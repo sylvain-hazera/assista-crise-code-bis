@@ -127,38 +127,63 @@ describe('MembresAssociationComponent', () => {
     });
   });
 
-  describe('les trois états d\'une disponibilité', () => {
-    it('distingue un refus d\'un silence', () => {
-      expect(composant.etatJour(true)).toBe('oui');
-      expect(composant.etatJour(false)).toBe('non');
-      expect(composant.etatJour(null)).toBe('silence');
-    });
-
-    it('compte les silences séparément des refus', () => {
+  describe('la grille à créneaux', () => {
+    /** La grille lit désormais le moteur à créneaux — le même que la constitution d'équipe.
+     * Quatre créneaux par jour, et « pas de ligne = indisponible ». */
+    function grilleDeux() {
       composant.grille = {
         institution: 'i1', institution_nom: 'AASC', debut: iso(0), fin: iso(1),
-        jours: [iso(0), iso(1)], membres_en_conge: 0,
+        jours: [iso(0), iso(1)], creneaux: ['MATIN', 'MIDI', 'SOIR', 'NUIT'],
+        membres_en_conge: 0,
         membres: [
           { utilisateur: 'a', nom: 'A', membre_bureau: false, qualifications_expirees: 0,
-            jours: [{ date: iso(0), disponible: true }, { date: iso(1), disponible: null }] },
+            a_declare: true,
+            jours: [
+              { date: iso(0), creneaux: { MATIN: true, MIDI: false, SOIR: true, NUIT: false } },
+              { date: iso(1), creneaux: { MATIN: false, MIDI: false, SOIR: false, NUIT: false } },
+            ] },
+          // B n'a RIEN déclaré : ses cases vides ne sont pas des refus.
           { utilisateur: 'b', nom: 'B', membre_bureau: false, qualifications_expirees: 0,
-            jours: [{ date: iso(0), disponible: false }, { date: iso(1), disponible: null }] },
+            a_declare: false,
+            jours: [
+              { date: iso(0), creneaux: { MATIN: false, MIDI: false, SOIR: false, NUIT: false } },
+              { date: iso(1), creneaux: { MATIN: false, MIDI: false, SOIR: false, NUIT: false } },
+            ] },
         ],
       };
+    }
 
-      expect(composant.comptePourJour(0, 'oui')).toBe(1);
-      expect(composant.comptePourJour(0, 'non')).toBe(1);
-      expect(composant.comptePourJour(0, 'silence')).toBe(0);
-      // Le jour où personne n'a répondu : deux silences, zéro refus. C'est cette ligne qui dit
-      // qui relancer.
-      expect(composant.comptePourJour(1, 'silence')).toBe(2);
-      expect(composant.comptePourJour(1, 'non')).toBe(0);
+    it('compte les disponibles par créneau et non par jour', () => {
+      grilleDeux();
+
+      // C'est tout l'intérêt du créneau : quelqu'un de libre le matin et pris à midi est une
+      // situation ordinaire, qu'une grille à la journée ne sait pas exprimer.
+      expect(composant.compteDisponibles(0, 'MATIN')).toBe(1);
+      expect(composant.compteDisponibles(0, 'MIDI')).toBe(0);
+      expect(composant.compteDisponibles(0, 'SOIR')).toBe(1);
+      expect(composant.compteDisponibles(1, 'MATIN')).toBe(0);
+    });
+
+    it('compte à part ceux qui n\'ont rien déclaré', () => {
+      grilleDeux();
+
+      // Ce moteur ne stocke pas de « non renseigné » : une grille vierge et une grille tout
+      // décochée sont identiques en base. Seul `a_declare` dit qui relancer.
+      expect(composant.compteSansDeclaration()).toBe(1);
     });
 
     it('ne compte rien sans grille chargée', () => {
       composant.grille = null;
 
-      expect(composant.comptePourJour(0, 'oui')).toBe(0);
+      expect(composant.compteDisponibles(0, 'MATIN')).toBe(0);
+      expect(composant.compteSansDeclaration()).toBe(0);
+    });
+
+    it('abrège les créneaux sans confondre matin et midi', () => {
+      // « M » désignerait aussi bien l'un que l'autre : midi prend deux lettres.
+      expect(composant.initialeCreneau('MATIN')).toBe('M');
+      expect(composant.initialeCreneau('MIDI')).toBe('Mi');
+      expect(composant.libelleCreneau('NUIT')).toBe('Nuit');
     });
   });
 

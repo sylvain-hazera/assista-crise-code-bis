@@ -857,7 +857,9 @@ def importer_benevoles_association(request, institution, lignes, mapping,
     """
     from .audit import audit_log
     from .crypto_fields import blind_index
-    from .fiches_benevoles import departement_de_la_fiche, geolocaliser_fiche
+    from .fiches_benevoles import (
+        departement_de_la_fiche, geolocaliser_fiche, ressource_du_benevole,
+    )
     from .institution_attachment import _affecter_role
     from .models import (
         ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User, UserRole,
@@ -974,6 +976,12 @@ def importer_benevoles_association(request, institution, lignes, mapping,
                 erreurs.append({"ligne": numero,
                                 "message": f"Adresse non géolocalisée : {motif_geo}"})
         fiche.save()
+
+        # La RESSOURCE : une offre « Bénévolat » INTERNE à l'association. C'est elle qui porte
+        # les créneaux de disponibilité (DisponibiliteOffre), donc c'est elle qui fait entrer
+        # le bénévole dans la constitution d'équipe. Interne, parce que `Offer` alimente la
+        # carte publique (voir VisibiliteOffre).
+        ressource_du_benevole(fiche, institution)
 
         departement, origine, motif = departement_de_la_fiche(fiche)
         equipe = equipes.get(departement) if departement else None

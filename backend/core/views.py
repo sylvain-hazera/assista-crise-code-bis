@@ -56,6 +56,9 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .alertes_pcs import preparer_checklist_pcs, envoyer_notifications
 from .audit import audit_log, get_client_ip, send_mail_logged, send_mail_with_attachment_logged
+# Cloisonnement des offres d'aide internes (voir core/visibilite_offres.py). Import au niveau
+# du module : ce filtre s'applique a cinq endroits, et l'oublier a l'un d'eux est une fuite.
+from .visibilite_offres import offres_visibles
 from .notifications_admin import filtre_comptes_en_attente, notifier_administrateurs
 from .export import build_crisis_export_zip
 from .institution_attachment import (
@@ -186,6 +189,7 @@ from .models import (
     StatutSiteSensible,
     StatutImportOpenData,
     UserRole,
+    VisibiliteOffre,
     InstitutionType,
     Institution,
     RoleOperationnel,
@@ -2697,10 +2701,18 @@ class DashboardStatsView(APIView):
         # fiches, sans crise rattachée) — hors-sujet pour le suivi de crise du dashboard,
         # même motif que ReportingComponent.loadAll côté frontend. Compté séparément (carte
         # "Bénévoles") plutôt qu'exclu silencieusement.
-        offres = Offer.objects.filter(environment=env).exclude(offer_type__type='Bénévolat')
+        # Les offres internes sont comptées pour qui y a droit, et seulement pour lui : un
+        # compteur « 412 bénévoles » visible d'une autre institution renseignerait déjà sur
+        # l'effectif d'une association, sans qu'aucune fiche n'ait fuité.
+        offres = offres_visibles(
+            self.request, Offer.objects.filter(environment=env),
+        ).exclude(offer_type__type='Bénévolat')
         demandes = Request.objects.filter(environment=env)
         signalements = Information.objects.filter(environment=env)
-        benevoles = Offer.objects.filter(environment=env, offer_type__type='Bénévolat')
+        benevoles = offres_visibles(
+            self.request, Offer.objects.filter(environment=env,
+                                               offer_type__type='Bénévolat'),
+        )
         return {
             "crises": crises, "offres": offres, "demandes": demandes,
             "signalements": signalements, "benevoles": benevoles,
@@ -9649,6 +9661,11 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         qs = annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
         )
+        # Cloisonnement des offres INTERNES (voir core/visibilite_offres.py). Appliqué AVANT
+        # tout aiguillage par action, `reactiver` compris : cette vue est en `AllowAny` et sert
+        # la carte publique, donc une offre interne qui s'échapperait ici serait lisible par
+        # un visiteur anonyme. Sans effet sur les offres citoyennes, toutes PUBLIQUE.
+        qs = offres_visibles(self.request, qs)
         if self.action == 'reactiver':
             return qs
         qs = _filter_actif(self.request, qs)
@@ -10187,9 +10204,31 @@ class OfferPhotoViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
 
 class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""
+    """Créneaux de disponibilité (matin/midi/soir/nuit) déclarés avec une offre d'aide.
+
+    **Le moteur de disponibilité du projet** : c'est ce que lit le planning de `/admin/teams`
+    pour constituer une équipe, et ce que remplit le formulaire public « proposer mon aide ».
+    Depuis le 11/11/2026, les bénévoles d'association y entrent aussi, par la ressource qui les
+    représente (voir `fiches_benevoles.ressource_du_benevole`)."""
     queryset = DisponibiliteOffre.objects.all()
     serializer_class = DisponibiliteOffreSerializer
+
+    def get_queryset(self):
+        """Seuls les créneaux d'offres que l'appelant a le droit de voir.
+
+        Ajouté le 11/11/2026, et nécessaire avant d'y faire entrer les bénévoles : la liste
+        était en `AllowAny` sur `objects.all()`. Un visiteur anonyme pouvait donc énumérer les
+        créneaux de **toutes** les offres, y compris ceux des ressources internes d'une
+        association — c'est-à-dire reconstituer qui est mobilisable et quand, sans jamais voir
+        une seule fiche.
+
+        Filtré par sous-requête sur les offres visibles plutôt qu'en recopiant la règle ici :
+        une seconde écriture de la même règle finirait par diverger de
+        `core/visibilite_offres.py`. `offer_id` est indexé (clé étrangère), donc la
+        sous-requête reste un index scan."""
+        return super().get_queryset().filter(
+            offer__in=offres_visibles(self.request, Offer.objects.all()),
+        )
     # 'in' en plus de 'exact' : ?offer__in=<id1>,<id2>,... -- permet à un appelant qui a déjà
     # résolu un lot d'offres (ex: celles d'une crise) de ne récupérer QUE leurs créneaux, sans
     # jamais avoir à lister la table entière (27k+ lignes mesurées, croît avec Offer -- voir
@@ -13176,8 +13215,20 @@ class DelegationCompetenceViewSet(
             )
         )
 
+#: Les quatre créneaux, dans l'ordre de la journée. Déclaré ici plutôt que déduit de
+#: `Creneau.choices` : l'ordre d'un TextChoices est celui de l'écriture du code, et une
+#: réorganisation du modèle réordonnerait silencieusement toutes les grilles.
+CRENEAUX_ORDONNES = ["MATIN", "MIDI", "SOIR", "NUIT"]
+
+
 def _disponibilite_du_jour(declarations, jour):
     """Disponible, indisponible, ou None quand rien n'a été déclaré pour ce jour.
+
+    **Plus appelée par la grille de l'association depuis le 11/11/2026** : celle-ci lit
+    désormais le moteur à créneaux (`DisponibiliteOffre`), le même que la constitution
+    d'équipe. Conservée parce que `DisponibiliteOperationnelle` reste exposé et que ses lignes,
+    elles, sont bien des périodes à la journée — la fonction reste la bonne lecture de CE
+    modèle. La supprimer obligerait à la réécrire au premier écran qui l'affiche.
 
     None n'est PAS « indisponible » : c'est un silence, et le distinguer est ce qui évite de
     lancer une mobilisation sur un effectif imaginaire. La déclaration la plus récente
@@ -13293,12 +13344,21 @@ class DisponibiliteOperationnelleViewSet(
 
     @action(detail=False, methods=["get"], url_path="grille")
     def grille(self, request):
-        """Qui est disponible, jour par jour, sur les quinze prochains jours.
+        """Qui est disponible, **créneau par créneau**, sur les quinze prochains jours.
 
-        Trois valeurs par case, et la troisième est la plus importante : disponible, indisponible,
-        ou **non renseigné**. Confondre « a dit non » et « n'a pas répondu » est l'erreur qui
-        fait partir une mobilisation avec un effectif imaginaire ; l'écran doit pouvoir montrer
-        les silences.
+        Bascule du 11/11/2026 sur le moteur unique. Cette grille lisait
+        `DisponibiliteOperationnelle` — une déclaration à la journée — alors que la
+        constitution d'équipe (`/admin/teams`) lit `DisponibiliteOffre`, quatre créneaux par
+        jour. Deux sources pour la même question, dont une seule décidait réellement des
+        mobilisations : la grille pouvait afficher « disponible » là où la constitution
+        d'équipe ne voyait rien.
+
+        Elle lit donc maintenant les mêmes lignes, et la case est le créneau. « Pas de ligne =
+        indisponible » est la règle de ce moteur depuis l'origine : il n'y a pas de troisième
+        état à montrer ici, et en inventer un ferait croire à une nuance que le modèle ne sait
+        pas stocker. Ce qui reste vrai, et que l'écran doit montrer, c'est qu'une ligne vide
+        peut être un silence autant qu'un refus — d'où `a_declare`, qui dit si la personne a
+        déjà touché à sa grille.
 
         Les membres SORTIS n'y figurent pas (ils ne sont plus de l'association) et ceux EN CONGÉ
         non plus — mais leur nombre est rendu, parce qu'une liste qui omet des gens sans le dire
@@ -13349,23 +13409,26 @@ class DisponibiliteOperationnelleViewSet(
         ).count()
 
         utilisateurs = [c.utilisateur_id for c in rattachements]
-        # Une seule requête pour toutes les déclarations de la fenêtre, puis assemblage en
-        # mémoire : une requête par membre et par jour ferait 15 × l'effectif.
-        declarations = list(
-            DisponibiliteOperationnelle.objects.filter(
-                affectation__institution=institution,
-                affectation__utilisateur_id__in=utilisateurs,
-                environment=environnement,
-            ).filter(
-                Q(date_fin__isnull=True) | Q(date_fin__date__gte=debut),
-                date_debut__date__lte=jours[-1],
-            ).select_related("affectation")
-        )
 
+        # Le MOTEUR UNIQUE : les créneaux portés par la ressource de chaque membre (son offre
+        # « Bénévolat » interne). Deux requêtes pour toute la grille — les ressources, puis
+        # leurs créneaux — plutôt qu'une par membre et par jour, qui ferait 15 × l'effectif.
+        from .fiches_benevoles import TYPE_OFFRE_BENEVOLE
+
+        ressources = dict(
+            Offer.objects.filter(
+                author_id__in=utilisateurs, institution=institution,
+                offer_type__type=TYPE_OFFRE_BENEVOLE, environment=environnement,
+            ).values_list("id", "author_id")
+        )
         par_utilisateur = {}
-        for declaration in declarations:
-            par_utilisateur.setdefault(
-                declaration.affectation.utilisateur_id, []).append(declaration)
+        for date_jour, creneau, offre_id in DisponibiliteOffre.objects.filter(
+                offer_id__in=ressources.keys(), date__gte=jours[0], date__lte=jours[-1],
+        ).values_list("date", "creneau", "offer_id"):
+            utilisateur_id = ressources.get(offre_id)
+            if utilisateur_id is None:
+                continue
+            par_utilisateur.setdefault(utilisateur_id, set()).add((date_jour, creneau))
 
         qualifications_expirees = {}
         for qualif in QualificationMembre.objects.filter(
@@ -13376,7 +13439,7 @@ class DisponibiliteOperationnelleViewSet(
 
         membres = []
         for contact in rattachements:
-            siennes = par_utilisateur.get(contact.utilisateur_id, [])
+            siennes = par_utilisateur.get(contact.utilisateur_id, set())
             membres.append({
                 "utilisateur": contact.utilisateur_id,
                 "nom": nom_affichable(contact.utilisateur, request) or contact.utilisateur.email,
@@ -13387,8 +13450,20 @@ class DisponibiliteOperationnelleViewSet(
                 "qualifications_expirees": qualifications_expirees.get(
                     contact.utilisateur_id, 0),
                 "aptitude_valide_jusquau": contact.aptitude_valide_jusquau,
+                # `a_declare` distingue le silence du refus, que ce moteur ne sait pas
+                # stocker : « pas de ligne = indisponible » est sa règle, donc une grille
+                # vierge et une grille où tout a été décoché sont identiques en base. Sans ce
+                # drapeau, on ne saurait pas qui relancer — et c'est l'information qui fait
+                # partir une mobilisation sur un effectif imaginaire.
+                "a_declare": bool(siennes),
                 "jours": [
-                    {"date": jour, "disponible": _disponibilite_du_jour(siennes, jour)}
+                    {
+                        "date": jour,
+                        "creneaux": {
+                            creneau: (jour, creneau) in siennes
+                            for creneau in CRENEAUX_ORDONNES
+                        },
+                    }
                     for jour in jours
                 ],
             })
@@ -13400,6 +13475,7 @@ class DisponibiliteOperationnelleViewSet(
             "debut": jours[0],
             "fin": jours[-1],
             "jours": jours,
+            "creneaux": CRENEAUX_ORDONNES,
             "membres": membres,
             # Dit, et non tu : une liste qui omet des gens sans le signaler laisse chercher.
             "membres_en_conge": en_conge,
@@ -14071,9 +14147,9 @@ class PointOperationnelViewSet(
                 "Seul le responsable ou le leader de l'équipe du point peut consulter les candidats."
             )
 
-        queryset = Offer.objects.filter(
+        queryset = offres_visibles(request, Offer.objects.filter(
             environment=get_active_environment(request), status=Status.AVAILABLE,
-        ).prefetch_related("disponibilites", "competences")
+        )).prefetch_related("disponibilites", "competences")
 
         search = request.query_params.get("search", "").strip()
         if search:
@@ -14462,10 +14538,10 @@ class LogementsDisponiblesView(generics.GenericAPIView):
         points = PointOperationnel.objects.filter(
             environment=environment, type__code='HEBERGEMENT',
         )
-        offres = Offer.objects.filter(
+        offres = offres_visibles(request, Offer.objects.filter(
             environment=environment, actif=True, accueil_intervenants=True,
             accueil_intervenants_valide_par__isnull=False,
-        )
+        ))
         if crise.location is not None:
             points = points.annotate(distance=Distance('location', crise.location)).order_by('distance')
             offres = offres.annotate(distance=Distance('location', crise.location)).order_by('distance')
@@ -19539,7 +19615,11 @@ class SatelliteViewSet(
             request, Request.objects.filter(environment=env, actif=True).filter(filtre_crise)
         )
         offres_qs = filter_queryset_to_viewer_zone(
-            request, Offer.objects.filter(environment=env, actif=True).filter(filtre_crise).prefetch_related('competences')
+            # Jamais les offres internes : un satellite sert le public de son territoire, et
+            # rien ne l'autorise à détenir l'annuaire des bénévoles d'une association.
+            request, Offer.objects.filter(
+                environment=env, actif=True, visibilite=VisibiliteOffre.PUBLIQUE,
+            ).filter(filtre_crise).prefetch_related('competences')
         )
         signalements_qs = filter_queryset_to_viewer_zone(
             request, Information.objects.filter(environment=env).filter(filtre_crise),
@@ -21474,6 +21554,10 @@ class MaFicheBenevoleView(generics.GenericAPIView):
                 avertissement = motif
             else:
                 self._replacer_dans_son_equipe(request, fiche)
+        # La ressource suit la fiche, à chaque enregistrement et non au seul géocodage :
+        # l'identité et le titre en viennent aussi. Sans ça, un bénévole qui corrige son nom
+        # resterait cherchable sous l'ancien.
+        self._mettre_a_jour_ses_ressources(fiche)
 
         fiche.completee_le = timezone.now()
         fiche.save(update_fields=['completee_le', 'date_modification'])
@@ -21488,6 +21572,33 @@ class MaFicheBenevoleView(generics.GenericAPIView):
         if avertissement:
             donnees['avertissement'] = avertissement
         return Response(donnees)
+
+    def _mettre_a_jour_ses_ressources(self, fiche):
+        """Aligne l'offre « Bénévolat » interne de chaque association dont la personne est
+        membre.
+
+        Une par institution, et non une seule : quelqu'un peut être adhérent de deux
+        associations, et chacune doit voir sa propre ressource — en partager une seule
+        reviendrait à ce que l'une voie les créneaux déclarés pour l'autre.
+
+        Best-effort, tracé mais jamais bloquant : la fiche est déjà enregistrée à ce stade, et
+        un échec de la ressource ne doit pas transformer une correction d'adresse réussie en
+        erreur à l'écran."""
+        from .fiches_benevoles import ressource_du_benevole
+        from .institution_attachment import CODE_TYPE_AASC
+
+        rattachements = ContactInstitution.objects.filter(
+            utilisateur=fiche.utilisateur, actif=True,
+            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+        ).select_related('institution')
+        for rattachement in rattachements:
+            try:
+                ressource_du_benevole(fiche, rattachement.institution)
+            except Exception:
+                logger.exception(
+                    "Mise a jour de la ressource benevole impossible (fiche %s, institution "
+                    "%s)", fiche.id, rattachement.institution_id,
+                )
 
     def _replacer_dans_son_equipe(self, request, fiche):
         """Déplace le bénévole vers l'équipe départementale de sa nouvelle adresse.
@@ -21537,48 +21648,69 @@ class MaFicheBenevoleView(generics.GenericAPIView):
 
 
 class MesDisponibilitesView(generics.GenericAPIView):
-    """Mes disponibilités, jour par jour — écrites dans le SEUL moteur du projet.
+    """Mes créneaux de disponibilité — écrits dans le SEUL moteur du projet.
 
-    `DisponibiliteOperationnelle` est la source que lit la grille de mobilisation, donc la
-    constitution d'équipe. Cette vue n'en est pas une seconde : elle n'est qu'un guichet pour
-    que l'intéressé puisse y écrire lui-même, sans connaître la plomberie.
+    `DisponibiliteOffre` : une ligne par `(offre, date, créneau)` avec quatre créneaux par jour
+    (matin, midi, soir, nuit), et **pas de ligne = indisponible**. C'est ce que lit
+    `/admin/teams` pour constituer une équipe, et c'est aussi ce que remplit le formulaire
+    public « proposer mon aide » depuis l'origine.
 
-    **Pourquoi un guichet plutôt que d'envoyer le bénévole sur
-    `DisponibiliteOperationnelleViewSet`** : une déclaration pend à une
-    `AffectationRoleOperationnel`, dont l'identifiant n'est servi nulle part à un simple
-    membre. Lui demander de le trouver, c'est l'obliger à lire ses propres affectations pour
-    cocher une case — et c'est exactement le genre de détour qui fait qu'une grille reste
+    **Correction du 11/11/2026.** La première version de cette vue écrivait dans
+    `DisponibiliteOperationnelle` : une déclaration à la journée, accrochée à
+    `AffectationRoleOperationnel`, que seule la grille de l'association lisait. C'était un
+    second moteur — exactement ce qu'il ne faut pas : deux sources qui se ressemblent sans
+    jamais se parler, et on mobilise alors sur la mauvaise.
+
+    Le créneau est donc l'unité, pas la journée. Un bénévole disponible le matin et pris
+    l'après-midi est une situation ordinaire, qu'une déclaration à la journée ne sait pas
+    exprimer : elle forcerait à répondre « indisponible » pour toute la journée, et on
+    perdrait une demi-journée d'effectif à chaque fois.
+
+    Les créneaux sont portés par la **ressource** de la personne (son offre « Bénévolat »
+    interne, voir `fiches_benevoles.ressource_du_benevole`). Cette vue est un guichet : elle
+    retrouve cette ressource elle-même, parce que son identifiant n'est servi nulle part à un
+    simple membre — l'obliger à le trouver pour cocher une case, c'est garantir une grille
     vide.
-
-    Le format est celui que l'écran manipule : un jour, disponible ou non. Le modèle, lui,
-    raisonne en périodes ; la conversion se fait ici, en un seul endroit.
     """
 
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MesDisponibilitesSerializer
 
-    #: Même fenêtre que la grille : au-delà de quinze jours les gens ne savent pas encore, et
-    #: une case remplie trop tôt donne une fausse certitude.
+    #: Horizon de la grille, en jours (choix de Sylvain du 11/11/2026 : 15 jours × 4 créneaux).
+    #: Les écrans citoyens plus anciens en affichent 8 ; ils ne sont pas touchés.
     JOURS = 15
 
-    def _mes_affectations(self, request):
+    def _mes_ressources(self, request):
+        """Les offres « Bénévolat » internes dont l'appelant est l'auteur.
+
+        Plusieurs possibles : on peut être adhérent de deux associations, et chacune a sa
+        ressource. Les créneaux sont alors déclarés sur toutes — être disponible pour l'une et
+        pas pour l'autre le même créneau n'a pas de sens physique, on ne peut être qu'à un
+        endroit."""
+        from .fiches_benevoles import TYPE_OFFRE_BENEVOLE
+
         return list(
-            AffectationRoleOperationnel.objects.filter(
-                utilisateur=request.user, actif=True,
+            Offer.objects.filter(
+                author=request.user,
+                offer_type__type=TYPE_OFFRE_BENEVOLE,
+                visibilite=VisibiliteOffre.INTERNE,
                 environment=get_active_environment(request),
             ).select_related("institution")
         )
 
     def get(self, request):
-        """Les quinze prochains jours, avec trois états par jour.
+        """Les quinze prochains jours, quatre créneaux chacun.
 
-        « Non renseigné » est rendu comme `null` et non comme `false` : un blanc n'est pas un
-        refus, et les confondre fait partir une mobilisation avec un effectif imaginaire."""
-        affectations = self._mes_affectations(request)
-        if not affectations:
-            # Pas une erreur : un citoyen sans rattachement n'a simplement rien à déclarer.
-            # L'écran doit pouvoir le dire plutôt que d'afficher une grille vide inexpliquée.
-            return Response({"rattachements": [], "jours": [], "declarations": []})
+        Un créneau non déclaré est rendu `false` et non `null` : contrairement à la grille de
+        l'association, ce moteur n'a pas de troisième état — « pas de ligne = indisponible »
+        est sa règle depuis l'origine, et inventer un « non renseigné » ici ferait croire à une
+        nuance que le modèle ne sait pas stocker."""
+        ressources = self._mes_ressources(request)
+        if not ressources:
+            # Pas une erreur : quelqu'un qui n'est membre d'aucune association n'a pas de
+            # ressource, donc rien à déclarer. L'écran doit pouvoir le dire plutôt que
+            # d'afficher une grille vide inexpliquée.
+            return Response({"ressources": [], "jours": [], "creneaux": CRENEAUX_ORDONNES})
 
         try:
             nb_jours = int(request.query_params.get("jours", self.JOURS))
@@ -21589,100 +21721,90 @@ class MesDisponibilitesView(generics.GenericAPIView):
         debut = timezone.localdate()
         jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
 
-        declarations = list(
-            DisponibiliteOperationnelle.objects.filter(
-                affectation__in=affectations,
-                environment=get_active_environment(request),
-            ).filter(
-                Q(date_fin__isnull=True) | Q(date_fin__date__gte=debut),
-                date_debut__date__lte=jours[-1],
-            )
+        # Une requête pour toute la fenêtre, puis assemblage en mémoire : une requête par jour
+        # et par créneau ferait 60 allers-retours pour afficher un écran.
+        declares = set(
+            DisponibiliteOffre.objects.filter(
+                offer__in=ressources, date__gte=jours[0], date__lte=jours[-1],
+            ).values_list("date", "creneau")
         )
 
         return Response({
-            "rattachements": [
-                {"affectation": a.id, "institution": a.institution_id,
-                 "institution_nom": a.institution.nom}
-                for a in affectations
+            "ressources": [
+                {"offre": o.id,
+                 "institution": o.institution_id,
+                 "institution_nom": o.institution.nom if o.institution else None}
+                for o in ressources
             ],
+            "creneaux": CRENEAUX_ORDONNES,
             "jours": [
-                {"date": jour, "disponible": _disponibilite_du_jour(declarations, jour)}
+                {
+                    "date": jour,
+                    "creneaux": {
+                        creneau: (jour, creneau) in declares
+                        for creneau in CRENEAUX_ORDONNES
+                    },
+                }
                 for jour in jours
             ],
-            "declarations": DisponibiliteOperationnelleSerializer(declarations,
-                                                                  many=True).data,
         })
 
     def post(self, request):
-        """Déclare un jour disponible ou indisponible, ou efface la déclaration.
+        """Coche ou décoche un créneau, ou une journée entière.
 
-        **Un jour = une déclaration**, et une nouvelle remplace la précédente sur ce jour.
-        Empiler deux déclarations contradictoires sur le même jour rendrait la grille
-        dépendante de l'ordre de lecture — c'est-à-dire fausse une fois sur deux.
-
-        `disponible: null` EFFACE : revenir à « je ne sais pas encore » doit être possible,
-        sinon la seule façon de retirer un engagement est d'affirmer un refus."""
+        `creneau` omis = **toute la journée** : quatre lignes d'un coup. Soixante cases à
+        cocher une par une, personne ne le fait — et une grille que personne ne remplit ne sert
+        pas à armer une garde.
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         jour = serializer.validated_data["date"]
-        disponible = serializer.validated_data.get("disponible")
+        creneau = serializer.validated_data.get("creneau") or None
+        disponible = serializer.validated_data["disponible"]
 
-        affectations = self._mes_affectations(request)
-        if not affectations:
+        ressources = self._mes_ressources(request)
+        if not ressources:
             return Response(
-                {"error": "Vous n'êtes rattaché à aucune institution : il n'y a pas de "
-                          "disponibilité à déclarer."},
+                {"error": "Vous n'avez pas de fiche de ressource : il n'y a pas de "
+                          "disponibilité à déclarer. Complétez d'abord votre fiche."},
                 status=status.HTTP_400_BAD_REQUEST)
 
-        demandee = serializer.validated_data.get("affectation")
-        if demandee is not None:
-            affectation = next((a for a in affectations if str(a.id) == str(demandee)), None)
-            if affectation is None:
-                # On ne déclare que pour SES propres rattachements. Le reste passe par la page
-                # de l'association, avec ses droits.
-                raise PermissionDenied("Ce rattachement n'est pas le vôtre.")
-        else:
-            affectation = affectations[0]
-
+        creneaux = [creneau] if creneau else list(CRENEAUX_ORDONNES)
         environnement = get_active_environment(request)
-        # Les déclarations qui couvrent ce jour, toutes affectations confondues : laisser celle
-        # d'un autre rattachement contredire la nouvelle reproduirait le problème qu'on évite.
-        anciennes = DisponibiliteOperationnelle.objects.filter(
-            affectation__in=affectations, environment=environnement,
-            date_debut__date__lte=jour,
-        ).filter(Q(date_fin__isnull=True) | Q(date_fin__date__gte=jour))
-        effacees = anciennes.count()
-        anciennes.delete()
 
-        creee = None
-        if disponible is not None:
-            creee = DisponibiliteOperationnelle.objects.create(
-                affectation=affectation,
-                disponible=disponible,
-                # Journée entière : l'écran raisonne en jours, et une demi-journée n'est pas
-                # une notion de ce domaine. Le modèle garde des horodatages, donc on borne.
-                date_debut=timezone.make_aware(
-                    datetime.datetime.combine(jour, datetime.time.min)),
-                date_fin=timezone.make_aware(
-                    datetime.datetime.combine(jour, datetime.time.max)),
-                environment=environnement,
-            )
+        poses, retires = 0, 0
+        for ressource in ressources:
+            for valeur in creneaux:
+                if disponible:
+                    _, cree = DisponibiliteOffre.objects.get_or_create(
+                        offer=ressource, date=jour, creneau=valeur,
+                        defaults={"environment": environnement},
+                    )
+                    poses += 1 if cree else 0
+                else:
+                    # « Pas de ligne = indisponible » : décocher SUPPRIME, il n'y a pas de
+                    # ligne « indisponible » à écrire.
+                    supprimes, _ = DisponibiliteOffre.objects.filter(
+                        offer=ressource, date=jour, creneau=valeur,
+                    ).delete()
+                    retires += supprimes
 
         audit_log(
-            request=request, action_code="MODIFICATION",
-            objet_type="DisponibiliteOperationnelle",
-            objet_id=creee.id if creee else affectation.id,
+            request=request, action_code="MODIFICATION", objet_type="Offer",
+            objet_id=ressources[0].id,
             commentaire=(
-                f"Disponibilité du {jour} déclarée par son titulaire : "
-                f"{'disponible' if disponible else 'indisponible' if disponible is not None else 'effacée'}"
-                + (f" ({effacees} déclaration(s) remplacée(s))" if effacees else "")
+                f"Disponibilité déclarée par son titulaire : {jour} "
+                f"({creneau or 'journée entière'}) → "
+                f"{'disponible' if disponible else 'indisponible'}"
             ),
         )
 
         return Response({
             "date": jour,
+            "creneaux": creneaux,
             "disponible": disponible,
-            "remplacees": effacees,
+            "poses": poses,
+            "retires": retires,
         })
 
 

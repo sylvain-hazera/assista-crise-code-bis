@@ -67,3 +67,85 @@ def departement_de_la_fiche(fiche):
             "d'une limite de département."
         )
     return None, None, motif
+
+
+#: Type d'offre sous lequel un bénévole d'association est publié comme ressource. Le libellé
+#: existe déjà dans le catalogue (`OfferType.type`) et sert aux offres citoyennes de bénévolat :
+#: on le réutilise plutôt que d'en créer un second, sinon les écrans qui excluent « Bénévolat »
+#: (tableau de bord, reporting) devraient connaître les deux.
+TYPE_OFFRE_BENEVOLE = "Bénévolat"
+
+
+def ressource_du_benevole(fiche, institution):
+    """Crée ou met à jour l'offre qui représente ce bénévole comme RESSOURCE.
+
+    Décision du 11/11/2026. Le moteur de disponibilité du projet — celui que lit
+    `/admin/teams` pour constituer une équipe — est `DisponibiliteOffre`, et il est clé sur
+    `Offer`. Pour qu'un bénévole y entre, il lui faut donc une offre. C'est aussi ce qui le
+    rend trouvable comme ressource par les régulateurs de son association.
+
+    **L'offre est `INTERNE`**, rattachée à l'institution : `Offer` est servi en `AllowAny` et
+    alimente la carte publique. Sans ce cloisonnement, importer un fichier d'adhérents
+    publierait l'annuaire de l'association (voir `VisibiliteOffre`).
+
+    Idempotent, et retrouvée par `(author, institution, type)` et non par son titre : un
+    libellé d'affichage n'a aucune raison d'être stable, et s'en servir de clé créerait une
+    seconde ressource au premier changement de nom.
+
+    Renvoie `(offre, creee)`.
+    """
+    from .models import Offer, OfferType, Status, VisibiliteOffre
+
+    type_offre, _ = OfferType.objects.get_or_create(type=TYPE_OFFRE_BENEVOLE)
+    utilisateur = fiche.utilisateur
+
+    offre = Offer.objects.filter(
+        author=utilisateur, institution=institution, offer_type=type_offre,
+        environment=fiche.environment,
+    ).first()
+    creee = offre is None
+    if creee:
+        offre = Offer(
+            author=utilisateur, institution=institution, offer_type=type_offre,
+            environment=fiche.environment,
+            visibilite=VisibiliteOffre.INTERNE,
+            # DISPONIBLE : c'est l'état qui rend la ressource proposable, et il n'y a rien à
+            # valider — l'adhésion a déjà eu lieu. Une offre citoyenne, elle, arrive en
+            # NON_TRAITEE parce que personne ne l'a encore regardée.
+            status=Status.AVAILABLE,
+        )
+
+    # Identité recopiée depuis le compte : les trois champs sont chiffrés au repos sur `Offer`
+    # (`EncryptedTextField` / `EncryptedEmailField`), donc on ne dégrade rien.
+    offre.title = _titre_ressource(utilisateur)
+    offre.first_name_offer = utilisateur.first_name or ""
+    offre.last_name_offer = utilisateur.last_name or ""
+    offre.email_offer = utilisateur.email or ""
+    offre.visibilite = VisibiliteOffre.INTERNE
+    offre.institution = institution
+
+    # Position et secteur viennent de la FICHE, déjà géocodée : la ressource se cherche par
+    # territoire comme n'importe quelle offre, sans second géocodage.
+    offre.location = fiche.location
+    offre.commune_code = fiche.commune_code
+    offre.epci_code = fiche.epci_code
+    offre.departement_code = fiche.departement_code
+    offre.region_code = fiche.region_code
+    offre.save()
+    return offre, creee
+
+
+def _titre_ressource(utilisateur):
+    """« Bénévole — Prénom N. ».
+
+    Le nom de famille est ABRÉGÉ : `Offer.title` n'est pas chiffré (c'est un champ de
+    recherche et de tri), et il s'affiche dans des listes. Y écrire l'état civil complet
+    reviendrait à sortir en clair ce que `first_name_offer` / `last_name_offer` chiffrent juste
+    à côté — le titre doit suffire à reconnaître quelqu'un dans une liste, pas à le constituer
+    en fichier.
+    """
+    prenom = (utilisateur.first_name or "").strip()
+    nom = (utilisateur.last_name or "").strip()
+    initiale = f"{nom[0].upper()}." if nom else ""
+    identite = " ".join(part for part in (prenom, initiale) if part)
+    return f"Bénévole — {identite}" if identite else "Bénévole"

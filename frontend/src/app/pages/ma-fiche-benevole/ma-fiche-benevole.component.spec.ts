@@ -159,79 +159,120 @@ describe('MaFicheBenevoleComponent', () => {
     expect(composant.depotPret).toBeFalse();
   });
 
-  describe('les disponibilités (moteur unique)', () => {
+  describe('les créneaux (moteur unique)', () => {
     const DISPOS: MesDisponibilites = {
-      rattachements: [{ affectation: 'a1', institution: 'i1', institution_nom: 'Reserve' }],
+      ressources: [{ offre: 'o1', institution: 'i1', institution_nom: 'Reserve' }],
+      creneaux: ['MATIN', 'MIDI', 'SOIR', 'NUIT'],
       jours: [
-        { date: '2026-11-12', disponible: null },
-        { date: '2026-11-13', disponible: true },
+        { date: '2026-11-12',
+          creneaux: { MATIN: false, MIDI: false, SOIR: false, NUIT: false } },
+        { date: '2026-11-13',
+          creneaux: { MATIN: true, MIDI: true, SOIR: true, NUIT: true } },
       ],
     };
 
     function ouvrirDispos(grille: MesDisponibilites = DISPOS): void {
       charger();
       composant.ouvrirOnglet('disponibilites');
-      http.expectOne(r => r.url === `${api}/mes-disponibilites/`).flush(grille);
+      http.expectOne(r => r.url === `${api}/mes-disponibilites/`)
+        .flush(JSON.parse(JSON.stringify(grille)));
     }
 
-    it('écrit dans le moteur des personnes ressources, pas dans la fiche', () => {
+    it('écrit dans le moteur à créneaux, pas dans la fiche', () => {
       ouvrirDispos();
-      // C'est tout l'objet de la correction : une seule source, celle que lit la
-      // constitution d'équipe.
+      // Le moteur que lit la constitution d'équipe, et lui seul.
       expect(composant.disponibilites?.jours.length).toBe(2);
       http.expectNone(r => r.method === 'PATCH');
     });
 
-    it('parcourt les trois états : silence → disponible → indisponible → silence', () => {
+    it('coche un créneau seul', () => {
       ouvrirDispos();
       const jour = composant.disponibilites!.jours[0];
 
-      composant.basculerJour(jour);
-      let requete = http.expectOne(`${api}/mes-disponibilites/`);
-      expect(requete.request.body).toEqual({ date: '2026-11-12', disponible: true });
-      requete.flush({ date: '2026-11-12', disponible: true, remplacees: 0 });
-      expect(jour.disponible).toBeTrue();
+      composant.basculerCreneau(jour, 'MATIN');
+      const requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(requete.request.body).toEqual(
+        { date: '2026-11-12', disponible: true, creneau: 'MATIN' });
+      requete.flush({ date: '2026-11-12', creneaux: ['MATIN'], disponible: true });
 
-      composant.basculerJour(jour);
-      requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(jour.creneaux['MATIN']).toBeTrue();
+      // Les trois autres ne bougent pas : c'est tout l'intérêt du créneau.
+      expect(jour.creneaux['MIDI']).toBeFalse();
+    });
+
+    it('décoche un créneau déjà coché', () => {
+      ouvrirDispos();
+      const jour = composant.disponibilites!.jours[1];
+
+      composant.basculerCreneau(jour, 'SOIR');
+      const requete = http.expectOne(`${api}/mes-disponibilites/`);
+      // Décocher SUPPRIME côté serveur : « pas de ligne = indisponible ».
       expect(requete.request.body.disponible).toBeFalse();
-      requete.flush({ date: '2026-11-12', disponible: false, remplacees: 1 });
-      expect(jour.disponible).toBeFalse();
+      requete.flush({ date: '2026-11-13', creneaux: ['SOIR'], disponible: false });
 
-      // Troisième clic : retour au silence. Sans lui, retirer un engagement obligerait à
-      // affirmer un refus.
-      composant.basculerJour(jour);
-      requete = http.expectOne(`${api}/mes-disponibilites/`);
-      expect(requete.request.body.disponible).toBeNull();
-      requete.flush({ date: '2026-11-12', disponible: null, remplacees: 1 });
-      expect(jour.disponible).toBeNull();
+      expect(jour.creneaux['SOIR']).toBeFalse();
+    });
+
+    it('coche toute la journée sans envoyer le créneau', () => {
+      ouvrirDispos();
+      const jour = composant.disponibilites!.jours[0];
+
+      composant.basculerJournee(jour);
+      const requete = http.expectOne(`${api}/mes-disponibilites/`);
+      // `creneau` omis = les quatre d'un coup. Soixante cases sur quinze jours, personne ne
+      // les coche une par une.
+      expect(requete.request.body).toEqual({ date: '2026-11-12', disponible: true });
+      requete.flush({ date: '2026-11-12', creneaux: ['MATIN', 'MIDI', 'SOIR', 'NUIT'],
+                      disponible: true });
+
+      expect(composant.journeeComplete(jour)).toBeTrue();
+    });
+
+    it('retire la journée quand elle est déjà complète', () => {
+      ouvrirDispos();
+      const jour = composant.disponibilites!.jours[1];
+
+      composant.basculerJournee(jour);
+      const requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(requete.request.body.disponible).toBeFalse();
+      requete.flush({ date: '2026-11-13', creneaux: [], disponible: false });
+
+      expect(composant.journeeVide(jour)).toBeTrue();
+    });
+
+    it('enchaîne les quinze jours un par un', () => {
+      ouvrirDispos();
+
+      composant.basculerToutesLesJournees(true);
+
+      // Séquentiel : quinze requêtes simultanées sur le même jeu de lignes, c'est quinze fois
+      // l'occasion d'un conflit pour un gain invisible.
+      const premiere = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(premiere.request.body.date).toBe('2026-11-12');
+      premiere.flush({ date: '2026-11-12', creneaux: [], disponible: true });
+      const seconde = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(seconde.request.body.date).toBe('2026-11-13');
+      seconde.flush({ date: '2026-11-13', creneaux: [], disponible: true });
     });
 
     it('ne modifie pas la case si le serveur refuse', () => {
       ouvrirDispos();
       const jour = composant.disponibilites!.jours[1];
 
-      composant.basculerJour(jour);
+      composant.basculerCreneau(jour, 'MATIN');
       http.expectOne(`${api}/mes-disponibilites/`).flush(
-        { error: 'Ce rattachement n\'est pas le vôtre.' },
-        { status: 403, statusText: 'Forbidden' });
+        { error: 'Vous n\'avez pas de fiche de ressource.' },
+        { status: 400, statusText: 'Bad Request' });
 
       // Une case qui change d'apparence sans que le serveur l'ait enregistrée est pire qu'un
       // refus visible : on partirait sur une disponibilité imaginaire.
-      expect(jour.disponible).toBeTrue();
-      expect(composant.erreur).toContain('rattachement');
+      expect(jour.creneaux['MATIN']).toBeTrue();
+      expect(composant.erreur).toContain('ressource');
     });
 
-    it('dit quand il n\'y a rien à déclarer plutôt que de montrer une grille vide', () => {
-      ouvrirDispos({ rattachements: [], jours: [] });
-      expect(composant.sansRattachement).toBeTrue();
-    });
-
-    it('distingue les trois états pour l\'affichage', () => {
-      expect(composant.etatJour(true)).toBe('oui');
-      expect(composant.etatJour(false)).toBe('non');
-      // Un blanc n'est pas un refus.
-      expect(composant.etatJour(null)).toBe('silence');
+    it('dit quand il n\'y a pas encore de ressource', () => {
+      ouvrirDispos({ ressources: [], creneaux: [], jours: [] });
+      expect(composant.sansRessource).toBeTrue();
     });
 
     it('ne recharge pas la grille à chaque ouverture d\'onglet', () => {

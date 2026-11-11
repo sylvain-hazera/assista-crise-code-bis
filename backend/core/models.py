@@ -5,6 +5,7 @@ import os
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.auth.models import UserManager as DjangoUserManager
 from django.contrib.gis.db import models as gis_models
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from django.db import models
@@ -772,6 +773,26 @@ class LivraisonMateriel(models.TextChoices):
     LIVRAISON_POSSIBLE = "LIVRAISON_POSSIBLE", "Peut être déposé dans un centre de regroupement"
 
 
+class VisibiliteOffre(models.TextChoices):
+    """Qui a le droit de voir une offre d'aide.
+
+    Ajouté le 11/11/2026. `Offer` était **entièrement public** : `OfferViewSet` est en
+    `AllowAny`, la liste alimente la carte publique et la recherche, et le modèle ne portait ni
+    institution ni notion de visibilité. C'était cohérent tant qu'une offre était le geste d'un
+    citoyen qui propose son aide à tous.
+
+    Ça ne l'est plus dès qu'un membre d'association devient une ressource : publier l'annuaire
+    des bénévoles de la Réserve Résilience sur une carte publique serait exactement l'inverse
+    de la consigne (« seule la réserve résilience a le droit de les voir comme ressource »).
+
+    `PUBLIQUE` est le défaut, et toutes les offres existantes le restent : ce champ ne peut pas
+    *réduire* par accident ce qui était déjà visible.
+    """
+
+    PUBLIQUE = "PUBLIQUE", "Publique"
+    INTERNE = "INTERNE", "Réservée à son institution"
+
+
 class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -822,6 +843,27 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
                    "est coché (le régulateur doit confirmer avant que l'offre soit exploitable).",
     )
     accueil_intervenants_valide_le = models.DateTimeField(null=True, blank=True)
+
+    # Cloisonnement d'une offre (voir VisibiliteOffre). Une offre INTERNE n'est servie qu'aux
+    # membres de son institution ; `institution` dit laquelle, et doit donc être renseignée
+    # avec elle — un `INTERNE` sans institution ne serait visible de personne, ce que
+    # `clean()` refuse plutôt que de le laisser disparaître en silence.
+    visibilite = models.CharField(
+        max_length=10, choices=VisibiliteOffre.choices, default=VisibiliteOffre.PUBLIQUE,
+        db_index=True,
+        help_text="PUBLIQUE = carte et recherche publiques, comme toute offre citoyenne. "
+                   "INTERNE = réservée aux membres de `institution`.",
+    )
+
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.CASCADE,
+        related_name="offres_internes",
+        null=True,
+        blank=True,
+        help_text="Renseignée pour une offre INTERNE : l'institution dont les membres y ont "
+                   "accès. Nulle pour une offre citoyenne publique.",
+    )
 
     offer_type = models.ForeignKey(
         OfferType, on_delete=models.PROTECT, related_name="offers"
@@ -913,6 +955,19 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
             # lignes).
             models.Index(fields=["-created_at"]),
         ]
+
+    def clean(self):
+        """Une offre INTERNE sans institution ne serait visible de PERSONNE.
+
+        Refusé explicitement plutôt que laissé passer : la ressource existerait en base, ne
+        remonterait dans aucune liste, et on chercherait longtemps pourquoi un bénévole
+        « n'apparaît pas ». Voir VisibiliteOffre."""
+        super().clean()
+        if self.visibilite == VisibiliteOffre.INTERNE and self.institution_id is None:
+            raise DjangoValidationError({
+                "institution": "Une offre interne doit nommer l'institution dont les membres "
+                               "y ont accès.",
+            })
 
     def save(self, *args, **kwargs):
         self.email_offer_bidx = blind_index(self.email_offer) if self.email_offer else None

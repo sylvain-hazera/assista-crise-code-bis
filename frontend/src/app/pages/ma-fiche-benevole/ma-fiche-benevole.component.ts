@@ -7,7 +7,8 @@ import { FicheBenevoleService } from '../../services/fiche-benevole.service';
 import { AssociationService } from '../../services/association.service';
 import { AuthService } from '../../auth/services/auth.service';
 import {
-  FREQUENCES_ENGAGEMENT, FicheBenevole, MesDisponibilites, SITUATIONS,
+  CRENEAUX, Creneau, FREQUENCES_ENGAGEMENT, FicheBenevole, JourCreneaux, MesDisponibilites,
+  SITUATIONS,
 } from '../../shared/models/fiche-benevole.model';
 import { Qualification, QualificationMembre } from '../../shared/models/association.model';
 
@@ -55,9 +56,12 @@ export class MaFicheBenevoleComponent implements OnInit {
   readonly SITUATIONS = SITUATIONS;
   readonly FREQUENCES_ENGAGEMENT = FREQUENCES_ENGAGEMENT;
 
-  /** Grille personnelle des quinze prochains jours, servie par le moteur unique. */
+  /** Grille personnelle : quinze jours × quatre créneaux, servie par le moteur unique. */
   disponibilites: MesDisponibilites | null = null;
-  jourEnCours = '';
+  readonly CRENEAUX = CRENEAUX;
+  /** Clé `date|creneau` en cours d'enregistrement, pour désactiver la seule case touchée
+   * plutôt que toute la grille. */
+  enregistrementEnCours = '';
 
   // ── Mot de passe ──────────────────────────────────────────────────────────
   motDePasse = '';
@@ -182,38 +186,91 @@ export class MaFicheBenevoleComponent implements OnInit {
     });
   }
 
-  /** Vrai quand la personne n'est rattachée à aucune institution : il n'y a alors rien à
-   * déclarer, et il faut le dire plutôt que de montrer une grille vide. */
-  get sansRattachement(): boolean {
-    return !!this.disponibilites && this.disponibilites.rattachements.length === 0;
+  /** Vrai quand la personne n'a pas encore de ressource : elle n'a alors rien à déclarer, et
+   * il faut le dire plutôt que de montrer une grille vide. */
+  get sansRessource(): boolean {
+    return !!this.disponibilites && this.disponibilites.ressources.length === 0;
   }
 
-  /** Les trois états, dans l'ordre où on les parcourt en cliquant : non renseigné →
-   * disponible → indisponible → non renseigné. Un clic de trop revient au silence plutôt que
-   * de bloquer sur un refus. */
-  basculerJour(jour: { date: string; disponible: boolean | null }): void {
-    const suivant = jour.disponible === null ? true : jour.disponible ? false : null;
-    this.jourEnCours = jour.date;
-    this.ficheService.declarerJour(jour.date, suivant).subscribe({
+  estCoche(jour: JourCreneaux, creneau: Creneau): boolean {
+    return !!jour.creneaux[creneau];
+  }
+
+  enCours(date: string, creneau?: Creneau): boolean {
+    return this.enregistrementEnCours === `${date}|${creneau ?? ''}`;
+  }
+
+  /** Coche ou décoche un créneau. Deux états : ce moteur ne stocke pas de « non renseigné »,
+   * « pas de ligne = indisponible » est sa règle depuis l'origine. */
+  basculerCreneau(jour: JourCreneaux, creneau: Creneau): void {
+    const vise = !jour.creneaux[creneau];
+    this.enregistrementEnCours = `${jour.date}|${creneau}`;
+    this.ficheService.declarerCreneau(jour.date, vise, creneau).subscribe({
       next: () => {
-        jour.disponible = suivant;
-        this.jourEnCours = '';
+        jour.creneaux[creneau] = vise;
+        this.enregistrementEnCours = '';
         this.erreur = '';
       },
-      error: (err) => {
-        this.jourEnCours = '';
-        this.erreur = this.premierMessage(err)
-          || 'Impossible d\'enregistrer cette disponibilité.';
-      },
+      error: (err) => this.echecDeclaration(err),
     });
   }
 
-  /** 'oui' | 'non' | 'silence' — trois états et non deux : un blanc n'est pas un refus, et
-   * confondre les deux fait partir une mobilisation avec un effectif imaginaire. */
-  etatJour(disponible: boolean | null): 'oui' | 'non' | 'silence' {
-    if (disponible === true) { return 'oui'; }
-    if (disponible === false) { return 'non'; }
-    return 'silence';
+  /** Toute la journée d'un coup. Soixante cases sur quinze jours, personne ne les coche une
+   * par une — et une grille que personne ne remplit ne sert pas à armer une garde. */
+  basculerJournee(jour: JourCreneaux): void {
+    // Si tout n'est pas déjà coché, on coche tout : c'est le geste attendu quand on clique
+    // « toute la journée » sur une journée à moitié remplie.
+    const vise = !this.journeeComplete(jour);
+    this.enregistrementEnCours = `${jour.date}|`;
+    this.ficheService.declarerCreneau(jour.date, vise).subscribe({
+      next: () => {
+        for (const { creneau } of this.CRENEAUX) { jour.creneaux[creneau] = vise; }
+        this.enregistrementEnCours = '';
+        this.erreur = '';
+      },
+      error: (err) => this.echecDeclaration(err),
+    });
+  }
+
+  journeeComplete(jour: JourCreneaux): boolean {
+    return this.CRENEAUX.every(({ creneau }) => jour.creneaux[creneau]);
+  }
+
+  journeeVide(jour: JourCreneaux): boolean {
+    return this.CRENEAUX.every(({ creneau }) => !jour.creneaux[creneau]);
+  }
+
+  /** La semaine entière, pour que remplir quinze jours ne demande pas quinze clics. */
+  basculerToutesLesJournees(vise: boolean): void {
+    const grille = this.disponibilites;
+    if (!grille) { return; }
+    // Séquentiel et non en parallèle : quinze requêtes simultanées sur le même jeu de lignes,
+    // c'est quinze fois l'occasion d'un conflit pour un gain invisible à l'œil.
+    const suivant = (index: number): void => {
+      if (index >= grille.jours.length) {
+        this.enregistrementEnCours = '';
+        return;
+      }
+      const jour = grille.jours[index];
+      this.enregistrementEnCours = `${jour.date}|`;
+      this.ficheService.declarerCreneau(jour.date, vise).subscribe({
+        next: () => {
+          for (const { creneau } of this.CRENEAUX) { jour.creneaux[creneau] = vise; }
+          suivant(index + 1);
+        },
+        error: (err) => this.echecDeclaration(err),
+      });
+    };
+    suivant(0);
+  }
+
+  /** La case n'est PAS modifiée : une case qui change d'apparence sans que le serveur l'ait
+   * enregistrée est pire qu'un refus visible — on partirait sur une disponibilité
+   * imaginaire. */
+  private echecDeclaration(err: unknown): void {
+    this.enregistrementEnCours = '';
+    this.erreur = this.premierMessage(err)
+      || "Impossible d'enregistrer cette disponibilité.";
   }
 
   /** Jour de la semaine abrégé + numéro : « sa 14 » se lit mieux que « 2026-11-14 ». */

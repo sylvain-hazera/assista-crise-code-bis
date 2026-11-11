@@ -22,6 +22,7 @@ from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
 from .crypto_fields import blind_index
 from .models import (
+    Creneau,
     CandidatureAssociation,
     DemandeAccesRadio,
     MoyenAdminRadio,
@@ -5221,19 +5222,22 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
 
 
 class MesDisponibilitesSerializer(serializers.Serializer):
-    """Corps de `MesDisponibilitesView.post` : un jour, et ce qu'on en dit.
+    """Corps de `MesDisponibilitesView.post` : un créneau, coché ou décoché.
 
-    `disponible` accepte **trois** valeurs et c'est le cœur du modèle : `true`, `false`, et
-    `null` qui EFFACE la déclaration. Sans la troisième, revenir à « je ne sais pas encore »
-    obligerait à affirmer un refus — et la grille ne pourrait plus distinguer un silence d'un
-    non, ce qui est précisément l'erreur qu'elle existe pour montrer.
+    **Deux états et non trois**, contrairement à la grille de l'association : le moteur à
+    créneaux (`DisponibiliteOffre`) tient « pas de ligne = indisponible » depuis l'origine.
+    Inventer un « non renseigné » ici ferait croire à une nuance que le modèle ne sait pas
+    stocker, et c'est exactement ce genre d'écart qui finit par faire mobiliser sur une
+    information fausse.
 
-    `affectation` est facultative : utile seulement pour qui est rattaché à plusieurs
-    institutions, et vérifiée comme étant la sienne par la vue."""
+    `creneau` omis = **toute la journée**, soit quatre lignes. Soixante cases à cocher une par
+    une sur quinze jours, personne ne le fait — et une grille que personne ne remplit ne sert
+    pas à armer une garde."""
 
     date = serializers.DateField()
-    disponible = serializers.BooleanField(required=False, allow_null=True, default=None)
-    affectation = serializers.UUIDField(required=False, allow_null=True)
+    disponible = serializers.BooleanField()
+    creneau = serializers.ChoiceField(choices=Creneau.choices, required=False,
+                                      allow_null=True, allow_blank=True)
 
 
 class MotDePasseChoisiSerializer(serializers.Serializer):

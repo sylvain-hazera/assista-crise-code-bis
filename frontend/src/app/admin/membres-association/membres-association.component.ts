@@ -621,12 +621,22 @@ export class MembresAssociationComponent implements OnInit {
     if (onglet === 'disponibilites' && !this.grille) { this.chargerGrille(); }
   }
 
-  /** 'oui' | 'non' | 'silence'. Trois valeurs et non deux : un blanc n'est pas un refus, et la
-   * grille doit permettre de voir qui n'a pas répondu. */
-  etatJour(disponible: boolean | null): 'oui' | 'non' | 'silence' {
-    if (disponible === true) { return 'oui'; }
-    if (disponible === false) { return 'non'; }
-    return 'silence';
+  /** Libellé d'un créneau pour l'infobulle. La grille n'a pas la place d'écrire « Matin »
+   * quinze fois sur soixante colonnes. */
+  libelleCreneau(creneau: string): string {
+    const libelles: Record<string, string> = {
+      MATIN: 'Matin', MIDI: 'Midi', SOIR: 'Soir', NUIT: 'Nuit',
+    };
+    return libelles[creneau] ?? creneau;
+  }
+
+  /** Une lettre par créneau : M / Mi / S / N. « Mi » sur deux lettres parce que « M »
+   * désignerait aussi bien matin que midi. */
+  initialeCreneau(creneau: string): string {
+    const initiales: Record<string, string> = {
+      MATIN: 'M', MIDI: 'Mi', SOIR: 'S', NUIT: 'N',
+    };
+    return initiales[creneau] ?? creneau.slice(0, 1);
   }
 
   /** Jour de la semaine sur deux lettres + numéro : une grille de quinze colonnes n'a pas la
@@ -642,9 +652,19 @@ export class MembresAssociationComponent implements OnInit {
     return jour === 0 || jour === 6;
   }
 
-  comptePourJour(index: number, etat: 'oui' | 'non' | 'silence'): number {
+  /** Combien de membres sont disponibles sur ce créneau de ce jour. C'est le chiffre qu'on
+   * lit pour savoir si une garde est armée. */
+  compteDisponibles(index: number, creneau: string): number {
     if (!this.grille) { return 0; }
     return this.grille.membres.filter(
-      m => this.etatJour(m.jours[index]?.disponible ?? null) === etat).length;
+      m => !!m.jours[index]?.creneaux?.[creneau]).length;
+  }
+
+  /** Combien n'ont RIEN déclaré. Compté par membre et non par case : ce moteur ne stocke pas
+   * de « non renseigné », donc une grille vierge et une grille tout décochée sont identiques
+   * en base — seul `a_declare` les distingue, et c'est lui qui dit qui relancer. */
+  compteSansDeclaration(): number {
+    if (!this.grille) { return 0; }
+    return this.grille.membres.filter(m => !m.a_declare).length;
   }
 }

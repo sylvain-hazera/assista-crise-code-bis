@@ -582,9 +582,18 @@
           <table class="grille">
             <thead>
               <tr>
-                <th class="colonne-nom">Membre</th>
+                <th class="colonne-nom" rowspan="2">Membre</th>
                 @for (j of grille.jours; track j) {
-                  <th [class.week-end]="estWeekEnd(j)">{{ enTeteJour(j) }}</th>
+                  <th [class.week-end]="estWeekEnd(j)"
+                      [attr.colspan]="grille.creneaux.length">{{ enTeteJour(j) }}</th>
+                }
+              </tr>
+              <tr class="ligne-creneaux">
+                @for (j of grille.jours; track j) {
+                  @for (c of grille.creneaux; track c) {
+                    <th [class.week-end]="estWeekEnd(j)"
+                        [title]="libelleCreneau(c)">{{ initialeCreneau(c) }}</th>
+                  }
                 }
               </tr>
             </thead>
@@ -607,17 +616,20 @@
                     }
                   </td>
                   @for (j of m.jours; track j.date) {
-                    <td [class]="'case ' + etatJour(j.disponible)"
-                        [class.week-end]="estWeekEnd(j.date)"
-                        [title]="j.date + ' — ' + (j.disponible === true ? 'disponible'
-                                 : j.disponible === false ? 'indisponible' : 'non renseigné')">
-                      {{ j.disponible === true ? '✓' : j.disponible === false ? '✗' : '·' }}
-                    </td>
+                    @for (c of grille.creneaux; track c) {
+                      <td [class]="'case ' + (j.creneaux[c] ? 'oui' : m.a_declare ? 'non' : 'silence')"
+                          [class.week-end]="estWeekEnd(j.date)"
+                          [title]="j.date + ' ' + libelleCreneau(c) + ' — ' +
+                                   (j.creneaux[c] ? 'disponible' : m.a_declare ? 'indisponible' : 'aucune déclaration')">
+                        {{ j.creneaux[c] ? '✓' : m.a_declare ? '✗' : '·' }}
+                      </td>
+                    }
                   }
                 </tr>
               } @empty {
                 <tr>
-                  <td [attr.colspan]="grille.jours.length + 1" class="empty">
+                  <td [attr.colspan]="grille.jours.length * grille.creneaux.length + 1"
+                      class="empty">
                     Aucun membre mobilisable dans cette association.
                   </td>
                 </tr>
@@ -628,18 +640,19 @@
                 <tr>
                   <td class="colonne-nom">Disponibles</td>
                   @for (j of grille.jours; track j; let i = $index) {
-                    <td class="total" [class.week-end]="estWeekEnd(j)">
-                      {{ comptePourJour(i, 'oui') }}
-                    </td>
+                    @for (c of grille.creneaux; track c) {
+                      <td class="total" [class.week-end]="estWeekEnd(j)">
+                        {{ compteDisponibles(i, c) }}
+                      </td>
+                    }
                   }
                 </tr>
                 <tr class="ligne-silences">
                   <td class="colonne-nom">Sans réponse</td>
-                  @for (j of grille.jours; track j; let i = $index) {
-                    <td class="total" [class.week-end]="estWeekEnd(j)">
-                      {{ comptePourJour(i, 'silence') }}
-                    </td>
-                  }
+                  <td class="total"
+                      [attr.colspan]="grille.jours.length * grille.creneaux.length">
+                    {{ compteSansDeclaration() }} membre(s) n'ont rien déclaré
+                  </td>
                 </tr>
               </tfoot>
             }
@@ -648,7 +661,11 @@
         <p class="legende">
           <span class="case oui">✓</span> disponible
           <span class="case non">✗</span> indisponible
-          <span class="case silence">·</span> non renseigné
+          <span class="case silence">·</span> aucune déclaration
+          <span class="note-legende">
+            Quatre créneaux par jour (matin, midi, soir, nuit) — la même grille que la
+            constitution d'équipe.
+          </span>
         </p>
       }
     }

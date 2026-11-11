@@ -3,7 +3,9 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { FicheBenevole, MesDisponibilites } from '../shared/models/fiche-benevole.model';
+import {
+  Creneau, FicheBenevole, MesDisponibilites,
+} from '../shared/models/fiche-benevole.model';
 
 /** Fiche du compte connecté, et son mot de passe.
  *
@@ -31,26 +33,27 @@ export class FicheBenevoleService {
     return this.http.patch<FicheBenevole>(this.url, champs);
   }
 
-  /** Mes disponibilités, jour par jour.
+  /** Mes créneaux, quatre par jour sur quinze jours.
    *
-   * Écrit dans `DisponibiliteOperationnelle` — **le seul moteur de disponibilité du projet**,
-   * celui que lit la grille de mobilisation et donc la constitution d'équipe. Ce guichet
-   * n'est pas une seconde source : il évite seulement au membre de devoir connaître
-   * l'identifiant de son affectation pour cocher une case. */
+   * Écrit dans `DisponibiliteOffre` — **le seul moteur de disponibilité du projet**, celui
+   * que lit `/admin/teams` pour constituer une équipe et que remplit déjà le formulaire
+   * public « proposer mon aide ». Ce guichet n'est pas une seconde source : il évite au membre
+   * de devoir connaître l'identifiant de sa ressource pour cocher une case. */
   mesDisponibilites(jours = 15): Observable<MesDisponibilites> {
     return this.http.get<MesDisponibilites>(this.urlDisponibilites,
                                             { params: { jours: String(jours) } });
   }
 
-  /** `disponible: null` EFFACE la déclaration du jour.
+  /** Coche ou décoche un créneau. `creneau` omis = **toute la journée**, soit quatre lignes.
    *
-   * Trois valeurs et non deux : revenir à « je ne sais pas encore » doit être possible, sinon
-   * la seule façon de retirer un engagement est d'affirmer un refus — et la grille ne
-   * distinguerait plus un silence d'un non. */
-  declarerJour(date: string, disponible: boolean | null)
-      : Observable<{ date: string; disponible: boolean | null; remplacees: number }> {
-    return this.http.post<{ date: string; disponible: boolean | null; remplacees: number }>(
-      this.urlDisponibilites, { date, disponible });
+   * Décocher SUPPRIME la ligne : « pas de ligne = indisponible » est la règle de ce moteur
+   * depuis l'origine, il n'y a pas de ligne « indisponible » à écrire. */
+  declarerCreneau(date: string, disponible: boolean, creneau?: Creneau)
+      : Observable<{ date: string; creneaux: Creneau[]; disponible: boolean }> {
+    const corps: Record<string, unknown> = { date, disponible };
+    if (creneau) { corps['creneau'] = creneau; }
+    return this.http.post<{ date: string; creneaux: Creneau[]; disponible: boolean }>(
+      this.urlDisponibilites, corps);
   }
 
   /** Aucun ancien mot de passe demandé : un compte créé par import n'en a pas, et en exiger

@@ -160,57 +160,88 @@
       <!-- ══ Mes disponibilités ════════════════════════════════════════════ -->
       @if (onglet === 'disponibilites') {
         <section class="bloc">
-          <h2>Les quinze prochains jours</h2>
+          <h2>Quinze jours, quatre créneaux</h2>
           <p class="aide">
             C'est <strong>cette</strong> grille que votre encadrement consulte pour constituer
-            une équipe. Cliquez sur un jour pour passer de « non renseigné » à
-            « disponible », puis à « indisponible », puis revenir au silence.
+            une équipe. Cochez les créneaux où vous êtes joignable et mobilisable.
           </p>
           <p class="aide">
-            Un jour laissé vide n'est <strong>pas</strong> un refus : il dit « je ne sais pas
-            encore », et votre encadrement le voit comme tel.
+            Une case décochée veut dire <strong>indisponible</strong> : il n'y a pas d'état
+            « je ne sais pas encore ». Si vous n'avez touché à rien, votre encadrement le voit
+            et pourra vous relancer.
           </p>
 
-          @if (sansRattachement) {
+          @if (sansRessource) {
             <p class="vide">
-              Vous n'êtes rattaché à aucune association : il n'y a pas de disponibilité à
-              déclarer pour l'instant.
+              Vous n'avez pas encore de fiche de ressource. Complétez d'abord l'onglet
+              « Mes informations » : votre adresse sert à vous rattacher à une équipe.
             </p>
           } @else if (!disponibilites) {
             <p class="attente">Chargement de vos disponibilités…</p>
           } @else {
-            @if (disponibilites.rattachements.length > 1) {
+            @if (disponibilites.ressources.length > 1) {
               <p class="aide">
-                Vos disponibilités valent pour vos
-                {{ disponibilites.rattachements.length }} rattachements : vous n'êtes pas
-                disponible pour l'une et pas pour l'autre le même jour.
+                Vos créneaux valent pour vos
+                {{ disponibilites.ressources.length }} associations : on ne peut être qu'à un
+                endroit à la fois.
               </p>
             }
 
-            <div class="grille-jours">
-              @for (jour of disponibilites.jours; track jour.date) {
-                <button type="button" class="jour" [class]="etatJour(jour.disponible)"
-                        [class.week-end]="estWeekEnd(jour.date)"
-                        [disabled]="jourEnCours === jour.date"
-                        (click)="basculerJour(jour)"
-                        [attr.aria-label]="enTeteJour(jour.date) + ' : ' + (jour.disponible === null ? 'non renseigné' : jour.disponible ? 'disponible' : 'indisponible')">
-                  <span class="jour-date">{{ enTeteJour(jour.date) }}</span>
-                  <span class="jour-etat">
-                    @switch (etatJour(jour.disponible)) {
-                      @case ('oui') { <span class="material-icons">check</span> }
-                      @case ('non') { <span class="material-icons">close</span> }
-                      @default { <span class="material-icons">remove</span> }
-                    }
-                  </span>
-                </button>
-              }
+            <div class="raccourcis">
+              <button type="button" class="primaire"
+                      (click)="basculerToutesLesJournees(true)">
+                Tout cocher (15 jours)
+              </button>
+              <button type="button" class="secondaire"
+                      (click)="basculerToutesLesJournees(false)">
+                Tout décocher
+              </button>
             </div>
 
-            <ul class="legende">
-              <li><span class="pastille-legende oui"></span> disponible</li>
-              <li><span class="pastille-legende non"></span> indisponible</li>
-              <li><span class="pastille-legende silence"></span> non renseigné</li>
-            </ul>
+            <div class="grille-creneaux">
+              <table>
+                <caption class="sr-only">
+                  Vos disponibilités sur quinze jours, par créneau
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Jour</th>
+                    @for (c of CRENEAUX; track c.creneau) {
+                      <th scope="col">{{ c.libelle }}</th>
+                    }
+                    <th scope="col">Journée</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (jour of disponibilites.jours; track jour.date) {
+                    <tr [class.week-end]="estWeekEnd(jour.date)">
+                      <th scope="row">{{ enTeteJour(jour.date) }}</th>
+                      @for (c of CRENEAUX; track c.creneau) {
+                        <td>
+                          <button type="button" class="case"
+                                  [class.coche]="estCoche(jour, c.creneau)"
+                                  [disabled]="enCours(jour.date, c.creneau)"
+                                  (click)="basculerCreneau(jour, c.creneau)"
+                                  [attr.aria-pressed]="estCoche(jour, c.creneau)"
+                                  [attr.aria-label]="enTeteJour(jour.date) + ' ' + c.libelle + (estCoche(jour, c.creneau) ? ' : disponible' : ' : indisponible')">
+                            @if (estCoche(jour, c.creneau)) {
+                              <span class="material-icons">check</span>
+                            }
+                          </button>
+                        </td>
+                      }
+                      <td>
+                        <button type="button" class="tout-le-jour"
+                                [disabled]="enCours(jour.date)"
+                                (click)="basculerJournee(jour)">
+                          {{ journeeComplete(jour) ? 'Retirer' : 'Tout' }}
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           }
         </section>
       }

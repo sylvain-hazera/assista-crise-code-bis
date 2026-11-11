@@ -1017,57 +1017,120 @@ une ressource particulière comme membre de l'asso ») : même forme qu'`Offer` 
 `adresse` chiffrée, `location` PointField, `ban_id`, et les quatre codes de secteur
 dénormalisés par `commune_secteur_codes`.
 
-#### Un seul moteur de disponibilité
+#### Ce que la fiche porte, et ce qu'elle ne porte pas
 
-Correction du 11/11/2026, demandée par Sylvain : « tu as généré un nouveau modèle de
-disponibilité alors que j'ai celui des personnes ressources. Peux tu utiliser qu'un seul
-moteur ? Celui des personnes ressources, c'est celui qui est appelé quand on constitue une
-équipe. »
+`FicheBenevole` ne porte **aucune disponibilité** : son champ s'appelle
+`frequence_engagement` (migration `0254`, un `RenameField`) et dit un volume annuel —
+« occasionnelle », « régulière », « fréquente », les libellés du formulaire d'adhésion du
+partenaire.
 
-**La seule source est `DisponibiliteOperationnelle`**, que lit
-`DisponibiliteOperationnelleViewSet.grille` et donc la constitution d'équipe. `FicheBenevole`
-ne porte plus de « disponibilité » : le champ s'appelle `frequence_engagement` (migration
-`0254`, un `RenameField` — la valeur vient du formulaire d'adhésion du partenaire et n'est pas
-du bruit).
+Ce n'est pas une disponibilité, et la différence est de nature, pas de précision : « environ
+10 jours par an » ne dit **rien** du 5 novembre. On ne peut donc pas la convertir en
+déclarations datées sans inventer des dates, et elle ne peut pas servir à armer une garde. Elle
+sert à autre chose, qui compte aussi : dimensionner l'effectif mobilisable sur l'année, et
+savoir à qui l'on peut demander souvent. Elle est conservée **à côté** du moteur plutôt que
+fondue dedans, et jamais lue par la grille — un test le vérifie.
 
-La différence entre les deux est de nature, pas de précision : « environ 10 jours par an » ne
-dit **rien** du 5 novembre. On ne peut donc pas convertir l'une en l'autre sans inventer des
-dates, et c'est pourquoi la fréquence est conservée **à côté** du moteur plutôt que fondue
-dedans — en la supprimant on jetterait une information collectée auprès de plusieurs centaines
-de personnes.
+Elle ne conditionne pas non plus `est_complete` : une fiche est exploitable dès qu'on sait
+joindre la personne et où elle est.
 
-Trois conséquences, toutes nécessaires pour que « un seul moteur » veuille dire quelque chose :
+**Dette de sécurité corrigée au passage sur l'ancien modèle à la journée**
+(`DisponibiliteOperationnelle`, toujours exposé mais plus utilisé par les membres) : le ViewSet
+servait `objects.all()` sans `permission_classes` ni filtrage. Tout compte connecté lisait les
+disponibilités de la plateforme entière et surtout **écrivait celles de n'importe qui** —
+`prendre_permanence` et `quitter_permanence` appelaient `get_object()` sur une table non
+filtrée. On pouvait déclarer un inconnu indisponible la veille d'une garde. Lecture cloisonnée
+comme les comptes, écriture plus étroite encore : le titulaire, le bureau, ou l'encadrement
+d'une de ses équipes.
 
-- **L'import crée l'affectation.** `DisponibiliteOperationnelle` pend à une
-  `AffectationRoleOperationnel` ; `importer_benevoles_association` n'en créait aucune, donc un
-  bénévole importé **ne pouvait rien déclarer** et sa ligne restait un silence permanent dans
-  la grille — un effectif invisible, c'est-à-dire inutilisable. Le rôle posé est `INTERVENANT`,
-  le même que pose le circuit de recrutement à l'acceptation : la voie « import » ne doit pas
-  produire un membre d'une autre nature que la voie « candidature ». Toujours **pas** de
-  `REFERENT`, qui est un niveau de responsabilité.
-- **Un guichet personnel**, `MesDisponibilitesView` (`/api/mes-disponibilites/`), et l'onglet
-  « Mes disponibilités » de `/ma-fiche-benevole`. Ce n'est pas une seconde source : il écrit
-  dans le moteur. Il existe parce que l'identifiant d'une affectation n'est servi nulle part à
-  un simple membre — l'obliger à le trouver pour cocher une case, c'est garantir une grille
-  vide. Un jour = une déclaration, et une nouvelle remplace celle du jour : empiler deux
-  déclarations contradictoires rendrait la grille dépendante de l'ordre de lecture.
-- **Trois états, et `null` efface.** Revenir à « je ne sais pas encore » doit être possible,
-  sinon la seule façon de retirer un engagement est d'affirmer un refus — et la grille ne
-  distinguerait plus un silence d'un non, ce qu'elle existe précisément pour montrer.
+**L'import crée aussi l'affectation opérationnelle** (`INTERVENANT`, comme le circuit de
+recrutement à l'acceptation) : la voie « import » ne doit pas produire un membre d'une autre
+nature que la voie « candidature ». Toujours pas de `REFERENT`, qui est un niveau de
+responsabilité.
 
-**Dette de sécurité corrigée au passage, et elle était sérieuse.**
-`DisponibiliteOperationnelleViewSet` servait `objects.all()` sans `permission_classes` ni
-filtrage : tout compte connecté lisait les disponibilités de la plateforme entière, et surtout
-**écrivait celles de n'importe qui** — `prendre_permanence` et `quitter_permanence` appelaient
-`get_object()` sur une table non filtrée. On pouvait déclarer un inconnu indisponible la veille
-d'une garde. Le cloisonnement reprend celui des comptes (`core/visibilite_membres.py`) en
-lecture, et l'écriture est plus étroite encore : le titulaire, le bureau, ou l'encadrement
-d'une de ses équipes — un simple collègue voit la grille mais ne coche pas pour les autres,
-parce qu'une case posée par quelqu'un d'autre a la même apparence que celle posée par
-l'intéressé.
+#### Le bénévole est une ressource, et le moteur de disponibilité est celui à créneaux
 
-Ouvrir la déclaration aux bénévoles sans corriger cela aurait transformé une dette dormante en
-porte réellement empruntée.
+Deux corrections du 11/11/2026, qui n'en font qu'une : Sylvain demande un seul moteur de
+disponibilité, et c'est celui des personnes ressources — « celui qui est appelé quand on
+constitue une équipe ».
+
+**Le moteur, c'est `DisponibiliteOffre`** : une ligne par `(offre, date, créneau)`, quatre
+créneaux par jour (`Creneau` : matin, midi, soir, nuit), et **« pas de ligne = indisponible »**.
+C'est ce que lit le planning de `/admin/teams` — « les disponibilités des offres dont le membre
+est l'auteur » — et ce que remplit le formulaire public « proposer mon aide » depuis l'origine.
+
+Une première version de l'écran bénévole avait écrit dans `DisponibiliteOperationnelle` : une
+déclaration **à la journée**, accrochée à `AffectationRoleOperationnel`, que seule la grille de
+l'association lisait. C'était un second moteur, et le défaut n'était pas cosmétique : la grille
+pouvait afficher « disponible » là où la constitution d'équipe ne voyait rien. La journée est
+aussi la mauvaise unité — quelqu'un de libre le matin et pris l'après-midi est une situation
+ordinaire, et une déclaration à la journée force à répondre « indisponible », perdant une
+demi-journée d'effectif à chaque fois.
+
+**Le moteur est clé sur `Offer`, donc un bénévole doit avoir une offre.** C'est
+`fiches_benevoles.ressource_du_benevole()` : une offre de type « Bénévolat », dont le membre est
+l'auteur, créée à l'import et réalignée à chaque enregistrement de fiche (position, secteur,
+identité — sinon quelqu'un qui corrige son nom resterait cherchable sous l'ancien). Retrouvée
+par `(author, institution, type)` et jamais par son titre : un libellé d'affichage n'a aucune
+raison d'être stable.
+
+Conséquence voulue, et c'est la réponse à l'autre question : **un bénévole devient une vraie
+ressource**, trouvable par les régulateurs de son association comme n'importe quelle offre.
+
+#### Offres internes : `Offer` n'était pas cloisonné du tout
+
+Ce qui précède était impossible sans ça. `Offer` est servi par un `OfferViewSet` en `AllowAny`,
+sa liste alimente la carte publique et la recherche, et le modèle ne portait **ni institution ni
+visibilité**. Importer un fichier d'adhérents aurait publié l'annuaire de l'association —
+l'inverse exact de la consigne « seule la réserve résilience a le droit de les voir comme
+ressource ».
+
+`Offer.visibilite` (`PUBLIQUE` / `INTERNE`) + `Offer.institution`, migration `0255`, et
+`core/visibilite_offres.py` comme pendant de `visibilite_membres.py`. Une offre `INTERNE` n'est
+servie qu'aux membres actifs de son institution, à son auteur, et aux administrateurs.
+
+**Le défaut est permissif, et c'est délibéré** : toutes les lignes existantes restent
+`PUBLIQUE`. Ce champ ne peut donc pas *réduire* par accident ce qui était déjà visible ; il
+ouvre la possibilité de fermer.
+
+Cinq points servent des offres à un client, et le filtre est appliqué aux cinq — la liste est
+dans les tests, parce qu'une nouvelle vue qui sert des offres sans passer par là est un oubli
+que seul un test attrapera :
+
+| Où | Pourquoi ça compte |
+|---|---|
+| `OfferViewSet.get_queryset` | la carte publique et la recherche ; appliqué **avant** tout aiguillage par action, cette vue étant anonyme |
+| tableau de bord (`_base_querysets`) | un compteur « 412 bénévoles » renseigne déjà sur l'effectif d'une association, sans qu'aucune fiche ne fuite |
+| candidats à un point | on ne recrute pas dans l'annuaire d'une autre association |
+| logement des intervenants | même filtre, par cohérence |
+| synchronisation satellite | un satellite sert le public de son territoire ; rien ne l'autorise à détenir cet annuaire |
+
+Deux garde-fous de modèle : `visibilite` est **indexé** (il entre dans le filtre de toute
+lecture, sur la table la plus volumineuse du projet), et `clean()` refuse un `INTERNE` sans
+institution — il ne serait visible de personne, et on chercherait longtemps pourquoi un bénévole
+« n'apparaît pas ».
+
+`Offer.title` reste en clair (champ de recherche et de tri) : le titre d'une ressource bénévole
+est donc « Bénévole — Prénom N. », **nom abrégé**. Y écrire l'état civil complet sortirait en
+clair ce que `first_name_offer` / `last_name_offer` chiffrent juste à côté.
+
+#### La grille de l'association, en créneaux
+
+`DisponibiliteOperationnelleViewSet.grille` lit les mêmes lignes que la constitution d'équipe :
+quinze jours × quatre créneaux (choix de Sylvain ; les écrans citoyens plus anciens restent à
+huit jours et ne sont pas touchés).
+
+Ce moteur n'a que **deux états** par créneau, et il ne faut pas en inventer un troisième : il ne
+sait pas stocker « non renseigné ». Ce qui restait juste dans l'ancienne grille — distinguer un
+silence d'un refus, pour savoir qui relancer — est donc porté autrement, par `a_declare` :
+en base, une grille vierge et une grille entièrement décochée sont identiques, et seul ce
+drapeau les sépare.
+
+Côté écran bénévole (`/ma-fiche-benevole`, onglet « Mes disponibilités »), un tableau de
+15 × 4 avec un geste « toute la journée » et un « tout cocher » sur quinze jours : soixante cases
+à cocher une par une, personne ne le fait — et une grille que personne ne remplit ne sert pas à
+armer une garde. Le « tout cocher » enchaîne les jours **séquentiellement** : quinze requêtes
+simultanées sur le même jeu de lignes, c'est quinze occasions de conflit pour un gain invisible.
 
 #### Justificatifs de qualification : déposés par le membre, validés par sa hiérarchie
 

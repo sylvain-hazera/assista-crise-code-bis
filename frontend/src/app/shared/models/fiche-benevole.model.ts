@@ -59,6 +59,10 @@ export type SituationProfessionnelle =
 
 export type FrequenceEngagement = 'OCCASIONNELLE' | 'REGULIERE' | 'FREQUENTE';
 
+/** Les créneaux du moteur de disponibilité — celui que lit la constitution d'équipe. Repris
+ * de `shared/models/disponibilite-offre.model.ts`, où il existe depuis l'origine. */
+export type Creneau = 'MATIN' | 'MIDI' | 'SOIR' | 'NUIT';
+
 /** Libellés repris du formulaire d'adhésion : les reformuler rendrait incomparables les
  * réponses déjà collectées. */
 export const SITUATIONS: { valeur: SituationProfessionnelle; libelle: string }[] = [
@@ -77,17 +81,33 @@ export const FREQUENCES_ENGAGEMENT: { valeur: FrequenceEngagement; libelle: stri
   { valeur: 'FREQUENTE', libelle: 'Fréquente (plus de 10 jours par an)' },
 ];
 
-/** Une journée de la grille personnelle. `disponible: null` = non renseigné, et c'est une
- * information : un blanc n'est pas un refus. */
-export interface JourDisponibilitePersonnel {
+/** Les quatre créneaux d'une journée, dans l'ordre. Miroir de `CRENEAUX_ORDONNES`
+ * (backend/core/views.py) : l'ordre est métier, pas alphabétique. */
+export const CRENEAUX: { creneau: Creneau; libelle: string }[] = [
+  { creneau: 'MATIN', libelle: 'Matin' },
+  { creneau: 'MIDI', libelle: 'Midi' },
+  { creneau: 'SOIR', libelle: 'Soir' },
+  { creneau: 'NUIT', libelle: 'Nuit' },
+];
+
+/** Une journée de la grille personnelle : quatre créneaux, cochés ou non.
+ *
+ * **Deux états et non trois**, contrairement à ce que portait la première version de cet
+ * écran : le moteur à créneaux (`DisponibiliteOffre`) tient « pas de ligne = indisponible »
+ * depuis l'origine. Un « non renseigné » afficherait une nuance que le modèle ne sait pas
+ * stocker. */
+export interface JourCreneaux {
   date: string;
-  disponible: boolean | null;
+  creneaux: Record<Creneau, boolean>;
 }
 
-/** Réponse de `/api/mes-disponibilites/`. `rattachements` est vide pour qui n'appartient à
- * aucune institution : l'écran doit le DIRE plutôt que d'afficher une grille vide
- * inexpliquée. */
+/** Réponse de `/api/mes-disponibilites/`.
+ *
+ * `ressources` est vide pour qui n'a pas encore de fiche : il n'a alors pas d'offre
+ * « Bénévolat », donc rien à déclarer — et l'écran doit le DIRE plutôt que d'afficher une
+ * grille vide inexpliquée. */
 export interface MesDisponibilites {
-  rattachements: { affectation: string; institution: string; institution_nom: string }[];
-  jours: JourDisponibilitePersonnel[];
+  ressources: { offre: string; institution: string | null; institution_nom: string | null }[];
+  creneaux: Creneau[];
+  jours: JourCreneaux[];
 }

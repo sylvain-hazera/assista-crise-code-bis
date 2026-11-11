@@ -117,11 +117,17 @@ export interface QualificationsAVerifier {
   par_membre: Record<string, string[]>;
 }
 
-/** Une case de la grille. `disponible: null` = non renseigné, et c'est une information : elle
- * dit qui relancer. */
+/** Une journée de la grille : quatre créneaux, cochés ou non.
+ *
+ * **Deux états par créneau, pas trois.** La grille lisait auparavant un moteur à la journée
+ * avec un « non renseigné » ; elle lit maintenant celui à créneaux
+ * (`DisponibiliteOffre`), le même que la constitution d'équipe, dont la règle est « pas de
+ * ligne = indisponible ». Ce qui restait vrai — distinguer le silence du refus — est porté
+ * par `MembreGrille.a_declare`, parce qu'en base une grille vierge et une grille tout
+ * décochée sont identiques. */
 export interface JourDisponibilite {
   date: string;
-  disponible: boolean | null;
+  creneaux: Record<string, boolean>;
 }
 
 export interface MembreGrille {
@@ -133,6 +139,10 @@ export interface MembreGrille {
    * du départ. */
   qualifications_expirees: number;
   aptitude_valide_jusquau?: string | null;
+  /** A-t-elle touché à sa grille ? C'est ce qui dit qui relancer : sans ce drapeau, on ne
+   * distinguerait pas quelqu'un qui s'est déclaré indisponible de quelqu'un qui n'a rien
+   * rempli. */
+  a_declare: boolean;
   jours: JourDisponibilite[];
 }
 
@@ -142,6 +152,9 @@ export interface GrilleDisponibilites {
   debut: string;
   fin: string;
   jours: string[];
+  /** Les créneaux servis, dans l'ordre de la journée. Vient du serveur plutôt que d'une
+   * constante locale : l'ordre est métier, et deux listes divergeraient. */
+  creneaux: string[];
   membres: MembreGrille[];
   /** Les membres en congé ne sont pas listés — ils ne sont pas mobilisables — mais leur nombre
    * est rendu : une liste qui omet des gens sans le dire laisse chercher. */

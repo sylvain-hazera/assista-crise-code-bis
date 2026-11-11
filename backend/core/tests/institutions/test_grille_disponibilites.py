@@ -1,17 +1,25 @@
 """Grille de disponibilités à quinze jours, pour armer une mobilisation.
 
+**Bascule du 11/11/2026 : la grille lit le moteur à créneaux** (`DisponibiliteOffre`, quatre
+créneaux par jour), celui que lit aussi la constitution d'équipe. Elle lisait avant
+`DisponibiliteOperationnelle`, une déclaration à la journée que personne d'autre ne consultait —
+deux sources pour la même question, dont une seule décidait des mobilisations.
+
 Ce que ces tests tiennent, dans l'ordre d'importance :
 
-1. **Trois valeurs par case, pas deux.** Disponible, indisponible, ou **non renseigné**.
-   Confondre « a dit non » et « n'a pas répondu » est l'erreur qui fait partir une mobilisation
-   avec un effectif imaginaire.
+1. **Le silence reste distinct du refus, mais il n'est plus une valeur de case.** Ce moteur-ci
+   tient « pas de ligne = indisponible » et ne sait pas stocker « non renseigné » : en base,
+   une grille vierge et une grille entièrement décochée sont identiques. C'est `a_declare` qui
+   les sépare, et c'est lui qui dit qui relancer. Confondre « a dit non » et « n'a pas
+   répondu » reste l'erreur qui fait partir une mobilisation avec un effectif imaginaire.
 2. **Les absents sont comptés, pas tus.** Les membres sortis et en congé ne figurent pas dans la
    grille, mais le nombre de congés est rendu : une liste qui omet des gens sans le dire laisse
    chercher où ils sont passés.
 3. **Le contrôle d'accès est porté par l'action.** Le ViewSet qui l'héberge n'a pas de cadrage
    par institution, et une nouvelle action ne doit pas en hériter.
-4. **Le dernier mot l'emporte** sur deux déclarations qui se recouvrent : quelqu'un qui se
-   dédit a changé d'avis.
+4. **Le créneau est l'unité**, pas la journée : quelqu'un de libre le matin et pris
+   l'après-midi est une situation ordinaire, qu'une déclaration à la journée forcerait à
+   déclarer « indisponible ».
 """
 import datetime
 
@@ -22,8 +30,9 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    AffectationRoleOperationnel, ContactInstitution, DisponibiliteOperationnelle, Institution,
-    InstitutionType, Qualification, QualificationMembre, RoleOperationnel, UserRole,
+    AffectationRoleOperationnel, ContactInstitution, DisponibiliteOffre, FicheBenevole,
+    Institution, InstitutionType, Qualification, QualificationMembre, RoleOperationnel,
+    UserRole,
 )
 
 
@@ -59,14 +68,25 @@ def _membre(create_user, aasc, role, nom, statut=ContactInstitution.StatutMembre
     return user, affectation
 
 
-def _declarer(affectation, disponible, debut_jours, fin_jours=None):
-    maintenant = timezone.now()
-    return DisponibiliteOperationnelle.objects.create(
-        affectation=affectation, disponible=disponible,
-        date_debut=maintenant + datetime.timedelta(days=debut_jours),
-        date_fin=None if fin_jours is None
-        else maintenant + datetime.timedelta(days=fin_jours),
-        environment="PROD",
+def _ressource(membre, aasc):
+    """La ressource du membre — son offre « Bénévolat » interne.
+
+    C'est elle qui porte les créneaux : le moteur est clé sur `Offer`, et c'est ce qui fait
+    qu'un bénévole entre dans la constitution d'équipe."""
+    from core.fiches_benevoles import ressource_du_benevole
+
+    fiche, _ = FicheBenevole.objects.get_or_create(
+        utilisateur=membre, defaults={"environment": "PROD"})
+    offre, _cree = ressource_du_benevole(fiche, aasc)
+    return offre
+
+
+def _cocher(membre, aasc, decalage_jours, creneau="MATIN"):
+    """Coche un créneau à J+n, comme le ferait l'écran du bénévole."""
+    offre = _ressource(membre, aasc)
+    return DisponibiliteOffre.objects.create(
+        offer=offre, creneau=creneau,
+        date=timezone.localdate() + datetime.timedelta(days=decalage_jours),
     )
 
 
@@ -76,62 +96,82 @@ def _grille(utilisateur, aasc, **params):
         {"institution": str(aasc.id), **params})
 
 
-class TestTroisValeursParCase:
-    def test_sans_declaration_le_jour_est_non_renseigne(
-            self, create_user, aasc, role):
-        """LE test. `null` n'est pas « indisponible » : c'est un silence, et l'écran doit
-        pouvoir le montrer pour qu'on sache qui relancer."""
+class TestLesCasesViennentDuMoteurACreneaux:
+    def test_sans_declaration_aucun_creneau_et_a_declare_faux(self, create_user, aasc, role):
+        """LE test. Les cases vides ne sont pas des refus : `a_declare` le dit, et c'est lui
+        qui permet de savoir qui relancer."""
         membre, _ = _membre(create_user, aasc, role, "SILENCIEUX")
+        _ressource(membre, aasc)
 
         reponse = _grille(membre, aasc)
 
         assert reponse.status_code == status.HTTP_200_OK, reponse.data
         fiche = reponse.data["membres"][0]
-        assert all(j["disponible"] is None for j in fiche["jours"])
+        assert fiche["a_declare"] is False
+        assert all(not any(j["creneaux"].values()) for j in fiche["jours"])
 
-    def test_une_disponibilite_declaree_remplit_sa_periode(
-            self, create_user, aasc, role):
-        membre, affectation = _membre(create_user, aasc, role, "DISPO")
-        _declarer(affectation, True, 0, 2)
-
-        fiche = _grille(membre, aasc).data["membres"][0]
-
-        assert fiche["jours"][0]["disponible"] is True
-        assert fiche["jours"][2]["disponible"] is True
-        # Au-delà de la période déclarée : silence, pas refus.
-        assert fiche["jours"][5]["disponible"] is None
-
-    def test_une_indisponibilite_est_distincte_dun_silence(
-            self, create_user, aasc, role):
-        membre, affectation = _membre(create_user, aasc, role, "ABSENT")
-        _declarer(affectation, False, 0, 1)
+    def test_un_creneau_coche_ne_remplit_que_lui(self, create_user, aasc, role):
+        """Le créneau est l'unité : cocher le matin ne dit rien du soir."""
+        membre, _ = _membre(create_user, aasc, role, "MATINAL")
+        _cocher(membre, aasc, 0, "MATIN")
 
         fiche = _grille(membre, aasc).data["membres"][0]
 
-        assert fiche["jours"][0]["disponible"] is False
-        assert fiche["jours"][10]["disponible"] is None
+        assert fiche["a_declare"] is True
+        assert fiche["jours"][0]["creneaux"]["MATIN"] is True
+        assert fiche["jours"][0]["creneaux"]["SOIR"] is False
+        # Le lendemain n'est pas déclaré : aucune case cochée.
+        assert not any(fiche["jours"][1]["creneaux"].values())
 
-    def test_une_permanence_sans_fin_couvre_toute_la_fenetre(
-            self, create_user, aasc, role):
-        """`date_fin` nulle = permanence ouverte (voir l'action prendre_permanence)."""
-        membre, affectation = _membre(create_user, aasc, role, "PERMANENT")
-        _declarer(affectation, True, 0, None)
+    def test_la_grille_sert_les_quatre_creneaux_dans_l_ordre(self, create_user, aasc, role):
+        """L'ordre est métier (matin → nuit) et vient du serveur : deux listes divergeraient."""
+        membre, _ = _membre(create_user, aasc, role, "ORDRE")
+        _ressource(membre, aasc)
+
+        data = _grille(membre, aasc).data
+
+        assert data["creneaux"] == ["MATIN", "MIDI", "SOIR", "NUIT"]
+        assert set(data["membres"][0]["jours"][0]["creneaux"]) == {
+            "MATIN", "MIDI", "SOIR", "NUIT"}
+
+    def test_plusieurs_creneaux_le_meme_jour(self, create_user, aasc, role):
+        membre, _ = _membre(create_user, aasc, role, "DOUBLE")
+        _cocher(membre, aasc, 3, "MIDI")
+        _cocher(membre, aasc, 3, "NUIT")
+
+        jour = _grille(membre, aasc).data["membres"][0]["jours"][3]
+
+        assert jour["creneaux"]["MIDI"] is True
+        assert jour["creneaux"]["NUIT"] is True
+        assert jour["creneaux"]["MATIN"] is False
+
+    def test_un_creneau_hors_fenetre_n_apparait_pas(self, create_user, aasc, role):
+        """Au-delà de quinze jours, la grille ne montre rien — et ne doit pas non plus
+        remonter la déclaration sur un autre jour."""
+        membre, _ = _membre(create_user, aasc, role, "LOINTAIN")
+        _cocher(membre, aasc, 40, "MATIN")
 
         fiche = _grille(membre, aasc).data["membres"][0]
 
-        assert all(j["disponible"] is True for j in fiche["jours"])
+        assert len(fiche["jours"]) == 15
+        assert all(not any(j["creneaux"].values()) for j in fiche["jours"])
+        # Il a pourtant déclaré quelque chose : `a_declare` ne porte que sur la fenêtre lue.
+        assert fiche["a_declare"] is False
 
-    def test_le_dernier_mot_lemporte(self, create_user, aasc, role):
-        """Deux déclarations qui se recouvrent : quelqu'un qui se dédit a changé d'avis."""
-        membre, affectation = _membre(create_user, aasc, role, "INDECIS")
-        _declarer(affectation, True, 0, 10)
-        _declarer(affectation, False, 2, 4)
+    def test_les_creneaux_d_une_AUTRE_association_ne_comptent_pas(self, create_user, aasc,
+                                                                  role):
+        """Chaque association a sa propre ressource : partager une seule offre ferait voir à
+        l'une les créneaux déclarés pour l'autre."""
+        membre, _ = _membre(create_user, aasc, role, "DEUXASSOS")
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="aasc", defaults={"libelle": "AASC"})
+        autre = Institution.objects.create(nom="AASC Grille Autre", type=itype, actif=True)
+        ContactInstitution.objects.create(institution=autre, utilisateur=membre, actif=True)
+        _cocher(membre, autre, 1, "MATIN")
 
         fiche = _grille(membre, aasc).data["membres"][0]
 
-        assert fiche["jours"][0]["disponible"] is True
-        assert fiche["jours"][3]["disponible"] is False
-        assert fiche["jours"][6]["disponible"] is True
+        assert fiche["a_declare"] is False
 
 
 class TestQuiFigureDansLaGrille:
