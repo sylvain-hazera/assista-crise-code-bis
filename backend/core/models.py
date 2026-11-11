@@ -1550,6 +1550,24 @@ class BrouillonEnvoi(EnvironmentScopedModel):
     # JSON {placeholder: url}. JAMAIS servi par l'API — voir le sérialiseur.
     liens_masques = EncryptedTextField(blank=True)
 
+    # LOT : messages produits par la MÊME action et identiques à leurs valeurs près.
+    #
+    # Un import de 200 bénévoles produit 200 messages qui ne diffèrent que par un nom et un
+    # lien. Faire relire 200 fois le même texte n'est pas une relecture, c'est une corvée que
+    # personne ne fera — et une relecture que personne ne fait est pire qu'une absence de
+    # relecture, parce qu'elle donne l'illusion d'un contrôle. On n'en montre donc qu'un, sous
+    # sa forme générique, et le valider envoie tout le lot (demande du 11/11/2026).
+    lot = models.UUIDField(
+        null=True, blank=True, db_index=True,
+        help_text="Partagé par les messages d'une même action ayant le même texte générique. "
+                   "Nul = message unique, relu seul.",
+    )
+
+    # {PRENOM: …, NOM: …, EMAIL: …} pour CE destinataire. `corps` est stocké sous sa forme
+    # GÉNÉRIQUE ; ces valeurs y sont réinjectées au seul moment de l'envoi, comme les liens.
+    # Chiffré : ce sont des données personnelles.
+    valeurs = EncryptedJSONField(default=dict, blank=True)
+
     # Ce que le relecteur a changé, si quelque chose : utile pour savoir si les modèles par
     # défaut sont bons, ou systématiquement réécrits au même endroit.
     modifie_par_relecteur = models.BooleanField(default=False)

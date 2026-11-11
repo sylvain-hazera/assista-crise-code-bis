@@ -96,6 +96,87 @@ def restaurer_les_liens(texte, correspondance):
     return restaure
 
 
+def generiser(texte, valeurs):
+    """Remplace les valeurs propres au destinataire par leurs placeholders.
+
+    L'inverse de `rendre` : « Bonjour Jean Dupont » devient « Bonjour [PRENOM] [NOM] ».
+
+    Pourquoi : quand une action produit N messages identiques à un nom près — un import de
+    200 bénévoles — faire relire 200 fois le même texte n'est pas une relecture, c'est une
+    corvée que personne ne fera. Génériser permet de reconnaître que ces messages sont LE MÊME,
+    de n'en montrer qu'un, et de le valider une fois (demande de Sylvain du 11/11/2026).
+
+    Les valeurs sont remplacées de la PLUS LONGUE à la plus courte : un prénom peut être
+    contenu dans un nom de famille (« Martin Martinez »), et commencer par la plus courte
+    laisserait un fragment.
+
+    Une valeur trop courte est ignorée : remplacer « Li » par « [NOM] » massacrerait le texte
+    partout où ces deux lettres apparaissent.
+    """
+    resultat = texte or ""
+    for nom_champ, valeur in sorted(valeurs.items(), key=lambda kv: len(str(kv[1] or "")),
+                                    reverse=True):
+        valeur = str(valeur or "")
+        if len(valeur) < 3:
+            continue
+        resultat = resultat.replace(valeur, f"[{nom_champ}]")
+    return resultat
+
+
+def valeurs_du_destinataire(request, adresse):
+    """Les valeurs qui personnalisent un message, pour l'unique destinataire donné.
+
+    Renvoie `{}` si on ne retrouve pas de compte : on ne génériser alors rien, et le message
+    est relu tel quel — moins pratique, jamais faux.
+    """
+    from .crypto_fields import blind_index
+    from .models import User
+
+    utilisateur = User.objects.filter(email_bidx=blind_index(adresse)).first()
+    if utilisateur is None:
+        return {}
+    valeurs = {}
+    # L'EMAIL en premier dans le dictionnaire mais trié par longueur au remplacement : une
+    # adresse contient souvent le nom (« jean.dupont@… »), et remplacer le nom d'abord
+    # casserait l'adresse en « [PRENOM].[NOM]@… ».
+    if utilisateur.email:
+        valeurs["EMAIL"] = utilisateur.email
+    if utilisateur.first_name:
+        valeurs["PRENOM"] = utilisateur.first_name
+    if utilisateur.last_name:
+        valeurs["NOM"] = utilisateur.last_name
+    return valeurs
+
+
+def _lot_pour(request, sujet_generique, corps_generique):
+    """Identifiant de lot pour ce couple (sujet, corps) génériques, dans CETTE requête.
+
+    Le regroupement est volontairement limité à une requête : deux imports lancés à dix minutes
+    d'intervalle sont deux décisions, et les fondre en un seul lot ferait valider d'un geste des
+    messages qu'on n'a pas vus partir ensemble.
+
+    Deux messages dont le texte générique est identique sont LE MÊME message : s'ils ne le sont
+    pas, c'est que la génération a échoué quelque part — et ils sont alors relus séparément,
+    ce qui est le comportement sûr.
+    """
+    import uuid as _uuid
+
+    if request is None:
+        return None
+    try:
+        lots = getattr(request, '_lots_brouillons', None)
+        if lots is None:
+            lots = {}
+            request._lots_brouillons = lots
+    except Exception:
+        return None
+
+    signature = (sujet_generique, corps_generique)
+    if signature not in lots:
+        lots[signature] = _uuid.uuid4()
+    return lots[signature]
+
+
 def capturer(request, institution, sujet, message, destinataires, reply_to=None):
     """Enregistre un brouillon à relire et le déclare sur la requête.
 
@@ -110,15 +191,25 @@ def capturer(request, institution, sujet, message, destinataires, reply_to=None)
     sujet_masque, correspondance_sujet = masquer_les_liens(request, sujet)
     correspondance.update(correspondance_sujet)
 
+    # GÉNÉRISATION, pour un destinataire UNIQUE seulement : avec plusieurs destinataires, le
+    # corps ne peut de toute façon pas contenir le nom d'une personne en particulier.
+    adresses = list(destinataires)
+    valeurs = valeurs_du_destinataire(request, adresses[0]) if len(adresses) == 1 else {}
+    if valeurs:
+        masque = generiser(masque, valeurs)
+        sujet_masque = generiser(sujet_masque, valeurs)
+
     brouillon = BrouillonEnvoi.objects.create(
         institution=institution,
         cree_par=request.user,
         canal=BrouillonEnvoi.Canal.EMAIL,
         sujet=sujet_masque,
         corps=masque,
-        destinataires=list(destinataires),
+        destinataires=adresses,
         reply_to=reply_to or "",
         liens_masques=json.dumps(correspondance) if correspondance else "",
+        valeurs=valeurs,
+        lot=_lot_pour(request, sujet_masque, masque),
         environment=get_active_environment(request) if request is not None else Environment.PROD,
     )
 
@@ -179,6 +270,7 @@ def envoyer_brouillon(request, brouillon, sujet=None, corps=None, statut_final=N
 
     from .audit import send_mail_logged
     from .envoi_institution import envoyer_email_pour_institution
+    from .modeles_messages import rendre
     from .models import BrouillonEnvoi
 
     if brouillon.statut != BrouillonEnvoi.Statut.A_RELIRE:
@@ -195,6 +287,16 @@ def envoyer_brouillon(request, brouillon, sujet=None, corps=None, statut_final=N
         correspondance = {}
     sujet_final = restaurer_les_liens(sujet_final, correspondance)
     corps_final = restaurer_les_liens(corps_final, correspondance)
+
+    # VALEURS DU DESTINATAIRE réinjectées ici, comme les liens : le corps est stocké sous sa
+    # forme générique, et le texte relu peut l'être aussi. C'est ce qui permet de valider UN
+    # texte pour tout un lot — chaque message repart avec ses propres valeurs.
+    #
+    # Placeholders inconnus laissés tels quels (défaut de `rendre`) : un « [PRENOM] » visible
+    # dans un mail se remarque et se corrige, un « Bonjour  » passe inaperçu.
+    if brouillon.valeurs:
+        sujet_final = rendre(sujet_final, brouillon.valeurs, pour_envoi=True)
+        corps_final = rendre(corps_final, brouillon.valeurs, pour_envoi=True)
 
     destinataires = list(brouillon.destinataires or [])
     if not destinataires:
@@ -230,3 +332,23 @@ def envoyer_brouillon(request, brouillon, sujet=None, corps=None, statut_final=N
     brouillon.save(update_fields=['statut', 'date_traitement', 'traite_par',
                                   'modifie_par_relecteur', 'erreur'])
     return True, ""
+
+
+def envoyer_lot(request, brouillons, sujet=None, corps=None):
+    """Envoie tout un lot avec le MÊME texte, chacun repersonnalisé.
+
+    Renvoie `(envoyes, echecs)` où `echecs` est une liste de `(brouillon, motif)`.
+
+    On continue après un échec au lieu de s'arrêter : sur un lot de deux cents, une adresse
+    invalide ne doit pas empêcher les cent quatre-vingt-dix-neuf autres de partir. Les échecs
+    sont rendus pour que l'écran les nomme — un lot « partiellement envoyé » qu'on croirait
+    complet serait pire qu'un échec franc.
+    """
+    envoyes, echecs = 0, []
+    for brouillon in brouillons:
+        ok, motif = envoyer_brouillon(request, brouillon, sujet=sujet, corps=corps)
+        if ok:
+            envoyes += 1
+        else:
+            echecs.append((brouillon, motif))
+    return envoyes, echecs

@@ -5082,7 +5082,7 @@ class BrouillonEnvoiSerializer(serializers.ModelSerializer):
         model = BrouillonEnvoi
         fields = ['id', 'institution', 'institution_nom', 'cree_par_nom', 'canal',
                   'statut', 'statut_libelle', 'sujet', 'corps', 'destinataires',
-                  'segments', 'modifie_par_relecteur', 'erreur',
+                  'segments', 'modifie_par_relecteur', 'erreur', 'lot',
                   'date_creation', 'date_traitement']
         read_only_fields = fields
 

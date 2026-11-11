@@ -21043,6 +21043,94 @@ class BrouillonEnvoiViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMode
     def _accessible(self, brouillon):
         return self.get_queryset().filter(pk=brouillon.pk).exists()
 
+    @action(detail=False, methods=['get'], url_path='lots-a-relire')
+    def lots_a_relire(self, request):
+        """Ce qu'il y a à relire, REGROUPÉ par lot : un représentant par texte.
+
+        Un import de deux cents bénévoles produit deux cents messages identiques à un nom près.
+        Les lister un par un transformerait la relecture en corvée que personne ne ferait — et
+        une relecture que personne ne fait est pire qu'une absence de relecture, parce qu'elle
+        donne l'illusion d'un contrôle.
+
+        On rend donc un représentant par lot, son effectif, et la liste des destinataires du
+        lot entier : valider le représentant envoie tout (voir `envoyer_lot`)."""
+        en_attente = self.get_queryset().filter(
+            statut=BrouillonEnvoi.Statut.A_RELIRE,
+        ).order_by('date_creation')
+
+        lots, isoles = {}, []
+        for brouillon in en_attente:
+            if brouillon.lot is None:
+                isoles.append(brouillon)
+                continue
+            lots.setdefault(str(brouillon.lot), []).append(brouillon)
+
+        resultat = []
+        for identifiant, membres in lots.items():
+            representant = membres[0]
+            donnees = self.get_serializer(representant).data
+            donnees['lot'] = identifiant
+            donnees['effectif'] = len(membres)
+            # Tous les destinataires du lot, pas seulement ceux du représentant : c'est à ça
+            # qu'on juge l'ampleur de ce qu'on valide.
+            donnees['destinataires_du_lot'] = sorted(
+                adresse for m in membres for adresse in (m.destinataires or [])
+            )
+            resultat.append(donnees)
+
+        for brouillon in isoles:
+            donnees = self.get_serializer(brouillon).data
+            donnees['effectif'] = 1
+            donnees['destinataires_du_lot'] = brouillon.destinataires or []
+            resultat.append(donnees)
+
+        return Response(resultat)
+
+    @action(detail=True, methods=['post'], url_path='envoyer-lot')
+    def envoyer_lot(self, request, pk=None):
+        """Envoie TOUT le lot du brouillon désigné, avec le texte relu une seule fois.
+
+        Si le brouillon n'appartient à aucun lot, n'envoie que lui : l'appelant n'a pas à
+        distinguer les deux cas."""
+        from .brouillons_envoi import envoyer_lot as expedier_lot
+
+        brouillon = self.get_object()
+        if not self._accessible(brouillon):
+            return Response({"error": "Brouillon inaccessible."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        sujet = request.data.get('sujet')
+        corps = request.data.get('corps')
+        if corps is not None and not str(corps).strip():
+            return Response({"error": "Le corps du message ne peut pas être vide."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if brouillon.lot is None:
+            membres = [brouillon]
+        else:
+            # Le lot est repris depuis le QUERYSET CLOISONNÉ : sans cela, valider un lot
+            # enverrait aussi les messages d'une institution qu'on n'a pas le droit de voir.
+            membres = list(self.get_queryset().filter(
+                lot=brouillon.lot, statut=BrouillonEnvoi.Statut.A_RELIRE,
+            ))
+
+        envoyes, echecs = expedier_lot(request, membres, sujet=sujet, corps=corps)
+
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="BrouillonEnvoi",
+            objet_id=brouillon.id,
+            commentaire=f"Lot relu et envoyé : {envoyes} message(s), {len(echecs)} échec(s).",
+            succes=not echecs,
+        )
+        return Response({
+            "envoyes": envoyes,
+            # Nommés, jamais comptés seulement : un lot « partiellement envoyé » qu'on croirait
+            # complet serait pire qu'un échec franc.
+            "echecs": [
+                {"destinataires": b.destinataires, "motif": motif} for b, motif in echecs
+            ],
+        })
+
     @action(detail=True, methods=['post'])
     def envoyer(self, request, pk=None):
         """Envoie le brouillon, éventuellement réécrit.
