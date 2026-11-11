@@ -13,6 +13,7 @@ import { Crisis } from '../../shared/models/crisis.model';
 import { User } from '../../shared/models/user.model';
 import { Institution } from '../../shared/models/institution.model';
 import { Offer } from '../../shared/models/offer.model';
+import { ScannerMobilisationComponent } from '../../shared/components/common/scanner-mobilisation/scanner-mobilisation.component';
 
 type TypeCible = 'utilisateur' | 'institution' | 'offre';
 
@@ -22,7 +23,7 @@ type TypeCible = 'utilisateur' | 'institution' | 'offre';
 @Component({
   selector: 'app-demandes-mobilisation',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ScannerMobilisationComponent],
   templateUrl: './demandes-mobilisation.component.html',
   styleUrl: './demandes-mobilisation.component.scss',
 })
@@ -184,8 +185,70 @@ export class DemandesMobilisationComponent implements OnInit {
   }
 
   envoiAttestationEnCours: string | null = null;
+  previsualisationEnCours: string | null = null;
+  extractionEnCours = false;
+  /** Crise de l'extraction. Distincte du filtre de la liste : on extrait souvent une crise
+   * qu'on n'est pas en train de regarder. */
+  criseExtraction = '';
+  institutionExtraction = '';
+  scannerOuvert = false;
   envoiAttestationMessage = '';
   envoiAttestationErreur = '';
+
+  // ── Prévisualisation, extraction, vérification ───────────────────────────
+  // Trois gestes demandés le 11/11/2026, et chacun comble un manque précis.
+
+  /** Ouvre l'attestation dans un onglet, sans l'envoyer à personne.
+   *
+   * Passe par un blob : la route exige l'en-tête d'authentification posé par l'intercepteur,
+   * qu'un `<a href>` n'enverrait pas. L'URL temporaire est révoquée au bout d'une minute —
+   * assez pour que le lecteur PDF ait chargé, assez tôt pour ne pas laisser le document en
+   * mémoire. */
+  previsualiser(demande: DemandeMobilisation): void {
+    this.previsualisationEnCours = demande.id;
+    this.envoiAttestationErreur = '';
+    this.service.previsualiserAttestation(demande.id).subscribe({
+      next: (blob) => {
+        this.previsualisationEnCours = null;
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      },
+      error: () => {
+        this.previsualisationEnCours = null;
+        this.envoiAttestationErreur = "Impossible de générer l'attestation.";
+      },
+    });
+  }
+
+  /** Extrait en CSV toutes les mobilisations de la crise choisie.
+   *
+   * La crise est obligatoire côté serveur : un extrait « de toutes les crises » n'est pas un
+   * document de retour d'expérience, c'est un vidage de base. */
+  extraire(): void {
+    if (!this.criseExtraction) { return; }
+    this.extractionEnCours = true;
+    this.envoiAttestationErreur = '';
+    this.service.extraire(this.criseExtraction, this.institutionExtraction || undefined)
+      .subscribe({
+        next: (blob) => {
+          this.extractionEnCours = false;
+          const url = URL.createObjectURL(blob);
+          const lien = document.createElement('a');
+          lien.href = url;
+          const nom = this.crises.find(c => c.id === this.criseExtraction)?.name ?? 'crise';
+          // Le nom porte la crise : trois extractions dans un dossier de téléchargements
+          // doivent rester distinguables.
+          lien.download = `mobilisations-${nom.replace(/[^\w-]+/g, '-')}.csv`;
+          lien.click();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        },
+        error: (err) => {
+          this.extractionEnCours = false;
+          this.envoiAttestationErreur = err.error?.error || "Extraction impossible.";
+        },
+      });
+  }
 
   envoyerAttestation(demande: DemandeMobilisation): void {
     this.envoiAttestationEnCours = demande.id;

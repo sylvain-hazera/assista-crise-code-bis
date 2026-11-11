@@ -543,7 +543,8 @@ rattachement d'une mairie.
   - Une habilitation **se retire avec un motif, ne se supprime pas** (`perform_destroy` refuse),
     pour pouvoir établir qui avait accès à une date donnée.
 - **Demandes de mobilisation** (`DemandeMobilisation`) : jamais présentées comme une
-  réquisition légale, pouvoir réservé au préfet et au maire.
+  réquisition légale, pouvoir réservé au préfet et au maire. Le module se complète le
+  11/11/2026 de trois gestes — voir le § « Module mobilisation » ci-dessous.
 - **Plans** : un `Plan` regroupe équipes, points et zones existants ; son activation sur une
   crise instancie les missions modèles (`PlanMissionModele`).
 - **Requêtes N+1** : les serializers mémorisent sur l'instance les valeurs utilisées par
@@ -1194,6 +1195,120 @@ Trois choix qui tiennent à l'échelle réelle (125 équipes pour les Casques Ja
 - **un cycle dans `equipe_parente` ne doit pas figer la page**, et une équipe dont le parent est
   absent (autre institution, ou désactivé) devient racine plutôt que de disparaître sans que
   rien ne le dise. Les deux sont tenus par un test.
+
+#### Module mobilisation : prévisualiser, extraire, vérifier au QR
+
+Trois demandes de Sylvain du 11/11/2026, sur un module qui existait déjà
+(`DemandeMobilisation`, `core/attestation_mobilisation.py`, page
+`/admin/demandes-mobilisation`). Elles comblent chacune un manque précis.
+
+**Prévisualisation** (`GET /api/demandes-mobilisation/<id>/attestation/`). Il n'existait que
+`envoyer-attestation`, qui expédie : la seule façon de voir le document était donc de se
+l'envoyer à soi-même, ou de l'envoyer au destinataire pour s'apercevoir après coup qu'une ligne
+était fausse. `Content-Disposition: inline` — le navigateur l'affiche au lieu de le déposer dans
+les téléchargements, c'est toute la différence entre une prévisualisation et un fichier de plus.
+Côté Angular, chargée en **blob** : la route exige l'en-tête d'authentification, qu'un
+`<a href>` n'enverrait pas. Disponible aussi sur une demande **révoquée** : on regarde aussi ce
+qui a été émis.
+
+Rien n'est stocké, comme avant : le PDF est reconstruit à chaque appel depuis les données
+actuelles, statut inclus. Un PDF mis en cache afficherait « active » après une révocation.
+
+**Extraction** (`GET /api/demandes-mobilisation/extraction/?crise=…&institution=…`), en CSV à
+séparateur `;` — ces fichiers s'ouvrent dans un Excel configuré en français, où un CSV à la
+virgule arrive sur une seule colonne. Dix-huit colonnes : référence, autorité, émetteur,
+destinataire et son type, immatriculation, point de rendez-vous avec adresse et GPS, équipe,
+mission, motif, statut, date de révocation, et **le lien de vérification** de chaque ligne —
+plutôt que le jeton nu, parce que collé dans un navigateur il donne le statut à jour, ce qu'un
+CSV ne saura jamais dire.
+
+Deux points qui comptent : `crise` est **obligatoire** (un extrait « de toutes les crises » est
+un vidage de base, pas un document de retour d'expérience), et le filtre `institution`
+s'applique **par-dessus** le cloisonnement de `get_queryset` — passer l'identifiant d'une
+institution dont on n'est pas membre ne sort rien. Tracé en main courante avec
+`exposition=EXPORT`, qui distingue une consultation d'une sortie de données hors plateforme.
+
+**Vérification au QR : le QR pointe vers l'APPLICATION, et le verdict a deux niveaux.**
+
+Le QR imprimait `/api/verifier-mobilisation/<jeton>/`, une page HTML servie par Django et faite
+pour un gendarme sans compte. Il pointe depuis le 11/11/2026 vers
+`/verifier-mobilisation/<jeton>` — une route Angular, donc hors `/api/`. Proposition de
+Sylvain, et c'est la bonne : « l'appareil photo lit l'URL, renvoie sur le site, réutilise
+l'authentification en place ». C'est ce qui donne la vérification complète **sur iPhone**, où
+le navigateur ne sait pas décoder un QR : l'appareil photo natif ouvre l'URL, l'application
+retrouve la session, sans décodeur et sans rien installer.
+
+`verdict_mobilisation(demande, complet)` produit **les deux sorties** — la page HTML publique et
+le JSON de l'application. Une seule fonction, délibérément : deux listes de champs écrites
+séparément finiraient par diverger, et celle qui se tromperait serait la publique, c'est-à-dire
+la fuite.
+
+| | Connecté | Anonyme |
+|---|---|---|
+| valide / révoquée / inconnue, référence, autorité, crise, nature, dates | ✓ | ✓ |
+| **destinataire** | ✓ | retiré |
+| **lieu de rendez-vous** | ✓ | retiré |
+
+**Ce resserrage corrige un défaut réel** : la page publique affichait le nom du destinataire et
+le lieu, donc un QR ramassé par terre disait qui avait été mobilisé et où.
+
+L'endpoint reste `AllowAny` plutôt que fermé, et c'est un arbitrage explicite : une autorité
+extérieure doit pouvoir constater qu'un document n'est pas faux — elle lit le nom sur
+l'attestation qu'elle tient. Le fermer entièrement obligerait d'ailleurs à réécrire le texte
+légal du PDF, qui annonce un document « vérifiable via le QR code ». La barre posée est **être
+authentifié sur le site**, pas « avoir un lien avec cette demande » : l'authentification lève le
+masquage, le jeton reste l'autorisation.
+
+**La route Angular n'a pas de garde d'authentification**, et ce n'est pas un oubli : une garde
+renverrait un contrôleur extérieur vers une page de connexion qu'il ne peut pas franchir, alors
+que le serveur sait lui répondre. C'est le serveur qui décide du niveau de détail — une garde
+côté navigateur ne protège rien.
+
+**Les attestations déjà émises portent l'ancienne adresse imprimée**, donc la route Django reste
+servie. Elle rend le verdict réduit et affiche un lien « Vous êtes membre ? Ouvrir le détail
+dans l'application → » : un geste de plus pour les PDF déjà dans les poches, rien de cassé.
+
+Le rendu du verdict est mutualisé entre le scanner intégré et la page ouverte par le QR
+(`VerdictMobilisationComponent`), pour la même raison que la fonction côté serveur. Jamais le
+téléphone ni l'email de la cible, dans aucun des deux niveaux : ce sont des données de contact,
+et le jeton n'est pas une autorisation de les lire.
+
+Un jeton inconnu rend **200 avec `valide: false` et `connue: false`**, jamais 404 : le scanner
+doit distinguer « ce QR n'est pas des nôtres » d'une panne réseau, et un 404 se confond avec une
+erreur de route côté client. L'écran distingue d'ailleurs trois verdicts — valide, révoquée,
+inconnue — et un quatrième état qui n'est pas un verdict : « serveur injoignable, ne concluez
+rien de cet échec ».
+
+**Le scanner intégré utilise `BarcodeDetector`, l'API du navigateur, et aucune
+bibliothèque.** Cette API existe sur Chrome et Edge, **pas sur Safari ni iOS** — ce qui aurait
+été une vraie limite si le scanner était le seul chemin. Il ne l'est pas, et c'est pourquoi le
+QR pointe vers l'application : **sur iPhone, l'appareil photo natif fait le travail**, ouvre la
+page et réutilise la session. Le scanner reste utile pour contrôler plusieurs personnes à la
+suite sans ressortir l'appareil photo à chaque fois. Embarquer un décodeur JavaScript aurait
+couvert l'iPhone dans le scanner lui-même, au prix d'une dépendance de plus dans un projet qui
+n'en a aucune de ce genre — et sans rien apporter que le chemin natif ne donne déjà.
+
+La saisie manuelle de la référence reste ouverte à tous. `jetonDepuisTexte` accepte
+donc l'URL complète comme le jeton nu, et **refuse** ce qui n'a rien à voir — un QR de carte de
+visite ne doit pas partir en requête, et l'écran doit dire « ce code n'est pas une attestation »
+plutôt que « introuvable », qui laisserait croire à une attestation périmée.
+
+La caméra est arrêtée à la fermeture **et** à la destruction du composant : une diode qui reste
+allumée après fermeture est le genre de détail qui fait désinstaller une application. Et une
+image par 400 ms plutôt qu'en continu — un QR tenu à la main n'a pas besoin de 60 images par
+seconde, et décoder sans répit chauffe le téléphone pour rien.
+
+**Le QR code est passé de 26 à 45 mm** (`COTE_QR_MM`), soit 73 % de côté en plus et trois fois
+la surface, à la demande de Sylvain : « plus gros pour être plus facilement lisible sans
+modifier profondément la mise en page ». La mise en page ne bouge pas — la zone 2 offre
+95 × 125,5 mm utiles, et les flowables qui suivent se replacent d'eux-mêmes, ce qui est tout
+l'intérêt d'un `Frame` platypus plutôt que de coordonnées absolues. Au-delà, on perdrait le
+texte légal en bas de zone : 45 mm est le réglage, pas un maximum théorique.
+
+Le motif lui-même est devenu plus tolérant au même encombrement : correction d'erreur au
+**niveau Q** (25 % de redondance au lieu des 7 % par défaut) parce que ce document est plié en
+quatre, glissé dans une poche et ressorti froissé ; et marge réduite de 4 à 2 modules, les deux
+modules récupérés allant au motif.
 
 #### Campagnes de disponibilité : solliciter en masse, sur critères
 

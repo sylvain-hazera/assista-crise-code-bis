@@ -12056,6 +12056,142 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             )
         return Response(self.get_serializer(demande).data)
 
+    @action(detail=True, methods=['get'])
+    def attestation(self, request, pk=None):
+        """L'attestation PDF, rendue à l'écran plutôt qu'envoyée par mail.
+
+        Demande de Sylvain du 11/11/2026 : « un bouton preview pour voir le pdf généré ». Il
+        n'existait que `envoyer-attestation`, qui l'expédie — donc la seule façon de voir à quoi
+        ressemblait le document était de se l'envoyer à soi-même, ou de l'envoyer au
+        destinataire pour s'en apercevoir après.
+
+        `Content-Disposition: inline` : le navigateur l'affiche dans son lecteur au lieu de le
+        déposer dans les téléchargements. C'est ce qui fait la différence entre une
+        prévisualisation et un fichier de plus sur le bureau.
+
+        **Rien n'est stocké.** Le PDF est reconstruit à chaque appel depuis les données
+        actuelles, statut inclus : un PDF figé en cache afficherait « active » après une
+        révocation.
+
+        `base_url = settings.SERVER_URL` et jamais l'hôte de la requête : le QR doit pointer
+        vers la même adresse quel que soit l'endroit d'où l'attestation est émise.
+        """
+        from .attestation_mobilisation import generer_pdf_demande_mobilisation
+
+        demande = self.get_object()
+        pdf = generer_pdf_demande_mobilisation(demande, settings.SERVER_URL)
+
+        # `TELECHARGEMENT` et non un code inventé : la table des actions de main courante est
+        # semée par migration, et `audit_log` AVALE un code absent en journalisant une erreur
+        # — l'acte aurait donc lieu sans laisser de trace. Savoir qui a sorti l'attestation de
+        # quelqu'un fait partie de la traçabilité de la mobilisation.
+        audit_log(
+            request=request, action_code="TELECHARGEMENT", objet_type="DemandeMobilisation",
+            objet_id=demande.id, crise=demande.crise,
+            commentaire="Attestation de mobilisation prévisualisée.",
+        )
+
+        reponse = HttpResponse(pdf, content_type="application/pdf")
+        reponse['Content-Disposition'] = (
+            f'inline; filename="attestation-mobilisation-{str(demande.id)[:8]}.pdf"'
+        )
+        return reponse
+
+    @action(detail=False, methods=['get'])
+    def extraction(self, request):
+        """Toutes les mobilisations d'une crise pour une institution, en CSV.
+
+        Demande de Sylvain du 11/11/2026 : « un extract de toutes les mobilisations de la crise
+        pour l'institution donnée ». C'est le document qu'on sort pour un retour d'expérience,
+        un contrôle, ou simplement pour savoir qui a été engagé et où.
+
+        `institution` est **l'institution émettrice**, et le filtre s'applique PAR-DESSUS le
+        cloisonnement de `get_queryset` : on ne peut pas extraire les mobilisations d'une
+        institution dont on n'est pas membre, même en passant son identifiant.
+
+        Séparateur `;` et nombres à la française : ces fichiers s'ouvrent dans Excel configuré
+        en français, où la virgule est un séparateur décimal — un CSV à la virgule y arrive sur
+        une seule colonne.
+        """
+        crise_id = request.query_params.get('crise')
+        if not crise_id:
+            return Response({"error": "Paramètre `crise` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        crise = Crisis.objects.filter(pk=crise_id).first()
+        if crise is None:
+            return Response({"error": "Crise inconnue."}, status=status.HTTP_404_NOT_FOUND)
+
+        lignes = self.get_queryset().filter(crise=crise)
+        institution_id = request.query_params.get('institution')
+        if institution_id:
+            lignes = lignes.filter(institution_emettrice_id=institution_id)
+        lignes = list(lignes)
+
+        sortie = io.StringIO()
+        ecrivain = csv.writer(sortie, delimiter=';')
+        ecrivain.writerow([
+            "Référence", "Émise le", "Autorité émettrice", "Émetteur", "Nature",
+            "Destinataire", "Type de destinataire", "Immatriculation", "Point de rendez-vous",
+            "Adresse", "Latitude", "Longitude", "Équipe", "Mission", "Motif", "Statut",
+            "Révoquée le", "Lien de vérification",
+        ])
+
+        from .attestation_mobilisation import (
+            immatriculation_cible, nom_cible, url_verification,
+        )
+
+        for d in sorted(lignes, key=lambda x: x.date_creation):
+            point = d.point_operationnel
+            equipe = point.equipe if point is not None else None
+            if d.cible_utilisateur_id:
+                genre_cible = "Personne"
+            elif d.cible_institution_id:
+                genre_cible = "Institution"
+            elif d.cible_offre_id:
+                genre_cible = "Ressource (offre d'aide)"
+            else:
+                genre_cible = ""
+            ecrivain.writerow([
+                str(d.id)[:8].upper(),
+                timezone.localtime(d.date_creation).strftime('%d/%m/%Y %H:%M'),
+                d.institution_emettrice.nom,
+                nom_affichable(d.emetteur, request) if d.emetteur_id else '',
+                d.get_type_demande_display(),
+                nom_cible(d),
+                genre_cible,
+                immatriculation_cible(d) or '',
+                point.nom if point is not None else '',
+                (point.adresse or '') if point is not None else (d.lieu_texte or ''),
+                f"{point.location.y:.6f}" if point is not None and point.location else '',
+                f"{point.location.x:.6f}" if point is not None and point.location else '',
+                equipe.name if equipe is not None else '',
+                equipe.mission_active.titre
+                if equipe is not None and equipe.mission_active_id else '',
+                d.motif or '',
+                d.get_statut_display(),
+                timezone.localtime(d.date_revocation).strftime('%d/%m/%Y %H:%M')
+                if d.date_revocation else '',
+                # Le lien plutôt que le jeton nu : collé dans un navigateur, il donne le
+                # statut à jour — ce qu'un CSV, lui, ne saura jamais dire.
+                url_verification(d, settings.SERVER_URL) if d.jeton_verification else '',
+            ])
+
+        # `exposition=EXPORT` : la main courante distingue une consultation d'un export, qui
+        # sort les données du périmètre de la plateforme.
+        audit_log(
+            request=request, action_code="EXPORT", objet_type="DemandeMobilisation",
+            objet_id=None, crise=crise, exposition=AuditLog.Exposition.EXPORT,
+            objets_ids=[d.id for d in lignes],
+            commentaire=f"Export CSV des demandes de mobilisation de la crise "
+                        f"« {crise.name} » : {len(lignes)} ligne(s)",
+        )
+
+        reponse = HttpResponse(sortie.getvalue(), content_type="text/csv; charset=utf-8")
+        reponse['Content-Disposition'] = (
+            f'attachment; filename="mobilisations-{timezone.localdate():%Y%m%d}.csv"'
+        )
+        return reponse
+
     @action(detail=True, methods=['post'], url_path='envoyer-attestation')
     def envoyer_attestation(self, request, pk=None):
         """Génère l'attestation PDF (avec QR code de vérification, voir
@@ -12096,6 +12232,46 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         return Response({"envoye_a": destinataire})
 
 
+def verdict_mobilisation(demande, complet: bool) -> dict:
+    """Le verdict d'une attestation, en deux niveaux de détail.
+
+    **Une seule fonction pour les deux sorties** (page HTML publique et JSON de l'application) :
+    deux listes de champs écrites séparément finiraient par diverger, et celle qui se
+    tromperait serait la publique — c'est-à-dire la fuite.
+
+    `complet=False` **retire le nom du destinataire et le lieu de rendez-vous**. Resserrage du
+    11/11/2026 : jusque-là la page publique les affichait, donc un QR code ramassé par terre
+    disait qui avait été mobilisé et où. L'authenticité, elle, reste vérifiable sans compte —
+    c'est la raison d'être de cette page, et une autorité extérieure qui contrôle un document
+    n'a pas besoin de savoir le nom de la personne qu'elle a devant elle : elle le lit sur
+    l'attestation qu'elle tient.
+    """
+    from .attestation_mobilisation import nom_cible
+    from .models import StatutDemandeMobilisation
+
+    valide = demande.statut == StatutDemandeMobilisation.ACTIVE
+    donnees = {
+        "valide": valide,
+        "connue": True,
+        "motif": "Attestation valide." if valide else "Cette attestation a été révoquée.",
+        "complet": complet,
+        "statut": demande.statut,
+        "statut_libelle": demande.get_statut_display(),
+        "reference": str(demande.id)[:8].upper(),
+        "institution_emettrice": demande.institution_emettrice.nom,
+        "crise": demande.crise.name,
+        "nature": demande.get_type_demande_display(),
+        "date_creation": demande.date_creation,
+        "date_revocation": demande.date_revocation,
+    }
+    if complet:
+        donnees["destinataire"] = nom_cible(demande)
+        donnees["lieu"] = (demande.point_operationnel.nom
+                           if demande.point_operationnel_id
+                           else (demande.lieu_texte or ""))
+    return donnees
+
+
 class VerifierDemandeMobilisationView(APIView):
     """Page de vérification publique (pointée par le QR code de l'attestation, voir
     core/attestation_mobilisation.py) — AUCUNE authentification requise, c'est justement le
@@ -12126,10 +12302,19 @@ class VerifierDemandeMobilisationView(APIView):
             )
             return HttpResponse(html, content_type="text/html; charset=utf-8", status=404)
 
-        valide = demande.statut == StatutDemandeMobilisation.ACTIVE
-        couleur = "#15803d" if valide else "#b91c1c"
-        libelle_statut = "ATTESTATION VALIDE" if valide else "ATTESTATION RÉVOQUÉE"
-        lieu = demande.point_operationnel.nom if demande.point_operationnel_id else (demande.lieu_texte or "—")
+        # Verdict RÉDUIT, toujours : cette page est servie par Django, qui ne voit pas le jeton
+        # d'authentification de l'application (gardé côté navigateur). Elle ne peut donc pas
+        # savoir si le lecteur est un membre connecté — et dans le doute, elle en dit le
+        # moins. Le détail complet passe par la page de l'application, vers laquelle le lien
+        # ci-dessous emmène en un geste.
+        verdict = verdict_mobilisation(demande, complet=False)
+        couleur = "#15803d" if verdict["valide"] else "#b91c1c"
+        libelle_statut = ("ATTESTATION VALIDE" if verdict["valide"]
+                          else "ATTESTATION RÉVOQUÉE")
+        lien_application = (
+            f"{settings.SERVER_URL.rstrip('/')}/verifier-mobilisation/"
+            f"{demande.jeton_verification}"
+        )
 
         html = f"""<!doctype html><html lang='fr'><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
@@ -12137,19 +12322,83 @@ class VerifierDemandeMobilisationView(APIView):
 <body style='font-family:sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem;color:#1f2937'>
   <h1 style='color:{couleur};font-size:1.3rem'>{libelle_statut}</h1>
   <table style='width:100%;border-collapse:collapse;font-size:.95rem'>
-    <tr><td style='padding:.4rem 0;color:#6b7280'>Autorité émettrice</td><td><strong>{demande.institution_emettrice.nom}</strong></td></tr>
-    <tr><td style='padding:.4rem 0;color:#6b7280'>Destinataire</td><td>{nom_cible(demande)}</td></tr>
-    <tr><td style='padding:.4rem 0;color:#6b7280'>Crise</td><td>{demande.crise.name}</td></tr>
-    <tr><td style='padding:.4rem 0;color:#6b7280'>Nature</td><td>{demande.get_type_demande_display()}</td></tr>
-    <tr><td style='padding:.4rem 0;color:#6b7280'>Lieu</td><td>{lieu}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Référence</td><td><strong>{verdict["reference"]}</strong></td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Autorité émettrice</td><td><strong>{verdict["institution_emettrice"]}</strong></td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Crise</td><td>{verdict["crise"]}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Nature</td><td>{verdict["nature"]}</td></tr>
     <tr><td style='padding:.4rem 0;color:#6b7280'>Émise le</td><td>{demande.date_creation.strftime('%d/%m/%Y à %H:%M')}</td></tr>
   </table>
-  <p style='color:#9ca3af;font-size:.78rem;margin-top:2rem'>
+  <p style='font-size:.85rem;margin-top:1.5rem'>
+    <a href='{lien_application}' style='color:#0d9488'>Vous êtes membre de la plateforme ?
+    Ouvrir le détail dans l'application &rarr;</a>
+  </p>
+  <p style='color:#9ca3af;font-size:.78rem;margin-top:1.5rem'>
+    Cette page confirme l'authenticité et le statut du document. Le nom du destinataire et le
+    lieu de rendez-vous ne sont pas affichés ici : ils figurent sur l'attestation que vous
+    avez entre les mains.
+  </p>
+  <p style='color:#9ca3af;font-size:.78rem'>
     Ceci n'est pas une réquisition légale au sens strict (article L. 2215-1 du CGCT) — une
     demande formelle tracée sur la plateforme Assista Crise.
   </p>
 </body></html>"""
         return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
+class VerifierDemandeMobilisationJsonView(APIView):
+    """Le même verdict que la page publique, en JSON — pour le scanner intégré à l'application.
+
+    Demande de Sylvain du 11/11/2026 : « un bouton pour ouvrir l'appareil photo d'un téléphone,
+    scanner un qrcode d'une demande de mobilisation, et que ça dise si la demande est validée ou
+    non ». Le QR pointe vers la page HTML, qui est faite pour un gendarme sans compte ; un écran
+    de l'application, lui, a besoin des mêmes faits sous forme de données pour les afficher
+    dans son propre langage visuel.
+
+    **Deux niveaux de détail, selon que l'appelant est connecté ou non** (voir
+    `verdict_mobilisation`). Resserrage du 11/11/2026, à la demande de Sylvain : « plutôt que la
+    page soit publique, on peut le rendre authentifié obligatoire ».
+
+    - **connecté** : tout, destinataire et lieu de rendez-vous compris ;
+    - **anonyme** : l'authenticité et le statut, sans le nom de la personne ni le lieu. Jusque-là
+      la page publique les affichait, donc un QR ramassé par terre disait qui avait été mobilisé
+      et où.
+
+    L'endpoint reste `AllowAny` et non fermé, et c'est volontaire : une autorité extérieure qui
+    contrôle un document doit pouvoir vérifier qu'il n'est pas faux. Elle n'a pas besoin du nom
+    — elle le lit sur l'attestation qu'elle tient. Le fermer entièrement obligerait à réécrire
+    le texte légal du PDF, qui annonce un document « vérifiable via le QR code ».
+
+    Jamais le téléphone ni l'email de la cible, dans aucun des deux niveaux : ce sont des
+    données de contact, et le jeton n'est pas une autorisation de les lire.
+
+    **Jamais 404 sur un jeton inconnu, mais 200 avec `valide: false`.** Le scanner doit pouvoir
+    distinguer « ce QR n'est pas des nôtres » d'une panne réseau, et un 404 se confond avec une
+    erreur de route côté client. Le motif est explicite pour que l'écran puisse le dire.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, jeton):
+        from .attestation_mobilisation import nom_cible
+
+        demande = DemandeMobilisation.objects.select_related(
+            'crise', 'institution_emettrice', 'point_operationnel',
+        ).filter(jeton_verification=jeton).first()
+
+        if demande is None:
+            return Response({
+                "valide": False,
+                "connue": False,
+                "motif": "Aucune attestation ne correspond à ce QR code.",
+            })
+
+        # Le détail complet pour un compte connecté, le verdict réduit sinon (voir
+        # `verdict_mobilisation`). C'est le mécanisme demandé par Sylvain le 11/11/2026 :
+        # l'appareil photo de l'iPhone ouvre l'URL, l'application réutilise la session en
+        # place, et le contrôleur voit tout. Qui n'est pas connecté vérifie l'authenticité sans
+        # apprendre qui a été mobilisé.
+        connecte = bool(getattr(request.user, "is_authenticated", False))
+        return Response(verdict_mobilisation(demande, complet=connecte))
 
 
 def _notifier_lecteurs_et_createur_recherche(request, recherche, titre, message):

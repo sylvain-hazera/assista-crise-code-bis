@@ -99,14 +99,25 @@ def immatriculation_cible(demande) -> str | None:
 
 
 def url_verification(demande, base_url: str) -> str:
-    # /api/ : seul préfixe que le proxy (ac_proxy) route vers le backend Django — tout le reste
-    # tombe sur le frontend Angular (SPA, try_files vers index.html), voir sa configuration
-    # nginx. Cette page est volontairement servie en HTML directement par Django (pas une route
-    # Angular), donc doit rester sous /api/ malgré son contenu. `base_url` doit être le domaine
-    # public assista-crise.fr (settings.SERVER_URL), jamais l'hôte de la requête qui a déclenché
-    # la génération — demande explicite du 2026-09-21, le QR doit toujours pointer vers la même
-    # adresse quel que soit l'endroit d'où l'attestation a été émise.
-    return f"{base_url.rstrip('/')}/api/verifier-mobilisation/{demande.jeton_verification}/"
+    """L'adresse imprimée dans le QR code.
+
+    **Elle pointe vers la page de l'APPLICATION depuis le 11/11/2026**, et non plus vers la
+    page HTML servie par Django. Demande de Sylvain : « l'appareil photo lit l'URL, renvoie sur
+    le site, réutilise l'authentification en place ». C'est ce qui donne la vérification
+    intégrée sur iPhone, où le navigateur ne sait pas décoder un QR : l'appareil photo natif
+    ouvre l'URL, l'application retrouve la session, et le contrôleur voit le détail complet.
+
+    Une URL hors `/api/` tombe sur le frontend Angular (SPA, `try_files` vers `index.html`),
+    ce qui est exactement ce qu'on veut ici. La route Django
+    `/api/verifier-mobilisation/<jeton>/` **reste servie** : les attestations déjà émises
+    portent cette adresse imprimée, et elles doivent continuer de se vérifier. Elle rend
+    désormais un verdict réduit, avec un lien vers la page de l'application.
+
+    `base_url` doit être le domaine public (`settings.SERVER_URL`), jamais l'hôte de la requête
+    qui a déclenché la génération — demande explicite du 2026-09-21 : le QR doit toujours
+    pointer vers la même adresse quel que soit l'endroit d'où l'attestation a été émise.
+    """
+    return f"{base_url.rstrip('/')}/verifier-mobilisation/{demande.jeton_verification}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,8 +183,28 @@ def generer_mini_carte(lat: float, lon: float, zoom: int = 16, taille_finale: in
 
 
 def generer_qr_image(url: str) -> io.BytesIO:
+    """Le QR code de vérification, en PNG.
+
+    Trois réglages, et aucun n'est cosmétique :
+
+    - `error_correction=ERROR_CORRECT_Q` (25 % de redondance au lieu des 7 % du défaut) : ce
+      document est **plié en quatre**, glissé dans une poche et ressorti mouillé. Un pli qui
+      passe au travers du QR doit rester rattrapable.
+    - `box_size=10` : le PNG est rendu assez grand pour que reportlab le réduise proprement à
+      45 mm. Une image trop petite agrandie devient floue, et un QR flou ne se lit pas.
+    - `border=2` au lieu de 4 : la norme demande une marge blanche de 4 modules ; 2 suffit sur
+      un fond déjà blanc, et les 2 modules récupérés vont au motif lui-même, donc à sa
+      lisibilité.
+    """
     buffer = io.BytesIO()
-    qrcode.make(url).save(buffer, format="PNG")
+    code = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_Q,
+        box_size=10,
+        border=2,
+    )
+    code.add_data(url)
+    code.make(fit=True)
+    code.make_image(fill_color="black", back_color="white").save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
 
@@ -223,10 +254,28 @@ def _zone1_flowables(demande):
     return flow
 
 
+#: Côté du QR code dans la zone 2, en millimètres.
+#:
+#: Porté de 26 à 45 mm le 11/11/2026 à la demande de Sylvain : « prévoit que le QR code soit
+#: plus gros pour être plus facilement lisible sans modifier profondément la mise en page ».
+#: C'est **73 % de côté en plus**, donc trois fois la surface — ce qui change tout pour un
+#: téléphone tenu à bout de bras, de nuit, sur un document plié et froissé.
+#:
+#: La mise en page ne bouge pas : la zone 2 mesure 105 × 135,5 mm, moins 5 mm de marge de
+#: chaque côté, soit 95 × 125,5 mm utiles. Un carré de 45 mm y tient sans contrainte, et les
+#: flowables qui suivent (URL, statut, mentions légales) se replacent d'eux-mêmes — c'est tout
+#: l'intérêt d'un `Frame` platypus plutôt que de coordonnées absolues.
+#:
+#: Au-delà, on perdrait le texte légal en bas de zone : 45 mm est le réglage, pas un maximum
+#: théorique.
+COTE_QR_MM = 45
+
+
 def _zone2_flowables(demande, base_url):
     url = url_verification(demande, base_url)
     flow = [Paragraph("2 · VÉRIFICATION &amp; MENTIONS LÉGALES", STYLE_TITRE_ZONE)]
-    flow.append(RLImage(generer_qr_image(url), width=26 * mm, height=26 * mm))
+    flow.append(RLImage(generer_qr_image(url),
+                        width=COTE_QR_MM * mm, height=COTE_QR_MM * mm))
     flow.append(Spacer(1, 1.5 * mm))
     flow.append(Paragraph(url, STYLE_URL))
     flow.append(Paragraph(f"Statut au moment de l'émission : {demande.get_statut_display()}.", STYLE_LEGAL))

@@ -81,9 +81,16 @@ class TestGenerationPdf:
         assert pdf.startswith(b'%PDF')
         assert len(pdf) > 500
 
-    def test_url_verification_sous_api(self, demande):
+    def test_url_verification_pointe_la_page_de_l_application(self, demande):
+        """Changé le 11/11/2026 : le QR emmène sur la page Angular et non plus sur la page
+        HTML de Django. C'est ce qui permet à l'appareil photo d'un iPhone de rendre une
+        vérification complète — l'application retrouve la session en place.
+
+        Hors `/api/`, donc servi par le frontend : la route Django reste en place pour les
+        attestations déjà émises, qui portent l'ancienne adresse imprimée."""
         url = url_verification(demande, 'https://172.16.1.113/')
-        assert url == f'https://172.16.1.113/api/verifier-mobilisation/{demande.jeton_verification}/'
+        assert url == f'https://172.16.1.113/verifier-mobilisation/{demande.jeton_verification}'
+        assert '/api/' not in url
 
 
 @pytest.mark.django_db

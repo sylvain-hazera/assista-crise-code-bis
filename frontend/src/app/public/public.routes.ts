@@ -45,6 +45,16 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.CompleterInscriptionComponent)
       },
       {
+        // Page ouverte par le QR code d'une attestation de mobilisation. PAS de garde
+        // d'authentification, et c'est voulu : un controleur exterieur (gendarmerie) doit
+        // pouvoir verifier l'authenticite d'un document. C'est le SERVEUR qui decide du
+        // niveau de detail -- complet pour un compte connecte, reduit sinon (voir
+        // verdict_mobilisation) -- parce qu'une garde cote navigateur ne protege rien.
+        path: 'verifier-mobilisation/:jeton',
+        loadComponent: () => import('./verification-mobilisation/verification-mobilisation.component')
+          .then(m => m.VerificationMobilisationComponent)
+      },
+      {
         path: 'connexion-magique/:uidb64/:token',
         loadComponent: () => import('../auth/component/magic-login/magic-login.component')
           .then(m => m.MagicLoginComponent)

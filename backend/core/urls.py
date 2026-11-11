@@ -34,7 +34,8 @@ from .views import (
     InformationEditionPublicView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
     DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
-    DemandeMobilisationViewSet, VerifierDemandeMobilisationView,
+    DemandeMobilisationViewSet, VerifierDemandeMobilisationJsonView,
+    VerifierDemandeMobilisationView,
     AuditLogViewSet,
     JournalCollectiviteViewSet,
     InstitutionTypeViewSet,
@@ -311,6 +312,12 @@ urlpatterns = [
     path('magic-login/<str:uidb64>/<str:token>/', MagicLoginView.as_view(), name='magic_login'),
     path('me/', UserMeView.as_view(), name='auth_me'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
+    # Le meme verdict en JSON, pour le scanner integre a l'application (voir
+    # VerifierDemandeMobilisationJsonView). Sous le meme prefixe, parce que c'est le meme fait
+    # public : le jeton EST l'autorisation.
+    path('verifier-mobilisation/<str:jeton>/donnees/',
+         VerifierDemandeMobilisationJsonView.as_view(),
+         name='verifier_demande_mobilisation_json'),
     path('change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
     path('reset-password/request/', PasswordResetRequestView.as_view(), name='reset_password_request'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),

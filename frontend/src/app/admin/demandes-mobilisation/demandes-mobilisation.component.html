@@ -125,6 +125,42 @@
     <p class="error-message">{{ envoiAttestationErreur }}</p>
   }
 
+  <!-- ══ Extraction et vérification ═════════════════════════════════════════
+       Deux gestes qui ne portent pas sur UNE demande mais sur le dispositif : sortir le
+       relevé des mobilisations d'une crise, et contrôler une attestation présentée sur le
+       terrain. -->
+  <div class="bandeau-module">
+    <div class="extraction">
+      <label>
+        <span>Extraire les mobilisations de</span>
+        <select [(ngModel)]="criseExtraction" name="criseExtraction">
+          <option value="">Choisir une crise…</option>
+          @for (c of crises; track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </label>
+      <button type="button" class="btn-secondary-sm"
+              [disabled]="!criseExtraction || extractionEnCours" (click)="extraire()"
+              title="Télécharge un CSV de toutes les mobilisations de cette crise pour votre institution">
+        <span class="material-icons">download</span>
+        {{ extractionEnCours ? 'Extraction…' : 'Extraire en CSV' }}
+      </button>
+      <span class="page-hint">
+        Toutes les demandes de la crise pour votre institution : destinataire, lieu, équipe,
+        statut, et le lien de vérification de chacune.
+      </span>
+    </div>
+
+    <button type="button" class="btn-primary" (click)="scannerOuvert = true">
+      <span class="material-icons">qr_code_scanner</span> Vérifier une attestation
+    </button>
+  </div>
+
+  @if (scannerOuvert) {
+    <app-scanner-mobilisation (ferme)="scannerOuvert = false"></app-scanner-mobilisation>
+  }
+
   @if (loading) {
     <p>Chargement…</p>
   } @else if (errorMessage) {
@@ -159,6 +195,14 @@
               <td><span class="statut-badge" [ngClass]="statutClass(d)">{{ d.statut_libelle }}</span></td>
               <td>{{ d.date_creation | date:'dd/MM/yyyy HH:mm' }}</td>
               <td class="actions-cell">
+                <!-- Prévisualisation disponible même sur une demande révoquée : on regarde
+                     aussi ce qui a été émis, pas seulement ce qui va partir. -->
+                <button type="button" class="btn-secondary-sm"
+                        [disabled]="previsualisationEnCours === d.id"
+                        (click)="previsualiser(d)"
+                        title="Voir l'attestation PDF telle qu'elle sera reçue, sans l'envoyer">
+                  <span class="material-icons">picture_as_pdf</span> Aperçu
+                </button>
                 @if (d.statut === 'ACTIVE') {
                   <button type="button" class="btn-secondary-sm" [disabled]="envoiAttestationEnCours === d.id" (click)="envoyerAttestation(d)" title="Générer l'attestation PDF (avec QR code de vérification) et l'envoyer par email">
                     <span class="material-icons">mail</span> Envoyer l'attestation

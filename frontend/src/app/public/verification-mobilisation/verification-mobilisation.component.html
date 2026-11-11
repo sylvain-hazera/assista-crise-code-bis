@@ -1,0 +1,29 @@
+<div class="verification-page">
+  <div class="carte">
+
+    <header>
+      <h1><span class="material-icons">verified_user</span> Vérification d'attestation</h1>
+    </header>
+
+    @if (chargement) {
+      <p class="attente">Vérification en cours…</p>
+    }
+
+    @if (erreur) {
+      <p class="alerte">
+        <span class="material-icons">cloud_off</span> {{ erreur }}
+      </p>
+    }
+
+    @if (verdict) {
+      <app-verdict-mobilisation [verdict]="verdict"></app-verdict-mobilisation>
+
+      @if (!connecte && verdict.connue) {
+        <button type="button" class="primaire" (click)="seConnecter()">
+          <span class="material-icons">login</span>
+          Se connecter pour voir le détail
+        </button>
+      }
+    }
+  </div>
+</div>

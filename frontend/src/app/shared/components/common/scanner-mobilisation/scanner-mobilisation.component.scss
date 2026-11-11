@@ -1,0 +1,157 @@
+/* Scanner d'attestation. Pensé pour un téléphone tenu d'une main, dehors : grandes cibles,
+   verdict lisible d'un coup d'œil, et le texte du verdict ne dépend pas de la seule couleur
+   (une icône et un mot, pour rester lisible au soleil comme pour un daltonien). */
+.scanner-fond {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, .72);
+}
+
+.scanner {
+  width: 100%;
+  max-width: 30rem;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1rem 1.1rem 1.2rem;
+  border-radius: 12px;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #1f2937);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .3);
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .6rem;
+
+    h2 {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      margin: 0;
+      font-size: 1.05rem;
+    }
+  }
+}
+
+.icone {
+  border: none;
+  background: none;
+  color: var(--ac-text-muted, #6b7280);
+  cursor: pointer;
+  padding: .2rem;
+}
+
+.aide {
+  margin: .5rem 0;
+  font-size: .88rem;
+  line-height: 1.5;
+  color: var(--ac-text-muted, #4b5563);
+
+  &.petite { font-size: .76rem; color: var(--ac-text-muted, #9ca3af); }
+}
+
+.alerte {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  margin: .5rem 0;
+  padding: .6rem .7rem;
+  border-radius: 6px;
+  background: var(--ac-orange-bg, #fff7ed);
+  color: var(--ac-orange-text, #9a3412);
+  font-size: .85rem;
+  line-height: 1.45;
+
+  .material-icons { font-size: 1.1rem; }
+}
+
+/* Le viseur : la vidéo occupe un carré, et le cadre indique où viser sans masquer l'image. */
+.viseur {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0f172a;
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .cadre {
+    position: absolute;
+    inset: 15%;
+    border: 3px solid rgba(255, 255, 255, .85);
+    border-radius: 10px;
+    box-shadow: 0 0 0 100vmax rgba(15, 23, 42, .25);
+  }
+}
+
+.actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: .6rem;
+}
+
+.manuelle {
+  display: flex;
+  align-items: flex-end;
+  gap: .5rem;
+  margin-top: .8rem;
+  padding-top: .8rem;
+  border-top: 1px solid var(--ac-border, #e5e7eb);
+
+  label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .78rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  input {
+    padding: .5rem .6rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    border-radius: 6px;
+    font: inherit;
+    font-size: .9rem;
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #1f2937);
+  }
+}
+
+.primaire, .secondaire {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  /* Cible large : on clique dessus dehors, avec des gants parfois. */
+  padding: .7rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: .92rem;
+  cursor: pointer;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+  .material-icons { font-size: 1.15rem; }
+}
+
+.primaire { background: #2563eb; color: #fff; width: 100%; }
+.actions .primaire { width: auto; }
+.secondaire {
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #374151);
+  border-color: var(--ac-border-strong, #d1d5db);
+}

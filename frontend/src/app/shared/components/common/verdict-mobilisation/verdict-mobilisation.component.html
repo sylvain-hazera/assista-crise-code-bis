@@ -1,0 +1,41 @@
+<div class="verdict" [class.valide]="verdict.valide" [class.invalide]="!verdict.valide">
+  <span class="material-icons gros">{{ icone }}</span>
+  <strong>{{ titre }}</strong>
+  <span class="motif">{{ verdict.motif }}</span>
+</div>
+
+@if (verdict.connue) {
+  <dl class="details">
+    <dt>Référence</dt><dd>{{ verdict.reference }}</dd>
+    <dt>Autorité émettrice</dt><dd>{{ verdict.institution_emettrice }}</dd>
+    @if (verdict.destinataire) {
+      <dt>Destinataire</dt><dd>{{ verdict.destinataire }}</dd>
+    }
+    <dt>Crise</dt><dd>{{ verdict.crise }}</dd>
+    <dt>Nature</dt><dd>{{ verdict.nature }}</dd>
+    @if (verdict.lieu) { <dt>Lieu</dt><dd>{{ verdict.lieu }}</dd> }
+    <dt>Émise le</dt><dd>{{ verdict.date_creation | date:'dd/MM/yyyy à HH:mm' }}</dd>
+    @if (verdict.date_revocation) {
+      <dt>Révoquée le</dt>
+      <dd>{{ verdict.date_revocation | date:'dd/MM/yyyy à HH:mm' }}</dd>
+    }
+  </dl>
+
+  @if (reduit) {
+    <!-- DIT plutôt que laissé deviner : un champ absent se lit comme une donnée manquante,
+         alors que c'est une donnée volontairement retenue. -->
+    <p class="note">
+      <span class="material-icons">lock</span>
+      <span>
+        Le nom du destinataire et le lieu de rendez-vous ne sont pas affichés : ils figurent
+        sur l'attestation que vous avez entre les mains.
+        <strong>Connectez-vous</strong> pour voir le détail complet.
+      </span>
+    </p>
+  }
+
+  <p class="legal">
+    Ceci n'est pas une réquisition légale au sens strict (article L. 2215-1 du CGCT) — une
+    demande formelle tracée sur la plateforme.
+  </p>
+}

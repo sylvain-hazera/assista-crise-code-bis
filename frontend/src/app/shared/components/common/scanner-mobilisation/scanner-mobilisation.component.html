@@ -1,0 +1,84 @@
+<div class="scanner-fond" (click)="fermer()">
+  <div class="scanner" (click)="$event.stopPropagation()">
+
+    <header>
+      <h2><span class="material-icons">qr_code_scanner</span> Vérifier une attestation</h2>
+      <button type="button" class="icone" (click)="fermer()" aria-label="Fermer">
+        <span class="material-icons">close</span>
+      </button>
+    </header>
+
+    @if (erreur()) {
+      <p class="alerte">
+        <span class="material-icons">error_outline</span> {{ erreur() }}
+      </p>
+    }
+
+    <!-- ══ Avant le scan ══════════════════════════════════════════════════ -->
+    @if (etat() === 'inactif') {
+      <p class="aide">
+        Scannez le QR code de l'attestation : la plateforme dira si la demande est
+        <strong>valide</strong> ou <strong>révoquée</strong>, à l'instant.
+      </p>
+      @if (decodageDisponible) {
+        <button type="button" class="primaire" (click)="demarrer()">
+          <span class="material-icons">photo_camera</span> Ouvrir la caméra
+        </button>
+      } @else {
+        <p class="aide">
+          Ce navigateur ne sait pas décoder un QR code — c'est le cas sur iPhone. Deux chemins
+          qui marchent quand même : l'<strong>appareil photo de votre téléphone</strong> lit ce
+          QR et ouvre directement la page de vérification ; ou saisissez la référence
+          ci-dessous.
+        </p>
+      }
+    }
+
+    @if (etat() === 'demarrage') {
+      <p class="aide">Ouverture de la caméra…</p>
+    }
+
+    <!-- ══ Pendant le scan ════════════════════════════════════════════════ -->
+    @if (etat() === 'scan') {
+      <div class="viseur">
+        <video #video playsinline muted></video>
+        <div class="cadre" aria-hidden="true"></div>
+      </div>
+      <p class="aide">
+        Cadrez le QR code de la zone 2 de l'attestation. La lecture se fait toute seule.
+      </p>
+    }
+
+    <!-- ══ Verdict ════════════════════════════════════════════════════════ -->
+    @if (etat() === 'verdict' && verdict(); as v) {
+      <!-- Rendu mutualisé avec la page ouverte par le QR : c'est le même verdict, et deux
+           rendus écrits séparément finiraient par ne plus dire la même chose. -->
+      <app-verdict-mobilisation [verdict]="v"></app-verdict-mobilisation>
+
+      <div class="actions">
+        @if (decodageDisponible) {
+          <button type="button" class="secondaire" (click)="scannerLeSuivant()">
+            <span class="material-icons">qr_code_scanner</span> Scanner le suivant
+          </button>
+        }
+        <button type="button" class="primaire" (click)="fermer()">Terminer</button>
+      </div>
+    }
+
+    <!-- ══ Saisie manuelle — toujours accessible ══════════════════════════ -->
+    @if (etat() !== 'scan') {
+      <div class="manuelle">
+        <label>
+          <span>Ou saisissez la référence lue sur l'attestation</span>
+          <input type="text" [(ngModel)]="saisieManuelle" name="jeton"
+                 placeholder="Collez l'adresse du QR, ou la référence"
+                 (keyup.enter)="verifierLaSaisie()">
+        </label>
+        <button type="button" class="secondaire" [disabled]="!saisieManuelle.trim()"
+                (click)="verifierLaSaisie()">
+          Vérifier
+        </button>
+      </div>
+    }
+  </div>
+</div>

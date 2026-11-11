@@ -197,3 +197,46 @@
   font-size: .85rem;
   margin: .5rem 0;
 }
+
+/* ── Bandeau du module : extraction et vérification ─────────────────────────
+   Séparé de la liste et du formulaire, parce que ces deux gestes ne portent pas sur UNE
+   demande mais sur le dispositif entier — les mettre dans la colonne d'actions d'une ligne
+   aurait laissé croire le contraire. */
+.bandeau-module {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: .8rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--ac-surface-2, #f9fafb);
+}
+
+.extraction {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: .6rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .78rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  select {
+    padding: .4rem .5rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    border-radius: 6px;
+    font-size: .88rem;
+    background: var(--ac-surface, white);
+    color: var(--ac-text, #374151);
+  }
+
+  .page-hint { flex-basis: 100%; margin: 0; }
+}
