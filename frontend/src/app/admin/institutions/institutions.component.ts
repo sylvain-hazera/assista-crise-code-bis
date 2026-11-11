@@ -6,6 +6,8 @@ import { forkJoin } from 'rxjs';
 
 import { InstitutionService } from '../../services/institution.service';
 import { ConfigurationEnvoi, ConfigurationEnvoiPatch } from '../../shared/models/configuration-envoi.model';
+import { ModeleCatalogue, ModeleMessage } from '../../shared/models/brouillon-envoi.model';
+import { BrouillonsEnvoiService } from '../../core/brouillons-envoi.service';
 import { InstitutionTypeService } from '../../services/institution-type.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
@@ -45,7 +47,7 @@ import { Competence } from '../../shared/models/competence.model';
 type MainTab = 'institutions' | 'types' | 'roles';
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
-type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois';
+type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois' | 'modeles';
 
 @Component({
   selector: 'app-institutions',
@@ -175,6 +177,7 @@ export class InstitutionsComponent implements OnInit {
     private locationService: LocationService,
     private zoneService: ZoneService,
     private configurationAlerteSismiqueService: ConfigurationAlerteSismiqueService,
+    private brouillonsService: BrouillonsEnvoiService,
     private interlocuteurAlertePCSService: InterlocuteurAlertePCSService,
     private risqueMajeurTypeService: RisqueMajeurTypeService,
     private risqueCommunalService: RisqueCommunalService,
@@ -202,6 +205,132 @@ export class InstitutionsComponent implements OnInit {
   configEnvoiSucces = '';
   brevoCleSaisie = '';
   smsCleSaisie = '';
+
+  // ── Onglet « Modèles » : textes réécrits par l'institution ────────────────────────────
+  //
+  // Le catalogue (textes par défaut, champs disponibles) vient du serveur : il vit dans le code
+  // et y ajouter un message ne doit pas demander de toucher à cet écran.
+  catalogue: ModeleCatalogue[] = [];
+  modelesPropres: ModeleMessage[] = [];
+  modelesChargement = false;
+  modelesErreur = '';
+  modelesSucces = '';
+  modeleOuvert: string | null = null;
+  modeleSujetSaisi = '';
+  modeleCorpsSaisi = '';
+  modeleEnregistrement = false;
+
+  ouvrirOngletModeles(): void {
+    this.detailTab = 'modeles';
+    if (this.catalogue.length || !this.selectedInstitution?.id) return;
+    this.modelesChargement = true;
+    this.modelesErreur = '';
+    this.brouillonsService.catalogue().subscribe({
+      next: (catalogue) => {
+        this.catalogue = catalogue;
+        this.chargerModelesPropres();
+      },
+      error: () => {
+        this.modelesChargement = false;
+        this.modelesErreur = "Impossible de charger la liste des messages.";
+      },
+    });
+  }
+
+  private chargerModelesPropres(): void {
+    if (!this.selectedInstitution?.id) return;
+    this.brouillonsService.modelesDe(this.selectedInstitution.id).subscribe({
+      next: (modeles) => { this.modelesPropres = modeles; this.modelesChargement = false; },
+      error: (err) => {
+        this.modelesChargement = false;
+        this.modelesErreur = err?.status === 403
+          ? "Seul le bureau de cette institution peut réécrire ses messages."
+          : "Impossible de charger les textes réécrits.";
+      },
+    });
+  }
+
+  /** La version réécrite de ce message, si elle existe. */
+  modelePropre(cle: string): ModeleMessage | undefined {
+    return this.modelesPropres.find(m => m.cle === cle);
+  }
+
+  /** Vrai si l'institution a réécrit ce message : affiché dans la liste, pour qu'on voie d'un
+   * coup d'œil ce qui est propre à l'institution et ce qui reste au défaut. */
+  estReecrit(cle: string): boolean {
+    const propre = this.modelePropre(cle);
+    return !!propre && propre.actif && !!(propre.sujet || propre.corps);
+  }
+
+  ouvrirModele(modele: ModeleCatalogue): void {
+    if (this.modeleOuvert === modele.cle) { this.modeleOuvert = null; return; }
+    this.modeleOuvert = modele.cle;
+    this.modelesSucces = '';
+    this.modelesErreur = '';
+    const propre = this.modelePropre(modele.cle);
+    // Préremplissage avec le texte EFFECTIF : la version réécrite si elle existe, sinon le
+    // défaut. Partir d'un champ vide obligerait à recopier le défaut pour le modifier un peu.
+    this.modeleSujetSaisi = propre?.sujet || modele.sujet_defaut;
+    this.modeleCorpsSaisi = propre?.corps || modele.corps_defaut;
+  }
+
+  enregistrerModele(modele: ModeleCatalogue): void {
+    if (!this.selectedInstitution?.id || this.modeleEnregistrement) return;
+    const propre = this.modelePropre(modele.cle);
+    // On n'envoie que ce qui DIFFÈRE du défaut : un champ identique au défaut est stocké vide,
+    // ce qui le fait suivre les évolutions du texte d'origine au lieu de le figer.
+    const donnees = {
+      institution: this.selectedInstitution.id,
+      cle: modele.cle,
+      sujet: this.modeleSujetSaisi === modele.sujet_defaut ? '' : this.modeleSujetSaisi,
+      corps: this.modeleCorpsSaisi === modele.corps_defaut ? '' : this.modeleCorpsSaisi,
+      actif: true,
+    };
+
+    this.modeleEnregistrement = true;
+    this.modelesErreur = '';
+    this.modelesSucces = '';
+    const requete = propre
+      ? this.brouillonsService.majModele(propre.id, donnees)
+      : this.brouillonsService.creerModele(donnees);
+    requete.subscribe({
+      next: () => {
+        this.modeleEnregistrement = false;
+        this.modelesSucces = `« ${modele.libelle} » enregistré.`;
+        this.chargerModelesPropres();
+      },
+      error: (err) => {
+        this.modeleEnregistrement = false;
+        const corps = err?.error || {};
+        // Le serveur nomme les champs inconnus et rappelle ceux disponibles : l'afficher vaut
+        // mieux qu'un message générique, c'est l'erreur courante (une faute de frappe dans un
+        // placeholder).
+        this.modelesErreur = corps.corps?.[0] || corps.sujet?.[0] || corps.cle?.[0]
+          || "Erreur lors de l'enregistrement.";
+      },
+    });
+  }
+
+  /** Revient au texte par défaut sans perdre la version réécrite (`actif = false`). */
+  revenirAuDefaut(modele: ModeleCatalogue): void {
+    const propre = this.modelePropre(modele.cle);
+    if (!propre || this.modeleEnregistrement) return;
+    if (!confirm(`Revenir au texte par défaut pour « ${modele.libelle} » ? Votre version est `
+                 + `conservée et pourra être réactivée.`)) return;
+    this.modeleEnregistrement = true;
+    this.brouillonsService.majModele(propre.id, { actif: false }).subscribe({
+      next: () => {
+        this.modeleEnregistrement = false;
+        this.modelesSucces = "Texte par défaut rétabli.";
+        this.modeleOuvert = null;
+        this.chargerModelesPropres();
+      },
+      error: () => {
+        this.modeleEnregistrement = false;
+        this.modelesErreur = "Erreur lors du rétablissement.";
+      },
+    });
+  }
 
   ouvrirOngletEnvois(): void {
     this.detailTab = 'envois';
@@ -240,6 +369,11 @@ export class InstitutionsComponent implements OnInit {
     this.configEnvoiEnregistrement = true;
     this.configEnvoiErreur = '';
     this.configEnvoiSucces = '';
+    this.catalogue = [];
+    this.modelesPropres = [];
+    this.modeleOuvert = null;
+    this.modelesErreur = '';
+    this.modelesSucces = '';
     this.institutionService.majConfigurationEnvoi(this.selectedInstitution.id, patch).subscribe({
       next: (maj) => {
         this.configEnvoi = maj;

@@ -72,6 +72,9 @@ export const ADMIN_ROUTES: Routes = [
   // exige en plus une PREUVE de controle sur le noeud vise pour toute ecriture : il n'existe
   // pas d'equivalent de security.admin_key cote MeshCore, qui a le mot de passe ecrit (voir
   // TacheAdminMeshCoreViewSet et core/acces_radio.py).
+  // Filet pour les relectures manquees : la fenetre s'ouvre d'elle-meme apres l'action, cette
+  // page retrouve ce qui attend encore (voir core/brouillons_envoi.py).
+  { path: 'messages-a-relire', loadComponent: () => import('./messages-a-relire/messages-a-relire.component').then(m => m.MessagesARelireComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'meshcore-administration', loadComponent: () => import('./meshcore-administration/meshcore-administration.component').then(m => m.MeshcoreAdministrationComponent), canActivate: [radioGuard] },
   { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [radioGuard] },
   { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [radioGuard] },

@@ -319,6 +319,9 @@
           <button class="tab" [class.active]="detailTab === 'envois'" (click)="ouvrirOngletEnvois()">
             <span class="material-icons">send</span> Envois
           </button>
+          <button class="tab" [class.active]="detailTab === 'modeles'" (click)="ouvrirOngletModeles()">
+            <span class="material-icons">description</span> Modèles de messages
+          </button>
         </nav>
 
         <div class="modal-body">
@@ -699,6 +702,89 @@
               </table>
             } @empty {
               <p class="empty-pick">Aucun interlocuteur PCS/PICS pour l'instant.</p>
+            }
+          }
+
+          <!-- ── MODELES DE MESSAGES ───────────────────────────────────────
+               Chaque entree dit QUAND le message part et a qui : une institution qui reecrit
+               un texte sans le savoir reecrit a l'aveugle. -->
+          @if (detailTab === 'modeles') {
+            <p class="hint">
+              Les textes envoyés au nom de cette institution. Un message non réécrit utilise le
+              texte par défaut — et suit ses évolutions.
+            </p>
+
+            @if (modelesChargement) { <p class="empty-pick">Chargement…</p> }
+            @if (modelesErreur) {
+              <div class="alert alert-error"><span class="material-icons">warning</span> {{ modelesErreur }}</div>
+            }
+            @if (modelesSucces) {
+              <div class="alert alert-success"><span class="material-icons">check_circle</span> {{ modelesSucces }}</div>
+            }
+
+            @for (m of catalogue; track m.cle) {
+              <div class="modele-ligne" [class.ouvert]="modeleOuvert === m.cle">
+                <button type="button" class="modele-entete" (click)="ouvrirModele(m)">
+                  <span class="material-icons">{{ m.canal === 'SMS' ? 'sms' : 'mail' }}</span>
+                  <span class="modele-nom">
+                    {{ m.libelle }}
+                    @if (estReecrit(m.cle)) { <span class="badge-reecrit">réécrit</span> }
+                  </span>
+                  <span class="material-icons chevron">
+                    {{ modeleOuvert === m.cle ? 'expand_less' : 'expand_more' }}
+                  </span>
+                </button>
+
+                @if (modeleOuvert === m.cle) {
+                  <div class="modele-detail">
+                    <p class="modele-quand"><span class="material-icons">schedule</span> {{ m.quand }}</p>
+
+                    <p class="modele-champs">
+                      Champs disponibles :
+                      @for (p of m.placeholders; track p.nom) {
+                        <code [class.champ-lien]="p.lien"
+                              [title]="p.lien
+                                ? 'Lien : remplacé par la vraie adresse au moment de l\'envoi, jamais affiché avant'
+                                : 'Remplacé par la valeur du destinataire'">[{{ p.nom }}]</code>
+                      }
+                    </p>
+                    <p class="note-champs">
+                      Les champs en bleu sont des <strong>liens</strong> : ils sont remplacés par
+                      la vraie adresse au moment de l'envoi et ne sont jamais affichés avant —
+                      un lien de connexion permet d'agir à la place de son destinataire. Ils ne
+                      peuvent pas être ajoutés à la main. Pour écrire des crochets littéraux,
+                      doublez-les : <code>[[texte]]</code>.
+                    </p>
+
+                    @if (m.canal !== 'SMS') {
+                      <label class="form-label">Objet</label>
+                      <input type="text" class="form-input" [(ngModel)]="modeleSujetSaisi">
+                    }
+                    <label class="form-label">Message</label>
+                    <textarea class="form-input modele-corps" rows="12"
+                              [(ngModel)]="modeleCorpsSaisi"></textarea>
+                    @if (m.canal === 'SMS') {
+                      <p class="hint">
+                        {{ modeleCorpsSaisi.length }} caractères. Au-delà de 160, le SMS est
+                        facturé en plusieurs segments.
+                      </p>
+                    }
+
+                    <div class="modele-actions">
+                      <button type="button" class="btn-primary"
+                              [disabled]="modeleEnregistrement" (click)="enregistrerModele(m)">
+                        <span class="material-icons">save</span> Enregistrer
+                      </button>
+                      @if (estReecrit(m.cle)) {
+                        <button type="button" class="btn-secondary sm"
+                                [disabled]="modeleEnregistrement" (click)="revenirAuDefaut(m)">
+                          Revenir au texte par défaut
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
             }
           }
 

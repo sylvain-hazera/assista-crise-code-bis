@@ -783,6 +783,88 @@ URL inventée. Ce qu'il faut pour l'écrire est listé dans la docstring de `_en
 compris le **format du numéro** — c'est le point le plus souvent faux : un opérateur qui attend
 `33612345678` et reçoit `+33612345678` accepte l'appel et ne livre rien.
 
+#### Relecture avant envoi, et modèles de messages
+
+`core/modeles_messages.py` (registre), `core/brouillons_envoi.py` (capture), `BrouillonEnvoi` +
+`ModeleMessage` (migration `0249`), onglet **Modèles de messages** de la fiche institution, et
+page **Messages à relire**.
+
+Trois besoins d'un seul mécanisme (demande du 11/11/2026) : une fenêtre de relecture avant
+envoi, des placeholders plutôt que des valeurs, et des textes qu'une institution réécrit.
+
+**Aucun des 48 points d'envoi n'a été modifié**, et c'est le cœur de la conception. La capture se
+fait dans `send_branded_mail` et la décision se déduit de la requête :
+
+> un utilisateur authentifié, et **aucun destinataire n'est son adresse** → il écrit à un tiers
+
+C'est la traduction du critère retenu après avoir sorti la liste réelle des 48 envois : « un
+humain agit » ne suffisait pas, puisqu'une inscription est une action humaine. Le critère utile
+est **« le message part-il vers quelqu'un d'autre ? »**. Les trois conséquences tombent d'elles-
+mêmes :
+
+| Famille | Exemples | Comportement |
+|---|---|---|
+| l'acteur écrit à un **tiers** (~25) | valider/refuser un compte, clôturer un dossier, inviter, réinitialiser le mot de passe **d'un autre** | capturé en brouillon, fenêtre de relecture |
+| l'acteur est le **destinataire** | inscription, mot de passe oublié, accusé de dépôt | part directement — un éditeur montrerait à quelqu'un le mail qu'il reçoit, avec son propre lien dedans |
+| **aucun humain** (4) | `notifier_administrateurs`, SOS mesh, passerelle muette, infrastructure DEMO | part directement, `request=None` |
+
+**L'INVARIANT : un placeholder de lien n'est jamais résolu ailleurs qu'à l'instant de l'envoi.**
+Onze points d'envoi utilisent `build_magic_link`, et un lien magique est un **porteur
+d'identité** — qui l'a peut agir comme la personne, 7 jours. Le cas qui le prouve :
+`UserViewSet.send_password_reset`, où un administrateur déclenche une réinitialisation **pour
+quelqu'un d'autre** ; lui afficher ce lien lui donnerait la main sur ce compte.
+
+Le masquage est fait **par valeur, pas par motif** : `build_magic_link` déclare chaque lien
+produit sur la requête (`_liens_magiques`, même motif qu'`audit_log`), et on remplace exactement
+ces chaînes par `[LIEN_1]`, `[LIEN_2]`… La correspondance est gardée **chiffrée** côté serveur et
+n'est jamais servie par l'API. Reconnaître par motif d'URL laisserait passer la première forme à
+laquelle on n'aurait pas pensé. Un test structurel vérifie que les quatre actions **et** la
+variante `?next=` se déclarent toutes ; les liens sont remplacés du plus long au plus court,
+parce qu'un lien peut être le préfixe d'un autre.
+
+**L'interface est prévenue par un en-tête de réponse** (`X-Brouillons-Envoi`) qu'un intercepteur
+Angular lit : aucun des 25 endpoints ne change de contrat, et tout envoi futur est couvert
+automatiquement. `CORS_EXPOSE_HEADERS` est renseigné — sans lui l'en-tête arrive mais reste
+invisible au JavaScript : la requête réussit et la fonctionnalité ne marche pas, sans qu'aucune
+erreur n'apparaisse. La fenêtre est montée **une fois** dans la coquille de l'application, pas
+par page.
+
+**L'action a déjà eu lieu.** Le compte est validé, le dossier est clôturé ; seul le message
+attend. D'où trois dispositions : `manage.py expedier_brouillons_oublies` envoie au-delà de
+**24 h** avec le statut `EXPEDIE_AUTO` — distinct d'`ENVOYE`, pour mesurer si la relecture sert
+ou si elle est systématiquement oubliée ; l'abandon exige un **motif**, pour savoir plus tard
+pourquoi personne n'a été prévenu ; et la page « Messages à relire » retrouve ce qui a été
+manqué (onglet fermé, « Plus tard », message produit par un collègue).
+
+Le catalogue compte **16 messages, 15 personnalisables**. Les envois internes et techniques ne le
+sont pas : ils vont aux administrateurs de la plateforme, et les laisser réécrire permettrait de
+casser le texte d'une alerte de panne.
+
+Quatre détails qui ont chacun coûté un aller-retour :
+
+- **crochets littéraux doublés** : `[[PCS]]` rend `[PCS]`. Le sujet de l'alerte PCS commence par
+  ce préfixe, sur lequel des filtres de boîte mail peuvent porter. `rendre()` le laissait intact
+  seulement parce qu'aucune valeur n'était fournie pour « PCS » — le jour où un placeholder de ce
+  nom existerait, le sujet changeait en silence. L'échappement **prime** sur la résolution d'un
+  lien, y compris à l'envoi ;
+- **contrôle de cohérence du catalogue** : tout placeholder employé doit être déclaré (sinon il
+  partirait en clair dans le mail) **et** tout placeholder déclaré doit être employé (sinon
+  l'écran réclame une valeur qui ne sert à rien). C'est ce contrôle qui a trouvé le `[PCS]` ;
+- **un placeholder sans valeur est laissé tel quel**, jamais remplacé par du vide : « Bonjour
+  [PRENOM] » se remarque et se corrige, « Bonjour  » passe inaperçu ;
+- **compteur de segments SMS**, recalculé à la frappe : la facturation est au segment, et un
+  texte de 161 caractères coûte deux fois celui de 160. Au-delà du premier segment, chacun ne
+  porte plus que 153 caractères utiles (en-tête de concaténation).
+
+Côté personnalisation, un champ identique au défaut est stocké **vide** : le texte suit alors les
+évolutions de l'original au lieu d'être figé. Et `actif = false` revient au défaut **sans perdre**
+la version réécrite.
+
+**Reste à faire** : les 25 envois utilisent encore leurs textes en dur. La fenêtre de relecture
+fonctionne sur tous — elle capture le corps déjà composé — mais la personnalisation par
+institution ne s'applique qu'aux appels migrés vers `resoudre_modele`. À faire par lots : 37
+extractions de f-strings en un seul commit est exactement là où vit la casse silencieuse.
+
 #### Arborescence de coordination territoriale
 
 `echelon` + `territoire_code` + `territoire_libelle` sur `Team` (migration `0247`), plus

@@ -1,0 +1,64 @@
+.page { padding: 1.25rem; max-width: 900px; }
+
+.entete {
+  display: flex; align-items: center; gap: 1rem; margin-bottom: .5rem;
+
+  h1 {
+    display: flex; align-items: center; gap: .5rem;
+    margin: 0; font-size: 1.25rem;
+    .material-icons { color: var(--primary, #2563eb); }
+  }
+  button { margin-left: auto; }
+}
+
+.hint {
+  font-size: .88rem; color: var(--ac-text-muted, #6b7280);
+  max-width: 68ch; margin: 0 0 1.25rem;
+}
+
+.vide {
+  display: flex; align-items: center; gap: .5rem;
+  color: var(--ac-text-muted, #6b7280); font-size: .9rem;
+  .material-icons { color: #15803d; }
+}
+
+.liste { display: flex; flex-direction: column; gap: .75rem; }
+
+.carte {
+  border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+  padding: .85rem 1rem;
+  background: var(--ac-surface, #fff);
+
+  // Ce qui approche de l'envoi automatique se distingue : c'est le seul élément de cette page
+  // où le temps qui passe change quelque chose.
+  &.urgent { border-color: #f59e0b; background: #fffbeb; }
+}
+
+.carte-entete {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem;
+  .material-icons { font-size: 18px; color: var(--ac-text-muted, #6b7280); }
+  .objet { flex: 1; font-size: .95rem; overflow-wrap: anywhere; }
+  .age {
+    font-size: .78rem; color: var(--ac-text-muted, #6b7280); white-space: nowrap;
+    &.urgent { color: #b45309; font-weight: 700; }
+  }
+}
+
+.meta {
+  margin: 0 0 .5rem; font-size: .8rem; color: var(--ac-text-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.extrait {
+  margin: 0 0 .7rem; padding: .5rem .65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem; line-height: 1.5; white-space: pre-wrap;
+  background: var(--ac-surface-2, #f8fafc); border-radius: 6px;
+  max-height: 7rem; overflow: hidden;
+}
+
+.echec {
+  display: flex; align-items: center; gap: .35rem;
+  margin: 0 0 .6rem; font-size: .8rem; color: #991b1b;
+  .material-icons { font-size: 16px; }
+}

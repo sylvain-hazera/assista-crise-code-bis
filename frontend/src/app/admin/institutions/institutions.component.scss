@@ -448,3 +448,74 @@
 
   input { flex: none; }
 }
+
+// ── Onglet « Modèles de messages » ───────────────────────────────────────────
+// Liste dépliable : 15 messages, dont la plupart ne seront jamais touchés. Tout afficher
+// déplié ferait une page de plusieurs écrans où l'on ne trouve rien.
+.modele-ligne {
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: .5rem; overflow: hidden;
+
+  &.ouvert { border-color: var(--primary); }
+}
+
+.modele-entete {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  padding: .6rem .75rem; font: inherit; font-size: .9rem; text-align: left;
+  background: none; border: none; cursor: pointer;
+
+  &:hover { background: var(--ac-surface-2, #f8fafc); }
+  .material-icons { font-size: 18px; color: var(--ac-text-muted, #6b7280); }
+  .modele-nom { flex: 1; font-weight: 600; }
+  .chevron { color: var(--ac-text-muted, #6b7280); }
+}
+
+.badge-reecrit {
+  margin-left: .5rem; font-size: .7rem; font-weight: 700;
+  padding: .1rem .4rem; border-radius: 999px;
+  background: #1d4ed8; color: #fff;
+}
+
+.modele-detail {
+  padding: .25rem .75rem .9rem;
+  border-top: 1px solid var(--border);
+}
+
+.modele-quand {
+  display: flex; align-items: flex-start; gap: .4rem;
+  margin: .6rem 0; font-size: .82rem; color: var(--ac-text-muted, #6b7280);
+  .material-icons { font-size: 15px; margin-top: .1rem; flex: none; }
+}
+
+.modele-champs {
+  margin: .6rem 0 .3rem; font-size: .82rem;
+
+  code {
+    display: inline-block; margin: 0 .2rem .2rem 0;
+    padding: .1rem .35rem; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+    background: var(--ac-surface-2, #f1f5f9); border: 1px solid var(--border);
+  }
+
+  // Les liens se distinguent : ce sont les seuls qu'on ne peut ni voir ni ajouter.
+  code.champ-lien {
+    background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600;
+  }
+}
+
+.note-champs {
+  margin: 0 0 .9rem; font-size: .78rem; color: var(--ac-text-muted, #6b7280);
+  max-width: 68ch;
+  code { font-size: .76rem; }
+}
+
+// Le message part en texte brut : une police à pas fixe montre exactement ce que le
+// destinataire verra, retours à la ligne compris.
+.modele-corps {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .82rem; line-height: 1.5; resize: vertical;
+}
+
+.modele-actions {
+  display: flex; align-items: center; gap: .5rem; margin-top: .8rem;
+}

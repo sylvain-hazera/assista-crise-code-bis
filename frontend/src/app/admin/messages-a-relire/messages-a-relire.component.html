@@ -1,0 +1,60 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">drafts</span> Messages à relire</h1>
+    <button type="button" class="btn-secondary sm" (click)="charger()">
+      <span class="material-icons">refresh</span> Actualiser
+    </button>
+  </header>
+
+  <p class="hint">
+    Ces messages ont été retenus avant leur envoi, parce qu'ils partent vers quelqu'un d'autre
+    au nom de votre institution. <strong>L'action qui les a produits a déjà eu lieu</strong> —
+    le compte est validé, le dossier est clôturé : seul le message attend. Un message jamais
+    relu part automatiquement au bout de 24 heures.
+  </p>
+
+  @if (erreur()) {
+    <div class="alert alert-error"><span class="material-icons">warning</span> {{ erreur() }}</div>
+  }
+
+  @if (chargement()) {
+    <p class="vide">Chargement…</p>
+  } @else if (!brouillons().length) {
+    <p class="vide">
+      <span class="material-icons">check_circle</span>
+      Aucun message en attente de relecture.
+    </p>
+  } @else {
+    <div class="liste">
+      @for (b of brouillons(); track b.id) {
+        <div class="carte" [class.urgent]="presqueExpire(b)">
+          <div class="carte-entete">
+            <span class="material-icons">{{ b.canal === 'SMS' ? 'sms' : 'mail' }}</span>
+            <strong class="objet">{{ b.sujet || '(sans objet)' }}</strong>
+            <span class="age" [class.urgent]="presqueExpire(b)">
+              il y a {{ heuresDepuis(b.date_creation) }} h
+              @if (presqueExpire(b)) { — part bientôt seul }
+            </span>
+          </div>
+
+          <p class="meta">
+            Au nom de <strong>{{ b.institution_nom }}</strong>, à {{ b.destinataires.join(', ') }}
+            @if (b.cree_par_nom) { · déclenché par {{ b.cree_par_nom }} }
+          </p>
+
+          <!-- Extrait seulement : l'édition se fait dans la fenêtre de relecture, pour ne pas
+               maintenir deux éditeurs qui divergeraient. -->
+          <p class="extrait">{{ b.corps.slice(0, 220) }}@if (b.corps.length > 220) {…}</p>
+
+          @if (b.erreur) {
+            <p class="echec"><span class="material-icons">error_outline</span> {{ b.erreur }}</p>
+          }
+
+          <button type="button" class="btn-primary sm" (click)="relire(b)">
+            <span class="material-icons">rate_review</span> Relire et envoyer
+          </button>
+        </div>
+      }
+    </div>
+  }
+</div>

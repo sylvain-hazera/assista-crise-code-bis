@@ -166,6 +166,9 @@ export const NAV_ITEMS: NavItem[] = [
 
   // ── Administration ──────────────────────────────────────────────────
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },
+  // Messages retenus avant envoi (voir backend/core/brouillons_envoi.py). La fenetre de
+  // relecture s'ouvre d'elle-meme apres l'action ; cette page retrouve ce qui a ete manque.
+  { icon: 'drafts', label: 'Messages a relire', route: '/admin/messages-a-relire', groupe: 'administration' },
   { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins', groupe: 'administration' },
   { icon: 'inventory_2', label: 'Matériel', route: '/admin/materiel', groupe: 'administration' },
   { icon: 'sync_problem', label: 'Conflits de synchronisation', route: '/admin/conflits-synchronisation', groupe: 'administration' },
