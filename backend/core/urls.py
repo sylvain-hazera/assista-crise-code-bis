@@ -4,6 +4,8 @@ from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
     BrouillonEnvoiViewSet,
+    DefinirMonMotDePasseView,
+    MaFicheBenevoleView,
     DemandeAccesRadioViewSet,
     ModeleMessageViewSet,
     NoeudPublicMeshCoreViewSet,
@@ -287,6 +289,12 @@ urlpatterns = [
     path('token/refresh/', MyTokenRefreshView.as_view(), name='token_refresh'),
     path('token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     path('register/', RegisterView.as_view(), name='auth_register'),
+    # Fiche du benevole connecte : la relire, la completer, et choisir un mot de passe
+    # (voir MaFicheBenevoleView). Hors du routeur : elle n'a pas d'identifiant, c'est
+    # toujours celle de l'appelant.
+    path('ma-fiche-benevole/', MaFicheBenevoleView.as_view(), name='ma_fiche_benevole'),
+    path('definir-mon-mot-de-passe/', DefinirMonMotDePasseView.as_view(),
+         name='definir_mon_mot_de_passe'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),

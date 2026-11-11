@@ -24,15 +24,62 @@ CHAMPS_PERSONNEL_COMMUNAL = ["prenom", "nom", "email", "telephone", "fonction"]
 # d'accueil. `metier` plutôt que `fonction` -- « Assureur » n'est pas une fonction dans
 # l'association, et le ranger dans `fonction` ferait afficher « Assureur » là où l'écran attend
 # « Référent » ou « Membre du bureau ».
-CHAMPS_BENEVOLES = ["prenom", "nom", "email", "telephone", "code_postal", "metier"]
+CHAMPS_BENEVOLES = [
+    "prenom", "nom", "email", "telephone",
+    "adresse", "code_postal", "ville",
+    "metier", "situation", "disponibilite", "date_naissance",
+    "diplome_premier_secours", "message", "date_adhesion",
+]
 
 LABELS_BENEVOLES = {
     "prenom": "Prénom",
     "nom": "Nom",
     "email": "Email",
     "telephone": "Téléphone",
-    "code_postal": "Code postal (détermine l'équipe départementale)",
-    "metier": "Métier ou formation (facultatif)",
+    "adresse": "Adresse (géocodée — détermine l'équipe départementale)",
+    "code_postal": "Code postal",
+    "ville": "Ville",
+    "metier": "Métier ou formation",
+    "situation": "Situation (salarié, retraité…)",
+    "disponibilite": "Disponibilité déclarée",
+    "date_naissance": "Date de naissance",
+    "diplome_premier_secours": "Diplôme de premier secours déclaré (oui/non)",
+    "message": "Message laissé à l'adhésion",
+    "date_adhesion": "Date d'adhésion",
+}
+
+#: RACINES cherchées dans le texte normalisé, et non valeurs exactes. Les formulaires écrivent
+#: en forme inclusive — « Salarié(e) », « Chef(fe) d'entreprise (artisan, profession
+#: libérale, etc.) » — et la normalisation transforme les parenthèses en espaces : « Salarié(e) »
+#: devient « salarie e ». Une table de valeurs exactes ne reconnaîtrait donc rien, ce qu'un
+#: premier essai a confirmé. On cherche une racine distinctive, insensible à la forme.
+#:
+#: L'ordre compte : la première racine trouvée gagne. Elles sont choisies pour ne pas se
+#: recouvrir.
+RACINES_SITUATION = (
+    ("retraite", "RETRAITE"),
+    ("salarie", "SALARIE"),
+    ("fonctionnaire", "FONCTIONNAIRE"),
+    ("etudiant", "ETUDIANT"),
+    ("emploi", "RECHERCHE_EMPLOI"),
+    ("entreprise", "INDEPENDANT"),
+    ("artisan", "INDEPENDANT"),
+    ("liberale", "INDEPENDANT"),
+    ("independant", "INDEPENDANT"),
+)
+
+#: La disponibilité est exportée sous la forme « 1 - Occasionnelle (- de 5 jours par an) » :
+#: le CHIFFRE de tête est l'information stable, le libellé change au gré des reformulations du
+#: formulaire. On lit donc le chiffre d'abord, le texte ensuite.
+CORRESPONDANCES_DISPONIBILITE_RANG = {
+    "1": "OCCASIONNELLE",
+    "2": "REGULIERE",
+    "3": "FREQUENTE",
+}
+CORRESPONDANCES_DISPONIBILITE_TEXTE = {
+    "occasionnelle": "OCCASIONNELLE",
+    "reguliere": "REGULIERE",
+    "frequente": "FREQUENTE",
 }
 
 LABELS_PERSONNEL_COMMUNAL = {
@@ -780,7 +827,7 @@ def exemple_csv_materiel_point() -> str:
 
 
 def importer_benevoles_association(request, institution, lignes, mapping,
-                                   premiere_ligne=2, inviter=True):
+                                   premiere_ligne=2, inviter=True, geolocaliser=True):
     """Importe des bénévoles d'une association et les place dans leur équipe départementale.
 
     **Distinct d'`importer_personnel_communal`, et pas un paramètre de plus.** Les deux créent
@@ -810,9 +857,15 @@ def importer_benevoles_association(request, institution, lignes, mapping,
     """
     from .audit import audit_log
     from .crypto_fields import blind_index
-    from .departements import departement_depuis_code_postal
-    from .models import ContactInstitution, EchelonEquipe, Team, User, UserRole
+    from .fiches_benevoles import departement_de_la_fiche, geolocaliser_fiche
+    from .models import (
+        ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User, UserRole,
+    )
+    from .permissions import get_active_environment
     from .views import send_institution_account_email
+
+    environnement = (get_active_environment(request) if request is not None
+                     else Environment.PROD)
 
     # Équipes départementales de CETTE institution, indexées par territoire : une requête pour
     # tout l'import plutôt qu'une par ligne.
@@ -871,10 +924,45 @@ def importer_benevoles_association(request, institution, lignes, mapping,
             defaults={"fonction": metier or "Bénévole", "actif": True},
         )
 
-        departement, motif = departement_depuis_code_postal(code_postal)
+        # FICHE : tout ce que le fichier d'adhésion porte et que `User` ne sait pas tenir.
+        # Rattachée à l'utilisateur et non au rattachement associatif (voir FicheBenevole) :
+        # une adresse appartient à la personne, pas à l'association.
+        fiche, _ = FicheBenevole.objects.get_or_create(
+            utilisateur=user, defaults={"environment": environnement},
+        )
+        fiche.adresse = _valeur(ligne, mapping, "adresse") or fiche.adresse
+        fiche.code_postal = code_postal or fiche.code_postal
+        fiche.ville = _valeur(ligne, mapping, "ville") or fiche.ville
+        fiche.metier = metier or fiche.metier
+        fiche.situation = _situation(_valeur(ligne, mapping, "situation")) or fiche.situation
+        fiche.disponibilite = (_disponibilite(_valeur(ligne, mapping, "disponibilite"))
+                               or fiche.disponibilite)
+        fiche.date_naissance = _date(_valeur(ligne, mapping, "date_naissance")) or fiche.date_naissance
+        fiche.date_adhesion = _date(_valeur(ligne, mapping, "date_adhesion")) or fiche.date_adhesion
+        fiche.message = _valeur(ligne, mapping, "message") or fiche.message
+        fiche.diplome_premier_secours = (
+            _booleen(_valeur(ligne, mapping, "diplome_premier_secours"))
+            or fiche.diplome_premier_secours
+        )
+
+        # Le GÉOCODAGE donne le département, pas le code postal : `commune_code` tranche
+        # exactement là où un préfixe postal se trompe (Corse 2A/2B, outre-mer, zéro initial
+        # mangé par un tableur). Best-effort : un échec laisse la fiche exploitable.
+        if geolocaliser:
+            geocode, motif_geo = geolocaliser_fiche(fiche)
+            if not geocode and motif_geo:
+                erreurs.append({"ligne": numero,
+                                "message": f"Adresse non géolocalisée : {motif_geo}"})
+        fiche.save()
+
+        departement, origine, motif = departement_de_la_fiche(fiche)
         equipe = equipes.get(departement) if departement else None
         if equipe is not None:
             equipe.members.add(user)
+            if origine == "code_postal":
+                # Signalé sans être une erreur : le rattachement a eu lieu, mais il repose sur
+                # une déduction moins sûre qu'un géocodage.
+                erreurs.append({"ligne": numero, "message": f"Rattaché au {departement}. {motif}"})
         else:
             sans_equipe.append(email)
             erreurs.append({
@@ -900,3 +988,85 @@ def importer_benevoles_association(request, institution, lignes, mapping,
         "crees": len(crees), "rattaches": len(rattaches),
         "sans_equipe": len(sans_equipe), "erreurs": erreurs,
     }
+
+
+def _texte_comparable(valeur):
+    """Minuscules, sans accents ni ponctuation : les exports d'adhésion rendent « Retraité(e) »,
+    « retraite » ou « RETRAITE » selon l'outil, et une comparaison brute en ferait trois valeurs
+    distinctes."""
+    texte = unicodedata.normalize('NFD', (valeur or '').strip())
+    texte = ''.join(c for c in texte if unicodedata.category(c) != 'Mn')
+    garde = [c if c.isalnum() or c.isspace() else ' ' for c in texte.lower()]
+    return ' '.join(''.join(garde).split())
+
+
+def _liste_echappee(valeur):
+    """Première valeur d'un champ exporté comme une liste Python en texte.
+
+    Les formulaires d'adhésion rendent `['2 - Régulière (env. 10 jours par an)']` — crochets,
+    apostrophes et tout. Les lire tels quels mettrait ce littéral dans la base. On prend le
+    premier élément : ces champs sont des choix uniques, et un second élément signalerait un
+    export cassé plutôt qu'une réponse multiple."""
+    texte = (valeur or '').strip()
+    if texte.startswith('[') and texte.endswith(']'):
+        texte = texte[1:-1]
+    for separateur in ("','", '","'):
+        if separateur in texte:
+            texte = texte.split(separateur)[0]
+            break
+    return texte.strip().strip("'\"").strip()
+
+
+def _situation(valeur):
+    """Choix de situation professionnelle, ou AUTRE si la valeur est renseignée mais inconnue.
+
+    AUTRE plutôt que vide : « on ne sait pas classer » et « la personne n'a pas répondu » ne
+    sont pas la même information, et les confondre ferait disparaître une réponse donnée."""
+    brut = _liste_echappee(valeur)
+    if not brut:
+        return ""
+    comparable = _texte_comparable(brut)
+    for racine, choix in RACINES_SITUATION:
+        if racine in comparable:
+            return choix
+    return "AUTRE"
+
+
+def _disponibilite(valeur):
+    """Choix de disponibilité. Le chiffre de tête fait foi ; le libellé est le repli."""
+    brut = _liste_echappee(valeur)
+    if not brut:
+        return ""
+    premier = brut.strip()[:1]
+    if premier in CORRESPONDANCES_DISPONIBILITE_RANG:
+        return CORRESPONDANCES_DISPONIBILITE_RANG[premier]
+    comparable = _texte_comparable(brut)
+    for cle, choix in CORRESPONDANCES_DISPONIBILITE_TEXTE.items():
+        if cle in comparable:
+            return choix
+    return ""
+
+
+def _date(valeur):
+    """Date tolérante aux formats des exports : JJ-MM-AAAA, JJ/MM/AAAA, AAAA-MM-JJ.
+
+    Renvoie None plutôt que de lever : une date mal formée ne doit pas faire échouer la ligne
+    entière — le reste de la fiche est exploitable sans elle."""
+    import datetime
+
+    texte = (valeur or '').strip()
+    if not texte:
+        return None
+    for format_date in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.datetime.strptime(texte, format_date).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _booleen(valeur):
+    """« YES »/« NO »/« oui »/« 1 » → booléen. Tout le reste est faux : pour un diplôme
+    déclaré, l'absence de réponse claire vaut non — l'inverse ferait croire à une compétence
+    que personne n'a affirmée."""
+    return _texte_comparable(valeur) in {"yes", "y", "oui", "o", "1", "true", "vrai"}

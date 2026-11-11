@@ -234,6 +234,8 @@ from .models import (
     DernierePositionUtilisateur,
     BrouillonEnvoi,
     ConfigurationEnvoiInstitution,
+    EchelonEquipe,
+    FicheBenevole,
     ModeleMessage,
     SalonMatrixEquipe,
     TypeSalonEquipe,
@@ -568,7 +570,9 @@ from .serializers import (
     DemandeAccesRadioSerializer,
     BrouillonEnvoiSerializer,
     ConfigurationEnvoiInstitutionSerializer,
+    FicheBenevoleSerializer,
     ModeleMessageSerializer,
+    MotDePasseChoisiSerializer,
     NoeudPublicMeshCoreSerializer,
     RattachementNoeudRadioSerializer,
     SourceObservateurMeshCoreSerializer,
@@ -20936,3 +20940,181 @@ class ModeleMessageViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet)
             }
             for m in modeles_personnalisables()
         ])
+
+
+class MaFicheBenevoleView(generics.GenericAPIView):
+    """La fiche du compte connecté : la lire, la compléter, et choisir un mot de passe.
+
+    Point 2 et 3 du déroulé d'enrôlement (11/11/2026) : après avoir cliqué son lien
+    d'activation, le bénévole arrive ici pour relire ce que l'import a saisi, le corriger, et
+    se donner un mot de passe.
+
+    **Pourquoi une vue dédiée plutôt que `UserMeView`** : cette page écrit dans deux modèles
+    (`User` pour le mot de passe, `FicheBenevole` pour le reste) et elle doit regéocoder
+    l'adresse quand celle-ci change — ce qui peut faire changer d'équipe départementale. Le
+    faire dans le sérialiseur d'un autre modèle cacherait ces effets.
+
+    **Le mot de passe est FACULTATIF et complémentaire** (décision de Sylvain) : le lien
+    magique continue de fonctionner. Quelqu'un qui n'en veut pas se connecte par son mail ;
+    quelqu'un qui en pose un a les deux. On n'en impose donc pas à l'activation — c'est une
+    friction de plus au pire moment, juste après le premier clic.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = FicheBenevoleSerializer
+
+    def _fiche(self, request):
+        fiche, _ = FicheBenevole.objects.get_or_create(
+            utilisateur=request.user,
+            defaults={"environment": get_active_environment(request)},
+        )
+        return fiche
+
+    def get(self, request):
+        fiche = self._fiche(request)
+        donnees = FicheBenevoleSerializer(fiche, context={'request': request}).data
+        # L'interface a besoin de savoir s'il y a déjà un mot de passe : le libellé du
+        # formulaire change (« choisir » ou « modifier »), et on ne peut pas le deviner côté
+        # navigateur.
+        donnees['mot_de_passe_defini'] = request.user.has_usable_password()
+        return Response(donnees)
+
+    def patch(self, request):
+        from .fiches_benevoles import geolocaliser_fiche
+
+        fiche = self._fiche(request)
+        serializer = FicheBenevoleSerializer(fiche, data=request.data, partial=True,
+                                             context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        adresse_avant = (fiche.adresse, fiche.code_postal, fiche.ville)
+        serializer.save()
+        fiche.refresh_from_db()
+
+        # Regéocodage seulement si l'adresse a bougé : c'est un appel réseau, et le refaire à
+        # chaque enregistrement d'un numéro de téléphone serait du gaspillage — et une panne de
+        # la BAN empêcherait alors de corriger une faute de frappe sans rapport.
+        avertissement = ""
+        if (fiche.adresse, fiche.code_postal, fiche.ville) != adresse_avant:
+            ok, motif = geolocaliser_fiche(fiche)
+            fiche.save()
+            if not ok:
+                avertissement = motif
+            else:
+                self._replacer_dans_son_equipe(request, fiche)
+
+        fiche.completee_le = timezone.now()
+        fiche.save(update_fields=['completee_le', 'date_modification'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="FicheBenevole",
+            objet_id=fiche.id, commentaire="Fiche de bénévole complétée par son titulaire.",
+        )
+
+        donnees = FicheBenevoleSerializer(fiche, context={'request': request}).data
+        donnees['mot_de_passe_defini'] = request.user.has_usable_password()
+        if avertissement:
+            donnees['avertissement'] = avertissement
+        return Response(donnees)
+
+    def _replacer_dans_son_equipe(self, request, fiche):
+        """Déplace le bénévole vers l'équipe départementale de sa nouvelle adresse.
+
+        Il est RETIRÉ de son ancienne équipe départementale au passage : quelqu'un qui
+        déménage de Gironde en Savoie ne doit pas rester mobilisable en Gironde, ni figurer
+        dans deux salons Matrix départementaux. Seules les équipes à échelon DÉPARTEMENTAL sont
+        touchées — ses autres équipes (opérationnelles, missions) ne regardent pas son
+        adresse."""
+        from .fiches_benevoles import departement_de_la_fiche
+
+        departement, _origine, _motif = departement_de_la_fiche(fiche)
+        if not departement:
+            return
+
+        institutions = ContactInstitution.objects.filter(
+            utilisateur=fiche.utilisateur, actif=True,
+        ).values_list('institution_id', flat=True)
+
+        cible = Team.objects.filter(
+            institution_id__in=institutions, echelon=EchelonEquipe.DEPARTEMENTAL,
+            territoire_code=departement,
+        ).first()
+        if cible is None:
+            return
+
+        anciennes = Team.objects.filter(
+            institution_id__in=institutions, echelon=EchelonEquipe.DEPARTEMENTAL,
+            members=fiche.utilisateur,
+        ).exclude(pk=cible.pk)
+        for equipe in anciennes:
+            equipe.members.remove(fiche.utilisateur)
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="Team",
+                objet_id=equipe.id,
+                commentaire=f"{fiche.utilisateur.email} retiré : déménagement vers "
+                            f"le département {departement}.",
+            )
+
+        if not cible.members.filter(pk=fiche.utilisateur.pk).exists():
+            cible.members.add(fiche.utilisateur)
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="Team",
+                objet_id=cible.id,
+                commentaire=f"{fiche.utilisateur.email} rattaché d'après son adresse.",
+            )
+
+
+class DefinirMonMotDePasseView(generics.GenericAPIView):
+    """Choisir ou changer son mot de passe sans connaître l'ancien.
+
+    **Distinct de `ChangePasswordView`**, qui exige l'ancien mot de passe : un compte créé par
+    import n'en a aucun (`create_user(password=None)` pose un mot de passe inutilisable), et
+    cette vue-là lui est donc inaccessible — il ne pourrait jamais s'en donner un.
+
+    Pas une faille : l'appelant est déjà authentifié. Il l'est par son lien magique, dont la
+    possession prouve l'accès à la boîte mail — exactement ce que prouverait « mot de passe
+    oublié ». Exiger un ancien mot de passe qui n'existe pas ne protégerait personne et
+    bloquerait tout le monde.
+
+    **Le mot de passe est complémentaire du lien magique**, jamais un remplacement : en poser
+    un n'empêche pas de continuer à se connecter par email (décision de Sylvain)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    # Sérialiseur vide : cette vue lit un seul champ du corps et n'a rien à rendre en écriture.
+    # Déclaré quand même parce que drf-spectacular en a besoin pour documenter l'endpoint.
+    serializer_class = MotDePasseChoisiSerializer
+
+    def post(self, request):
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        nouveau = request.data.get('nouveau_mot_de_passe') or ''
+        if not nouveau:
+            return Response({"error": "Le mot de passe est requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(nouveau, user=request.user)
+        except DjangoValidationError as erreur:
+            # Les messages de Django sont déjà traduits et disent QUOI corriger (« trop
+            # court », « trop courant ») : les remplacer par « mot de passe invalide » ferait
+            # perdre la seule information utile.
+            return Response({"error": " ".join(erreur.messages)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        avait_un_mot_de_passe = request.user.has_usable_password()
+        request.user.set_password(nouveau)
+        request.user.save(update_fields=['password'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="User",
+            objet_id=request.user.id,
+            commentaire=("Mot de passe modifié par son titulaire."
+                         if avait_un_mot_de_passe
+                         else "Mot de passe choisi pour la première fois par son titulaire."),
+        )
+        return Response({
+            "message": "Mot de passe enregistré. Vous pouvez désormais vous connecter avec "
+                       "votre email et ce mot de passe, ou continuer à utiliser le lien reçu "
+                       "par email.",
+        })

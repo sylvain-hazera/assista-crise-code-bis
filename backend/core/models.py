@@ -5719,6 +5719,130 @@ class Qualification(models.Model):
         return self.nom
 
 
+class SituationProfessionnelle(models.TextChoices):
+    """Situation déclarée par un bénévole. Reprend les valeurs du formulaire d'adhésion des
+    Casques Jaunes, qui sont celles que les gens ont déjà remplies."""
+
+    SALARIE = "SALARIE", "Salarié(e)"
+    RETRAITE = "RETRAITE", "Retraité(e)"
+    INDEPENDANT = "INDEPENDANT", "Chef(fe) d'entreprise, artisan, profession libérale"
+    FONCTIONNAIRE = "FONCTIONNAIRE", "Fonctionnaire"
+    ETUDIANT = "ETUDIANT", "Étudiant(e)"
+    RECHERCHE_EMPLOI = "RECHERCHE_EMPLOI", "En recherche d'emploi"
+    AUTRE = "AUTRE", "Autre"
+
+
+class DisponibiliteBenevole(models.TextChoices):
+    """Fréquence de disponibilité déclarée. Les libellés sont ceux du formulaire d'adhésion :
+    les reformuler rendrait incomparables les réponses déjà collectées."""
+
+    OCCASIONNELLE = "OCCASIONNELLE", "Occasionnelle (moins de 5 jours par an)"
+    REGULIERE = "REGULIERE", "Régulière (environ 10 jours par an)"
+    FREQUENTE = "FREQUENTE", "Fréquente (plus de 10 jours par an)"
+
+
+class FicheBenevole(EnvironmentScopedModel):
+    """Fiche d'un bénévole d'association : ce qui permet de le joindre et de le mobiliser.
+
+    **Alignée sur le modèle des RESSOURCES** (`Offer`, `Habitation`) et non inventée : une
+    adresse texte, un point géocodé, et le secteur dénormalisé (commune, EPCI, département,
+    région). C'est ce qui fait qu'un bénévole se cherche et se filtre comme une offre d'aide ou
+    une habitation — « une ressource particulière, qui se trouve être membre de l'association »
+    (décision du 11/11/2026).
+
+    Conséquence directe et voulue : **le département d'affectation vient du GÉOCODAGE**, pas
+    d'un préfixe de code postal. Un code postal n'est pas un code commune — la Corse partage
+    `20xxx` entre 2A et 2B, l'outre-mer demande trois chiffres — alors que `commune_code` donne
+    le département de façon exacte par `commune_secteur_codes`. La dérivation par code postal
+    (`core/departements.py`) ne sert plus que de repli quand le géocodage échoue.
+
+    **Rattachée à l'UTILISATEUR et non au rattachement associatif**, exactement pour la raison
+    déjà écrite sur `QualificationMembre` : une adresse et une date de naissance appartiennent à
+    la personne, pas à l'association. Quelqu'un membre de deux AASC a une seule adresse, et la
+    saisir deux fois ferait diverger les deux copies.
+
+    Qui la voit : la hiérarchie du bénévole, par le même filtre que les comptes (voir
+    core/visibilite_membres.py). Les champs personnels sont chiffrés au repos — règle du
+    projet, on ne stocke rien en clair.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="fiche_benevole",
+    )
+
+    # ── Adresse, alignée sur Habitation/Offer ────────────────────────────────────────────
+    adresse = EncryptedTextField(blank=True)
+    code_postal = EncryptedTextField(blank=True)
+    ville = models.CharField(max_length=255, blank=True)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    ban_id = models.CharField(
+        max_length=50, blank=True,
+        help_text="Identifiant BAN de l'adresse, pour rafraîchissement et déduplication "
+                   "ultérieurs (même usage que Habitation.ban_id).",
+    )
+
+    # Secteur dénormalisé, posé une fois depuis commune_code (voir commune_secteur_codes) —
+    # même motif qu'Offer : éviter une jointure sur Commune à chaque lecture.
+    commune_code = models.CharField(max_length=10, blank=True, null=True, db_index=True)
+    epci_code = models.CharField(max_length=10, blank=True, null=True, db_index=True)
+    departement_code = models.CharField(max_length=3, blank=True, null=True, db_index=True)
+    region_code = models.CharField(max_length=3, blank=True, null=True, db_index=True)
+
+    # ── Ce que la personne a déclaré en adhérant ─────────────────────────────────────────
+    date_naissance = models.DateField(
+        null=True, blank=True,
+        help_text="Déclarée à l'adhésion. Sert à vérifier la majorité et à instruire une "
+                   "candidature ; jamais affichée dans les listes.",
+    )
+    metier = EncryptedTextField(
+        blank=True,
+        help_text="Métier ou formation déclarés. C'est ce qui permet de chercher un "
+                   "électricien ou une infirmière parmi les membres.",
+    )
+    situation = models.CharField(
+        max_length=20, choices=SituationProfessionnelle.choices, blank=True,
+    )
+    disponibilite = models.CharField(
+        max_length=20, choices=DisponibiliteBenevole.choices, blank=True,
+    )
+    # Ce que la personne a écrit en s'inscrivant : une motivation, une contrainte, un souhait
+    # de territoire. Chiffré — c'est un texte libre où les gens parlent d'eux.
+    message = EncryptedTextField(blank=True)
+
+    # Déclaratif, jamais une preuve : une qualification vérifiée vit dans QualificationMembre,
+    # avec ses dates et sa pièce justificative. Les confondre ferait passer une case cochée à
+    # l'inscription pour un diplôme contrôlé par le bureau.
+    diplome_premier_secours = models.BooleanField(
+        default=False,
+        help_text="Déclaré par la personne à l'adhésion. Une qualification VÉRIFIÉE se saisit "
+                   "dans QualificationMembre, avec ses dates et son justificatif.",
+    )
+
+    date_adhesion = models.DateField(
+        null=True, blank=True,
+        help_text="Date d'adhésion déclarée par le fichier d'origine, quand elle est connue.",
+    )
+
+    # Posée par la page de complétion : tant qu'elle est nulle, la personne n'a pas relu sa
+    # fiche, et l'écran le lui redemande à la connexion.
+    completee_le = models.DateTimeField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    @property
+    def est_complete(self):
+        """Ce qu'on considère comme une fiche exploitable : de quoi joindre la personne et
+        savoir où elle est. Le reste est utile mais n'empêche pas de la mobiliser."""
+        return bool(self.adresse and self.commune_code and self.disponibilite)
+
+    def __str__(self):
+        return f"Fiche de {self.utilisateur.email}"
+
+
 class QualificationMembre(EnvironmentScopedModel):
     """Qualification détenue par une personne, avec ses dates.
 

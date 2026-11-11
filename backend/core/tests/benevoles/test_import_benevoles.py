@@ -27,6 +27,22 @@ MAPPING = {"prenom": "PRENOM", "nom": "NOM", "email": "EMAIL", "telephone": "SMS
            "code_postal": "CODE_POSTAL", "metier": "METIERS_FORMATIONS"}
 
 
+@pytest.fixture(autouse=True)
+def sans_reseau(monkeypatch):
+    """Aucun appel réseau, et le REPLI par code postal exercé de bout en bout.
+
+    Ce fichier teste le chemin sans géocodage : les lignes n'ont pas de colonne adresse, et la
+    BAN ne doit pas être interrogée. Sans ce garde, les tests sortaient réellement sur
+    internet — lents, dépendants d'un service tiers, et le résultat changeait avec lui :
+    constaté quand la BAN a résolu « 20000 » en Corse-du-Sud et fait échouer un test qui
+    attendait l'ambiguïté 2A/2B.
+
+    Le géocodage proprement dit est testé dans test_fiche_benevole.py, avec une réponse
+    simulée."""
+    monkeypatch.setattr("core.imports._geocoder_adresse",
+                        lambda adresse: (None, None, None, None))
+
+
 def ligne(email, nom="Dupont", prenom="Jean", cp="33950", metier="Assureur", tel="33600000000"):
     return {"EMAIL": email, "NOM": nom, "PRENOM": prenom, "CODE_POSTAL": cp,
             "METIERS_FORMATIONS": metier, "SMS": tel}
@@ -120,15 +136,22 @@ class TestEquipeDepartementale:
 
     def test_un_departement_indeterminable_cree_le_compte_mais_le_signale(self, requete, asso,
                                                                           equipes):
-        """La Corse partage le préfixe 20 entre 2A et 2B. Refuser la ligne entière punirait le
-        bénévole d'une imprécision de fichier : le compte existe, c'est son rattachement
-        territorial qui attend."""
+        """Repli par code postal, quand le géocodage n'a rien donné : la Corse partage le
+        préfixe 20 entre 2A et 2B.
+
+        Refuser la ligne entière punirait le bénévole d'une imprécision de fichier : le compte
+        existe, c'est son rattachement territorial qui attend. Avec une adresse géocodable, ce
+        cas ne se présente pas — la BAN rend la commune, qui tranche entre 2A et 2B (voir
+        test_fiche_benevole.py)."""
         bilan = importer_benevoles_association(
             requete, asso, [ligne("corse@essai.invalide", cp="20000")], MAPPING)
 
         assert User.objects.filter(username="corse@essai.invalide").exists()
         assert bilan["sans_equipe"] == 1
-        assert "Corse" in bilan["erreurs"][0]["message"]
+        # Sur TOUS les signalements et non le premier : une ligne en produit plusieurs
+        # (l'adresse non géolocalisée, puis le département indéterminable), et leur ordre
+        # n'est pas ce que ce test établit.
+        assert any("Corse" in e["message"] for e in bilan["erreurs"])
 
     def test_un_departement_sans_equipe_est_signale(self, requete, asso, equipes):
         """Code postal valide, mais l'association n'a pas d'équipe pour ce département."""

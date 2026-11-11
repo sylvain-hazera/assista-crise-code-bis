@@ -93,6 +93,7 @@ from .models import (
     MessageCanalMeshCore,
     BrouillonEnvoi,
     ConfigurationEnvoiInstitution,
+    FicheBenevole,
     ModeleMessage,
     SalonMatrixEquipe,
     TypeSalonEquipe,
@@ -5105,3 +5106,48 @@ class ModeleMessageSerializer(serializers.ModelSerializer):
                     + ", ".join(f"[{n}]" for n in sorted(liens_en_trop))
                 )})
         return attrs
+
+
+class FicheBenevoleSerializer(serializers.ModelSerializer):
+    """Fiche d'un bénévole (voir FicheBenevole).
+
+    Servie à la personne elle-même sur sa page de complétion, et à sa hiérarchie dans les
+    écrans de l'association. Le cloisonnement est celui des comptes
+    (`core/visibilite_membres.py`) : qui peut voir le compte peut voir la fiche.
+
+    Le secteur (`commune_code`, `departement_code`…) est en LECTURE SEULE : il est posé par le
+    géocodage, et le laisser saisir permettrait de se déclarer dans un département où l'on
+    n'habite pas, donc de rejoindre une équipe qui n'est pas la sienne."""
+
+    situation_libelle = serializers.CharField(source='get_situation_display', read_only=True)
+    disponibilite_libelle = serializers.CharField(source='get_disponibilite_display',
+                                                  read_only=True)
+    est_complete = serializers.BooleanField(read_only=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FicheBenevole
+        fields = ['id', 'utilisateur', 'adresse', 'code_postal', 'ville',
+                  'latitude', 'longitude',
+                  'commune_code', 'epci_code', 'departement_code', 'region_code',
+                  'date_naissance', 'metier', 'situation', 'situation_libelle',
+                  'disponibilite', 'disponibilite_libelle', 'message',
+                  'diplome_premier_secours', 'date_adhesion', 'completee_le',
+                  'est_complete', 'date_modification']
+        read_only_fields = ['id', 'utilisateur', 'latitude', 'longitude',
+                            'commune_code', 'epci_code', 'departement_code', 'region_code',
+                            'completee_le', 'est_complete', 'date_modification']
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+
+class MotDePasseChoisiSerializer(serializers.Serializer):
+    """Corps de `DefinirMonMotDePasseView`. Aucun ancien mot de passe : un compte créé par
+    import n'en a pas, et en exiger un l'empêcherait d'en choisir un (voir la vue)."""
+
+    nouveau_mot_de_passe = serializers.CharField(write_only=True)
