@@ -1674,6 +1674,25 @@ class UserViewSet(viewsets.ModelViewSet):
         # l'institution responsable ET, le cas échéant, de l'institution délégataire, jamais
         # tous les comptes de la plateforme.
         queryset = super().get_queryset()
+
+        # CLOISONNEMENT (11/11/2026). Avant, cette vue servait `User.objects.all()` à tout
+        # acteur institutionnel : le filtre `?institution=` existait mais était FACULTATIF, et
+        # huit écrans appelaient la liste sans lui. Une mairie quelconque voyait donc tous les
+        # comptes de la plateforme, bénévoles d'associations compris.
+        #
+        # Appliqué à `list` ET à `retrieve` : restreindre la liste en laissant la fiche
+        # accessible par son identifiant ne cloisonnerait rien — l'identifiant se devine dans
+        # n'importe quelle réponse qui mentionne un utilisateur.
+        from .visibilite_membres import filtre_utilisateurs_visibles
+
+        if self.action in ('list', 'retrieve'):
+            visible = filtre_utilisateurs_visibles(
+                self.request.user,
+                est_administrateur=get_effective_role(self.request) == UserRole.ADMINISTRATOR,
+            )
+            if visible is not None:
+                queryset = queryset.filter(visible).distinct()
+
         if self.action == 'list':
             institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
             if institution_ids:
@@ -8954,6 +8973,31 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         avant = {str(u.id) for u in team.membres_encadrement.all()}
         team.membres_encadrement.set(membres)
         apres = {str(m.id) for m in membres}
+
+        # PROMOTION À L'ENCADREMENT (arbitrage du 11/11/2026). Un bénévole est importé en
+        # UTIL_SIMPLE : il n'a aucun pouvoir sur la plateforme, ce qui est juste pour quelqu'un
+        # qui n'est qu'adhérent. Mais encadrer, c'est gérer les autres — il faut donc l'accès
+        # institutionnel, et le demander par un second geste dans un autre écran serait oublié
+        # une fois sur deux.
+        #
+        # JAMAIS DE RÉTROGRADATION en sens inverse : retirer quelqu'un de l'encadrement ne lui
+        # retire pas son type de compte. Il peut l'avoir pour une autre raison (membre du
+        # bureau, agent d'une mairie), et une rétrogradation automatique le priverait d'accès
+        # sans que personne ne l'ait décidé. Même principe que l'import de personnel, qui ne
+        # rétrograde jamais un compte déjà institutionnel.
+        promus = [m for m in membres if m.type == UserRole.SIMPLE_USER]
+        for membre in promus:
+            membre.type = UserRole.ORGANIZED_RESCUE
+            membre.save(update_fields=['type'])
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="User",
+                objet_id=membre.id,
+                commentaire=(
+                    f"Compte promu « secours organisés » : désigné encadrement de l'équipe "
+                    f"« {team.name} ». La promotion suit la désignation, elle ne se retire pas "
+                    "automatiquement."
+                ),
+            )
 
         audit_log(
             request=request,

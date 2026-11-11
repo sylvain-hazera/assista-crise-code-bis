@@ -295,11 +295,19 @@ class TestUserDesactivation:
         assert target.is_active is True
         assert AuditLog.objects.filter(objet_id=target.id, action__code="REACTIVATION").exists()
 
-    def test_deactivated_user_still_listed(self, institutional_client, create_user):
-        """Comportement inchangé : is_active=False n'a jamais masqué un compte de la liste
-        admin (voir UserViewSet.get_queryset, non touché par ce chantier)."""
+    def test_deactivated_user_still_listed(self, institutional_client, create_user,
+                                           institution):
+        """Comportement inchangé : `is_active=False` n'a jamais masqué un compte de la liste.
+
+        La cible est rattachée à l'institution de l'appelant depuis le 11/11/2026, date à
+        laquelle `UserViewSet` a été cloisonné (voir core/visibilite_membres.py) : sans ce
+        rattachement, le test échouerait parce que la cible est HORS PÉRIMÈTRE, pas parce
+        qu'elle est désactivée — il ne prouverait donc plus ce qu'il annonce. L'intention est
+        conservée, les conditions sont rendues explicites."""
         client, _ = institutional_client
         target = create_user(username="cible-liste@test.fr", email="cible-liste@test.fr", type="UTIL_SIMPLE")
+        ContactInstitution.objects.create(institution=institution, utilisateur=target,
+                                          actif=True)
         target.is_active = False
         target.save(update_fields=['is_active'])
 

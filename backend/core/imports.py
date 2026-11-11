@@ -17,6 +17,24 @@ import openpyxl
 
 CHAMPS_PERSONNEL_COMMUNAL = ["prenom", "nom", "email", "telephone", "fonction"]
 
+# Import de BÉNÉVOLES d'une association (voir importer_benevoles_association). Liste fermée
+# elle aussi, pour la même raison : aucune colonne au-delà n'est jamais lue ni stockée.
+#
+# `code_postal` en plus du personnel communal : c'est lui qui décide de l'équipe départementale
+# d'accueil. `metier` plutôt que `fonction` -- « Assureur » n'est pas une fonction dans
+# l'association, et le ranger dans `fonction` ferait afficher « Assureur » là où l'écran attend
+# « Référent » ou « Membre du bureau ».
+CHAMPS_BENEVOLES = ["prenom", "nom", "email", "telephone", "code_postal", "metier"]
+
+LABELS_BENEVOLES = {
+    "prenom": "Prénom",
+    "nom": "Nom",
+    "email": "Email",
+    "telephone": "Téléphone",
+    "code_postal": "Code postal (détermine l'équipe départementale)",
+    "metier": "Métier ou formation (facultatif)",
+}
+
 LABELS_PERSONNEL_COMMUNAL = {
     "prenom": "Prénom",
     "nom": "Nom",
@@ -759,3 +777,126 @@ def exemple_csv_materiel_point() -> str:
     writer.writerow(["Tatamis", "OK", "40", "unité", "utilisables comme lits d'urgence"])
     writer.writerow(["Couvertures", "Faible", "15", "unité", ""])
     return buffer.getvalue()
+
+
+def importer_benevoles_association(request, institution, lignes, mapping,
+                                   premiere_ligne=2, inviter=True):
+    """Importe des bénévoles d'une association et les place dans leur équipe départementale.
+
+    **Distinct d'`importer_personnel_communal`, et pas un paramètre de plus.** Les deux créent
+    des comptes, mais pour des gens qui n'ont rien à voir :
+
+    | | personnel communal | bénévole d'association |
+    |---|---|---|
+    | type de compte | `AUT_LOCALE` (acteur institutionnel) | **`UTIL_SIMPLE`** |
+    | rôle opérationnel | `REFERENT` | **aucun** |
+    | accès zone DEMO | oui | **non** |
+    | équipe | celle de l'institution | **celle de son département** |
+
+    Le choix du type est l'arbitrage central (11/11/2026) : un bénévole n'est pas un agent.
+    `AUT_LOCALE` passe `IsInstitutionalActor` et ouvre une grande partie de la plateforme ; le
+    donner à deux mille adhérents pour exprimer « il est membre de l'association » confond ce
+    qu'on peut faire sur la PLATEFORME avec ce qu'on est dans l'ASSOCIATION. L'appartenance vit
+    dans `ContactInstitution`, le territoire dans l'équipe, le niveau dans
+    `Team.membres_encadrement` — et le type de compte ne dit que les droits plateforme.
+
+    Un bénévole promu encadrement devient `SECOURS` à ce moment-là, et à ce moment-là seulement
+    (voir `TeamViewSet.definir_encadrement`).
+
+    **Une ligne dont le département n'est pas déterminable est importée quand même**, mais sans
+    équipe, et signalée. Le compte existe et la personne reçoit son activation ; c'est son
+    rattachement territorial qui attend une correction. Refuser la ligne entière punirait le
+    bénévole d'une imprécision de fichier.
+    """
+    from .audit import audit_log
+    from .crypto_fields import blind_index
+    from .departements import departement_depuis_code_postal
+    from .models import ContactInstitution, EchelonEquipe, Team, User, UserRole
+    from .views import send_institution_account_email
+
+    # Équipes départementales de CETTE institution, indexées par territoire : une requête pour
+    # tout l'import plutôt qu'une par ligne.
+    equipes = {
+        t.territoire_code: t
+        for t in Team.objects.filter(institution=institution,
+                                     echelon=EchelonEquipe.DEPARTEMENTAL)
+    }
+
+    crees, rattaches, erreurs, sans_equipe = [], [], [], []
+    for numero, ligne in enumerate(lignes, start=premiere_ligne):
+        email = _valeur(ligne, mapping, "email").lower()
+        nom = _valeur(ligne, mapping, "nom")
+        prenom = _valeur(ligne, mapping, "prenom")
+        telephone = _valeur(ligne, mapping, "telephone")
+        code_postal = _valeur(ligne, mapping, "code_postal")
+        metier = _valeur(ligne, mapping, "metier")
+
+        if not email or not nom:
+            erreurs.append({"ligne": numero, "message": "Email et nom sont obligatoires."})
+            continue
+
+        user = User.objects.filter(email_bidx=blind_index(email)).first()
+        if user is None:
+            user = User.objects.create_user(
+                username=email, email=email, password=None,
+                first_name=prenom, last_name=nom,
+                phone_number=telephone or None,
+                postal_code=code_postal or None,
+                # UTIL_SIMPLE : voir la docstring. C'est la décision qui distingue cet import.
+                type=UserRole.SIMPLE_USER,
+                enabled=True, is_active=False,
+            )
+            crees.append(email)
+            if inviter:
+                try:
+                    send_institution_account_email(request, user)
+                except Exception:
+                    # Tracé, pas avalé : avant le 11/11/2026 l'import de personnel enveloppait
+                    # cet envoi dans un `except: pass` muet, et un échec laissait croire que
+                    # tout était parti.
+                    erreurs.append({
+                        "ligne": numero,
+                        "message": f"Compte créé, mais l'email d'activation n'est pas parti "
+                                   f"pour {email}. À renvoyer depuis la fiche du compte.",
+                    })
+        else:
+            rattaches.append(email)
+            # JAMAIS de rétrogradation : un compte déjà institutionnel (agent de mairie
+            # également bénévole) garde son type.
+
+        # `fonction` porte le métier déclaré quand il y en a un : c'est l'information la plus
+        # utile à côté du nom dans la liste des membres, et l'alternative serait de la perdre.
+        ContactInstitution.objects.get_or_create(
+            institution=institution, utilisateur=user,
+            defaults={"fonction": metier or "Bénévole", "actif": True},
+        )
+
+        departement, motif = departement_depuis_code_postal(code_postal)
+        equipe = equipes.get(departement) if departement else None
+        if equipe is not None:
+            equipe.members.add(user)
+        else:
+            sans_equipe.append(email)
+            erreurs.append({
+                "ligne": numero,
+                "message": (
+                    f"Compte créé, mais sans équipe départementale : "
+                    f"{motif or f'aucune équipe pour le département {departement}.'}"
+                ),
+            })
+
+    audit_log(
+        request=request,
+        action_code="IMPORT_LISTE",
+        objet_type="Institution",
+        objet_id=institution.id,
+        commentaire=(
+            f"Import de bénévoles pour {institution.nom} : {len(crees)} compte(s) créé(s), "
+            f"{len(rattaches)} rattaché(s), {len(sans_equipe)} sans équipe, "
+            f"{len(erreurs)} signalement(s)"
+        ),
+    )
+    return {
+        "crees": len(crees), "rattaches": len(rattaches),
+        "sans_equipe": len(sans_equipe), "erreurs": erreurs,
+    }

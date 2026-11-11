@@ -714,6 +714,57 @@ mobilisations. Les qualifications par personne avec échéance n'existent PAS au
 crise, pas à une personne. Les disponibilités, elles, ont déjà leur socle
 (`DisponibiliteOperationnelle`, pendue à `AffectationRoleOperationnel`).
 
+#### Bénévoles d'association : ni agents, ni citoyens anonymes
+
+Arbitrage du 11/11/2026, après le constat que les membres des Casques Jaunes étaient « bancals »
+entre trois catégories. Le diagnostic : **trois choses différentes étaient dites dans un seul
+champ global**. `importer_personnel_communal` écrivait `AUT_LOCALE` — un pouvoir sur toute la
+plateforme — pour exprimer « il est membre d'une association ».
+
+| Ce qu'on veut dire | Où ça vit |
+|---|---|
+| ce que je peux faire **sur la plateforme** | `User.type` → `UTIL_SIMPLE` pour un bénévole |
+| à quelle **association** j'appartiens | `ContactInstitution` |
+| **où** j'interviens | l'équipe départementale |
+| mon **niveau** dans l'association | `Team.membres_encadrement` |
+
+`importer_benevoles_association` (`core/imports.py`) est **distinct** d'`importer_personnel_communal`,
+et pas un paramètre de plus : type de compte, rôle opérationnel, accès DEMO et équipe de
+destination diffèrent tous les quatre. Un compte déjà institutionnel n'est **jamais** rétrogradé
+— un agent de mairie peut aussi être bénévole.
+
+**La promotion suit la désignation** : marquer quelqu'un encadrement le passe en `SECOURS`
+(encadrer, c'est gérer les autres), tracé en main courante. Jamais de rétrogradation en sens
+inverse : le retirer de l'encadrement ne lui retire pas son type, qu'il peut détenir pour une
+autre raison.
+
+#### Qui voit quels comptes
+
+`core/visibilite_membres.py`. **Corrige un trou** : `UserViewSet` servait `User.objects.all()` à
+tout acteur institutionnel ; le filtre `?institution=` existait mais était **facultatif**, et
+huit écrans appelaient la liste sans lui. Une mairie quelconque voyait tous les comptes de la
+plateforme.
+
+Quatre règles, de la plus large à la plus étroite :
+
+1. **administrateur** : tout — c'est lui qui débloque une institution dont le bureau a perdu ses
+   accès ;
+2. **bureau d'une institution** : tous ses membres — lui cacher une partie de son propre fichier
+   rendrait la page Membres inutilisable ;
+3. **encadrement d'une équipe** : cette équipe et **toutes celles en dessous**. Un coordinateur
+   régional voit ses départements, le national voit tout le monde, la Gironde ne voit pas la
+   Haute-Savoie ;
+4. **acteur institutionnel d'une institution sans hiérarchie** (une mairie) : ses collègues.
+   Sans cette règle, cloisonner par hiérarchie ferait disparaître les collègues d'un agent dont
+   l'institution n'a aucune équipe à échelon.
+
+Et toujours **son propre compte** : se masquer à soi-même ne protège personne.
+
+Appliqué à `list` **et** à `retrieve` : restreindre la liste en laissant la fiche accessible par
+son identifiant ne cloisonnerait rien, l'identifiant se devinant dans n'importe quelle réponse
+qui mentionne un utilisateur. La descente de l'arbre se fait en Python sur **une** requête, avec
+un ensemble de vus contre les cycles.
+
 #### Envoi au nom de l'institution : email Brevo, SMS
 
 `ConfigurationEnvoiInstitution` + `core/envoi_brevo.py` + `core/envoi_institution.py`
