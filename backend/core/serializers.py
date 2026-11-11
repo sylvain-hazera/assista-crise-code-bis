@@ -3310,10 +3310,63 @@ class QualificationMembreSerializer(serializers.ModelSerializer):
     expiree = serializers.BooleanField(read_only=True)
     jours_avant_expiration = serializers.SerializerMethodField()
 
+    # TITULAIRE PAR DÉFAUT : l'appelant. `required=False` seul ne suffisait PAS, et la raison
+    # vaut d'être écrite — `QualificationMembre` porte un `UniqueConstraint` sur
+    # (utilisateur, qualification, environment), et DRF en dérive un `UniqueTogetherValidator`
+    # qui FORCE ses champs à être obligatoires, écrasant `extra_kwargs`. Un membre recevait donc
+    # « This field is required » sur un champ que le formulaire ne montre pas.
+    #
+    # Un DÉFAUT satisfait le validateur sans rien demander à l'appelant, et laisse le champ
+    # inscriptible pour le bureau ou l'encadrement qui saisit POUR quelqu'un (droit vérifié
+    # dans QualificationMembreViewSet.perform_create).
+    utilisateur = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False,
+        default=serializers.CurrentUserDefault(),
+    )
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    verifie_par_nom = serializers.SerializerMethodField()
+    # Présence seulement : le fichier lui-même ne sort que par l'action `justificatif`, après
+    # contrôle des droits (voir QualificationMembreViewSet). Servir une URL ici contournerait
+    # ce contrôle — c'est la leçon des cinq endpoints de secrets mesh.
+    a_justificatif = serializers.SerializerMethodField()
+
     class Meta:
         model = QualificationMembre
         fields = "__all__"
-        read_only_fields = ("saisie_par", "date_creation", "modifie_le")
+        read_only_fields = (
+            "saisie_par", "date_creation", "modifie_le",
+            # Le STATUT ne se pose pas par PATCH : sans cela, quelqu'un passerait sa propre
+            # qualification en « vérifiée » et viderait de son sens la vérification par
+            # l'encadrement. Il ne bouge que par `verifier` / `refuser`.
+            "statut", "verifie_par", "verifie_le", "motif_refus",
+            "justificatif_depose_le",
+        )
+        extra_kwargs = {
+            # Le fichier s'envoie, ne se relit pas : seule l'action dédiée le rend.
+            "justificatif": {"write_only": True, "required": False},
+        }
+
+    def get_verifie_par_nom(self, obj):
+        if not obj.verifie_par:
+            return None
+        return (nom_affichable(obj.verifie_par, self.context.get("request"))
+                or obj.verifie_par.email)
+
+    def get_a_justificatif(self, obj):
+        return bool(obj.justificatif)
+
+    def validate_justificatif(self, fichier):
+        """Mémorise le nom d'origine : le nom réel est un UUID, et l'écran afficherait
+        « a3f2….pdf » au lieu de « PSC1-2024.pdf »."""
+        if fichier is not None:
+            self._nom_origine = getattr(fichier, 'name', '')
+        return fichier
+
+    def save(self, **kwargs):
+        nom = getattr(self, '_nom_origine', None)
+        if nom:
+            kwargs.setdefault('justificatif_nom', nom[:255])
+        return super().save(**kwargs)
 
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:

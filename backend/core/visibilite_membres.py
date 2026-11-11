@@ -101,3 +101,103 @@ def filtre_utilisateurs_visibles(utilisateur, est_administrateur=False):
                      institutions__actif=True)
 
     return visible
+
+
+def peut_voir_justificatifs(demandeur, titulaire):
+    """Qui peut consulter les PIÈCES d'un membre — règle plus étroite que celle des comptes.
+
+    Volontairement distincte de `filtre_utilisateurs_visibles` : celle-ci laisse un agent de
+    mairie voir ses collègues (règle 4), ce qui est juste pour un annuaire et **beaucoup trop
+    large pour un diplôme ou un permis**. Un justificatif est une pièce personnelle ; le voir
+    suppose une responsabilité sur la personne, pas seulement de travailler au même endroit.
+
+    Trois cas, et trois seulement :
+
+    1. **soi-même** — c'est sa pièce ;
+    2. **l'administrateur de la plateforme** — recours quand un bureau a perdu ses accès ;
+    3. **le bureau de son association**, ou **l'encadrement d'une équipe à laquelle il
+       appartient, ou d'une équipe au-dessus**. C'est « la hiérarchie spécifique » : le
+       coordinateur de Gironde voit les pièces de ses bénévoles, celui de Haute-Savoie non.
+    """
+    from .models import ContactInstitution, Team, UserRole
+
+    if demandeur is None or titulaire is None:
+        return False
+    if demandeur.pk == titulaire.pk:
+        return True
+    # Rôle réel et non `demo_role` : un rôle prêté le temps d'une démonstration ne donne pas
+    # accès aux pièces d'identité de vraies personnes.
+    if getattr(demandeur, 'type', None) == UserRole.ADMINISTRATOR:
+        return True
+
+    institutions_titulaire = set(
+        ContactInstitution.objects.filter(utilisateur=titulaire, actif=True)
+        .values_list('institution_id', flat=True)
+    )
+    if not institutions_titulaire:
+        return False
+
+    # Bureau d'une institution dont le titulaire est membre.
+    if ContactInstitution.objects.filter(
+        utilisateur=demandeur, actif=True, membre_bureau=True,
+        institution_id__in=institutions_titulaire,
+    ).exists():
+        return True
+
+    # Encadrement d'une équipe qui contient le titulaire, ou d'une équipe au-dessus.
+    equipes_encadrees = list(
+        Team.objects.filter(membres_encadrement=demandeur,
+                            institution_id__in=institutions_titulaire)
+        .values_list('id', flat=True)
+    )
+    if not equipes_encadrees:
+        return False
+    sous_arbre = _equipes_descendantes(equipes_encadrees)
+    return Team.objects.filter(id__in=sous_arbre, members=titulaire).exists()
+
+
+def encadrants_a_prevenir(titulaire):
+    """Les personnes à informer qu'une pièce vient d'être déposée.
+
+    L'encadrement de l'équipe la plus PROCHE d'abord : prévenir tout le monde jusqu'au national
+    ferait de chaque dépôt de PSC1 une notification pour quatre échelons, et la notification
+    cesserait d'être lue. On remonte donc l'arbre depuis les équipes du titulaire et on s'arrête
+    au premier échelon qui a un encadrement — à défaut, le bureau de l'association.
+    """
+    from .models import ContactInstitution, Team, User
+
+    institutions = set(
+        ContactInstitution.objects.filter(utilisateur=titulaire, actif=True)
+        .values_list('institution_id', flat=True)
+    )
+    if not institutions:
+        return User.objects.none()
+
+    # Les équipes du titulaire, puis leurs parents de proche en proche.
+    niveau = list(
+        Team.objects.filter(members=titulaire, institution_id__in=institutions)
+        .values_list('id', flat=True)
+    )
+    vus = set(niveau)
+    while niveau:
+        encadrants = User.objects.filter(
+            teams_encadrees__id__in=niveau, is_active=True,
+        ).exclude(pk=titulaire.pk).distinct()
+        if encadrants.exists():
+            return encadrants
+        parents = [
+            p for p in Team.objects.filter(id__in=niveau)
+            .exclude(equipe_parente_id=None)
+            .values_list('equipe_parente_id', flat=True)
+            if p not in vus
+        ]
+        vus.update(parents)
+        niveau = parents
+
+    # Aucun encadrement nulle part : le bureau est le recours, sinon personne ne saurait
+    # qu'une pièce attend.
+    return User.objects.filter(
+        institutions__institution_id__in=institutions,
+        institutions__membre_bureau=True, institutions__actif=True,
+        is_active=True,
+    ).exclude(pk=titulaire.pk).distinct()

@@ -236,6 +236,7 @@ from .models import (
     ConfigurationEnvoiInstitution,
     EchelonEquipe,
     FicheBenevole,
+    StatutQualification,
     ModeleMessage,
     SalonMatrixEquipe,
     TypeSalonEquipe,
@@ -15610,29 +15611,85 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
     qualification dit quelque chose de précis sur le parcours de quelqu'un."""
 
     queryset = QualificationMembre.objects.select_related(
-        "qualification", "utilisateur", "saisie_par")
+        "qualification", "utilisateur", "saisie_par", "verifie_par")
     serializer_class = QualificationMembreSerializer
-    permission_classes = [IsInstitutionalActor]
-    filterset_fields = ["utilisateur", "qualification"]
+    # `IsAuthenticated` et non `IsInstitutionalActor` depuis le 11/11/2026 : un bénévole est
+    # UTIL_SIMPLE (voir importer_benevoles_association), et la garde institutionnelle
+    # l'empêchait de déposer SES PROPRES titres — c'est-à-dire de faire la seule chose que
+    # cette page lui demande. Ce qui protège n'est pas la permission mais `get_queryset`, qui
+    # ne rend jamais toute la table.
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ["utilisateur", "qualification", "statut"]
 
     def get_queryset(self):
+        """Chacun ses propres titres ; le bureau et L'ENCADREMENT ceux de leurs membres.
+
+        L'encadrement a été ajouté le 11/11/2026 : la version précédente ne connaissait que le
+        bureau, donc un coordinateur départemental ne voyait aucune pièce de ses propres
+        bénévoles — et c'est lui qu'on prévient quand une pièce est déposée."""
         qs = super().get_queryset()
         user = self.request.user
         if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             return qs
-        institutions = ContactInstitution.objects.filter(
+
+        from .visibilite_membres import _equipes_descendantes
+
+        institutions_bureau = ContactInstitution.objects.filter(
             utilisateur=user, membre_bureau=True, actif=True,
         ).values_list("institution_id", flat=True)
-        membres = ContactInstitution.objects.filter(
-            institution_id__in=institutions, actif=True,
+        membres_bureau = ContactInstitution.objects.filter(
+            institution_id__in=institutions_bureau, actif=True,
         ).values_list("utilisateur_id", flat=True)
-        return qs.filter(Q(utilisateur=user) | Q(utilisateur_id__in=membres))
+
+        equipes_encadrees = list(
+            Team.objects.filter(membres_encadrement=user).values_list('id', flat=True)
+        )
+        visible = Q(utilisateur=user) | Q(utilisateur_id__in=membres_bureau)
+        if equipes_encadrees:
+            visible |= Q(utilisateur__teams__id__in=_equipes_descendantes(equipes_encadrees))
+        return qs.filter(visible).distinct()
+
+    def perform_update(self, serializer):
+        """Un membre ne peut modifier QUE ses propres titres, et jamais leur statut.
+
+        Sans cette garde, quelqu'un pourrait passer sa propre qualification en VERIFIEE par un
+        simple PATCH — ce qui viderait de son sens la vérification par l'encadrement. Le statut
+        ne bouge que par `verifier`/`refuser`."""
+        objet = self.get_object()
+        if objet.utilisateur_id != self.request.user.id:
+            from .visibilite_membres import peut_voir_justificatifs
+
+            if not peut_voir_justificatifs(self.request.user, objet.utilisateur):
+                raise PermissionDenied("Vous ne pouvez pas modifier ce titre.")
+
+        # Un nouveau dépôt remet le titre à instruire : une pièce remplacée après un refus
+        # doit être relue, sinon le refus resterait affiché sur un justificatif corrigé.
+        ancien_fichier = objet.justificatif.name if objet.justificatif else None
+        maj = serializer.save()
+        nouveau_fichier = maj.justificatif.name if maj.justificatif else None
+        if nouveau_fichier and nouveau_fichier != ancien_fichier:
+            self._enregistrer_depot(maj)
 
     def perform_create(self, serializer):
         # Qui a saisi : une qualification affirmée par le bureau n'a pas le même poids qu'une
         # ligne déclarée par l'intéressé, et il faut pouvoir le distinguer sans fouiller les
         # journaux.
+        # Le titulaire par défaut est l'appelant : un membre qui dépose son PSC1 n'a pas à
+        # désigner son propre compte, et surtout ne doit pas pouvoir en désigner un autre.
+        # Seuls le bureau et l'encadrement peuvent saisir POUR quelqu'un, et seulement pour
+        # quelqu'un dont ils ont la charge.
+        titulaire = serializer.validated_data.get('utilisateur') or self.request.user
+        if titulaire.pk != self.request.user.pk:
+            from .visibilite_membres import peut_voir_justificatifs
+
+            if not peut_voir_justificatifs(self.request.user, titulaire):
+                raise PermissionDenied(
+                    "Vous ne pouvez enregistrer un titre que pour vous-même ou pour un membre "
+                    "dont vous avez la charge."
+                )
+
         objet = serializer.save(
+            utilisateur=titulaire,
             saisie_par=self.request.user,
             environment=get_active_environment(self.request),
         )
@@ -15642,6 +15699,195 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             commentaire=f"Qualification {objet.qualification} enregistree pour "
                         f"{objet.utilisateur}",
         )
+        if objet.justificatif:
+            self._enregistrer_depot(objet)
+
+    def _enregistrer_depot(self, objet):
+        """Horodate le dépôt, remet le titre à instruire, et prévient l'encadrement.
+
+        Remettre à DECLAREE est délibéré : une pièce déposée après un refus doit être relue,
+        sinon le refus resterait affiché sur un justificatif corrigé — et le membre croirait
+        avoir fait le nécessaire sans que personne ne le relise."""
+        from .visibilite_membres import encadrants_a_prevenir
+
+        objet.justificatif_depose_le = timezone.now()
+        objet.statut = StatutQualification.DECLAREE
+        objet.verifie_par = None
+        objet.verifie_le = None
+        objet.motif_refus = ""
+        objet.save(update_fields=['justificatif_depose_le', 'statut', 'verifie_par',
+                                  'verifie_le', 'motif_refus'])
+
+        destinataires = [u.email for u in encadrants_a_prevenir(objet.utilisateur) if u.email]
+        if not destinataires:
+            return
+
+        nom = nom_affichable(objet.utilisateur, self.request) or objet.utilisateur.email
+        institution = (
+            ContactInstitution.objects.filter(utilisateur=objet.utilisateur, actif=True)
+            .select_related('institution').first()
+        )
+        send_branded_mail_env_aware(
+            self.request, institution.institution if institution else None,
+            subject=f"Justificatif à vérifier — {objet.qualification}",
+            message=(
+                f"Bonjour,\n\n"
+                f"{nom} vient de déposer un justificatif pour « {objet.qualification} ».\n\n"
+                "Il est à consulter et à valider depuis la page « Membres de mon association ».\n\n"
+                "{signature}"
+            ),
+            recipient_list=destinataires,
+            fail_silently=True,
+        )
+
+    def _qualification_ou_403(self, pk):
+        """Le titre, si l'appelant a le droit d'en voir la pièce — sinon None.
+
+        Volontairement `peut_voir_justificatifs` et non `get_queryset` : la règle des PIÈCES
+        est plus étroite que celle des titres. Un collègue d'une institution sans hiérarchie
+        peut voir qu'un titre existe ; voir le diplôme lui-même suppose une responsabilité sur
+        la personne."""
+        from .visibilite_membres import peut_voir_justificatifs
+
+        objet = QualificationMembre.objects.filter(pk=pk).select_related('utilisateur').first()
+        if objet is None:
+            return None, Response(status=status.HTTP_404_NOT_FOUND)
+        if not peut_voir_justificatifs(self.request.user, objet.utilisateur):
+            audit_log(
+                request=self.request, action_code="TELECHARGEMENT",
+                objet_type="QualificationMembre", objet_id=objet.id,
+                commentaire="Acces refuse au justificatif", succes=False,
+            )
+            return None, Response(status=status.HTTP_403_FORBIDDEN)
+        return objet, None
+
+    @action(detail=True, methods=['get'])
+    def justificatif(self, request, pk=None):
+        """Rend la pièce déchiffrée, après contrôle des droits.
+
+        Jamais une URL /media/ : le fichier est chiffré au repos et son nom est un UUID, mais
+        une URL directe contournerait tout contrôle. Chaque téléchargement est journalisé —
+        savoir QUI a consulté le diplôme de quelqu'un fait partie de la protection."""
+        objet, refus = self._qualification_ou_403(pk)
+        if refus is not None:
+            return refus
+        if not objet.justificatif:
+            return Response({"error": "Aucun justificatif déposé."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        audit_log(
+            request=request, action_code="TELECHARGEMENT",
+            objet_type="QualificationMembre", objet_id=objet.id,
+            commentaire=f"Justificatif de « {objet.qualification} » consulté",
+        )
+        reponse = FileResponse(objet.justificatif.open('rb'))
+        # `attachment` et non `inline` : un PDF ouvert dans l'onglet reste dans le cache du
+        # navigateur, et ce document n'a pas à y séjourner.
+        nom = objet.justificatif_nom or "justificatif"
+        reponse['Content-Disposition'] = f'attachment; filename="{nom}"'
+        return reponse
+
+    @action(detail=True, methods=['post'])
+    def verifier(self, request, pk=None):
+        """Marque le titre comme vérifié. Réservé à ceux qui peuvent voir la pièce.
+
+        On ne vérifie pas sans avoir pu regarder : c'est pourquoi le droit de valider est le
+        même que le droit de consulter, et non un droit à part."""
+        objet, refus = self._qualification_ou_403(pk)
+        if refus is not None:
+            return refus
+        if objet.utilisateur_id == request.user.id:
+            return Response(
+                {"error": "Vous ne pouvez pas vérifier votre propre titre."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        objet.statut = StatutQualification.VERIFIEE
+        objet.verifie_par = request.user
+        objet.verifie_le = timezone.now()
+        objet.motif_refus = ""
+        objet.save(update_fields=['statut', 'verifie_par', 'verifie_le', 'motif_refus'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="QualificationMembre", objet_id=objet.id,
+            commentaire=f"Titre « {objet.qualification} » vérifié",
+        )
+        return Response(self.get_serializer(objet).data)
+
+    @action(detail=True, methods=['post'])
+    def refuser(self, request, pk=None):
+        """Refuse le titre, avec un motif OBLIGATOIRE.
+
+        Sans motif, le membre voit « refusé » sans savoir quoi corriger, et redéposera la même
+        pièce. Le motif est la seule chose qui rende le refus actionnable."""
+        objet, refus = self._qualification_ou_403(pk)
+        if refus is not None:
+            return refus
+        if objet.utilisateur_id == request.user.id:
+            return Response({"error": "Vous ne pouvez pas instruire votre propre titre."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        motif = (request.data.get('motif') or '').strip()
+        if not motif:
+            return Response(
+                {"error": "Un motif est requis : sans lui, le membre ne saura pas quoi "
+                          "corriger et redéposera la même pièce."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        objet.statut = StatutQualification.REFUSEE
+        objet.verifie_par = request.user
+        objet.verifie_le = timezone.now()
+        objet.motif_refus = motif
+        objet.save(update_fields=['statut', 'verifie_par', 'verifie_le', 'motif_refus'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="QualificationMembre", objet_id=objet.id,
+            commentaire=f"Titre « {objet.qualification} » refusé : {motif}",
+        )
+        # Le membre est prévenu : un refus qu'il découvrirait par hasard en rouvrant sa page
+        # ne serait pas corrigé.
+        institution = (
+            ContactInstitution.objects.filter(utilisateur=objet.utilisateur, actif=True)
+            .select_related('institution').first()
+        )
+        send_branded_mail_env_aware(
+            request, institution.institution if institution else None,
+            subject=f"Justificatif à corriger — {objet.qualification}",
+            message=(
+                "Bonjour,\n\n"
+                f"Le justificatif déposé pour « {objet.qualification} » n'a pas pu être "
+                f"validé.\n\nMotif : {motif}\n\n"
+                "Vous pouvez en déposer un nouveau depuis votre fiche.\n\n"
+                "{signature}"
+            ),
+            recipient_list=[objet.utilisateur.email],
+            fail_silently=True,
+        )
+        return Response(self.get_serializer(objet).data)
+
+    @action(detail=False, methods=['get'], url_path='a-verifier')
+    def a_verifier(self, request):
+        """Combien de pièces attendent une vérification, et pour qui.
+
+        Sert la pastille de notification de la page « Membres de mon association » : sans un
+        compteur, l'encadrement devrait déplier l'arborescence entière pour découvrir qu'une
+        pièce attend."""
+        en_attente = self.get_queryset().filter(
+            statut=StatutQualification.DECLAREE,
+        ).exclude(justificatif='').exclude(justificatif=None).exclude(
+            utilisateur=request.user,
+        ).select_related('utilisateur', 'qualification')
+
+        par_membre = {}
+        for titre in en_attente:
+            par_membre.setdefault(str(titre.utilisateur_id), []).append(str(titre.qualification))
+        return Response({
+            "total": sum(len(v) for v in par_membre.values()),
+            "par_membre": par_membre,
+        })
 
 
 class InvitationAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

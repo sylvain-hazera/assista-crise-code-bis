@@ -5843,6 +5843,18 @@ class FicheBenevole(EnvironmentScopedModel):
         return f"Fiche de {self.utilisateur.email}"
 
 
+class StatutQualification(models.TextChoices):
+    """État d'instruction d'une qualification.
+
+    DECLAREE est le défaut, et le mot compte : tant que l'encadrement ne s'est pas prononcé,
+    la qualification est une affirmation de son titulaire. La confondre avec VERIFIEE ferait
+    envoyer en intervention quelqu'un sur la foi d'une case qu'il a cochée lui-même."""
+
+    DECLAREE = "DECLAREE", "Déclarée par le membre"
+    VERIFIEE = "VERIFIEE", "Vérifiée par l'encadrement"
+    REFUSEE = "REFUSEE", "Refusée"
+
+
 class QualificationMembre(EnvironmentScopedModel):
     """Qualification détenue par une personne, avec ses dates.
 
@@ -5876,6 +5888,47 @@ class QualificationMembre(EnvironmentScopedModel):
 
     # Qui l'a saisie : une qualification affirmée par le bureau n'a pas le même poids qu'une
     # ligne déclarée par l'intéressé, et il faut pouvoir le distinguer sans interroger les logs.
+    # ── JUSTIFICATIF ET VÉRIFICATION (11/11/2026) ───────────────────────────────────────
+    #
+    # Le membre dépose lui-même sa pièce ; l'encadrement la consulte et la valide. Avant, une
+    # qualification se saisissait à la main par le bureau, sur la foi d'une attestation vue
+    # ailleurs : rien ne restait dans l'application, et une qualification « vérifiée » ne
+    # l'était que dans le souvenir de celui qui l'avait saisie.
+    #
+    # MÊME PROTECTION QUE LES PIÈCES D'IDENTITÉ (voir PieceIdentiteReserve) : chiffré au repos
+    # par `get_encrypted_file_storage` (core/file_crypto.py), rangé sous le préfixe
+    # `documents/` que proxy/nginx.conf bloque — ne pas changer ce préfixe sans ajouter le
+    # blocage correspondant — et jamais servi comme URL /media/ directe : seule une action
+    # dédiée le rend, après contrôle des droits.
+    justificatif = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        null=True, blank=True, validators=[validate_identity_document_file],
+        help_text="Attestation, diplôme ou permis. Chiffré au repos, jamais accessible par "
+                   "URL directe.",
+    )
+    justificatif_nom = models.CharField(
+        max_length=255, blank=True,
+        help_text="Nom du fichier tel que déposé. Le nom réel est un UUID : sans cela, "
+                   "l'écran afficherait « a3f2…pdf » au lieu de « PSC1-2024.pdf ».",
+    )
+    justificatif_depose_le = models.DateTimeField(null=True, blank=True)
+
+    statut = models.CharField(
+        max_length=12, choices=StatutQualification.choices,
+        default=StatutQualification.DECLAREE,
+        help_text="DÉCLARÉE tant que l'encadrement ne s'est pas prononcé. Une qualification "
+                   "déclarée n'est PAS une qualification vérifiée.",
+    )
+    verifie_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="qualifications_verifiees",
+    )
+    verifie_le = models.DateTimeField(null=True, blank=True)
+    motif_refus = models.TextField(
+        blank=True,
+        help_text="Obligatoire au refus : le membre doit savoir quoi corriger pour redéposer.",
+    )
+
     saisie_par = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="qualifications_saisies",
