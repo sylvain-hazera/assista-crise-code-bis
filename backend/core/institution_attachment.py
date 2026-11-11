@@ -67,6 +67,11 @@ def _envoyer_email_acces_messagerie_equipe(user, team, request):
     personnalisé, pas l'infrastructure Matrix elle-même (un seul serveur partagé, pas un
     déploiement Matrix par partenaire, voir la mémoire de conception marque blanche)."""
     branding = branding_for_institution(team.institution)
+    # Adresse à SAISIR dans Element X : celle du partenaire quand il en a une (voir
+    # Institution.matrix_hostname), sinon l'adresse partagée. Ce n'est PAS le `server_name` de
+    # Synapse, qui reste unique et continue de former les identifiants de comptes — c'est le
+    # point d'entrée, et le proxy sert déjà les deux domaines vers le même serveur.
+    adresse_serveur = team.institution.matrix_hostname or MATRIX_SERVER_NAME
     message = (
         f"Bonjour {user.first_name},\n\n"
         f"Vous avez été rattaché à l'équipe « {team.name} » sur {branding.nom_affichage}, qui dispose "
@@ -76,7 +81,7 @@ def _envoyer_email_acces_messagerie_equipe(user, team, request):
         "   - Android : https://play.google.com/store/apps/details?id=io.element.android.x\n"
         "   - iPhone : https://apps.apple.com/us/app/element-x-secure-chat-call/id1631335820\n\n"
         "2. Au démarrage, choisissez \"Se connecter\", puis \"Je possède déjà un compte\", et "
-        f"indiquez l'adresse de serveur suivante quand elle est demandée :\n{MATRIX_SERVER_NAME}\n\n"
+        f"indiquez l'adresse de serveur suivante quand elle est demandée :\n{adresse_serveur}\n\n"
         f"3. Vous serez redirigé vers la page de connexion {branding.nom_affichage} : connectez-vous avec "
         "votre compte habituel (les mêmes identifiants que sur la plateforme).\n\n"
         "{signature}"

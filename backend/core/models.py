@@ -1332,6 +1332,25 @@ class Institution(EnvironmentScopedModel):
     police_texte = models.CharField(max_length=100, blank=True, help_text="Police Google Fonts pour le texte courant, ex: Open Sans.")
     email_reply_to = models.EmailField(blank=True, help_text="Reply-To des emails envoyés au nom de cette institution.")
 
+    # Adresse de serveur Matrix à SAISIR dans Element X, pour les membres de cette institution.
+    # Vide = MATRIX_SERVER_NAME, l'adresse partagée.
+    #
+    # Distinct du `server_name` de Synapse, et c'est TOUT l'intérêt : Synapse n'a qu'un seul
+    # `server_name`, inscrit dans chaque identifiant d'utilisateur et de salon, et il ne sait pas
+    # en héberger deux — les comptes restent donc `@…:matrix.assista-crise.fr`. Mais le POINT
+    # D'ENTRÉE, lui, peut porter le domaine du partenaire : le proxy sert déjà
+    # `matrix.reserve-resilience.org` vers le même Synapse, avec son propre certificat (voir
+    # proxy/nginx.conf). Les deux usages de MATRIX_SERVER_NAME étaient confondus avant le
+    # 11/11/2026 — l'identité et l'adresse à taper — ce qui faisait croire que rien n'était
+    # personnalisable.
+    matrix_hostname = models.CharField(
+        max_length=255, blank=True,
+        help_text="Adresse de serveur Matrix à saisir dans Element X (ex: "
+                   "matrix.exemple.org). Vide = adresse partagée. Le domaine doit être servi "
+                   "par le proxy et couvert par son certificat, sinon Element ne s'y connecte "
+                   "pas.",
+    )
+
     # Affiche la case « rejoindre la réserve » à l'inscription quand le Host résout vers cette
     # institution.
     reserve_active = models.BooleanField(default=False)

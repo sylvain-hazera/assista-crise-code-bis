@@ -1699,6 +1699,39 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
   `room_id`, son historique Synapse et ses membres ; aucun salon n'est recréé. Le pont met le
   type dans le **nom** du salon : deux salons homonymes dans Element sont indiscernables, et on
   écrit alors à l'encadrement en croyant parler à l'équipe.
+- **Deux FQDN sur un seul Synapse** (11/11/2026) : le proxy sert déjà
+  `matrix.reserve-resilience.org`, `auth.*` et `chat.*` vers les mêmes conteneurs, avec un
+  certificat partenaire séparé (`proxy/waf-partenaires-tls.conf`). Trois niveaux à ne pas
+  confondre :
+
+  | Niveau | Personnalisable ? |
+  |---|---|
+  | **Point d'entrée** (l'adresse saisie dans Element X) | **oui** — `Institution.matrix_hostname` |
+  | **Découverte client** (`/.well-known/matrix/client`) | **oui** — servi par hôte dans nginx |
+  | **`server_name` de Synapse** (le suffixe des identifiants) | **non** |
+
+  `MATRIX_SERVER_NAME` servait à deux choses confondues — former les identifiants
+  (`core/matrix.py:matrix_user_id`) **et** indiquer l'adresse à taper dans le mail d'enrôlement.
+  Seule la seconde devient per-institution ; un test (`test_l_identifiant_matrix_ne_change_PAS`)
+  garde la frontière. Synapse n'a qu'un seul `server_name`, inscrit dans chaque identifiant
+  d'utilisateur et de salon : les comptes restent `@…:matrix.assista-crise.fr`, et le changer
+  casserait toutes les identités et tous les salons existants.
+
+  Synapse génère `/.well-known/matrix/client` depuis son `public_baseurl` **unique** : un membre
+  qui saisissait l'adresse du partenaire était aussitôt renvoyé sur celle de la plateforme.
+  Nginx répond donc avant le `proxy_pass`, avec le `$host` réellement visité.
+
+  **L'`issuer` OIDC y reste celui de la plateforme, et c'est mesuré, pas supposé** : MAS renvoie
+  `issuer: https://auth.assista-crise.fr/` **quel que soit le Host** (vérifié en forçant
+  l'en-tête `Host` sur les deux domaines). Annoncer l'émetteur du partenaire créerait une
+  non-concordance que tout client OIDC strict refuse — cela casserait la connexion Matrix pour
+  **tout le monde**, pas seulement pour le partenaire. Le domaine partenaire sur
+  l'authentification demanderait de reconfigurer l'émetteur de MAS, ce qui invaliderait les
+  sessions existantes. Reste donc une seule apparition d'« assista-crise » pour un bénévole : la
+  page de connexion.
+
+  `nginx.conf` est **copié dans l'image**, pas monté : toute modification exige
+  `docker compose build proxy && up -d proxy`, un `nginx -s reload` ne la voit pas.
 - **Positions live** Element (MSC3489) : enregistrées par le pont dans
   `HistoriquePositionUtilisateur` pour rejouer un trajet. Distinct de `DernierePositionUtilisateur`,
   capturée par le frontend seulement quand le navigateur a déjà la position (jamais de
