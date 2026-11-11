@@ -35,6 +35,10 @@ export interface User {
   // d'une AASC meme rattache ailleurs) -- pilote le menu et la garde de « Membres
   // association ». Une institution non associative ne doit pas voir cette page.
   acces_membres_association?: boolean;
+  // Rattachement actif a une AASC -- pilote l'entree « Ma fiche de benevole ». Distinct de
+  // acces_membres_association, qui dit qui ADMINISTRE des membres : un administrateur y est
+  // vrai sans etre benevole de personne.
+  est_benevole_association?: boolean;
   // Domaine radio. Calcule cote backend (noeud personnel actif, passerelle de l'institution,
   // ou droit accorde nominativement -- core/acces_radio.py) et renseigne pour le SEUL compte
   // de la requete : `undefined` sur les autres comptes d'une liste, ou le serializer ferait

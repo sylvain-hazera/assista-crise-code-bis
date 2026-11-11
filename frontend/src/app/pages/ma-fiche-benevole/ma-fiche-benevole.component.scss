@@ -1,0 +1,311 @@
+// Fiche du bénévole. Les couleurs passent par les variables --ac-* avec un repli clair : le
+// fond de carte et les panneaux restent clairs même en thème sombre (limite assumée, voir
+// DOCUMENTATION.md § carte).
+.fiche-page {
+  min-height: 100vh;
+  background: var(--ac-surface-2, #f5f5f5);
+  padding: 2rem 1rem;
+}
+
+.fiche-wrapper {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.fiche-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: var(--ac-surface, #fff);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  h1 { margin: 0; font-size: 1.6rem; }
+
+  .sous-titre {
+    margin: 0.35rem 0 0;
+    color: var(--ac-text-muted, #666);
+    font-size: 0.95rem;
+  }
+
+  .badge-incomplet {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--ac-orange-bg, #fff3e0);
+    color: var(--ac-orange-text, #e65100);
+    .material-icons { font-size: 1.1rem; }
+  }
+}
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+
+  &.succes { background: var(--ac-green-bg, #e8f5e9); color: var(--ac-green-text, #2e7d32); }
+  &.echec  { background: var(--ac-red-bg, #ffebee);   color: var(--ac-red-text, #c62828); }
+  &.tiede  { background: var(--ac-orange-bg, #fff3e0); color: var(--ac-orange-text, #e65100); }
+  .material-icons { font-size: 1.2rem; }
+}
+
+.onglets {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--ac-border, #ddd);
+    background: var(--ac-surface, #fff);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.92rem;
+    color: var(--ac-text, #222);
+
+    &.actif {
+      border-color: var(--ac-primary, #1976d2);
+      color: var(--ac-primary, #1976d2);
+      font-weight: 600;
+    }
+    .material-icons { font-size: 1.1rem; }
+  }
+
+  // Pastille d'attention : un refus de pièce est la seule chose, ici, que le membre doit voir
+  // sans avoir à ouvrir l'onglet.
+  .pastille {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 999px;
+    background: var(--ac-red-text, #c62828);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+}
+
+.bloc {
+  background: var(--ac-surface, #fff);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--ac-border, #eee);
+  }
+}
+
+.aide {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ac-text-muted, #666);
+  line-height: 1.5;
+
+  &.avertie {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--ac-orange-text, #e65100);
+    font-weight: 500;
+    .material-icons { font-size: 1.05rem; }
+  }
+}
+
+.attente, .vide {
+  margin: 0;
+  color: var(--ac-text-muted, #666);
+  font-style: italic;
+}
+
+.champs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ac-text, #333);
+
+  &.large { grid-column: 1 / -1; }
+
+  input[type="text"], input[type="date"], input[type="password"], select, textarea {
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--ac-border, #ccc);
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 400;
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #222);
+  }
+  textarea { resize: vertical; }
+}
+
+.case {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-weight: 400;
+
+  input { margin-top: 0.2rem; }
+  em { color: var(--ac-text-muted, #666); font-size: 0.85rem; }
+}
+
+.fichier {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border: 1px dashed var(--ac-border, #bbb);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  .material-icons { font-size: 1.15rem; }
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.primaire {
+  padding: 0.6rem 1.3rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--ac-primary, #1976d2);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+}
+
+// ── Liste des pièces ───────────────────────────────────────────────────────
+.pieces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  li {
+    border: 1px solid var(--ac-border, #e0e0e0);
+    border-left-width: 4px;
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+
+    // L'état d'instruction se lit au bord gauche : déclarée ≠ vérifiée, et un refus doit
+    // sauter aux yeux.
+    &.declaree { border-left-color: var(--ac-border, #bdbdbd); }
+    &.verifiee { border-left-color: var(--ac-green-text, #2e7d32); }
+    &.refusee  { border-left-color: var(--ac-red-text, #c62828); }
+  }
+
+  .entete {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .etat {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ac-text-muted, #666);
+  }
+
+  .detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: 0.85rem;
+    color: var(--ac-text-muted, #666);
+
+    .perimee { color: var(--ac-red-text, #c62828); font-weight: 600; }
+  }
+
+  .motif {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.87rem;
+    color: var(--ac-red-text, #c62828);
+    .material-icons { font-size: 1.05rem; }
+
+    &.ok { color: var(--ac-green-text, #2e7d32); }
+  }
+
+  .piece-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .lien {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.88rem;
+    color: var(--ac-primary, #1976d2);
+    cursor: pointer;
+    text-decoration: underline;
+    .material-icons { font-size: 1.05rem; }
+  }
+
+  .remplacer {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--ac-text-muted, #555);
+    .material-icons { font-size: 1.05rem; }
+
+    &.manquante { color: var(--ac-orange-text, #e65100); font-weight: 600; }
+  }
+}

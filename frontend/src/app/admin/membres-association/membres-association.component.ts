@@ -9,13 +9,28 @@ import { ContactInstitutionService } from '../../services/contact-institution.se
 import { InstitutionService } from '../../services/institution.service';
 import {
   CandidatureAssociation, ETAPES_CIRCUIT, EtapeCandidature, GrilleDisponibilites,
-  InvitationAssociation, Qualification, QualificationMembre, StatutMembre,
+  InvitationAssociation, Qualification, QualificationMembre, QualificationsAVerifier,
+  StatutMembre,
 } from '../../shared/models/association.model';
+import { Team, rangEchelon } from '../../shared/models/team.model';
+import { TeamService } from '../../services/team.service';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
 import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
 import { environment } from '../../../environments/environment';
 
-type Onglet = 'membres' | 'candidatures' | 'disponibilites' | 'liens';
+type Onglet = 'membres' | 'arborescence' | 'candidatures' | 'disponibilites' | 'liens';
+
+/** Un nœud de l'arborescence des équipes. Construit côté client à partir de `equipe_parente` :
+ * le serveur sert une liste plate, et la hiérarchie est déjà dans les données. */
+export interface NoeudEquipe {
+  equipe: Team;
+  enfants: NoeudEquipe[];
+  /** Pièces en attente de vérification pour les membres de CETTE équipe seulement. */
+  aVerifier: number;
+  /** Idem, en comptant toutes les équipes en dessous : c'est ce nombre que porte la pastille
+   * d'une branche repliée, sinon replier une branche masquerait ce qui attend dedans. */
+  aVerifierTotal: number;
+}
 
 /** Code de l'InstitutionType des AASC -- compare en insensible a la casse, comme cote serveur
  * (institution_attachment.CODE_TYPE_AASC) : les lignes de catalogue existent en « AASC »
@@ -102,6 +117,15 @@ export class MembresAssociationComponent implements OnInit {
   nouvelleQualification = { qualification: '', date_obtention: '', date_expiration: '',
                             organisme: '' };
 
+  // ── Arborescence des équipes et vérification des justificatifs ──────────────
+  equipes: Team[] = [];
+  arborescence: NoeudEquipe[] = [];
+  /** Ids des équipes DÉPLIÉES. Un ensemble des dépliées et non des repliées : une
+   * arborescence de 125 équipes doit s'ouvrir refermée, sinon la page s'ouvre sur un mur. */
+  depliees = new Set<string>();
+  aVerifier: QualificationsAVerifier = { total: 0, par_membre: {} };
+  refusPieceEnCours: { id: string; motif: string } | null = null;
+
   // Saisie d'un lien d'invitation.
   nouveauLien = { libelle: '', date_expiration: '' };
   refusEnCours: { id: string; motif: string } | null = null;
@@ -111,6 +135,7 @@ export class MembresAssociationComponent implements OnInit {
     private contactService: ContactInstitutionService,
     private institutionService: InstitutionService,
     private authService: AuthService,
+    private teamService: TeamService,
   ) {}
 
   ngOnInit(): void {
@@ -190,9 +215,164 @@ export class MembresAssociationComponent implements OnInit {
       error: () => undefined,
     });
     this.associationService.getQualificationsMembres().subscribe({
-      next: (q) => this.qualifications = q,
+      next: (q) => { this.qualifications = q; this.construireArborescence(); },
       error: () => undefined,
     });
+    this.teamService.getAll().subscribe({
+      next: (equipes) => {
+        this.equipes = equipes.filter(e => e.institution === id && e.actif !== false);
+        this.construireArborescence();
+      },
+      error: () => undefined,
+    });
+    this.chargerAVerifier();
+  }
+
+  // ══ Arborescence et justificatifs ═════════════════════════════════════════
+
+  /** Le compteur de la pastille. Rechargé après chaque décision : c'est le serveur qui sait ce
+   * qui reste à instruire, et un décompte tenu localement finirait par mentir. */
+  chargerAVerifier(): void {
+    this.associationService.qualificationsAVerifier().subscribe({
+      next: (res) => { this.aVerifier = res; this.construireArborescence(); },
+      // Silencieux : un compte sans encadrement n'a rien à vérifier, et le serveur peut
+      // légitimement refuser. Afficher une erreur ferait croire la page cassée.
+      error: () => this.aVerifier = { total: 0, par_membre: {} },
+    });
+  }
+
+  /** Reconstruit l'arbre depuis la liste plate. Rappelée à chaque arrivée de données plutôt
+   * que mémorisée : les trois sources (équipes, qualifications, compteurs) arrivent dans un
+   * ordre non garanti. */
+  private construireArborescence(): void {
+    const noeuds = new Map<string, NoeudEquipe>();
+    for (const equipe of this.equipes) {
+      if (!equipe.id) { continue; }
+      noeuds.set(equipe.id, { equipe, enfants: [], aVerifier: 0, aVerifierTotal: 0 });
+    }
+
+    const racines: NoeudEquipe[] = [];
+    for (const noeud of noeuds.values()) {
+      const parent = noeud.equipe.equipe_parente
+        ? noeuds.get(noeud.equipe.equipe_parente) : undefined;
+      // Une équipe dont le parent n'est pas dans la liste (parent d'une autre institution,
+      // ou désactivé) devient racine : sinon elle disparaîtrait de l'écran sans que rien ne
+      // le dise.
+      if (parent && parent !== noeud) { parent.enfants.push(noeud); } else { racines.push(noeud); }
+    }
+
+    const compter = (noeud: NoeudEquipe, vus: Set<string>): number => {
+      // Garde-fou : un cycle dans `equipe_parente` ferait tourner la page indéfiniment.
+      if (noeud.equipe.id && vus.has(noeud.equipe.id)) { return 0; }
+      if (noeud.equipe.id) { vus.add(noeud.equipe.id); }
+      noeud.enfants.sort((a, b) =>
+        rangEchelon(a.equipe.echelon) - rangEchelon(b.equipe.echelon)
+        || a.equipe.name.localeCompare(b.equipe.name, 'fr'));
+      noeud.aVerifier = (noeud.equipe.member_ids ?? []).reduce(
+        (total, id) => total + (this.aVerifier.par_membre[id]?.length ?? 0), 0);
+      noeud.aVerifierTotal = noeud.aVerifier
+        + noeud.enfants.reduce((total, enfant) => total + compter(enfant, vus), 0);
+      return noeud.aVerifierTotal;
+    };
+    const vus = new Set<string>();
+    racines.forEach(r => compter(r, vus));
+    racines.sort((a, b) =>
+      rangEchelon(a.equipe.echelon) - rangEchelon(b.equipe.echelon)
+      || a.equipe.name.localeCompare(b.equipe.name, 'fr'));
+    this.arborescence = racines;
+  }
+
+  basculer(noeud: NoeudEquipe): void {
+    const id = noeud.equipe.id;
+    if (!id) { return; }
+    if (this.depliees.has(id)) { this.depliees.delete(id); } else { this.depliees.add(id); }
+  }
+
+  estDepliee(noeud: NoeudEquipe): boolean {
+    return !!noeud.equipe.id && this.depliees.has(noeud.equipe.id);
+  }
+
+  /** Déplie tout ce qui mène à une pièce en attente, et rien d'autre : c'est le geste que
+   * cherche le manager en arrivant sur l'onglet avec une pastille. */
+  deplierCeQuiAttend(): void {
+    const ouvrir = (noeud: NoeudEquipe): void => {
+      if (noeud.aVerifierTotal > 0 && noeud.equipe.id) { this.depliees.add(noeud.equipe.id); }
+      noeud.enfants.forEach(ouvrir);
+    };
+    this.arborescence.forEach(ouvrir);
+  }
+
+  toutReplier(): void {
+    this.depliees.clear();
+  }
+
+  /** Les membres d'une équipe, pris dans `members_info` que sert le serializer : les noms sans
+   * requête supplémentaire. */
+  membresDe(noeud: NoeudEquipe): { id: string; nom: string }[] {
+    const info = noeud.equipe.members_info ?? [];
+    return [...info].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  }
+
+  nombreAVerifierPour(utilisateurId: string): number {
+    return this.aVerifier.par_membre[utilisateurId]?.length ?? 0;
+  }
+
+  /** Les pièces d'un membre que l'appelant a le droit de voir. La liste vient du serveur, déjà
+   * filtrée par la visibilité (core/visibilite_membres.py) : ce filtre-ci n'est qu'un
+   * regroupement d'affichage. */
+  piecesDe(utilisateurId: string): QualificationMembre[] {
+    return this.qualifications.filter(q => q.utilisateur === utilisateurId);
+  }
+
+  /** Ouvre le justificatif dans un onglet. Passe par un blob : la route exige l'en-tête
+   * d'authentification posé par l'intercepteur, qu'un `<a href>` n'enverrait pas. Chaque
+   * consultation est journalisée côté serveur — savoir qui a regardé le diplôme de quelqu'un
+   * fait partie de la protection. */
+  voirPiece(q: QualificationMembre): void {
+    this.associationService.telechargerJustificatif(q.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      },
+      error: (err) => this.erreur = err?.error?.error
+        || "Impossible d'ouvrir cette pièce.",
+    });
+  }
+
+  verifierPiece(q: QualificationMembre): void {
+    this.associationService.verifierQualification(q.id).subscribe({
+      next: (maj) => {
+        this.qualifications = this.qualifications.map(x => (x.id === maj.id ? maj : x));
+        this.message = 'Pièce vérifiée.';
+        this.erreur = '';
+        this.chargerAVerifier();
+      },
+      error: (err) => this.erreur = err?.error?.error || 'Impossible de vérifier cette pièce.',
+    });
+  }
+
+  ouvrirRefusPiece(q: QualificationMembre): void {
+    this.refusPieceEnCours = { id: q.id, motif: '' };
+  }
+
+  confirmerRefusPiece(): void {
+    if (!this.refusPieceEnCours?.motif.trim()) { return; }
+    const { id, motif } = this.refusPieceEnCours;
+    this.refusPieceEnCours = null;
+    this.associationService.refuserQualification(id, motif.trim()).subscribe({
+      next: (maj) => {
+        this.qualifications = this.qualifications.map(x => (x.id === maj.id ? maj : x));
+        this.message = 'Pièce refusée : le membre voit le motif et peut en redéposer une.';
+        this.erreur = '';
+        this.chargerAVerifier();
+      },
+      error: (err) => this.erreur = err?.error?.error || 'Impossible de refuser cette pièce.',
+    });
+  }
+
+  classeStatutPiece(q: QualificationMembre): string {
+    return q.statut.toLowerCase();
   }
 
   // ══ Annuaire ══════════════════════════════════════════════════════════════

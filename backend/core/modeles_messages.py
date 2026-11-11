@@ -284,6 +284,39 @@ CATALOGUE = {m.cle: m for m in [
         relisible=True,
     ),
 
+    ModeleDefaut(
+        cle="BENEVOLE_ACTIVATION",
+        libelle="Activation du compte d'un bénévole d'association",
+        quand="À l'import des membres d'une association. Premier message que reçoit le "
+              "bénévole : son lien d'activation et ce qu'on attend de lui ensuite.",
+        # Distinct de COMPTE_ACTIVATION_INSTITUTIONNEL, et pas par souci de nuance : ce texte
+        # parlait de « compte institutionnel » et d'un « rattachement à votre institution »,
+        # ce qui ne veut rien dire pour un bénévole, et il n'emmenait nulle part. Celui-ci
+        # emmène là où il reste quelque chose à faire — relire sa fiche et déposer ses pièces.
+        sujet="Votre accès bénévole [INSTITUTION]",
+        corps=(
+            "Bonjour [PRENOM],\n\n"
+            "Un compte vous a été créé sur [INSTITUTION] à partir de la liste des membres de "
+            "l'association.\n\n"
+            "Il est encore inactif : cliquez sur le lien ci-dessous pour confirmer votre "
+            "adresse et l'activer.\n\n"
+            "- Activation : [LIEN_ACTIVATION]\n\n"
+            "Vous arriverez ensuite sur votre fiche de bénévole. Prenez un instant pour "
+            "relire ce qu'elle contient, la compléter, et y déposer vos justificatifs "
+            "(permis, diplômes, attestations de formation). Vous pourrez aussi y choisir un "
+            "mot de passe — c'est facultatif : le lien reçu par email suffit pour vous "
+            "connecter.\n\n"
+            "Vous reconnecter à tout moment : [LIEN_CONNEXION]\n\n"
+            "Ces liens sont valables 7 jours.\n\n"
+            "[SIGNATURE]"
+        ),
+        placeholders=("PRENOM", "INSTITUTION", "LIEN_ACTIVATION", "LIEN_CONNEXION",
+                      "SIGNATURE"),
+        # Le bénévole est le destinataire : lui ouvrir la fenêtre de relecture lui montrerait
+        # son propre lien d'activation.
+        relisible=False,
+    ),
+
     # ── Équipes et missions ─────────────────────────────────────────────────────────────────
     ModeleDefaut(
         cle="EQUIPE_NOUVEAU_MEMBRE",

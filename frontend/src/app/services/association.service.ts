@@ -6,6 +6,7 @@ import { environment } from '../../environments/environment';
 import {
   CandidatureAssociation, GrilleDisponibilites, InvitationAssociation, Qualification,
   QualificationMembre,
+  QualificationsAVerifier,
 } from '../shared/models/association.model';
 
 /** Gestion des membres d'une association agréée de sécurité civile : candidatures, liens
@@ -90,6 +91,58 @@ export class AssociationService {
     const params: Record<string, string> = {};
     if (utilisateurId) { params['utilisateur'] = utilisateurId; }
     return this.http.get<QualificationMembre[]>(`${this.qualificationsMembres}/`, { params });
+  }
+
+  /** GET /api/qualifications-membres/a-verifier/ — ce qui attend une vérification.
+   *
+   * Sert la pastille de notification : sans un compteur, l'encadrement devrait déplier
+   * l'arborescence entière pour découvrir qu'une pièce attend. */
+  qualificationsAVerifier(): Observable<QualificationsAVerifier> {
+    return this.http.get<QualificationsAVerifier>(`${this.qualificationsMembres}/a-verifier/`);
+  }
+
+  /** POST /api/qualifications-membres/ avec le fichier — `FormData` obligatoire.
+   *
+   * Le titulaire n'est pas envoyé : le serveur retombe sur l'appelant (CurrentUserDefault).
+   * L'envoyer permettrait de déposer pour quelqu'un d'autre, ce que le serveur refuse de
+   * toute façon sans droit sur la personne. */
+  deposerJustificatif(qualificationId: string, fichier: File, champs: Record<string, string> = {})
+      : Observable<QualificationMembre> {
+    const corps = new FormData();
+    corps.append('qualification', qualificationId);
+    corps.append('justificatif', fichier);
+    Object.entries(champs).forEach(([cle, valeur]) => {
+      if (valeur) corps.append(cle, valeur);
+    });
+    return this.http.post<QualificationMembre>(`${this.qualificationsMembres}/`, corps);
+  }
+
+  /** PATCH avec un nouveau fichier : remet le titre à instruire côté serveur. */
+  remplacerJustificatif(id: string, fichier: File): Observable<QualificationMembre> {
+    const corps = new FormData();
+    corps.append('justificatif', fichier);
+    return this.http.patch<QualificationMembre>(`${this.qualificationsMembres}/${id}/`, corps);
+  }
+
+  /** Le fichier, en blob. **Jamais un `href` direct** : la route exige l'en-tête
+   * d'authentification que pose l'intercepteur, qu'un `<a href>` n'enverrait pas — le
+   * navigateur afficherait une page de refus. Et jamais une URL /media/ : cette route
+   * contrôle les droits et journalise la consultation, savoir qui a regardé le diplôme de
+   * quelqu'un fait partie de la protection. */
+  telechargerJustificatif(id: string): Observable<Blob> {
+    return this.http.get(`${this.qualificationsMembres}/${id}/justificatif/`,
+                         { responseType: 'blob' });
+  }
+
+  verifierQualification(id: string): Observable<QualificationMembre> {
+    return this.http.post<QualificationMembre>(`${this.qualificationsMembres}/${id}/verifier/`, {});
+  }
+
+  /** Le motif est obligatoire : sans lui le membre voit « refusé » sans savoir quoi corriger,
+   * et redéposera la même pièce. */
+  refuserQualification(id: string, motif: string): Observable<QualificationMembre> {
+    return this.http.post<QualificationMembre>(
+      `${this.qualificationsMembres}/${id}/refuser/`, { motif });
   }
 
   enregistrerQualification(data: Partial<QualificationMembre>)

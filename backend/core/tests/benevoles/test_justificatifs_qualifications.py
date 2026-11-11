@@ -78,6 +78,43 @@ def _client(u):
 
 
 @pytest.mark.django_db
+class TestCatalogueDesTitres:
+    """Le catalogue (`/api/qualifications/`) doit être LISIBLE par un bénévole.
+
+    Même défaut que sur `QualificationMembreViewSet`, trouvé en construisant l'écran de dépôt :
+    `IsInstitutionalActor` fermait le catalogue à un `UTIL_SIMPLE`, donc la page n'avait aucun
+    titre à proposer — inutilisable pour exactement les gens à qui elle est destinée.
+
+    « PSE1 », « permis C » sont un vocabulaire partagé, pas une donnée personnelle. Ce qui est
+    personnel est de DÉTENIR un titre, et cela vit dans `QualificationMembre`, qui garde son
+    cloisonnement."""
+
+    def test_un_benevole_lit_le_catalogue(self, create_user, asso, psc1):
+        benevole = _membre(create_user, 'cat', asso)
+
+        reponse = _client(benevole).get("/api/qualifications/")
+
+        assert reponse.status_code == 200, reponse.data
+        assert str(psc1.id) in [t["id"] for t in reponse.data]
+
+    def test_un_benevole_n_ecrit_PAS_dans_le_catalogue(self, create_user, asso):
+        """Lecture ouverte, écriture non : le vocabulaire partagé reste tenu par les
+        institutions. Un bénévole qui ne trouve pas son titre le demande, il ne l'invente pas
+        — sinon le catalogue se peuple de doublons personnels."""
+        benevole = _membre(create_user, 'cat2', asso)
+
+        reponse = _client(benevole).post("/api/qualifications/", {"nom": "Brevet maison"})
+
+        assert reponse.status_code == 403
+        assert not Qualification.objects.filter(nom="Brevet maison").exists()
+
+    def test_un_anonyme_n_y_accede_pas(self):
+        """Ouvert aux comptes CONNECTÉS, pas au public : le catalogue dit quelles compétences
+        l'organisation suit, ce qui n'a pas à être lisible de l'extérieur."""
+        assert APIClient().get("/api/qualifications/").status_code in (401, 403)
+
+
+@pytest.mark.django_db
 class TestDepotParLeMembre:
 
     def test_un_benevole_UTIL_SIMPLE_peut_deposer_sa_piece(self, create_user, asso, arbre,

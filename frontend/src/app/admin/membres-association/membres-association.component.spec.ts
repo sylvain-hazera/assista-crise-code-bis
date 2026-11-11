@@ -5,6 +5,7 @@ import { MembresAssociationComponent } from './membres-association.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
 import { AuthService } from '../../auth/services/auth.service';
 import { ContactInstitution } from '../../shared/models/institution.model';
+import { Team } from '../../shared/models/team.model';
 
 /**
  * Premiers tests de composant du projet — le harnais qui permet de les exécuter a été monté
@@ -301,6 +302,98 @@ describe('MembresAssociationComponent', () => {
       expect(composant.estWeekEnd('2026-10-31')).toBeTrue();   // samedi
       expect(composant.estWeekEnd('2026-11-01')).toBeTrue();   // dimanche
       expect(composant.estWeekEnd('2026-10-28')).toBeFalse();  // mercredi
+    });
+  });
+
+  describe('l\'arborescence des équipes et la pastille des justificatifs', () => {
+    /** Une hiérarchie réduite mais de même forme que la vraie : national → zone →
+     * département. Le serveur sert une liste PLATE, la hiérarchie est dans `equipe_parente`. */
+    function equipe(partiel: Partial<Team>): Team {
+      return {
+        name: 'Equipe', description: '', color: '#000', leader: null,
+        institution: 'i1', member_ids: [], members_info: [],
+        missions: [], assigned_crisis_ids: [], assigned_offer_ids: [],
+        assigned_request_ids: [], assigned_information_ids: [],
+        competence_ids: [], departements: [], communes: [],
+        ...partiel,
+      } as Team;
+    }
+
+    function construire(): void {
+      composant.equipes = [
+        equipe({ id: 'dep', name: 'Gironde', echelon: 'DEPARTEMENTAL',
+                 equipe_parente: 'zone',
+                 member_ids: ['u9'], members_info: [{ id: 'u9', nom: 'Marie D.' }] }),
+        equipe({ id: 'nat', name: 'Coordination Nationale', echelon: 'NATIONAL' }),
+        equipe({ id: 'zone', name: 'Zone Sud-Ouest', echelon: 'ZONE_DEFENSE',
+                 equipe_parente: 'nat' }),
+      ];
+      composant.aVerifier = { total: 2, par_membre: { u9: ['PSE1', 'Permis C'] } };
+      composant['construireArborescence']();
+    }
+
+    it('reconstitue la hiérarchie depuis la liste plate', () => {
+      construire();
+
+      // Une seule racine : le reste pend dessous, quel que soit l'ordre d'arrivée.
+      expect(composant.arborescence.length).toBe(1);
+      expect(composant.arborescence[0].equipe.id).toBe('nat');
+      expect(composant.arborescence[0].enfants[0].equipe.id).toBe('zone');
+      expect(composant.arborescence[0].enfants[0].enfants[0].equipe.id).toBe('dep');
+    });
+
+    it('fait remonter le compte des pièces à vérifier jusqu\'à la racine', () => {
+      construire();
+
+      // Ce qui attend doit se voir SANS déplier : une pastille qui ne compterait que l'équipe
+      // elle-même laisserait une branche repliée masquer deux pièces en attente.
+      expect(composant.arborescence[0].aVerifier).toBe(0);
+      expect(composant.arborescence[0].aVerifierTotal).toBe(2);
+      const departement = composant.arborescence[0].enfants[0].enfants[0];
+      expect(departement.aVerifier).toBe(2);
+    });
+
+    it('survit à un cycle dans equipe_parente', () => {
+      // Une boucle ferait tourner la page indéfiniment : le garde-fou doit tenir même si la
+      // base contient une aberration.
+      composant.equipes = [
+        equipe({ id: 'a', name: 'A', equipe_parente: 'b' }),
+        equipe({ id: 'b', name: 'B', equipe_parente: 'a' }),
+      ];
+      composant.aVerifier = { total: 0, par_membre: {} };
+
+      expect(() => composant['construireArborescence']()).not.toThrow();
+    });
+
+    it('fait d\'une équipe orpheline une racine plutôt que de la perdre', () => {
+      // Parent d'une autre institution, ou désactivé : l'équipe doit rester visible, sinon
+      // elle disparaît de l'écran sans que rien ne le dise.
+      composant.equipes = [equipe({ id: 'seule', name: 'Orpheline',
+                                    equipe_parente: 'inconnue' })];
+      composant.aVerifier = { total: 0, par_membre: {} };
+      composant['construireArborescence']();
+
+      expect(composant.arborescence.map(n => n.equipe.id)).toEqual(['seule']);
+    });
+
+    it('n\'ouvre que les branches où quelque chose attend', () => {
+      construire();
+      composant.deplierCeQuiAttend();
+
+      // Le geste que cherche le manager : les trois niveaux qui mènent à la pièce, et rien
+      // d'autre.
+      expect(composant.depliees.has('nat')).toBeTrue();
+      expect(composant.depliees.has('dep')).toBeTrue();
+
+      composant.toutReplier();
+      expect(composant.depliees.size).toBe(0);
+    });
+
+    it('s\'ouvre refermée', () => {
+      construire();
+      // 125 équipes dépliées d'office ouvriraient la page sur un mur.
+      expect(composant.depliees.size).toBe(0);
+      expect(composant.estDepliee(composant.arborescence[0])).toBeFalse();
     });
   });
 });

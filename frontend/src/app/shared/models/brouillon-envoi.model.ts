@@ -23,6 +23,23 @@ export interface BrouillonEnvoi {
   erreur: string;
   date_creation: string;
   date_traitement: string | null;
+
+  /** Partagé par les messages d'une même action ayant le même texte générique. Null = message
+   * unique, relu seul. */
+  lot: string | null;
+  /** Combien de messages ce texte représente. Servi par `lots-a-relire` ; 1 pour un message
+   * isolé. */
+  effectif?: number;
+  /** Tous les destinataires du lot, pas seulement ceux de ce message : c'est à ça qu'on juge
+   * l'ampleur de ce qu'on valide. */
+  destinataires_du_lot?: string[];
+}
+
+/** Résultat de l'envoi d'un lot. Les échecs sont NOMMÉS et non comptés : un lot
+ * « partiellement envoyé » qu'on croirait complet serait pire qu'un échec franc. */
+export interface ResultatEnvoiLot {
+  envoyes: number;
+  echecs: { destinataires: string[]; motif: string }[];
 }
 
 /** Un message du catalogue, personnalisable par une institution. */

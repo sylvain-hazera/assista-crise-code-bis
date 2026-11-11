@@ -40,6 +40,21 @@ export class RelectureEnvoiComponent {
    * perdre. */
   private liensAttendus = signal<string[]>([]);
 
+  /** Champs de personnalisation du texte (`[PRENOM]`, `[NOM]`…). Montrés au relecteur pour
+   * qu'il ne les prenne pas pour une coquille : ils seront remplis, par destinataire, au
+   * moment de l'envoi. */
+  champsAttendus = signal<string[]>([]);
+
+  /** Combien de messages ce texte représente. 1 = message unique. */
+  effectif = computed(() => this.brouillon()?.effectif ?? 1);
+
+  /** Vrai quand ce texte part à plusieurs personnes : l'écran le dit autrement. */
+  estUnLot = computed(() => this.effectif() > 1);
+
+  /** Échecs du dernier envoi, nommés : un lot « partiellement envoyé » qu'on croirait complet
+   * serait pire qu'un échec franc. */
+  echecs = signal<{ destinataires: string[]; motif: string }[]>([]);
+
   /** Liens retirés par le relecteur. Avertissement et non blocage : il peut y avoir une raison
    * de retirer un lien, mais pas par accident. */
   liensPerdus = computed(() => {
@@ -71,21 +86,42 @@ export class RelectureEnvoiComponent {
   private charger(id: string): void {
     this.chargement.set(true);
     this.erreur.set('');
-    this.service.get(id).subscribe({
-      next: (brouillon) => {
-        this.brouillon.set(brouillon);
-        this.sujet.set(brouillon.sujet);
-        this.corps.set(brouillon.corps);
-        this.liensAttendus.set(brouillon.corps.match(/\[LIEN_\d+\]/g) || []);
+    // On demande les LOTS et non le brouillon seul : un import de deux cents bénévoles
+    // produit deux cents messages identiques à un nom près, et les relire un par un serait
+    // une corvée que personne ne ferait. Le lot qui contient l'identifiant annoncé est celui
+    // qu'on ouvre — s'il n'y est plus (déjà traité par un collègue), on passe au suivant.
+    this.service.lotsARelire().subscribe({
+      next: (lots) => {
         this.chargement.set(false);
+        const voulu = lots.find(l => l.id === id)
+          // L'identifiant annoncé peut ne pas être le REPRÉSENTANT de son lot : le serveur
+          // choisit le plus ancien. On retombe alors sur n'importe quel lot en attente.
+          || lots.find(l => l.lot && this.service.aRelire().includes(l.id))
+          || lots[0];
+        if (!voulu) { this.service.retirer(id); return; }
+        this.ouvrir(voulu);
+        // Les autres messages du même lot n'ont plus à être signalés séparément : ils
+        // partiront avec celui-ci.
+        if (voulu.id !== id) this.service.retirer(id);
       },
       error: () => {
-        // Le brouillon est inaccessible (droits, déjà traité ailleurs) : on le retire de la
-        // file plutôt que de bloquer la fenêtre sur lui indéfiniment.
         this.chargement.set(false);
         this.service.retirer(id);
       },
     });
+  }
+
+  private ouvrir(brouillon: BrouillonEnvoi): void {
+    this.brouillon.set(brouillon);
+    this.sujet.set(brouillon.sujet);
+    this.corps.set(brouillon.corps);
+    this.liensAttendus.set(brouillon.corps.match(/\[LIEN_\d+\]/g) || []);
+    // Les champs de personnalisation présents dans le texte : affichés au relecteur pour
+    // qu'il sache que « [PRENOM] » n'est pas une coquille mais un champ qui sera rempli.
+    this.champsAttendus.set(
+      [...new Set(brouillon.corps.match(/\[[A-Z][A-Z0-9_]*\]/g) || [])]
+        .filter(c => !c.startsWith('[LIEN')),
+    );
   }
 
   envoyer(): void {
@@ -97,8 +133,23 @@ export class RelectureEnvoiComponent {
     }
     this.enCours.set(true);
     this.erreur.set('');
-    this.service.envoyer(brouillon.id, this.sujet(), this.corps()).subscribe({
-      next: () => { this.enCours.set(false); this.terminer(brouillon.id); },
+    this.echecs.set([]);
+    // `envoyerLot` même pour un message isolé : le serveur traite les deux cas, et l'appelant
+    // n'a pas à les distinguer.
+    this.service.envoyerLot(brouillon.id, this.sujet(), this.corps()).subscribe({
+      next: (resultat) => {
+        this.enCours.set(false);
+        if (resultat.echecs.length) {
+          // On NE ferme PAS : le relecteur doit voir qui n'a pas reçu, sinon il croirait le
+          // lot complet.
+          this.echecs.set(resultat.echecs);
+          this.erreur.set(
+            `${resultat.envoyes} message(s) envoyé(s), ${resultat.echecs.length} en échec.`);
+          this.service.retirer(brouillon.id);
+          return;
+        }
+        this.terminer(brouillon.id);
+      },
       error: (err) => {
         this.enCours.set(false);
         this.erreur.set(err?.error?.error || "Erreur lors de l'envoi.");
@@ -134,6 +185,8 @@ export class RelectureEnvoiComponent {
     this.liensAttendus.set([]);
     this.motifAbandon.set('');
     this.demandeAbandon.set(false);
+    this.champsAttendus.set([]);
+    this.echecs.set([]);
     this.service.retirer(id);
   }
 

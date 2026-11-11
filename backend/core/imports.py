@@ -862,7 +862,7 @@ def importer_benevoles_association(request, institution, lignes, mapping,
         ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User, UserRole,
     )
     from .permissions import get_active_environment
-    from .views import send_institution_account_email
+    from .views import send_benevole_account_email
 
     environnement = (get_active_environment(request) if request is not None
                      else Environment.PROD)
@@ -902,7 +902,10 @@ def importer_benevoles_association(request, institution, lignes, mapping,
             crees.append(email)
             if inviter:
                 try:
-                    send_institution_account_email(request, user)
+                    # Envoi dédié aux bénévoles : le texte des comptes institutionnels ne
+                    # correspond pas à leur situation, et surtout son lien n'emmène pas sur la
+                    # fiche à compléter (voir send_benevole_account_email).
+                    send_benevole_account_email(request, user, institution)
                 except Exception:
                     # Tracé, pas avalé : avant le 11/11/2026 l'import de personnel enveloppait
                     # cet envoi dans un `except: pass` muet, et un échec laissait croire que

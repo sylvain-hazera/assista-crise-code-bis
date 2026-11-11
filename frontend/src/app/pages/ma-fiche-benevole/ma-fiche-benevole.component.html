@@ -1,0 +1,301 @@
+<div class="fiche-page">
+  <div class="fiche-wrapper">
+
+    <header class="fiche-header">
+      <div>
+        <h1>Ma fiche de bénévole</h1>
+        <p class="sous-titre">
+          @if (monNom) { {{ monNom }} — } relisez ce qui est enregistré, corrigez-le, et déposez
+          vos justificatifs.
+        </p>
+      </div>
+      @if (fiche && !fiche.est_complete) {
+        <div class="badge-incomplet">
+          <span class="material-icons">priority_high</span>
+          <span>Fiche à compléter</span>
+        </div>
+      }
+    </header>
+
+    @if (message) {
+      <div class="alert succes"><span class="material-icons">check_circle</span> {{ message }}</div>
+    }
+    @if (erreur) {
+      <div class="alert echec"><span class="material-icons">warning</span> {{ erreur }}</div>
+    }
+    @if (avertissement) {
+      <div class="alert tiede">
+        <span class="material-icons">location_off</span>
+        {{ avertissement }} Votre fiche est enregistrée, mais nous ne savons pas vous situer :
+        vérifiez l'adresse, ou signalez-le à votre encadrement.
+      </div>
+    }
+
+    <nav class="onglets">
+      <button type="button" [class.actif]="onglet === 'fiche'" (click)="onglet = 'fiche'">
+        <span class="material-icons">badge</span> Mes informations
+      </button>
+      <button type="button" [class.actif]="onglet === 'justificatifs'"
+              (click)="onglet = 'justificatifs'">
+        <span class="material-icons">folder_shared</span> Mes justificatifs
+        @if (aUnRefus) { <span class="pastille">!</span> }
+      </button>
+      <button type="button" [class.actif]="onglet === 'acces'" (click)="onglet = 'acces'">
+        <span class="material-icons">key</span> Mon accès
+      </button>
+    </nav>
+
+    @if (chargement) {
+      <p class="attente">Chargement de votre fiche…</p>
+    } @else {
+
+      <!-- ══ Mes informations ══════════════════════════════════════════════ -->
+      @if (onglet === 'fiche') {
+        <form class="bloc" (ngSubmit)="enregistrer()">
+
+          <h2>Où vous joindre</h2>
+          <p class="aide">
+            Votre adresse sert à vous rattacher à l'équipe de votre département. Elle n'est
+            visible que de votre encadrement.
+          </p>
+
+          <div class="champs">
+            <label class="large">
+              <span>Adresse</span>
+              <input type="text" name="adresse" [(ngModel)]="saisie.adresse"
+                     autocomplete="street-address" placeholder="12 rue des Lilas">
+            </label>
+            <label>
+              <span>Code postal</span>
+              <input type="text" name="code_postal" [(ngModel)]="saisie.code_postal"
+                     autocomplete="postal-code" inputmode="numeric" maxlength="5">
+            </label>
+            <label>
+              <span>Commune</span>
+              <input type="text" name="ville" [(ngModel)]="saisie.ville"
+                     autocomplete="address-level2">
+            </label>
+          </div>
+
+          @if (adresseModifiee) {
+            <p class="aide avertie">
+              <span class="material-icons">swap_horiz</span>
+              L'adresse a changé : à l'enregistrement, vous serez replacé dans l'équipe du
+              département correspondant.
+            </p>
+          } @else if (secteurConnu) {
+            <p class="aide">
+              Département retenu : <strong>{{ fiche?.departement_code }}</strong>.
+            </p>
+          }
+
+          <h2>Vous</h2>
+          <div class="champs">
+            <label>
+              <span>Date de naissance</span>
+              <input type="date" name="date_naissance" [(ngModel)]="saisie.date_naissance">
+            </label>
+            <label>
+              <span>Métier</span>
+              <input type="text" name="metier" [(ngModel)]="saisie.metier"
+                     placeholder="Infirmier, électricien…">
+            </label>
+            <label>
+              <span>Situation</span>
+              <select name="situation" [(ngModel)]="saisie.situation">
+                <option value="">Non renseignée</option>
+                @for (s of SITUATIONS; track s.valeur) {
+                  <option [value]="s.valeur">{{ s.libelle }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span>Disponibilité</span>
+              <select name="disponibilite" [(ngModel)]="saisie.disponibilite">
+                <option value="">Non renseignée</option>
+                @for (d of DISPONIBILITES; track d.valeur) {
+                  <option [value]="d.valeur">{{ d.libelle }}</option>
+                }
+              </select>
+            </label>
+          </div>
+
+          <label class="case">
+            <input type="checkbox" name="diplome_premier_secours"
+                   [(ngModel)]="saisie.diplome_premier_secours">
+            <span>
+              Je suis titulaire d'un diplôme de premier secours
+              <em>(déclaratif — pour qu'il compte, déposez l'attestation dans
+                « Mes justificatifs »)</em>
+            </span>
+          </label>
+
+          <label class="large">
+            <span>Ce que vous souhaitez faire savoir</span>
+            <textarea name="message" rows="4" [(ngModel)]="saisie.message"
+                      placeholder="Compétences, contraintes, moyens dont vous disposez…"></textarea>
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="primaire" [disabled]="enregistrement">
+              {{ enregistrement ? 'Enregistrement…' : 'Enregistrer ma fiche' }}
+            </button>
+          </div>
+        </form>
+      }
+
+      <!-- ══ Mes justificatifs ═════════════════════════════════════════════ -->
+      @if (onglet === 'justificatifs') {
+        <section class="bloc">
+          <h2>Mes pièces</h2>
+          <p class="aide">
+            Permis, diplômes, attestations de formation. Ces fichiers sont chiffrés et ne sont
+            consultables que par votre encadrement — jamais par les autres membres.
+          </p>
+
+          @if (mesQualifications.length === 0) {
+            <p class="vide">Aucune qualification enregistrée pour l'instant.</p>
+          } @else {
+            <ul class="pieces">
+              @for (q of mesQualifications; track q.id) {
+                <li [class]="classeStatut(q)">
+                  <div class="entete">
+                    <strong>{{ q.qualification_nom || q.qualification }}</strong>
+                    <span class="etat">{{ q.statut_libelle || q.statut }}</span>
+                  </div>
+                  <div class="detail">
+                    @if (q.date_obtention) { <span>Obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span> }
+                    @if (q.date_expiration) {
+                      <span [class.perimee]="q.expiree">
+                        Valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}
+                        @if (q.expiree) { (périmée) }
+                      </span>
+                    }
+                    @if (q.organisme) { <span>{{ q.organisme }}</span> }
+                  </div>
+
+                  @if (q.statut === 'REFUSEE' && q.motif_refus) {
+                    <p class="motif">
+                      <span class="material-icons">report</span>
+                      Refusée : {{ q.motif_refus }}
+                    </p>
+                  }
+                  @if (q.statut === 'VERIFIEE') {
+                    <p class="motif ok">
+                      <span class="material-icons">verified</span>
+                      Vérifiée
+                      @if (q.verifie_par_nom) { par {{ q.verifie_par_nom }} }
+                      @if (q.verifie_le) { le {{ q.verifie_le | date:'dd/MM/yyyy' }} }
+                    </p>
+                  }
+
+                  <div class="piece-actions">
+                    @if (q.a_justificatif) {
+                      <button type="button" class="lien" (click)="voirPiece(q)">
+                        <span class="material-icons">description</span>
+                        {{ q.justificatif_nom || 'Voir la pièce déposée' }}
+                      </button>
+                      <label class="remplacer">
+                        <span class="material-icons">upload_file</span>
+                        Remplacer
+                        <input type="file" (change)="remplacer(q, $event)" hidden>
+                      </label>
+                    } @else {
+                      <label class="remplacer manquante">
+                        <span class="material-icons">upload_file</span>
+                        Aucune pièce — en déposer une
+                        <input type="file" (change)="remplacer(q, $event)" hidden>
+                      </label>
+                    }
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <section class="bloc">
+          <h2>Déposer une nouvelle pièce</h2>
+          <div class="champs">
+            <label>
+              <span>Titre concerné</span>
+              <select name="titre" [(ngModel)]="depot.qualification" (ngModelChange)="onTitreChoisi()">
+                <option value="">Choisir…</option>
+                @for (t of catalogue; track t.id) {
+                  <option [value]="t.id">{{ t.nom }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span>Date d'obtention</span>
+              <input type="date" name="obtention" [(ngModel)]="depot.date_obtention"
+                     (ngModelChange)="onTitreChoisi()">
+            </label>
+            <label>
+              <span>Valable jusqu'au</span>
+              <input type="date" name="expiration" [(ngModel)]="depot.date_expiration">
+            </label>
+            <label>
+              <span>Organisme</span>
+              <input type="text" name="organisme" [(ngModel)]="depot.organisme"
+                     placeholder="Croix-Rouge, préfecture…">
+            </label>
+          </div>
+
+          <label class="fichier">
+            <span class="material-icons">attach_file</span>
+            {{ fichierChoisi ? fichierChoisi.name : 'Choisir le fichier (PDF ou image)' }}
+            <input type="file" (change)="onFichier($event)" hidden>
+          </label>
+
+          <div class="actions">
+            <button type="button" class="primaire" [disabled]="!depotPret || enregistrement"
+                    (click)="deposer()">
+              {{ enregistrement ? 'Envoi…' : 'Déposer' }}
+            </button>
+          </div>
+        </section>
+      }
+
+      <!-- ══ Mon accès ═════════════════════════════════════════════════════ -->
+      @if (onglet === 'acces') {
+        <section class="bloc">
+          <h2>{{ fiche?.mot_de_passe_defini ? 'Changer mon mot de passe' : 'Choisir un mot de passe' }}</h2>
+          <p class="aide">
+            @if (fiche?.mot_de_passe_defini) {
+              Vous avez déjà un mot de passe. Le lien de connexion reçu par email reste
+              valable : vous pouvez utiliser l'un ou l'autre.
+            } @else {
+              Facultatif. Vous pouvez continuer à vous connecter en demandant un lien par
+              email. Un mot de passe vous évite d'attendre ce lien à chaque fois.
+            }
+          </p>
+
+          <div class="champs">
+            <label>
+              <span>Nouveau mot de passe</span>
+              <input type="password" name="mdp" [(ngModel)]="motDePasse"
+                     autocomplete="new-password">
+            </label>
+            <label>
+              <span>Confirmation</span>
+              <input type="password" name="mdp2" [(ngModel)]="motDePasseConfirme"
+                     autocomplete="new-password">
+            </label>
+          </div>
+          @if (motDePasseConfirme && !motsDePasseConcordent) {
+            <p class="aide avertie">Les deux saisies diffèrent.</p>
+          }
+
+          <div class="actions">
+            <button type="button" class="primaire"
+                    [disabled]="!motsDePasseConcordent || enregistrement"
+                    (click)="definirMotDePasse()">
+              {{ enregistrement ? 'Enregistrement…' : 'Enregistrer ce mot de passe' }}
+            </button>
+          </div>
+        </section>
+      }
+    }
+  </div>
+</div>

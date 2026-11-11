@@ -496,3 +496,217 @@
 .btn-danger:hover:not(:disabled) { background: var(--ac-red-bg, #fef2f2); }
 
 .required { color: var(--ac-red-text, #dc2626); }
+
+/* ── Arborescence des équipes et justificatifs ───────────────────────────── */
+.bloc-arbo {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--ac-surface, white);
+}
+
+.arbo-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: .75rem;
+
+  h2 { margin: 0; font-size: 1.05rem; }
+}
+
+.arbo-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+.arbre, .sous-equipes {
+  list-style: none;
+  margin: .75rem 0 0;
+  padding: 0;
+}
+
+/* L'indentation se fait par une variable portée par la branche : le modèle est récursif, et
+   une classe par niveau figerait la profondeur (national → zone → région → département). */
+.branche {
+  padding-left: calc(var(--profondeur, 0) * .9rem);
+}
+
+.ligne-equipe {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .3rem .4rem;
+  border-radius: 6px;
+
+  &:hover { background: var(--ac-surface-2, #f9fafb); }
+
+  /* Ce qui attend se voit sans déplier : c'est tout l'objet de la pastille. */
+  &.attend { background: var(--ac-red-bg, #fef2f2); }
+}
+
+.chevron {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ac-text-muted, #6b7280);
+  cursor: pointer;
+
+  .material-icons { font-size: 1.15rem; }
+}
+
+.nom-equipe {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--ac-text, #374151);
+  cursor: pointer;
+
+  .icone-equipe { font-size: 1.05rem; color: var(--ac-text-muted, #9ca3af); }
+  .libelle { font-weight: 600; font-size: .92rem; }
+  .echelon {
+    padding: .1rem .4rem;
+    border-radius: 999px;
+    background: var(--ac-blue-bg, #eff6ff);
+    color: var(--ac-blue-text, #1d4ed8);
+    font-size: .72rem;
+  }
+  .effectif { color: var(--ac-text-muted, #6b7280); font-size: .78rem; }
+}
+
+.pastille.alerte {
+  background: var(--ac-red-text, #991b1b);
+  color: white;
+}
+
+.membres-equipe {
+  list-style: none;
+  margin: .25rem 0 .5rem;
+  padding-left: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+.ligne-membre {
+  padding: .45rem .6rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-left-width: 3px;
+  border-radius: 6px;
+
+  &.attend { border-left-color: var(--ac-red-text, #991b1b); }
+
+  .membre-entete {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .9rem;
+
+    .material-icons { font-size: 1rem; color: var(--ac-text-muted, #9ca3af); }
+  }
+}
+
+.vide-inline {
+  margin: .25rem 0 0;
+  color: var(--ac-text-muted, #9ca3af);
+  font-size: .82rem;
+  font-style: italic;
+}
+
+.pieces {
+  list-style: none;
+  margin: .4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+
+  li {
+    padding: .45rem .55rem;
+    border-radius: 6px;
+    background: var(--ac-surface-2, #f9fafb);
+
+    /* L'état d'instruction se lit au bord gauche. « Déclarée » n'est pas « vérifiée » : c'est
+       une affirmation de son titulaire tant que personne ne s'est prononcé. */
+    border-left: 3px solid var(--ac-border-strong, #d1d5db);
+    &.verifiee { border-left-color: var(--ac-green-text, #166534); }
+    &.refusee  { border-left-color: var(--ac-red-text, #991b1b); }
+  }
+
+  .piece-entete {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    font-size: .88rem;
+
+    .etat {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--ac-text-muted, #6b7280);
+    }
+    .perimee {
+      padding: .1rem .4rem;
+      border-radius: 999px;
+      background: var(--ac-red-bg, #fef2f2);
+      color: var(--ac-red-text, #991b1b);
+      font-size: .72rem;
+      font-weight: 600;
+    }
+  }
+
+  .piece-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .15rem .75rem;
+    margin-top: .15rem;
+    color: var(--ac-text-muted, #6b7280);
+    font-size: .78rem;
+  }
+
+  .motif {
+    margin: .3rem 0 0;
+    color: var(--ac-red-text, #991b1b);
+    font-size: .82rem;
+  }
+
+  .piece-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: .4rem;
+  }
+
+  .voir-piece {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: .82rem;
+    color: #2563eb;
+    text-decoration: underline;
+    cursor: pointer;
+
+    .material-icons { font-size: .95rem; }
+  }
+
+  .sans-piece {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    color: var(--ac-orange-text, #9a3412);
+    font-size: .8rem;
+
+    .material-icons { font-size: .95rem; }
+  }
+}

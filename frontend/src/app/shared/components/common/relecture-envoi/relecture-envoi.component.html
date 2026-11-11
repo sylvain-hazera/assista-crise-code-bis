@@ -6,11 +6,23 @@
           <span class="material-icons">{{ b.canal === 'SMS' ? 'sms' : 'drafts' }}</span>
           Relire avant envoi
         </h2>
+        <!-- L'AMPLEUR de ce qu'on valide est dite d'emblée : valider un texte qui part à
+             200 personnes n'est pas le même geste que valider un message unique. -->
         <p class="sous-titre">
-          Au nom de <strong>{{ b.institution_nom }}</strong>, à
-          {{ b.destinataires.length }} destinataire{{ b.destinataires.length > 1 ? 's' : '' }} :
-          {{ b.destinataires.join(', ') }}
+          Au nom de <strong>{{ b.institution_nom }}</strong>
+          @if (estUnLot()) {
+            — ce texte part à <strong>{{ effectif() }} personnes</strong>, personnalisé pour
+            chacune.
+          } @else {
+            à {{ b.destinataires.join(', ') }}
+          }
         </p>
+        @if (estUnLot()) {
+          <details class="destinataires">
+            <summary>Voir les {{ effectif() }} destinataires</summary>
+            <p>{{ (b.destinataires_du_lot || []).join(', ') }}</p>
+          </details>
+        }
       </header>
 
       <div class="corps">
@@ -49,12 +61,39 @@
           </div>
         }
 
+        @if (champsAttendus().length) {
+          <p class="note">
+            <span class="material-icons">person</span>
+            @for (champ of champsAttendus(); track champ) { <code>{{ champ }}</code> }
+            @if (estUnLot()) {
+              sont remplacés par les valeurs de chaque destinataire. Vous validez un texte,
+              {{ effectif() }} messages personnalisés partent.
+            } @else {
+              est remplacé par la valeur du destinataire à l'envoi.
+            }
+          </p>
+        }
+
         <p class="note">
           <span class="material-icons">lock</span>
           Les <strong>[LIEN_1]</strong> et suivants sont remplacés par les vraies adresses au
           moment de l'envoi. Elles ne sont pas affichées ici : un lien de connexion permet
           d'agir à la place de son destinataire. Laissez-les en place.
         </p>
+
+        <!-- Les echecs restent affiches et la fenetre NE se ferme PAS : le relecteur doit
+             voir qui n'a pas recu, sinon il croirait le lot complet. -->
+        @if (echecs().length) {
+          <div class="alerte erreur">
+            <span class="material-icons">error_outline</span>
+            <span>
+              Non envoyés :
+              @for (echec of echecs(); track echec.destinataires[0]) {
+                <br>{{ echec.destinataires.join(', ') }} — {{ echec.motif }}
+              }
+            </span>
+          </div>
+        }
       </div>
 
       @if (demandeAbandon()) {
@@ -82,7 +121,7 @@
           </button>
           <button type="button" class="principal" [disabled]="enCours()" (click)="envoyer()">
             <span class="material-icons">send</span>
-            {{ enCours() ? 'Envoi…' : 'Envoyer' }}
+            {{ enCours() ? 'Envoi…' : (estUnLot() ? 'Envoyer aux ' + effectif() + ' destinataires' : 'Envoyer') }}
           </button>
         } @else {
           <button type="button" class="lien" (click)="demandeAbandon.set(false)">Revenir</button>

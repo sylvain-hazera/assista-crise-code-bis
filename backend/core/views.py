@@ -380,6 +380,41 @@ def send_institution_account_email(request, user):
     )
 
 
+def send_benevole_account_email(request, user, institution):
+    """Lien d'activation d'un bénévole importé depuis la liste des membres d'une association.
+
+    Distinct de `send_institution_account_email` pour deux raisons, et pas par goût de la
+    nuance :
+
+    1. **le texte.** Celui des comptes institutionnels annonce un « compte institutionnel » et
+       un « rattachement à votre institution » ; un bénévole des Casques Jaunes n'y reconnaît
+       rien de sa situation.
+    2. **la destination.** Il ne reste rien à faire après l'activation d'un compte
+       institutionnel ; ici il reste l'essentiel — relire la fiche que l'import a remplie à sa
+       place, et déposer ses justificatifs. Le lien porte donc `next` vers cette page, sinon
+       la personne atterrit sur l'accueil et ne saura jamais qu'une fiche l'attendait.
+
+    La marque vient de **l'institution d'accueil** et non du Host de la requête : l'import est
+    lancé par un membre du bureau, depuis le domaine d'administration éventuellement, et c'est
+    bien l'association qui écrit à ses membres.
+    """
+    activation_link = build_magic_link(request, user, "activate-account",
+                                       next_url="/ma-fiche-benevole")
+    login_link = build_magic_link(request, user, "magic-login")
+
+    send_modele_mail(
+        request, institution, "BENEVOLE_ACTIVATION",
+        {
+            # nom-reel-assume: le prénom du destinataire, dans un message qui lui est adressé.
+            "PRENOM": user.first_name or "",
+            "LIEN_ACTIVATION": activation_link,
+            "LIEN_CONNEXION": login_link,
+        },
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
 def envoyer_email_creation_compte(request, user):
     """Email de cycle de vie envoyé juste après la création d'un compte, selon son type.
 
@@ -15600,6 +15635,23 @@ class QualificationViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     queryset = Qualification.objects.all()
     serializer_class = QualificationSerializer
     permission_classes = [IsInstitutionalActor]
+
+    def get_permissions(self):
+        """Lecture ouverte à tout compte connecté, écriture réservée aux institutionnels.
+
+        Corrigé le 11/11/2026 : un bénévole d'association est `UTIL_SIMPLE`, donc
+        `IsInstitutionalActor` lui refusait ce catalogue — et sans lui sa page de dépôt de
+        justificatifs n'avait **aucun titre à proposer**, ce qui la rendait inutilisable pour
+        exactement les gens à qui elle est destinée.
+
+        Ce n'est pas une donnée personnelle : « PSE1 », « permis C », « CACES » sont un
+        vocabulaire partagé, le même pour tout le monde. Ce qui est personnel, c'est de
+        DÉTENIR un titre, et cela vit dans `QualificationMembre`, qui garde son propre
+        cloisonnement.
+        """
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
 
 class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

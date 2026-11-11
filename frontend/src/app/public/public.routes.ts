@@ -91,6 +91,14 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.InformationEditionComponent)
       },
       {
+        // Page d'arrivee du lien d'activation d'un benevole importe : il relit sa fiche,
+        // depose ses justificatifs et peut choisir un mot de passe.
+        path: 'ma-fiche-benevole',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/ma-fiche-benevole/ma-fiche-benevole.component')
+          .then(m => m.MaFicheBenevoleComponent)
+      },
+      {
         path: 'settings',
         canActivate: [authGuard],
         loadComponent: () => import('./settings/settings.component')

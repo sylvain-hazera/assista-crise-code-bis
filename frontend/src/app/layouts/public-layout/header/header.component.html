@@ -116,6 +116,15 @@
               <div class="dropdown-divider"></div>
             }
 
+            @if (currentUser?.est_benevole_association) {
+              <a class="dropdown-item" routerLink="/ma-fiche-benevole"
+                 (click)="closeAllMenus()">
+                <span class="material-icons">badge</span>
+                Ma fiche de bénévole
+              </a>
+              <div class="dropdown-divider"></div>
+            }
+
             <button class="dropdown-item" (click)="goToSettings()">
               <span class="material-icons">settings</span>
               Paramètres

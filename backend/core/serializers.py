@@ -297,6 +297,7 @@ class UserSerializer(serializers.ModelSerializer):
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
     acces_membres_association = serializers.SerializerMethodField()
+    est_benevole_association = serializers.SerializerMethodField()
     acces_radio = serializers.SerializerMethodField()
     niveau_acces_radio = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
@@ -402,6 +403,25 @@ class UserSerializer(serializers.ModelSerializer):
             institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
         ).exists()
 
+    def get_est_benevole_association(self, obj):
+        """Ce compte est-il membre d'une association agréée de sécurité civile ?
+
+        Pilote l'entrée « Ma fiche de bénévole » du menu. Distinct de
+        `acces_membres_association`, qui répond à « qui ADMINISTRE des membres » : un
+        administrateur y est vrai sans être bénévole de personne, et lui proposer de compléter
+        une fiche d'adhérent n'aurait pas de sens.
+
+        Le critère est le rattachement associatif actif, pas le type de compte : un bénévole
+        est `UTIL_SIMPLE` jusqu'à ce qu'on le désigne encadrant, et un agent de mairie peut
+        être adhérent de l'association locale.
+        """
+        from .institution_attachment import CODE_TYPE_AASC
+
+        return ContactInstitution.objects.filter(
+            utilisateur=obj, actif=True,
+            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+        ).exists()
+
     def _niveau_radio(self, obj):
         """Niveau d'accès radio, calculé pour le SEUL compte de la requête.
 
@@ -469,6 +489,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
                   'acces_registre_vulnerables', 'acces_membres_association',
+                  'est_benevole_association',
                   'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {
             'password': {'write_only': True},

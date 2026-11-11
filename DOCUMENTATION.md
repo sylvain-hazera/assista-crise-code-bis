@@ -983,6 +983,85 @@ décide de qui lit un salon. L'appel remplace la liste entière (`set`), donc il
 un retrait ne demande pas d'action séparée ; en revanche un corps **sans** `membres_encadrement`
 est refusé, pour que « je n'ai rien envoyé » ne soit jamais lu comme « retire tout ».
 
+#### Enrôlement d'un bénévole, de l'import à sa fiche
+
+Déroulé validé le 11/11/2026, de bout en bout :
+
+1. `importer_benevoles_association` crée le compte (`UTIL_SIMPLE`, inactif), le rattachement
+   (`ContactInstitution`), la fiche (`FicheBenevole`), et place la personne dans l'équipe
+   départementale **déduite du géocodage** ;
+2. elle reçoit `BENEVOLE_ACTIVATION` — un modèle **distinct** de celui des comptes
+   institutionnels (`send_benevole_account_email`). Deux raisons, aucune cosmétique : le texte
+   des comptes institutionnels annonce un « compte institutionnel » et un « rattachement à
+   votre institution », où un bénévole ne reconnaît rien de sa situation ; et son lien
+   n'emmenait **nulle part**, alors qu'il reste ici l'essentiel à faire. Le lien porte donc
+   `?next=/ma-fiche-benevole`, honoré par `ActivateAccountComponent` — **restreint aux chemins
+   internes**, sinon un lien d'activation qui circule par email devient une redirection ouverte
+   avec la caution du domaine ;
+3. elle arrive sur `/ma-fiche-benevole` : relecture de ce que l'import a saisi, dépôt des
+   justificatifs, et mot de passe **facultatif**. Le lien magique continue de fonctionner — en
+   imposer un juste après le premier clic serait une friction au pire moment.
+
+**Le département vient du géocodage, pas du code postal.** `core/departements.py` n'est qu'un
+repli, et il le **signale** : un préfixe postal se trompe sur la Corse (20xxx → 2A ou 2B), sur
+l'outre-mer (trois chiffres) et sur tout fichier passé par un tableur, qui mange le zéro
+initial. Changer d'adresse peut donc changer d'équipe départementale : l'écran l'annonce **avant**
+l'enregistrement (`adresseModifiee`), pour que ce ne soit pas découvert après coup.
+
+**Le secteur est en lecture seule** (`commune_code`, `departement_code`…). Le laisser saisir
+permettrait de se déclarer dans un département où l'on n'habite pas, donc de rejoindre une
+équipe qui n'est pas la sienne.
+
+Une fiche de bénévole est **une ressource comme les autres** (demande de Sylvain : « c'est juste
+une ressource particulière comme membre de l'asso ») : même forme qu'`Offer` et `Habitation` —
+`adresse` chiffrée, `location` PointField, `ban_id`, et les quatre codes de secteur
+dénormalisés par `commune_secteur_codes`.
+
+#### Justificatifs de qualification : déposés par le membre, validés par sa hiérarchie
+
+`QualificationMembre.justificatif` + `statut` (`DECLAREE` / `VERIFIEE` / `REFUSEE`), migration
+`0253`. Permis, diplômes, attestations de formation.
+
+**« Déclarée » n'est pas « vérifiée », et le mot compte** : tant que l'encadrement ne s'est pas
+prononcé, une qualification est une affirmation de son titulaire. L'interface le montre au bord
+gauche de chaque ligne, des deux côtés — celui du membre et celui du manager.
+
+**L'accès aux PIÈCES est plus étroit que l'accès aux comptes** (`peut_voir_justificatifs`) :
+soi-même, le bureau, ou l'encadrement d'une équipe à laquelle le titulaire appartient — ou d'une
+équipe au-dessus. Un simple collègue est refusé, alors qu'il **voit** le compte : un diplôme
+n'est pas un annuaire.
+
+Protection du fichier, les quatre mêmes garde-fous que les autres pièces jointes sensibles :
+`get_encrypted_file_storage`, `secure_document_path` (préfixe `documents/`, bloqué par nginx),
+`validate_identity_document_file`, et **jamais d'URL `/media/`** — le fichier ne sort que par une
+action dédiée, après contrôle des droits, avec journalisation du succès **et** du refus. Côté
+Angular il est donc chargé en **blob** : un `<a href>` ne porterait pas l'en-tête
+d'authentification, et le navigateur afficherait une page de refus.
+
+**Un refus exige un motif**, qui est lu par le membre. Sans lui, il redépose la même pièce sans
+savoir ce qui n'allait pas. Redéposer remet le titre à instruire : c'est la seule façon de
+répondre à un refus.
+
+#### L'arborescence repliable et sa pastille
+
+Onglet **Équipes et justificatifs** de `/admin/membres-association`. Le serveur sert une liste
+**plate** d'équipes ; la hiérarchie est dans `equipe_parente` et l'arbre est reconstruit côté
+client.
+
+Trois choix qui tiennent à l'échelle réelle (125 équipes pour les Casques Jaunes) :
+
+- **la page s'ouvre refermée.** 125 équipes dépliées d'office ouvrent sur un mur. Un bouton
+  « ouvrir ce qui attend » déplie les seules branches qui mènent à une pièce en attente — c'est
+  le geste que cherche le manager ;
+- **la pastille d'une branche compte tout ce qui est en dessous** (`aVerifierTotal`). Ne compter
+  que l'équipe elle-même laisserait une branche repliée masquer ce qui attend dedans, ce qui est
+  exactement le défaut qu'une pastille est censée corriger. Le compteur vient de
+  `qualifications-membres/a-verifier/` et est **rechargé après chaque décision** : un décompte
+  tenu localement finirait par mentir ;
+- **un cycle dans `equipe_parente` ne doit pas figer la page**, et une équipe dont le parent est
+  absent (autre institution, ou désactivé) devient racine plutôt que de disparaître sans que
+  rien ne le dise. Les deux sont tenus par un test.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

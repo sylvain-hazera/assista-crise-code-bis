@@ -91,6 +91,30 @@ export interface QualificationMembre {
    * mobilisation. */
   expiree: boolean;
   jours_avant_expiration: number | null;
+
+  /** État d'instruction. DECLAREE est le défaut, et le mot compte : tant que l'encadrement ne
+   * s'est pas prononcé, la qualification est une affirmation de son titulaire. */
+  statut: 'DECLAREE' | 'VERIFIEE' | 'REFUSEE';
+  statut_libelle?: string;
+  verifie_par?: string | null;
+  verifie_par_nom?: string | null;
+  verifie_le?: string | null;
+  /** Obligatoire au refus : sans lui le membre ne sait pas quoi corriger. */
+  motif_refus?: string;
+
+  /** Présence seulement. Le fichier ne sort que par l'action dédiée, après contrôle des
+   * droits — servir une URL ici contournerait ce contrôle. */
+  a_justificatif: boolean;
+  justificatif_nom?: string;
+  justificatif_depose_le?: string | null;
+}
+
+/** Ce qui attend une vérification, pour la pastille de notification. */
+export interface QualificationsAVerifier {
+  total: number;
+  /** { id d'utilisateur: [noms de qualifications] } — permet de poser la pastille sur la
+   * bonne ligne de l'arborescence sans recharger toute la liste. */
+  par_membre: Record<string, string[]>;
 }
 
 /** Une case de la grille. `disponible: null` = non renseigné, et c'est une information : elle

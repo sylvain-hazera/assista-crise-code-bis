@@ -119,3 +119,22 @@ button {
   .fenetre { max-height: 96vh; }
   footer { flex-wrap: wrap; .principal { margin-left: 0; width: 100%; justify-content: center; } }
 }
+
+// Liste dépliable des destinataires d'un lot : on affiche le NOMBRE d'emblée (c'est ce qui
+// qualifie le geste) et la liste à la demande — 200 adresses pousseraient la fenêtre hors de
+// l'écran.
+.destinataires {
+  margin: .4rem 0 0; font-size: .8rem;
+
+  summary { cursor: pointer; color: var(--primary, #2563eb); }
+  p {
+    margin: .4rem 0 0; max-height: 7rem; overflow-y: auto;
+    color: var(--ac-text-muted, #6b7280); overflow-wrap: anywhere;
+  }
+}
+
+.note code {
+  padding: .05rem .3rem; border-radius: 4px; margin-right: .2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem;
+  background: var(--ac-surface-2, #f1f5f9); border: 1px solid var(--ac-border, #e5e7eb);
+}

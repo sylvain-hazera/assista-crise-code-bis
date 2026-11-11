@@ -27,6 +27,8 @@ describe('RelectureEnvoiComponent', () => {
     destinataires: ['benevole@essai.invalide'], segments: null,
     modifie_par_relecteur: false, erreur: '', date_creation: '2026-11-11T08:00:00Z',
     date_traitement: null,
+    // Message isolé : pas de lot, un seul destinataire.
+    lot: null, effectif: 1,
   };
 
   beforeEach(() => {
@@ -43,10 +45,13 @@ describe('RelectureEnvoiComponent', () => {
 
   afterEach(() => http.verify());
 
-  function ouvrir(brouillon: BrouillonEnvoi = BROUILLON) {
+  /** La fenetre demande les LOTS a relire et ouvre celui qui contient l'identifiant annonce :
+   * un import de deux cents benevoles produit deux cents messages identiques a un nom pres,
+   * et les relire un par un serait une corvee que personne ne ferait. */
+  function ouvrir(brouillon: BrouillonEnvoi = BROUILLON, lots?: BrouillonEnvoi[]) {
     service.signaler([brouillon.id]);
     fixture.detectChanges();
-    http.expectOne(`${api}/brouillons-envoi/${brouillon.id}/`).flush(brouillon);
+    http.expectOne(`${api}/brouillons-envoi/lots-a-relire/`).flush(lots ?? [brouillon]);
     fixture.detectChanges();
   }
 
@@ -80,7 +85,7 @@ describe('RelectureEnvoiComponent', () => {
     composant.corps.set('   ');
     composant.envoyer();
     expect(composant.erreur()).toContain('vide');
-    http.expectNone(`${api}/brouillons-envoi/b1/envoyer/`);
+    http.expectNone(`${api}/brouillons-envoi/b1/envoyer-lot/`);
   });
 
   it('envoie le texte relu et vide la file', () => {
@@ -88,9 +93,9 @@ describe('RelectureEnvoiComponent', () => {
     composant.corps.set('Texte reecrit : [LIEN_1]');
     composant.envoyer();
 
-    const requete = http.expectOne(`${api}/brouillons-envoi/b1/envoyer/`);
+    const requete = http.expectOne(`${api}/brouillons-envoi/b1/envoyer-lot/`);
     expect(requete.request.body.corps).toBe('Texte reecrit : [LIEN_1]');
-    requete.flush({ ...BROUILLON, statut: 'ENVOYE' });
+    requete.flush({ envoyes: 1, echecs: [] });
 
     expect(composant.brouillon()).toBeNull();
     expect(service.aRelire()).toEqual([]);
@@ -115,7 +120,7 @@ describe('RelectureEnvoiComponent', () => {
     composant.reporter();
     expect(composant.brouillon()).toBeNull();
     expect(service.aRelire()).toEqual([]);
-    http.expectNone(`${api}/brouillons-envoi/b1/envoyer/`);
+    http.expectNone(`${api}/brouillons-envoi/b1/envoyer-lot/`);
   });
 
   it('compte les segments d\'un SMS', () => {
@@ -132,13 +137,54 @@ describe('RelectureEnvoiComponent', () => {
     expect(composant.segments()).toBeNull();
   });
 
+  it('annonce l\'ampleur d\'un lot et ne le valide qu\'une fois', () => {
+    // Le cas qui a motive les lots : six messages identiques a un nom pres. Le relecteur voit
+    // le texte generique, l'effectif, et valide une seule fois -- chaque message repart
+    // personnalise cote serveur.
+    const LOT: BrouillonEnvoi = {
+      ...BROUILLON, id: 'rep', lot: 'l1', effectif: 6,
+      corps: 'Bonjour [PRENOM],\n\nActivez : [LIEN_1]',
+      destinataires: ['a@essai.invalide'],
+      destinataires_du_lot: [
+        'a@essai.invalide', 'b@essai.invalide', 'c@essai.invalide',
+        'd@essai.invalide', 'e@essai.invalide', 'f@essai.invalide',
+      ],
+    };
+    ouvrir(LOT);
+
+    expect(composant.estUnLot()).toBe(true);
+    expect(composant.effectif()).toBe(6);
+    // Les champs de personnalisation sont montres pour que « [PRENOM] » ne passe pas pour une
+    // coquille ; les liens n'en font pas partie, ils restent masques.
+    expect(composant.champsAttendus()).toEqual(['[PRENOM]']);
+    expect(fixture.nativeElement.textContent).toContain('6');
+
+    composant.envoyer();
+    const requete = http.expectOne(`${api}/brouillons-envoi/rep/envoyer-lot/`);
+    requete.flush({ envoyes: 6, echecs: [] });
+    expect(composant.brouillon()).toBeNull();
+  });
+
+  it('garde la fenetre ouverte et NOMME les destinataires en echec', () => {
+    // Un lot « partiellement envoye » qu'on croirait complet serait pire qu'un echec franc.
+    ouvrir({ ...BROUILLON, lot: 'l1', effectif: 3 });
+    composant.envoyer();
+    http.expectOne(`${api}/brouillons-envoi/b1/envoyer-lot/`).flush({
+      envoyes: 2,
+      echecs: [{ destinataires: ['c@essai.invalide'], motif: 'Adresse refusee' }],
+    });
+    fixture.detectChanges();
+
+    expect(composant.brouillon()).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('c@essai.invalide');
+  });
+
   it('retire de la file un brouillon devenu inaccessible', () => {
     // Deja traite par un collegue, ou droits perdus : la fenetre ne doit pas rester bloquee
     // dessus indefiniment.
     service.signaler(['disparu']);
     fixture.detectChanges();
-    http.expectOne(`${api}/brouillons-envoi/disparu/`)
-      .flush({}, { status: 404, statusText: 'Not Found' });
+    http.expectOne(`${api}/brouillons-envoi/lots-a-relire/`).flush([]);
     fixture.detectChanges();
 
     expect(composant.brouillon()).toBeNull();

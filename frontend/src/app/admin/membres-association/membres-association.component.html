@@ -52,6 +52,13 @@
               (click)="ouvrirOnglet('membres')">
         <span class="material-icons">groups</span> Annuaire
       </button>
+      <button type="button" [class.actif]="onglet === 'arborescence'"
+              (click)="ouvrirOnglet('arborescence')">
+        <span class="material-icons">account_tree</span> Équipes et justificatifs
+        @if (aVerifier.total) {
+          <span class="pastille alerte">{{ aVerifier.total }}</span>
+        }
+      </button>
       <button type="button" [class.actif]="onglet === 'candidatures'"
               (click)="ouvrirOnglet('candidatures')">
         <span class="material-icons">how_to_reg</span> Candidatures
@@ -234,6 +241,199 @@
           }
         </tbody>
       </table>
+    }
+
+    <!-- ══ Équipes et justificatifs ════════════════════════════════════════ -->
+    @if (onglet === 'arborescence') {
+
+      <section class="bloc-arbo">
+        <div class="arbo-entete">
+          <div>
+            <h2>Équipes de l'association</h2>
+            <p class="page-hint">
+              @if (aVerifier.total) {
+                <strong>{{ aVerifier.total }} pièce(s) attendent votre vérification.</strong>
+                Les branches qui en contiennent portent une pastille rouge.
+              } @else {
+                Aucune pièce en attente. Dépliez une équipe pour consulter les justificatifs
+                de ses membres.
+              }
+            </p>
+          </div>
+          <div class="arbo-actions">
+            @if (aVerifier.total) {
+              <button type="button" class="btn-primary" (click)="deplierCeQuiAttend()">
+                <span class="material-icons">unfold_more</span>
+                Ouvrir ce qui attend
+              </button>
+            }
+            <button type="button" class="btn-secondary" (click)="toutReplier()">
+              <span class="material-icons">unfold_less</span>
+              Tout replier
+            </button>
+          </div>
+        </div>
+
+        @if (!arborescence.length) {
+          <p class="vide">
+            Aucune équipe pour cette association. Les justificatifs se consultent par équipe :
+            créez l'arborescence depuis la page Équipes.
+          </p>
+        } @else {
+          <ul class="arbre">
+            @for (noeud of arborescence; track noeud.equipe.id) {
+              <ng-container [ngTemplateOutlet]="branche"
+                            [ngTemplateOutletContext]="{ noeud: noeud, profondeur: 0 }">
+              </ng-container>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Une seule définition, réemployée à chaque niveau : l'arborescence est de profondeur
+           variable (national → zone → région → département), et l'écrire niveau par niveau
+           la figerait. -->
+      <ng-template #branche let-noeud="noeud" let-profondeur="profondeur">
+        <li class="branche" [style.--profondeur]="profondeur">
+          <div class="ligne-equipe" [class.attend]="noeud.aVerifierTotal > 0">
+            <button type="button" class="chevron" (click)="basculer(noeud)"
+                    [attr.aria-expanded]="estDepliee(noeud)"
+                    [attr.aria-label]="estDepliee(noeud) ? 'Replier ' + noeud.equipe.name : 'Déplier ' + noeud.equipe.name">
+              <span class="material-icons">
+                {{ estDepliee(noeud) ? 'expand_more' : 'chevron_right' }}
+              </span>
+            </button>
+
+            <button type="button" class="nom-equipe" (click)="basculer(noeud)">
+              <span class="material-icons icone-equipe">groups</span>
+              <span class="libelle">{{ noeud.equipe.name }}</span>
+              @if (noeud.equipe.echelon_libelle) {
+                <span class="echelon">{{ noeud.equipe.echelon_libelle }}</span>
+              }
+              <span class="effectif">
+                {{ noeud.equipe.member_ids.length }} membre(s)
+              </span>
+            </button>
+
+            <!-- La pastille d'une branche repliée compte TOUT ce qui est en dessous : sinon
+                 replier une branche masquerait ce qui attend dedans. -->
+            @if (noeud.aVerifierTotal) {
+              <span class="pastille alerte" [title]="noeud.aVerifierTotal + ' pièce(s) à vérifier dans cette branche'">
+                {{ noeud.aVerifierTotal }}
+              </span>
+            }
+          </div>
+
+          @if (estDepliee(noeud)) {
+            <ul class="membres-equipe">
+              @if (!membresDe(noeud).length) {
+                <li class="vide-inline">Aucun membre dans cette équipe.</li>
+              }
+              @for (membre of membresDe(noeud); track membre.id) {
+                <li class="ligne-membre" [class.attend]="nombreAVerifierPour(membre.id) > 0">
+                  <div class="membre-entete">
+                    <span class="material-icons">person</span>
+                    <strong>{{ membre.nom }}</strong>
+                    @if (nombreAVerifierPour(membre.id)) {
+                      <span class="pastille alerte">{{ nombreAVerifierPour(membre.id) }}</span>
+                    }
+                  </div>
+
+                  @if (!piecesDe(membre.id).length) {
+                    <p class="vide-inline">Aucune qualification enregistrée.</p>
+                  } @else {
+                    <ul class="pieces">
+                      @for (q of piecesDe(membre.id); track q.id) {
+                        <li [class]="classeStatutPiece(q)">
+                          <div class="piece-entete">
+                            <strong>{{ q.qualification_nom || q.qualification }}</strong>
+                            <span class="etat">{{ q.statut_libelle || q.statut }}</span>
+                            @if (q.expiree) { <span class="perimee">périmée</span> }
+                          </div>
+                          <div class="piece-detail">
+                            @if (q.date_obtention) {
+                              <span>obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span>
+                            }
+                            @if (q.date_expiration) {
+                              <span>valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}</span>
+                            }
+                            @if (q.organisme) { <span>{{ q.organisme }}</span> }
+                            @if (q.verifie_par_nom) {
+                              <span>vérifiée par {{ q.verifie_par_nom }}</span>
+                            }
+                          </div>
+                          @if (q.statut === 'REFUSEE' && q.motif_refus) {
+                            <p class="motif">Refusée : {{ q.motif_refus }}</p>
+                          }
+
+                          <div class="piece-actions">
+                            @if (q.a_justificatif) {
+                              <button type="button" class="voir-piece" (click)="voirPiece(q)">
+                                <span class="material-icons">description</span>
+                                {{ q.justificatif_nom || 'Consulter la pièce' }}
+                              </button>
+                            } @else {
+                              <span class="sans-piece">
+                                <span class="material-icons">report_gmailerrorred</span>
+                                Aucune pièce déposée — déclaratif
+                              </span>
+                            }
+                            @if (q.statut !== 'VERIFIEE' && q.a_justificatif) {
+                              <button type="button" class="btn-primary sm"
+                                      (click)="verifierPiece(q)">
+                                <span class="material-icons">verified</span>
+                                Valider
+                              </button>
+                            }
+                            @if (q.statut !== 'REFUSEE' && q.a_justificatif) {
+                              <button type="button" class="btn-danger sm"
+                                      (click)="ouvrirRefusPiece(q)">
+                                <span class="material-icons">block</span>
+                                Refuser
+                              </button>
+                            }
+                          </div>
+
+                          @if (refusPieceEnCours?.id === q.id) {
+                            <div class="refus">
+                              <label>
+                                Motif du refus <span class="required">*</span>
+                                <textarea [(ngModel)]="refusPieceEnCours!.motif" rows="2"
+                                          placeholder="Document illisible, attestation expirée, nom qui ne correspond pas…"></textarea>
+                              </label>
+                              <p class="page-hint">
+                                Obligatoire, et lu par le membre : sans motif il redéposera la
+                                même pièce sans savoir ce qui n'allait pas.
+                              </p>
+                              <div class="refus-actions">
+                                <button type="button" class="btn-secondary"
+                                        (click)="refusPieceEnCours = null">Annuler</button>
+                                <button type="button" class="btn-danger"
+                                        [disabled]="!refusPieceEnCours!.motif.trim()"
+                                        (click)="confirmerRefusPiece()">Confirmer le refus</button>
+                              </div>
+                            </div>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                </li>
+              }
+            </ul>
+
+            @if (noeud.enfants.length) {
+              <ul class="sous-equipes">
+                @for (enfant of noeud.enfants; track enfant.equipe.id) {
+                  <ng-container [ngTemplateOutlet]="branche"
+                                [ngTemplateOutletContext]="{ noeud: enfant, profondeur: profondeur + 1 }">
+                  </ng-container>
+                }
+              </ul>
+            }
+          }
+        </li>
+      </ng-template>
     }
 
     <!-- ══ Candidatures ════════════════════════════════════════════════════ -->

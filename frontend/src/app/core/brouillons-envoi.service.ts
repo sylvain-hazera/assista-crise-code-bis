@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  BrouillonEnvoi, ModeleCatalogue, ModeleMessage,
+  BrouillonEnvoi, ModeleCatalogue, ModeleMessage, ResultatEnvoiLot,
 } from '../shared/models/brouillon-envoi.model';
 
 /** Messages retenus pour relecture, et textes réécrits par une institution.
@@ -46,6 +46,26 @@ export class BrouillonsEnvoiService {
    * manquée (onglet fermé, rechargement) doit rester trouvable. */
   aRelireListe(): Observable<BrouillonEnvoi[]> {
     return this.http.get<BrouillonEnvoi[]>(`${this.url}/`, { params: { statut: 'A_RELIRE' } });
+  }
+
+  /** GET /api/brouillons-envoi/lots-a-relire/ — un représentant par texte.
+   *
+   * Un import de deux cents bénévoles produit deux cents messages identiques à un nom près :
+   * les lister un par un transformerait la relecture en corvée que personne ne ferait. */
+  lotsARelire(): Observable<BrouillonEnvoi[]> {
+    return this.http.get<BrouillonEnvoi[]>(`${this.url}/lots-a-relire/`);
+  }
+
+  /** POST /api/brouillons-envoi/<id>/envoyer-lot/ — envoie TOUT le lot avec ce texte.
+   *
+   * Chaque message repart avec ses propres valeurs : les `[PRENOM]` et `[LIEN_n]` conservés
+   * dans le texte relu sont remplacés côté serveur, par destinataire. C'est ce qui rend le
+   * lot acceptable — un texte validé une fois, N messages personnalisés. */
+  envoyerLot(id: string, sujet?: string, corps?: string): Observable<ResultatEnvoiLot> {
+    const corpsRequete: Record<string, string> = {};
+    if (sujet !== undefined) corpsRequete['sujet'] = sujet;
+    if (corps !== undefined) corpsRequete['corps'] = corps;
+    return this.http.post<ResultatEnvoiLot>(`${this.url}/${id}/envoyer-lot/`, corpsRequete);
   }
 
   /** `sujet`/`corps` omis = le texte capturé part tel quel. Les `[LIEN_n]` conservés dans le
