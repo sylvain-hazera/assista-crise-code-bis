@@ -79,7 +79,8 @@ export interface Team {
   territoire_code?:             string;
   territoire_libelle?:          string;
   /** Membres formant l'encadrement de CETTE équipe (lecture seule : voir
-   * TeamService.definirEncadrement). Pilote la composition du salon « Encadrement ». */
+   * TeamService.definirEncadrement). Ils peuplent le salon « Encadrement » de cette équipe et
+   * celui de l'équipe parente — un seul niveau au-dessus (« n-1 »). */
   membres_encadrement?:         string[];
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];

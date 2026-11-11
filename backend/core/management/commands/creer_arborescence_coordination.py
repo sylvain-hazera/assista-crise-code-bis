@@ -1,10 +1,17 @@
 """Crée l'arborescence de coordination territoriale d'une association nationale.
 
-    python manage.py creer_arborescence_coordination --institution "Réserve Résilience - Casques Jaunes"
+    python manage.py creer_arborescence_coordination --institution "Reserve Resilience - Casques Jaunes"
     python manage.py creer_arborescence_coordination --institution "..." --compter
 
 National → zone de défense → régional → départemental, chaque équipe rattachée à la précédente
-par `equipe_parente`. Soit, France entière : 1 + 10 zones + 23 régions + 96 départements.
+par `equipe_parente`. Soit, France entière : **125 équipes** — 1 national, 10 zones de défense
+(7 en métropole + 3 outre-mer), 18 régions (13 en métropole + 5 DROM) et 96 départements.
+
+**`--institution` se compare SANS accents ni casse** (`nom_comparable`, le même rattrapage que
+`trouver_aasc`). Ce n'est pas une coquetterie : les accents sont mutilés en route par certains
+clients SSH, et la commande était alors impossible à lancer pour une institution qui s'appelle
+« Réserve Résilience ». Elle n'accepte qu'une correspondance EXACTE une fois normalisé — jamais
+un rapprochement approximatif, qui ferait écrire 125 équipes dans la mauvaise institution.
 
 **Idempotente.** Une seconde exécution ne crée pas de doublons : chaque équipe est retrouvée par
 (institution, échelon, code de territoire), et seuls son parent et ses libellés sont remis à
@@ -22,6 +29,7 @@ l'équipe *représente* de ce sur quoi elle *intervient*, sans que le second ces
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from core.institution_attachment import nom_comparable
 from core.models import EchelonEquipe, Environment, Institution, Team
 from core.zones_defense import (
     ZONES_DEFENSE, ZONES_DEFENSE_OUTRE_MER, verifier_coherence,
@@ -59,13 +67,7 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR(f"  {probleme}"))
             raise CommandError("Table des zones de défense incohérente : rien n'a été écrit.")
 
-        institution = Institution.objects.filter(nom=options['institution']).first()
-        if institution is None:
-            proches = Institution.objects.filter(
-                nom__icontains=options['institution'].split()[0]
-            ).values_list('nom', flat=True)[:5]
-            indice = f" Institutions approchantes : {', '.join(proches)}." if proches else ""
-            raise CommandError(f"Aucune institution nommée « {options['institution'] } ».{indice}")
+        institution = self._resoudre_institution(options['institution'])
 
         zones = list(ZONES_DEFENSE)
         if not options['sans_outre_mer']:
@@ -113,6 +115,50 @@ class Command(BaseCommand):
                 "  Aucun salon Matrix n'a été provisionné : un salon se crée quand l'équipe a "
                 "des membres (voir la docstring de la commande)."
             )
+
+    def _resoudre_institution(self, nom_demande):
+        """L'institution portant ce nom, à la casse et aux accents près.
+
+        Correspondance exacte d'abord — c'est le cas courant et il ne coûte qu'une requête.
+        Puis comparaison normalisée, qui demande de parcourir les institutions : accepté, cette
+        commande se lance une fois et il n'y en a pas des millions.
+
+        Une ambiguïté (deux institutions dont les noms normalisés sont identiques) est une
+        ERREUR et non un choix arbitraire : écrire 125 équipes dans la mauvaise institution ne
+        se défait pas d'un geste."""
+        exacte = Institution.objects.filter(nom=nom_demande).first()
+        if exacte is not None:
+            return exacte
+
+        cible = nom_comparable(nom_demande)
+        correspondances = [
+            institution for institution in Institution.objects.all()
+            if nom_comparable(institution.nom) == cible
+        ] if cible else []
+
+        if len(correspondances) == 1:
+            institution = correspondances[0]
+            self.stdout.write(self.style.WARNING(
+                f"  Nom rapproché sans accents : « {nom_demande} » → « {institution.nom} »."
+            ))
+            return institution
+
+        if len(correspondances) > 1:
+            noms = ", ".join(f"« {i.nom} »" for i in correspondances)
+            raise CommandError(
+                f"Plusieurs institutions correspondent à « {nom_demande} » une fois les accents "
+                f"et la casse ignorés : {noms}. Précisez le nom exact."
+            )
+
+        # Aucune correspondance : on aide avec les noms qui contiennent le premier mot, comparé
+        # lui aussi sans accents -- sinon l'indice échoue pour la même raison que la commande.
+        premier_mot = cible.split()[0] if cible else ""
+        proches = [
+            institution.nom for institution in Institution.objects.all()
+            if premier_mot and premier_mot in nom_comparable(institution.nom)
+        ][:5]
+        indice = f" Institutions approchantes : {', '.join(proches)}." if proches else ""
+        raise CommandError(f"Aucune institution nommée « {nom_demande} ».{indice}")
 
     def _equipe(self, echelon, code, libelle, nom, parent, description=None,
                 departements=None):

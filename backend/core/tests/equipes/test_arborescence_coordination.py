@@ -6,19 +6,19 @@ Intervenants — dans lesquels les membres de l'équipe sont invités automatiqu
 
 Ce que ces tests verrouillent, et qui ne se devine pas à la lecture :
 
-1. **Le salon ENCADREMENT d'une équipe contient aussi l'encadrement de ses équipes filles**, à
-   toute profondeur. C'est ce qui rend l'arborescence utile : le salon d'une Coordination
-   Régionale réunit l'encadrement régional ET les coordinateurs départementaux, au lieu
-   d'exiger un salon par couple d'échelons. Conséquence assumée : un encadrant départemental
-   apparaît dans quatre salons d'encadrement (le sien, sa région, sa zone, le national).
+1. **Le salon ENCADREMENT d'une équipe contient l'encadrement de ses équipes filles DIRECTES**,
+   un seul niveau — « n-1 », arbitrage du 11/11/2026. Le salon d'une Coordination Régionale
+   réunit donc l'encadrement régional et les coordinateurs départementaux, et s'arrête là.
+
+   La remontée récursive avait d'abord été écrite, puis écartée : elle faisait du salon national
+   la réunion de TOUS les encadrants de France, ce qui n'est plus un salon de commandement mais
+   une liste de diffusion. Les deux tests qui suivent sont les gardiens de cet arbitrage — l'un
+   vérifie que la remontée a lieu d'un niveau, l'autre qu'elle ne va pas plus loin.
 2. **Le salon INTERVENANTS contient toute l'équipe, encadrement compris** : un encadrant absent
    du salon de terrain de sa propre équipe ne voit pas ce qui s'y dit.
 3. **Un encadrant doit être membre de l'équipe.** L'encadrement est une qualité au sein de
    l'équipe, pas une appartenance de plus — et le refus est explicite, pas un filtrage
    silencieux qui laisserait croire que la désignation a pris.
-4. **`equipes_filles_recursives` ne boucle pas sur un cycle.** `equipe_parente` est libre et
-   rien n'empêche en base qu'un cycle y soit introduit ; un parcours naïf tournerait
-   indéfiniment dans le pont Matrix, en production.
 """
 import pytest
 from django.urls import reverse
@@ -95,24 +95,6 @@ class TestArborescence:
         assert ordinaire.rang_echelon > national.rang_echelon
         assert ordinaire.rang_echelon > arborescence[3].rang_echelon
 
-    def test_les_equipes_filles_sont_trouvees_a_toute_profondeur(self, arborescence):
-        national, zone, region, departement = arborescence
-        assert {e.id for e in national.equipes_filles_recursives()} == {
-            zone.id, region.id, departement.id}
-        assert {e.id for e in region.equipes_filles_recursives()} == {departement.id}
-        assert departement.equipes_filles_recursives() == []
-
-    def test_un_cycle_dans_l_arbre_ne_fait_pas_boucler_le_parcours(self, arborescence):
-        """`equipe_parente` est libre : rien n'empêche en base qu'un cycle soit introduit à la
-        main. Un parcours récursif naïf tournerait indéfiniment — dans le pont Matrix, en
-        production."""
-        national, zone, region, departement = arborescence
-        national.equipe_parente = departement
-        national.save(update_fields=['equipe_parente'])
-
-        trouvees = national.equipes_filles_recursives()
-        assert {e.id for e in trouvees} == {zone.id, region.id, departement.id}
-
 
 @pytest.mark.django_db
 class TestCompositionDesSalons:
@@ -138,9 +120,8 @@ class TestCompositionDesSalons:
 
         assert _membres(departement, TypeSalonEquipe.ENCADREMENT) == {str(chef.id)}
 
-    def test_le_salon_encadrement_remonte_celui_des_equipes_filles(self, arborescence,
-                                                                   create_user):
-        """La décision qui rend l'arborescence utile : la Coordination Régionale parle à ses
+    def test_le_salon_encadrement_remonte_d_un_niveau(self, arborescence, create_user):
+        """Ce qui rend l'arborescence utile : la Coordination Régionale parle à ses
         coordinateurs départementaux dans SON salon d'encadrement."""
         national, zone, region, departement = arborescence
         chef_region = create_user(username='chef-region@test.fr', email='chef-region@test.fr')
@@ -152,9 +133,27 @@ class TestCompositionDesSalons:
 
         assert _membres(region, TypeSalonEquipe.ENCADREMENT) == {
             str(chef_region.id), str(chef_dept.id)}
-        # Et jusqu'en haut : le national voit l'encadrement de tout le pays.
-        assert _membres(national, TypeSalonEquipe.ENCADREMENT) == {
-            str(chef_region.id), str(chef_dept.id)}
+        # La zone, parent direct de la région, voit l'encadrement régional.
+        assert _membres(zone, TypeSalonEquipe.ENCADREMENT) == {str(chef_region.id)}
+
+    def test_mais_elle_NE_remonte_PAS_de_deux_niveaux(self, arborescence, create_user):
+        """L'arbitrage « n-1 » du 11/11/2026, et le test qui le garde.
+
+        Sans cette limite, le salon d'encadrement national réunissait TOUS les encadrants de
+        France : ce n'est plus un salon de commandement mais une liste de diffusion. Le national
+        ne joint pas un coordinateur départemental par un salon — il passe par la zone, qui
+        passe par la région."""
+        national, zone, region, departement = arborescence
+        chef_zone = create_user(username='chef-zone@test.fr', email='chef-zone@test.fr')
+        chef_dept = create_user(username='chef-dept2@test.fr', email='chef-dept2@test.fr')
+        zone.members.set([chef_zone])
+        zone.membres_encadrement.set([chef_zone])
+        departement.members.set([chef_dept])
+        departement.membres_encadrement.set([chef_dept])
+
+        # Le national voit la zone (son enfant direct), PAS le département (deux niveaux plus
+        # bas), ni la région.
+        assert _membres(national, TypeSalonEquipe.ENCADREMENT) == {str(chef_zone.id)}
 
     def test_mais_le_salon_intervenants_ne_remonte_PAS(self, arborescence, create_user):
         """Sinon le salon « Intervenants » du national contiendrait tous les bénévoles de
@@ -184,11 +183,10 @@ class TestCompositionDesSalons:
 class TestCoutDeLaRemonteeEncadrement:
     """Le pont relit TOUS les salons toutes les 30 secondes.
 
-    Le parcours de l'arbre par `Team.equipes_filles_recursives()` coûte une requête par niveau
-    de profondeur ; appelé par salon, il coûterait des centaines de requêtes à chaque passage dès
-    que l'arborescence complète a ses salons. `SalonMatrixEquipeSerializer` mémorise donc l'arbre
-    entier en UNE requête pour toute la réponse — ce test est ce qui empêche quelqu'un de
-    revenir à un `.filter()` par salon sans s'en apercevoir."""
+    Une requête d'enfants par salon coûterait une centaine de requêtes par passage dès que
+    l'arborescence complète a ses salons. `SalonMatrixEquipeSerializer` mémorise donc la carte
+    parent → enfants en UNE requête pour toute la réponse — ce test est ce qui empêche quelqu'un
+    de revenir à un `.filter()` par salon sans s'en apercevoir."""
 
     def test_le_cout_ne_croit_pas_avec_le_nombre_de_salons(self, institution, arborescence):
         from django.db import connection
@@ -213,7 +211,7 @@ class TestCoutDeLaRemonteeEncadrement:
             list(donnees)
 
         # Une requête d'arbre mémorisée + une requête de membres et une d'expulsion par salon.
-        # Sans mémorisation, le parcours seul en ajouterait une par salon ET par niveau.
+        # Sans mémorisation, la carte des enfants en ajouterait une par salon.
         assert len(ctx) <= 2 * len(salons) + 3, (
             f"{len(ctx)} requêtes pour {len(salons)} salons : l'arbre doit être lu une seule "
             "fois pour toute la réponse"

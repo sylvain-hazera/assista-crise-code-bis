@@ -725,10 +725,12 @@ territoire** : rien ne permettait donc de trier les équipes département → r�
 national, ni de retrouver « l'équipe de l'Isère ». Les antennes restent des **équipes** et non
 des institutions filles (décision antérieure : `Institution` n'a aucune hiérarchie).
 
-    Coordination Nationale
-      └─ Coordination Zone de Défense « X »     (7 en métropole + 3 outre-mer)
-           └─ Coordination Régionale « X »       (18 + 5 DROM)
-                └─ Coordination Départementale « XX »  (96 en métropole)
+    Coordination Nationale                              1
+      └─ Coordination Zone de Défense « X »             10   (7 métropole + 3 outre-mer)
+           └─ Coordination Régionale « X »              18   (13 métropole + 5 DROM)
+                └─ Coordination Départementale « XX »   96   (métropole seulement)
+                                                       ───
+                                                       125 équipes
 
 Cinq points à ne pas redécouvrir :
 
@@ -753,6 +755,13 @@ Cinq points à ne pas redécouvrir :
 Elle est **idempotente** et retrouve chaque équipe par `(institution, échelon, territoire)`,
 jamais par son nom — un libellé d'affichage n'a aucune raison d'être stable, et s'en servir de
 clé créerait un doublon au premier renommage.
+
+**`--institution` se compare sans accents ni casse** (`nom_comparable`, rendue publique pour
+cela — c'est le rattrapage que `trouver_aasc` faisait déjà). Les accents sont mutilés en route
+par certains clients SSH, et la commande était alors impossible à lancer pour une institution
+qui s'appelle « Réserve Résilience ». La correspondance reste **exacte une fois normalisée** :
+jamais un rapprochement approximatif, et une ambiguïté est une erreur plutôt qu'un choix
+arbitraire — écrire 125 équipes dans la mauvaise institution ne se défait pas d'un geste.
 
 #### Encadrement d'une équipe
 
@@ -1512,16 +1521,27 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
   | Salon | Qui s'y trouve |
   |---|---|
   | `INTERVENANTS` | toute l'équipe, **encadrement compris** — un encadrant absent du salon de terrain de sa propre équipe ne voit pas ce qui s'y dit |
-  | `ENCADREMENT` | l'encadrement de l'équipe **et celui de ses équipes filles, à toute profondeur** |
+  | `ENCADREMENT` | l'encadrement de l'équipe **et celui de ses équipes filles directes**, un seul niveau |
 
-  La remontée de l'encadrement est ce qui rend l'arborescence utile : le salon d'une
-  Coordination Régionale réunit l'encadrement régional et les coordinateurs départementaux, au
-  lieu d'exiger un salon par couple d'échelons. Conséquence assumée : un encadrant départemental
-  est présent dans quatre salons d'encadrement (le sien, sa région, sa zone, le national) —
-  c'est la chaîne de commandement, mais cela veut dire qu'ajouter un encadrant tout en bas de
-  l'arbre le fait apparaître tout en haut. Le salon `INTERVENANTS`, lui, **ne remonte pas** :
-  celui du national contiendrait sinon tous les bénévoles de France, ce qui n'est plus un salon
-  mais une liste de diffusion.
+  **La remontée s'arrête à « n-1 »** (arbitrage du 11/11/2026). Le salon d'une Coordination
+  Régionale réunit l'encadrement régional et les coordinateurs départementaux, et s'arrête là :
+  chaque échelon parle à celui immédiatement en dessous.
+
+  La remontée récursive avait d'abord été écrite, puis écartée : elle faisait du salon
+  d'encadrement national la réunion de **tous** les encadrants de France, ce qui n'est plus un
+  salon de commandement mais une liste de diffusion. À n-1, un encadrant départemental est dans
+  exactement deux salons d'encadrement — le sien et celui de sa région.
+
+  Conséquence à connaître : **rien ne relie deux échelons non adjacents.** Le national ne joint
+  pas un coordinateur départemental par un salon ; il passe par la zone, qui passe par la région.
+  C'est la chaîne de commandement, et c'est ce qui est voulu.
+
+  Effet secondaire bienvenu : un seul niveau ne peut pas boucler, donc aucun garde anti-cycle
+  n'est nécessaire — la version récursive en demandait un pour ne pas tourner indéfiniment dans
+  le pont si un cycle était introduit à la main dans `equipe_parente`.
+
+  Le salon `INTERVENANTS` **ne remonte pas du tout** : celui du national contiendrait sinon tous
+  les bénévoles de France.
 
   La migration donne le type `INTERVENANTS` aux salons existants, et c'est le seul choix qui ne
   détruise rien — l'unique salon d'une équipe était déjà celui de l'équipe entière. Il garde son

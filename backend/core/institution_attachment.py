@@ -394,11 +394,14 @@ def assign_default_institution_role(user, institution=None):
     )
 
 
-def _nom_comparable(valeur):
+def nom_comparable(valeur):
     """Nom réduit à ce qui l'identifie : sans casse, sans accents, espaces normalisés.
 
     « Réserve Résilience - Casques Jaunes » et « reserve resilience -  casques jaunes » sont la
-    même association ; les comparer brutalement en créait deux."""
+    même association ; les comparer brutalement en créait deux.
+
+    Publique depuis le 11/11/2026 : `creer_arborescence_coordination` en a le même besoin, pour
+    qu'on puisse désigner une institution sans taper ses accents (voir sa docstring)."""
     texte = unicodedata.normalize('NFD', (valeur or '').strip())
     texte = ''.join(c for c in texte if unicodedata.category(c) != 'Mn')
     return ' '.join(texte.lower().split())
@@ -417,11 +420,11 @@ def trouver_aasc(nom_declare):
     normalisée rattrape les variantes de casse, d'accents et d'espaces — pas un nom réellement
     différent : c'est au lien d'invitation et à la liste des associations de faire CHOISIR
     l'AASC plutôt que de la faire saisir."""
-    cible = _nom_comparable(nom_declare)
+    cible = nom_comparable(nom_declare)
     if not cible:
         return None
     for institution in Institution.objects.filter(type__code__iexact=CODE_TYPE_AASC, actif=True):
-        if _nom_comparable(institution.nom) == cible:
+        if nom_comparable(institution.nom) == cible:
             return institution
     return None
 

@@ -21,7 +21,9 @@ from core.zones_defense import (
     verifier_coherence,
 )
 
-NOM = "Reserve Resilience Commande Test"
+# Avec accents, comme la vraie institution : les tests de rapprochement n'ont aucun sens sur un
+# nom déjà en ASCII.
+NOM = "Réserve Résilience Commande Test"
 
 
 @pytest.fixture
@@ -85,6 +87,47 @@ class TestTableDeReference:
 @pytest.mark.django_db
 class TestCommande:
 
+    def test_le_nom_sans_accents_est_accepte(self, institution):
+        """La raison d'être du rapprochement : certains clients SSH mutilent les accents en
+        route, et la commande était alors impossible à lancer pour « Réserve Résilience »."""
+        sortie = StringIO()
+        call_command('creer_arborescence_coordination',
+                     institution="Reserve Resilience Commande Test", compter=True,
+                     stdout=sortie)
+        assert "Nom rapproché sans accents" in sortie.getvalue()
+        assert "équipes créées       : 125" in sortie.getvalue()
+
+    def test_la_casse_et_les_espaces_sont_rattrapes_aussi(self, institution):
+        sortie = StringIO()
+        call_command('creer_arborescence_coordination',
+                     institution="  reserve   resilience commande TEST ", compter=True,
+                     stdout=sortie)
+        assert "équipes créées       : 125" in sortie.getvalue()
+
+    def test_un_nom_exact_ne_declenche_aucun_rapprochement(self, institution):
+        """Le cas courant ne doit rien afficher d'inhabituel, ni parcourir les institutions."""
+        sortie = lancer(compter=True)
+        assert "Nom rapproché" not in sortie
+
+    def test_une_ambiguite_est_une_erreur_et_non_un_choix(self, institution):
+        """Écrire 125 équipes dans la mauvaise institution ne se défait pas d'un geste : mieux
+        vaut refuser et demander le nom exact."""
+        itype = InstitutionType.objects.get(code='AASC_CMD')
+        Institution.objects.create(nom="RESERVE RESILIENCE COMMANDE TEST", type=itype)
+
+        with pytest.raises(CommandError, match="Plusieurs institutions"):
+            call_command('creer_arborescence_coordination',
+                         institution="reserve resilience commande test", stdout=StringIO())
+        assert not Team.objects.exists()
+
+    def test_un_nom_simplement_different_reste_refuse(self, institution):
+        """Le rapprochement porte sur les accents et la casse, PAS sur la ressemblance : un nom
+        réellement différent ne doit pas être accepté « au plus proche »."""
+        with pytest.raises(CommandError):
+            call_command('creer_arborescence_coordination',
+                         institution="Reserve Resilience Commande", stdout=StringIO())
+        assert not Team.objects.exists()
+
     def test_une_institution_inconnue_echoue_sans_rien_ecrire(self, institution):
         with pytest.raises(CommandError, match="Aucune institution"):
             call_command('creer_arborescence_coordination',
@@ -97,7 +140,11 @@ class TestCommande:
         assert "rien n'a été écrit" in sortie
 
     def test_l_arborescence_complete_est_creee(self, institution):
+        """125 équipes : 1 national + 10 zones + 18 régions + 96 départements. Le total est
+        vérifié ici parce que c'est lui qu'on annonce, et qu'une ligne perdue dans la table de
+        référence le changerait sans rien casser d'autre."""
         lancer()
+        assert Team.objects.count() == 125
         national = Team.objects.get(echelon=EchelonEquipe.NATIONAL)
         assert national.name == "Coordination Nationale"
         assert national.equipe_parente is None

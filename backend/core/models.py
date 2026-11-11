@@ -2879,24 +2879,6 @@ class Team(EnvironmentScopedModel):
         except ValueError:
             return len(ORDRE_ECHELONS)
 
-    def equipes_filles_recursives(self):
-        """Toutes les équipes sous celle-ci, à toute profondeur.
-
-        Itératif et non récursif, avec un ensemble de vus : `equipe_parente` est libre et rien
-        n'empêche en base qu'un cycle y soit introduit à la main. Un parcours récursif naïf
-        boucherait alors indéfiniment, dans le pont Matrix, en production."""
-        vus = {self.pk}
-        a_voir = [self.pk]
-        trouvees = []
-        while a_voir:
-            lot = list(Team.objects.filter(equipe_parente_id__in=a_voir).exclude(pk__in=vus))
-            a_voir = []
-            for equipe in lot:
-                vus.add(equipe.pk)
-                trouvees.append(equipe)
-                a_voir.append(equipe.pk)
-        return trouvees
-
 
 class TeamDelegation(EnvironmentScopedModel):
     """Historique des délégations d'une équipe (état courant : Team.institution_delegataire)."""
@@ -6187,10 +6169,15 @@ class TypeSalonEquipe(models.TextChoices):
     """Les deux salons que porte toute équipe.
 
     INTERVENANTS est le salon de l'équipe entière, encadrement compris : un encadrant absent du
-    salon de terrain ne voit pas ce qui s'y dit. ENCADREMENT réunit l'encadrement de l'équipe
-    **et celui de ses équipes filles** — c'est ce qui rend l'arborescence utile, chaque échelon
-    parlant à l'échelon du dessous dans un seul salon au lieu d'un salon par couple (décision du
-    11/11/2026). Voir SalonMatrixEquipeSerializer.get_membres, qui calcule les deux."""
+    salon de terrain ne voit pas ce qui s'y dit.
+
+    ENCADREMENT réunit l'encadrement de l'équipe **et celui de ses équipes filles directes**,
+    un seul niveau — « n-1 » (arbitrage du 11/11/2026). Chaque échelon parle à celui
+    immédiatement en dessous. La remontée récursive avait d'abord été écrite puis écartée : elle
+    faisait du salon national la réunion de tous les encadrants du pays, ce qui n'est plus un
+    salon de commandement mais une liste de diffusion.
+
+    Voir SalonMatrixEquipeSerializer.get_membres, qui calcule les deux."""
 
     INTERVENANTS = "INTERVENANTS", "Intervenants"
     ENCADREMENT = "ENCADREMENT", "Encadrement"

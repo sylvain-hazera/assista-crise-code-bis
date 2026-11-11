@@ -415,8 +415,8 @@
                           [disabled]="enregistrantEncadrement"
                           (click)="$event.stopPropagation(); basculerEncadrement(u.id)"
                           [title]="estEncadrant(u.id)
-                            ? 'Retirer de l\'encadrement — sortira du salon « Encadrement »'
-                            : 'Désigner comme encadrement — entrera dans le salon « Encadrement » de cette équipe et de celles du dessus'">
+                            ? 'Retirer de l\'encadrement — sortira du salon « Encadrement » de cette équipe et de celui de l\'équipe parente'
+                            : 'Désigner comme encadrement — entrera dans le salon « Encadrement » de cette équipe et dans celui de l\'équipe parente, un seul niveau au-dessus'">
                     <span class="material-icons">shield</span>
                     {{ estEncadrant(u.id) ? 'Encadrement' : 'Intervenant' }}
                   </button>
@@ -795,7 +795,8 @@
               <p class="no-missions">
                 Aucun salon Matrix activé. Chaque équipe en a deux : <strong>Intervenants</strong>
                 (toute l'équipe) et <strong>Encadrement</strong> (l'encadrement de cette équipe
-                et celui de ses équipes rattachées). Les membres y sont invités automatiquement.
+                et celui de ses équipes rattachées <em>directes</em>, un seul niveau). Les
+                membres y sont invités automatiquement.
               </p>
               <button class="btn-secondary sm" [disabled]="provisionnantSalonMatrix"
                       (click)="provisionnerSalonMatrix()">

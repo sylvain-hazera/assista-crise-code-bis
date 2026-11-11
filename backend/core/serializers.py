@@ -3589,21 +3589,25 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         INTERVENANTS : toute l'équipe, encadrement compris. Un encadrant absent du salon de
         terrain de sa propre équipe ne voit pas ce qui s'y dit.
 
-        ENCADREMENT : l'encadrement de l'équipe **et celui de ses équipes filles, à toute
-        profondeur**. C'est ce qui rend l'arborescence utile — le salon Encadrement d'une
-        Coordination Régionale réunit l'encadrement régional et les coordinateurs
-        départementaux, au lieu d'exiger un salon par couple d'échelons (décision du
-        11/11/2026).
+        ENCADREMENT : l'encadrement de l'équipe **et celui de ses équipes filles DIRECTES**,
+        un seul niveau — « n-1 », arbitrage du 11/11/2026. Le salon Encadrement d'une
+        Coordination Régionale réunit donc l'encadrement régional et les coordinateurs
+        départementaux, et s'arrête là.
 
-        Conséquence à connaître : un encadrant départemental est donc présent dans TROIS salons
-        d'encadrement (le sien, celui de sa région, celui de sa zone) et dans celui du national.
-        C'est voulu — c'est la chaîne de commandement — mais cela veut dire qu'ajouter un
-        encadrant tout en bas de l'arbre le fait apparaître tout en haut."""
+        La remontée récursive avait d'abord été écrite, puis écartée : elle faisait du salon
+        d'encadrement national la réunion de TOUS les encadrants de France, ce qui n'est plus un
+        salon de commandement mais une liste de diffusion. À n-1, un encadrant départemental est
+        dans exactement deux salons d'encadrement — le sien et celui de sa région — et chaque
+        échelon parle à celui immédiatement en dessous.
+
+        Conséquence à connaître : rien ne relie deux échelons non adjacents. Le national ne
+        joint pas un coordinateur départemental par un salon ; il passe par la zone, qui passe
+        par la région. C'est la chaîne de commandement, et c'est ce qui est voulu."""
         from .matrix import matrix_user_id
 
         if obj.type == TypeSalonEquipe.ENCADREMENT:
             membres = User.objects.filter(
-                teams_encadrees__id__in=self._equipe_et_filles(obj.equipe_id),
+                teams_encadrees__id__in=self._equipe_et_filles_directes(obj.equipe_id),
                 is_active=True,
             ).distinct()
         else:
@@ -3616,13 +3620,12 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         ]
 
     def _enfants_par_parent(self):
-        """{id de parent: [ids d'enfants]} pour TOUT l'arbre, en UNE requête, mémorisé sur le
-        sérialiseur.
+        """{id de parent: [ids d'enfants directs]} pour tout l'arbre, en UNE requête, mémorisé
+        sur le sérialiseur.
 
-        `Team.equipes_filles_recursives()` coûte une requête par niveau de profondeur. Appelée
-        par salon, elle coûterait des centaines de requêtes à chaque passage du pont (toutes les
-        30 s) dès que l'arborescence complète a ses salons : le salon d'encadrement du national
-        parcourt les 127 équipes, celui de chaque zone son sous-arbre, et ainsi de suite.
+        Le pont relit TOUS les salons toutes les 30 secondes. Une requête d'enfants par salon
+        coûterait une centaine de requêtes par passage dès que l'arborescence complète a ses
+        salons ; une seule les couvre tous.
 
         Avec `many=True`, DRF réutilise UNE instance de sérialiseur enfant pour tous les objets :
         mémoriser ici vaut donc pour toute la réponse. Même motif que la mémoire par requête du
@@ -3636,22 +3639,14 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
             self._cache_enfants = enfants
         return self._cache_enfants
 
-    def _equipe_et_filles(self, equipe_id):
-        """L'équipe et toutes ses descendantes, à toute profondeur.
+    def _equipe_et_filles_directes(self, equipe_id):
+        """L'équipe et ses filles DIRECTES, un seul niveau — la remontée « n-1 ».
 
-        Ensemble des vus : `equipe_parente` est libre et rien n'empêche en base qu'un cycle y
-        soit introduit à la main. Sans ce garde, le pont boucherait indéfiniment, en production
-        (même précaution que Team.equipes_filles_recursives)."""
-        enfants = self._enfants_par_parent()
-        vus = {equipe_id}
-        a_voir = [equipe_id]
-        while a_voir:
-            courant = a_voir.pop()
-            for enfant in enfants.get(courant, ()):
-                if enfant not in vus:
-                    vus.add(enfant)
-                    a_voir.append(enfant)
-        return vus
+        Pas de parcours récursif, donc pas de garde anti-cycle à prévoir ici : un seul niveau ne
+        peut pas boucler. C'est un effet secondaire bienvenu de l'arbitrage du 11/11/2026, la
+        version récursive demandant un ensemble de vus pour ne pas tourner indéfiniment dans le
+        pont si un cycle était introduit à la main dans `equipe_parente`."""
+        return [equipe_id, *self._enfants_par_parent().get(equipe_id, ())]
 
     def get_expulsion_activee(self, obj):
         from .models import PointOperationnel
