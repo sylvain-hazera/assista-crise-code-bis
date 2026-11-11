@@ -232,6 +232,7 @@ from .models import (
     EngagementRessource, StatutEngagementRessource,
     Status,
     DernierePositionUtilisateur,
+    ConfigurationEnvoiInstitution,
     SalonMatrixEquipe,
     TypeSalonEquipe,
     SalonMatrixInstitution,
@@ -378,18 +379,26 @@ def envoyer_email_creation_compte(request, user):
 
     if not user.enabled:
         try:
-            send_mail_logged(
-                request,
+            # MARQUE BLANCHE (corrigé le 11/11/2026) : ce message signait « L'équipe
+            # Assista-Crise » en dur et partait par send_mail_logged, donc hors de tout
+            # branding. Quelqu'un qui s'inscrivait comme secours sur cj.assista-crise.fr
+            # recevait un accusé Assista-Crise — et c'est le PREMIER message qu'il voit.
+            # Résolu depuis le Host de l'inscription, comme send_institution_account_email et
+            # l'accusé citoyen juste en dessous, et pas depuis user.institution qui n'est pas
+            # encore rattachée à ce stade.
+            institution_branding = resolve_institution_branding(request)
+            branding = branding_for_institution(institution_branding)
+            send_branded_mail(
+                request, institution_branding,
                 subject="Compte créé - En attente de validation",
                 message=(
                     f"Bonjour {user.first_name} {user.last_name},\n\n"
-                    f"Votre compte ({user.get_type_display()}) a bien été créé.\n"
+                    f"Votre compte ({user.get_type_display()}) sur {branding.nom_affichage} a "
+                    "bien été créé.\n"
                     "Cependant, il est en attente de validation par un administrateur.\n"
                     "Vous recevrez un email dès que votre compte sera validé.\n\n"
-                    "Cordialement,\n"
-                    "L'équipe Assista-Crise"
+                    "{signature}"
                 ),
-                from_email=None,
                 recipient_list=[user.email],
                 fail_silently=False,
             )
@@ -525,6 +534,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 
 from .serializers import (
     DemandeAccesRadioSerializer,
+    ConfigurationEnvoiInstitutionSerializer,
     NoeudPublicMeshCoreSerializer,
     RattachementNoeudRadioSerializer,
     SourceObservateurMeshCoreSerializer,
@@ -2188,9 +2198,17 @@ class UserViewSet(viewsets.ModelViewSet):
             )
         
         # Envoyer email de rejet
+        #
+        # MARQUE BLANCHE (corrigé le 11/11/2026, même défaut que l'accusé de compte en
+        # attente) : signé « L'équipe Assista-Crise » en dur. L'institution est prise sur le
+        # compte refusé quand elle est connue, sinon sur le Host de la requête — le refus est
+        # prononcé depuis l'interface de l'institution qui refuse.
+        institution_rejet = (
+            getattr(user_to_reject, 'institution', None) or resolve_institution_branding(request)
+        )
         try:
-            send_mail_logged(
-                request,
+            send_branded_mail(
+                request, institution_rejet,
                 subject="Votre demande de compte a été refusée",
                 message=(
                     f"Bonjour {user_to_reject.first_name} {user_to_reject.last_name},\n\n"
@@ -2198,10 +2216,8 @@ class UserViewSet(viewsets.ModelViewSet):
                     f"({user_to_reject.get_type_display()}) n'a pas été acceptée.\n\n"
                     f"Raison : {reason}\n\n"
                     "Pour plus d'informations, vous pouvez nous contacter.\n\n"
-                    "Cordialement,\n"
-                    "L'équipe Assista-Crise"
+                    "{signature}"
                 ),
-                from_email=None,
                 recipient_list=[user_to_reject.email],
                 fail_silently=False,
             )
@@ -12688,6 +12704,62 @@ class InstitutionViewSet(
                        f"« {nom} » et en deviendra le contact principal."},
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=['get', 'put', 'patch'], url_path='configuration-envoi')
+    def configuration_envoi(self, request, pk=None):
+        """Identifiants d'envoi de l'institution — onglet « Envois » de sa fiche.
+
+        **Réservé au bureau de l'institution** (`ContactInstitution.membre_bureau`) ou à un
+        administrateur de la plateforme, et non à tout contact actif : confier une clé qui
+        permet d'envoyer des emails AU NOM de l'association est un acte de gouvernance, du même
+        ordre que d'administrer ses membres — ce que `membre_bureau` porte déjà.
+
+        Les clés sont en écriture seule ; la lecture ne rend que « configurée / non
+        configurée » (voir le sérialiseur). `GET` crée la ligne au premier appel plutôt que de
+        rendre 404 : l'onglet doit s'ouvrir sur un formulaire vide, pas sur une erreur."""
+        institution = self.get_object()
+
+        est_admin = get_effective_role(request) == UserRole.ADMINISTRATOR
+        au_bureau = ContactInstitution.objects.filter(
+            institution=institution, utilisateur=request.user, membre_bureau=True, actif=True,
+        ).exists()
+        if not (est_admin or au_bureau):
+            return Response(
+                {"error": "Seul le bureau de cette institution peut consulter ou modifier ses "
+                          "identifiants d'envoi."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        config, _ = ConfigurationEnvoiInstitution.objects.get_or_create(
+            institution=institution,
+            defaults={"environment": get_active_environment(request)},
+        )
+
+        if request.method == 'GET':
+            return Response(ConfigurationEnvoiInstitutionSerializer(
+                config, context={'request': request}).data)
+
+        serializer = ConfigurationEnvoiInstitutionSerializer(
+            config, data=request.data, partial=True, context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # Journalisé SANS la valeur des clés, évidemment — mais le fait qu'elles ont changé,
+        # oui : c'est la trace qui permet de comprendre pourquoi les envois d'une institution
+        # se sont mis à échouer, ou à partir d'une autre adresse.
+        modifies = sorted(k for k in request.data.keys() if k in {
+            'brevo_actif', 'brevo_cle_api', 'brevo_expediteur_email', 'brevo_expediteur_nom',
+            'fournisseur_sms', 'sms_cle_api', 'sms_expediteur',
+        })
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="ConfigurationEnvoiInstitution", objet_id=config.id,
+            commentaire=f"Identifiants d'envoi de « {institution.nom} » modifiés : "
+                        f"{', '.join(modifies) or 'aucun champ reconnu'}.",
+        )
+        return Response(ConfigurationEnvoiInstitutionSerializer(
+            config, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='provisionner-salons-matrix')
     def provisionner_salons_matrix(self, request, pk=None):

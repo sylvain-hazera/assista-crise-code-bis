@@ -316,6 +316,9 @@
           <button class="tab" [class.active]="detailTab === 'mes-risques'" (click)="detailTab = 'mes-risques'">
             <span class="material-icons">report_problem</span> Mes risques
           </button>
+          <button class="tab" [class.active]="detailTab === 'envois'" (click)="ouvrirOngletEnvois()">
+            <span class="material-icons">send</span> Envois
+          </button>
         </nav>
 
         <div class="modal-body">
@@ -696,6 +699,132 @@
               </table>
             } @empty {
               <p class="empty-pick">Aucun interlocuteur PCS/PICS pour l'instant.</p>
+            }
+          }
+
+          <!-- ── ENVOIS : identifiants propres a l'institution ──────────────
+               Les cles ne sont JAMAIS relues depuis le serveur : les champs restent vides a
+               l'ouverture, et une saisie vide signifie << inchangee >>. -->
+          @if (detailTab === 'envois') {
+            <p class="hint">
+              Quand une clé est fournie, les emails de cette institution partent de
+              <strong>son</strong> compte et de <strong>son</strong> adresse : Assista-Crise
+              n'apparaît alors nulle part dans le message.
+            </p>
+
+            @if (configEnvoiChargement) {
+              <p class="empty-pick">Chargement…</p>
+            }
+            @if (configEnvoiErreur) {
+              <div class="alert alert-error"><span class="material-icons">warning</span> {{ configEnvoiErreur }}</div>
+            }
+            @if (configEnvoiSucces) {
+              <div class="alert alert-success"><span class="material-icons">check_circle</span> {{ configEnvoiSucces }}</div>
+            }
+
+            @if (configEnvoi) {
+              <h4 class="bloc-titre"><span class="material-icons">mail</span> Email (Brevo)</h4>
+
+              @if (configEnvoi.derniere_erreur_email) {
+                <!-- Le seul endroit ou une cle revoquee se voit : sans ca, le probleme
+                     n'apparait que quand un destinataire signale n'avoir rien recu. -->
+                <div class="alert alert-error">
+                  <span class="material-icons">error_outline</span>
+                  Dernier échec signalé par Brevo : {{ configEnvoi.derniere_erreur_email }}
+                </div>
+              }
+              @if (configEnvoi.dernier_envoi_email_le) {
+                <p class="georisques-date">
+                  Dernier envoi réussi le {{ configEnvoi.dernier_envoi_email_le | date:'dd/MM/yyyy à HH:mm' }}
+                </p>
+              }
+
+              <label class="case-a-cocher">
+                <input type="checkbox" [(ngModel)]="configEnvoi.brevo_actif">
+                Envoyer les emails de cette institution par son compte Brevo
+              </label>
+
+              <div class="form-group">
+                <label class="form-label">Clé API Brevo</label>
+                <input type="password" class="form-input" autocomplete="off"
+                       [(ngModel)]="brevoCleSaisie"
+                       [placeholder]="configEnvoi.brevo_cle_api_renseignee
+                         ? 'Clé enregistrée — laisser vide pour ne pas la changer'
+                         : 'xkeysib-…'">
+                <p class="hint">
+                  @if (configEnvoi.brevo_cle_api_renseignee) {
+                    Une clé est enregistrée. Elle n'est jamais réaffichée, même au bureau :
+                    si elle est perdue, régénérez-la chez Brevo.
+                    <button type="button" class="btn-link-invite" (click)="effacerCleBrevo()">
+                      Effacer la clé
+                    </button>
+                  } @else {
+                    Dans Brevo : <em>Paramètres → SMTP &amp; API → Clés API</em>. Attention à ne
+                    pas prendre la clé SMTP, qui est différente et ne fonctionne pas avec l'API.
+                  }
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Adresse expéditrice</label>
+                <input type="email" class="form-input" [(ngModel)]="configEnvoi.brevo_expediteur_email"
+                       placeholder="ne-pas-repondre@votre-domaine.fr">
+                <p class="hint">
+                  Elle doit être un <strong>expéditeur vérifié</strong> dans le compte Brevo
+                  (<em>Paramètres → Expéditeurs &amp; IP</em>), sinon l'API refusera les envois.
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Nom affiché de l'expéditeur</label>
+                <input type="text" class="form-input" maxlength="70"
+                       [(ngModel)]="configEnvoi.brevo_expediteur_nom"
+                       [placeholder]="selectedInstitution?.nom || ''">
+                <p class="hint">
+                  Vide = le nom d'affichage de l'institution (le serveur fait le même repli que
+                  pour la signature des emails). 70 caractères maximum.
+                </p>
+              </div>
+
+              <h4 class="bloc-titre"><span class="material-icons">sms</span> SMS</h4>
+              @if (configEnvoi.derniere_erreur_sms) {
+                <div class="alert alert-error">
+                  <span class="material-icons">error_outline</span>
+                  Dernier échec : {{ configEnvoi.derniere_erreur_sms }}
+                </div>
+              }
+              <div class="form-group">
+                <label class="form-label">Fournisseur</label>
+                <select class="form-input" [(ngModel)]="configEnvoi.fournisseur_sms">
+                  <option value="">— Aucun envoi de SMS —</option>
+                  <option value="MOBIMEL">Mobimel (en attente de sa documentation API)</option>
+                </select>
+                <p class="hint">
+                  L'envoi par Mobimel n'est pas encore opérationnel : sa documentation API est
+                  nécessaire pour écrire l'adaptateur. Tout le reste est en place — la clé peut
+                  déjà être enregistrée ici.
+                </p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Clé API SMS</label>
+                <input type="password" class="form-input" autocomplete="off"
+                       [(ngModel)]="smsCleSaisie"
+                       [placeholder]="configEnvoi.sms_cle_api_renseignee
+                         ? 'Clé enregistrée — laisser vide pour ne pas la changer'
+                         : 'Clé fournie par l\'opérateur'">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Expéditeur présenté</label>
+                <input type="text" class="form-input" maxlength="30"
+                       [(ngModel)]="configEnvoi.sms_expediteur"
+                       placeholder="Nom ou numéro, selon ce que l'opérateur autorise">
+              </div>
+
+              <button type="button" class="btn-primary"
+                      [disabled]="configEnvoiEnregistrement" (click)="enregistrerConfigEnvoi()">
+                <span class="material-icons">save</span>
+                {{ configEnvoiEnregistrement ? 'Enregistrement…' : 'Enregistrer' }}
+              </button>
             }
           }
 

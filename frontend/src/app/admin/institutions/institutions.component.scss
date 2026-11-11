@@ -428,3 +428,23 @@
   font-weight: 400;
   margin-top: .2rem;
 }
+
+// ── Onglet « Envois » ─────────────────────────────────────────────────────────
+// Titre de bloc à l'intérieur d'un onglet : l'onglet en porte deux (email, SMS) et sans
+// séparation visuelle on saisit la clé SMS dans le champ Brevo.
+.bloc-titre {
+  display: flex; align-items: center; gap: .4rem;
+  margin: 1.5rem 0 .75rem; font-size: .95rem; font-weight: 700;
+  padding-bottom: .4rem; border-bottom: 1px solid var(--border);
+
+  .material-icons { font-size: 18px; color: var(--primary); }
+
+  &:first-of-type { margin-top: .5rem; }
+}
+
+.case-a-cocher {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .9rem; margin: 0 0 1rem; cursor: pointer;
+
+  input { flex: none; }
+}

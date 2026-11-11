@@ -5,6 +5,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } 
 import { forkJoin } from 'rxjs';
 
 import { InstitutionService } from '../../services/institution.service';
+import { ConfigurationEnvoi, ConfigurationEnvoiPatch } from '../../shared/models/configuration-envoi.model';
 import { InstitutionTypeService } from '../../services/institution-type.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
@@ -44,7 +45,7 @@ import { Competence } from '../../shared/models/competence.model';
 type MainTab = 'institutions' | 'types' | 'roles';
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
-type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques';
+type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois';
 
 @Component({
   selector: 'app-institutions',
@@ -187,6 +188,98 @@ export class InstitutionsComponent implements OnInit {
   ngOnInit(): void {
     this.buildForms();
     this.loadAll();
+  }
+
+  // ── Onglet « Envois » : identifiants propres à l'institution ──────────────────────────
+  //
+  // Les clés ne sont JAMAIS rendues par le serveur (voir ConfigurationEnvoi) : les champs de
+  // saisie restent donc vides à l'ouverture, et une saisie laissée vide ne change rien. C'est
+  // la raison d'être de `brevoCleSaisie`, distinct de la configuration elle-même.
+  configEnvoi: ConfigurationEnvoi | null = null;
+  configEnvoiChargement = false;
+  configEnvoiEnregistrement = false;
+  configEnvoiErreur = '';
+  configEnvoiSucces = '';
+  brevoCleSaisie = '';
+  smsCleSaisie = '';
+
+  ouvrirOngletEnvois(): void {
+    this.detailTab = 'envois';
+    // Chargé à l'ouverture de l'onglet et non avec la fiche : l'endpoint est réservé au bureau
+    // et répond 403 aux autres, inutile de le solliciter pour tout le monde.
+    if (this.configEnvoi || !this.selectedInstitution?.id) return;
+    this.configEnvoiChargement = true;
+    this.configEnvoiErreur = '';
+    this.institutionService.getConfigurationEnvoi(this.selectedInstitution.id).subscribe({
+      next: (config) => { this.configEnvoi = config; this.configEnvoiChargement = false; },
+      error: (err) => {
+        this.configEnvoiChargement = false;
+        this.configEnvoiErreur = err?.status === 403
+          ? "Seul le bureau de cette institution peut consulter ses identifiants d'envoi."
+          : "Impossible de charger la configuration d'envoi.";
+      },
+    });
+  }
+
+  enregistrerConfigEnvoi(): void {
+    if (!this.selectedInstitution?.id || !this.configEnvoi) return;
+    const config = this.configEnvoi;
+    const patch: ConfigurationEnvoiPatch = {
+      brevo_actif: config.brevo_actif,
+      brevo_expediteur_email: config.brevo_expediteur_email,
+      brevo_expediteur_nom: config.brevo_expediteur_nom,
+      fournisseur_sms: config.fournisseur_sms,
+      sms_expediteur: config.sms_expediteur,
+    };
+    // Une clé n'est envoyée que si elle a été saisie : un champ vide signifie « inchangée »,
+    // pas « effacée ». Sans cette distinction, ouvrir l'onglet et enregistrer effacerait la
+    // clé en place sans que personne ne l'ait voulu.
+    if (this.brevoCleSaisie.trim()) patch.brevo_cle_api = this.brevoCleSaisie.trim();
+    if (this.smsCleSaisie.trim()) patch.sms_cle_api = this.smsCleSaisie.trim();
+
+    this.configEnvoiEnregistrement = true;
+    this.configEnvoiErreur = '';
+    this.configEnvoiSucces = '';
+    this.institutionService.majConfigurationEnvoi(this.selectedInstitution.id, patch).subscribe({
+      next: (maj) => {
+        this.configEnvoi = maj;
+        this.brevoCleSaisie = '';
+        this.smsCleSaisie = '';
+        this.configEnvoiEnregistrement = false;
+        this.configEnvoiSucces = "Configuration enregistrée.";
+      },
+      error: (err) => {
+        this.configEnvoiEnregistrement = false;
+        // Le serveur nomme le champ fautif (clé qui ne commence pas par « xkeysib- »,
+        // expéditeur manquant alors que Brevo est activé) : l'afficher vaut mieux qu'un
+        // message générique, ce sont exactement les deux erreurs courantes.
+        const corps = err?.error || {};
+        this.configEnvoiErreur =
+          corps.brevo_cle_api?.[0] || corps.brevo_expediteur_email?.[0]
+          || corps.error || "Erreur lors de l'enregistrement.";
+      },
+    });
+  }
+
+  /** Efface la clé Brevo côté serveur — geste explicite, distinct d'un champ laissé vide. */
+  effacerCleBrevo(): void {
+    if (!this.selectedInstitution?.id || !this.configEnvoi) return;
+    if (!confirm("Effacer la clé API Brevo ? Les emails de cette institution repartiront du "
+                 + "serveur Assista-Crise, avec son texte mais pas son adresse.")) return;
+    this.configEnvoiEnregistrement = true;
+    this.institutionService.majConfigurationEnvoi(this.selectedInstitution.id, {
+      brevo_cle_api: '', brevo_actif: false,
+    }).subscribe({
+      next: (maj) => {
+        this.configEnvoi = maj;
+        this.configEnvoiEnregistrement = false;
+        this.configEnvoiSucces = "Clé effacée.";
+      },
+      error: () => {
+        this.configEnvoiEnregistrement = false;
+        this.configEnvoiErreur = "Erreur lors de l'effacement.";
+      },
+    });
   }
 
   // ── Salons Matrix généraux de l'institution (permanents / bénévoles mobilisés) ─────────
@@ -388,6 +481,13 @@ export class InstitutionsComponent implements OnInit {
 
   openDetail(institution: Institution): void {
     this.selectedInstitution = institution;
+    // Remise à zéro de l'onglet « Envois » : garder la configuration de l'institution
+    // précédente ferait saisir une clé dans la mauvaise fiche.
+    this.configEnvoi = null;
+    this.brevoCleSaisie = '';
+    this.smsCleSaisie = '';
+    this.configEnvoiErreur = '';
+    this.configEnvoiSucces = '';
     // Les contacts de CETTE institution, demandés nommément. La page tirait auparavant la
     // table entière au chargement pour n'en afficher qu'une institution à la fois — et
     // l'endpoint, ouvert à tout compte authentifié, les rendait toutes lisibles.

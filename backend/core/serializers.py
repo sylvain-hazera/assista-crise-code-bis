@@ -91,6 +91,7 @@ from .models import (
     CanalMeshCore,
     CanalMeshCoreDetecte,
     MessageCanalMeshCore,
+    ConfigurationEnvoiInstitution,
     SalonMatrixEquipe,
     TypeSalonEquipe,
     SalonMatrixInstitution,
@@ -4911,3 +4912,94 @@ class NoeudPublicMeshCoreSerializer(serializers.ModelSerializer):
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+
+class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
+    """Identifiants d'envoi d'une institution (voir ConfigurationEnvoiInstitution).
+
+    **Les clés sont en écriture seule, et il n'existe aucun moyen de les relire.** On ne sert
+    que « configurée / non configurée » : une clé API qu'on peut relire depuis l'application
+    est une clé qui fuite par le premier endpoint mal gardé — le projet l'a déjà constaté sur
+    cinq endpoints de secrets mesh, d'où `EstComptePont`. Une clé perdue se régénère chez le
+    fournisseur.
+
+    `derniere_erreur_*` est en revanche servie, et c'est délibéré : c'est le seul endroit où
+    l'on voit qu'une clé a été révoquée. Elle contient le message du fournisseur, pas un
+    secret."""
+
+    email_configure = serializers.BooleanField(read_only=True)
+    sms_configure = serializers.BooleanField(read_only=True)
+    # Présence seulement, jamais la valeur ni un fragment : même quatre caractères d'une clé
+    # réduisent le travail de qui la cherche.
+    brevo_cle_api_renseignee = serializers.SerializerMethodField()
+    sms_cle_api_renseignee = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ConfigurationEnvoiInstitution
+        fields = [
+            'id', 'institution',
+            'brevo_actif', 'brevo_cle_api', 'brevo_cle_api_renseignee',
+            'brevo_expediteur_email', 'brevo_expediteur_nom',
+            'fournisseur_sms', 'sms_cle_api', 'sms_cle_api_renseignee', 'sms_expediteur',
+            'email_configure', 'sms_configure',
+            'dernier_envoi_email_le', 'derniere_erreur_email',
+            'dernier_envoi_sms_le', 'derniere_erreur_sms',
+            'date_modification',
+        ]
+        read_only_fields = [
+            'id', 'institution', 'dernier_envoi_email_le', 'derniere_erreur_email',
+            'dernier_envoi_sms_le', 'derniere_erreur_sms', 'date_modification',
+        ]
+        extra_kwargs = {
+            'brevo_cle_api': {'write_only': True, 'required': False, 'allow_blank': True},
+            'sms_cle_api': {'write_only': True, 'required': False, 'allow_blank': True},
+        }
+
+    def get_brevo_cle_api_renseignee(self, obj):
+        return bool(obj.brevo_cle_api)
+
+    def get_sms_cle_api_renseignee(self, obj):
+        return bool(obj.sms_cle_api)
+
+    def validate_brevo_cle_api(self, value):
+        """Une chaîne vide EFFACE la clé ; une valeur la remplace.
+
+        Le préfixe `xkeysib-` est vérifié parce que la confusion la plus fréquente est de
+        coller la clé SMTP de Brevo à la place de la clé API — les deux coexistent dans le même
+        écran de leur interface, et ne sont pas interchangeables. Refuser tout de suite vaut
+        mieux qu'un 400 de Brevo au premier email réel."""
+        valeur = (value or '').strip()
+        if valeur and not valeur.startswith('xkeysib-'):
+            raise serializers.ValidationError(
+                "Une clé API Brevo commence par « xkeysib- ». Attention à ne pas coller la "
+                "clé SMTP, qui est différente et ne fonctionne pas avec l'API."
+            )
+        return valeur
+
+    def validate(self, attrs):
+        """Activer Brevo sans clé ni adresse expéditrice est refusé.
+
+        Sinon la configuration passerait pour active, chaque envoi échouerait, et le repli SMTP
+        ferait partir tous les messages au nom d'Assista-Crise — en silence, puisque le message
+        arrive quand même."""
+        instance = self.instance
+        actif = attrs.get('brevo_actif', getattr(instance, 'brevo_actif', False))
+        if not actif:
+            return attrs
+
+        cle = attrs.get('brevo_cle_api', None)
+        cle_presente = bool(cle) if cle is not None else bool(getattr(instance, 'brevo_cle_api', ''))
+        adresse = attrs.get('brevo_expediteur_email',
+                            getattr(instance, 'brevo_expediteur_email', ''))
+
+        manquants = {}
+        if not cle_presente:
+            manquants['brevo_cle_api'] = "Requise pour activer l'envoi par Brevo."
+        if not adresse:
+            manquants['brevo_expediteur_email'] = (
+                "Requise pour activer l'envoi par Brevo. Elle doit être un expéditeur vérifié "
+                "dans le compte Brevo, sinon l'API refusera les envois."
+            )
+        if manquants:
+            raise serializers.ValidationError(manquants)
+        return attrs

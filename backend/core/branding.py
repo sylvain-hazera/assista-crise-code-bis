@@ -101,14 +101,53 @@ def send_branded_mail(request, institution, subject, message, recipient_list, **
     """Variante de send_mail_logged (core/audit.py) qui personnalise le sujet/la signature/le
     Reply-To selon l'institution fournie -- `message` doit se terminer par un marqueur
     "{signature}" que cette fonction remplace (voir les appelants) plutôt que de supposer où la
-    signature se trouve dans le texte. `from_email` reste toujours None (compte SMTP unique
-    Assista-Crise en v1, voir mémoire de conception -- `reply_to` est le seul levier de
-    personnalisation de l'adresse pour l'instant)."""
-    from .audit import send_mail_logged
+    signature se trouve dans le texte.
+
+    **Depuis le 11/11/2026, l'envoi passe par l'API de l'institution quand elle en a une**
+    (`ConfigurationEnvoiInstitution`, Brevo) : le message part alors de SON adresse, et
+    Assista-Crise n'apparaît nulle part. C'est la levée de la limite de la v1, qui disait ici
+    même « compte SMTP unique Assista-Crise, `reply_to` est le seul levier de personnalisation
+    de l'adresse pour l'instant ».
+
+    Sans configuration, ou si l'API échoue, on retombe sur le SMTP Assista-Crise
+    (`from_email=None`) **en gardant le texte de l'institution** — voir
+    core/envoi_institution.py pour ce qui est assumé dans ce repli. L'envoi reste journalisé en
+    main courante dans les deux cas : `send_mail_logged` pour le SMTP, un `audit_log` explicite
+    pour l'API, qui ne passe pas par Django."""
+    from .audit import audit_log, send_mail_logged
+    from .envoi_institution import envoyer_email_pour_institution
 
     branding = get_mail_branding(institution)
     message_final = message.replace("{signature}", f"Cordialement,\n{branding['signature']}")
     reply_to = [branding["reply_to"]] if branding["reply_to"] else None
+
+    envoye, detail = envoyer_email_pour_institution(
+        request, institution, subject, message_final, list(recipient_list),
+        reply_to=branding["reply_to"],
+    )
+    if envoye:
+        # Journalisé ici parce que cet envoi ne traverse pas send_mail_logged : sans cela,
+        # passer une institution à l'API ferait DISPARAÎTRE ses emails de la main courante —
+        # exactement le trou que send_mail_logged avait été écrit pour fermer.
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="Email",
+            commentaire=f'Envoi "{subject}" à {", ".join(recipient_list)} '
+                        f'via l\'API de « {institution.nom} »',
+            succes=True,
+        )
+        # 1 : même convention de retour que django.core.mail.send_mail (nombre de messages
+        # pris en charge), pour que les appelants n'aient pas à distinguer les deux chemins.
+        return 1
+
+    if detail and detail != "non configuré":
+        # Le repli est tracé À PART du succès de l'envoi SMTP qui suit : une clé révoquée doit
+        # se voir dans la main courante même si le message est finalement parti.
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="Email",
+            commentaire=f'Repli SMTP pour « {institution.nom} » après échec de son API : {detail}',
+            succes=False,
+        )
+
     return send_mail_logged(
         request, subject=subject, message=message_final, from_email=None,
         recipient_list=recipient_list, reply_to=reply_to, **kwargs,

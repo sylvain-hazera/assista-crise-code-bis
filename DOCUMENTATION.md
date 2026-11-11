@@ -714,6 +714,75 @@ mobilisations. Les qualifications par personne avec échéance n'existent PAS au
 crise, pas à une personne. Les disponibilités, elles, ont déjà leur socle
 (`DisponibiliteOperationnelle`, pendue à `AffectationRoleOperationnel`).
 
+#### Envoi au nom de l'institution : email Brevo, SMS
+
+`ConfigurationEnvoiInstitution` + `core/envoi_brevo.py` + `core/envoi_institution.py`
+(migration `0248`), onglet **Envois** de la fiche institution.
+
+Lève la limite inscrite dans `core/branding.py` depuis l'origine : « compte SMTP unique
+Assista-Crise en v1, `reply_to` est le seul levier de personnalisation de l'adresse pour
+l'instant ». Une institution qui fournit sa clé Brevo envoie depuis **son** adresse, et
+Assista-Crise n'apparaît plus dans le message.
+
+Le point d'insertion est `send_branded_mail`, parce que c'est la seule fonction qui connaît
+l'institution. Conséquence voulue : **tous** les emails de marque blanche y passent, y compris
+le cycle de vie des comptes (activation, mot de passe oublié) — choix explicite du 11/11/2026,
+puisque le mail d'activation est le **premier** que voit un bénévole.
+
+Contrat Brevo relevé sur leur documentation le 11/11/2026 : `POST
+https://api.brevo.com/v3/smtp/email`, clé dans l'en-tête **`api-key`** (et non
+`Authorization: Bearer`, qui renvoie 401), corps `sender {name, email}` / `to` / `subject` /
+`textContent`, succès **201** avec `messageId`. Deux zones d'ombre, traitées défensivement :
+leur documentation **ne liste que le 400** (aucune entrée 401/403) et **ne dit pas** quelle
+erreur revient pour un expéditeur non vérifié. Tout statut hors 2xx est donc un échec nommé,
+avec le message de Brevo remonté **intact** — c'est lui qui distingue une clé révoquée d'un
+quota dépassé ou d'un domaine non vérifié.
+
+**Le repli est volontaire et partiel.** Si l'API échoue, le message part quand même par le SMTP
+Assista-Crise **en gardant le texte de l'institution** : sa signature, son Reply-To, son nom
+dans le corps. Seule l'adresse `From` retombe sur Assista-Crise. C'est une fuite de marque
+assumée, préférée à un message qui ne part pas (arbitrage de Sylvain). Elle n'est jamais
+silencieuse : journalisée en main courante avec le message du fournisseur, et horodatée sur la
+configuration, que l'onglet affiche.
+
+Distinction de journalisation qui compte : une clé révoquée passe par `logger.warning` (c'est un
+problème de configuration **chez le partenaire**), un bug de notre côté par `logger.exception`,
+qui déclenche l'alerte technique. Confondre les deux noierait les vraies pannes.
+
+Quatre décisions sur le stockage :
+
+- **modèle séparé d'`Institution`**, pas des champs de plus. Le bloc de marque blanche sur
+  `Institution` porte en commentaire « en clair : informations publiques », et
+  `InstitutionSerializer` est servi largement. Un modèle à part garantit que la clé ne voyage
+  jamais par défaut — le projet a déjà payé cette leçon sur cinq endpoints de secrets mesh, d'où
+  `EstComptePont` ;
+- **clés chiffrées au repos** (`EncryptedTextField`), vérifié par un test **en SQL brut** et non
+  par l'ORM : seule façon de constater ce qu'un `pg_dump` contiendrait ;
+- **jamais relues par l'API.** On ne sert que `*_cle_api_renseignee`, pas même un fragment :
+  quatre caractères réduisent déjà le travail de qui la cherche. Une clé perdue se régénère chez
+  le fournisseur ;
+- **réservé au bureau** (`ContactInstitution.membre_bureau`), pas à tout contact actif : confier
+  une clé qui permet d'envoyer **au nom** de l'association est un acte de gouvernance, du même
+  ordre que d'administrer ses membres.
+
+Côté interface, un champ de clé laissé vide signifie **inchangée** et non effacée — sans cette
+distinction, ouvrir l'onglet et enregistrer effacerait la clé en place. L'effacement est un
+geste explicite.
+
+Deux fuites de marque corrigées au passage, trouvées en traçant les chemins d'envoi : l'accusé
+« compte en attente de validation » et le mail de refus de compte signaient « L'équipe
+Assista-Crise » **en dur**, hors de tout branding, par `send_mail_logged` direct.
+
+**SMS : la couche est construite, l'adaptateur Mobimel ne l'est pas.** `core/envoi_sms.py` est un
+registre de fournisseurs, de la même forme que celui des canaux d'alerte PCS — ajouter un
+opérateur = une fonction + une entrée, sans migration (`fournisseur_sms` est une chaîne libre).
+Mobimel y est **déclaré et marqué non implémenté** : l'opérateur existe, mais aucune
+documentation publique de son API n'a pu être trouvée (ni endpoint, ni paramètres, ni forme
+d'authentification). Un adaptateur écrit sur des suppositions enverrait des identifiants à une
+URL inventée. Ce qu'il faut pour l'écrire est listé dans la docstring de `_envoyer_mobimel`, y
+compris le **format du numéro** — c'est le point le plus souvent faux : un opérateur qui attend
+`33612345678` et reçoit `+33612345678` accepte l'appel et ne livre rien.
+
 #### Arborescence de coordination territoriale
 
 `echelon` + `territoire_code` + `territoire_libelle` sur `Team` (migration `0247`), plus

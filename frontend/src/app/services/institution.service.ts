@@ -4,6 +4,7 @@ import { EMPTY, Observable, expand, reduce } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Institution } from '../shared/models/institution.model';
 import { MatrixMessage } from '../shared/models/team.model';
+import { ConfigurationEnvoi, ConfigurationEnvoiPatch } from '../shared/models/configuration-envoi.model';
 
 export type TypeSalonInstitution = 'PERMANENTS' | 'BENEVOLES';
 
@@ -53,6 +54,21 @@ export class InstitutionService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
+  /** GET /api/institutions/<id>/configuration-envoi/ — identifiants d'envoi (email Brevo,
+   * SMS). Réservé au bureau de l'institution ; 403 sinon.
+   *
+   * La ligne est créée au premier appel plutôt que de rendre 404 : l'onglet doit s'ouvrir sur
+   * un formulaire vide, pas sur une erreur. Les clés ne sont jamais rendues — voir le modèle. */
+  getConfigurationEnvoi(id: string): Observable<ConfigurationEnvoi> {
+    return this.http.get<ConfigurationEnvoi>(`${this.url}/${id}/configuration-envoi/`);
+  }
+
+  /** PATCH /api/institutions/<id>/configuration-envoi/ — une clé absente du corps est
+   * inchangée, une chaîne vide l'effface. */
+  majConfigurationEnvoi(id: string, patch: ConfigurationEnvoiPatch): Observable<ConfigurationEnvoi> {
+    return this.http.patch<ConfigurationEnvoi>(`${this.url}/${id}/configuration-envoi/`, patch);
   }
 
   /** POST /api/institutions/<id>/provisionner-salons-matrix/ — active les deux salons

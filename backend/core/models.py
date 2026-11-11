@@ -1340,6 +1340,94 @@ class Institution(EnvironmentScopedModel):
         return self.nom
 
 
+class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
+    """Identifiants d'envoi (email, SMS) propres à une institution en marque blanche.
+
+    Lève la limite inscrite dans `core/branding.py` depuis l'origine : « compte SMTP unique
+    Assista-Crise en v1, `reply_to` est le seul levier de personnalisation de l'adresse ». Une
+    institution qui fournit sa clé Brevo envoie depuis SA propre adresse, et Assista-Crise
+    n'apparaît plus dans le message.
+
+    **Modèle séparé d'`Institution`, et c'est une décision.** Les champs de marque blanche
+    (`nom_affichage`, couleurs, `logo`) vivent sur `Institution` dans un bloc qui porte en
+    commentaire « en clair : informations publiques » — y mêler des secrets casserait cette
+    invariante et l'hypothèse du prochain lecteur. Surtout, `InstitutionSerializer` est servi
+    largement et lu par beaucoup de rôles : un modèle à part garantit que la clé ne voyage
+    jamais par défaut. Le projet a déjà payé cette leçon — cinq endpoints livraient des secrets
+    mesh en clair à tout compte connecté, d'où `EstComptePont`.
+
+    Les clés sont **chiffrées au repos** (règle du projet : on ne stocke rien en clair) et
+    **jamais relues par l'API** : le sérialiseur n'expose que « configurée / non configurée ».
+    Une clé perdue se régénère chez le fournisseur, ce qui est plus sûr que de pouvoir la
+    relire depuis l'application."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.OneToOneField(
+        "Institution", on_delete=models.CASCADE, related_name="configuration_envoi",
+    )
+
+    # ── Email (Brevo) ────────────────────────────────────────────────────────
+    brevo_actif = models.BooleanField(
+        default=False,
+        help_text="Faux = les emails de cette institution partent du SMTP Assista-Crise, "
+                   "avec le texte de l'institution (signature, Reply-To).",
+    )
+    brevo_cle_api = EncryptedTextField(
+        blank=True,
+        help_text="Clé API Brevo (commence par « xkeysib- »). Jamais relue par l'API.",
+    )
+    brevo_expediteur_email = models.EmailField(
+        blank=True,
+        help_text="Adresse expéditrice. Doit être un « sender » VÉRIFIÉ dans le compte Brevo, "
+                   "sinon l'API refuse l'envoi.",
+    )
+    brevo_expediteur_nom = models.CharField(
+        max_length=70, blank=True,
+        help_text="Nom affiché de l'expéditeur. Vide = nom_affichage de l'institution. "
+                   "70 caractères maximum (limite Brevo).",
+    )
+
+    # ── SMS ──────────────────────────────────────────────────────────────────
+    # `fournisseur_sms` est une chaîne et non un choix figé : le registre des fournisseurs
+    # vit dans core/envoi_sms.py, et ajouter un opérateur ne doit pas demander une migration.
+    fournisseur_sms = models.CharField(
+        max_length=30, blank=True,
+        help_text="Identifiant du fournisseur SMS (voir core/envoi_sms.py). Vide = aucun "
+                   "envoi de SMS pour cette institution.",
+    )
+    sms_cle_api = EncryptedTextField(blank=True, help_text="Jamais relue par l'API.")
+    sms_expediteur = models.CharField(
+        max_length=30, blank=True,
+        help_text="Nom ou numéro d'expéditeur présenté au destinataire, selon ce que le "
+                   "fournisseur autorise.",
+    )
+
+    # Dernier résultat observé, posé par les fonctions d'envoi. Sert à l'écran de configuration :
+    # une clé acceptée à la saisie peut être révoquée ensuite, et sans cette trace personne ne
+    # le verrait avant qu'un destinataire ne signale l'absence de message.
+    dernier_envoi_email_le = models.DateTimeField(null=True, blank=True)
+    derniere_erreur_email = models.TextField(blank=True)
+    dernier_envoi_sms_le = models.DateTimeField(null=True, blank=True)
+    derniere_erreur_sms = models.TextField(blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    @property
+    def email_configure(self):
+        """Prêt à envoyer : actif, une clé ET une adresse. Les trois, parce qu'un des trois
+        manquant produit un refus de Brevo et non un envoi dégradé."""
+        return bool(self.brevo_actif and self.brevo_cle_api and self.brevo_expediteur_email)
+
+    @property
+    def sms_configure(self):
+        return bool(self.fournisseur_sms and self.sms_cle_api)
+
+    def __str__(self):
+        return f"Configuration d'envoi de {self.institution.nom}"
+
+
 class InstitutionWebDomaine(EnvironmentScopedModel):
     """Nom d'hôte web (marque blanche) résolu vers cette institution par core/branding.py.
     Distinct d'InstitutionDomaine (domaine email, rattachement automatique). Déclarer chaque
