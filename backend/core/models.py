@@ -2660,6 +2660,39 @@ class TacheSimulationInondation(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.type_tache} — {self.statut}"
 
 
+class EchelonEquipe(models.TextChoices):
+    """Échelon territorial d'une équipe de coordination.
+
+    Conçu et validé le 28/10/2026, écrit le 11/11/2026 pour l'arborescence des Casques Jaunes :
+    `Team` avait déjà `equipe_parente` (arbre de profondeur libre) mais **aucun territoire**, et
+    rien ne permettait donc de trier les équipes département → région → zone → national.
+
+    Vide pour les équipes opérationnelles ordinaires, qui sont la grande majorité : un échelon ne
+    se devine pas et le poser par défaut rangerait de force des équipes qui n'appartiennent à
+    aucune hiérarchie.
+
+    ZONE_DEFENSE correspond aux zones de défense et de sécurité (7 en métropole, décret du
+    10/12/2015, plus les zones outre-mer) — voir core/zones_defense.py."""
+
+    NATIONAL = "NATIONAL", "Coordination nationale"
+    ZONE_DEFENSE = "ZONE_DEFENSE", "Coordination de zone de défense"
+    REGIONAL = "REGIONAL", "Coordination régionale"
+    DEPARTEMENTAL = "DEPARTEMENTAL", "Coordination départementale"
+    COMMUNAL = "COMMUNAL", "Échelon communal"
+
+
+# Du plus large au plus fin : sert à TRIER les équipes d'une arborescence. L'ordre est une
+# donnée, pas l'ordre de déclaration de l'énumération -- s'en remettre à celui-ci casserait au
+# premier échelon inséré au milieu.
+ORDRE_ECHELONS = [
+    EchelonEquipe.NATIONAL,
+    EchelonEquipe.ZONE_DEFENSE,
+    EchelonEquipe.REGIONAL,
+    EchelonEquipe.DEPARTEMENTAL,
+    EchelonEquipe.COMMUNAL,
+]
+
+
 class Team(EnvironmentScopedModel):
     """Équipes de gestion de crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2699,6 +2732,34 @@ class Team(EnvironmentScopedModel):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name="sous_equipes",
+    )
+
+    # ÉCHELON ET TERRITOIRE : ce qui manquait pour qu'un arbre d'équipes signifie quelque
+    # chose. `equipe_parente` dit QUI est rattaché à qui ; ces deux champs disent CE QUE
+    # représente l'équipe, donc comment la trier et où la chercher.
+    echelon = models.CharField(
+        max_length=15, choices=EchelonEquipe.choices, blank=True, default="",
+        help_text="Vide pour une équipe opérationnelle ordinaire, qui n'appartient à aucune "
+                   "hiérarchie territoriale.",
+    )
+    # Code INSEE pour une région ou un département ; identifiant de zone (ex. « ZD-SUD ») pour
+    # une zone de défense, qui n'a pas de code INSEE. Jamais interprété géographiquement : le
+    # matching d'intervention reste celui de `departements` / `communes` / `zone_precise`
+    # ci-dessous, et une équipe départementale les renseigne AUSSI.
+    # 20 et non 10 : un code INSEE tient en 3 caractères, mais un identifiant de zone de
+    # défense est un libellé (« ZD-OCEAN-INDIEN », 15). Mesuré, pas estimé.
+    territoire_code = models.CharField(max_length=20, blank=True, default="")
+    territoire_libelle = models.CharField(max_length=100, blank=True, default="")
+
+    # ENCADREMENT, par équipe et non par personne : la même personne peut encadrer son
+    # département et n'être qu'intervenante ailleurs. Ni `leader` ni `regulateur` ne pouvaient
+    # servir (une seule personne chacun), et AffectationRoleOperationnel est par INSTITUTION.
+    # Pilote la composition du salon Matrix « Encadrement » (voir SalonMatrixEquipe).
+    membres_encadrement = models.ManyToManyField(
+        User, blank=True, related_name="teams_encadrees",
+        help_text="Membres de cette équipe qui en forment l'encadrement. Un encadrant doit "
+                   "aussi être membre : l'encadrement est une qualité au sein de l'équipe, "
+                   "pas une appartenance de plus.",
     )
 
     est_equipe_rcsc = models.BooleanField(
@@ -2804,6 +2865,37 @@ class Team(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def rang_echelon(self):
+        """Position dans ORDRE_ECHELONS, ou la fin pour une équipe sans échelon.
+
+        Sert au tri : une équipe sans échelon ne doit pas s'intercaler entre deux échelons, elle
+        vient après."""
+        if not self.echelon:
+            return len(ORDRE_ECHELONS)
+        try:
+            return ORDRE_ECHELONS.index(self.echelon)
+        except ValueError:
+            return len(ORDRE_ECHELONS)
+
+    def equipes_filles_recursives(self):
+        """Toutes les équipes sous celle-ci, à toute profondeur.
+
+        Itératif et non récursif, avec un ensemble de vus : `equipe_parente` est libre et rien
+        n'empêche en base qu'un cycle y soit introduit à la main. Un parcours récursif naïf
+        boucherait alors indéfiniment, dans le pont Matrix, en production."""
+        vus = {self.pk}
+        a_voir = [self.pk]
+        trouvees = []
+        while a_voir:
+            lot = list(Team.objects.filter(equipe_parente_id__in=a_voir).exclude(pk__in=vus))
+            a_voir = []
+            for equipe in lot:
+                vus.add(equipe.pk)
+                trouvees.append(equipe)
+                a_voir.append(equipe.pk)
+        return trouvees
 
 
 class TeamDelegation(EnvironmentScopedModel):
@@ -6091,15 +6183,41 @@ class CanalMeshCoreObsolete(EnvironmentScopedModel):
         return f"Slot {self.canal_idx} de {self.compagnon_id} à libérer après {self.supprimer_apres}"
 
 
+class TypeSalonEquipe(models.TextChoices):
+    """Les deux salons que porte toute équipe.
+
+    INTERVENANTS est le salon de l'équipe entière, encadrement compris : un encadrant absent du
+    salon de terrain ne voit pas ce qui s'y dit. ENCADREMENT réunit l'encadrement de l'équipe
+    **et celui de ses équipes filles** — c'est ce qui rend l'arborescence utile, chaque échelon
+    parlant à l'échelon du dessous dans un seul salon au lieu d'un salon par couple (décision du
+    11/11/2026). Voir SalonMatrixEquipeSerializer.get_membres, qui calcule les deux."""
+
+    INTERVENANTS = "INTERVENANTS", "Intervenants"
+    ENCADREMENT = "ENCADREMENT", "Encadrement"
+
+
 class SalonMatrixEquipe(EnvironmentScopedModel):
     """Salon Matrix privé d'une équipe, activé à la demande
     (TeamViewSet.provisionner_salon_matrix). room_id vide tant que matrix-bridge ne l'a pas
-    créé ; les membres sont ensuite resynchronisés en continu."""
+    créé ; les membres sont ensuite resynchronisés en continu.
+
+    **Plusieurs salons par équipe depuis le 11/11/2026** : c'était un OneToOneField, une équipe
+    n'avait qu'un salon. Les lignes existantes sont devenues INTERVENANTS par la migration, et
+    c'est le seul choix qui ne détruit rien — l'unique salon d'une équipe était déjà celui de
+    l'équipe entière, il garde donc son room_id, son historique et ses membres.
+
+    Même motif que SalonMatrixInstitution (type + contrainte d'unicité), qui portait déjà deux
+    salons par institution."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    equipe = models.OneToOneField(
-        "Team", on_delete=models.CASCADE, related_name="salon_matrix",
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.CASCADE, related_name="salons_matrix",
+    )
+
+    type = models.CharField(
+        max_length=12, choices=TypeSalonEquipe.choices,
+        default=TypeSalonEquipe.INTERVENANTS,
     )
 
     room_id = models.CharField(
@@ -6110,8 +6228,13 @@ class SalonMatrixEquipe(EnvironmentScopedModel):
     date_creation = models.DateTimeField(auto_now_add=True)
     derniere_synchronisation = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['equipe', 'type'], name='unique_salon_matrix_equipe_type'),
+        ]
+
     def __str__(self):
-        return f"Salon Matrix de {self.equipe.name}"
+        return f"Salon Matrix {self.get_type_display()} de {self.equipe.name}"
 
 
 class TypeSalonInstitution(models.TextChoices):

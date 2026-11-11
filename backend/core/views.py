@@ -233,6 +233,7 @@ from .models import (
     Status,
     DernierePositionUtilisateur,
     SalonMatrixEquipe,
+    TypeSalonEquipe,
     SalonMatrixInstitution,
     TypeSalonInstitution,
     HistoriquePositionUtilisateur,
@@ -7652,10 +7653,15 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         Prefetch('assigned_offers', queryset=Offer.objects.select_related('offer_type')),
         'assigned_crises', 'assigned_requests', 'sous_equipes',
         'themes', 'competences', 'assigned_informations',
+        # `salons_matrix` est PRÉCHARGÉ et non plus select_related : depuis le 11/11/2026 une
+        # équipe porte plusieurs salons (Encadrement / Intervenants), ce n'est plus un
+        # OneToOne. Le préchargement reste indispensable -- c'est exactement sur ce champ
+        # qu'un N+1 avait été payé (voir test_query_optimization.py).
+        'salons_matrix',
+        'membres_encadrement',
     ).select_related(
         'leader', 'equipe_parente', 'institution', 'institution_delegataire', 'regulateur',
         'mission_active', 'mission_active__crise', 'canal_meshcore', 'canal_meshtastic',
-        'salon_matrix',
     ).all()
     serializer_class   = TeamSerializer
 
@@ -7672,7 +7678,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'inviter_membre', 'definir_mission', 'assigner_ressource', 'retirer_ressource',
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
-            'rattacher_equipe', 'detacher_equipe',
+            'rattacher_equipe', 'detacher_equipe', 'definir_encadrement',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'equipes_institution', 'institutions_liees',
             'ressources_mobilisees', 'assigner_crise', 'provisionner_canal_meshcore',
             'provisionner_canal_meshtastic', 'provisionner_salon_matrix', 'designer_rcsc',
@@ -8820,19 +8826,96 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        salon, cree = SalonMatrixEquipe.objects.get_or_create(
-            equipe=team, defaults={"environment": get_active_environment(request)},
+        environment = get_active_environment(request)
+        # LES DEUX salons, depuis le 11/11/2026 : toute équipe a un salon Intervenants et un
+        # salon Encadrement. Provisionner le seul salon général laisserait l'encadrement sans
+        # endroit pour se parler, et il faudrait un second geste que personne ne devinerait.
+        salons = []
+        for type_salon in (TypeSalonEquipe.INTERVENANTS, TypeSalonEquipe.ENCADREMENT):
+            salon, cree = SalonMatrixEquipe.objects.get_or_create(
+                equipe=team, type=type_salon, defaults={"environment": environment},
+            )
+            salons.append(salon)
+            audit_log(
+                request=request,
+                action_code="CREATION" if cree else "MODIFICATION",
+                objet_type="SalonMatrixEquipe",
+                objet_id=salon.id,
+                commentaire=(
+                    f"Salon Matrix {salon.get_type_display()} "
+                    f"{'provisionné' if cree else 'déjà actif'} pour l'équipe « {team.name} »."
+                ),
+            )
+
+        return Response(
+            SalonMatrixEquipeSerializer(salons, many=True, context={'request': request}).data
         )
+
+    @action(detail=True, methods=['post'], url_path='definir-encadrement')
+    def definir_encadrement(self, request, pk=None):
+        """Désigne les membres qui forment l'encadrement de CETTE équipe.
+
+        Demande du 11/11/2026 : le statut d'encadrement se définit depuis la page de l'équipe.
+        Il est **par équipe** — la même personne peut encadrer son département et n'être
+        qu'intervenante ailleurs — ce que ni `leader` ni `regulateur` (une seule personne
+        chacun) ni `AffectationRoleOperationnel` (par institution) ne pouvaient porter.
+
+        Action dédiée plutôt qu'un champ inscriptible par PATCH, pour deux garanties qu'un
+        PATCH ne donne pas : **un encadrant doit être membre de l'équipe** (l'encadrement est
+        une qualité au sein de l'équipe, pas une appartenance de plus), et le changement est
+        journalisé — il décide de la composition d'un salon Matrix, donc de qui lit quoi.
+
+        Remplace la liste entière (`set`), ce qui rend l'appel idempotent et permet de retirer
+        quelqu'un sans action de retrait séparée."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez définir l'encadrement que des équipes de votre "
+                          "institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ids = request.data.get('membres_encadrement')
+        if ids is None:
+            return Response(
+                {"error": "Le champ 'membres_encadrement' est requis (liste d'identifiants, "
+                          "éventuellement vide pour retirer tout l'encadrement)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(ids, list):
+            return Response({"error": "'membres_encadrement' doit être une liste."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        membres = list(team.members.filter(id__in=ids))
+        hors_equipe = set(str(i) for i in ids) - {str(m.id) for m in membres}
+        if hors_equipe:
+            # Refus explicite plutôt qu'un filtrage silencieux : désigner quelqu'un qui n'est
+            # pas de l'équipe est une erreur de saisie, et l'ignorer ferait croire que
+            # l'encadrement a été posé.
+            return Response(
+                {"error": "Ces personnes ne sont pas membres de l'équipe : "
+                          + ", ".join(sorted(hors_equipe))
+                          + ". Ajoutez-les à l'équipe avant de les désigner comme encadrement.",
+                 "hors_equipe": sorted(hors_equipe)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        avant = {str(u.id) for u in team.membres_encadrement.all()}
+        team.membres_encadrement.set(membres)
+        apres = {str(m.id) for m in membres}
 
         audit_log(
             request=request,
-            action_code="CREATION" if cree else "MODIFICATION",
-            objet_type="SalonMatrixEquipe",
-            objet_id=salon.id,
-            commentaire=f"Salon Matrix {'provisionné' if cree else 'déjà actif'} pour l'équipe « {team.name} ».",
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=(
+                f"Encadrement de l'équipe « {team.name} » : {len(apres)} membre(s) "
+                f"(+{len(apres - avant)}, -{len(avant - apres)})."
+            ),
         )
 
-        return Response(SalonMatrixEquipeSerializer(salon, context={'request': request}).data)
+        return Response(TeamSerializer(team, context={'request': request}).data)
 
     def _est_cadre(self, request, team) -> bool:
         """« Cadre » (accord utilisateur du 26/09) : acteur institutionnel au sens large, OU le
@@ -8993,8 +9076,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # (provisionner_salon_matrix reste utilisable séparément, idempotent). room_id reste
         # vide tant que matrix-bridge ne l'a pas créé côté Synapse (poll ~30s) -- dans ce cas
         # on continue quand même (les canaux mesh, eux, n'ont pas cette latence).
+        #
+        # Le salon INTERVENANTS : c'est la messagerie de l'équipe, celle que ce bouton ouvre, et
+        # c'était le seul salon avant le 11/11/2026. Le salon ENCADREMENT n'est PAS provisionné
+        # ici — un intervenant qui ouvre sa messagerie n'a pas à créer le salon de
+        # l'encadrement, dont il ne fait pas forcément partie.
         salon, _ = SalonMatrixEquipe.objects.get_or_create(
-            equipe=team, defaults={"environment": environment},
+            equipe=team, type=TypeSalonEquipe.INTERVENANTS,
+            defaults={"environment": environment},
         )
         if salon.room_id and not est_membre:
             _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)

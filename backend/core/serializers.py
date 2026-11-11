@@ -92,6 +92,7 @@ from .models import (
     CanalMeshCoreDetecte,
     MessageCanalMeshCore,
     SalonMatrixEquipe,
+    TypeSalonEquipe,
     SalonMatrixInstitution,
     TypeSalonInstitution,
     ContactMeshCore,
@@ -1637,10 +1638,52 @@ class TeamSerializer(serializers.ModelSerializer):
     # appareil.
     canal_meshtastic_id = serializers.CharField(source='canal_meshtastic.id', read_only=True, default=None)
     canal_meshtastic_nom = serializers.CharField(source='canal_meshtastic.nom', read_only=True, default=None)
-    # Salon Matrix privé de l'équipe (voir TeamViewSet.provisionner_salon_matrix) — même
+    # Salon Matrix de l'équipe entière (voir TeamViewSet.provisionner_salons_matrix) — même
     # principe que canal_meshcore_id ci-dessus, indépendant.
-    salon_matrix_id = serializers.CharField(source='salon_matrix.id', read_only=True, default=None)
-    salon_matrix_room_id = serializers.CharField(source='salon_matrix.room_id', read_only=True, default=None)
+    #
+    # Reste au SINGULIER et désigne le salon INTERVENANTS, délibérément : c'est le salon de
+    # l'équipe, celui que le bouton « messagerie » ouvre, et c'était le seul avant le
+    # 11/11/2026. Les deux salons sont servis séparément par `salons_matrix` ci-dessous, pour
+    # la page de l'équipe.
+    salon_matrix_id = serializers.SerializerMethodField()
+    salon_matrix_room_id = serializers.SerializerMethodField()
+    salons_matrix = serializers.SerializerMethodField()
+    # Encadrement en LECTURE SEULE ici : il se modifie par l'action dédiée
+    # `TeamViewSet.definir_encadrement`, qui vérifie l'appartenance à l'équipe et journalise.
+    # Le laisser inscriptible par PATCH ouvrirait un second chemin, sans ces deux garanties.
+    membres_encadrement = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    # Échelon et territoire (arborescence de coordination), plus l'encadrement de l'équipe.
+    echelon_libelle = serializers.CharField(source='get_echelon_display', read_only=True, default=None)
+    equipe_parente_nom = serializers.CharField(source='equipe_parente.name', read_only=True, default=None)
+
+    def _salon(self, obj, type_salon):
+        """Un salon par type, pris dans ce qui a déjà été préchargé.
+
+        Volontairement une boucle Python sur `obj.salons_matrix.all()` et non un `.filter()` :
+        la vue précharge cette relation (`prefetch_related`), et un filtre en base la
+        contournerait — une requête par équipe et par type, soit le N+1 déjà payé une fois sur
+        ce même champ (voir TeamViewSet.get_queryset)."""
+        for salon in obj.salons_matrix.all():
+            if salon.type == type_salon:
+                return salon
+        return None
+
+    def get_salon_matrix_id(self, obj):
+        salon = self._salon(obj, TypeSalonEquipe.INTERVENANTS)
+        return str(salon.id) if salon else None
+
+    def get_salon_matrix_room_id(self, obj):
+        salon = self._salon(obj, TypeSalonEquipe.INTERVENANTS)
+        return salon.room_id if salon else None
+
+    def get_salons_matrix(self, obj):
+        """Les deux salons, pour la page de l'équipe. `room_id` vide = provisionné côté Django
+        mais pas encore créé côté Synapse (le pont y passe toutes les 30 s)."""
+        return [
+            {"id": str(salon.id), "type": salon.type,
+             "type_libelle": salon.get_type_display(), "room_id": salon.room_id}
+            for salon in sorted(obj.salons_matrix.all(), key=lambda s: s.type)
+        ]
 
     # L'appelant peut-il gérer cette équipe (ressources, mission, dossiers) ? La liste des
     # équipes couvre toute sa zone, mais seules celles de son institution (ou déléguées à
@@ -1721,6 +1764,13 @@ class TeamSerializer(serializers.ModelSerializer):
             'canal_meshtastic_nom',
             'salon_matrix_id',
             'salon_matrix_room_id',
+            'salons_matrix',
+            'echelon',
+            'echelon_libelle',
+            'territoire_code',
+            'territoire_libelle',
+            'equipe_parente_nom',
+            'membres_encadrement',
             'engagement_debut',
         ]
         # Modifiables seulement par les actions dédiées (historique, anti-cycle, permissions,
@@ -3519,8 +3569,9 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SalonMatrixEquipe
-        fields = ['id', 'equipe', 'equipe_nom', 'room_id', 'membres', 'sujet_salon', 'expulsion_activee', 'date_creation', 'derniere_synchronisation']
-        read_only_fields = ['id', 'equipe', 'date_creation']
+        fields = ['id', 'equipe', 'equipe_nom', 'type', 'room_id', 'membres', 'sujet_salon',
+                  'expulsion_activee', 'date_creation', 'derniere_synchronisation']
+        read_only_fields = ['id', 'equipe', 'type', 'date_creation']
 
     def get_sujet_salon(self, obj):
         regulateur = obj.equipe.regulateur
@@ -3531,12 +3582,76 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         return f"Régulateur : {nom}" + (f" ({coordonnees})" if coordonnees else "")
 
     def get_membres(self, obj):
+        """Qui matrix-bridge doit trouver dans ce salon — et donc qui il invite, et qui il
+        expulse. C'est la seule définition des deux cercles, et elle vit ici parce que le pont
+        ne connaît ni les équipes filles ni l'encadrement.
+
+        INTERVENANTS : toute l'équipe, encadrement compris. Un encadrant absent du salon de
+        terrain de sa propre équipe ne voit pas ce qui s'y dit.
+
+        ENCADREMENT : l'encadrement de l'équipe **et celui de ses équipes filles, à toute
+        profondeur**. C'est ce qui rend l'arborescence utile — le salon Encadrement d'une
+        Coordination Régionale réunit l'encadrement régional et les coordinateurs
+        départementaux, au lieu d'exiger un salon par couple d'échelons (décision du
+        11/11/2026).
+
+        Conséquence à connaître : un encadrant départemental est donc présent dans TROIS salons
+        d'encadrement (le sien, celui de sa région, celui de sa zone) et dans celui du national.
+        C'est voulu — c'est la chaîne de commandement — mais cela veut dire qu'ajouter un
+        encadrant tout en bas de l'arbre le fait apparaître tout en haut."""
         from .matrix import matrix_user_id
+
+        if obj.type == TypeSalonEquipe.ENCADREMENT:
+            membres = User.objects.filter(
+                teams_encadrees__id__in=self._equipe_et_filles(obj.equipe_id),
+                is_active=True,
+            ).distinct()
+        else:
+            membres = obj.equipe.members.filter(is_active=True)
+
         return [
             {"id": str(m.id), "matrix_user_id": matrix_user_id(m),
              "nom": nom_affichable(m, self.context.get("request")) or m.email}
-            for m in obj.equipe.members.filter(is_active=True)
+            for m in membres
         ]
+
+    def _enfants_par_parent(self):
+        """{id de parent: [ids d'enfants]} pour TOUT l'arbre, en UNE requête, mémorisé sur le
+        sérialiseur.
+
+        `Team.equipes_filles_recursives()` coûte une requête par niveau de profondeur. Appelée
+        par salon, elle coûterait des centaines de requêtes à chaque passage du pont (toutes les
+        30 s) dès que l'arborescence complète a ses salons : le salon d'encadrement du national
+        parcourt les 127 équipes, celui de chaque zone son sous-arbre, et ainsi de suite.
+
+        Avec `many=True`, DRF réutilise UNE instance de sérialiseur enfant pour tous les objets :
+        mémoriser ici vaut donc pour toute la réponse. Même motif que la mémoire par requête du
+        résolveur de zones, pour la même raison (voir core/zone_scoping.py)."""
+        if not hasattr(self, '_cache_enfants'):
+            enfants = {}
+            for enfant_id, parent_id in Team.objects.exclude(
+                equipe_parente_id=None
+            ).values_list('id', 'equipe_parente_id'):
+                enfants.setdefault(parent_id, []).append(enfant_id)
+            self._cache_enfants = enfants
+        return self._cache_enfants
+
+    def _equipe_et_filles(self, equipe_id):
+        """L'équipe et toutes ses descendantes, à toute profondeur.
+
+        Ensemble des vus : `equipe_parente` est libre et rien n'empêche en base qu'un cycle y
+        soit introduit à la main. Sans ce garde, le pont boucherait indéfiniment, en production
+        (même précaution que Team.equipes_filles_recursives)."""
+        enfants = self._enfants_par_parent()
+        vus = {equipe_id}
+        a_voir = [equipe_id]
+        while a_voir:
+            courant = a_voir.pop()
+            for enfant in enfants.get(courant, ()):
+                if enfant not in vus:
+                    vus.add(enfant)
+                    a_voir.append(enfant)
+        return vus
 
     def get_expulsion_activee(self, obj):
         from .models import PointOperationnel

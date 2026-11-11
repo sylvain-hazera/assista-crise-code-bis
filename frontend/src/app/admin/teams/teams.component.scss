@@ -313,6 +313,51 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   .btn-ghost { margin-left: auto; }
 }
 
+// Échelon territorial : ce que l'équipe REPRÉSENTE (national, zone, région, département), par
+// opposition au bandeau de rattachement juste au-dessus, qui dit à qui elle est rattachée.
+.echelon-banner {
+  display: flex; align-items: center; gap: .4rem; font-size: .85rem; font-weight: 600;
+  margin: 0 0 .6rem;
+  background: var(--ac-surface-2, #f8fafc); border: 1px solid var(--border); border-radius: 8px;
+  padding: .5rem .75rem;
+  .material-icons { font-size: 16px; color: var(--primary); }
+}
+
+// Les deux salons Matrix de l'équipe, nommés : dans Element, deux salons de la même équipe se
+// ressemblent, et on écrit alors à l'encadrement en croyant parler à l'équipe.
+.salons-equipe {
+  margin-top: .6rem;
+
+  .salon-ligne {
+    display: flex; align-items: center; gap: .5rem; font-size: .85rem;
+    padding: .35rem 0;
+    .material-icons { font-size: 18px; color: var(--ac-text-muted, #6b7280); }
+    .material-icons.statut-ok { color: #15803d; }
+    .salon-nom { font-weight: 600; }
+    a { margin-left: auto; color: var(--primary); }
+    .salon-attente { margin-left: auto; color: var(--ac-text-muted, #6b7280); font-style: italic; }
+  }
+}
+
+// Bascule encadrement / intervenant, sur chaque membre de l'équipe.
+.btn-encadrement {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font: inherit; font-size: .75rem; font-weight: 600;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--ac-surface, #fff); color: var(--ac-text-muted, #6b7280);
+  padding: .2rem .55rem; cursor: pointer;
+
+  .material-icons { font-size: 14px; }
+  &:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+  &:disabled { opacity: .6; cursor: default; }
+
+  // Actif : l'encadrement se distingue d'un coup d'œil dans une liste de membres.
+  &.actif {
+    background: #1d4ed8; border-color: #1d4ed8; color: #fff;
+    &:hover:not(:disabled) { color: #fff; }
+  }
+}
+
 // ── User pick list ────────────────────────────────────────────────
 .btn-link-invite {
   display: inline-flex; align-items: center; gap: .35rem;

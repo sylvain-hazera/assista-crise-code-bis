@@ -714,6 +714,64 @@ mobilisations. Les qualifications par personne avec échéance n'existent PAS au
 crise, pas à une personne. Les disponibilités, elles, ont déjà leur socle
 (`DisponibiliteOperationnelle`, pendue à `AffectationRoleOperationnel`).
 
+#### Arborescence de coordination territoriale
+
+`echelon` + `territoire_code` + `territoire_libelle` sur `Team` (migration `0247`), plus
+`manage.py creer_arborescence_coordination --institution "<nom>"`. Conçu et validé le
+28/10/2026, écrit le 11/11/2026 pour les Casques Jaunes.
+
+`Team.equipe_parente` existait déjà (arbre de profondeur libre) mais `Team` n'avait **aucun
+territoire** : rien ne permettait donc de trier les équipes département → région → zone →
+national, ni de retrouver « l'équipe de l'Isère ». Les antennes restent des **équipes** et non
+des institutions filles (décision antérieure : `Institution` n'a aucune hiérarchie).
+
+    Coordination Nationale
+      └─ Coordination Zone de Défense « X »     (7 en métropole + 3 outre-mer)
+           └─ Coordination Régionale « X »       (18 + 5 DROM)
+                └─ Coordination Départementale « XX »  (96 en métropole)
+
+Cinq points à ne pas redécouvrir :
+
+- **`core/zones_defense.py` est recopiée à la main, et elle se vérifie.** Il n'existe pas d'API
+  publique stable servant la découpe en zones de défense, fixée par le décret du
+  10 décembre 2015. `verifier_coherence()` est appelée **avant toute écriture** et par un test :
+  aucun département dans deux régions, aucune région dans deux zones, et 96 départements de
+  métropole (Corse comptée pour deux). C'est ce recoupement qui a servi à établir la table — les
+  comptes officiels par zone tombent juste (Nord 1 région / 5 départements, Est 2/18, Ouest 4/20,
+  Sud 3/21).
+- **Un code de département n'est pas un entier** : `2A` et `2B`. Traiter la table comme numérique
+  casse sur la Corse.
+- **Les DROM s'arrêtent à l'échelon régional.** Leur territoire est à la fois région et
+  département ; empiler deux équipes pour un seul territoire créerait deux salons pour les
+  mêmes personnes.
+- **Une équipe départementale renseigne AUSSI `departements`.** `territoire_code` dit ce que
+  l'équipe *représente* ; `departements` est ce que lit le matching d'intervention existant.
+  Oublier le second rendrait l'équipe invisible au moteur d'affectation.
+- **La commande ne provisionne AUCUN salon Matrix** : 127 équipes feraient 254 salons, presque
+  tous vides et tous affichés dans Element. Un salon se crée quand l'équipe a des membres.
+
+Elle est **idempotente** et retrouve chaque équipe par `(institution, échelon, territoire)`,
+jamais par son nom — un libellé d'affichage n'a aucune raison d'être stable, et s'en servir de
+clé créerait un doublon au premier renommage.
+
+#### Encadrement d'une équipe
+
+`Team.membres_encadrement`, défini depuis la page de l'équipe
+(`TeamViewSet.definir_encadrement`). Il pilote la composition du salon Matrix « Encadrement »
+(§ 7.1).
+
+**Par équipe et non par personne** : la même personne peut encadrer son département et n'être
+qu'intervenante ailleurs. Ni `Team.leader` ni `Team.regulateur` (une seule personne chacun) ni
+`AffectationRoleOperationnel` (par **institution**) ne pouvaient le porter.
+
+Action dédiée plutôt qu'un champ inscriptible par `PATCH`, pour deux garanties qu'un `PATCH` ne
+donne pas : **un encadrant doit être membre de l'équipe** — l'encadrement est une qualité au sein
+de l'équipe, pas une appartenance de plus, et désigner quelqu'un d'extérieur est refusé
+explicitement plutôt que filtré en silence — et le changement est **journalisé**, parce qu'il
+décide de qui lit un salon. L'appel remplace la liste entière (`set`), donc il est idempotent et
+un retrait ne demande pas d'action séparée ; en revanche un corps **sans** `membres_encadrement`
+est refusé, pour que « je n'ai rien envoyé » ne soit jamais lu comme « retire tout ».
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites
@@ -1443,10 +1501,33 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 - **Identifiants Matrix** déterministes (`core/matrix.py`) : `MATRIX_SERVER_NAME` doit être
   identique dans Django, `matrix-bridge` et la config Synapse. Ne jamais pré-créer un compte
   Matrix via l'API d'administration (erreur « Localpart not available » au premier SSO).
-- **Salons** : un salon privé par équipe (`SalonMatrixEquipe`, activé à la demande) et deux
+- **Salons** : **deux par équipe** (`SalonMatrixEquipe`, activés à la demande) et deux
   par institution (`PERMANENTS` pour le personnel, `BENEVOLES` pour les membres de ses équipes
   actives). `matrix-bridge` les crée puis **resynchronise les membres en continu** depuis
   l'API ; le salon de la cellule de crise n'expulse personne (pas de membres formels).
+
+  Les deux salons d'équipe (11/11/2026, migration `0247` — c'était un `OneToOneField`, une
+  équipe n'avait qu'un salon) :
+
+  | Salon | Qui s'y trouve |
+  |---|---|
+  | `INTERVENANTS` | toute l'équipe, **encadrement compris** — un encadrant absent du salon de terrain de sa propre équipe ne voit pas ce qui s'y dit |
+  | `ENCADREMENT` | l'encadrement de l'équipe **et celui de ses équipes filles, à toute profondeur** |
+
+  La remontée de l'encadrement est ce qui rend l'arborescence utile : le salon d'une
+  Coordination Régionale réunit l'encadrement régional et les coordinateurs départementaux, au
+  lieu d'exiger un salon par couple d'échelons. Conséquence assumée : un encadrant départemental
+  est présent dans quatre salons d'encadrement (le sien, sa région, sa zone, le national) —
+  c'est la chaîne de commandement, mais cela veut dire qu'ajouter un encadrant tout en bas de
+  l'arbre le fait apparaître tout en haut. Le salon `INTERVENANTS`, lui, **ne remonte pas** :
+  celui du national contiendrait sinon tous les bénévoles de France, ce qui n'est plus un salon
+  mais une liste de diffusion.
+
+  La migration donne le type `INTERVENANTS` aux salons existants, et c'est le seul choix qui ne
+  détruise rien — l'unique salon d'une équipe était déjà celui de l'équipe entière. Il garde son
+  `room_id`, son historique Synapse et ses membres ; aucun salon n'est recréé. Le pont met le
+  type dans le **nom** du salon : deux salons homonymes dans Element sont indiscernables, et on
+  écrit alors à l'encadrement en croyant parler à l'équipe.
 - **Positions live** Element (MSC3489) : enregistrées par le pont dans
   `HistoriquePositionUtilisateur` pour rejouer un trajet. Distinct de `DernierePositionUtilisateur`,
   capturée par le frontend seulement quand le navigateur a déjà la position (jamais de

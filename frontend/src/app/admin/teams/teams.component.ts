@@ -32,7 +32,7 @@ import { PointModalComponent } from '../crises/point-modal/point-modal.component
 import { MatrixSalonChatComponent } from './matrix-salon-chat/matrix-salon-chat.component';
 import { environment } from '../../../environments/environment';
 
-import { Team, TeamMission }  from '../../shared/models/team.model';
+import { Team, TeamMission, SalonMatrixEquipe, rangEchelon }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
 import { RoleOperationnel, AffectationRoleOperationnel } from '../../shared/models/institution.model';
 import { Crisis }              from '../../shared/models/crisis.model';
@@ -1209,16 +1209,72 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id) return;
     this.provisionnantSalonMatrix = true;
     this.teamService.provisionnerSalonMatrix(this.selectedTeam.id).subscribe({
-      next: (resultat) => {
+      // Deux salons depuis le 11/11/2026 : Intervenants et Encadrement.
+      next: (salons) => {
         this.provisionnantSalonMatrix = false;
         this.reloadTeams();
+        const intervenants = salons.find(s => s.type === 'INTERVENANTS');
         if (this.selectedTeam) {
-          this.selectedTeam = { ...this.selectedTeam, salon_matrix_id: resultat.id, salon_matrix_room_id: resultat.room_id };
+          this.selectedTeam = {
+            ...this.selectedTeam,
+            salons_matrix: salons,
+            // Le champ au singulier désigne le salon de l'équipe entière, celui qu'ouvre le
+            // bouton « messagerie ».
+            salon_matrix_id: intervenants?.id ?? this.selectedTeam.salon_matrix_id,
+            salon_matrix_room_id: intervenants?.room_id ?? this.selectedTeam.salon_matrix_room_id,
+          };
         }
-        this.showSuccess("Salon Matrix activé — le pont le crée côté serveur sous quelques dizaines de secondes.");
+        this.showSuccess(
+          `${salons.length} salon(s) Matrix activé(s) — le pont les crée côté serveur sous `
+          + 'quelques dizaines de secondes.',
+        );
       },
       error: () => { this.provisionnantSalonMatrix = false; this.showError('Erreur lors de l\'activation du salon Matrix.'); },
     });
+  }
+
+  // ── Encadrement de l'équipe ───────────────────────────────────────────────
+  // Statut défini depuis la page de l'équipe (demande du 11/11/2026), et PAR ÉQUIPE : la même
+  // personne peut encadrer son département et n'être qu'intervenante ailleurs. Il pilote la
+  // composition du salon Matrix « Encadrement ».
+  enregistrantEncadrement = false;
+
+  estEncadrant(membreId: string): boolean {
+    return (this.selectedTeam?.membres_encadrement || []).includes(membreId);
+  }
+
+  basculerEncadrement(membreId: string): void {
+    if (!this.selectedTeam?.id || this.enregistrantEncadrement) return;
+    const actuels = this.selectedTeam.membres_encadrement || [];
+    const voulus = actuels.includes(membreId)
+      ? actuels.filter(id => id !== membreId)
+      : [...actuels, membreId];
+
+    this.enregistrantEncadrement = true;
+    this.teamService.definirEncadrement(this.selectedTeam.id, voulus).subscribe({
+      next: (equipe) => {
+        this.enregistrantEncadrement = false;
+        if (this.selectedTeam) {
+          this.selectedTeam = { ...this.selectedTeam, membres_encadrement: equipe.membres_encadrement };
+        }
+        this.reloadTeams();
+        this.showSuccess(
+          'Encadrement mis à jour — le salon « Encadrement » est resynchronisé par le pont '
+          + 'dans la minute.',
+        );
+      },
+      error: (err) => {
+        this.enregistrantEncadrement = false;
+        // Le serveur nomme les personnes refusées : les afficher vaut mieux qu'un message
+        // générique, l'erreur habituelle étant de désigner quelqu'un pas encore ajouté.
+        this.showError(err?.error?.error || "Erreur lors de la mise à jour de l'encadrement.");
+      },
+    });
+  }
+
+  /** Les deux salons, triés pour que l'ordre d'affichage ne dépende pas de la réponse HTTP. */
+  get salonsMatrixEquipe(): SalonMatrixEquipe[] {
+    return [...(this.selectedTeam?.salons_matrix || [])].sort((a, b) => a.type.localeCompare(b.type));
   }
 
   lienSalonMatrix(roomId: string): string {
@@ -1306,12 +1362,26 @@ export class TeamsComponent implements OnInit {
     return '—';
   }
 
+  /** Triées par ÉCHELON puis par nom : national, zone de défense, région, département, puis
+   * les équipes sans échelon.
+   *
+   * C'est le tri demandé le 28/10/2026 et resté en attente faute d'échelon sur `Team`. Sans
+   * lui, une arborescence de 127 équipes s'affiche dans l'ordre alphabétique et le national se
+   * retrouve entre deux départements. Le territoire départage à échelon égal — par son
+   * libellé, pour que l'Isère suive la Haute-Savoie et non le code « 38 ». */
   get filteredTeams(): Team[] {
     const q = this.searchQuery.trim().toLowerCase();
-    if (!q) return this.teams;
-    return this.teams.filter(t =>
-      t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
+    const base = !q ? this.teams : this.teams.filter(t =>
+      t.name.toLowerCase().includes(q)
+      || t.description.toLowerCase().includes(q)
+      || (t.territoire_libelle || '').toLowerCase().includes(q)
+      || (t.territoire_code || '').toLowerCase().includes(q)
     );
+    return [...base].sort((a, b) => {
+      const parEchelon = rangEchelon(a.echelon) - rangEchelon(b.echelon);
+      if (parEchelon !== 0) return parEchelon;
+      return (a.territoire_libelle || a.name).localeCompare(b.territoire_libelle || b.name, 'fr');
+    });
   }
 
   get teamMembers(): User[] {

@@ -61,8 +61,26 @@ export interface Team {
   canal_meshcore_provisionne?:  boolean;
   canal_meshtastic_id?:         string | null;
   canal_meshtastic_nom?:        string | null;
+  /** Salon Matrix de l'équipe entière. Reste au singulier et désigne le salon INTERVENANTS :
+   * c'est celui que le bouton « messagerie » ouvre, et c'était le seul avant le 11/11/2026. */
   salon_matrix_id?:             string | null;
   salon_matrix_room_id?:        string | null;
+  /** Les deux salons de l'équipe. `room_id` vide = provisionné côté Django mais pas encore
+   * créé côté Synapse (le pont y passe toutes les 30 s). */
+  salons_matrix?:               SalonMatrixEquipe[];
+
+  /** Échelon territorial (arborescence de coordination). Vide pour une équipe opérationnelle
+   * ordinaire, qui n'appartient à aucune hiérarchie. */
+  echelon?:                     EchelonEquipe | '';
+  echelon_libelle?:             string | null;
+  /** Code INSEE pour une région ou un département, identifiant de zone (« ZD-SUD ») pour une
+   * zone de défense. Jamais interprété géographiquement : le matching d'intervention reste
+   * celui de `departements` / `communes` / `zone_precise`. */
+  territoire_code?:             string;
+  territoire_libelle?:          string;
+  /** Membres formant l'encadrement de CETTE équipe (lecture seule : voir
+   * TeamService.definirEncadrement). Pilote la composition du salon « Encadrement ». */
+  membres_encadrement?:         string[];
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   vehicules_count?:     number;            // Offres de type Transport affectées à l'équipe (lecture seule)
@@ -84,6 +102,32 @@ export interface Team {
   commune_centre?:      { latitude: number | null; longitude: number | null } | null;
   /** Début de l'engagement continu (null = au repos), géré manuellement. */
   engagement_debut?:    string | null;
+}
+
+export type EchelonEquipe =
+  | 'NATIONAL' | 'ZONE_DEFENSE' | 'REGIONAL' | 'DEPARTEMENTAL' | 'COMMUNAL';
+
+/** Du plus large au plus fin — sert à trier une arborescence. Une équipe sans échelon vient
+ * après : elle ne doit pas s'intercaler entre deux échelons. Miroir de ORDRE_ECHELONS
+ * (backend/core/models.py). */
+export const ORDRE_ECHELONS: EchelonEquipe[] = [
+  'NATIONAL', 'ZONE_DEFENSE', 'REGIONAL', 'DEPARTEMENTAL', 'COMMUNAL',
+];
+
+export function rangEchelon(echelon: EchelonEquipe | '' | null | undefined): number {
+  if (!echelon) return ORDRE_ECHELONS.length;
+  const rang = ORDRE_ECHELONS.indexOf(echelon);
+  return rang === -1 ? ORDRE_ECHELONS.length : rang;
+}
+
+export type TypeSalonEquipe = 'INTERVENANTS' | 'ENCADREMENT';
+
+export interface SalonMatrixEquipe {
+  id: string;
+  type: TypeSalonEquipe;
+  type_libelle: string;
+  /** Vide tant que matrix-bridge ne l'a pas créé côté Synapse. */
+  room_id: string | null;
 }
 
 /** Nom préfixé par l'institution responsable, pour les listes mêlant plusieurs institutions. */

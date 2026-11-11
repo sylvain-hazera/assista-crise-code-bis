@@ -73,34 +73,65 @@ class TestPointOperationnelQueryCount:
 class TestTeamQueryCount:
 
     def test_vehicules_count_does_not_query_per_team(self):
+        """Mesure le coût MARGINAL, et non un total absolu.
+
+        Il mesurait un total (« moins de 10 requêtes pour 5 équipes ») : ce seuil confondait le
+        coût CONSTANT des préchargements — un `prefetch_related` vaut une requête, quel que soit
+        le nombre d'équipes, et c'est précisément ce qui ÉVITE le N+1 — avec le coût par objet,
+        seul en cause ici. Ajouter deux préchargements légitimes le faisait donc échouer
+        (constaté le 11/11/2026 en ajoutant `salons_matrix` et `membres_encadrement`), ce qui
+        poussait à gonfler le seuil et à perdre un peu plus de sens à chaque fois.
+
+        Il compare désormais 5 équipes à 10, comme le fait déjà
+        `test_salon_matrix_does_not_query_per_team` juste en dessous."""
         institution = _make_institution('Mairie Perf B', 'PERF_B')
         author = User.objects.create_user(
             username='perf-b-offreur@test.fr', email='perf-b-offreur@test.fr', type='UTIL_SIMPLE'
         )
         transport_type, _ = OfferType.objects.get_or_create(type='Transport', defaults={'description': ''})
-        for i in range(5):
-            team = Team.objects.create(name=f'Equipe Perf B {i}', institution=institution)
-            camion = Offer.objects.create(
-                title=f'Camion {i}', first_name_offer='O', last_name_offer='Ffreur',
-                email_offer=author.email, status='DISPONIBLE', offer_type=transport_type, author=author,
-            )
-            team.assigned_offers.add(camion)
 
-        with CaptureQueriesContext(connection) as ctx:
-            teams = list(TeamViewSet.queryset.filter(institution=institution))
-            data = TeamSerializer(teams, many=True).data
-            assert all(t['vehicules_count'] == 1 for t in data)
+        def equiper(indices):
+            for i in indices:
+                team = Team.objects.create(name=f'Equipe Perf B {i}', institution=institution)
+                camion = Offer.objects.create(
+                    title=f'Camion {i}', first_name_offer='O', last_name_offer='Ffreur',
+                    email_offer=author.email, status='DISPONIBLE', offer_type=transport_type,
+                    author=author,
+                )
+                team.assigned_offers.add(camion)
+
+        equiper(range(5))
+        requetes = TeamViewSet.queryset.filter(institution=institution)
+        count_5 = _query_count(requetes, TeamSerializer, n=5)
+        # Le résultat est bien calculé, et pas seulement compté : un sérialiseur qui rendrait 0
+        # partout passerait n'importe quel budget de requêtes.
+        assert all(
+            t['vehicules_count'] == 1
+            for t in TeamSerializer(list(requetes.all()[:5]), many=True).data
+        )
+
+        equiper(range(5, 10))
+        count_10 = _query_count(requetes, TeamSerializer, n=10)
 
         # Avant le fix : get_vehicules_count faisait un .filter().count() par équipe, ignorant
-        # le prefetch_related('assigned_offers') — une requête de plus par équipe.
-        assert len(ctx) < 5 + 5, f"{len(ctx)} requêtes pour 5 équipes : vehicules_count ne doit pas requêter par équipe"
+        # le prefetch_related('assigned_offers') — une requête de plus par équipe, soit +5 ici.
+        marginal = count_10 - count_5
+        assert marginal <= 2 * 5, (
+            f"{count_5} requêtes pour 5 équipes, {count_10} pour 10 (marginal {marginal}) : "
+            "vehicules_count ne doit pas requêter une fois par équipe"
+        )
 
     def test_salon_matrix_does_not_query_per_team(self):
-        """salon_matrix_id/salon_matrix_room_id (TeamSerializer) déréférencent la relation
-        OneToOne inverse `salon_matrix` -- oublié dans select_related lors de l'ajout de la
+        """salon_matrix_id/salon_matrix_room_id/salons_matrix (TeamSerializer) déréférencent la
+        relation `salons_matrix` -- oubliée dans select_related lors de l'ajout de la
         fonctionnalité Matrix le 24/09 (contrairement à canal_meshcore/canal_meshtastic, ajoutés
-        au même endroit pour la même raison), retrouvé en creusant une lenteur signalée sur la
-        vue équipe."""
+        au même endroit pour la même raison), retrouvée en creusant une lenteur signalée sur la
+        vue équipe.
+
+        Le risque a AUGMENTÉ le 11/11/2026 : la relation est devenue un ForeignKey (deux salons
+        par équipe) et le sérialiseur la parcourt trois fois. D'où le choix d'une boucle Python
+        sur `salons_matrix.all()` dans `TeamSerializer._salon` plutôt que d'un `.filter()`, qui
+        contournerait le préchargement et rejouerait une requête par équipe ET par type."""
         institution = _make_institution('Mairie Perf Matrix', 'PERF_MATRIX')
         for i in range(5):
             Team.objects.create(name=f'Equipe Perf Matrix {i}', institution=institution)
@@ -115,7 +146,7 @@ class TestTeamQueryCount:
         marginal = count_10 - count_5
         assert marginal <= 3 * 5, (
             f"{count_5} requêtes pour 5 équipes, {count_10} pour 10 (marginal {marginal}) : "
-            "salon_matrix ne doit pas requêter une fois par équipe"
+            "salons_matrix ne doit pas requêter une fois par équipe"
         )
 
 

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Team, MatrixMessage } from '../shared/models/team.model';
+import { Team, MatrixMessage, SalonMatrixEquipe } from '../shared/models/team.model';
 import { Dossier } from '../shared/models/dossier.model';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
 import { RessourceMobilisee } from '../shared/models/ressource-mobilisee.model';
@@ -111,11 +111,25 @@ export class TeamService {
     );
   }
 
-  /** POST /api/teams/<id>/provisionner-salon-matrix/ — room_id reste vide tant que matrix-bridge
-   * n'a pas créé le salon. */
-  provisionnerSalonMatrix(id: string): Observable<{ id: string; room_id: string | null }> {
-    return this.http.post<{ id: string; room_id: string | null }>(
+  /** POST /api/teams/<id>/provisionner-salon-matrix/ — provisionne LES DEUX salons de l'équipe
+   * (Intervenants et Encadrement) depuis le 11/11/2026 et rend donc un tableau. `room_id` reste
+   * vide tant que matrix-bridge n'a pas créé le salon côté Synapse (poll ~30 s).
+   *
+   * L'URL garde son nom au singulier : la renommer casserait les appels en place sans rien
+   * apporter. */
+  provisionnerSalonMatrix(id: string): Observable<SalonMatrixEquipe[]> {
+    return this.http.post<SalonMatrixEquipe[]>(
       `${this.url}/${id}/provisionner-salon-matrix/`, {},
+    );
+  }
+
+  /** POST /api/teams/<id>/definir-encadrement/ — remplace la liste entière, donc idempotent et
+   * un retrait ne demande pas d'appel séparé. Le serveur refuse une personne qui n'est pas
+   * membre de l'équipe (400, `hors_equipe`) : l'encadrement est une qualité au sein de
+   * l'équipe, pas une appartenance de plus. */
+  definirEncadrement(id: string, membresEncadrement: string[]): Observable<Team> {
+    return this.http.post<Team>(
+      `${this.url}/${id}/definir-encadrement/`, { membres_encadrement: membresEncadrement },
     );
   }
 

@@ -406,6 +406,21 @@
                     }
                   </select>
                 }
+                <!-- ENCADREMENT : statut défini ici, par équipe (demande du 11/11/2026). La
+                     même personne peut encadrer son département et n'être qu'intervenante
+                     ailleurs. Il décide de qui lit le salon « Encadrement ». -->
+                @if (isMember(u.id)) {
+                  <button type="button" class="btn-encadrement"
+                          [class.actif]="estEncadrant(u.id)"
+                          [disabled]="enregistrantEncadrement"
+                          (click)="$event.stopPropagation(); basculerEncadrement(u.id)"
+                          [title]="estEncadrant(u.id)
+                            ? 'Retirer de l\'encadrement — sortira du salon « Encadrement »'
+                            : 'Désigner comme encadrement — entrera dans le salon « Encadrement » de cette équipe et de celles du dessus'">
+                    <span class="material-icons">shield</span>
+                    {{ estEncadrant(u.id) ? 'Encadrement' : 'Intervenant' }}
+                  </button>
+                }
                 @if (u.id === selectedTeam.leader) {
                   <span class="leader-star" title="Chef d'équipe">
                     <span class="material-icons">star</span>
@@ -757,6 +772,37 @@
               <span class="material-icons">open_in_new</span> Ouvrir dans Element (fonctions avancées : chiffrement, pièces jointes...)
             </a>
           }
+
+          <!-- Les DEUX salons de l'équipe. Les nommer évite d'écrire à l'encadrement en croyant
+               parler à l'équipe : dans Element, deux salons de la même équipe se ressemblent. -->
+          <div class="salons-equipe">
+            @for (salon of salonsMatrixEquipe; track salon.id) {
+              <div class="salon-ligne">
+                <span class="material-icons" [class.statut-ok]="salon.room_id">
+                  {{ salon.type === 'ENCADREMENT' ? 'shield' : 'groups' }}
+                </span>
+                <span class="salon-nom">{{ salon.type_libelle }}</span>
+                @if (salon.room_id) {
+                  <a [href]="lienSalonMatrix(salon.room_id)" target="_blank" rel="noopener">
+                    Ouvrir dans Element
+                  </a>
+                } @else {
+                  <span class="salon-attente">en cours de création côté serveur…</span>
+                }
+              </div>
+            }
+            @if (!salonsMatrixEquipe.length) {
+              <p class="no-missions">
+                Aucun salon Matrix activé. Chaque équipe en a deux : <strong>Intervenants</strong>
+                (toute l'équipe) et <strong>Encadrement</strong> (l'encadrement de cette équipe
+                et celui de ses équipes rattachées). Les membres y sont invités automatiquement.
+              </p>
+              <button class="btn-secondary sm" [disabled]="provisionnantSalonMatrix"
+                      (click)="provisionnerSalonMatrix()">
+                <span class="material-icons">add</span> Activer les deux salons
+              </button>
+            }
+          </div>
         </div>
 
         <!-- ── CANAL MESHTASTIC ───────────────────────────────── -->
@@ -939,6 +985,20 @@
               </button>
             }
           </div>
+
+          <!-- ÉCHELON ET TERRITOIRE : ce que l'équipe représente, par opposition à son
+               rattachement. Affiché seulement quand il y en a un — la grande majorité des
+               équipes n'appartiennent à aucune hiérarchie territoriale. -->
+          @if (selectedTeam.echelon) {
+            <p class="echelon-banner">
+              <span class="material-icons">account_tree</span>
+              {{ selectedTeam.echelon_libelle }}
+              @if (selectedTeam.territoire_libelle) {
+                — {{ selectedTeam.territoire_libelle }}
+                @if (selectedTeam.territoire_code) { ({{ selectedTeam.territoire_code }}) }
+              }
+            </p>
+          }
 
           @if (selectedTeam.equipe_parente_nom) {
             <p class="parent-team-banner">

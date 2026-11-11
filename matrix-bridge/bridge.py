@@ -291,6 +291,13 @@ async def boucle_provisionnement_salons(django, synapse):
         await asyncio.sleep(SALONS_POLL_INTERVAL_SECONDS)
 
 
+# Libellé affiché dans le nom du salon. Le serveur sert déjà `type_libelle`, mais le pont
+# compose aussi le nom des salons d'institution depuis une table locale (voir
+# TYPE_SALON_INSTITUTION_LIBELLE) : même motif, pour que le nom reste stable même si un libellé
+# d'affichage change côté Django.
+TYPE_SALON_EQUIPE_LIBELLE = {"INTERVENANTS": "Intervenants", "ENCADREMENT": "Encadrement"}
+
+
 async def _synchroniser_salons_equipe(django, synapse, environnement):
     salons = await django.salons_a_synchroniser(environnement)
     for salon in salons:
@@ -306,10 +313,23 @@ async def _synchroniser_salons_equipe(django, synapse, environnement):
 
         room_id = salon.get("room_id")
         if not room_id:
-            nom_salon = f"{PREFIXE_NOM_SALON[environnement]}Équipe {salon['equipe_nom']}"
+            # Le TYPE est dans le nom du salon, et ce n'est pas cosmétique : depuis le
+            # 11/11/2026 une équipe en a deux (Intervenants / Encadrement). Deux salons
+            # homonymes dans Element sont indiscernables, et on écrit alors à l'encadrement en
+            # croyant parler à l'équipe.
+            #
+            # Absence de `type` = salon servi par une version antérieure du serveur : on garde
+            # l'ancien nom plutôt que d'en inventer un, le pont et Django ne se déploient pas
+            # forcément dans la même seconde.
+            suffixe = TYPE_SALON_EQUIPE_LIBELLE.get(salon.get("type"))
+            nom_salon = (
+                f"{PREFIXE_NOM_SALON[environnement]}Équipe {salon['equipe_nom']}"
+                + (f" — {suffixe}" if suffixe else "")
+            )
             room_id = await synapse.creer_salon(nom_salon[:64])
             await django.rapporter_salon(salon["id"], room_id, environnement)
-            logger.info("Salon créé pour l'équipe « %s » : %s", salon["equipe_nom"], room_id)
+            logger.info("Salon « %s » créé pour l'équipe « %s » : %s",
+                        suffixe or "Équipe", salon["equipe_nom"], room_id)
 
         if salon.get("sujet_salon"):
             await synapse.definir_sujet(room_id, salon["sujet_salon"])
@@ -318,7 +338,8 @@ async def _synchroniser_salons_equipe(django, synapse, environnement):
         for matrix_id in cibles:
             if matrix_id not in actuels:
                 await synapse.rejoindre_de_force(room_id, matrix_id)
-                logger.info("Membre %s ajouté au salon de « %s ».", matrix_id, salon["equipe_nom"])
+                logger.info("Membre %s ajouté au salon %s de « %s ».", matrix_id,
+                            salon.get("type", "?"), salon["equipe_nom"])
         # `expulsion_activee=False` (équipe "cellule de crise", voir
         # SalonMatrixEquipeSerializer.get_expulsion_activee côté Django) : n'importe qui
         # peut y entrer via assurer_membre_salon au premier accès (matrix.py), jamais
@@ -330,7 +351,8 @@ async def _synchroniser_salons_equipe(django, synapse, environnement):
             for matrix_id in actuels:
                 if matrix_id != synapse.user_id and matrix_id not in cibles:
                     await synapse.expulser(room_id, matrix_id)
-                    logger.info("Membre %s retiré du salon de « %s ».", matrix_id, salon["equipe_nom"])
+                    logger.info("Membre %s retiré du salon %s de « %s ».", matrix_id,
+                                salon.get("type", "?"), salon["equipe_nom"])
 
 
 TYPE_SALON_INSTITUTION_LIBELLE = {"PERMANENTS": "Permanents", "BENEVOLES": "Bénévoles mobilisés"}
