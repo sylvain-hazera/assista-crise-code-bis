@@ -582,18 +582,9 @@
           <table class="grille">
             <thead>
               <tr>
-                <th class="colonne-nom" rowspan="2">Membre</th>
+                <th class="colonne-nom">Membre</th>
                 @for (j of grille.jours; track j) {
-                  <th [class.week-end]="estWeekEnd(j)"
-                      [attr.colspan]="grille.creneaux.length">{{ enTeteJour(j) }}</th>
-                }
-              </tr>
-              <tr class="ligne-creneaux">
-                @for (j of grille.jours; track j) {
-                  @for (c of grille.creneaux; track c) {
-                    <th [class.week-end]="estWeekEnd(j)"
-                        [title]="libelleCreneau(c)">{{ initialeCreneau(c) }}</th>
-                  }
+                  <th [class.week-end]="estWeekEnd(j)">{{ enTeteJour(j) }}</th>
                 }
               </tr>
             </thead>
@@ -603,6 +594,12 @@
                   <td class="colonne-nom">
                     <strong>{{ m.nom }}</strong>
                     @if (m.membre_bureau) { <span class="marque">bureau</span> }
+                    @if (!m.a_declare) {
+                      <span class="marque muet"
+                            title="N'a rien déclaré : ses cases vides ne sont pas des refus">
+                        sans réponse
+                      </span>
+                    }
                     @if (m.qualifications_expirees) {
                       <span class="alerte" title="Un titre périmé vaut un titre absent">
                         <span class="material-icons">warning_amber</span>
@@ -615,21 +612,27 @@
                       </span>
                     }
                   </td>
+                  <!-- UNE CELLULE PAR JOUR, les quatre créneaux empilés dedans (matin en
+                       haut, nuit en bas). Même orientation que le modal de recrutement et que
+                       l'écran du bénévole : une journée est un bloc vertical. L'alternative —
+                       soixante colonnes d'une case — était illisible. -->
                   @for (j of m.jours; track j.date) {
-                    @for (c of grille.creneaux; track c) {
-                      <td [class]="'case ' + (j.creneaux[c] ? 'oui' : m.a_declare ? 'non' : 'silence')"
-                          [class.week-end]="estWeekEnd(j.date)"
-                          [title]="j.date + ' ' + libelleCreneau(c) + ' — ' +
-                                   (j.creneaux[c] ? 'disponible' : m.a_declare ? 'indisponible' : 'aucune déclaration')">
-                        {{ j.creneaux[c] ? '✓' : m.a_declare ? '✗' : '·' }}
-                      </td>
-                    }
+                    <td class="jour" [class.week-end]="estWeekEnd(j.date)">
+                      <div class="pile">
+                        @for (c of grille.creneaux; track c) {
+                          <span [class]="'creneau ' + (j.creneaux[c] ? 'oui' : m.a_declare ? 'non' : 'silence')"
+                                [title]="j.date + ' ' + libelleCreneau(c) + ' — ' +
+                                         (j.creneaux[c] ? 'disponible' : m.a_declare ? 'indisponible' : 'aucune déclaration')">
+                            {{ initialeCreneau(c) }}
+                          </span>
+                        }
+                      </div>
+                    </td>
                   }
                 </tr>
               } @empty {
                 <tr>
-                  <td [attr.colspan]="grille.jours.length * grille.creneaux.length + 1"
-                      class="empty">
+                  <td [attr.colspan]="grille.jours.length + 1" class="empty">
                     Aucun membre mobilisable dans cette association.
                   </td>
                 </tr>
@@ -638,20 +641,24 @@
             @if (grille.membres.length) {
               <tfoot>
                 <tr>
-                  <td class="colonne-nom">Disponibles</td>
+                  <td class="colonne-nom">Disponibles par créneau</td>
                   @for (j of grille.jours; track j; let i = $index) {
-                    @for (c of grille.creneaux; track c) {
-                      <td class="total" [class.week-end]="estWeekEnd(j)">
-                        {{ compteDisponibles(i, c) }}
-                      </td>
-                    }
+                    <td class="jour" [class.week-end]="estWeekEnd(j)">
+                      <div class="pile">
+                        @for (c of grille.creneaux; track c) {
+                          <span class="creneau total"
+                                [title]="libelleCreneau(c) + ' du ' + j">
+                            {{ compteDisponibles(i, c) }}
+                          </span>
+                        }
+                      </div>
+                    </td>
                   }
                 </tr>
                 <tr class="ligne-silences">
                   <td class="colonne-nom">Sans réponse</td>
-                  <td class="total"
-                      [attr.colspan]="grille.jours.length * grille.creneaux.length">
-                    {{ compteSansDeclaration() }} membre(s) n'ont rien déclaré
+                  <td class="total" [attr.colspan]="grille.jours.length">
+                    {{ compteSansDeclaration() }} membre(s) n'ont rien déclaré sur la période
                   </td>
                 </tr>
               </tfoot>
@@ -659,12 +666,13 @@
           </table>
         </div>
         <p class="legende">
-          <span class="case oui">✓</span> disponible
-          <span class="case non">✗</span> indisponible
-          <span class="case silence">·</span> aucune déclaration
+          <span class="creneau oui">M</span> disponible
+          <span class="creneau non">M</span> indisponible
+          <span class="creneau silence">M</span> aucune déclaration
           <span class="note-legende">
-            Quatre créneaux par jour (matin, midi, soir, nuit) — la même grille que la
-            constitution d'équipe.
+            Une colonne par jour, quatre créneaux empilés : <strong>M</strong>atin,
+            <strong>Mi</strong>di, <strong>S</strong>oir, <strong>N</strong>uit — la même
+            grille que la constitution d'équipe.
           </span>
         </p>
       }

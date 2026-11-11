@@ -310,10 +310,11 @@ label {
   }
 }
 
-// ── Grille de créneaux (15 jours × 4) ─────────────────────────────────────
-// Un tableau et non une grille de boutons : quinze lignes × quatre colonnes se lisent par
-// ligne, et un lecteur d'écran a besoin des en-têtes de ligne et de colonne pour dire
-// « samedi 14, matin ».
+// ── Grille de créneaux : une colonne par jour, une ligne par créneau ──────
+// Orientation reprise du modal de recrutement (`dispo-mini`) : une journée est un bloc
+// vertical, et comparer deux jours se fait d'un coup d'œil. C'est aussi ce que l'encadrement
+// a déjà sous les yeux quand il constitue une équipe — deux orientations pour la même
+// information obligeraient à relire l'en-tête à chaque écran.
 .raccourcis {
   display: flex;
   flex-wrap: wrap;
@@ -331,58 +332,77 @@ label {
 }
 
 .grille-creneaux {
-  // Sur un téléphone, quinze lignes tiennent ; c'est la largeur qui manque.
+  // Seize colonnes ne tiennent pas sur un téléphone : c'est la largeur qui défile, et la
+  // colonne des créneaux reste collée à gauche pour qu'on sache toujours quelle ligne on lit.
   overflow-x: auto;
 
   table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .9rem;
+    border-collapse: separate;
+    border-spacing: 2px;
+    font-size: .85rem;
   }
 
   th, td {
-    padding: .3rem .45rem;
+    padding: 0;
     text-align: center;
-    border-bottom: 1px solid var(--ac-border, #eee);
   }
 
   thead th {
-    font-size: .78rem;
-    text-transform: uppercase;
-    letter-spacing: .03em;
-    color: var(--ac-text-muted, #666);
+    font-size: .72rem;
     font-weight: 600;
+    color: var(--ac-text-muted, #666);
+    padding: .2rem .1rem;
+    white-space: nowrap;
+
+    &.week-end { color: var(--ac-primary, #1976d2); }
   }
 
   tbody th {
-    text-align: left;
-    white-space: nowrap;
+    text-align: right;
+    padding-right: .5rem;
+    font-size: .78rem;
     font-weight: 600;
+    white-space: nowrap;
     color: var(--ac-text, #333);
   }
 
-  // Repère de lecture seulement : le week-end n'est pas un état de disponibilité.
-  tr.week-end th { color: var(--ac-primary, #1976d2); }
-  tr.week-end { background: var(--ac-surface-2, #fafafa); }
+  // Les deux en-têtes qui doivent rester lisibles pendant le défilement horizontal.
+  .coin, tbody th {
+    position: sticky;
+    left: 0;
+    background: var(--ac-surface, #fff);
+    z-index: 1;
+  }
+
+  .coin {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  td.week-end { background: var(--ac-surface-2, #fafafa); }
+
+  .ligne-journee th { color: var(--ac-text-muted, #666); font-weight: 500; }
 }
 
 .case {
-  width: 2rem;
-  height: 2rem;
+  width: 100%;
+  min-width: 1.9rem;
+  height: 1.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   // Pointillés = décoché : la différence ne repose pas que sur la couleur, pour rester
   // lisible en niveaux de gris comme pour un daltonien.
   border: 1px dashed var(--ac-border-strong, #bbb);
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--ac-surface, #fff);
   cursor: pointer;
   color: var(--ac-green-text, #2e7d32);
 
   &:disabled { opacity: .5; cursor: progress; }
 
-  .material-icons { font-size: 1.05rem; }
+  .material-icons { font-size: 1rem; }
 
   &.coche {
     border-style: solid;
@@ -392,11 +412,13 @@ label {
 }
 
 .tout-le-jour {
-  padding: .25rem .5rem;
+  width: 100%;
+  min-width: 1.9rem;
+  height: 1.5rem;
   border: 1px solid var(--ac-border, #ddd);
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--ac-surface, #fff);
-  font-size: .78rem;
+  font-size: .8rem;
   color: var(--ac-text-muted, #555);
   cursor: pointer;
 

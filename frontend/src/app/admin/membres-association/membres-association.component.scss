@@ -385,13 +385,15 @@
 
   .week-end { background: var(--ac-surface-2, #fafafa); }
 
-  /* Trois états, trois couleurs — et le silence doit se voir autant que le refus. */
-  .case {
-    font-weight: 600;
+  /* Une cellule = un jour ; les quatre créneaux empilés dedans, matin en haut. Soixante
+     colonnes d'une case étaient illisibles — et cette orientation est celle du modal de
+     recrutement, donc celle que l'encadrement a déjà en tête. */
+  td.jour { padding: .15rem; min-width: 1.6rem; }
 
-    &.oui { background: var(--ac-green-bg, #f0fdf4); color: var(--ac-green-text, #166534); }
-    &.non { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); }
-    &.silence { color: #d1d5db; }
+  .pile {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 
   tfoot {
@@ -709,4 +711,40 @@
 
     .material-icons { font-size: .95rem; }
   }
+}
+
+/* Un créneau dans la pile : la lettre porte l'information autant que la couleur, pour rester
+   lisible en niveaux de gris comme pour un daltonien — et elle dit LEQUEL des quatre on lit. */
+.creneau {
+  display: block;
+  font-size: .6rem;
+  line-height: 1;
+  font-weight: 700;
+  text-align: center;
+  padding: .18rem 0;
+  border-radius: 2px;
+  background: var(--ac-surface-2, #f3f4f6);
+  color: #d1d5db;
+
+  &.oui { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #166534); }
+  &.non { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); }
+  /* Le silence reste neutre et visiblement vide : ce n'est pas un refus. */
+  &.silence { background: transparent; color: #d1d5db; }
+
+  &.total {
+    background: transparent;
+    color: var(--ac-green-text, #166534);
+    font-size: .62rem;
+  }
+}
+
+.legende .creneau {
+  display: inline-block;
+  width: 1.1rem;
+  margin-right: .2rem;
+}
+
+.marque.muet {
+  background: var(--ac-orange-bg, #fff7ed);
+  color: var(--ac-orange-text, #9a3412);
 }

@@ -201,23 +201,29 @@
             <div class="grille-creneaux">
               <table>
                 <caption class="sr-only">
-                  Vos disponibilités sur quinze jours, par créneau
+                  Vos disponibilités : une colonne par jour, une ligne par créneau
                 </caption>
                 <thead>
                   <tr>
-                    <th scope="col">Jour</th>
-                    @for (c of CRENEAUX; track c.creneau) {
-                      <th scope="col">{{ c.libelle }}</th>
+                    <th scope="col" class="coin">Créneau</th>
+                    @for (jour of disponibilites.jours; track jour.date) {
+                      <th scope="col" [class.week-end]="estWeekEnd(jour.date)">
+                        {{ enTeteJour(jour.date) }}
+                      </th>
                     }
-                    <th scope="col">Journée</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (jour of disponibilites.jours; track jour.date) {
-                    <tr [class.week-end]="estWeekEnd(jour.date)">
-                      <th scope="row">{{ enTeteJour(jour.date) }}</th>
-                      @for (c of CRENEAUX; track c.creneau) {
-                        <td>
+                  <!-- Une LIGNE par créneau et une COLONNE par jour : une journée se lit
+                       comme un bloc vertical, et comparer deux jours se fait d'un coup
+                       d'œil. C'est l'orientation du modal de recrutement
+                       (`dispo-mini`), donc celle que l'encadrement a déjà sous les yeux
+                       quand il constitue une équipe. -->
+                  @for (c of CRENEAUX; track c.creneau) {
+                    <tr>
+                      <th scope="row">{{ c.libelle }}</th>
+                      @for (jour of disponibilites.jours; track jour.date) {
+                        <td [class.week-end]="estWeekEnd(jour.date)">
                           <button type="button" class="case"
                                   [class.coche]="estCoche(jour, c.creneau)"
                                   [disabled]="enCours(jour.date, c.creneau)"
@@ -230,15 +236,21 @@
                           </button>
                         </td>
                       }
-                      <td>
-                        <button type="button" class="tout-le-jour"
-                                [disabled]="enCours(jour.date)"
-                                (click)="basculerJournee(jour)">
-                          {{ journeeComplete(jour) ? 'Retirer' : 'Tout' }}
-                        </button>
-                      </td>
                     </tr>
                   }
+                  <tr class="ligne-journee">
+                    <th scope="row">Journée</th>
+                    @for (jour of disponibilites.jours; track jour.date) {
+                      <td [class.week-end]="estWeekEnd(jour.date)">
+                        <button type="button" class="tout-le-jour"
+                                [disabled]="enCours(jour.date)"
+                                (click)="basculerJournee(jour)"
+                                [attr.aria-label]="(journeeComplete(jour) ? 'Retirer toute la journée du ' : 'Cocher toute la journée du ') + enTeteJour(jour.date)">
+                          {{ journeeComplete(jour) ? '✕' : '✓' }}
+                        </button>
+                      </td>
+                    }
+                  </tr>
                 </tbody>
               </table>
             </div>

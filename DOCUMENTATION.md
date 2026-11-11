@@ -1126,11 +1126,29 @@ silence d'un refus, pour savoir qui relancer — est donc porté autrement, par 
 en base, une grille vierge et une grille entièrement décochée sont identiques, et seul ce
 drapeau les sépare.
 
-Côté écran bénévole (`/ma-fiche-benevole`, onglet « Mes disponibilités »), un tableau de
-15 × 4 avec un geste « toute la journée » et un « tout cocher » sur quinze jours : soixante cases
-à cocher une par une, personne ne le fait — et une grille que personne ne remplit ne sert pas à
-armer une garde. Le « tout cocher » enchaîne les jours **séquentiellement** : quinze requêtes
-simultanées sur le même jeu de lignes, c'est quinze occasions de conflit pour un gain invisible.
+**L'orientation des trois grilles est la même, et ce n'est pas un détail de goût** (demande de
+Sylvain du 11/11/2026 : « 1 colonne = 1 jour, 4 lignes = les 4 créneaux… c'est tellement plus
+lisible ») : **une colonne par jour, les quatre créneaux empilés**, matin en haut. C'est
+l'orientation que le modal de recrutement (`dispo-mini`) utilise depuis l'origine, donc celle que
+l'encadrement a déjà sous les yeux au moment où il constitue une équipe. Deux orientations pour
+la même information obligeraient à relire l'en-tête à chaque écran — et une journée se lit mieux
+comme un bloc vertical qu'étalée sur quatre colonnes.
+
+La première version faisait l'inverse (une ligne par jour) et, sur la grille de l'association,
+produisait **soixante colonnes d'une case** : illisible.
+
+Côté écran bénévole (`/ma-fiche-benevole`, onglet « Mes disponibilités »), la colonne des
+créneaux reste collée à gauche pendant le défilement horizontal — seize colonnes ne tiennent pas
+sur un téléphone, et sans ça on ne sait plus quelle ligne on lit. Un geste « toute la journée »
+par colonne et un « tout cocher » sur quinze jours : soixante cases à cocher une par une,
+personne ne le fait, et une grille que personne ne remplit ne sert pas à armer une garde. Le
+« tout cocher » enchaîne les jours **séquentiellement** : quinze requêtes simultanées sur le même
+jeu de lignes, c'est quinze occasions de conflit pour un gain invisible.
+
+La lettre dans chaque case (`M` / `Mi` / `S` / `N`) porte l'information autant que la couleur :
+la grille reste lisible en niveaux de gris et pour un daltonien, et elle dit **lequel** des
+quatre créneaux on lit. « Mi » prend deux lettres parce que « M » désignerait aussi bien matin
+que midi.
 
 #### Justificatifs de qualification : déposés par le membre, validés par sa hiérarchie
 
