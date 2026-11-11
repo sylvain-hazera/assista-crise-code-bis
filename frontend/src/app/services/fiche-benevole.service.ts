@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { FicheBenevole } from '../shared/models/fiche-benevole.model';
+import { FicheBenevole, MesDisponibilites } from '../shared/models/fiche-benevole.model';
 
 /** Fiche du compte connecté, et son mot de passe.
  *
@@ -14,6 +14,7 @@ export class FicheBenevoleService {
 
   private url = `${environment.apiUrl}/ma-fiche-benevole/`;
   private urlMotDePasse = `${environment.apiUrl}/definir-mon-mot-de-passe/`;
+  private urlDisponibilites = `${environment.apiUrl}/mes-disponibilites/`;
 
   constructor(private http: HttpClient) {}
 
@@ -28,6 +29,28 @@ export class FicheBenevoleService {
    * départementale — et retirer de l'ancienne. */
   enregistrer(champs: Partial<FicheBenevole>): Observable<FicheBenevole> {
     return this.http.patch<FicheBenevole>(this.url, champs);
+  }
+
+  /** Mes disponibilités, jour par jour.
+   *
+   * Écrit dans `DisponibiliteOperationnelle` — **le seul moteur de disponibilité du projet**,
+   * celui que lit la grille de mobilisation et donc la constitution d'équipe. Ce guichet
+   * n'est pas une seconde source : il évite seulement au membre de devoir connaître
+   * l'identifiant de son affectation pour cocher une case. */
+  mesDisponibilites(jours = 15): Observable<MesDisponibilites> {
+    return this.http.get<MesDisponibilites>(this.urlDisponibilites,
+                                            { params: { jours: String(jours) } });
+  }
+
+  /** `disponible: null` EFFACE la déclaration du jour.
+   *
+   * Trois valeurs et non deux : revenir à « je ne sais pas encore » doit être possible, sinon
+   * la seule façon de retirer un engagement est d'affirmer un refus — et la grille ne
+   * distinguerait plus un silence d'un non. */
+  declarerJour(date: string, disponible: boolean | null)
+      : Observable<{ date: string; disponible: boolean | null; remplacees: number }> {
+    return this.http.post<{ date: string; disponible: boolean | null; remplacees: number }>(
+      this.urlDisponibilites, { date, disponible });
   }
 
   /** Aucun ancien mot de passe demandé : un compte créé par import n'en a pas, et en exiger

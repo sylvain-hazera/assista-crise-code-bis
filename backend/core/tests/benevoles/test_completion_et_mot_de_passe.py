@@ -133,7 +133,7 @@ class TestCompletionDeFiche:
                                  "region_code": "75"}):
             reponse = client.patch(URL_FICHE, {
                 "adresse": "1 place Pey Berland", "code_postal": "33000",
-                "ville": "Bordeaux", "disponibilite": "REGULIERE",
+                "ville": "Bordeaux", "frequence_engagement": "REGULIERE",
                 "metier": "Infirmière",
             }, format='json')
 

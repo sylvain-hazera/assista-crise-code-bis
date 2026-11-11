@@ -1017,6 +1017,58 @@ une ressource particulière comme membre de l'asso ») : même forme qu'`Offer` 
 `adresse` chiffrée, `location` PointField, `ban_id`, et les quatre codes de secteur
 dénormalisés par `commune_secteur_codes`.
 
+#### Un seul moteur de disponibilité
+
+Correction du 11/11/2026, demandée par Sylvain : « tu as généré un nouveau modèle de
+disponibilité alors que j'ai celui des personnes ressources. Peux tu utiliser qu'un seul
+moteur ? Celui des personnes ressources, c'est celui qui est appelé quand on constitue une
+équipe. »
+
+**La seule source est `DisponibiliteOperationnelle`**, que lit
+`DisponibiliteOperationnelleViewSet.grille` et donc la constitution d'équipe. `FicheBenevole`
+ne porte plus de « disponibilité » : le champ s'appelle `frequence_engagement` (migration
+`0254`, un `RenameField` — la valeur vient du formulaire d'adhésion du partenaire et n'est pas
+du bruit).
+
+La différence entre les deux est de nature, pas de précision : « environ 10 jours par an » ne
+dit **rien** du 5 novembre. On ne peut donc pas convertir l'une en l'autre sans inventer des
+dates, et c'est pourquoi la fréquence est conservée **à côté** du moteur plutôt que fondue
+dedans — en la supprimant on jetterait une information collectée auprès de plusieurs centaines
+de personnes.
+
+Trois conséquences, toutes nécessaires pour que « un seul moteur » veuille dire quelque chose :
+
+- **L'import crée l'affectation.** `DisponibiliteOperationnelle` pend à une
+  `AffectationRoleOperationnel` ; `importer_benevoles_association` n'en créait aucune, donc un
+  bénévole importé **ne pouvait rien déclarer** et sa ligne restait un silence permanent dans
+  la grille — un effectif invisible, c'est-à-dire inutilisable. Le rôle posé est `INTERVENANT`,
+  le même que pose le circuit de recrutement à l'acceptation : la voie « import » ne doit pas
+  produire un membre d'une autre nature que la voie « candidature ». Toujours **pas** de
+  `REFERENT`, qui est un niveau de responsabilité.
+- **Un guichet personnel**, `MesDisponibilitesView` (`/api/mes-disponibilites/`), et l'onglet
+  « Mes disponibilités » de `/ma-fiche-benevole`. Ce n'est pas une seconde source : il écrit
+  dans le moteur. Il existe parce que l'identifiant d'une affectation n'est servi nulle part à
+  un simple membre — l'obliger à le trouver pour cocher une case, c'est garantir une grille
+  vide. Un jour = une déclaration, et une nouvelle remplace celle du jour : empiler deux
+  déclarations contradictoires rendrait la grille dépendante de l'ordre de lecture.
+- **Trois états, et `null` efface.** Revenir à « je ne sais pas encore » doit être possible,
+  sinon la seule façon de retirer un engagement est d'affirmer un refus — et la grille ne
+  distinguerait plus un silence d'un non, ce qu'elle existe précisément pour montrer.
+
+**Dette de sécurité corrigée au passage, et elle était sérieuse.**
+`DisponibiliteOperationnelleViewSet` servait `objects.all()` sans `permission_classes` ni
+filtrage : tout compte connecté lisait les disponibilités de la plateforme entière, et surtout
+**écrivait celles de n'importe qui** — `prendre_permanence` et `quitter_permanence` appelaient
+`get_object()` sur une table non filtrée. On pouvait déclarer un inconnu indisponible la veille
+d'une garde. Le cloisonnement reprend celui des comptes (`core/visibilite_membres.py`) en
+lecture, et l'écriture est plus étroite encore : le titulaire, le bureau, ou l'encadrement
+d'une de ses équipes — un simple collègue voit la grille mais ne coche pas pour les autres,
+parce qu'une case posée par quelqu'un d'autre a la même apparence que celle posée par
+l'intéressé.
+
+Ouvrir la déclaration aux bénévoles sans corriger cela aurait transformé une dette dormante en
+porte réellement empruntée.
+
 #### Justificatifs de qualification : déposés par le membre, validés par sa hiérarchie
 
 `QualificationMembre.justificatif` + `statut` (`DECLAREE` / `VERIFIEE` / `REFUSEE`), migration

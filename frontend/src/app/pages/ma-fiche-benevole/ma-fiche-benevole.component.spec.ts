@@ -5,7 +5,7 @@ import { MaFicheBenevoleComponent } from './ma-fiche-benevole.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
 import { AuthService } from '../../auth/services/auth.service';
 import { environment } from '../../../environments/environment';
-import { FicheBenevole } from '../../shared/models/fiche-benevole.model';
+import { FicheBenevole, MesDisponibilites } from '../../shared/models/fiche-benevole.model';
 import { QualificationMembre } from '../../shared/models/association.model';
 
 /**
@@ -31,7 +31,7 @@ describe('MaFicheBenevoleComponent', () => {
     latitude: 44.8, longitude: -0.57,
     commune_code: '33063', epci_code: null, departement_code: '33', region_code: '75',
     date_naissance: null, metier: 'Infirmier', situation: 'SALARIE',
-    disponibilite: 'REGULIERE', message: '', diplome_premier_secours: false,
+    frequence_engagement: 'REGULIERE', message: '', diplome_premier_secours: false,
     date_adhesion: null, completee_le: null, est_complete: true,
     date_modification: '2026-11-11T08:00:00Z', mot_de_passe_defini: false,
   };
@@ -157,6 +157,89 @@ describe('MaFicheBenevoleComponent', () => {
     charger();
     composant.depot.qualification = 'q1';
     expect(composant.depotPret).toBeFalse();
+  });
+
+  describe('les disponibilités (moteur unique)', () => {
+    const DISPOS: MesDisponibilites = {
+      rattachements: [{ affectation: 'a1', institution: 'i1', institution_nom: 'Reserve' }],
+      jours: [
+        { date: '2026-11-12', disponible: null },
+        { date: '2026-11-13', disponible: true },
+      ],
+    };
+
+    function ouvrirDispos(grille: MesDisponibilites = DISPOS): void {
+      charger();
+      composant.ouvrirOnglet('disponibilites');
+      http.expectOne(r => r.url === `${api}/mes-disponibilites/`).flush(grille);
+    }
+
+    it('écrit dans le moteur des personnes ressources, pas dans la fiche', () => {
+      ouvrirDispos();
+      // C'est tout l'objet de la correction : une seule source, celle que lit la
+      // constitution d'équipe.
+      expect(composant.disponibilites?.jours.length).toBe(2);
+      http.expectNone(r => r.method === 'PATCH');
+    });
+
+    it('parcourt les trois états : silence → disponible → indisponible → silence', () => {
+      ouvrirDispos();
+      const jour = composant.disponibilites!.jours[0];
+
+      composant.basculerJour(jour);
+      let requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(requete.request.body).toEqual({ date: '2026-11-12', disponible: true });
+      requete.flush({ date: '2026-11-12', disponible: true, remplacees: 0 });
+      expect(jour.disponible).toBeTrue();
+
+      composant.basculerJour(jour);
+      requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(requete.request.body.disponible).toBeFalse();
+      requete.flush({ date: '2026-11-12', disponible: false, remplacees: 1 });
+      expect(jour.disponible).toBeFalse();
+
+      // Troisième clic : retour au silence. Sans lui, retirer un engagement obligerait à
+      // affirmer un refus.
+      composant.basculerJour(jour);
+      requete = http.expectOne(`${api}/mes-disponibilites/`);
+      expect(requete.request.body.disponible).toBeNull();
+      requete.flush({ date: '2026-11-12', disponible: null, remplacees: 1 });
+      expect(jour.disponible).toBeNull();
+    });
+
+    it('ne modifie pas la case si le serveur refuse', () => {
+      ouvrirDispos();
+      const jour = composant.disponibilites!.jours[1];
+
+      composant.basculerJour(jour);
+      http.expectOne(`${api}/mes-disponibilites/`).flush(
+        { error: 'Ce rattachement n\'est pas le vôtre.' },
+        { status: 403, statusText: 'Forbidden' });
+
+      // Une case qui change d'apparence sans que le serveur l'ait enregistrée est pire qu'un
+      // refus visible : on partirait sur une disponibilité imaginaire.
+      expect(jour.disponible).toBeTrue();
+      expect(composant.erreur).toContain('rattachement');
+    });
+
+    it('dit quand il n\'y a rien à déclarer plutôt que de montrer une grille vide', () => {
+      ouvrirDispos({ rattachements: [], jours: [] });
+      expect(composant.sansRattachement).toBeTrue();
+    });
+
+    it('distingue les trois états pour l\'affichage', () => {
+      expect(composant.etatJour(true)).toBe('oui');
+      expect(composant.etatJour(false)).toBe('non');
+      // Un blanc n'est pas un refus.
+      expect(composant.etatJour(null)).toBe('silence');
+    });
+
+    it('ne recharge pas la grille à chaque ouverture d\'onglet', () => {
+      ouvrirDispos();
+      composant.ouvrirOnglet('fiche');
+      composant.ouvrirOnglet('disponibilites');
+      http.expectNone(r => r.url === `${api}/mes-disponibilites/`);
+    });
   });
 
   it('signale un refus pour que la pastille attire l\'œil', () => {

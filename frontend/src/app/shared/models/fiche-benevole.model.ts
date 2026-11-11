@@ -26,8 +26,12 @@ export interface FicheBenevole {
   metier: string;
   situation: SituationProfessionnelle | '';
   situation_libelle?: string;
-  disponibilite: DisponibiliteBenevole | '';
-  disponibilite_libelle?: string;
+  /** Volume d'engagement annoncé à l'adhésion. **Ce n'est pas une disponibilité** : les
+   * disponibilités datées vivent dans `DisponibiliteOperationnelle`, le seul moteur que lit la
+   * constitution d'équipe (voir `MesDisponibilitesService`). Garder les deux sous le même mot
+   * laissait croire à deux sources pour la même question. */
+  frequence_engagement: FrequenceEngagement | '';
+  frequence_engagement_libelle?: string;
   message: string;
   /** DÉCLARATIF. Une qualification vérifiée vit dans QualificationMembre, avec ses dates et
    * son justificatif : les confondre ferait passer une case cochée pour un diplôme contrôlé. */
@@ -53,7 +57,7 @@ export type SituationProfessionnelle =
   | 'SALARIE' | 'RETRAITE' | 'INDEPENDANT' | 'FONCTIONNAIRE' | 'ETUDIANT'
   | 'RECHERCHE_EMPLOI' | 'AUTRE';
 
-export type DisponibiliteBenevole = 'OCCASIONNELLE' | 'REGULIERE' | 'FREQUENTE';
+export type FrequenceEngagement = 'OCCASIONNELLE' | 'REGULIERE' | 'FREQUENTE';
 
 /** Libellés repris du formulaire d'adhésion : les reformuler rendrait incomparables les
  * réponses déjà collectées. */
@@ -67,8 +71,23 @@ export const SITUATIONS: { valeur: SituationProfessionnelle; libelle: string }[]
   { valeur: 'AUTRE', libelle: 'Autre' },
 ];
 
-export const DISPONIBILITES: { valeur: DisponibiliteBenevole; libelle: string }[] = [
+export const FREQUENCES_ENGAGEMENT: { valeur: FrequenceEngagement; libelle: string }[] = [
   { valeur: 'OCCASIONNELLE', libelle: 'Occasionnelle (moins de 5 jours par an)' },
   { valeur: 'REGULIERE', libelle: 'Régulière (environ 10 jours par an)' },
   { valeur: 'FREQUENTE', libelle: 'Fréquente (plus de 10 jours par an)' },
 ];
+
+/** Une journée de la grille personnelle. `disponible: null` = non renseigné, et c'est une
+ * information : un blanc n'est pas un refus. */
+export interface JourDisponibilitePersonnel {
+  date: string;
+  disponible: boolean | null;
+}
+
+/** Réponse de `/api/mes-disponibilites/`. `rattachements` est vide pour qui n'appartient à
+ * aucune institution : l'écran doit le DIRE plutôt que d'afficher une grille vide
+ * inexpliquée. */
+export interface MesDisponibilites {
+  rattachements: { affectation: string; institution: string; institution_nom: string }[];
+  jours: JourDisponibilitePersonnel[];
+}

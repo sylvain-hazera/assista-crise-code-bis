@@ -608,6 +608,7 @@ from .serializers import (
     ConfigurationEnvoiInstitutionSerializer,
     FicheBenevoleSerializer,
     ModeleMessageSerializer,
+    MesDisponibilitesSerializer,
     MotDePasseChoisiSerializer,
     NoeudPublicMeshCoreSerializer,
     RattachementNoeudRadioSerializer,
@@ -13198,14 +13199,92 @@ def _disponibilite_du_jour(declarations, jour):
 class DisponibiliteOperationnelleViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
+    """Déclarations de disponibilité — **le seul moteur de disponibilité du projet**.
+
+    C'est celui que lit la grille de mobilisation et donc la constitution d'équipe. Rien
+    d'autre ne doit répondre à « qui est disponible le 5 novembre » : une seconde source se
+    désynchronise, et on mobilise alors sur la mauvaise (voir `FrequenceEngagement`, qui porte
+    un volume annuel et n'est jamais consultée ici).
+
+    **Cloisonnement ajouté le 11/11/2026.** Cette classe servait `objects.all()` sans
+    `permission_classes` ni filtrage : tout compte connecté pouvait lire les disponibilités de
+    toute la plateforme, et surtout **écrire celles de n'importe qui** — `prendre_permanence`
+    et `quitter_permanence` appellent `get_object()` sur une table non filtrée. On pouvait donc
+    déclarer un inconnu indisponible la veille d'une garde. Ouvrir la déclaration aux bénévoles
+    sans corriger cela aurait transformé une dette en vraie porte."""
 
     queryset = (
-        DisponibiliteOperationnelle.objects.all()
+        DisponibiliteOperationnelle.objects.select_related(
+            "affectation", "affectation__utilisateur", "affectation__institution")
     )
 
     serializer_class = (
         DisponibiliteOperationnelleSerializer
     )
+
+    def get_queryset(self):
+        """Les siennes, et celles des gens dont on a la charge.
+
+        Trois cercles, du plus large au plus étroit — mêmes règles que la visibilité des
+        comptes (`core/visibilite_membres.py`), parce qu'une disponibilité est une information
+        sur quelqu'un : l'administrateur, le bureau d'une institution pour ses membres,
+        l'encadrement d'une équipe pour cette équipe et toutes celles en dessous. Et toujours
+        les siennes."""
+        from .visibilite_membres import filtre_utilisateurs_visibles
+
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+
+        filtre = filtre_utilisateurs_visibles(self.request.user)
+        if filtre is None:
+            # Aucun périmètre : les siennes seulement. Jamais toute la table — c'était
+            # précisément le défaut.
+            return qs.filter(affectation__utilisateur=self.request.user)
+        # Le filtre est écrit pour `User` : on le transpose sur le porteur de l'affectation.
+        visibles = User.objects.filter(filtre).values_list("id", flat=True)
+        return qs.filter(
+            Q(affectation__utilisateur=self.request.user)
+            | Q(affectation__utilisateur_id__in=visibles)
+        )
+
+    def _verifier_droit_d_ecriture(self, affectation):
+        """Écrire une disponibilité est un acte plus étroit que la lire.
+
+        Le titulaire, le bureau de son institution, ou l'encadrement d'une de ses équipes. Un
+        simple collègue voit la grille mais ne coche pas pour les autres : une case posée par
+        quelqu'un d'autre a la même apparence qu'une case posée par l'intéressé, et c'est sur
+        ces cases qu'on part en intervention."""
+        from .visibilite_membres import peut_voir_justificatifs
+
+        if affectation.utilisateur_id == self.request.user.id:
+            return
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return
+        # Même critère que l'accès aux pièces : une responsabilité sur la personne, pas un
+        # simple partage d'institution.
+        if peut_voir_justificatifs(self.request.user, affectation.utilisateur):
+            return
+        raise PermissionDenied(
+            "Vous ne pouvez déclarer une disponibilité que pour vous-même, ou pour un membre "
+            "dont vous avez la charge."
+        )
+
+    def perform_create(self, serializer):
+        self._verifier_droit_d_ecriture(serializer.validated_data["affectation"])
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._verifier_droit_d_ecriture(serializer.instance.affectation)
+        nouvelle = serializer.validated_data.get("affectation")
+        if nouvelle is not None:
+            # Sinon on déplacerait sa propre déclaration sur l'affectation d'un autre.
+            self._verifier_droit_d_ecriture(nouvelle)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._verifier_droit_d_ecriture(instance.affectation)
+        instance.delete()
 
     # Fenêtre de la grille de mobilisation. Quinze jours : c'est l'horizon sur lequel une
     # association se projette pour armer une garde — au-delà, les gens ne savent pas encore, et
@@ -13338,6 +13417,8 @@ class DisponibiliteOperationnelleViewSet(
 
         disponibilite = self.get_object()
 
+        self._verifier_droit_d_ecriture(disponibilite.affectation)
+
         disponibilite.disponible = True
 
         disponibilite.date_fin = None
@@ -13371,6 +13452,8 @@ class DisponibiliteOperationnelleViewSet(
 
         disponibilite = self.get_object()
 
+        self._verifier_droit_d_ecriture(disponibilite.affectation)
+
         disponibilite.disponible = False
 
         disponibilite.date_fin = timezone.now()
@@ -13401,8 +13484,11 @@ class DisponibiliteOperationnelleViewSet(
         request
     ):
 
+        # `get_queryset()` et non `objects` : cette action rendait les permanences ouvertes de
+        # TOUTE la plateforme, cloisonnement compris (corrigé le 11/11/2026 avec le reste de la
+        # classe).
         queryset = (
-            DisponibiliteOperationnelle.objects
+            self.get_queryset()
             .filter(
                 disponible=True,
                 date_fin__isnull=True
@@ -21448,6 +21534,156 @@ class MaFicheBenevoleView(generics.GenericAPIView):
                 objet_id=cible.id,
                 commentaire=f"{fiche.utilisateur.email} rattaché d'après son adresse.",
             )
+
+
+class MesDisponibilitesView(generics.GenericAPIView):
+    """Mes disponibilités, jour par jour — écrites dans le SEUL moteur du projet.
+
+    `DisponibiliteOperationnelle` est la source que lit la grille de mobilisation, donc la
+    constitution d'équipe. Cette vue n'en est pas une seconde : elle n'est qu'un guichet pour
+    que l'intéressé puisse y écrire lui-même, sans connaître la plomberie.
+
+    **Pourquoi un guichet plutôt que d'envoyer le bénévole sur
+    `DisponibiliteOperationnelleViewSet`** : une déclaration pend à une
+    `AffectationRoleOperationnel`, dont l'identifiant n'est servi nulle part à un simple
+    membre. Lui demander de le trouver, c'est l'obliger à lire ses propres affectations pour
+    cocher une case — et c'est exactement le genre de détour qui fait qu'une grille reste
+    vide.
+
+    Le format est celui que l'écran manipule : un jour, disponible ou non. Le modèle, lui,
+    raisonne en périodes ; la conversion se fait ici, en un seul endroit.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = MesDisponibilitesSerializer
+
+    #: Même fenêtre que la grille : au-delà de quinze jours les gens ne savent pas encore, et
+    #: une case remplie trop tôt donne une fausse certitude.
+    JOURS = 15
+
+    def _mes_affectations(self, request):
+        return list(
+            AffectationRoleOperationnel.objects.filter(
+                utilisateur=request.user, actif=True,
+                environment=get_active_environment(request),
+            ).select_related("institution")
+        )
+
+    def get(self, request):
+        """Les quinze prochains jours, avec trois états par jour.
+
+        « Non renseigné » est rendu comme `null` et non comme `false` : un blanc n'est pas un
+        refus, et les confondre fait partir une mobilisation avec un effectif imaginaire."""
+        affectations = self._mes_affectations(request)
+        if not affectations:
+            # Pas une erreur : un citoyen sans rattachement n'a simplement rien à déclarer.
+            # L'écran doit pouvoir le dire plutôt que d'afficher une grille vide inexpliquée.
+            return Response({"rattachements": [], "jours": [], "declarations": []})
+
+        try:
+            nb_jours = int(request.query_params.get("jours", self.JOURS))
+        except (TypeError, ValueError):
+            nb_jours = self.JOURS
+        nb_jours = max(1, min(nb_jours, 31))
+
+        debut = timezone.localdate()
+        jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
+
+        declarations = list(
+            DisponibiliteOperationnelle.objects.filter(
+                affectation__in=affectations,
+                environment=get_active_environment(request),
+            ).filter(
+                Q(date_fin__isnull=True) | Q(date_fin__date__gte=debut),
+                date_debut__date__lte=jours[-1],
+            )
+        )
+
+        return Response({
+            "rattachements": [
+                {"affectation": a.id, "institution": a.institution_id,
+                 "institution_nom": a.institution.nom}
+                for a in affectations
+            ],
+            "jours": [
+                {"date": jour, "disponible": _disponibilite_du_jour(declarations, jour)}
+                for jour in jours
+            ],
+            "declarations": DisponibiliteOperationnelleSerializer(declarations,
+                                                                  many=True).data,
+        })
+
+    def post(self, request):
+        """Déclare un jour disponible ou indisponible, ou efface la déclaration.
+
+        **Un jour = une déclaration**, et une nouvelle remplace la précédente sur ce jour.
+        Empiler deux déclarations contradictoires sur le même jour rendrait la grille
+        dépendante de l'ordre de lecture — c'est-à-dire fausse une fois sur deux.
+
+        `disponible: null` EFFACE : revenir à « je ne sais pas encore » doit être possible,
+        sinon la seule façon de retirer un engagement est d'affirmer un refus."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        jour = serializer.validated_data["date"]
+        disponible = serializer.validated_data.get("disponible")
+
+        affectations = self._mes_affectations(request)
+        if not affectations:
+            return Response(
+                {"error": "Vous n'êtes rattaché à aucune institution : il n'y a pas de "
+                          "disponibilité à déclarer."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        demandee = serializer.validated_data.get("affectation")
+        if demandee is not None:
+            affectation = next((a for a in affectations if str(a.id) == str(demandee)), None)
+            if affectation is None:
+                # On ne déclare que pour SES propres rattachements. Le reste passe par la page
+                # de l'association, avec ses droits.
+                raise PermissionDenied("Ce rattachement n'est pas le vôtre.")
+        else:
+            affectation = affectations[0]
+
+        environnement = get_active_environment(request)
+        # Les déclarations qui couvrent ce jour, toutes affectations confondues : laisser celle
+        # d'un autre rattachement contredire la nouvelle reproduirait le problème qu'on évite.
+        anciennes = DisponibiliteOperationnelle.objects.filter(
+            affectation__in=affectations, environment=environnement,
+            date_debut__date__lte=jour,
+        ).filter(Q(date_fin__isnull=True) | Q(date_fin__date__gte=jour))
+        effacees = anciennes.count()
+        anciennes.delete()
+
+        creee = None
+        if disponible is not None:
+            creee = DisponibiliteOperationnelle.objects.create(
+                affectation=affectation,
+                disponible=disponible,
+                # Journée entière : l'écran raisonne en jours, et une demi-journée n'est pas
+                # une notion de ce domaine. Le modèle garde des horodatages, donc on borne.
+                date_debut=timezone.make_aware(
+                    datetime.datetime.combine(jour, datetime.time.min)),
+                date_fin=timezone.make_aware(
+                    datetime.datetime.combine(jour, datetime.time.max)),
+                environment=environnement,
+            )
+
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="DisponibiliteOperationnelle",
+            objet_id=creee.id if creee else affectation.id,
+            commentaire=(
+                f"Disponibilité du {jour} déclarée par son titulaire : "
+                f"{'disponible' if disponible else 'indisponible' if disponible is not None else 'effacée'}"
+                + (f" ({effacees} déclaration(s) remplacée(s))" if effacees else "")
+            ),
+        )
+
+        return Response({
+            "date": jour,
+            "disponible": disponible,
+            "remplacees": effacees,
+        })
 
 
 class DefinirMonMotDePasseView(generics.GenericAPIView):

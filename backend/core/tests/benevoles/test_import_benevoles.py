@@ -87,14 +87,23 @@ class TestTypeDeCompte:
         assert u.type == UserRole.SIMPLE_USER
         assert u.is_active is False  # en attente d'activation par son lien magique
 
-    def test_aucun_role_operationnel_n_est_pose(self, requete, asso, equipes):
-        """L'import de personnel posait REFERENT, un niveau de responsabilité, à tout le
-        monde."""
+    def test_le_role_pose_est_INTERVENANT_et_rien_de_plus(self, requete, asso, equipes):
+        """L'import de personnel posait REFERENT, un niveau de RESPONSABILITÉ, à tout le monde.
+        C'est cela qu'on refuse, et c'est toujours refusé.
+
+        Un rôle est posé depuis le 11/11/2026, mais c'est INTERVENANT — le niveau de base, le
+        même que pose le circuit de recrutement à l'acceptation : la voie « import » ne doit
+        pas produire un membre d'une autre nature que la voie « candidature ».
+
+        Et c'est nécessaire : `DisponibiliteOperationnelle` pend à une affectation. Sans elle,
+        un bénévole importé ne pouvait rien déclarer et restait un silence permanent dans la
+        grille de mobilisation, c'est-à-dire un effectif invisible."""
         from core.models import AffectationRoleOperationnel
 
         importer_benevoles_association(requete, asso, [ligne("b2@essai.invalide")], MAPPING)
         u = User.objects.get(username="b2@essai.invalide")
-        assert not AffectationRoleOperationnel.objects.filter(utilisateur=u).exists()
+        affectations = AffectationRoleOperationnel.objects.filter(utilisateur=u)
+        assert [a.role.code for a in affectations] == ["INTERVENANT"]
 
     def test_aucun_acces_a_la_zone_de_demonstration(self, requete, asso, equipes):
         importer_benevoles_association(requete, asso, [ligne("b3@essai.invalide")], MAPPING)

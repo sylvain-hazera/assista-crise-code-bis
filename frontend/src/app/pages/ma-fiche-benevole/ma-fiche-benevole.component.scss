@@ -309,3 +309,73 @@ label {
     &.manquante { color: var(--ac-orange-text, #e65100); font-weight: 600; }
   }
 }
+
+// ── Grille personnelle de disponibilités ───────────────────────────────────
+// Les trois états se distinguent par la COULEUR ET par un signe : un daltonien doit pouvoir
+// lire sa propre grille, et « disponible » ne peut pas se deviner d'une nuance.
+.grille-jours {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.2rem, 1fr));
+  gap: .5rem;
+}
+
+.jour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .2rem;
+  padding: .5rem .3rem;
+  border: 1px solid var(--ac-border, #ddd);
+  border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  font: inherit;
+  cursor: pointer;
+
+  &:disabled { opacity: .5; cursor: progress; }
+
+  .jour-date { font-size: .78rem; color: var(--ac-text-muted, #666); }
+  .jour-etat .material-icons { font-size: 1.2rem; }
+
+  &.oui {
+    border-color: var(--ac-green-text, #2e7d32);
+    background: var(--ac-green-bg, #e8f5e9);
+    .jour-etat { color: var(--ac-green-text, #2e7d32); }
+  }
+  &.non {
+    border-color: var(--ac-red-text, #c62828);
+    background: var(--ac-red-bg, #ffebee);
+    .jour-etat { color: var(--ac-red-text, #c62828); }
+  }
+  // Le silence n'est pas un refus : il reste neutre, et visiblement vide.
+  &.silence {
+    border-style: dashed;
+    .jour-etat { color: var(--ac-text-muted, #9e9e9e); }
+  }
+
+  // Le week-end n'est pas un état de disponibilité : juste un repère de lecture.
+  &.week-end .jour-date { font-weight: 700; }
+}
+
+.legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .82rem;
+  color: var(--ac-text-muted, #666);
+
+  li { display: flex; align-items: center; gap: .35rem; }
+}
+
+.pastille-legende {
+  width: .8rem;
+  height: .8rem;
+  border-radius: 3px;
+  border: 1px solid var(--ac-border, #ddd);
+
+  &.oui { background: var(--ac-green-bg, #e8f5e9); border-color: var(--ac-green-text, #2e7d32); }
+  &.non { background: var(--ac-red-bg, #ffebee); border-color: var(--ac-red-text, #c62828); }
+  &.silence { border-style: dashed; }
+}

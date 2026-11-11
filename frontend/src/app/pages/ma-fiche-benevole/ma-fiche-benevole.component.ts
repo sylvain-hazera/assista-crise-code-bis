@@ -7,11 +7,11 @@ import { FicheBenevoleService } from '../../services/fiche-benevole.service';
 import { AssociationService } from '../../services/association.service';
 import { AuthService } from '../../auth/services/auth.service';
 import {
-  DISPONIBILITES, FicheBenevole, SITUATIONS,
+  FREQUENCES_ENGAGEMENT, FicheBenevole, MesDisponibilites, SITUATIONS,
 } from '../../shared/models/fiche-benevole.model';
 import { Qualification, QualificationMembre } from '../../shared/models/association.model';
 
-type Onglet = 'fiche' | 'justificatifs' | 'acces';
+type Onglet = 'fiche' | 'disponibilites' | 'justificatifs' | 'acces';
 
 /**
  * « Ma fiche de bénévole » : ce que le membre d'une association voit de lui-même.
@@ -53,7 +53,11 @@ export class MaFicheBenevoleComponent implements OnInit {
   saisie: Partial<FicheBenevole> = {};
 
   readonly SITUATIONS = SITUATIONS;
-  readonly DISPONIBILITES = DISPONIBILITES;
+  readonly FREQUENCES_ENGAGEMENT = FREQUENCES_ENGAGEMENT;
+
+  /** Grille personnelle des quinze prochains jours, servie par le moteur unique. */
+  disponibilites: MesDisponibilites | null = null;
+  jourEnCours = '';
 
   // ── Mot de passe ──────────────────────────────────────────────────────────
   motDePasse = '';
@@ -115,7 +119,7 @@ export class MaFicheBenevoleComponent implements OnInit {
       date_naissance: fiche.date_naissance ?? null,
       metier: fiche.metier ?? '',
       situation: fiche.situation ?? '',
-      disponibilite: fiche.disponibilite ?? '',
+      frequence_engagement: fiche.frequence_engagement ?? '',
       message: fiche.message ?? '',
       diplome_premier_secours: !!fiche.diplome_premier_secours,
     };
@@ -158,6 +162,70 @@ export class MaFicheBenevoleComponent implements OnInit {
         this.erreur = this.premierMessage(err) || "Impossible d'enregistrer votre fiche.";
       },
     });
+  }
+
+  // ══ Disponibilités (moteur unique) ════════════════════════════════════════
+
+  ouvrirOnglet(onglet: Onglet): void {
+    this.onglet = onglet;
+    this.message = '';
+    this.erreur = '';
+    // Chargée à la première ouverture seulement : la grille n'intéresse pas qui vient
+    // corriger son adresse, et c'est une requête de plus à l'arrivée.
+    if (onglet === 'disponibilites' && !this.disponibilites) { this.chargerDisponibilites(); }
+  }
+
+  chargerDisponibilites(): void {
+    this.ficheService.mesDisponibilites().subscribe({
+      next: (grille) => this.disponibilites = grille,
+      error: () => this.erreur = 'Impossible de charger vos disponibilités.',
+    });
+  }
+
+  /** Vrai quand la personne n'est rattachée à aucune institution : il n'y a alors rien à
+   * déclarer, et il faut le dire plutôt que de montrer une grille vide. */
+  get sansRattachement(): boolean {
+    return !!this.disponibilites && this.disponibilites.rattachements.length === 0;
+  }
+
+  /** Les trois états, dans l'ordre où on les parcourt en cliquant : non renseigné →
+   * disponible → indisponible → non renseigné. Un clic de trop revient au silence plutôt que
+   * de bloquer sur un refus. */
+  basculerJour(jour: { date: string; disponible: boolean | null }): void {
+    const suivant = jour.disponible === null ? true : jour.disponible ? false : null;
+    this.jourEnCours = jour.date;
+    this.ficheService.declarerJour(jour.date, suivant).subscribe({
+      next: () => {
+        jour.disponible = suivant;
+        this.jourEnCours = '';
+        this.erreur = '';
+      },
+      error: (err) => {
+        this.jourEnCours = '';
+        this.erreur = this.premierMessage(err)
+          || 'Impossible d\'enregistrer cette disponibilité.';
+      },
+    });
+  }
+
+  /** 'oui' | 'non' | 'silence' — trois états et non deux : un blanc n'est pas un refus, et
+   * confondre les deux fait partir une mobilisation avec un effectif imaginaire. */
+  etatJour(disponible: boolean | null): 'oui' | 'non' | 'silence' {
+    if (disponible === true) { return 'oui'; }
+    if (disponible === false) { return 'non'; }
+    return 'silence';
+  }
+
+  /** Jour de la semaine abrégé + numéro : « sa 14 » se lit mieux que « 2026-11-14 ». */
+  enTeteJour(iso: string): string {
+    const d = new Date(iso + 'T00:00:00');
+    const jours = ['di', 'lu', 'ma', 'me', 'je', 've', 'sa'];
+    return `${jours[d.getDay()]} ${d.getDate()}`;
+  }
+
+  estWeekEnd(iso: string): boolean {
+    const jour = new Date(iso + 'T00:00:00').getDay();
+    return jour === 0 || jour === 6;
   }
 
   // ══ Mot de passe ══════════════════════════════════════════════════════════

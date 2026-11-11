@@ -32,15 +32,21 @@
     }
 
     <nav class="onglets">
-      <button type="button" [class.actif]="onglet === 'fiche'" (click)="onglet = 'fiche'">
+      <button type="button" [class.actif]="onglet === 'fiche'"
+              (click)="ouvrirOnglet('fiche')">
         <span class="material-icons">badge</span> Mes informations
       </button>
+      <button type="button" [class.actif]="onglet === 'disponibilites'"
+              (click)="ouvrirOnglet('disponibilites')">
+        <span class="material-icons">event_available</span> Mes disponibilités
+      </button>
       <button type="button" [class.actif]="onglet === 'justificatifs'"
-              (click)="onglet = 'justificatifs'">
+              (click)="ouvrirOnglet('justificatifs')">
         <span class="material-icons">folder_shared</span> Mes justificatifs
         @if (aUnRefus) { <span class="pastille">!</span> }
       </button>
-      <button type="button" [class.actif]="onglet === 'acces'" (click)="onglet = 'acces'">
+      <button type="button" [class.actif]="onglet === 'acces'"
+              (click)="ouvrirOnglet('acces')">
         <span class="material-icons">key</span> Mon accès
       </button>
     </nav>
@@ -110,15 +116,22 @@
               </select>
             </label>
             <label>
-              <span>Disponibilité</span>
-              <select name="disponibilite" [(ngModel)]="saisie.disponibilite">
-                <option value="">Non renseignée</option>
-                @for (d of DISPONIBILITES; track d.valeur) {
-                  <option [value]="d.valeur">{{ d.libelle }}</option>
+              <span>Engagement envisagé</span>
+              <select name="frequence_engagement" [(ngModel)]="saisie.frequence_engagement">
+                <option value="">Non renseigné</option>
+                @for (f of FREQUENCES_ENGAGEMENT; track f.valeur) {
+                  <option [value]="f.valeur">{{ f.libelle }}</option>
                 }
               </select>
             </label>
           </div>
+
+          <p class="aide">
+            « Engagement envisagé » est un volume sur l'année, pas un agenda. Pour dire quels
+            jours vous êtes disponible, passez par l'onglet
+            <strong>Mes disponibilités</strong> : c'est lui que votre encadrement consulte pour
+            constituer une équipe.
+          </p>
 
           <label class="case">
             <input type="checkbox" name="diplome_premier_secours"
@@ -142,6 +155,64 @@
             </button>
           </div>
         </form>
+      }
+
+      <!-- ══ Mes disponibilités ════════════════════════════════════════════ -->
+      @if (onglet === 'disponibilites') {
+        <section class="bloc">
+          <h2>Les quinze prochains jours</h2>
+          <p class="aide">
+            C'est <strong>cette</strong> grille que votre encadrement consulte pour constituer
+            une équipe. Cliquez sur un jour pour passer de « non renseigné » à
+            « disponible », puis à « indisponible », puis revenir au silence.
+          </p>
+          <p class="aide">
+            Un jour laissé vide n'est <strong>pas</strong> un refus : il dit « je ne sais pas
+            encore », et votre encadrement le voit comme tel.
+          </p>
+
+          @if (sansRattachement) {
+            <p class="vide">
+              Vous n'êtes rattaché à aucune association : il n'y a pas de disponibilité à
+              déclarer pour l'instant.
+            </p>
+          } @else if (!disponibilites) {
+            <p class="attente">Chargement de vos disponibilités…</p>
+          } @else {
+            @if (disponibilites.rattachements.length > 1) {
+              <p class="aide">
+                Vos disponibilités valent pour vos
+                {{ disponibilites.rattachements.length }} rattachements : vous n'êtes pas
+                disponible pour l'une et pas pour l'autre le même jour.
+              </p>
+            }
+
+            <div class="grille-jours">
+              @for (jour of disponibilites.jours; track jour.date) {
+                <button type="button" class="jour" [class]="etatJour(jour.disponible)"
+                        [class.week-end]="estWeekEnd(jour.date)"
+                        [disabled]="jourEnCours === jour.date"
+                        (click)="basculerJour(jour)"
+                        [attr.aria-label]="enTeteJour(jour.date) + ' : ' + (jour.disponible === null ? 'non renseigné' : jour.disponible ? 'disponible' : 'indisponible')">
+                  <span class="jour-date">{{ enTeteJour(jour.date) }}</span>
+                  <span class="jour-etat">
+                    @switch (etatJour(jour.disponible)) {
+                      @case ('oui') { <span class="material-icons">check</span> }
+                      @case ('non') { <span class="material-icons">close</span> }
+                      @default { <span class="material-icons">remove</span> }
+                    }
+                  </span>
+                </button>
+              }
+            </div>
+
+            <ul class="legende">
+              <li><span class="pastille-legende oui"></span> disponible</li>
+              <li><span class="pastille-legende non"></span> indisponible</li>
+              <li><span class="pastille-legende silence"></span> non renseigné</li>
+            </ul>
+          }
+        </section>
       }
 
       <!-- ══ Mes justificatifs ═════════════════════════════════════════════ -->

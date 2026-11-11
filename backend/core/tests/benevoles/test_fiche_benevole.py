@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from core.imports import (
-    _booleen, _date, _disponibilite, _liste_echappee, _situation,
+    _booleen, _date, _frequence_engagement, _liste_echappee, _situation,
     importer_benevoles_association,
 )
 from core.models import (
@@ -102,13 +102,13 @@ class TestLectureDesValeursDExport:
         ("['2 - Régulière (env. 10 jours par an)']", "REGULIERE"),
         ("['3 - Fréquente (+ de 10 jours par an)']", "FREQUENTE"),
     ])
-    def test_la_disponibilite_est_lue_sur_le_CHIFFRE(self, brut, attendu):
+    def test_la_frequence_est_lue_sur_le_CHIFFRE(self, brut, attendu):
         """Le chiffre de tête est l'information stable ; le libellé change au gré des
         reformulations du formulaire."""
-        assert _disponibilite(brut) == attendu
+        assert _frequence_engagement(brut) == attendu
 
-    def test_la_disponibilite_retombe_sur_le_texte_sans_chiffre(self):
-        assert _disponibilite("['Régulière']") == "REGULIERE"
+    def test_la_frequence_retombe_sur_le_texte_sans_chiffre(self):
+        assert _frequence_engagement("['Régulière']") == "REGULIERE"
 
     @pytest.mark.parametrize("brut,attendu", [
         ("18-01-1968", (1968, 1, 18)), ("18/01/1968", (1968, 1, 18)),
@@ -147,7 +147,7 @@ class TestFicheCreeeParLImport:
         assert fiche.code_postal == "33950"
         assert fiche.metier == "Assureur"
         assert fiche.situation == "SALARIE"
-        assert fiche.disponibilite == "OCCASIONNELLE"
+        assert fiche.frequence_engagement == "OCCASIONNELLE"
         assert fiche.date_naissance.year == 1968
         assert fiche.date_adhesion.year == 2026
         assert "je veux juste aider" in fiche.message

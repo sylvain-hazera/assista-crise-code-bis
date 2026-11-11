@@ -41,7 +41,7 @@ LABELS_BENEVOLES = {
     "ville": "Ville",
     "metier": "Métier ou formation",
     "situation": "Situation (salarié, retraité…)",
-    "disponibilite": "Disponibilité déclarée",
+    "disponibilite": "Disponibilité déclarée (volume annuel)",
     "date_naissance": "Date de naissance",
     "diplome_premier_secours": "Diplôme de premier secours déclaré (oui/non)",
     "message": "Message laissé à l'adhésion",
@@ -858,6 +858,7 @@ def importer_benevoles_association(request, institution, lignes, mapping,
     from .audit import audit_log
     from .crypto_fields import blind_index
     from .fiches_benevoles import departement_de_la_fiche, geolocaliser_fiche
+    from .institution_attachment import _affecter_role
     from .models import (
         ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User, UserRole,
     )
@@ -927,6 +928,17 @@ def importer_benevoles_association(request, institution, lignes, mapping,
             defaults={"fonction": metier or "Bénévole", "actif": True},
         )
 
+        # INTERVENANT, exactement comme le fait le circuit de recrutement à l'acceptation
+        # (recrutement_association.accepter) : c'est le même événement — quelqu'un devient
+        # membre de l'association — et il n'y a aucune raison que la voie « import » produise
+        # un membre d'une autre nature que la voie « candidature ».
+        #
+        # Et c'est surtout le CROCHET dont le moteur de disponibilité a besoin :
+        # `DisponibiliteOperationnelle` pend à une AffectationRoleOperationnel. Sans elle, un
+        # bénévole importé ne pouvait RIEN déclarer et sa ligne restait un silence permanent
+        # dans la grille de mobilisation — un effectif invisible, c'est-à-dire inutilisable.
+        _affecter_role(user, institution, "INTERVENANT")
+
         # FICHE : tout ce que le fichier d'adhésion porte et que `User` ne sait pas tenir.
         # Rattachée à l'utilisateur et non au rattachement associatif (voir FicheBenevole) :
         # une adresse appartient à la personne, pas à l'association.
@@ -938,8 +950,13 @@ def importer_benevoles_association(request, institution, lignes, mapping,
         fiche.ville = _valeur(ligne, mapping, "ville") or fiche.ville
         fiche.metier = metier or fiche.metier
         fiche.situation = _situation(_valeur(ligne, mapping, "situation")) or fiche.situation
-        fiche.disponibilite = (_disponibilite(_valeur(ligne, mapping, "disponibilite"))
-                               or fiche.disponibilite)
+        # La colonne du fichier s'appelle « Disponibilité » chez le partenaire, mais ce
+        # qu'elle porte est un VOLUME ANNUEL (« environ 10 jours par an ») : il va dans
+        # `frequence_engagement`, jamais dans le moteur de disponibilité, qui ne connaît que
+        # des périodes datées (voir FrequenceEngagement).
+        fiche.frequence_engagement = (
+            _frequence_engagement(_valeur(ligne, mapping, "disponibilite"))
+            or fiche.frequence_engagement)
         fiche.date_naissance = _date(_valeur(ligne, mapping, "date_naissance")) or fiche.date_naissance
         fiche.date_adhesion = _date(_valeur(ligne, mapping, "date_adhesion")) or fiche.date_adhesion
         fiche.message = _valeur(ligne, mapping, "message") or fiche.message
@@ -1035,8 +1052,9 @@ def _situation(valeur):
     return "AUTRE"
 
 
-def _disponibilite(valeur):
-    """Choix de disponibilité. Le chiffre de tête fait foi ; le libellé est le repli."""
+def _frequence_engagement(valeur):
+    """Volume d'engagement annonce a l'adhesion. Le chiffre de tete fait foi ; le libelle
+    est le repli. **Pas une disponibilite** : voir FrequenceEngagement."""
     brut = _liste_echappee(valeur)
     if not brut:
         return ""

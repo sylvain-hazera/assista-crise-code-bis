@@ -5194,8 +5194,8 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
     n'habite pas, donc de rejoindre une équipe qui n'est pas la sienne."""
 
     situation_libelle = serializers.CharField(source='get_situation_display', read_only=True)
-    disponibilite_libelle = serializers.CharField(source='get_disponibilite_display',
-                                                  read_only=True)
+    frequence_engagement_libelle = serializers.CharField(
+        source='get_frequence_engagement_display', read_only=True)
     est_complete = serializers.BooleanField(read_only=True)
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
@@ -5206,7 +5206,7 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
                   'latitude', 'longitude',
                   'commune_code', 'epci_code', 'departement_code', 'region_code',
                   'date_naissance', 'metier', 'situation', 'situation_libelle',
-                  'disponibilite', 'disponibilite_libelle', 'message',
+                  'frequence_engagement', 'frequence_engagement_libelle', 'message',
                   'diplome_premier_secours', 'date_adhesion', 'completee_le',
                   'est_complete', 'date_modification']
         read_only_fields = ['id', 'utilisateur', 'latitude', 'longitude',
@@ -5218,6 +5218,22 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+
+class MesDisponibilitesSerializer(serializers.Serializer):
+    """Corps de `MesDisponibilitesView.post` : un jour, et ce qu'on en dit.
+
+    `disponible` accepte **trois** valeurs et c'est le cœur du modèle : `true`, `false`, et
+    `null` qui EFFACE la déclaration. Sans la troisième, revenir à « je ne sais pas encore »
+    obligerait à affirmer un refus — et la grille ne pourrait plus distinguer un silence d'un
+    non, ce qui est précisément l'erreur qu'elle existe pour montrer.
+
+    `affectation` est facultative : utile seulement pour qui est rattaché à plusieurs
+    institutions, et vérifiée comme étant la sienne par la vue."""
+
+    date = serializers.DateField()
+    disponible = serializers.BooleanField(required=False, allow_null=True, default=None)
+    affectation = serializers.UUIDField(required=False, allow_null=True)
 
 
 class MotDePasseChoisiSerializer(serializers.Serializer):

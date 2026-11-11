@@ -5750,9 +5750,22 @@ class SituationProfessionnelle(models.TextChoices):
     AUTRE = "AUTRE", "Autre"
 
 
-class DisponibiliteBenevole(models.TextChoices):
-    """Fréquence de disponibilité déclarée. Les libellés sont ceux du formulaire d'adhésion :
-    les reformuler rendrait incomparables les réponses déjà collectées."""
+class FrequenceEngagement(models.TextChoices):
+    """Volume d'engagement annoncé à l'adhésion. **Ce n'est PAS une disponibilité.**
+
+    Renommé le 11/11/2026 : s'appeler « disponibilité » en faisait un second moteur apparent à
+    côté de `DisponibiliteOperationnelle`, qui est le seul interrogé pour constituer une équipe.
+    Deux notions se ressemblaient donc sans jamais se parler — exactement la confusion qui fait
+    mobiliser sur la mauvaise source.
+
+    La différence est de nature, pas de précision : « environ 10 jours par an » ne dit RIEN du
+    5 novembre. On ne peut donc pas la convertir en déclarations datées sans inventer des
+    dates, et elle ne peut pas servir à armer une garde. Elle sert à autre chose, qui compte
+    aussi : dimensionner l'effectif mobilisable sur l'année, et savoir à qui l'on peut demander
+    souvent.
+
+    Les libellés sont ceux du formulaire d'adhésion : les reformuler rendrait incomparables les
+    réponses déjà collectées."""
 
     OCCASIONNELLE = "OCCASIONNELLE", "Occasionnelle (moins de 5 jours par an)"
     REGULIERE = "REGULIERE", "Régulière (environ 10 jours par an)"
@@ -5823,8 +5836,12 @@ class FicheBenevole(EnvironmentScopedModel):
     situation = models.CharField(
         max_length=20, choices=SituationProfessionnelle.choices, blank=True,
     )
-    disponibilite = models.CharField(
-        max_length=20, choices=DisponibiliteBenevole.choices, blank=True,
+    # JAMAIS lu par la constitution d'équipe : la seule source de disponibilité est
+    # `DisponibiliteOperationnelle` (voir FrequenceEngagement et MesDisponibilitesView).
+    frequence_engagement = models.CharField(
+        max_length=20, choices=FrequenceEngagement.choices, blank=True,
+        help_text="Volume d'engagement annoncé à l'adhésion. N'est pas une disponibilité : "
+                   "les disponibilités datées vivent dans DisponibiliteOperationnelle.",
     )
     # Ce que la personne a écrit en s'inscrivant : une motivation, une contrainte, un souhait
     # de territoire. Chiffré — c'est un texte libre où les gens parlent d'eux.
@@ -5854,8 +5871,19 @@ class FicheBenevole(EnvironmentScopedModel):
     @property
     def est_complete(self):
         """Ce qu'on considère comme une fiche exploitable : de quoi joindre la personne et
-        savoir où elle est. Le reste est utile mais n'empêche pas de la mobiliser."""
-        return bool(self.adresse and self.commune_code and self.disponibilite)
+        savoir où elle est. Le reste est utile mais n'empêche pas de la mobiliser.
+
+        **La fréquence d'engagement n'en fait plus partie** (11/11/2026, avec le passage au
+        moteur unique) : elle dit un volume annuel, pas une capacité à être mobilisé. Une
+        fiche sans elle reste parfaitement exploitable — on sait qui joindre et où. Ce qui
+        dit « est-il disponible le 5 novembre » est ailleurs, dans
+        `DisponibiliteOperationnelle`.
+
+        Au passage, cette propriété lisait encore `self.disponibilite` après le renommage :
+        l'`AttributeError` était avalée par DRF, qui retirait silencieusement `est_complete`
+        de la réponse. L'écran ne voyait donc plus jamais « fiche à compléter ». Trouvé par un
+        test, pas à l'œil."""
+        return bool(self.adresse and self.commune_code)
 
     def __str__(self):
         return f"Fiche de {self.utilisateur.email}"

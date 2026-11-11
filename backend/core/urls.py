@@ -6,6 +6,7 @@ from .views import (
     BrouillonEnvoiViewSet,
     DefinirMonMotDePasseView,
     MaFicheBenevoleView,
+    MesDisponibilitesView,
     DemandeAccesRadioViewSet,
     ModeleMessageViewSet,
     NoeudPublicMeshCoreViewSet,
@@ -295,6 +296,10 @@ urlpatterns = [
     path('ma-fiche-benevole/', MaFicheBenevoleView.as_view(), name='ma_fiche_benevole'),
     path('definir-mon-mot-de-passe/', DefinirMonMotDePasseView.as_view(),
          name='definir_mon_mot_de_passe'),
+    # Guichet de declaration de SES disponibilites. Ecrit dans DisponibiliteOperationnelle,
+    # le seul moteur du projet : ce n'est pas une seconde source, c'est un acces simplifie
+    # (voir MesDisponibilitesView).
+    path('mes-disponibilites/', MesDisponibilitesView.as_view(), name='mes_disponibilites'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),
