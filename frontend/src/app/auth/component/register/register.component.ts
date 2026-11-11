@@ -102,7 +102,11 @@ export class RegisterComponent implements OnInit, OnDestroy {
     this.registerForm = this.formBuilder.group({
       userType: [UserRole.SIMPLE_USER, Validators.required],
       lastName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
-      firstName: [''],
+      // Requis pour TOUT LE MONDE depuis le 11/11/2026. Il ne l'était que pour les
+      // particuliers, et `toggleFieldsBasedOnUserType` l'effaçait et le désactivait pour les
+      // comptes institutionnels : une mairie ou une association n'était donc identifiée que
+      // par un patronyme, dans une plateforme où l'on se nomme pour se coordonner.
+      firstName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
       password: ['', [
         Validators.required,
         Validators.minLength(8),
@@ -145,18 +149,16 @@ export class RegisterComponent implements OnInit, OnDestroy {
       });
   }
 
+  /** Le type de compte ne pilote plus QUE les champs d'institution.
+   *
+   * Le prénom en sortait avant le 11/11/2026 : il était effacé et désactivé pour tout type
+   * autre que particulier. Il est maintenant requis dans tous les cas et n'apparaît donc plus
+   * ici — un champ d'identité n'a pas de raison de dépendre du type de compte. */
   private toggleFieldsBasedOnUserType(userType: string): void {
-    const firstNameControl = this.registerForm.get('firstName');
     const institutionNameControl = this.registerForm.get('institutionName');
     const institutionTypeControl = this.registerForm.get('institutionType');
 
     if (userType === UserRole.SIMPLE_USER) {
-      firstNameControl?.setValidators([
-        Validators.required,
-        Validators.minLength(2),
-        Validators.maxLength(50)
-      ]);
-      firstNameControl?.enable();
       institutionNameControl?.clearValidators();
       institutionNameControl?.setValue('');
       institutionNameControl?.disable();
@@ -164,10 +166,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       institutionTypeControl?.setValue('');
       institutionTypeControl?.disable();
     } else {
-      firstNameControl?.clearValidators();
-      firstNameControl?.setValue('');
-      firstNameControl?.disable();
-
       const isRcsc = userType === UserRole.RESCUE && this.registerForm.get('isRcsc')?.value;
       if (isRcsc) {
         // RCSC : rattachement automatique à la mairie de la commune déclarée.
@@ -194,7 +192,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       }
     }
 
-    firstNameControl?.updateValueAndValidity();
     institutionNameControl?.updateValueAndValidity();
     institutionTypeControl?.updateValueAndValidity();
   }
@@ -300,7 +297,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
       type: formValue.userType,
       phone_number: formValue.phone,
       last_name: formValue.lastName,
-      first_name: formValue.firstName || '',
+      first_name: formValue.firstName,
       postal_code: postalCode,
       enabled: !requiresValidation
     };

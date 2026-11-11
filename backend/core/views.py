@@ -7316,11 +7316,13 @@ class RattachementHabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                 # voir core/crypto_fields.py) -- évite de recalculer celui de email_demandeur.
                 utilisateur = User.objects.filter(email_bidx=rattachement.email_demandeur_bidx).first()
             if utilisateur is None:
-                nom_parts = (rattachement.nom_demandeur or '').split(' ', 1)
+                # Le prénom est un CHAMP depuis le 11/11/2026 ; voir
+                # RattachementHabitation.noms_pour_compte pour le repli des demandes
+                # antérieures, qui n'en ont pas.
+                prenom, patronyme = rattachement.noms_pour_compte
                 utilisateur = User.objects.create_user(
                     username=rattachement.email_demandeur, email=rattachement.email_demandeur,
-                    password=None, first_name=nom_parts[0] if nom_parts else '',
-                    last_name=nom_parts[1] if len(nom_parts) > 1 else '',
+                    password=None, first_name=prenom, last_name=patronyme,
                     phone_number=rattachement.telephone_demandeur or None,
                     type=UserRole.SIMPLE_USER, is_active=True,
                 )
@@ -7332,7 +7334,8 @@ class RattachementHabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                 dossier, demandeur=utilisateur,
                 notification_titre="Rattachement accepté sur un dossier dégâts",
                 notification_message=(
-                    f"Le rattachement de {rattachement.nom_demandeur} ({rattachement.get_type_lien_display()}) "
+                    f"Le rattachement de {rattachement.identite_demandeur} "
+                    f"({rattachement.get_type_lien_display()}) "
                     f"à « {rattachement.habitation.adresse} » a été accepté : le dossier {dossier.numero} "
                     "nécessite une affectation."
                 ),
@@ -7346,7 +7349,7 @@ class RattachementHabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                     request, institution,
                     subject="Votre rattachement à une habitation a été accepté",
                     message=(
-                        f"Bonjour {rattachement.nom_demandeur},\n\n"
+                        f"Bonjour {rattachement.salutation_demandeur},\n\n"
                         f"Votre demande de rattachement ({rattachement.get_type_lien_display()}) à "
                         f"l'habitation « {rattachement.habitation.adresse} » a été acceptée.\n\n"
                         f"Vous pouvez suivre son état et échanger avec le référent en charge du dossier ici :\n{suivi_link}\n\n"
@@ -7363,7 +7366,7 @@ class RattachementHabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                     request, institution,
                     subject="Votre demande de rattachement n'a pas été acceptée",
                     message=(
-                        f"Bonjour {rattachement.nom_demandeur},\n\n"
+                        f"Bonjour {rattachement.salutation_demandeur},\n\n"
                         f"Votre demande de rattachement ({rattachement.get_type_lien_display()}) à "
                         f"l'habitation « {rattachement.habitation.adresse} » n'a pas été acceptée."
                         + (f"\n\nMotif : {rattachement.motif_refus}" if rattachement.motif_refus else "")

@@ -59,7 +59,9 @@ export class HabitationFicheComponent implements OnChanges {
   // obligatoire, voir RattachementHabitation.__doc__ côté backend).
   demandeEnvoyee = false;
   demandeEnCours = false;
-  formRattachement = { nom_demandeur: '', email_demandeur: '', telephone_demandeur: '', type_lien: 'PROPRIETAIRE' as 'PROPRIETAIRE' | 'LOCATAIRE', message: '' };
+  // Prénom séparé du nom depuis le 11/11/2026 : « Nom complet » était un seul champ, et le
+  // compte créé à l'acceptation était fabriqué en coupant la chaîne au premier espace.
+  formRattachement = { prenom_demandeur: '', nom_demandeur: '', email_demandeur: '', telephone_demandeur: '', type_lien: 'PROPRIETAIRE' as 'PROPRIETAIRE' | 'LOCATAIRE', message: '' };
   justificatifChoisi: File | null = null;
 
   labelsEvaluation = LABELS_STATUT_EVALUATION;
@@ -210,11 +212,13 @@ export class HabitationFicheComponent implements OnChanges {
   }
 
   envoyerDemandeRattachement(): void {
-    if (!this.formRattachement.nom_demandeur || !this.formRattachement.email_demandeur) return;
+    if (!this.formRattachement.prenom_demandeur || !this.formRattachement.nom_demandeur
+        || !this.formRattachement.email_demandeur) return;
     this.demandeEnCours = true;
 
     const payload = {
       habitation: this.habitation.id,
+      prenom_demandeur: this.formRattachement.prenom_demandeur,
       nom_demandeur: this.formRattachement.nom_demandeur,
       email_demandeur: this.formRattachement.email_demandeur,
       telephone_demandeur: this.formRattachement.telephone_demandeur || undefined,

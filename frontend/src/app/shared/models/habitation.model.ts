@@ -83,6 +83,10 @@ export interface RattachementHabitation {
   habitation: string;
   habitation_adresse: string;
   utilisateur: string | null;
+  /** Vide pour une demande antérieure au 11/11/2026 : le prénom n'était pas un champ séparé,
+   * et on ne découpe pas rétroactivement `nom_demandeur` — c'est le découpage qui était le
+   * défaut. */
+  prenom_demandeur: string;
   nom_demandeur: string;
   email_demandeur: string;
   telephone_demandeur: string | null;

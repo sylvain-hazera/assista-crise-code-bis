@@ -2361,6 +2361,14 @@ class RattachementHabitation(EnvironmentScopedModel):
         related_name="rattachements_habitations",
     )
 
+    # Prénom séparé depuis le 11/11/2026. Avant, `nom_demandeur` portait l'identité entière et
+    # le compte créé à l'acceptation était fabriqué en coupant cette chaîne au PREMIER espace
+    # (voir RattachementHabitationViewSet.traiter) : « Jean Pierre Dupont » donnait le prénom
+    # « Jean » et le patronyme « Pierre Dupont », sans que rien ne le signale.
+    #
+    # `blank=True` pour les lignes antérieures, qui n'ont jamais eu ce champ ; l'API l'exige à
+    # la création (voir RattachementHabitationSerializer).
+    prenom_demandeur = EncryptedTextField(max_length=255, blank=True)
     nom_demandeur = EncryptedTextField(max_length=255)
     email_demandeur = EncryptedEmailField()
     # Index aveugle : anti-doublon et rapprochement avec un compte.
@@ -2401,7 +2409,42 @@ class RattachementHabitation(EnvironmentScopedModel):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.nom_demandeur} ({self.type_lien}) -> {self.habitation.adresse}"
+        return f"{self.identite_demandeur} ({self.type_lien}) -> {self.habitation.adresse}"
+
+    @property
+    def identite_demandeur(self):
+        """« Prénom Nom », ou le seul nom pour une demande antérieure au 11/11/2026.
+
+        Existe pour que les quatre endroits qui affichent cette identité (journal, notification,
+        deux emails) ne la recomposent pas chacun à leur façon — c'est ainsi qu'on finit avec un
+        écran qui dit « Dupont » et un autre « Jean Dupont » pour la même demande."""
+        return " ".join(part for part in ((self.prenom_demandeur or '').strip(),
+                                          (self.nom_demandeur or '').strip()) if part)
+
+    @property
+    def noms_pour_compte(self):
+        """(prénom, patronyme) pour le compte créé à l'acceptation.
+
+        Le repli sur la découpe au premier espace ne sert QUE les demandes déposées avant le
+        11/11/2026, qui n'ont pas de prénom séparé. Extrait ici pour être testable : il vivait
+        en ligne dans la vue, où personne ne pouvait constater qu'il attribuait
+        « Pierre Dupont » comme patronyme à un « Jean Pierre Dupont »."""
+        prenom = (self.prenom_demandeur or '').strip()
+        patronyme = (self.nom_demandeur or '').strip()
+        if prenom:
+            return prenom, patronyme
+        parts = patronyme.split(' ', 1)
+        if len(parts) > 1:
+            return parts[0], parts[1]
+        return '', patronyme
+
+    @property
+    def salutation_demandeur(self):
+        """De quoi écrire « Bonjour … » : le prénom seul quand on l'a.
+
+        Saluer quelqu'un par son patronyme est ce que faisaient ces emails faute de prénom
+        séparé ; on garde ce repli pour les demandes qui n'en ont pas."""
+        return (self.prenom_demandeur or '').strip() or (self.nom_demandeur or '').strip()
 
 
 class PieceIdentiteReserve(EnvironmentScopedModel):

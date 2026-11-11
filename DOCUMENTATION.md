@@ -439,6 +439,35 @@ rattachement d'une mairie.
   serveur est dans `error.error` — toujours l'extraire avec `messageErreurServeur(err, repli)`,
   qui couvre les quatre formes du backend (chaîne brute, `{detail}`, `{error}`,
   `{champ: [messages]}`) et écarte une page HTML de passerelle en panne.
+- **Prénom et nom exigés à l'inscription** (11/11/2026) : dans `UserSerializer.validate()`, à
+  la **création seulement**. Les deux champs restent `required: False` au niveau champ
+  (`extra_kwargs`) et c'est voulu — le même sérialiseur sert les mises à jour partielles, où
+  exiger un nom ferait échouer la modification d'un numéro de téléphone. La règle appartient
+  donc à la création, pas au champ, et elle est côté serveur parce que `/api/register/` est
+  ouvert : une inscription sans prénom passerait par n'importe quel autre client.
+
+  Deux surfaces étaient concernées, et chacune n'identifiait la personne que par un patronyme :
+
+  - le **formulaire public** (`register.component.ts`) ne demandait le prénom qu'à un
+    particulier ; `toggleFieldsBasedOnUserType` l'effaçait et le désactivait pour une autorité
+    locale ou un service de secours. Le champ ne dépend plus du type de compte — un champ
+    d'identité n'a pas de raison d'en dépendre ;
+  - le **rattachement d'une habitation** avait un seul champ « Nom complet », et le compte créé
+    à l'acceptation était fabriqué en coupant cette chaîne au **premier espace** : « Jean Pierre
+    Dupont » donnait le prénom « Jean » et le patronyme « Pierre Dupont », en silence.
+    `prenom_demandeur` est désormais un champ (migration `0246`), exigé par l'API. Les demandes
+    antérieures ne sont **pas** découpées rétroactivement : couper au premier espace est
+    précisément ce qui produisait l'erreur, et le figer en base la rendrait définitive. Elles
+    retombent sur `RattachementHabitation.noms_pour_compte` / `identite_demandeur` /
+    `salutation_demandeur`, extraits du corps de la vue pour être testables.
+
+  **Non modifié, et c'est une décision déjà prise** : l'invitation d'un contact par une
+  institution (`champsInvitationContact`, `ContactInstitutionViewSet.inviter`) garde prénom et
+  nom facultatifs — on invite souvent depuis une adresse de service seule, et exiger un nom
+  qu'on ne connaît pas conduit à inventer « DGS DGS ». Ce n'est pas une inscription : la
+  personne ne se nomme pas elle-même, et peut compléter son profil ensuite. Conséquence à
+  connaître : un compte invité sans nom reste sans nom jusqu'à ce que son titulaire le remplisse,
+  l'activation ne demandant qu'un clic sur un lien.
 - **Unicité du compte à l'inscription** : traitée dans `UserSerializer.validate()` et **non**
   par le validateur de champ sur `username`, retiré pour cela (`extra_kwargs`). DRF exécute les
   validateurs de champ AVANT `validate()` : tant qu'il restait, il court-circuitait tout et

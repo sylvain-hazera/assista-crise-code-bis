@@ -229,7 +229,7 @@
             @for (r of rattachements; track r.id) {
               <div class="rattachement-item" [attr.data-statut]="r.statut">
                 <div class="rattachement-info">
-                  <strong>{{ r.nom_demandeur }}</strong> — {{ r.type_lien === 'PROPRIETAIRE' ? 'Propriétaire' : 'Locataire' }}
+                  <strong>{{ r.prenom_demandeur }} {{ r.nom_demandeur }}</strong> — {{ r.type_lien === 'PROPRIETAIRE' ? 'Propriétaire' : 'Locataire' }}
                   <div class="rattachement-contact">{{ r.email_demandeur }} @if (r.telephone_demandeur) { · {{ r.telephone_demandeur }} }</div>
                   @if (r.message) { <div class="rattachement-message">{{ r.message }}</div> }
                   <div class="rattachement-date">Demandé le {{ r.date_demande | date:'dd/MM/yyyy' }}</div>
@@ -265,7 +265,10 @@
                 une fois acceptée par la collectivité ou l'association en charge, vous pourrez suivre
                 l'avancement et échanger directement ici, sans avoir besoin de créer de compte.
               </p>
-              <label>Nom complet
+              <label>Prénom
+                <input type="text" [(ngModel)]="formRattachement.prenom_demandeur">
+              </label>
+              <label>Nom
                 <input type="text" [(ngModel)]="formRattachement.nom_demandeur">
               </label>
               <label>Email

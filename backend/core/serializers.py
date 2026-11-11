@@ -525,6 +525,25 @@ class UserSerializer(serializers.ModelSerializer):
             user_type = attrs.get('type')
             request = self.context.get('request')
 
+            # PRÉNOM ET NOM exigés à l'inscription depuis le 11/11/2026, sur demande explicite.
+            # Les deux restent `required: False` au niveau CHAMP (`extra_kwargs`) et c'est
+            # voulu : le même sérialiseur sert les mises à jour partielles, où exiger un nom
+            # ferait échouer la modification d'un numéro de téléphone. La règle appartient donc
+            # à la création, pas au champ.
+            #
+            # La vérification est ici et pas seulement dans le formulaire parce que
+            # `/api/register/` est ouvert (`AllowAny`) : une inscription sans prénom passerait
+            # par n'importe quel autre client, et on se retrouverait avec des comptes
+            # identifiés par un seul mot — exactement ce qu'on vient de corriger.
+            manquants = {
+                champ: "Ce champ est obligatoire."
+                for champ, valeur in (('first_name', attrs.get('first_name')),
+                                      ('last_name', attrs.get('last_name')))
+                if not (valeur or '').strip()
+            }
+            if manquants:
+                raise serializers.ValidationError(manquants)
+
             # Compte deja existant : posé AVANT tout le reste, et rendu en francais sur la clé
             # `email`. Le refus venait jusqu'ici du validateur d'unicité par défaut sur
             # `username`, qui répondait « A user with that username already exists. » -- en
@@ -4158,7 +4177,15 @@ class RattachementHabitationSerializer(serializers.ModelSerializer):
             'utilisateur', 'statut', 'traite_par', 'date_traitement', 'motif_refus', 'date_demande',
         ]
         # justificatif seulement via preview (contrôle d'accès). Index aveugle jamais exposé.
-        extra_kwargs = {'justificatif': {'write_only': True}, 'email_demandeur_bidx': {'read_only': True}}
+        #
+        # `prenom_demandeur` est `blank=True` EN BASE pour les lignes antérieures au 11/11/2026,
+        # mais exigé par l'API : une nouvelle demande identifie son auteur par un prénom et un
+        # nom, et non par une chaîne qu'il faudra deviner où couper.
+        extra_kwargs = {
+            'justificatif': {'write_only': True},
+            'email_demandeur_bidx': {'read_only': True},
+            'prenom_demandeur': {'required': True, 'allow_blank': False},
+        }
 
     def get_traite_par_nom(self, obj):
         if not obj.traite_par:

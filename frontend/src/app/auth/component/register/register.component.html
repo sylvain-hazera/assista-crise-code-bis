@@ -43,39 +43,40 @@
         </div>
       </div>
 
-      <!-- Nom -->
+      <!-- Prénom, puis nom : demandés à TOUT LE MONDE depuis le 11/11/2026. Le prénom était
+           jusque-là réservé aux particuliers et effacé pour les comptes institutionnels, qui
+           n'étaient donc identifiés que par un patronyme. -->
+      <div class="form-group">
+        <label for="firstName" class="form-label">
+          Prénom <span class="required">*</span>
+        </label>
+        <input
+          type="text"
+          id="firstName"
+          formControlName="firstName"
+          class="form-input"
+          placeholder="Votre prénom"
+          [class.invalid]="isFieldInvalid('firstName')">
+        <div class="error-message" *ngIf="isFieldInvalid('firstName')">
+          {{ getFieldError('firstName') }}
+        </div>
+      </div>
+
       <div class="form-group">
         <label for="lastName" class="form-label">
           Nom <span class="required">*</span>
         </label>
-        <input 
-          type="text" 
-          id="lastName" 
+        <input
+          type="text"
+          id="lastName"
           formControlName="lastName"
           class="form-input"
-          placeholder="Placeholder"
+          placeholder="Votre nom"
           [class.invalid]="isFieldInvalid('lastName')">
         <div class="error-message" *ngIf="isFieldInvalid('lastName')">
           {{ getFieldError('lastName') }}
         </div>
       </div>
-
-      <!-- Prénom (uniquement pour les particuliers) -->
-      @if(isIndividual) {
-        <div class="form-group">
-          <label for="firstName" class="form-label">Prénom</label>
-          <input 
-            type="text" 
-            id="firstName" 
-            formControlName="firstName"
-            class="form-input"
-            placeholder="Votre prénom"
-            [class.invalid]="isFieldInvalid('firstName')">
-          <div class="error-message" *ngIf="isFieldInvalid('firstName')">
-            {{ getFieldError('firstName') }}
-          </div>
-        </div>
-      }
 
       <!-- Champs institutionnels -->
       @if(!isIndividual) {

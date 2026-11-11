@@ -110,9 +110,15 @@ class TestUserViewSetLockdown:
             'email': 'lockdown-inscription@test.fr',
             'password': 'Test1234!',
             'type': 'UTIL_SIMPLE',
+            # Prénom et nom exigés à la création depuis le 11/11/2026 (voir
+            # core/tests/comptes/test_prenom_obligatoire.py). Complétés ici parce que ce test
+            # porte sur la PERMISSION — « l'inscription reste ouverte à l'anonyme » — et pas sur
+            # la charge : une charge incomplète le ferait échouer pour la mauvaise raison.
+            'first_name': 'Jean',
+            'last_name': 'Dupont',
         }, format='json')
 
-        assert response.status_code == status.HTTP_201_CREATED
+        assert response.status_code == status.HTTP_201_CREATED, response.data
 
 
 @pytest.mark.django_db
