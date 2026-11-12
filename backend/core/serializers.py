@@ -24,6 +24,8 @@ from .crypto_fields import blind_index
 from .models import (
     AffectationRotation,
     CampagneDisponibilite,
+    CreneauEquipe,
+    DossierRelogement,
     CibleCampagne,
     EchelonCiblage,
     EtatCible,
@@ -34,6 +36,7 @@ from .models import (
     MoyenAdminRadio,
     NoeudPublicMeshCore,
     RattachementNoeudRadio,
+    SolutionRelogement,
     StatutPreuveRadio,
     SourceObservateurMeshCore,
     TacheAdminMeshCore,
@@ -5393,3 +5396,93 @@ class RotationCampagneSerializer(serializers.ModelSerializer):
         model = RotationCampagne
         fields = ['id', 'campagne', 'numero', 'date_debut', 'date_fin', 'affectations']
         read_only_fields = fields
+
+
+# ══ Suivi du relogement des familles ═══════════════════════════════════════════════════════
+
+class SolutionRelogementSerializer(serializers.ModelSerializer):
+    """Un hébergement successif d'un foyer.
+
+    Les champs calculés (`en_cours`, `jours_restants`) viennent du MODÈLE et non du navigateur :
+    « arrive à son terme » décide d'une relance, et deux calculs de dates divergeraient au
+    premier fuseau horaire."""
+
+    type_solution_libelle = serializers.CharField(
+        source='get_type_solution_display', read_only=True)
+    titre_occupation_libelle = serializers.CharField(
+        source='get_titre_occupation_display', read_only=True)
+    en_cours = serializers.BooleanField(read_only=True)
+    jours_restants = serializers.IntegerField(read_only=True)
+    point_nom = serializers.CharField(source='point.nom', read_only=True, default=None)
+    offre_titre = serializers.CharField(source='offre.title', read_only=True, default=None)
+
+    class Meta:
+        model = SolutionRelogement
+        fields = [
+            'id', 'dossier_relogement', 'type_solution', 'type_solution_libelle',
+            'titre_occupation', 'titre_occupation_libelle', 'point', 'point_nom', 'offre',
+            'offre_titre', 'adresse', 'commune_code', 'commune_nom', 'hebergeur',
+            'hebergeur_contact', 'date_debut', 'date_fin_prevue', 'date_fin_effective',
+            'motif_fin', 'loyer_mensuel', 'reste_a_charge', 'prise_en_charge_par',
+            'commentaire', 'en_cours', 'jours_restants', 'date_creation',
+        ]
+        read_only_fields = ['id', 'date_creation']
+
+
+class DossierRelogementSerializer(serializers.ModelSerializer):
+    """Un foyer à reloger, avec son parcours complet.
+
+    Les solutions sont servies AVEC le dossier : un suivi se lit en parcourant ce qu'une
+    famille a traversé, pas en ouvrant six fiches."""
+
+    solutions = SolutionRelogementSerializer(many=True, read_only=True)
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+    institution_nom = serializers.CharField(
+        source='institution.nom', read_only=True, default=None)
+    nombre_personnes = serializers.IntegerField(read_only=True)
+    solution_courante = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DossierRelogement
+        fields = [
+            'id', 'crise', 'crise_nom', 'institution', 'institution_nom', 'nom_referent',
+            'telephone_referent', 'email_referent', 'nombre_adultes', 'nombre_enfants',
+            'nombre_personnes', 'personnes_vulnerables', 'animaux', 'besoin_pmr',
+            'commune_origine_code', 'commune_origine_nom', 'demande', 'dossier', 'habitation',
+            'statut', 'statut_libelle', 'accompagnement', 'date_ouverture', 'date_cloture',
+            'solutions', 'solution_courante', 'date_creation', 'date_maj',
+        ]
+        read_only_fields = ['id', 'date_creation', 'date_maj']
+
+    def get_solution_courante(self, obj):
+        courante = obj.solution_courante
+        return SolutionRelogementSerializer(courante, context=self.context).data \
+            if courante else None
+
+
+# ══ Planning d'équipe ══════════════════════════════════════════════════════════════════════
+
+class CreneauEquipeSerializer(serializers.ModelSerializer):
+    """Une case du planning : une personne, une équipe, un jour, un créneau."""
+
+    nom = serializers.SerializerMethodField()
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    creneau_libelle = serializers.CharField(source='get_creneau_display', read_only=True)
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+    point_nom = serializers.CharField(source='point.nom', read_only=True, default=None)
+    mission_titre = serializers.CharField(
+        source='mission.titre', read_only=True, default=None)
+
+    class Meta:
+        model = CreneauEquipe
+        fields = [
+            'id', 'equipe', 'equipe_nom', 'utilisateur', 'nom', 'date', 'creneau',
+            'creneau_libelle', 'statut', 'statut_libelle', 'role', 'point', 'point_nom',
+            'mission', 'mission_titre', 'crise', 'commentaire', 'date_creation',
+        ]
+        read_only_fields = ['id', 'date_creation']
+
+    def get_nom(self, obj):
+        return nom_affichable(obj.utilisateur, self.context.get('request')) \
+            or obj.utilisateur.email

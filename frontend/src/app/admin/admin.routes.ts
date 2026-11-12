@@ -32,6 +32,10 @@ export const ADMIN_ROUTES: Routes = [
 
   // ── Post-critique — gestion à long terme ──
   { path: 'logement-intervenants', loadComponent: () => import('./logement-intervenants/logement-intervenants.component').then(m => m.LogementIntervenantsComponent), canActivate: [institutionalEffectiveGuard] },
+  // Pendant de la page precedente, pour les sinistres : suivi des familles relogees.
+  { path: 'relogement-familles', loadComponent: () => import('./relogement-familles/relogement-familles.component').then(m => m.RelogementFamillesComponent), canActivate: [institutionalEffectiveGuard] },
+  // Planning d'equipe : qui tient quel creneau (voir backend/core/planning_equipe.py).
+  { path: 'planning-equipes', loadComponent: () => import('./planning-equipes/planning-equipes.component').then(m => m.PlanningEquipesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'resultats', loadComponent: () => import('./results/results.component').then(m => m.ResultsComponent), canActivate: [institutionalEffectiveGuard] },
 
   // ── Préparation ──

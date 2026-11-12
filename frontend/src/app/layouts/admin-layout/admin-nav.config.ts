@@ -81,6 +81,11 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'location_city', label: 'Vue Ma Collectivité', route: '/admin/vue-mairie', groupe: 'permanent' },
   // Route publique : un chef d'équipe peut être un simple citoyen.
   { icon: 'checklist', label: 'Mes interventions', route: '/mes-interventions', groupe: 'permanent', visibilite: 'tous' },
+  // Route publique également, et `tous` pour la même raison : un bénévole hébergé chez un
+  // particulier n'est pas un compte institutionnel. L'entrée reste visible MÊME SANS ÉQUIPE —
+  // la page explique alors ce qu'il faut pour qu'elle se remplisse, au lieu de laisser croire
+  // que la fonction n'existe pas (demande du 12/11/2026).
+  { icon: 'home_work', label: 'Hébergement', route: '/hebergement', groupe: 'permanent', visibilite: 'tous' },
 
   // ── Crise en cours ──────────────────────────────────────────────────
   { icon: 'flag', label: 'Signalements', route: '/admin/signalements', groupe: 'crise' },
@@ -93,6 +98,9 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'visibility', label: 'Supervision PC Crise', route: '/admin/supervision-pc-crise', groupe: 'crise' },
   { icon: 'campaign', label: 'Demandes de mobilisation', route: '/admin/demandes-mobilisation', groupe: 'crise' },
   { icon: 'assignment', label: 'Affectations', route: '/admin/affectations', groupe: 'crise' },
+  // Qui tient quel créneau, jour par jour. Distinct des « Affectations » (qui est dans
+  // quelle équipe) : ici c'est le tour de garde, pas l'appartenance.
+  { icon: 'calendar_month', label: 'Planning des équipes', route: '/admin/planning-equipes', groupe: 'crise' },
   { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers', groupe: 'crise' },
   { icon: 'search', label: 'Recherches de personnes', route: '/admin/recherches-personnes', groupe: 'crise' },
   { icon: 'map', label: 'Carte', route: '/admin/carte', groupe: 'crise' },
@@ -101,6 +109,8 @@ export const NAV_ITEMS: NavItem[] = [
   // ── Post-critique — gestion à long terme ────────────────────────────
   // Le relogement des intervenants dure au-delà de la phase aiguë.
   { icon: 'night_shelter', label: 'Logement intervenants', route: '/admin/logement-intervenants', groupe: 'post-critique' },
+  // Le pendant pour les sinistres : qui a ete reloge, ou, jusqu'a quand, et ce qui tient.
+  { icon: 'family_restroom', label: 'Relogement des familles', route: '/admin/relogement-familles', groupe: 'post-critique' },
   // Page encore vide, gardée dans le menu.
   { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats', groupe: 'post-critique' },
   // Route publique ; les actions de gestion sont contrôlées côté backend (Habitation.peut_gerer).

@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import secrets
 import uuid
@@ -4625,6 +4626,244 @@ class AffectationLogementIntervenant(EnvironmentScopedModel):
         return f"Logement de {self.intervenant} pour {self.crise.name} : {cible}"
 
 
+# ══ Suivi du relogement des familles ═══════════════════════════════════════════════════════
+#
+# Demande de Sylvain du 12/11/2026 : « comme on a fait une page suivi hébergement des équipes,
+# il me faudra une page, suivi hébergement des familles nécessitant un relogement [...] tout ce
+# qui est nécessaire pour assurer le suivi de personnes ayant bénéficié d'un relogement suite à
+# une crise. À terme, on devra pouvoir éditer des rapports [...] tant de familles relogées,
+# tant de manières pérennes. »
+#
+# **Pourquoi DEUX tables et non une.** Un foyer sinistré passe presque toujours par plusieurs
+# solutions successives : gymnase la première nuit, hôtel la semaine suivante, logement
+# communal pour six mois, puis un bail. Écrire tout cela dans une seule ligne mise à jour en
+# place détruit l'historique — or c'est précisément l'historique que le rapport demande : « tant
+# de familles relogées DE MANIÈRE PÉRENNE » suppose de savoir distinguer le provisoire de ce qui
+# a tenu. Le dossier porte donc le foyer et son parcours ; chaque hébergement est une ligne.
+#
+# **Rien en clair.** Le nom du référent, ses coordonnées, la composition du foyer et les notes
+# d'accompagnement sont les données les plus sensibles de tout le produit : des personnes
+# sinistrées, nommées, avec l'adresse où elles dorment. Tout ce qui est nominatif est en
+# `EncryptedTextField`, comme le reste du domaine (voir DOCUMENTATION.md § 10.1).
+
+
+class TypeSolutionRelogement(models.TextChoices):
+    """Ce que vaut la solution dans le temps — la colonne qui fait le rapport.
+
+    Trois valeurs, pas deux : l'intermédiaire existe pour de vrai (un logement communal prêté
+    six mois pendant que l'assurance instruit), et le compter comme définitif ferait annoncer
+    des familles relogées qui seront à la rue au printemps."""
+
+    URGENCE = "URGENCE", "Hébergement d'urgence (quelques nuits)"
+    TEMPORAIRE = "TEMPORAIRE", "Solution temporaire (quelques semaines)"
+    INTERMEDIAIRE = "INTERMEDIAIRE", "Solution intermédiaire (plusieurs mois)"
+    DEFINITIVE = "DEFINITIVE", "Solution définitive (retour ou relogement pérenne)"
+
+
+class TitreOccupation(models.TextChoices):
+    """À quel titre la famille occupe le logement : ce qui dit si elle peut en être sortie."""
+
+    CENTRE = "CENTRE", "Centre d'hébergement collectif"
+    HOTEL = "HOTEL", "Hôtel ou meublé payé par la collectivité"
+    PROCHES = "PROCHES", "Hébergée par des proches"
+    PRET = "PRET", "Prêt à titre gratuit"
+    CONVENTION = "CONVENTION", "Convention d'occupation précaire"
+    BAIL = "BAIL", "Bail (meublé, HLM, parc privé)"
+    RETOUR = "RETOUR", "Retour au domicile d'origine"
+
+
+class StatutDossierRelogement(models.TextChoices):
+    EN_RECHERCHE = "EN_RECHERCHE", "Sans solution — en recherche"
+    HEBERGE = "HEBERGE", "Hébergée"
+    RELOGEE = "RELOGEE", "Relogée durablement"
+    RETOUR_DOMICILE = "RETOUR_DOMICILE", "Retournée au domicile"
+    CLOS_SANS_SUITE = "CLOS_SANS_SUITE", "Clos sans suite (perdue de vue, refus, départ)"
+
+
+class DossierRelogement(EnvironmentScopedModel):
+    """Un foyer à reloger à la suite d'une crise, et son parcours.
+
+    L'unité est le FOYER et non la personne : on reloge une famille, on ne la découpe pas. La
+    composition (`nombre_adultes`, `nombre_enfants`) sert aux rapports — « 31 personnes » n'est
+    pas « 12 familles », et les deux chiffres sont attendus."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.CASCADE, related_name="dossiers_relogement",
+    )
+    #: Qui assure le suivi. La mairie le plus souvent, parfois l'association mandatée.
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dossiers_relogement",
+    )
+
+    # ── Le foyer ────────────────────────────────────────────────────────────────────────
+    # Chiffrés : des personnes sinistrées, nommées, avec l'endroit où elles dorment.
+    nom_referent = EncryptedTextField(
+        max_length=255,
+        help_text="Nom de la personne référente du foyer, telle qu'on s'adresse à elle.",
+    )
+    telephone_referent = EncryptedTextField(max_length=50, blank=True, null=True)
+    email_referent = EncryptedTextField(max_length=255, blank=True, null=True)
+
+    nombre_adultes = models.PositiveSmallIntegerField(default=1)
+    nombre_enfants = models.PositiveSmallIntegerField(default=0)
+    #: Ce qui fait passer un dossier devant les autres, et qui conditionne le type de logement.
+    personnes_vulnerables = models.BooleanField(
+        default=False,
+        help_text="Personne âgée, en situation de handicap, malade, femme enceinte, "
+                   "nourrisson : à loger en priorité et pas n'importe où.",
+    )
+    animaux = models.BooleanField(
+        default=False,
+        help_text="Un foyer avec animaux est refusé par la plupart des hébergements : c'est "
+                   "un critère de recherche, pas un détail.",
+    )
+    besoin_pmr = models.BooleanField(default=False)
+
+    commune_origine_code = models.CharField(max_length=10, blank=True, default="")
+    commune_origine_nom = models.CharField(max_length=255, blank=True, default="")
+
+    # ── Rattachements, tous facultatifs ─────────────────────────────────────────────────
+    # Un dossier de relogement naît souvent d'une demande d'aide ou d'un constat de dégâts ;
+    # il peut aussi être ouvert à la main depuis un accueil physique, sans rien derrière.
+    demande = models.ForeignKey(
+        "Request", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dossiers_relogement",
+        help_text="Demande d'hébergement à l'origine du dossier, si elle existe.",
+    )
+    dossier = models.ForeignKey(
+        "Dossier", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dossiers_relogement",
+    )
+    habitation = models.ForeignKey(
+        "Habitation", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dossiers_relogement",
+        help_text="Logement sinistré d'origine (module d'estimation des dégâts).",
+    )
+
+    statut = models.CharField(
+        max_length=20, choices=StatutDossierRelogement.choices,
+        default=StatutDossierRelogement.EN_RECHERCHE,
+    )
+
+    #: Notes d'accompagnement social. Chiffrées : c'est ce qu'il y a de plus intime dans un
+    #: dossier de crise.
+    accompagnement = EncryptedTextField(blank=True, null=True)
+
+    date_ouverture = models.DateField(default=datetime.date.today)
+    date_cloture = models.DateField(null=True, blank=True)
+
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self) -> str:
+        return f"Relogement {self.crise.name} — {self.nombre_personnes} personne(s)"
+
+    @property
+    def nombre_personnes(self) -> int:
+        return (self.nombre_adultes or 0) + (self.nombre_enfants or 0)
+
+    @property
+    def solution_courante(self):
+        """L'hébergement en cours, c'est-à-dire la dernière ligne non terminée.
+
+        Pas « la plus récente » tout court : une solution close le mois dernier ne loge
+        personne, et l'afficher comme courante ferait croire la famille à l'abri."""
+        return self.solutions.filter(date_fin_effective__isnull=True).order_by(
+            "-date_debut", "-date_creation").first()
+
+
+class SolutionRelogement(EnvironmentScopedModel):
+    """Un hébergement successif d'un foyer : où, à quel titre, de quand à quand.
+
+    Une ligne par solution, jamais une mise à jour en place : le parcours d'un foyer EST
+    l'information que le rapport de fin de crise demande."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    dossier_relogement = models.ForeignKey(
+        DossierRelogement, on_delete=models.CASCADE, related_name="solutions",
+    )
+
+    type_solution = models.CharField(max_length=20, choices=TypeSolutionRelogement.choices)
+    titre_occupation = models.CharField(max_length=20, choices=TitreOccupation.choices)
+
+    # ── Où ──────────────────────────────────────────────────────────────────────────────
+    # Trois origines possibles, toutes facultatives : un centre du dispositif, une offre
+    # d'hébergement reçue, ou rien de tout cela (un hôtel réservé au téléphone).
+    point = models.ForeignKey(
+        "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="solutions_relogement",
+        help_text="Centre d'hébergement du dispositif.",
+    )
+    offre = models.ForeignKey(
+        "Offer", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="solutions_relogement",
+        help_text="Offre d'hébergement retenue pour ce foyer.",
+    )
+    #: Chiffrée : c'est l'adresse où dort une famille sinistrée.
+    adresse = EncryptedTextField(blank=True, null=True)
+    commune_code = models.CharField(max_length=10, blank=True, default="")
+    commune_nom = models.CharField(max_length=255, blank=True, default="")
+    #: Qui héberge, quand ce n'est ni un centre ni une offre enregistrée (un hôtel, un bailleur
+    #: social, un particulier venu au guichet).
+    hebergeur = EncryptedTextField(max_length=255, blank=True, null=True)
+    hebergeur_contact = EncryptedTextField(max_length=255, blank=True, null=True)
+
+    # ── Quand ───────────────────────────────────────────────────────────────────────────
+    date_debut = models.DateField()
+    #: Terme prévu du prêt, de la convention ou du bail. C'est LA date qui fait le suivi :
+    #: sans elle, « arrive à son terme » ne peut pas se calculer, et on découvre la sortie le
+    #: jour où la famille appelle.
+    date_fin_prevue = models.DateField(null=True, blank=True)
+    date_fin_effective = models.DateField(null=True, blank=True)
+    motif_fin = models.CharField(max_length=255, blank=True, default="")
+
+    # ── Combien ─────────────────────────────────────────────────────────────────────────
+    loyer_mensuel = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Euros par mois, entier (même convention que "
+                                          "HebergementDetailsMixin.loyer_montant_*).")
+    reste_a_charge = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Ce que paie réellement la famille, une fois les aides déduites.")
+    prise_en_charge_par = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Qui paie le reste : commune, CCAS, assurance, association…")
+
+    commentaire = EncryptedTextField(blank=True, null=True)
+
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_debut", "-date_creation"]
+
+    def __str__(self) -> str:
+        return f"{self.get_type_solution_display()} du {self.date_debut}"
+
+    @property
+    def en_cours(self) -> bool:
+        return self.date_fin_effective is None
+
+    @property
+    def jours_restants(self):
+        """Jours avant le terme PRÉVU, ou None si aucun terme n'est posé.
+
+        Négatif quand le terme est dépassé sans que la sortie ait été enregistrée : c'est un
+        cas réel et c'est le plus urgent de tous — personne ne sait où en est cette famille."""
+        if self.date_fin_effective is not None or self.date_fin_prevue is None:
+            return None
+        return (self.date_fin_prevue - datetime.date.today()).days
+
+
 class EtatMateriel(models.TextChoices):
     DISPONIBLE = "DISPONIBLE", "Disponible"
     INDISPONIBLE = "INDISPONIBLE", "Indisponible (besoin de maintenance)"
@@ -8668,6 +8907,120 @@ class StatutAffectationRotation(models.TextChoices):
     PROPOSEE = "PROPOSEE", "Proposée par le planificateur"
     CONFIRMEE = "CONFIRMEE", "Confirmée par l'encadrement"
     RETIREE = "RETIREE", "Retirée"
+
+
+class StatutCreneauEquipe(models.TextChoices):
+    """Où en est un créneau du planning. Cinq valeurs, et les trois dernières sont ce qui
+    distingue un planning d'une intention : savoir qui a réellement tenu son poste."""
+
+    PREVU = "PREVU", "Prévu"
+    CONFIRME = "CONFIRME", "Confirmé"
+    ANNULE = "ANNULE", "Annulé"
+    REALISE = "REALISE", "Réalisé"
+    ABSENT = "ABSENT", "Absent (ne s'est pas présenté)"
+
+
+class CreneauEquipe(EnvironmentScopedModel):
+    """Le planning d'une équipe : qui tient quel créneau, quel jour.
+
+    **Pourquoi cette table existe, alors que trois autres parlent déjà de créneaux.** Chacune
+    répond à une question différente, et les confondre produisait exactement l'erreur qu'on
+    voulait éviter :
+
+    | Table | Question |
+    |---|---|
+    | `DisponibiliteOffre` | « quand cette personne PEUT-elle venir ? » — une déclaration du bénévole, jamais une affectation |
+    | `AffectationRotation` | « qui arme ce tour de garde de CETTE campagne ? » — maille rotation, pas jour, et n'existe que si la campagne a des tours de garde |
+    | `DisponibilitePointEquipe` | « qui tient CE point opérationnel ? » — clé sur un point, pas sur une équipe |
+    | `CreneauEquipe` | « qui tient le soir du 14 pour cette équipe ? » |
+
+    Avant le 12/11/2026, la dernière ligne n'avait pas de réponse : pointer un créneau à la
+    main dans la grille de l'association ne laissait qu'une trace au journal d'audit, hors
+    campagne. Demande de Sylvain : « vas-y, prévois le planning d'équipe et tout le
+    nécessaire ».
+
+    **Un créneau n'est pas une disponibilité.** On peut affecter quelqu'un sur un créneau qu'il
+    n'a pas déclaré : un chef d'équipe a le droit d'appeler. L'écart est **signalé** (voir
+    `core/planning_equipe.py`), jamais bloqué — l'interdire supposerait que la grille déclarée
+    est exhaustive, ce qu'elle n'est pas.
+
+    **Le double engagement, en revanche, est un vrai problème** : la même personne sur deux
+    équipes au même créneau n'est pas un oubli de saisie, c'est quelqu'un qu'on attend à deux
+    endroits. L'API le détecte et le nomme à chaque écriture.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.CASCADE, related_name="creneaux_planning",
+    )
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="creneaux_equipe",
+    )
+
+    date = models.DateField()
+    creneau = models.CharField(max_length=10, choices=Creneau.choices)
+
+    statut = models.CharField(
+        max_length=10, choices=StatutCreneauEquipe.choices,
+        default=StatutCreneauEquipe.PREVU,
+    )
+
+    #: Ce que la personne fait sur ce créneau, quand ce n'est pas évident. Texte libre : les
+    #: rôles opérationnels (`RoleOperationnel`) décrivent une qualité durable, pas ce qu'on
+    #: tient un samedi soir.
+    role = models.CharField(max_length=100, blank=True, default="")
+
+    #: Où. Un planning sans lieu laisse appeler pour demander où se présenter.
+    point = models.ForeignKey(
+        "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="creneaux_equipe",
+    )
+    mission = models.ForeignKey(
+        "Mission", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="creneaux_equipe",
+    )
+    #: Rattachement direct à la crise, pour les bilans. Redondant avec `mission.crise` quand
+    #: une mission est posée, mais un créneau peut exister sans mission (une permanence).
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="creneaux_equipe",
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date", "creneau"]
+        constraints = [
+            # Une personne ne tient qu'une fois le même créneau pour la même équipe. Deux
+            # lignes identiques feraient compter deux présents là où il n'y en a qu'un.
+            models.UniqueConstraint(
+                fields=["equipe", "utilisateur", "date", "creneau"],
+                name="uq_creneau_equipe",
+            ),
+        ]
+        indexes = [
+            # Le planning se lit toujours par équipe et par fenêtre de dates.
+            models.Index(fields=["equipe", "date"], name="ix_creneau_equipe_date"),
+            # …et la détection de double engagement, par personne et par date.
+            models.Index(fields=["utilisateur", "date"], name="ix_creneau_perso_date"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.equipe.name} — {self.date} {self.creneau} ({self.statut})"
+
+    @property
+    def compte_dans_leffectif(self) -> bool:
+        """Les annulés et les absents ne tiennent pas le poste.
+
+        C'est la seule définition qui rende l'effectif d'un créneau utilisable : compter une
+        ligne annulée ferait croire une garde armée."""
+        return self.statut not in (StatutCreneauEquipe.ANNULE, StatutCreneauEquipe.ABSENT)
 
 
 class AffectationRotation(EnvironmentScopedModel):

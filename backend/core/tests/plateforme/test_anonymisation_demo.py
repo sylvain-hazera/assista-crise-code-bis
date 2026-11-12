@@ -243,6 +243,37 @@ class TestPasDeRegressionDansLeCode:
                 trouvees.append((i + 1, ligne.strip()))
         return trouvees
 
+    def test_personne_n_appelle_nom_affichable_sans_requete(self):
+        """`nom_affichable(user, None)` rend le VRAI nom, même en zone de démonstration.
+
+        C'est écrit dans sa docstring, et c'est exactement le piège : la fonction ne lève pas,
+        elle ne prévient pas, elle rend simplement le nom réel. Appelée sans requête depuis un
+        module qui construit une réponse d'API, elle réintroduit la fuite que tout ce fichier
+        existe pour empêcher — erreur commise le 12/11/2026 en écrivant `planning_equipe.py`,
+        et attrapée à la relecture, pas par un test. Celui-ci la rattraperait.
+
+        Une lecture volontairement non masquée (un email, un journal) se déclare avec le même
+        marqueur que les autres."""
+        import re
+        from pathlib import Path
+
+        racine = Path(__file__).resolve().parents[2]
+        fautives = []
+        for chemin in sorted(racine.glob("*.py")):
+            lignes = chemin.read_text(encoding="utf-8").split("\n")
+            for i, ligne in enumerate(lignes):
+                if not re.search(r"nom_affichable\([^)]*,\s*None\s*\)", ligne):
+                    continue
+                voisinage = ligne + "".join(lignes[max(0, i - 3):i])
+                if self.MARQUEUR in voisinage:
+                    continue
+                fautives.append((chemin.name, i + 1, ligne.strip()))
+
+        assert fautives == [], (
+            "nom_affichable(..., None) rend le vrai nom en zone DEMO : passer la requête, "
+            f"ou déclarer la lecture avec `# {self.MARQUEUR}: …`. {fautives}"
+        )
+
     def test_les_serialiseurs_ne_composent_plus_de_nom_a_la_main(self):
         restantes = self._compositions("core/serializers.py")
         assert restantes == [], (

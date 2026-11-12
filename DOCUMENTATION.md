@@ -1509,6 +1509,145 @@ cadres sont recalculés dans `recalculerLesVues()` et non dans le gabarit : avec
 trier et filtrer dans une expression de template se refait à chaque cycle de détection de
 changements.
 
+#### La grille de disponibilités : deux fenêtres, et des créneaux qu'on pointe
+
+`GET /api/disponibilites-operationnelles/grille/` (construite dans
+`core/grille_disponibilites.py`) sert la mobilisation de l'onglet « Disponibilités » de
+`/admin/membres-association`. Les cases viennent de `DisponibiliteOffre`, le **moteur unique** —
+quatre créneaux par jour portés par la ressource du bénévole, les mêmes lignes que lit la
+constitution d'équipe. Sa règle est « pas de ligne = indisponible » ; `a_declare` est le seul
+signal qui sépare le silence du refus.
+
+**Deux fenêtres, et la seconde est l'ajout du 12/11/2026.** Par défaut, les quinze prochains
+jours (`jours`, plafonné à 31). Avec `?campagne=<id>`, la période de cette campagne —
+souvent bien plus loin devant. Les réponses à une campagne étaient écrites en base, lues par le
+planificateur de tours de garde, et **invisibles sur l'écran qui sert à mobiliser**. Trois
+conséquences, toutes voulues :
+
+- les créneaux servis deviennent ceux que la campagne a réellement posés
+  (`creneaux_effectifs`). Interroger sur quatre quand elle n'en demandait qu'un ferait lire
+  comme des refus trois colonnes auxquelles personne n'a été invité à répondre ;
+- `a_declare` tient compte de l'état de la cible : **zéro créneau déclaré par quelqu'un qui a
+  répondu n'est pas un silence**, c'est un « je ne suis pas disponible » ;
+- un membre **non ciblé** porte `cible: null` — on ne lui a rien demandé, ce n'est pas un
+  silencieux non plus.
+
+Une période plus longue que `PLAFOND_JOURS_CAMPAGNE` (92 jours) est coupée, et la réponse le
+**dit** (`tronquee`).
+
+**Les cases sont cliquables** : cliquer une case prend la personne *sur ce créneau*, geste repris
+du recrutement depuis un point opérationnel. Ce que les créneaux pointés deviennent dépend du
+contexte, et l'écran ne le cache pas :
+
+| Contexte | Ce qui est écrit |
+|---|---|
+| Grille ouverte sur une campagne **avec tours de garde** | `AffectationRotation` en `CONFIRMEE` — un humain a choisi, ce n'est pas une proposition du planificateur |
+| Campagne sans tours de garde, ou hors campagne | Rien : **aucune table ne stocke « cette équipe tient le soir du 14 »**. Les créneaux restent au journal d'audit, et la barre d'affectation le dit |
+
+Limite à connaître : la maille d'un tour de garde est la **rotation**, pas le jour. Pointer le
+soir du 14 et celui du 15 dans la même rotation produit UNE affectation, pas deux — l'unicité
+porte sur `(rotation, utilisateur, créneau)`.
+
+**Deux cibles pour une sélection** : `POST /api/teams/<id>/ajouter-membres/` (équipe existante,
+elle **ajoute** et ne remplace pas) et `POST /api/teams/creer-avec-membres/` (équipe neuve).
+Cette seconde action existe plutôt que le `POST /teams/` ordinaire parce que celui-ci exige un
+*type* de compte institutionnel — un membre du bureau d'une association est souvent
+`UTIL_SIMPLE` — et parce qu'il accepte `members` sans vérifier le rattachement. Ici, c'est la
+qualité qui compte (bureau de cette association, voir `recrutement_association.peut_instruire`),
+la sélection passe par le même tri que l'affectation, et **les refus sont nommés**. Une équipe
+dont tous les membres seraient refusés n'est pas créée : une coquille vide dans l'arborescence
+ne se nettoie jamais.
+
+#### Le planning d'équipe (`core/planning_equipe.py`)
+
+`CreneauEquipe` répond à la question que personne ne savait poser avant le 12/11/2026 : **qui
+tient le soir du 14 pour cette équipe ?** Page `/admin/planning-equipes`, API
+`creneaux-equipe`.
+
+**Quatre tables parlent de créneaux, et chacune répond à autre chose.** Les confondre était
+l'erreur à éviter :
+
+| Table | Question |
+|---|---|
+| `DisponibiliteOffre` | quand cette personne **peut** venir — une déclaration du bénévole, jamais une affectation |
+| `AffectationRotation` | qui arme ce **tour de garde** de cette campagne — maille rotation, pas jour |
+| `DisponibilitePointEquipe` | qui tient ce **point opérationnel** |
+| `CreneauEquipe` | qui tient ce **créneau pour cette équipe** |
+
+Pointer un créneau dans la grille de l'association écrit donc **les deux** quand une campagne
+est ouverte : la rotation pour le planificateur de la campagne, la ligne de planning pour
+l'équipe. Ce ne sont pas des doublons, ce sont deux questions posées par deux écrans.
+
+**Deux écarts signalés, jamais bloqués** — et un refus :
+
+- **double engagement** : la même personne attendue par une autre équipe au même créneau. Pas
+  refusé (il existe des cas réels : deux équipes du même site, un passage d'un poste à
+  l'autre), mais **nommé** — qui, quand, quelle équipe. « 3 conflits » n'a jamais permis à
+  personne de décider ;
+- **hors disponibilité déclarée** : la personne n'a pas coché ce créneau. Un chef d'équipe a le
+  droit d'appeler ; l'interdire supposerait que la grille déclarée est exhaustive ;
+- **pas membre de l'équipe** : refusé, lui. Un planning qui affecte des gens hors de l'équipe
+  ne décrit plus rien.
+
+`pointer` est **idempotent** : la clé est `(équipe, personne, jour, créneau)`, deux clics ne
+font pas deux présents. Et l'effectif d'un créneau **ne compte ni les annulés ni les absents** —
+c'est la seule définition qui rende le chiffre utilisable, compter une ligne annulée ferait
+croire une garde armée.
+
+#### Suivi du relogement des familles (`core/relogement.py`)
+
+Pendant de « Logement intervenants », pour les sinistrés : page `/admin/relogement-familles`,
+API `dossiers-relogement`. Demandé le 12/11/2026, avec le bilan qui va avec.
+
+**Deux tables et non une.** Un foyer sinistré passe presque toujours par plusieurs solutions
+successives — gymnase la première nuit, hôtel la semaine suivante, logement communal pour six
+mois, puis un bail. `DossierRelogement` porte le foyer ; `SolutionRelogement` est une ligne par
+hébergement. Écrire tout cela dans une seule ligne mise à jour en place détruirait l'historique,
+or c'est précisément ce que le rapport demande : « tant de familles relogées **de manière
+pérenne** » suppose de distinguer le provisoire de ce qui a tenu.
+
+| Notion | Valeurs |
+|---|---|
+| `TypeSolutionRelogement` | urgence, temporaire, **intermédiaire**, définitive |
+| `TitreOccupation` | centre, hôtel, proches, prêt, convention, bail, retour au domicile |
+| `StatutDossierRelogement` | en recherche, hébergée, relogée, retour au domicile, clos sans suite |
+
+L'intermédiaire existe pour de vrai (un logement communal prêté six mois pendant que l'assurance
+instruit) et le compter comme définitif ferait annoncer des familles relogées qui seront à la rue
+au printemps.
+
+**Ce que le serveur tient, et que l'écran ne refait pas :** `ajouter-solution` clôt
+automatiquement l'hébergement en cours (un foyer ne dort pas à deux endroits, et deux lignes
+ouvertes le compteraient deux fois) et met à jour le statut du dossier ; `synthese` calcule le
+bilan **sur toute la crise**, pas sur les lignes affichées — un total recompté côté navigateur
+changerait avec les filtres, et deux personnes annonceraient deux chiffres en réunion. La page
+en tire un point de situation en texte, prêt à coller.
+
+Trois chiffres passent devant le tableau : **foyers sans solution** (des gens qui dorment on ne
+sait où ce soir), **termes dépassés** sans sortie enregistrée (le plus urgent : personne ne sait
+où en est cette famille) et **termes à moins de 30 jours**.
+
+**Rien en clair** : nom du référent, coordonnées, notes d'accompagnement, adresse d'hébergement
+et contact de l'hébergeur sont en `EncryptedTextField` — ce sont les données les plus sensibles
+du produit, des personnes sinistrées nommées avec l'endroit où elles dorment. La lecture est
+réservée aux acteurs institutionnels dont l'institution suit le dossier ou a une équipe sur la
+crise, et chaque ouverture de fiche est tracée.
+
+#### Hébergement et interventions : des entrées de menu qui expliquent leur vide
+
+« Mes interventions » et « Hébergement » sont visibles de **tous** dans le menu, y compris d'un
+compte qui n'est dans aucune équipe. La page affiche alors un encart qui dit ce qu'elle fait, que
+ce n'est ni une panne ni un refus, et à qui demander le rattachement. Les masquer laissait croire
+que la fonction n'existe pas et ne donnait aucun moyen de savoir ce qu'il faut pour y accéder.
+`/hebergement` est le même composant que `/mon-equipe/<id>/hebergement` : sans équipe dans l'URL,
+il demande laquelle, ou explique pourquoi il n'y a rien.
+
+Sur cette page, **l'œil d'une fiche (offre comme demande) va chercher la fiche au serveur**, et
+ce n'est pas un détail d'implémentation : les listes d'annonces arrivent sans email ni téléphone
+(voir § 10, « coordonnées retirées des listes »), et c'est l'ouverture de la fiche qui est tracée
+objet par objet. Afficher l'objet déjà chargé par la liste montrerait une fiche sans contact et
+contournerait la trace.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

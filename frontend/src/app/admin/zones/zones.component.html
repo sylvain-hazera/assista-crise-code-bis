@@ -38,6 +38,9 @@
       <thead>
         <tr>
           <th>Zone</th>
+          <!-- Sans cette colonne, les « Mon territoire » automatiques de chaque collectivité
+               se lisaient comme des doublons (signalé le 12/11/2026). -->
+          <th>Institution</th>
           <th>Communes</th>
           <th>Description</th>
           <th></th>
@@ -47,6 +50,7 @@
         @for (zone of filteredZones; track zone.id) {
           <tr (click)="openEditModal(zone)">
             <td>{{ zone.nom }}</td>
+            <td>{{ zone.institution_nom || '—' }}</td>
             <td>{{ zone.communes.length || '—' }}</td>
             <td>{{ zone.description || '—' }}</td>
             <td class="actions">
@@ -57,7 +61,7 @@
           </tr>
         } @empty {
           <tr>
-            <td colspan="4" class="empty">Aucune zone déclarée pour l'instant.</td>
+            <td colspan="5" class="empty">Aucune zone déclarée pour l'instant.</td>
           </tr>
         }
       </tbody>

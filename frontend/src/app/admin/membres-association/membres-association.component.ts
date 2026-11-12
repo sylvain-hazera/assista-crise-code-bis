@@ -8,13 +8,13 @@ import { AuthService } from '../../auth/services/auth.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionService } from '../../services/institution.service';
 import {
-  AnnuaireAssociation, CandidatureAssociation, ETAPES_CIRCUIT, EtapeCandidature,
-  GrilleDisponibilites, InvitationAssociation, LIBELLES_ROLE_EQUIPE, MembreAnnuaire,
-  Qualification, QualificationMembre, QualificationsAVerifier, RoleDansEquipe,
-  StatutMembre,
+  AnnuaireAssociation, CampagneGrille, CandidatureAssociation, ETAPES_CIRCUIT,
+  EtapeCandidature, GrilleDisponibilites, InvitationAssociation, LIBELLES_ROLE_EQUIPE,
+  MembreAnnuaire, MembreGrille, Qualification, QualificationMembre,
+  QualificationsAVerifier, RoleDansEquipe, StatutMembre,
 } from '../../shared/models/association.model';
 import { Team, rangEchelon } from '../../shared/models/team.model';
-import { TeamService } from '../../services/team.service';
+import { CreneauPointe, TeamService } from '../../services/team.service';
 import { CrisisService } from '../../services/crisis.service';
 import { Crisis } from '../../shared/models/crisis.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
@@ -127,6 +127,26 @@ export class MembresAssociationComponent implements OnInit {
   qualifications: QualificationMembre[] = [];
   grille: GrilleDisponibilites | null = null;
   joursGrille = 15;
+  /** La fenêtre lue : `null` = les jours qui viennent, sinon la période de cette campagne.
+   * C'est la seule façon de voir des disponibilités à long terme — elles n'existent que
+   * parce qu'une campagne les a demandées. */
+  campagneChoisie: string | null = null;
+  /** Fiches ouvertes dans la grille, par utilisateur (l'œil après le nom). */
+  detailsGrille = new Set<string>();
+  /** Les créneaux pointés à la main, par utilisateur : clés « date|CRENEAU ».
+   *
+   * Reprend le geste du modal de recrutement d'un point opérationnel : on ne prend pas
+   * quelqu'un « en général », on le prend sur un créneau. */
+  creneauxPointes = new Map<string, Set<string>>();
+  /** Affecter à une équipe existante, ou en constituer une neuve avec la sélection. */
+  modeAffectation: 'existante' | 'nouvelle' = 'existante';
+  nouvelleEquipeNom = '';
+  creneauxIgnores: { nom: string; motif: string }[] = [];
+  /** Doubles engagements détectés à l'affectation : la même personne attendue par
+   * une autre équipe au même créneau. Signalé, jamais bloquant. */
+  conflitsPlanning: { nom: string; date: string; creneau: string;
+                      motif: string }[] = [];
+  derniereNoteCreneaux = '';
 
   readonly ETAPES = ETAPES_CIRCUIT;
   readonly LIBELLES_STATUT: Record<StatutMembre, string> = {
@@ -257,6 +277,8 @@ export class MembresAssociationComponent implements OnInit {
     // Une sélection faite dans une association n'a aucun sens dans une autre : la garder
     // ferait proposer d'affecter des gens que l'équipe cible ne peut pas accueillir.
     this.selection.clear();
+    this.creneauxPointes.clear();
+    this.campagneChoisie = null;
     this.equipeCible = null;
     this.annuaire.clear();
     if (this.institutionChoisie) { this.chargerInstitution(); }
@@ -586,8 +608,12 @@ export class MembresAssociationComponent implements OnInit {
   // ══ Sélection multiple et affectation terrain ══════════════════════════════
 
   basculerSelection(utilisateurId: string): void {
-    if (this.selection.has(utilisateurId)) { this.selection.delete(utilisateurId); }
-    else { this.selection.add(utilisateurId); }
+    if (this.selection.has(utilisateurId)) {
+      this.selection.delete(utilisateurId);
+      // Retirer quelqu'un retire ses créneaux : les garder enverrait au serveur des gardes
+      // pointées pour une personne absente de l'affectation.
+      this.creneauxPointes.delete(utilisateurId);
+    } else { this.selection.add(utilisateurId); }
     if (this.selection.size && !this.crises.length) { this.chargerCrises(); }
   }
 
@@ -609,7 +635,11 @@ export class MembresAssociationComponent implements OnInit {
 
   viderSelection(): void {
     this.selection.clear();
+    this.creneauxPointes.clear();
     this.refusAffectation = [];
+    this.creneauxIgnores = [];
+    this.conflitsPlanning = [];
+    this.derniereNoteCreneaux = '';
   }
 
   get nomsSelectionnes(): string[] {
@@ -636,39 +666,104 @@ export class MembresAssociationComponent implements OnInit {
     });
   }
 
+  /** Peut-on lancer l'affectation ? Les deux modes n'exigent pas la même chose : une équipe
+   * existante demande qu'on la choisisse, une équipe neuve qu'on la nomme. */
+  get affectationPossible(): boolean {
+    if (!this.selection.size || this.affectationEnCours) { return false; }
+    return this.modeAffectation === 'nouvelle'
+      ? !!this.nouvelleEquipeNom.trim()
+      : !!this.equipeCible;
+  }
+
   affecter(): void {
-    if (!this.equipeCible || !this.selection.size || this.affectationEnCours) { return; }
+    if (!this.affectationPossible) { return; }
     this.affectationEnCours = true;
     this.refusAffectation = [];
+    this.creneauxIgnores = [];
+    this.conflitsPlanning = [];
+
+    const options = {
+      missionTitre: this.missionTitre.trim() || undefined,
+      criseId: this.criseCible || undefined,
+      // La campagne n'est transmise que si la grille est ouverte dessus : c'est elle qui
+      // donne un sens aux créneaux pointés, en les versant dans ses tours de garde.
+      campagneId: this.campagneChoisie || undefined,
+      creneaux: this.creneauxPourEnvoi(),
+    };
+    const neuve = this.modeAffectation === 'nouvelle';
+    const nomNeuve = this.nouvelleEquipeNom.trim();
     const equipeId = this.equipeCible;
-    this.teamService.ajouterMembres(
-      equipeId, [...this.selection], this.missionTitre.trim() || undefined,
-      this.criseCible || undefined,
-    ).subscribe({
+    const appel = neuve
+      ? this.teamService.creerAvecMembres(
+          this.institutionChoisie!, nomNeuve, [...this.selection], options)
+      : this.teamService.ajouterMembres(equipeId!, [...this.selection], options);
+
+    appel.subscribe({
       next: (res) => {
         this.affectationEnCours = false;
-        const nom = this.equipes.find(e => e.id === equipeId)?.name ?? "l'équipe";
+        const nom = neuve
+          ? nomNeuve
+          : (this.equipes.find(e => e.id === equipeId)?.name ?? "l'équipe");
         // Les refus sont NOMMÉS, jamais fondus dans un « c'est fait » : une affectation
         // partielle présentée comme un succès fait partir une équipe incomplète.
         this.refusAffectation = (res.refuses ?? []).map(r => ({
           nom: this.annuaire.get(r.utilisateur)?.nom ?? r.utilisateur, motif: r.motif,
         }));
-        this.message = `${res.ajoutes} personne(s) affectée(s) à « ${nom} »`
+        this.creneauxIgnores = (res.creneaux_ignores ?? []).map(c => ({
+          nom: c.utilisateur ? (this.annuaire.get(c.utilisateur)?.nom ?? c.utilisateur) : '',
+          motif: c.date ? `${c.date} ${c.creneau} — ${c.motif}` : c.motif,
+        }));
+        this.derniereNoteCreneaux = this.noteSurLesCreneaux(
+          res.creneaux_pointes ?? 0, res.creneaux_enregistres ?? 0,
+          res.creneaux_planning ?? 0);
+        // Deux équipes qui attendent la même personne au même moment : nommé, jamais tu.
+        this.conflitsPlanning = res.conflits_planning ?? [];
+        this.message = (neuve
+            ? `Équipe « ${nom} » constituée avec ${res.ajoutes} personne(s)`
+            : `${res.ajoutes} personne(s) affectée(s) à « ${nom} »`)
           + (res.deja_presents ? `, ${res.deja_presents} y étaient déjà` : '')
           + (this.missionTitre.trim() ? `, mission « ${this.missionTitre.trim()} »` : '')
           + '.';
         this.erreur = '';
         this.selection.clear();
+        this.creneauxPointes.clear();
         this.missionTitre = '';
         this.criseCible = null;
+        this.nouvelleEquipeNom = '';
         // L'équipe a changé : recharger pour que l'arbre montre les nouveaux arrivants.
         this.chargerInstitution();
+        if (this.onglet === 'disponibilites') { this.chargerGrille(); }
       },
       error: (err) => {
         this.affectationEnCours = false;
+        this.refusAffectation = (err?.error?.refuses ?? []).map(
+          (r: { utilisateur: string; motif: string }) => ({
+            nom: this.annuaire.get(r.utilisateur)?.nom ?? r.utilisateur, motif: r.motif,
+          }));
         this.erreur = err?.error?.error || "L'affectation a échoué.";
       },
     });
+  }
+
+  /** Ce que sont devenus les créneaux pointés — dit, jamais tu.
+   *
+   * Rien dans le modèle ne stocke « cette équipe tient le soir du 14 » : seuls les tours de
+   * garde d'une campagne le savent, et leur maille est la rotation, pas le jour. Laisser
+   * croire à un planning qui n'existe pas serait la pire des trois issues possibles. */
+  private noteSurLesCreneaux(pointes: number, enregistres: number,
+                             planning: number): string {
+    if (!pointes) { return ''; }
+    const base = `${pointes} créneau(x) pointé(s), ${planning} posé(s) au planning de `
+      + `l'équipe.`;
+    if (!this.campagneChoisie) { return base; }
+    if (!enregistres) {
+      return `${base} Aucun tour de garde n'a été confirmé : cette campagne n'en a pas, ou `
+        + `les dates tombent en dehors.`;
+    }
+    const note = `${base} ${enregistres} tour(s) de garde confirmé(s).`;
+    return pointes === enregistres ? note
+      : `${note} La maille d'un tour de garde est la rotation, pas le jour : plusieurs jours `
+        + `d'une même rotation ne font qu'une affectation.`;
   }
 
   basculer(noeud: NoeudEquipe): void {
@@ -1013,11 +1108,117 @@ export class MembresAssociationComponent implements OnInit {
 
   chargerGrille(): void {
     if (!this.institutionChoisie) { return; }
-    this.associationService.getGrille(this.institutionChoisie, this.joursGrille).subscribe({
+    this.associationService.getGrille(
+      this.institutionChoisie, this.joursGrille, this.campagneChoisie,
+    ).subscribe({
       next: (g) => { this.grille = g; this.erreur = ''; },
       error: (err) => this.erreur = err?.error?.error
         || 'Impossible de charger les disponibilités.',
     });
+  }
+
+  /** Changer de fenêtre OUBLIE les créneaux pointés, et c'est voulu : « le soir du 14 » n'a
+   * pas le même sens d'une période à l'autre, et garder des cases cochées invisibles ferait
+   * partir une affectation sur des créneaux que personne n'a plus sous les yeux. */
+  changerFenetre(): void {
+    this.creneauxPointes.clear();
+    this.creneauxIgnores = [];
+    this.chargerGrille();
+  }
+
+  get campagnes(): CampagneGrille[] {
+    return this.grille?.campagnes ?? [];
+  }
+
+  get campagneCourante(): CampagneGrille | null {
+    return this.campagnes.find(c => c.id === this.campagneChoisie) ?? null;
+  }
+
+  /** Période lisible pour le sélecteur : « 12 janv. → 26 janv. ». */
+  periodeCampagne(c: CampagneGrille): string {
+    const format = (iso: string) => new Date(iso + 'T00:00:00')
+      .toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    return `${format(c.periode_debut)} → ${format(c.periode_fin)}`;
+  }
+
+  // ══ Fiche d'une personne depuis la grille ═════════════════════════════════
+
+  /** L'œil après le nom, dans la grille. Clé par utilisateur et non par équipe : ici il n'y a
+   * qu'une ligne par personne, contrairement à l'arborescence où elle peut figurer deux fois
+   * (cadre ici, intervenant là). */
+  basculerDetailGrille(utilisateurId: string): void {
+    if (this.detailsGrille.has(utilisateurId)) { this.detailsGrille.delete(utilisateurId); }
+    else { this.detailsGrille.add(utilisateurId); }
+  }
+
+  detailGrilleOuvert(utilisateurId: string): boolean {
+    return this.detailsGrille.has(utilisateurId);
+  }
+
+  // ══ Pointer un créneau ════════════════════════════════════════════════════
+
+  /** Clic sur une case : prend cette personne SUR CE CRÉNEAU.
+   *
+   * Deux gestes distincts, et la règle est simple :
+   *
+   * - la case à cocher devant le nom prend la personne **sans précision de créneau** ;
+   * - un clic sur une case la prend **sur ce créneau**, et l'ajoute à la sélection si elle
+   *   n'y était pas.
+   *
+   * Décocher la dernière case ne la retire PAS de la sélection : on vient de la choisir
+   * explicitement, et la faire disparaître de la barre d'affectation au moment où l'on
+   * corrige un créneau serait déroutant. Pour l'enlever, on décoche son nom — ce qui efface
+   * aussi ses créneaux. */
+  basculerCreneau(utilisateurId: string, date: string, creneau: string): void {
+    const cle = `${date}|${creneau}`;
+    const siens = this.creneauxPointes.get(utilisateurId) ?? new Set<string>();
+    if (siens.has(cle)) { siens.delete(cle); } else { siens.add(cle); }
+    if (siens.size) { this.creneauxPointes.set(utilisateurId, siens); }
+    else { this.creneauxPointes.delete(utilisateurId); }
+    if (!this.selection.has(utilisateurId)) { this.basculerSelection(utilisateurId); }
+  }
+
+  creneauPointe(utilisateurId: string, date: string, creneau: string): boolean {
+    return this.creneauxPointes.get(utilisateurId)?.has(`${date}|${creneau}`) ?? false;
+  }
+
+  nombreCreneauxPointes(utilisateurId: string): number {
+    return this.creneauxPointes.get(utilisateurId)?.size ?? 0;
+  }
+
+  get totalCreneauxPointes(): number {
+    let total = 0;
+    this.creneauxPointes.forEach(siens => { total += siens.size; });
+    return total;
+  }
+
+  /** La sélection, mise à plat pour le serveur. */
+  private creneauxPourEnvoi(): CreneauPointe[] {
+    const liste: CreneauPointe[] = [];
+    this.creneauxPointes.forEach((siens, utilisateur) => {
+      if (!this.selection.has(utilisateur)) { return; }
+      siens.forEach(cle => {
+        const [date, creneau] = cle.split('|');
+        liste.push({ utilisateur, date, creneau });
+      });
+    });
+    return liste;
+  }
+
+  /** Coche tous les créneaux DÉCLARÉS de cette personne sur la fenêtre affichée : le cas
+   * courant est « je le prends sur tout ce qu'il a donné ». */
+  pointerToutesSesDispos(membre: MembreGrille): void {
+    const siens = new Set<string>();
+    for (const jour of membre.jours) {
+      for (const [creneau, libre] of Object.entries(jour.creneaux)) {
+        if (libre) { siens.add(`${jour.date}|${creneau}`); }
+      }
+    }
+    if (!siens.size) { return; }
+    this.creneauxPointes.set(membre.utilisateur, siens);
+    if (!this.selection.has(membre.utilisateur)) {
+      this.basculerSelection(membre.utilisateur);
+    }
   }
 
   ouvrirOnglet(onglet: Onglet): void {

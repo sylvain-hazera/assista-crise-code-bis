@@ -381,76 +381,7 @@
         }
       </section>
 
-      <!-- Barre d'affectation. Apparaît avec la sélection et la suit : on compose une équipe
-           terrain en piochant dans plusieurs branches, et remonter en haut de page à chaque
-           ajout rendrait le geste impraticable. -->
-      @if (selection.size) {
-        <section class="barre-selection">
-          <div class="selection-resume">
-            <strong>{{ selection.size }} personne(s) sélectionnée(s)</strong>
-            <span class="noms">{{ nomsSelectionnes.join(', ') }}</span>
-            <button type="button" class="lien" (click)="viderSelection()">Tout décocher</button>
-          </div>
-
-          <div class="selection-actions">
-            <label>
-              <span>Affecter à l'équipe</span>
-              <select [(ngModel)]="equipeCible">
-                <option [ngValue]="null">Choisir une équipe…</option>
-                @for (e of equipesAffectables; track e.id) {
-                  <option [ngValue]="e.id">
-                    {{ e.name }}{{ e.echelon_libelle ? ' (' + e.echelon_libelle + ')' : '' }}
-                  </option>
-                }
-              </select>
-            </label>
-
-            <label>
-              <span>Mission (facultatif)</span>
-              <input type="text" [(ngModel)]="missionTitre"
-                     placeholder="Reconnaissance berges, point de rassemblement…">
-            </label>
-
-            @if (crises.length) {
-              <label>
-                <span>Crise (facultatif)</span>
-                <select [(ngModel)]="criseCible">
-                  <option [ngValue]="null">Hors crise</option>
-                  @for (c of crises; track c.id) {
-                    <option [ngValue]="c.id">{{ c.name }}</option>
-                  }
-                </select>
-              </label>
-            }
-
-            <button type="button" class="btn-primary"
-                    [disabled]="!equipeCible || affectationEnCours"
-                    (click)="affecter()">
-              <span class="material-icons">group_add</span>
-              {{ affectationEnCours ? 'Affectation…' : 'Affecter' }}
-            </button>
-          </div>
-
-          <p class="page-hint">
-            L'affectation <strong>ajoute</strong> à l'équipe, elle ne remplace pas ses membres.
-            La mission vaut pour l'équipe entière — une équipe n'a qu'une mission active.
-          </p>
-        </section>
-      }
-
-      @if (refusAffectation.length) {
-        <section class="refus-affectation">
-          <h3>
-            <span class="material-icons">report_problem</span>
-            {{ refusAffectation.length }} personne(s) n'ont pas été affectées
-          </h3>
-          <ul>
-            @for (r of refusAffectation; track r.nom) {
-              <li><strong>{{ r.nom }}</strong> — {{ r.motif }}</li>
-            }
-          </ul>
-        </section>
-      }
+      <ng-container [ngTemplateOutlet]="barreAffectation"></ng-container>
 
       <!-- Une seule définition, réemployée à chaque niveau : l'arborescence est de profondeur
            variable (national → zone → région → département), et l'écrire niveau par niveau
@@ -1027,14 +958,34 @@
       </p>
 
       <div class="barre-grille">
+        <!-- DEUX fenêtres, et la seconde est la raison d'être de ce sélecteur : une campagne
+             interroge une période nommée (« du 12 au 26 janvier »), souvent hors des trente
+             et un jours que la fenêtre libre sait montrer. Ses réponses étaient en base,
+             lues par le planificateur de tours de garde, et invisibles ici. -->
         <label>
           Fenêtre
-          <select [(ngModel)]="joursGrille" (ngModelChange)="chargerGrille()" name="jours">
-            <option [ngValue]="7">7 jours</option>
-            <option [ngValue]="15">15 jours</option>
-            <option [ngValue]="31">31 jours</option>
+          <select [(ngModel)]="campagneChoisie" (ngModelChange)="changerFenetre()"
+                  name="fenetre">
+            <option [ngValue]="null">Les jours qui viennent</option>
+            @for (c of campagnes; track c.id) {
+              <option [ngValue]="c.id">
+                {{ c.intitule }} ({{ periodeCampagne(c) }})
+              </option>
+            }
           </select>
         </label>
+
+        @if (!campagneChoisie) {
+          <label>
+            Durée
+            <select [(ngModel)]="joursGrille" (ngModelChange)="chargerGrille()" name="jours">
+              <option [ngValue]="7">7 jours</option>
+              <option [ngValue]="15">15 jours</option>
+              <option [ngValue]="31">31 jours</option>
+            </select>
+          </label>
+        }
+
         <button type="button" class="btn-secondary" (click)="chargerGrille()">
           <span class="material-icons">refresh</span> Actualiser
         </button>
@@ -1044,6 +995,29 @@
           </span>
         }
       </div>
+
+      @if (campagneCourante; as campagne) {
+        <section class="bandeau-campagne">
+          <div>
+            <strong>{{ campagne.intitule }}</strong>
+            <span class="marque">{{ campagne.motif_libelle }}</span>
+            <span class="marque">{{ periodeCampagne(campagne) }}</span>
+          </div>
+          <p>
+            {{ campagne.nombre_reponses }} réponse(s) sur
+            {{ campagne.nombre_cibles }} personne(s) sollicitée(s).
+            Les colonnes ne portent que les créneaux que la campagne a posés
+            ({{ campagne.creneaux.length }}) : les autres n'ont jamais été demandés.
+          </p>
+          @if (grille?.tronquee) {
+            <p class="alerte">
+              <span class="material-icons">warning_amber</span>
+              La période dépasse ce qu'une grille peut montrer : seuls les premiers jours
+              sont affichés.
+            </p>
+          }
+        </section>
+      }
 
       @if (grille) {
         <div class="grille-defilante">
@@ -1058,11 +1032,54 @@
             </thead>
             <tbody>
               @for (m of grille.membres; track m.utilisateur) {
-                <tr>
+                <tr [class.selectionnee]="estSelectionne(m.utilisateur)">
                   <td class="colonne-nom">
+                    <label class="coche" [title]="'Sélectionner ' + m.nom">
+                      <input type="checkbox" [checked]="estSelectionne(m.utilisateur)"
+                             (change)="basculerSelection(m.utilisateur)">
+                    </label>
                     <strong>{{ m.nom }}</strong>
+                    <button type="button" class="oeil"
+                            (click)="basculerDetailGrille(m.utilisateur)"
+                            [attr.aria-expanded]="detailGrilleOuvert(m.utilisateur)"
+                            [attr.aria-label]="'Fiche de ' + m.nom">
+                      <span class="material-icons">
+                        {{ detailGrilleOuvert(m.utilisateur) ? 'visibility_off' : 'visibility' }}
+                      </span>
+                    </button>
+                    @if (m.a_declare) {
+                      <button type="button" class="lien sm"
+                              (click)="pointerToutesSesDispos(m)"
+                              title="Le prendre sur tous les créneaux qu'il a déclarés">
+                        tout prendre
+                      </button>
+                    }
+                    @if (nombreCreneauxPointes(m.utilisateur)) {
+                      <span class="marque creneaux">
+                        {{ nombreCreneauxPointes(m.utilisateur) }} créneau(x)
+                      </span>
+                    }
                     @if (m.membre_bureau) { <span class="marque">bureau</span> }
-                    @if (!m.a_declare) {
+                    <!-- Trois états de réponse, et non deux : « a répondu non » n'est pas un
+                         silence, et « non sollicité » n'en est pas un non plus. -->
+                    @if (grille.campagne) {
+                      @if (!m.cible) {
+                        <span class="marque muet" title="Cette campagne ne le visait pas">
+                          non sollicité
+                        </span>
+                      } @else if (m.cible.etat === 'A_REPONDU') {
+                        <span class="marque repondu"
+                              [title]="m.cible.creneaux_declares
+                                       ? m.cible.creneaux_declares + ' créneau(x) déclaré(s)'
+                                       : 'A répondu qu\'il n\'est pas disponible'">
+                          {{ m.cible.creneaux_declares ? 'a répondu' : 'a répondu : non' }}
+                        </span>
+                      } @else {
+                        <span class="marque muet" [title]="m.cible.etat_libelle">
+                          {{ m.cible.etat_libelle }}
+                        </span>
+                      }
+                    } @else if (!m.a_declare) {
                       <span class="marque muet"
                             title="N'a rien déclaré : ses cases vides ne sont pas des refus">
                         sans réponse
@@ -1084,20 +1101,103 @@
                        haut, nuit en bas). Même orientation que le modal de recrutement et que
                        l'écran du bénévole : une journée est un bloc vertical. L'alternative —
                        soixante colonnes d'une case — était illisible. -->
+                  <!-- Les cases sont CLIQUABLES : on ne prend pas quelqu'un « en général »,
+                       on le prend sur un créneau. Même geste que le recrutement depuis un
+                       point opérationnel. Une case qu'il n'a pas déclarée reste cliquable —
+                       un chef d'équipe peut décider de demander, et l'interdire supposerait
+                       que la déclaration vaut engagement. -->
                   @for (j of m.jours; track j.date) {
                     <td class="jour" [class.week-end]="estWeekEnd(j.date)">
                       <div class="pile">
                         @for (c of grille.creneaux; track c) {
-                          <span [class]="'creneau ' + (j.creneaux[c] ? 'oui' : m.a_declare ? 'non' : 'silence')"
-                                [title]="j.date + ' ' + libelleCreneau(c) + ' — ' +
-                                         (j.creneaux[c] ? 'disponible' : m.a_declare ? 'indisponible' : 'aucune déclaration')">
+                          <button type="button"
+                                  [class]="'creneau ' + (j.creneaux[c] ? 'oui' : m.a_declare ? 'non' : 'silence')"
+                                  [class.pointe]="creneauPointe(m.utilisateur, j.date, c)"
+                                  (click)="basculerCreneau(m.utilisateur, j.date, c)"
+                                  [attr.aria-pressed]="creneauPointe(m.utilisateur, j.date, c)"
+                                  [title]="j.date + ' ' + libelleCreneau(c) + ' — ' +
+                                           (j.creneaux[c] ? 'disponible' : m.a_declare ? 'indisponible' : 'aucune déclaration') +
+                                           ' — cliquer pour le prendre sur ce créneau'">
                             {{ initialeCreneau(c) }}
-                          </span>
+                          </button>
                         }
                       </div>
                     </td>
                   }
                 </tr>
+                <!-- La fiche, dépliée sous la ligne. Elle vient de l'annuaire DÉJÀ chargé
+                     pour l'arborescence : la grille ne recharge rien, et les deux écrans ne
+                     peuvent pas diverger sur ce qu'ils disent d'une même personne. -->
+                @if (detailGrilleOuvert(m.utilisateur)) {
+                  <tr class="fiche-grille">
+                    <td [attr.colspan]="grille.jours.length + 1">
+                      @if (ficheDe(m.utilisateur); as f) {
+                        <div class="fiche-personne">
+                          <dl>
+                            <div><dt>Fonction</dt>
+                                 <dd>{{ f.fonction || 'Non renseignée' }}</dd></div>
+                            <div><dt>Statut</dt><dd>{{ libelleStatut(f.statut) }}</dd></div>
+                            @if (coordonneesVisibles) {
+                              <div><dt>Courriel</dt><dd>{{ f.email || '—' }}</dd></div>
+                              <div><dt>Téléphone</dt><dd>{{ f.telephone || '—' }}</dd></div>
+                              <div><dt>Commune</dt><dd>
+                                {{ f.ville || '—' }}
+                                @if (f.departement_code) { ({{ f.departement_code }}) }
+                              </dd></div>
+                              <div><dt>Métier déclaré</dt><dd>{{ f.metier || '—' }}</dd></div>
+                            } @else {
+                              <div><dt>Coordonnées</dt>
+                                   <dd class="restreint">
+                                     Réservées au bureau de l'association.
+                                   </dd></div>
+                            }
+                            @if (m.aptitude_valide_jusquau) {
+                              <div><dt>Aptitude</dt>
+                                   <dd [class]="etatEcheance(m.aptitude_valide_jusquau)">
+                                     valable jusqu'au
+                                     {{ m.aptitude_valide_jusquau | date:'dd/MM/yyyy' }}
+                                   </dd></div>
+                            }
+                            <div><dt>Titres</dt><dd>
+                              {{ f.titres_verifies }}/{{ f.titres }} vérifié(s)
+                              @if (f.titres_perimes) {
+                                <span class="alerte-texte">
+                                  — {{ f.titres_perimes }} périmé(s)
+                                </span>
+                              }
+                            </dd></div>
+                            @if (!f.a_ressource) {
+                              <div><dt>Fiche ressource</dt>
+                                   <dd class="alerte-texte">
+                                     Absente : ni ciblée par les campagnes, ni proposée à la
+                                     constitution d'équipe.
+                                   </dd></div>
+                            }
+                          </dl>
+
+                          <div class="bloc-competences">
+                            <h4>Compétences</h4>
+                            @if (!f.competences.length) {
+                              <p class="vide-inline">
+                                Aucune compétence déclarée sur sa fiche ressource.
+                              </p>
+                            } @else {
+                              <ul class="puces">
+                                @for (c of f.competences; track c.id) {
+                                  <li class="competence">{{ c.nom }}</li>
+                                }
+                              </ul>
+                            }
+                          </div>
+                        </div>
+                      } @else {
+                        <p class="vide-inline">
+                          Son annuaire n'a pas pu être chargé : la fiche n'a rien à montrer.
+                        </p>
+                      }
+                    </td>
+                  </tr>
+                }
               } @empty {
                 <tr>
                   <td [attr.colspan]="grille.jours.length + 1" class="empty">
@@ -1137,12 +1237,16 @@
           <span class="creneau oui">M</span> disponible
           <span class="creneau non">M</span> indisponible
           <span class="creneau silence">M</span> aucune déclaration
+          <span class="creneau oui pointe">M</span> pris sur ce créneau
           <span class="note-legende">
-            Une colonne par jour, quatre créneaux empilés : <strong>M</strong>atin,
+            Une colonne par jour, les créneaux empilés : <strong>M</strong>atin,
             <strong>Mi</strong>di, <strong>S</strong>oir, <strong>N</strong>uit — la même
-            grille que la constitution d'équipe.
+            grille que la constitution d'équipe. <strong>Cliquez une case</strong> pour
+            prendre la personne sur ce créneau précis.
           </span>
         </p>
+
+        <ng-container [ngTemplateOutlet]="barreAffectation"></ng-container>
       }
     }
 
@@ -1215,4 +1319,157 @@
       </table>
     }
   }
+
+  <!-- Barre d'affectation, UNE seule définition pour les deux onglets qui s'en servent :
+       l'arborescence (on pioche dans plusieurs branches) et la grille de disponibilités (on
+       pioche dans les créneaux). Deux copies auraient divergé au premier ajout de champ. -->
+  <ng-template #barreAffectation>
+    @if (selection.size) {
+      <section class="barre-selection">
+        <div class="selection-resume">
+          <strong>{{ selection.size }} personne(s) sélectionnée(s)</strong>
+          @if (totalCreneauxPointes) {
+            <span class="marque creneaux">{{ totalCreneauxPointes }} créneau(x) pointé(s)</span>
+          }
+          <span class="noms">{{ nomsSelectionnes.join(', ') }}</span>
+          <button type="button" class="lien" (click)="viderSelection()">Tout décocher</button>
+        </div>
+
+        <div class="selection-modes">
+          <label>
+            <input type="radio" name="modeAffectation" value="existante"
+                   [(ngModel)]="modeAffectation">
+            <span>Affecter à une équipe existante</span>
+          </label>
+          <label>
+            <input type="radio" name="modeAffectation" value="nouvelle"
+                   [(ngModel)]="modeAffectation">
+            <span>Constituer une équipe d'intervention</span>
+          </label>
+        </div>
+
+        <div class="selection-actions">
+          @if (modeAffectation === 'existante') {
+            <label>
+              <span>Équipe</span>
+              <select [(ngModel)]="equipeCible">
+                <option [ngValue]="null">Choisir une équipe…</option>
+                @for (e of equipesAffectables; track e.id) {
+                  <option [ngValue]="e.id">
+                    {{ e.name }}{{ e.echelon_libelle ? ' (' + e.echelon_libelle + ')' : '' }}
+                  </option>
+                }
+              </select>
+            </label>
+          } @else {
+            <label>
+              <span>Nom de la nouvelle équipe</span>
+              <input type="text" [(ngModel)]="nouvelleEquipeNom" name="nouvelleEquipeNom"
+                     placeholder="Intervention berges nord, Renfort nuit…">
+            </label>
+          }
+
+          <label>
+            <span>Mission (facultatif)</span>
+            <input type="text" [(ngModel)]="missionTitre" name="missionTitre"
+                   placeholder="Reconnaissance berges, point de rassemblement…">
+          </label>
+
+          @if (crises.length) {
+            <label>
+              <span>Crise (facultatif)</span>
+              <select [(ngModel)]="criseCible">
+                <option [ngValue]="null">Hors crise</option>
+                @for (c of crises; track c.id) {
+                  <option [ngValue]="c.id">{{ c.name }}</option>
+                }
+              </select>
+            </label>
+          }
+
+          <button type="button" class="btn-primary"
+                  [disabled]="!affectationPossible"
+                  (click)="affecter()">
+            <span class="material-icons">group_add</span>
+            {{ affectationEnCours ? 'Affectation…'
+               : (modeAffectation === 'nouvelle' ? "Constituer l'équipe" : 'Affecter') }}
+          </button>
+        </div>
+
+        <p class="page-hint">
+          @if (modeAffectation === 'nouvelle') {
+            L'équipe est créée dans cette association, <strong>sans échelon</strong> : c'est
+            une équipe opérationnelle, pas un niveau de la hiérarchie territoriale. Réservé au
+            bureau.
+          } @else {
+            L'affectation <strong>ajoute</strong> à l'équipe, elle ne remplace pas ses
+            membres. La mission vaut pour l'équipe entière — une équipe n'a qu'une mission
+            active.
+          }
+          @if (totalCreneauxPointes) {
+            <br>
+            Les créneaux pointés sont posés au <strong>planning de l'équipe</strong>
+            (/admin/planning-equipes), en « confirmé ».
+            @if (campagneChoisie) {
+              Ils alimentent <strong>en plus</strong> les tours de garde de la campagne quand
+              elle en a : ce sont deux questions distinctes — qui tient ce créneau pour cette
+              équipe, et qui arme ce tour de garde.
+            }
+          }
+        </p>
+      </section>
+    }
+
+    @if (refusAffectation.length) {
+      <section class="refus-affectation">
+        <h3>
+          <span class="material-icons">report_problem</span>
+          {{ refusAffectation.length }} personne(s) n'ont pas été affectées
+        </h3>
+        <ul>
+          @for (r of refusAffectation; track r.nom) {
+            <li><strong>{{ r.nom }}</strong> — {{ r.motif }}</li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (derniereNoteCreneaux) {
+      <p class="note-creneaux">
+        <span class="material-icons">schedule</span> {{ derniereNoteCreneaux }}
+      </p>
+    }
+
+    @if (conflitsPlanning.length) {
+      <section class="refus-affectation">
+        <h3>
+          <span class="material-icons">warning</span>
+          {{ conflitsPlanning.length }} double(s) engagement(s)
+        </h3>
+        <p class="page-hint">
+          Ces personnes sont attendues par une autre équipe sur le même créneau. Le créneau a
+          été posé quand même — il existe des cas légitimes — mais quelqu'un doit trancher.
+        </p>
+        <ul>
+          @for (c of conflitsPlanning; track $index) {
+            <li><strong>{{ c.nom }}</strong> — {{ c.date }} {{ c.creneau }} : {{ c.motif }}</li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (creneauxIgnores.length) {
+      <section class="refus-affectation">
+        <h3>
+          <span class="material-icons">report_problem</span>
+          {{ creneauxIgnores.length }} créneau(x) pointé(s) n'ont pas été retenus
+        </h3>
+        <ul>
+          @for (c of creneauxIgnores; track $index) {
+            <li>@if (c.nom) { <strong>{{ c.nom }}</strong> — }{{ c.motif }}</li>
+          }
+        </ul>
+      </section>
+    }
+  </ng-template>
 </div>

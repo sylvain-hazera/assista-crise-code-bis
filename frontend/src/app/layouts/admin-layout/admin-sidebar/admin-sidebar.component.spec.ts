@@ -48,11 +48,14 @@ describe('AdminSidebarComponent', () => {
     expect(new Set(routes).size).toBe(routes.length);
   });
 
-  it('un compte sans aucun droit ne voit que les deux portes d\'entrée', () => {
-    // « Accueil radio » est volontairement visible de tous : c'est elle qui explique ce qu'il
-    // faut pour avoir la radio et permet de le demander. La masquer fermerait la porte.
+  it('un compte sans aucun droit ne voit que les portes d\'entrée', () => {
+    // Trois entrées, et toutes les trois pour la même raison : elles EXPLIQUENT ce qu'il
+    // faut pour s'en servir au lieu de disparaître. « Accueil radio » dit comment obtenir la
+    // radio et permet de la demander ; « Mes interventions » et « Hébergement » disent, quand
+    // le compte n'est dans aucune équipe, pourquoi la page est vide et à qui s'adresser
+    // (demande du 12/11/2026). Les masquer laisserait croire que ces fonctions n'existent pas.
     const visibles = NAV_ITEMS.filter(i => component.isNavItemVisible(i)).map(i => i.label);
-    expect(visibles).toEqual(['Mes interventions', 'Accueil radio']);
+    expect(visibles).toEqual(['Mes interventions', 'Hébergement', 'Accueil radio']);
   });
 
   it('les pages radio suivent `acces_radio`, pas le rôle', () => {

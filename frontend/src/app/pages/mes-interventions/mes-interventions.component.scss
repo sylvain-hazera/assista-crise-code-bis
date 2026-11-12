@@ -343,3 +343,28 @@
     color: #fff;
   }
 }
+
+// Un compte sans équipe n'est pas une erreur : le bloc explique, il n'alarme pas.
+.state-block.disclaimer {
+  max-width: 70ch;
+  margin: 2rem auto;
+  padding: 1.25rem 1.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-left: 3px solid #1d4ed8;
+  background: var(--ac-surface, #fff);
+  text-align: left;
+
+  .material-icons { color: #1d4ed8; }
+
+  h2 { margin: .5rem 0; font-size: 1.05rem; }
+
+  p {
+    margin: 0 0 .6rem;
+    font-size: .88rem;
+    line-height: 1.5;
+    color: var(--ac-text-muted, #4b5563);
+
+    &:last-child { margin-bottom: 0; }
+  }
+}

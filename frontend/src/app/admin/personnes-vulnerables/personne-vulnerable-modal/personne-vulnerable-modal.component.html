@@ -34,7 +34,7 @@
         <select formControlName="zone">
           <option value="">—</option>
           @for (zone of zones; track zone.id) {
-            <option [value]="zone.id">{{ zone.nom }}</option>
+            <option [value]="zone.id">{{ zone.libelle }}</option>
           }
         </select>
       </div>

@@ -1,0 +1,439 @@
+// Suivi du relogement des familles. Même charte que les autres pages d'administration
+// (page-header / data-table / toast), avec un bandeau de chiffres en tête : c'est lui qu'on
+// regarde en premier dans une réunion de crise.
+
+.relogement-page { padding: 1.5rem; }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .subtitle {
+    margin: .25rem 0 0;
+    color: var(--ac-text-muted, #6b7280);
+    font-size: .9rem;
+    max-width: 70ch;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: .75rem;
+    flex-wrap: wrap;
+  }
+}
+
+.choix-crise {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  font-size: .8rem;
+  color: var(--ac-text-muted, #6b7280);
+
+  select {
+    padding: .45rem .6rem;
+    border-radius: 6px;
+    border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font-size: .88rem;
+  }
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .55rem 1rem;
+  border-radius: 6px;
+  border: none;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+
+  .material-icons { font-size: 1.05rem; }
+
+  &:disabled { opacity: .55; cursor: not-allowed; }
+}
+
+.btn-primary { background: #1d4ed8; color: #fff; }
+
+.btn-secondary {
+  background: var(--ac-surface-2, #f3f4f6);
+  color: var(--ac-text, #111827);
+  border: 1px solid var(--ac-border, #d1d5db);
+
+  &.sm { padding: .3rem .6rem; font-size: .78rem; }
+}
+
+.lien {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #1d4ed8;
+  font-size: .82rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .6rem .9rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: .88rem;
+
+  &.toast-err { background: rgba(220, 38, 38, .12); color: #b91c1c; }
+  &.toast-ok { background: rgba(22, 163, 74, .12); color: #15803d; }
+}
+
+// ── Le bandeau de chiffres ───────────────────────────────────────────────────
+.bandeau-synthese {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+
+.tuile {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding: .85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  background: var(--ac-surface, #fff);
+
+  .chiffre {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .etiquette { font-size: .85rem; font-weight: 600; }
+
+  .precision {
+    font-size: .76rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  // La couleur encode la gravité, pas la décoration : c'est ce qui fait qu'on sait où
+  // regarder sans lire les cinq tuiles.
+  &.alerte {
+    border-color: #dc2626;
+    background: rgba(220, 38, 38, .08);
+    .chiffre { color: #b91c1c; }
+  }
+
+  &.attention {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, .08);
+    .chiffre { color: #b45309; }
+  }
+
+  &.bon .chiffre { color: #15803d; }
+}
+
+.bloc-bilan {
+  margin-bottom: 1.25rem;
+  padding: .6rem .9rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--ac-surface, #fff);
+
+  summary {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: .9rem;
+  }
+
+  pre {
+    margin: .75rem 0;
+    padding: .75rem;
+    border-radius: 6px;
+    background: var(--ac-surface-2, #f3f4f6);
+    font-size: .82rem;
+    white-space: pre-wrap;
+  }
+}
+
+// ── Filtres ──────────────────────────────────────────────────────────────────
+.barre-filtres {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: 1rem;
+  padding: .75rem;
+  border-radius: 8px;
+  background: var(--ac-surface-2, #f9fafb);
+  font-size: .82rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  select, input[type="text"] {
+    padding: .35rem .5rem;
+    border-radius: 6px;
+    border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font-size: .84rem;
+  }
+
+  .recherche {
+    flex: 1 1 260px;
+    flex-direction: row;
+    align-items: center;
+    gap: .35rem;
+
+    input { width: 100%; }
+    .material-icons { font-size: 1.1rem; }
+  }
+
+  .coche {
+    flex-direction: row;
+    align-items: center;
+    gap: .3rem;
+    color: inherit;
+    cursor: pointer;
+  }
+}
+
+// ── Tableau ──────────────────────────────────────────────────────────────────
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .86rem;
+
+  th, td {
+    padding: .55rem .6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+    vertical-align: top;
+  }
+
+  th {
+    font-size: .76rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  tr.sans-solution > td { background: rgba(220, 38, 38, .06); }
+  tr.terme-depasse > td { background: rgba(220, 38, 38, .1); }
+
+  .detail {
+    display: block;
+    font-size: .78rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  .rien { color: #b91c1c; font-weight: 600; }
+
+  .statut { font-size: .8rem; }
+
+  .actions {
+    display: flex;
+    gap: .3rem;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .icon-btn {
+    border: 0;
+    background: none;
+    color: var(--ac-text-muted, #6b7280);
+    cursor: pointer;
+    padding: .15rem;
+
+    .material-icons { font-size: 1.1rem; }
+
+    &:hover { color: #1d4ed8; }
+  }
+
+  .empty, .vide-inline {
+    color: var(--ac-text-muted, #6b7280);
+    font-style: italic;
+  }
+}
+
+.marque {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 600;
+  background: var(--ac-surface-2, #f3f4f6);
+  color: var(--ac-text-muted, #6b7280);
+
+  &.alerte { background: rgba(220, 38, 38, .15); color: #b91c1c; }
+  &.attention { background: rgba(245, 158, 11, .18); color: #b45309; }
+}
+
+// ── La fiche dépliée ─────────────────────────────────────────────────────────
+tr.fiche > td { background: var(--ac-surface-2, #f9fafb); }
+
+.fiche-foyer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: .5rem .25rem;
+
+  dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: .5rem 1rem;
+    margin: 0;
+
+    dt {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--ac-text-muted, #6b7280);
+    }
+
+    dd { margin: 0; font-size: .86rem; }
+  }
+
+  h4 {
+    margin: 0 0 .4rem;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  .texte { margin: .25rem 0 0; font-size: .84rem; white-space: pre-wrap; }
+}
+
+.parcours {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+
+  li {
+    font-size: .84rem;
+
+    &.en-cours { font-weight: 500; }
+  }
+
+  .etape-entete {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+  }
+
+  .etape-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem .75rem;
+    font-size: .78rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+}
+
+// ── Panneau de saisie ────────────────────────────────────────────────────────
+.voile {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .55);
+  z-index: 40;
+}
+
+.panneau {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  z-index: 41;
+  padding: 1.25rem;
+  border-radius: 10px;
+  background: var(--ac-surface, #fff);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, .3);
+
+  h2 { margin: 0 0 1rem; font-size: 1.15rem; }
+
+  .champs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .75rem;
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .8rem;
+    color: var(--ac-text-muted, #6b7280);
+
+    &.pleine { grid-column: 1 / -1; }
+
+    &.coche {
+      flex-direction: row;
+      align-items: center;
+      gap: .4rem;
+      color: inherit;
+      font-size: .84rem;
+    }
+  }
+
+  input, select, textarea {
+    padding: .45rem .6rem;
+    border-radius: 6px;
+    border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font: inherit;
+    font-size: .88rem;
+  }
+
+  .actions-panneau {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    margin-top: 1rem;
+  }
+}
+
+.page-hint {
+  margin: .6rem 0 0;
+  font-size: .78rem;
+  color: var(--ac-text-muted, #6b7280);
+}
+
+.loading, .vide {
+  padding: 1.5rem;
+  color: var(--ac-text-muted, #6b7280);
+  font-size: .9rem;
+}

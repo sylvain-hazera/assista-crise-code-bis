@@ -1,0 +1,498 @@
+<div class="relogement-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">family_restroom</span> Relogement des familles</h1>
+      <p class="subtitle">
+        Qui a été sinistré, où cette famille dort ce soir, jusqu'à quand — et ce qui tient
+        vraiment. Pendant de « Logement intervenants », pour les sinistrés.
+      </p>
+    </div>
+    <div class="header-actions">
+      <label class="choix-crise">
+        Crise
+        <select [(ngModel)]="criseChoisie" (ngModelChange)="changerCrise()" name="crise">
+          @for (c of crises; track c.id) {
+            <option [ngValue]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </label>
+      <button type="button" class="btn-primary" [disabled]="!criseChoisie"
+              (click)="ouvrirFormulaire()">
+        <span class="material-icons">add</span> Nouveau foyer
+      </button>
+    </div>
+  </header>
+
+  @if (erreur) {
+    <div class="toast toast-err">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+  @if (message) {
+    <div class="toast toast-ok">
+      <span class="material-icons">check_circle</span> {{ message }}
+    </div>
+  }
+
+  @if (!crises.length && !chargement) {
+    <p class="vide">Aucune crise ouverte : il n'y a rien à suivre pour l'instant.</p>
+  }
+
+  <!-- LES TROIS CHIFFRES D'ABORD. Un suivi de relogement se lit en répondant à « qui n'a rien
+       ce soir ? », « qui sort bientôt ? », « combien tiennent vraiment ? ». Ils viennent du
+       serveur et portent sur TOUTE la crise : un total recompté sur les lignes affichées
+       changerait avec les filtres, et deux personnes annonceraient deux chiffres en réunion. -->
+  @if (synthese; as s) {
+    <section class="bandeau-synthese">
+      <div class="tuile" [class.alerte]="s.sans_solution > 0">
+        <span class="chiffre">{{ s.sans_solution }}</span>
+        <span class="etiquette">foyer(s) sans solution</span>
+        <span class="precision">Personne ne sait où ils dorment ce soir.</span>
+      </div>
+      <div class="tuile" [class.alerte]="s.termes_depasses > 0">
+        <span class="chiffre">{{ s.termes_depasses }}</span>
+        <span class="etiquette">terme(s) dépassé(s)</span>
+        <span class="precision">Fin prévue passée, aucune sortie enregistrée.</span>
+      </div>
+      <div class="tuile" [class.attention]="s.arrivent_a_terme > 0">
+        <span class="chiffre">{{ s.arrivent_a_terme }}</span>
+        <span class="etiquette">arrivent à leur terme</span>
+        <span class="precision">Sous {{ s.jours_alerte_terme }} jours.</span>
+      </div>
+      <div class="tuile bon">
+        <span class="chiffre">{{ s.relogees_durablement }}</span>
+        <span class="etiquette">relogé(s) durablement</span>
+        <span class="precision">Solution définitive seulement — l'hôtel ne compte pas.</span>
+      </div>
+      <div class="tuile">
+        <span class="chiffre">{{ s.foyers }}</span>
+        <span class="etiquette">foyer(s) suivi(s)</span>
+        <span class="precision">
+          {{ s.personnes }} personne(s) : {{ s.adultes }} adulte(s),
+          {{ s.enfants }} enfant(s).
+        </span>
+      </div>
+    </section>
+
+    <details class="bloc-bilan">
+      <summary>
+        <span class="material-icons">summarize</span>
+        Point de situation — texte prêt à reprendre
+      </summary>
+      <pre>{{ bilanTexte }}</pre>
+      <button type="button" class="btn-secondary" (click)="copierBilan()">
+        <span class="material-icons">content_copy</span> Copier
+      </button>
+      <p class="page-hint">
+        Les chiffres portent sur toute la crise, pas sur les lignes filtrées à l'écran :
+        c'est la même source que les tuiles ci-dessus, pour qu'un bilan écrit ne puisse pas
+        diverger de ce que la page montre.
+      </p>
+    </details>
+  }
+
+  <!-- ══ Recherche, filtres, tri ══════════════════════════════════════════ -->
+  @if (criseChoisie) {
+    <section class="barre-filtres">
+      <label class="recherche">
+        <span class="material-icons">search</span>
+        <input type="text" [(ngModel)]="recherche" name="recherche"
+               placeholder="Nom, commune, hébergeur, titre d'occupation…">
+      </label>
+
+      <label>
+        Tri
+        <select [(ngModel)]="tri" name="tri">
+          <option value="urgence">Urgence (défaut)</option>
+          <option value="terme">Terme le plus proche</option>
+          <option value="nom">Nom du référent</option>
+          <option value="personnes">Taille du foyer</option>
+          <option value="ouverture">Ancienneté du dossier</option>
+        </select>
+      </label>
+
+      <label>
+        Statut
+        <select [(ngModel)]="filtreStatut" name="statut">
+          <option value="">Tous</option>
+          @for (s of STATUTS; track s) {
+            <option [value]="s">{{ LIBELLES_STATUT[s] }}</option>
+          }
+        </select>
+      </label>
+
+      <label>
+        Solution en cours
+        <select [(ngModel)]="filtreTypeSolution" name="type">
+          <option value="">Toutes</option>
+          @for (t of TYPES; track t) {
+            <option [value]="t">{{ LIBELLES_TYPE[t] }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="coche">
+        <input type="checkbox" [(ngModel)]="filtreSansSolution" name="sansSolution">
+        Sans solution
+      </label>
+      <label class="coche">
+        <input type="checkbox" [(ngModel)]="filtreTermeProche" name="termeProche">
+        Terme proche
+      </label>
+      <label class="coche">
+        <input type="checkbox" [(ngModel)]="filtreVulnerables" name="vulnerables">
+        Personne vulnérable
+      </label>
+      <label class="coche">
+        <input type="checkbox" [(ngModel)]="filtreAnimaux" name="animaux">
+        Avec animaux
+      </label>
+      <label class="coche">
+        <input type="checkbox" [(ngModel)]="filtrePmr" name="pmr">
+        Besoin PMR
+      </label>
+
+      <button type="button" class="lien" (click)="viderFiltres()">Tout afficher</button>
+    </section>
+  }
+
+  @if (chargement) {
+    <div class="loading">Chargement…</div>
+  }
+
+  @if (!chargement && criseChoisie) {
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Foyer</th>
+          <th>Composition</th>
+          <th>Origine</th>
+          <th>Solution en cours</th>
+          <th>Terme</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of dossiersAffiches; track d.id) {
+          <tr [class.sans-solution]="!d.solution_courante"
+              [class.terme-depasse]="termeDepasse(d)">
+            <td class="foyer">
+              <strong>{{ d.nom_referent }}</strong>
+              @if (d.personnes_vulnerables) {
+                <span class="marque alerte" title="Personne vulnérable dans le foyer">
+                  vulnérable
+                </span>
+              }
+              @if (d.animaux) { <span class="marque">animaux</span> }
+              @if (d.besoin_pmr) { <span class="marque">PMR</span> }
+            </td>
+            <td>
+              {{ d.nombre_personnes }} pers.
+              <span class="detail">
+                ({{ d.nombre_adultes }} ad. / {{ d.nombre_enfants }} enf.)
+              </span>
+            </td>
+            <td>{{ d.commune_origine_nom || '—' }}</td>
+            <td>
+              @if (d.solution_courante; as sol) {
+                <strong>{{ sol.type_solution_libelle }}</strong>
+                <span class="detail">{{ sol.titre_occupation_libelle }}</span>
+                @if (sol.point_nom) { <span class="detail">{{ sol.point_nom }}</span> }
+                @else if (sol.commune_nom) { <span class="detail">{{ sol.commune_nom }}</span> }
+              } @else {
+                <span class="rien">Aucune — à loger</span>
+              }
+            </td>
+            <td>
+              @if (d.solution_courante?.date_fin_prevue; as fin) {
+                {{ fin | date:'dd/MM/yyyy' }}
+                @if (termeDepasse(d)) {
+                  <span class="marque alerte">dépassé</span>
+                } @else if (termeProche(d)) {
+                  <span class="marque attention">
+                    J−{{ d.solution_courante?.jours_restants }}
+                  </span>
+                }
+              } @else if (d.solution_courante) {
+                <span class="detail">sans terme</span>
+              } @else { — }
+            </td>
+            <td><span class="statut">{{ d.statut_libelle }}</span></td>
+            <td class="actions">
+              <!-- L'œil ouvre la fiche : coordonnées du référent, parcours complet. -->
+              <button type="button" class="icon-btn" (click)="basculerDetail(d.id)"
+                      [attr.aria-expanded]="detailOuvert(d.id)"
+                      [attr.aria-label]="'Fiche de ' + d.nom_referent">
+                <span class="material-icons">
+                  {{ detailOuvert(d.id) ? 'visibility_off' : 'visibility' }}
+                </span>
+              </button>
+              <button type="button" class="btn-secondary sm" (click)="ouvrirSolution(d)">
+                <span class="material-icons">add_home</span> Hébergement
+              </button>
+              @if (d.solution_courante) {
+                <button type="button" class="btn-secondary sm" (click)="cloturer(d)">
+                  Clore
+                </button>
+              }
+            </td>
+          </tr>
+
+          @if (detailOuvert(d.id)) {
+            <tr class="fiche">
+              <td colspan="7">
+                <div class="fiche-foyer">
+                  <dl>
+                    <div><dt>Référent</dt><dd>{{ d.nom_referent }}</dd></div>
+                    <div><dt>Téléphone</dt><dd>{{ d.telephone_referent || '—' }}</dd></div>
+                    <div><dt>Courriel</dt><dd>{{ d.email_referent || '—' }}</dd></div>
+                    <div><dt>Commune d'origine</dt>
+                         <dd>{{ d.commune_origine_nom || '—' }}</dd></div>
+                    <div><dt>Dossier ouvert le</dt>
+                         <dd>{{ d.date_ouverture | date:'dd/MM/yyyy' }}</dd></div>
+                    <div><dt>Suivi par</dt><dd>{{ d.institution_nom || '—' }}</dd></div>
+                  </dl>
+
+                  @if (d.accompagnement) {
+                    <div class="bloc">
+                      <h4>Accompagnement</h4>
+                      <p class="texte">{{ d.accompagnement }}</p>
+                    </div>
+                  }
+
+                  <!-- LE PARCOURS, et pas seulement la solution du moment : c'est lui qui
+                       permet de dire si une famille a été ballottée, et c'est lui que le
+                       bilan de fin de crise regarde. -->
+                  <div class="bloc">
+                    <h4>Parcours ({{ d.solutions.length }} hébergement(s))</h4>
+                    @if (!d.solutions.length) {
+                      <p class="vide-inline">
+                        Aucun hébergement enregistré : ce foyer n'a encore rien.
+                      </p>
+                    } @else {
+                      <ol class="parcours">
+                        @for (s of d.solutions; track s.id) {
+                          <li [class.en-cours]="s.en_cours">
+                            <div class="etape-entete">
+                              <strong>{{ s.type_solution_libelle }}</strong>
+                              <span class="detail">{{ s.titre_occupation_libelle }}</span>
+                              @if (s.en_cours) {
+                                <span class="marque attention">en cours</span>
+                              }
+                            </div>
+                            <div class="etape-detail">
+                              <span>
+                                du {{ s.date_debut | date:'dd/MM/yyyy' }}
+                                @if (s.date_fin_effective) {
+                                  au {{ s.date_fin_effective | date:'dd/MM/yyyy' }}
+                                } @else if (s.date_fin_prevue) {
+                                  jusqu'au {{ s.date_fin_prevue | date:'dd/MM/yyyy' }} (prévu)
+                                }
+                              </span>
+                              @if (s.point_nom) { <span>{{ s.point_nom }}</span> }
+                              @if (s.offre_titre) { <span>{{ s.offre_titre }}</span> }
+                              @if (s.hebergeur) { <span>{{ s.hebergeur }}</span> }
+                              @if (s.hebergeur_contact) {
+                                <span>{{ s.hebergeur_contact }}</span>
+                              }
+                              @if (s.adresse) { <span>{{ s.adresse }}</span> }
+                              @if (s.loyer_mensuel != null) {
+                                <span>{{ s.loyer_mensuel }} €/mois</span>
+                              }
+                              @if (s.reste_a_charge != null) {
+                                <span>reste à charge {{ s.reste_a_charge }} €</span>
+                              }
+                              @if (s.prise_en_charge_par) {
+                                <span>pris en charge par {{ s.prise_en_charge_par }}</span>
+                              }
+                              @if (s.motif_fin) { <span>fin : {{ s.motif_fin }}</span> }
+                            </div>
+                            @if (s.commentaire) {
+                              <p class="texte">{{ s.commentaire }}</p>
+                            }
+                          </li>
+                        }
+                      </ol>
+                    }
+                  </div>
+                </div>
+              </td>
+            </tr>
+          }
+        } @empty {
+          <tr>
+            <td colspan="7" class="empty">
+              @if (dossiers.length) {
+                Aucun foyer ne correspond à ces filtres.
+              } @else {
+                Aucun foyer suivi sur cette crise.
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ══ Nouveau foyer ════════════════════════════════════════════════════ -->
+  @if (formulaireOuvert) {
+    <div class="voile" (click)="fermerFormulaire()"></div>
+    <section class="panneau">
+      <h2>Nouveau foyer à reloger</h2>
+      <div class="champs">
+        <label>
+          Référent du foyer *
+          <input type="text" [(ngModel)]="nouveauDossier.nom_referent" name="nomReferent"
+                 placeholder="Famille Durand">
+        </label>
+        <label>
+          Téléphone
+          <input type="tel" [(ngModel)]="nouveauDossier.telephone_referent" name="tel">
+        </label>
+        <label>
+          Courriel
+          <input type="email" [(ngModel)]="nouveauDossier.email_referent" name="mail">
+        </label>
+        <label>
+          Commune d'origine
+          <input type="text" [(ngModel)]="nouveauDossier.commune_origine_nom" name="commune">
+        </label>
+        <label>
+          Adultes
+          <input type="number" min="0" [(ngModel)]="nouveauDossier.nombre_adultes"
+                 name="adultes">
+        </label>
+        <label>
+          Enfants
+          <input type="number" min="0" [(ngModel)]="nouveauDossier.nombre_enfants"
+                 name="enfants">
+        </label>
+        <label class="coche">
+          <input type="checkbox" [(ngModel)]="nouveauDossier.personnes_vulnerables"
+                 name="vuln">
+          Personne vulnérable (âgée, handicap, nourrisson, malade)
+        </label>
+        <label class="coche">
+          <input type="checkbox" [(ngModel)]="nouveauDossier.animaux" name="anim">
+          Avec animaux
+        </label>
+        <label class="coche">
+          <input type="checkbox" [(ngModel)]="nouveauDossier.besoin_pmr" name="pmrN">
+          Besoin d'un logement accessible (PMR)
+        </label>
+        <label class="pleine">
+          Accompagnement, points d'attention
+          <textarea rows="3" [(ngModel)]="nouveauDossier.accompagnement"
+                    name="accomp"></textarea>
+        </label>
+      </div>
+      <p class="page-hint">
+        Nom, coordonnées, notes d'accompagnement et adresses d'hébergement sont
+        <strong>chiffrés au repos</strong> : ce sont les données les plus sensibles du
+        produit, et leur consultation est tracée.
+      </p>
+      <div class="actions-panneau">
+        <button type="button" class="btn-secondary" (click)="fermerFormulaire()">
+          Annuler
+        </button>
+        <button type="button" class="btn-primary" [disabled]="enregistrement"
+                (click)="creer()">
+          {{ enregistrement ? 'Enregistrement…' : 'Ouvrir le dossier' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  <!-- ══ Nouvel hébergement ═══════════════════════════════════════════════ -->
+  @if (dossierSolution; as cible) {
+    <div class="voile" (click)="fermerSolution()"></div>
+    <section class="panneau">
+      <h2>Hébergement — {{ cible.nom_referent }}</h2>
+      @if (cible.solution_courante) {
+        <p class="page-hint">
+          L'hébergement en cours sera <strong>clos</strong> à la date de début de celui-ci :
+          un foyer ne dort pas à deux endroits, et deux lignes ouvertes le feraient compter
+          deux fois dans le bilan.
+        </p>
+      }
+      <div class="champs">
+        <label>
+          Type de solution
+          <select [(ngModel)]="nouvelleSolution['type_solution']" name="typeSol">
+            @for (t of TYPES; track t) {
+              <option [value]="t">{{ LIBELLES_TYPE[t] }}</option>
+            }
+          </select>
+        </label>
+        <label>
+          Titre d'occupation
+          <select [(ngModel)]="nouvelleSolution['titre_occupation']" name="titreSol">
+            @for (t of TITRES; track t) {
+              <option [value]="t">{{ LIBELLES_TITRE[t] }}</option>
+            }
+          </select>
+        </label>
+        <label>
+          Début *
+          <input type="date" [(ngModel)]="nouvelleSolution['date_debut']" name="debutSol">
+        </label>
+        <label>
+          Terme prévu
+          <input type="date" [(ngModel)]="nouvelleSolution['date_fin_prevue']" name="finSol">
+        </label>
+        <label>
+          Hébergeur
+          <input type="text" [(ngModel)]="nouvelleSolution['hebergeur']" name="hebSol"
+                 placeholder="Bailleur, hôtel, particulier…">
+        </label>
+        <label>
+          Contact de l'hébergeur
+          <input type="text" [(ngModel)]="nouvelleSolution['hebergeur_contact']"
+                 name="hebContact">
+        </label>
+        <label>
+          Commune
+          <input type="text" [(ngModel)]="nouvelleSolution['commune_nom']" name="comSol">
+        </label>
+        <label class="pleine">
+          Adresse
+          <input type="text" [(ngModel)]="nouvelleSolution['adresse']" name="adrSol">
+        </label>
+        <label>
+          Loyer mensuel (€)
+          <input type="number" min="0" [(ngModel)]="nouvelleSolution['loyer_mensuel']"
+                 name="loyerSol">
+        </label>
+        <label>
+          Reste à charge (€)
+          <input type="number" min="0" [(ngModel)]="nouvelleSolution['reste_a_charge']"
+                 name="resteSol">
+        </label>
+        <label>
+          Prise en charge par
+          <input type="text" [(ngModel)]="nouvelleSolution['prise_en_charge_par']"
+                 name="pecSol" placeholder="Commune, CCAS, assurance, association…">
+        </label>
+        <label class="pleine">
+          Commentaire
+          <textarea rows="2" [(ngModel)]="nouvelleSolution['commentaire']"
+                    name="commSol"></textarea>
+        </label>
+      </div>
+      <p class="page-hint">
+        Le <strong>terme prévu</strong> est ce qui fait tout le suivi : sans lui, « arrive à
+        son terme » ne peut pas se calculer, et la sortie se découvre le jour où la famille
+        appelle.
+      </p>
+      <div class="actions-panneau">
+        <button type="button" class="btn-secondary" (click)="fermerSolution()">Annuler</button>
+        <button type="button" class="btn-primary" [disabled]="enregistrement"
+                (click)="enregistrerSolution()">
+          {{ enregistrement ? 'Enregistrement…' : 'Enregistrer' }}
+        </button>
+      </div>
+    </section>
+  }
+</div>

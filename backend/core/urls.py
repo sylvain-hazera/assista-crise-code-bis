@@ -6,6 +6,8 @@ from .views import (
     BrouillonEnvoiViewSet,
     DefinirMonMotDePasseView,
     CampagneDisponibiliteViewSet,
+    CreneauEquipeViewSet,
+    DossierRelogementViewSet,
     MaFicheBenevoleView,
     MesDisponibilitesView,
     DemandeAccesRadioViewSet,
@@ -283,6 +285,10 @@ router.register(r'invitations-association', InvitationAssociationViewSet)
 # Campagnes de disponibilite : solliciter en masse ses benevoles sur une periode (voir
 # CampagneDisponibiliteViewSet).
 router.register(r'campagnes-disponibilite', CampagneDisponibiliteViewSet)
+# Suivi du relogement des familles sinistrées (voir core/relogement.py).
+router.register(r'dossiers-relogement', DossierRelogementViewSet)
+# Planning d'équipe : qui tient quel créneau (voir core/planning_equipe.py).
+router.register(r'creneaux-equipe', CreneauEquipeViewSet)
 router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
 urlpatterns = [

@@ -24,6 +24,11 @@ export const TYPE_LOGEMENT_LABELS: Record<string, string> = {
 export const TYPE_LOYER_LABELS: Record<string, string> = {
   GRATUIT: 'Gratuit', NEGOCIE: 'Loyer négocié', MARCHE: 'Prix du marché',
 };
+/** Temporaire ou longue durée : le critère qui décide si une offre peut servir à reloger une
+ * famille ou seulement à la dépanner (`HebergementDetailsMixin.hebergement_duree`). */
+export const DUREE_HEBERGEMENT_LABELS: Record<string, string> = {
+  TEMPORAIRE: 'Temporaire', LONGUE_DUREE: 'Longue durée',
+};
 
 /** Champs numériques sur lesquels une tolérance +/- peut s'appliquer lors de la comparaison
  * d'une offre avec une demande sélectionnée — voir compareToDemande()/matchesTolerance(). */
@@ -40,20 +45,39 @@ export class HebergementMatchingComponent implements OnInit {
   isLoading = true;
   errorMessage = '';
   team: Team | null = null;
+  /** Les équipes de l'appelant, quand la page est ouverte depuis le MENU et non depuis une
+   * équipe précise. Une page d'hébergement accessible seulement par le chemin
+   * `/mon-equipe/<id>/hebergement` était introuvable pour qui ne savait pas déjà où aller. */
+  mesEquipes: Team[] = [];
+  /** Vrai quand l'appelant n'est dans aucune équipe : la page ne montre alors rien, et
+   * l'écran DIT pourquoi au lieu de rester vide. */
+  aucuneEquipe = false;
 
   private allDemandes: Request[] = [];
   private allOffres: Offer[] = [];
 
   readonly typeLogementLabels = TYPE_LOGEMENT_LABELS;
   readonly typeLoyerLabels = TYPE_LOYER_LABELS;
+  readonly dureeLabels = DUREE_HEBERGEMENT_LABELS;
   readonly champsTolerance = CHAMPS_TOLERANCE;
 
   // ── Filtres communs (offres ET demandes) ────────────────────────
   filterTypeLogement = '';
   filterTypeLoyer = '';
+  /** Temporaire / longue durée : demandé explicitement le 12/11/2026. C'est le critère qui
+   * sépare « dépanner trois nuits » de « reloger le temps des travaux ». */
+  filterDuree = '';
   filterAnimaux = false;
   filterJardin = false;
   filterPmr = false;
+  /** Seuils numériques. Un nombre de chambres est une contrainte dure pour une famille : la
+   * recherche par mots-clés ne la remplace pas. */
+  filterChambresMin: number | null = null;
+  filterPiecesMin: number | null = null;
+  filterCapaciteMin: number | null = null;
+  filterLoyerMax: number | null = null;
+  /** Recherche libre, sur tout ce que la ligne affiche. */
+  recherche = '';
 
   // ── Filtre zone (offres uniquement) : communes + rayon ──────────
   zoneCommunes: Commune[] = [];
@@ -103,23 +127,52 @@ export class HebergementMatchingComponent implements OnInit {
 
   // ── Détail offre + messagerie ────────────────────────────────────
   selectedOffer: Offer | null = null;
+  /** Fiche d'une DEMANDE : mêmes coordonnées à retrouver, côté famille cette fois. */
+  selectedDemande: Request | null = null;
+  detailEnCours = false;
   offerMessages: OfferMessage[] = [];
   newMessageContenu = '';
   sendingMessage = false;
   messagesError = '';
 
+  /** L'œil : ouvre la fiche et VA LA CHERCHER au serveur.
+   *
+   * Ce n'est pas un détail d'implémentation. Les listes d'annonces arrivent **sans email ni
+   * téléphone** (voir `core/tracabilite.py`) : les coordonnées ne viennent qu'avec la fiche
+   * ouverte, dont la consultation est tracée objet par objet dans la main courante. Afficher
+   * l'objet déjà chargé par la liste montrerait une fiche sans contact, et surtout
+   * contournerait la trace qui permet de répondre à « qui a consulté les coordonnées de ces
+   * gens ? ». */
   openOfferDetail(offer: Offer): void {
+    this.selectedDemande = null;
     this.selectedOffer = offer;
     this.offerMessages = [];
     this.messagesError = '';
+    this.detailEnCours = true;
+    this.offerService.getById(offer.id).subscribe({
+      next: (complete) => { this.selectedOffer = complete; this.detailEnCours = false; },
+      // L'ancienne fiche reste affichée, sans coordonnées : mieux qu'un panneau vide.
+      error: () => this.detailEnCours = false,
+    });
     this.offerService.getMessages(offer.id).subscribe({
       next: (msgs) => this.offerMessages = msgs,
       error: () => this.messagesError = "Impossible de charger les messages.",
     });
   }
 
+  openDemandeDetail(demande: Request): void {
+    this.selectedOffer = null;
+    this.selectedDemande = demande;
+    this.detailEnCours = true;
+    this.requestService.getById(demande.id).subscribe({
+      next: (complete) => { this.selectedDemande = complete; this.detailEnCours = false; },
+      error: () => this.detailEnCours = false,
+    });
+  }
+
   closeOfferDetail(): void {
     this.selectedOffer = null;
+    this.selectedDemande = null;
   }
 
   sendMessage(): void {
@@ -151,12 +204,63 @@ export class HebergementMatchingComponent implements OnInit {
 
   ngOnInit(): void {
     this.teamId = this.route.snapshot.params['id'];
-    if (!this.teamId) {
-      this.errorMessage = 'Équipe introuvable.';
-      this.isLoading = false;
+    if (this.teamId) {
+      this.loadAll();
       return;
     }
+    // Ouverte depuis le MENU : on ne sait pas de quelle équipe il s'agit, on le demande.
+    // Avant, la page n'existait qu'au bout de `/mon-equipe/<id>/hebergement` et restait
+    // introuvable pour qui ne connaissait pas déjà le chemin (demande du 12/11/2026).
+    this.teamService.mesEquipes().subscribe({
+      next: (equipes) => {
+        this.mesEquipes = (equipes ?? []).filter(e => e.actif !== false);
+        if (!this.mesEquipes.length) {
+          // Pas une erreur : un compte peut parfaitement n'être dans aucune équipe. L'écran
+          // dit POURQUOI il n'y a rien, au lieu d'afficher un tableau vide ou un message
+          // d'échec qui laisserait croire à une panne.
+          this.aucuneEquipe = true;
+          this.isLoading = false;
+          return;
+        }
+        this.teamId = this.mesEquipes[0].id!;
+        this.loadAll();
+      },
+      error: () => {
+        this.errorMessage = "Impossible de charger vos équipes.";
+        this.isLoading = false;
+      },
+    });
+  }
+
+  /** Changement d'équipe depuis le sélecteur : on recharge tout, filtres compris, parce que
+   * les offres et les demandes sont celles des crises de CETTE équipe. */
+  changerEquipe(id: string): void {
+    if (!id || id === this.teamId) { return; }
+    this.teamId = id;
+    this.isLoading = true;
+    this.selectedOffer = null;
+    this.selectedDemande = null;
+    this.demandeComparee = null;
     this.loadAll();
+  }
+
+  viderFiltres(): void {
+    this.recherche = '';
+    this.filterTypeLogement = '';
+    this.filterTypeLoyer = '';
+    this.filterDuree = '';
+    this.filterAnimaux = false;
+    this.filterJardin = false;
+    this.filterPmr = false;
+    this.filterChambresMin = null;
+    this.filterPiecesMin = null;
+    this.filterCapaciteMin = null;
+    this.filterLoyerMax = null;
+  }
+
+  dureeLabel(item: Offer | Request): string {
+    return item.hebergement_duree
+      ? (this.dureeLabels[item.hebergement_duree] || item.hebergement_duree) : '—';
   }
 
   private loadAll(): void {
@@ -203,10 +307,42 @@ export class HebergementMatchingComponent implements OnInit {
   private matchesCommonFilters(item: Offer | Request): boolean {
     if (this.filterTypeLogement && item.type_logement !== this.filterTypeLogement) return false;
     if (this.filterTypeLoyer && item.type_loyer !== this.filterTypeLoyer) return false;
+    if (this.filterDuree && item.hebergement_duree !== this.filterDuree) return false;
     if (this.filterAnimaux && !item.animaux_acceptes) return false;
     if (this.filterJardin && !item.jardin) return false;
     if (this.filterPmr && !item.pmr_compatible) return false;
+    // Un seuil non renseigné sur la fiche NE PASSE PAS le filtre : « au moins 3 chambres » ne
+    // peut pas être satisfait par une offre qui ne dit pas combien elle en a. L'inverse
+    // enverrait une famille de cinq dans un studio.
+    if (!this.auMoins(item.nombre_chambres, this.filterChambresMin)) return false;
+    if (!this.auMoins(item.nombre_pieces, this.filterPiecesMin)) return false;
+    if (!this.auMoins((item.capacite_adultes ?? 0) + (item.capacite_enfants ?? 0),
+                      this.filterCapaciteMin)) return false;
+    if (this.filterLoyerMax != null) {
+      const loyer = item.loyer_montant_min ?? item.loyer_montant_max;
+      // Une offre gratuite passe toujours : elle n'a pas de montant, et l'écarter d'un filtre
+      // « loyer maximum » serait exactement l'inverse de ce qu'on cherche.
+      if (item.type_loyer !== 'GRATUIT' && (loyer == null || loyer > this.filterLoyerMax)) {
+        return false;
+      }
+    }
+    if (this.recherche.trim() && !this.texteDe(item).includes(
+          this.recherche.trim().toLowerCase())) return false;
     return true;
+  }
+
+  private auMoins(valeur: number | null | undefined, seuil: number | null): boolean {
+    if (seuil == null) return true;
+    return valeur != null && valeur >= seuil;
+  }
+
+  /** Tout ce sur quoi la recherche libre porte : on cherche une annonce par son titre, sa
+   * commune ou son texte, sans avoir à choisir un champ d'abord. */
+  private texteDe(item: Offer | Request): string {
+    const fiche = item as unknown as Record<string, unknown>;
+    return [item.title, item.description, fiche['commune_nom'], fiche['city'],
+            fiche['address']]
+      .filter(Boolean).join(' ').toLowerCase();
   }
 
   private matchesZone(offer: Offer): boolean {

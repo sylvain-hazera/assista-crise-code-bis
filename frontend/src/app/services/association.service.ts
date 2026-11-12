@@ -158,12 +158,20 @@ export class AssociationService {
 
   // ── Disponibilités ──────────────────────────────────────────────────────────────────────
 
-  /** La grille de mobilisation. `jours` est borné à 31 par le serveur : une grille de six mois
-   * n'est pas une grille, c'est un export. */
-  getGrille(institutionId: string, jours = 15): Observable<GrilleDisponibilites> {
-    return this.http.get<GrilleDisponibilites>(`${this.disponibilites}/grille/`, {
-      params: { institution: institutionId, jours: String(jours) },
-    });
+  /** La grille de mobilisation, sur l'une des deux fenêtres.
+   *
+   * Sans `campagneId` : les `jours` qui viennent, bornés à 31 par le serveur — une grille de
+   * six mois n'est pas une grille, c'est un export.
+   *
+   * Avec : la période de CETTE campagne, qui est souvent bien plus loin devant. C'est la seule
+   * façon de voir des disponibilités à long terme : elles n'existent que parce qu'une campagne
+   * les a demandées, et elles étaient jusqu'ici invisibles de l'écran qui sert à mobiliser. */
+  getGrille(institutionId: string, jours = 15, campagneId?: string | null)
+      : Observable<GrilleDisponibilites> {
+    const params: Record<string, string> = { institution: institutionId };
+    if (campagneId) { params['campagne'] = campagneId; }
+    else { params['jours'] = String(jours); }
+    return this.http.get<GrilleDisponibilites>(`${this.disponibilites}/grille/`, { params });
   }
 
   // ── Annuaire enrichi ────────────────────────────────────────────────────────────────────

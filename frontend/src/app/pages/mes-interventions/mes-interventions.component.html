@@ -16,9 +16,24 @@
       <p>{{ errorMessage }}</p>
     </div>
   } @else if (teams.length === 0) {
-    <div class="state-block">
+    <!-- L'entrée reste au menu pour tout le monde (demande du 12/11/2026) : la cacher
+         laissait croire que la fonction n'existe pas, et ne donnait aucun moyen de savoir
+         ce qu'il faut pour y accéder. La page DIT donc pourquoi elle est vide. -->
+    <div class="state-block disclaimer">
       <span class="material-icons">groups_off</span>
-      <p>Vous n'êtes chef, régulateur ou membre d'aucune équipe pour le moment.</p>
+      <h2>Il n'y a rien à afficher ici pour votre compte</h2>
+      <p>
+        Cette page liste les <strong>dossiers confiés à vos équipes</strong> pendant une
+        crise, triés par priorité, pour que chacun sache quoi traiter en premier. Elle a
+        besoin d'une équipe pour savoir quels dossiers montrer — et vous n'êtes chef,
+        régulateur ni membre d'aucune pour l'instant.
+      </p>
+      <p>
+        Ce n'est pas une panne et ce n'est pas un refus : il n'y a simplement pas de
+        périmètre à afficher. Demandez à être rattaché à une équipe par le bureau de votre
+        association ou par votre collectivité ; la page se remplira dès qu'un dossier sera
+        affecté à cette équipe.
+      </p>
     </div>
   } @else {
 

@@ -1,0 +1,230 @@
+<div class="planning-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">calendar_month</span> Planning des équipes</h1>
+      <p class="subtitle">
+        Qui tient quel créneau, quel jour. Même découpage que la grille de disponibilités —
+        matin, midi, soir, nuit — mais ici on <strong>affecte</strong> : une disponibilité dit
+        ce qu'une personne peut faire, un planning dit ce qu'on attend d'elle.
+      </p>
+    </div>
+  </header>
+
+  @if (erreur) {
+    <div class="toast toast-err">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+  @if (message) {
+    <div class="toast toast-ok">
+      <span class="material-icons">check_circle</span> {{ message }}
+    </div>
+  }
+
+  <section class="barre">
+    <label>
+      Équipe
+      <select [(ngModel)]="equipeChoisie" (ngModelChange)="changerEquipe()" name="equipe">
+        @for (e of equipes; track e.id) {
+          <option [ngValue]="e.id">{{ e.name }}</option>
+        }
+      </select>
+    </label>
+
+    <label>
+      Début
+      <input type="date" [(ngModel)]="debut" (ngModelChange)="charger()" name="debut">
+    </label>
+
+    <label>
+      Fenêtre
+      <select [(ngModel)]="joursAffiches" (ngModelChange)="charger()" name="jours">
+        <option [ngValue]="7">7 jours</option>
+        <option [ngValue]="14">14 jours</option>
+        <option [ngValue]="31">31 jours</option>
+        <option [ngValue]="62">62 jours</option>
+      </select>
+    </label>
+
+    <label title="Combien de personnes il faut par créneau. Les créneaux en dessous sont
+                  listés sous le tableau.">
+      Effectif cible
+      <input type="number" min="0" [(ngModel)]="effectifCible" (ngModelChange)="charger()"
+             name="cible" class="court">
+    </label>
+
+    <label class="separe">
+      Poser en
+      <select [(ngModel)]="statutAPoser" name="statut">
+        @for (s of STATUTS; track s) {
+          <option [value]="s">{{ LIBELLES_STATUT[s] }}</option>
+        }
+      </select>
+    </label>
+
+    <label>
+      Rôle tenu (facultatif)
+      <input type="text" [(ngModel)]="roleAPoser" name="role"
+             placeholder="Accueil, conduite, régulation…">
+    </label>
+  </section>
+
+  @if (chargement) {
+    <p class="loading">Chargement…</p>
+  }
+
+  @if (planning && !chargement) {
+    <p class="page-hint">
+      <strong>Cliquez une case</strong> pour poser le créneau avec le statut choisi ; cliquez-la
+      de nouveau pour le retirer. Les totaux du bas comptent les créneaux
+      <strong>réellement tenus</strong> : un créneau annulé ou une absence ne compte pas, sinon
+      une garde paraîtrait armée alors qu'elle ne l'est pas.
+    </p>
+
+    <div class="grille-defilante">
+      <table class="planning">
+        <thead>
+          <tr>
+            <th class="colonne-nom">Personne</th>
+            @for (j of planning.jours; track j; let i = $index) {
+              <th [class.week-end]="estWeekEnd(j)">{{ enTeteJour(j) }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of planning.personnes; track p.utilisateur) {
+            <tr>
+              <td class="colonne-nom">
+                <strong>{{ p.nom }}</strong>
+                @if (p.fonction) { <span class="detail">{{ p.fonction }}</span> }
+                <span class="compte">{{ p.creneaux_tenus }} créneau(x)</span>
+              </td>
+              @for (j of planning.jours; track j; let i = $index) {
+                <td class="jour" [class.week-end]="estWeekEnd(j)">
+                  <button type="button" class="tout-le-jour"
+                          (click)="poserJournee(p, i)"
+                          [title]="'Poser toute la journée du ' + j + ' pour ' + p.nom">+</button>
+                  <div class="pile">
+                    @for (c of planning.creneaux; track c) {
+                      <button type="button" [class]="classeCase(p, i, c)"
+                              (click)="basculerCase(p, i, c)"
+                              [disabled]="enregistrement"
+                              [title]="p.nom + ' — ' + j + ' ' + libelleCreneau(c) +
+                                       (caseDe(p, i, c)
+                                        ? ' — ' + caseDe(p, i, c)!.statut_libelle +
+                                          (caseDe(p, i, c)!.role ? ' (' + caseDe(p, i, c)!.role + ')' : '')
+                                        : ' — libre')">
+                        {{ initialeCreneau(c) }}
+                      </button>
+                    }
+                  </div>
+                </td>
+              }
+            </tr>
+          } @empty {
+            <tr>
+              <td [attr.colspan]="planning.jours.length + 1" class="empty">
+                Cette équipe n'a aucun membre : il n'y a personne à placer.
+              </td>
+            </tr>
+          }
+        </tbody>
+        @if (planning.personnes.length) {
+          <tfoot>
+            <tr>
+              <td class="colonne-nom">Tenu par créneau</td>
+              @for (j of planning.jours; track j; let i = $index) {
+                <td class="jour" [class.week-end]="estWeekEnd(j)">
+                  <button type="button" class="tout-le-jour" (click)="poserColonne(i, 'MATIN')"
+                          title="Poser le matin pour toute l'équipe">+</button>
+                  <div class="pile">
+                    @for (c of planning.creneaux; track c) {
+                      <span class="case total" [class.manque]="sousArme(j, c)"
+                            [title]="libelleCreneau(c) + ' du ' + j">
+                        {{ effectif(j, c) }}
+                      </span>
+                    }
+                  </div>
+                </td>
+              }
+            </tr>
+          </tfoot>
+        }
+      </table>
+    </div>
+
+    <p class="legende">
+      <span class="case prevu">M</span> prévu
+      <span class="case confirme">M</span> confirmé
+      <span class="case realise">M</span> réalisé
+      <span class="case annule">M</span> annulé
+      <span class="case absent">M</span> absent
+      <span class="case libre">M</span> libre
+      <span class="note-legende">
+        {{ totalCreneauxTenus }} créneau(x) tenus sur la fenêtre affichée.
+      </span>
+    </p>
+
+    @if (manques.length) {
+      <section class="bloc-alerte">
+        <h3>
+          <span class="material-icons">report_problem</span>
+          {{ manques.length }} créneau(x) sous l'effectif cible ({{ effectifCible }})
+        </h3>
+        <ul>
+          @for (m of manques; track m.date + m.creneau) {
+            <li>
+              {{ m.date }} — {{ libelleCreneau(m.creneau) }} :
+              <strong>{{ m.tenu }}/{{ m.cible }}</strong>, il manque {{ m.manque }}.
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- Les deux écarts que le serveur signale sans bloquer. Nommés, jamais comptés :
+         « 3 conflits » n'a jamais permis à personne de décider quoi que ce soit. -->
+    @if (conflits.length) {
+      <section class="bloc-alerte grave">
+        <h3>
+          <span class="material-icons">warning</span>
+          {{ conflits.length }} double(s) engagement(s)
+        </h3>
+        <p class="page-hint">
+          Ces personnes sont attendues <strong>par une autre équipe</strong> au même moment.
+          Le créneau a quand même été posé — il existe des cas légitimes — mais quelqu'un doit
+          trancher.
+        </p>
+        <ul>
+          @for (c of conflits; track c.utilisateur + c.date + c.creneau) {
+            <li>
+              <strong>{{ c.nom }}</strong> — {{ c.date }} {{ libelleCreneau(c.creneau) }} :
+              {{ c.motif }}
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (horsDisponibilite.length) {
+      <section class="bloc-alerte">
+        <h3>
+          <span class="material-icons">phone_in_talk</span>
+          {{ horsDisponibilite.length }} créneau(x) hors disponibilité déclarée
+        </h3>
+        <p class="page-hint">
+          Ce n'est pas une erreur : un chef d'équipe a le droit d'appeler. Mais ces personnes
+          n'ont pas coché ces créneaux, et leur présence reste à confirmer.
+        </p>
+        <ul>
+          @for (e of horsDisponibilite; track e.utilisateur + e.date + e.creneau) {
+            <li>
+              <strong>{{ e.nom }}</strong> — {{ e.date }} {{ libelleCreneau(e.creneau) }}
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</div>

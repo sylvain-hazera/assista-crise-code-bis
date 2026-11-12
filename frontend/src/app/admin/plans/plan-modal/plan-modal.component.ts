@@ -15,7 +15,7 @@ import { ContactInstitutionService } from '../../../services/contact-institution
 import { InterlocuteurAlertePCSService } from '../../../services/interlocuteur-alerte-pcs.service';
 import { MaterielPointService } from '../../../services/materiel-point.service';
 import { Plan, PlanMissionModele } from '../../../shared/models/plan.model';
-import { Zone } from '../../../shared/models/zone.model';
+import { Zone, ZoneLibellee, libellerZones } from '../../../shared/models/zone.model';
 import { Team, teamDisplayName } from '../../../shared/models/team.model';
 import { PointOperationnel, PointType } from '../../../shared/models/point-operationnel.model';
 import { User } from '../../../shared/models/user.model';
@@ -46,7 +46,9 @@ export class PlanModalComponent implements OnChanges {
   @Output() closed = new EventEmitter<void>();
 
   form!: FormGroup;
-  zones: Zone[] = [];
+  /** Libellées : « Mon territoire » existe pour chaque collectivité, et sans le nom de
+   * l'institution la liste répète six fois la même ligne. */
+  zones: ZoneLibellee[] = [];
   teams: Team[] = [];
   points: PointOperationnel[] = [];
   users: User[] = [];
@@ -96,7 +98,7 @@ export class PlanModalComponent implements OnChanges {
     this.buildForm();
     this.buildMissionForm();
     this.myInstitutionId = this.authService.getCurrentUser()?.institution_id ?? null;
-    this.zoneService.getAll().subscribe(zones => this.zones = zones);
+    this.zoneService.getAll().subscribe(zones => this.zones = libellerZones(zones));
     this.teamService.getAll().subscribe(teams => {
       this.teams = this.myInstitutionId ? teams.filter(t => t.institution === this.myInstitutionId) : teams;
     });
@@ -222,7 +224,7 @@ export class PlanModalComponent implements OnChanges {
 
   onZoneCreated(zone: Zone): void {
     this.showZoneModal = false;
-    this.zones = [...this.zones, zone];
+    this.zones = libellerZones([...this.zones, zone]);
     this.toggleZone(zone.id);
   }
 

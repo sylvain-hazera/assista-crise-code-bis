@@ -50,12 +50,23 @@ export class TeamService {
    * plus d'importance. Elle refuse aussi nommément un membre sorti — et le dit dans
    * `refuses` : une affectation partielle qui se présente comme un succès fait partir une
    * équipe incomplète en croyant l'avoir au complet. */
-  ajouterMembres(id: string, utilisateurs: string[], missionTitre?: string, criseId?: string)
+  ajouterMembres(id: string, utilisateurs: string[], options: OptionsAffectation = {})
       : Observable<AjoutMembresResultat> {
-    const corps: Record<string, unknown> = { utilisateurs };
-    if (missionTitre) { corps['mission_titre'] = missionTitre; }
-    if (criseId) { corps['crise_id'] = criseId; }
-    return this.http.post<AjoutMembresResultat>(`${this.url}/${id}/ajouter-membres/`, corps);
+    return this.http.post<AjoutMembresResultat>(
+      `${this.url}/${id}/ajouter-membres/`, { utilisateurs, ..._corps(options) });
+  }
+
+  /** POST /api/teams/creer-avec-membres/ — constitue une équipe d'intervention NEUVE.
+   *
+   * Ne se ramène pas à `create()` + `ajouterMembres()` : `POST /teams/` exige un type de
+   * compte institutionnel (un membre du bureau d'une association ne l'est pas toujours) et
+   * accepte `members` sans vérifier le rattachement. Ici le bureau de l'association suffit, et
+   * la sélection passe par le même tri que l'affectation — refus nommés compris. */
+  creerAvecMembres(institutionId: string, nom: string, utilisateurs: string[],
+                   options: OptionsAffectation = {}): Observable<AjoutMembresResultat> {
+    return this.http.post<AjoutMembresResultat>(`${this.url}/creer-avec-membres/`, {
+      institution: institutionId, nom, utilisateurs, ..._corps(options),
+    });
   }
 
   definirMission(id: string, titre: string, criseId?: string): Observable<Team> {
@@ -202,9 +213,53 @@ export class TeamService {
 }
 
 /** Résultat d'une affectation en masse. Les refus sont rendus, jamais tus. */
+/** Un créneau pointé à la main dans la grille : « je prends cette personne CE soir-là ». */
+export interface CreneauPointe {
+  utilisateur: string;
+  date: string;
+  creneau: string;
+}
+
+export interface OptionsAffectation {
+  missionTitre?: string;
+  criseId?: string | null;
+  /** La campagne sur laquelle la grille était ouverte : c'est elle qui donne un sens aux
+   * créneaux pointés, en les versant dans ses tours de garde. */
+  campagneId?: string | null;
+  creneaux?: CreneauPointe[];
+}
+
+function _corps(options: OptionsAffectation): Record<string, unknown> {
+  const corps: Record<string, unknown> = {};
+  if (options.missionTitre) { corps['mission_titre'] = options.missionTitre; }
+  if (options.criseId) { corps['crise_id'] = options.criseId; }
+  if (options.campagneId) { corps['campagne'] = options.campagneId; }
+  if (options.creneaux?.length) { corps['creneaux'] = options.creneaux; }
+  return corps;
+}
+
 export interface AjoutMembresResultat {
   team: Team;
   ajoutes: number;
   deja_presents: number;
   refuses: { utilisateur: string; motif: string }[];
+  /** Combien de créneaux ont été pointés, et combien ont réellement pu être enregistrés.
+   *
+   * Les deux nombres diffèrent, et c'est volontaire : rien dans le modèle ne stocke « cette
+   * équipe tient le soir du 14 » — seuls les tours de garde d'une campagne le savent
+   * (`AffectationRotation`), et leur maille est la rotation, pas le jour. Hors campagne, les
+   * créneaux restent dans le journal d'audit, et l'écran doit le dire plutôt que laisser
+   * croire à un planning qui n'existe pas. */
+  creneaux_pointes?: number;
+  creneaux_enregistres?: number;
+  creneaux_ignores?: { utilisateur?: string; date?: string; creneau?: string;
+                       motif: string }[];
+  /** Posés au planning de l'équipe (`CreneauEquipe`). Écrit dans TOUS les cas, campagne ou
+   * non : le planning répond à « qui tient ce créneau pour cette équipe », la rotation à
+   * « qui arme ce tour de garde ». Deux questions, deux tables. */
+  creneaux_planning?: number;
+  /** La même personne attendue par une AUTRE équipe au même moment. Signalé sans bloquer :
+   * il existe des cas légitimes, mais quelqu'un doit trancher. */
+  conflits_planning?: { utilisateur: string; nom: string; date: string; creneau: string;
+                        equipe: string; equipe_nom: string; motif: string }[];
 }

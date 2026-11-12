@@ -127,6 +127,15 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.HebergementMatchingComponent)
       },
       {
+        // Même composant que /mon-equipe/<id>/hebergement, sans équipe dans l'URL : il
+        // demande alors de quelle équipe il s'agit, ou explique pourquoi il n'y a rien.
+        // Sans cette route, la page était introuvable depuis le menu (demande du 12/11/2026).
+        path: 'hebergement',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/hebergement-matching/hebergement-matching.component')
+          .then(m => m.HebergementMatchingComponent)
+      },
+      {
         path: 'mes-interventions',
         canActivate: [authGuard],
         loadComponent: () => import('../pages/mes-interventions/mes-interventions.component')

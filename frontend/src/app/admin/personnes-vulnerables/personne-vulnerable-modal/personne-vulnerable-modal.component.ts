@@ -5,7 +5,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { PersonneVulnerableService, TypeVulnerabiliteService } from '../../../services/vulnerabilite.service';
 import { ZoneService } from '../../../services/zone.service';
 import { PersonneVulnerable, TypeVulnerabilite } from '../../../shared/models/vulnerabilite.model';
-import { Zone } from '../../../shared/models/zone.model';
+import { ZoneLibellee, libellerZones } from '../../../shared/models/zone.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
@@ -30,7 +30,7 @@ export class PersonneVulnerableModalComponent implements OnInit, OnChanges {
   @Output() closed = new EventEmitter<void>();
 
   form!: FormGroup;
-  zones: Zone[] = [];
+  zones: ZoneLibellee[] = [];
   categories: TypeVulnerabilite[] = [];
   saving = false;
   errorMessage = '';
@@ -49,7 +49,7 @@ export class PersonneVulnerableModalComponent implements OnInit, OnChanges {
   }
 
   ngOnInit(): void {
-    this.zoneService.getAll().subscribe(zones => this.zones = zones);
+    this.zoneService.getAll().subscribe(zones => this.zones = libellerZones(zones));
   }
 
   ngOnChanges(changes: SimpleChanges): void {

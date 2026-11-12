@@ -3,6 +3,34 @@
     <p class="loading">Chargement…</p>
   } @else if (errorMessage) {
     <p class="error-message">{{ errorMessage }}</p>
+  } @else if (aucuneEquipe) {
+
+    <!-- LA PAGE EXISTE, ELLE EST SIMPLEMENT VIDE POUR CE COMPTE — et elle le dit.
+         L'entrée reste au menu pour tout le monde (demande du 12/11/2026) : la cacher
+         laissait croire que la fonction n'existe pas, et ne donnait aucun moyen de savoir
+         ce qu'il faut pour y accéder. -->
+    <div class="page-header">
+      <h1><span class="material-icons">home_work</span> Hébergement</h1>
+    </div>
+    <section class="disclaimer">
+      <span class="material-icons">info</span>
+      <div>
+        <h2>Il n'y a rien à afficher ici pour votre compte</h2>
+        <p>
+          Cette page met en regard les <strong>demandes d'hébergement</strong> et les
+          <strong>offres de logement</strong> reçues sur les crises d'une équipe. Elle a
+          besoin d'une équipe pour savoir de quelles crises parler — et vous n'êtes membre
+          d'aucune pour l'instant.
+        </p>
+        <p>
+          Ce n'est pas une panne et ce n'est pas un refus : il n'y a simplement pas de
+          périmètre à afficher. Pour y accéder, demandez à être rattaché à une équipe par le
+          bureau de votre association ou par votre collectivité ; la page se remplira d'elle-
+          même dès que cette équipe sera affectée à une crise.
+        </p>
+      </div>
+    </section>
+
   } @else if (team) {
 
     <div class="page-header">
@@ -13,6 +41,18 @@
         <span class="material-icons">home_work</span>
         Hébergement — {{ team.name }}
       </h1>
+      <!-- Ouvert depuis le menu avec plusieurs équipes : on choisit, plutôt que d'imposer
+           silencieusement la première. -->
+      @if (mesEquipes.length > 1) {
+        <label class="choix-equipe">
+          Équipe
+          <select [ngModel]="team.id" (ngModelChange)="changerEquipe($event)">
+            @for (e of mesEquipes; track e.id) {
+              <option [ngValue]="e.id">{{ e.name }}</option>
+            }
+          </select>
+        </label>
+      }
     </div>
 
     <!-- Minimap des offres de logement -->
@@ -27,6 +67,12 @@
 
     <!-- Filtres communs -->
     <div class="filters-bar">
+      <div class="filter-group recherche">
+        <label>Rechercher</label>
+        <input type="text" [(ngModel)]="recherche"
+               placeholder="Titre, commune, texte de l'annonce…">
+      </div>
+
       <div class="filter-group">
         <label>Type de logement</label>
         <select [(ngModel)]="filterTypeLogement">
@@ -47,10 +93,40 @@
         </select>
       </div>
 
+      <!-- Temporaire / longue durée : le critère qui sépare « dépanner trois nuits » de
+           « reloger le temps des travaux ». -->
+      <div class="filter-group">
+        <label>Durée</label>
+        <select [(ngModel)]="filterDuree">
+          <option value="">Toutes</option>
+          @for (key of dureeLabels | keyvalue; track key.key) {
+            <option [value]="key.key">{{ key.value }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="filter-group seuils">
+        <label>Au moins</label>
+        <div class="ligne-seuils">
+          <input type="number" min="0" [(ngModel)]="filterChambresMin" placeholder="chambres">
+          <input type="number" min="0" [(ngModel)]="filterPiecesMin" placeholder="pièces">
+          <input type="number" min="0" [(ngModel)]="filterCapaciteMin" placeholder="personnes">
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label>Loyer max (€/mois)</label>
+        <input type="number" min="0" [(ngModel)]="filterLoyerMax" placeholder="sans limite">
+      </div>
+
       <div class="filter-group checkboxes">
         <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterAnimaux"> Animaux</label>
         <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterJardin"> Jardin</label>
         <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterPmr"> PMR</label>
+      </div>
+
+      <div class="filter-group">
+        <button type="button" class="btn-link" (click)="viderFiltres()">Tout afficher</button>
       </div>
 
       <div class="filter-group zone-filter">
@@ -95,6 +171,7 @@
                 <th class="sortable" (click)="setSortDemandes('nombre_pieces')">Pièces</th>
                 <th class="sortable" (click)="setSortDemandes('nombre_chambres')">Chambres</th>
                 <th class="sortable" (click)="setSortDemandes('capacite_adultes')">Capacité</th>
+                <th class="sortable" (click)="setSortDemandes('hebergement_duree')">Durée</th>
                 <th>Critères</th>
                 <th></th>
               </tr>
@@ -107,19 +184,27 @@
                   <td>{{ d.nombre_pieces ?? '—' }}</td>
                   <td>{{ d.nombre_chambres ?? '—' }}</td>
                   <td>{{ d.capacite_adultes ?? '—' }} adultes / {{ d.capacite_enfants ?? 0 }} enfants</td>
+                  <td>{{ dureeLabel(d) }}</td>
                   <td>
                     @if (d.animaux_acceptes) { <span class="material-icons" title="Animaux">pets</span> }
                     @if (d.jardin) { <span class="material-icons" title="Jardin">yard</span> }
                     @if (d.pmr_compatible) { <span class="material-icons" title="PMR">accessible</span> }
                   </td>
-                  <td>
+                  <td class="cellule-actions">
+                    <!-- L'œil va chercher la fiche au serveur : les coordonnées ne sont PAS
+                         dans la liste, et leur consultation est tracée fiche par fiche. -->
+                    <button type="button" class="icon-btn" (click)="openDemandeDetail(d)"
+                            [attr.aria-label]="'Fiche de ' + d.title"
+                            title="Voir la fiche et les coordonnées du demandeur">
+                      <span class="material-icons">visibility</span>
+                    </button>
                     <button type="button" class="btn-secondary sm" (click)="compareToDemande(d)">
                       {{ demandeComparee?.id === d.id ? 'Comparé' : 'Comparer' }}
                     </button>
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="7" class="empty">Aucune demande d'hébergement pour cette équipe.</td></tr>
+                <tr><td colspan="8" class="empty">Aucune demande d'hébergement pour cette équipe.</td></tr>
               }
             </tbody>
           </table>
@@ -137,6 +222,7 @@
                 <th class="sortable" (click)="setSortOffres('nombre_pieces')">Pièces</th>
                 <th class="sortable" (click)="setSortOffres('nombre_chambres')">Chambres</th>
                 <th class="sortable" (click)="setSortOffres('capacite_adultes')">Capacité</th>
+                <th class="sortable" (click)="setSortOffres('hebergement_duree')">Durée</th>
                 <th>Critères</th>
                 <th></th>
               </tr>
@@ -149,17 +235,23 @@
                   <td>{{ o.nombre_pieces ?? '—' }}</td>
                   <td>{{ o.nombre_chambres ?? '—' }}</td>
                   <td>{{ o.capacite_adultes ?? '—' }} adultes / {{ o.capacite_enfants ?? 0 }} enfants</td>
+                  <td>{{ dureeLabel(o) }}</td>
                   <td>
                     @if (o.animaux_acceptes) { <span class="material-icons" title="Animaux">pets</span> }
                     @if (o.jardin) { <span class="material-icons" title="Jardin">yard</span> }
                     @if (o.pmr_compatible) { <span class="material-icons" title="PMR">accessible</span> }
                   </td>
-                  <td>
+                  <td class="cellule-actions">
+                    <button type="button" class="icon-btn" (click)="openOfferDetail(o)"
+                            [attr.aria-label]="'Fiche de ' + o.title"
+                            title="Voir la fiche et les coordonnées de l'offrant">
+                      <span class="material-icons">visibility</span>
+                    </button>
                     <button type="button" class="btn-secondary sm" (click)="openOfferDetail(o)">Détail</button>
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="7" class="empty">Aucune offre d'hébergement ne correspond aux filtres.</td></tr>
+                <tr><td colspan="8" class="empty">Aucune offre d'hébergement ne correspond aux filtres.</td></tr>
               }
             </tbody>
           </table>
@@ -178,8 +270,38 @@
           <h2>{{ selectedOffer.title }}</h2>
           <p class="offer-owner">{{ selectedOffer.first_name_offer }} {{ selectedOffer.last_name_offer }}</p>
 
+          <!-- LES COORDONNÉES NE VIENNENT QU'AVEC LA FICHE OUVERTE. Elles sont absentes des
+               listes, et cette ouverture est tracée dans la main courante : on doit pouvoir
+               répondre à « qui a consulté les coordonnées de cette personne ». -->
+          <section class="bloc-contact">
+            <h3><span class="material-icons">contact_phone</span> Contact</h3>
+            @if (detailEnCours) {
+              <p class="loading">Chargement des coordonnées…</p>
+            } @else {
+              <dl>
+                <dt>Téléphone</dt>
+                <dd>
+                  @if (selectedOffer.phone_offer || selectedOffer.author_phone) {
+                    <a [href]="'tel:' + (selectedOffer.phone_offer || selectedOffer.author_phone)">
+                      {{ selectedOffer.phone_offer || selectedOffer.author_phone }}
+                    </a>
+                  } @else { Non communiqué }
+                </dd>
+                <dt>Courriel</dt>
+                <dd>
+                  @if (selectedOffer.email_offer || selectedOffer.author_email) {
+                    <a [href]="'mailto:' + (selectedOffer.email_offer || selectedOffer.author_email)">
+                      {{ selectedOffer.email_offer || selectedOffer.author_email }}
+                    </a>
+                  } @else { Non communiqué }
+                </dd>
+              </dl>
+            }
+          </section>
+
           <dl class="offer-criteria">
             <dt>Type</dt><dd>{{ logementLabel(selectedOffer) }}</dd>
+            <dt>Durée</dt><dd>{{ dureeLabel(selectedOffer) }}</dd>
             <dt>Loyer</dt><dd>{{ loyerLabel(selectedOffer) }}
               @if (selectedOffer.loyer_montant_min || selectedOffer.loyer_montant_max) {
                 ({{ selectedOffer.loyer_montant_min ?? '?' }}–{{ selectedOffer.loyer_montant_max ?? '?' }} €/mois)
@@ -222,6 +344,79 @@
               Envoyer (le propriétaire recevra un lien pour répondre et modifier son offre)
             </button>
           </div>
+        </div>
+      </div>
+    }
+
+    <!-- Fiche d'une DEMANDE : mêmes coordonnées à retrouver, côté famille cette fois.
+         Panneau séparé et non réemploi de celui de l'offre : une demande n'a pas de
+         messagerie, et un panneau avec un fil de discussion inerte se lit comme une panne. -->
+    @if (selectedDemande) {
+      <div class="offer-detail-overlay" (click)="closeOfferDetail()">
+        <div class="offer-detail-panel" (click)="$event.stopPropagation()">
+          <button type="button" class="btn-close" (click)="closeOfferDetail()">
+            <span class="material-icons">close</span>
+          </button>
+
+          <h2>{{ selectedDemande.title }}</h2>
+          <p class="offer-owner">
+            {{ selectedDemande.first_name_request }} {{ selectedDemande.last_name_request }}
+          </p>
+
+          <section class="bloc-contact">
+            <h3><span class="material-icons">contact_phone</span> Contact</h3>
+            @if (detailEnCours) {
+              <p class="loading">Chargement des coordonnées…</p>
+            } @else {
+              <dl>
+                <dt>Téléphone</dt>
+                <dd>
+                  @if (selectedDemande.phone_request) {
+                    <a [href]="'tel:' + selectedDemande.phone_request">
+                      {{ selectedDemande.phone_request }}
+                    </a>
+                  } @else { Non communiqué }
+                </dd>
+                <dt>Courriel</dt>
+                <dd>
+                  @if (selectedDemande.email_request) {
+                    <a [href]="'mailto:' + selectedDemande.email_request">
+                      {{ selectedDemande.email_request }}
+                    </a>
+                  } @else { Non communiqué }
+                </dd>
+              </dl>
+            }
+          </section>
+
+          <dl class="offer-criteria">
+            <dt>Type recherché</dt><dd>{{ logementLabel(selectedDemande) }}</dd>
+            <dt>Durée</dt><dd>{{ dureeLabel(selectedDemande) }}</dd>
+            <dt>Pièces / Chambres</dt>
+            <dd>
+              {{ selectedDemande.nombre_pieces ?? '—' }} /
+              {{ selectedDemande.nombre_chambres ?? '—' }}
+            </dd>
+            <dt>Foyer</dt>
+            <dd>
+              {{ selectedDemande.capacite_adultes ?? '—' }} adultes,
+              {{ selectedDemande.capacite_enfants ?? 0 }} enfants
+            </dd>
+            <dt>Critères</dt>
+            <dd>
+              {{ selectedDemande.animaux_acceptes ? 'avec animaux' : 'sans animal' }},
+              {{ selectedDemande.jardin ? 'jardin souhaité' : 'jardin indifférent' }},
+              {{ selectedDemande.pmr_compatible ? 'accès PMR nécessaire' : 'pas de besoin PMR' }}
+            </dd>
+            @if (selectedDemande.description) {
+              <dt>Description</dt><dd>{{ selectedDemande.description }}</dd>
+            }
+          </dl>
+
+          <button type="button" class="btn-secondary sm"
+                  (click)="compareToDemande(selectedDemande)">
+            Comparer les offres à cette demande
+          </button>
         </div>
       </div>
     }

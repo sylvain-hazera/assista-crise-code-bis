@@ -130,6 +130,37 @@ export interface JourDisponibilite {
   creneaux: Record<string, boolean>;
 }
 
+/** Une campagne telle que le sélecteur de fenêtre la montre.
+ *
+ * Le nombre de réponses est servi AVEC le nombre de cibles : « 8 réponses » ne veut rien dire
+ * sans savoir si l'on a écrit à dix personnes ou à quatre cents. */
+export interface CampagneGrille {
+  id: string;
+  intitule: string;
+  motif: string;
+  motif_libelle: string;
+  statut: string;
+  periode_debut: string;
+  periode_fin: string;
+  creneaux: string[];
+  nombre_cibles: number;
+  nombre_reponses: number;
+}
+
+/** Ce que la campagne a demandé à CETTE personne, et ce qu'elle en a fait.
+ *
+ * `null` veut dire « non ciblée » : on ne lui a rien demandé, elle n'est pas une silencieuse.
+ * La clé est absente hors campagne — une colonne « réponse » vide sur une grille libre ferait
+ * croire que tout le monde est resté muet. */
+export interface CibleGrille {
+  etat: 'A_CONTACTER' | 'CONTACTE' | 'A_REPONDU' | 'INJOIGNABLE';
+  etat_libelle: string;
+  /** Zéro EST une réponse : « je ne suis pas disponible » n'est pas un silence. */
+  creneaux_declares: number;
+  date_envoi?: string | null;
+  date_reponse?: string | null;
+}
+
 export interface MembreGrille {
   utilisateur: string;
   nom: string;
@@ -144,6 +175,8 @@ export interface MembreGrille {
    * rempli. */
   a_declare: boolean;
   jours: JourDisponibilite[];
+  /** Présent uniquement quand la grille est ouverte sur une campagne. `null` = non ciblée. */
+  cible?: CibleGrille | null;
 }
 
 export interface GrilleDisponibilites {
@@ -159,6 +192,13 @@ export interface GrilleDisponibilites {
   /** Les membres en congé ne sont pas listés — ils ne sont pas mobilisables — mais leur nombre
    * est rendu : une liste qui omet des gens sans le dire laisse chercher. */
   membres_en_conge: number;
+  /** Les campagnes consultables de l'association, servies AVEC la grille : le sélecteur de
+   * fenêtre en a besoin dès l'ouverture de l'onglet, et un second appel le ferait clignoter. */
+  campagnes: CampagneGrille[];
+  /** La campagne sur laquelle la fenêtre est ouverte, ou `null` pour la fenêtre libre. */
+  campagne: string | null;
+  /** La période demandée dépassait le plafond : la grille est coupée, et le dit. */
+  tronquee: boolean;
 }
 
 // ══ Annuaire enrichi, pour l'arborescence des équipes ═══════════════════════════════════════

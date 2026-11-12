@@ -172,7 +172,7 @@
           <select [(ngModel)]="zoneEstimationId">
             <option value="">— Toute la commune —</option>
             @for (zone of zones; track zone.id) {
-              <option [value]="zone.id">{{ zone.nom }}</option>
+              <option [value]="zone.id">{{ zone.libelle }}</option>
             }
           </select>
         </label>
@@ -237,7 +237,7 @@
             <select [(ngModel)]="moduleZoneId" (change)="changerZoneModule()">
               <option value="">— Pas de restriction —</option>
               @for (zone of zones; track zone.id) {
-                <option [value]="zone.id">{{ zone.nom }}</option>
+                <option [value]="zone.id">{{ zone.libelle }}</option>
               }
             </select>
           </label>

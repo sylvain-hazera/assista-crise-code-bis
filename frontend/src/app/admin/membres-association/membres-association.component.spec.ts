@@ -6,7 +6,7 @@ import { fournisseursDeTest } from '../../testing/test-providers';
 import { AuthService } from '../../auth/services/auth.service';
 import { ContactInstitution } from '../../shared/models/institution.model';
 import { Team } from '../../shared/models/team.model';
-import { MembreAnnuaire } from '../../shared/models/association.model';
+import { GrilleDisponibilites, MembreAnnuaire } from '../../shared/models/association.model';
 
 /**
  * Premiers tests de composant du projet — le harnais qui permet de les exécuter a été monté
@@ -151,6 +151,9 @@ describe('MembresAssociationComponent', () => {
               { date: iso(1), creneaux: { MATIN: false, MIDI: false, SOIR: false, NUIT: false } },
             ] },
         ],
+        // Servies avec la grille depuis le 12/11/2026 : le sélecteur de fenêtre en a besoin
+        // dès l'ouverture de l'onglet.
+        campagnes: [], campagne: null, tronquee: false,
       };
     }
 
@@ -672,6 +675,178 @@ describe('MembresAssociationComponent', () => {
           echelon: '' } as Team];
 
       expect(composant.equipesAffectables[0].id).toBe('terrain');
+    });
+  });
+
+  describe('la grille de disponibilités', () => {
+    /** Une grille minimale, à deux jours et deux créneaux : assez pour pointer, pas assez
+     * pour noyer l'assertion. */
+    function grille(partiel: Record<string, unknown> = {}): GrilleDisponibilites {
+      return {
+        institution: 'a1', institution_nom: 'AASC', debut: '2027-01-12', fin: '2027-01-13',
+        jours: ['2027-01-12', '2027-01-13'], creneaux: ['MATIN', 'SOIR'],
+        membres: [
+          {
+            utilisateur: 'u-libre', nom: 'LIBRE', membre_bureau: false,
+            qualifications_expirees: 0, a_declare: true,
+            jours: [
+              { date: '2027-01-12', creneaux: { MATIN: true, SOIR: false } },
+              { date: '2027-01-13', creneaux: { MATIN: false, SOIR: true } },
+            ],
+          },
+        ],
+        membres_en_conge: 0, campagnes: [], campagne: null, tronquee: false,
+        ...partiel,
+      } as GrilleDisponibilites;
+    }
+
+    it('cliquer une case prend la personne SUR ce créneau', () => {
+      // La demande : on ne prend pas quelqu'un « en général », on le prend sur un créneau.
+      composant.grille = grille();
+
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+
+      expect(composant.creneauPointe('u-libre', '2027-01-12', 'MATIN')).toBeTrue();
+      expect(composant.creneauPointe('u-libre', '2027-01-12', 'SOIR')).toBeFalse();
+      // Et la personne entre dans la sélection : pointer un créneau EST la sélectionner.
+      expect(composant.selection.has('u-libre')).toBeTrue();
+      expect(composant.totalCreneauxPointes).toBe(1);
+    });
+
+    it('décocher le nom efface ses créneaux', () => {
+      // Les garder enverrait au serveur des gardes pointées pour quelqu'un d'absent de
+      // l'affectation.
+      composant.grille = grille();
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+
+      composant.basculerSelection('u-libre');
+
+      expect(composant.selection.size).toBe(0);
+      expect(composant.totalCreneauxPointes).toBe(0);
+    });
+
+    it('décocher la dernière case ne retire PAS la personne de la sélection', () => {
+      // On vient de la choisir explicitement : la voir disparaître de la barre d'affectation
+      // au moment où l'on corrige un créneau serait déroutant.
+      composant.grille = grille();
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+
+      expect(composant.nombreCreneauxPointes('u-libre')).toBe(0);
+      expect(composant.selection.has('u-libre')).toBeTrue();
+    });
+
+    it('« tout prendre » ne coche que les créneaux déclarés', () => {
+      composant.grille = grille();
+
+      composant.pointerToutesSesDispos(composant.grille!.membres[0]);
+
+      expect(composant.nombreCreneauxPointes('u-libre')).toBe(2);
+      expect(composant.creneauPointe('u-libre', '2027-01-12', 'MATIN')).toBeTrue();
+      expect(composant.creneauPointe('u-libre', '2027-01-13', 'SOIR')).toBeTrue();
+      expect(composant.creneauPointe('u-libre', '2027-01-12', 'SOIR')).toBeFalse();
+    });
+
+    it('changer de fenêtre oublie les créneaux pointés', () => {
+      // « Le soir du 14 » n'a pas le même sens d'une période à l'autre : garder des cases
+      // cochées invisibles ferait partir une affectation sur des créneaux que personne n'a
+      // plus sous les yeux.
+      composant.institutionChoisie = 'a1';
+      composant.grille = grille();
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+
+      composant.campagneChoisie = 'camp-1';
+      composant.changerFenetre();
+
+      expect(composant.totalCreneauxPointes).toBe(0);
+      const appel = http.expectOne(r => r.url.includes('/grille/'));
+      expect(appel.request.params.get('campagne')).toBe('camp-1');
+      // La durée n'est PAS envoyée avec une campagne : c'est sa période qui fait la fenêtre.
+      expect(appel.request.params.get('jours')).toBeNull();
+      appel.flush(grille());
+    });
+
+    it('n\'exige pas la même chose selon qu\'on affecte ou qu\'on constitue', () => {
+      composant.selection = new Set(['u-libre']);
+
+      composant.modeAffectation = 'existante';
+      expect(composant.affectationPossible).toBeFalse();
+      composant.equipeCible = 'e1';
+      expect(composant.affectationPossible).toBeTrue();
+
+      composant.modeAffectation = 'nouvelle';
+      expect(composant.affectationPossible).toBeFalse();
+      composant.nouvelleEquipeNom = '  ';
+      expect(composant.affectationPossible).toBeFalse();
+      composant.nouvelleEquipeNom = 'Intervention Nord';
+      expect(composant.affectationPossible).toBeTrue();
+    });
+
+    it('constituer une équipe passe par creer-avec-membres, avec les créneaux', () => {
+      composant.institutionChoisie = 'a1';
+      composant.grille = grille();
+      composant.campagneChoisie = 'camp-1';
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+      // `basculerSelection` déclenche le chargement des crises : on le solde ici.
+      http.match(r => r.url.includes('/crises')).forEach(r => r.flush([]));
+      composant.modeAffectation = 'nouvelle';
+      composant.nouvelleEquipeNom = 'Intervention Nord';
+
+      composant.affecter();
+
+      const appel = http.expectOne(r => r.url.includes('/teams/creer-avec-membres/'));
+      expect(appel.request.body.nom).toBe('Intervention Nord');
+      expect(appel.request.body.institution).toBe('a1');
+      expect(appel.request.body.campagne).toBe('camp-1');
+      expect(appel.request.body.creneaux).toEqual([
+        { utilisateur: 'u-libre', date: '2027-01-12', creneau: 'MATIN' }]);
+      appel.flush({ team: {}, ajoutes: 1, deja_presents: 0, refuses: [],
+                    creneaux_pointes: 1, creneaux_enregistres: 1, creneaux_ignores: [] });
+    });
+
+    it('dit où sont allés les créneaux pointés', () => {
+      // Depuis `CreneauEquipe` (12/11/2026), ils vont au planning de l'équipe — dans tous les
+      // cas, campagne ou non. Le dire est ce qui évite de croire à un planning qui n'existe
+      // pas, ou d'ignorer celui qui vient d'être écrit.
+      composant.institutionChoisie = 'a1';
+      composant.grille = grille();
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+      http.match(r => r.url.includes('/crises')).forEach(r => r.flush([]));
+      composant.equipeCible = 'e1';
+
+      composant.affecter();
+
+      http.expectOne(r => r.url.includes('/ajouter-membres/')).flush(
+        { team: {}, ajoutes: 1, deja_presents: 0, refuses: [],
+          creneaux_pointes: 1, creneaux_enregistres: 0, creneaux_ignores: [],
+          creneaux_planning: 1, conflits_planning: [] });
+
+      expect(composant.derniereNoteCreneaux).toContain("planning de l'équipe");
+    });
+
+    it('nomme les doubles engagements rapportés par le serveur', () => {
+      // Quelqu'un attendu par deux équipes au même moment : « 3 conflits » n'aiderait
+      // personne, il faut le nom, le jour et l'équipe concurrente.
+      composant.institutionChoisie = 'a1';
+      composant.grille = grille();
+      composant.basculerCreneau('u-libre', '2027-01-12', 'MATIN');
+      http.match(r => r.url.includes('/crises')).forEach(r => r.flush([]));
+      composant.equipeCible = 'e1';
+
+      composant.affecter();
+
+      http.expectOne(r => r.url.includes('/ajouter-membres/')).flush(
+        { team: {}, ajoutes: 1, deja_presents: 0, refuses: [],
+          creneaux_pointes: 1, creneaux_enregistres: 0, creneaux_ignores: [],
+          creneaux_planning: 1,
+          conflits_planning: [{ utilisateur: 'u-libre', nom: 'LIBRE',
+                                date: '2027-01-12', creneau: 'MATIN', equipe: 'e2',
+                                equipe_nom: 'Garde voisine',
+                                motif: 'Déjà engagé sur ce créneau dans l\'équipe « Garde voisine ».' }] });
+
+      expect(composant.conflitsPlanning.length).toBe(1);
+      expect(composant.conflitsPlanning[0].nom).toBe('LIBRE');
     });
   });
 });

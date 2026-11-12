@@ -11,7 +11,7 @@ import { AuthService } from '../../../auth/services/auth.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
 import { ZoneService } from '../../../services/zone.service';
-import { Zone } from '../../../shared/models/zone.model';
+import { ZoneLibellee, libellerZones } from '../../../shared/models/zone.model';
 import { LocationService, Commune } from '../../../services/location.service';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { ModuleDegatsCriseService } from '../../../services/module-degats.service';
@@ -68,7 +68,9 @@ export class HabitationsPageComponent implements OnInit {
     { valeur: 'ALEA_SYNT_01_04FAI_FXX', libelle: 'Débordement rare (millénal)' },
   ];
   crises: Crisis[] = [];
-  zones: Zone[] = [];
+  /** Libellées : chaque collectivité a une zone « Mon territoire », et quelqu'un qui
+   * voit celles de plusieurs institutions lisait six fois la même ligne. */
+  zones: ZoneLibellee[] = [];
   estimationEnCours = false;
   resultatEstimation: { creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number; filtre_georisques?: string | null } | null = null;
   erreurEstimation = '';
@@ -252,7 +254,7 @@ export class HabitationsPageComponent implements OnInit {
     }
     if (this.zones.length === 0) {
       // Sans filtre, le backend limite déjà aux zones de mes institutions.
-      this.zoneService.getAll().subscribe(z => this.zones = z);
+      this.zoneService.getAll().subscribe(z => this.zones = libellerZones(z));
     }
   }
 
@@ -288,7 +290,9 @@ export class HabitationsPageComponent implements OnInit {
     this.moduleZoneId = '';
     this.moduleCourant = null;
     if (this.crises.length === 0) this.crisisService.getAll().subscribe(c => this.crises = c);
-    if (this.zones.length === 0) this.zoneService.getAll().subscribe(z => this.zones = z);
+    if (this.zones.length === 0) {
+      this.zoneService.getAll().subscribe(z => this.zones = libellerZones(z));
+    }
   }
 
   changerCriseModule(): void {

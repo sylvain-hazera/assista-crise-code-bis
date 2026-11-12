@@ -217,6 +217,13 @@ from .models import (
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationLogementIntervenant,
+    CreneauEquipe,
+    DossierRelogement,
+    SolutionRelogement,
+    StatutCreneauEquipe,
+    StatutDossierRelogement,
+    TitreOccupation,
+    TypeSolutionRelogement,
     SuiviMaterielEvenement,
     CompagnonMeshCore, CompteMqtt, SourceLiaisonMeshtastic, LiaisonMeshtastic, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     CommandeMeshCore, TypeCommandeMeshCore, StatutCommandeMeshCore,
@@ -616,6 +623,9 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 from .serializers import (
     AffectationRotationSerializer,
     CampagneDisponibiliteSerializer,
+    CreneauEquipeSerializer,
+    DossierRelogementSerializer,
+    SolutionRelogementSerializer,
     CibleCampagneSerializer,
     RotationCampagneSerializer,
     DemandeAccesRadioSerializer,
@@ -5104,6 +5114,191 @@ def _synchroniser_competences_des_domaines(team, anciens_domaine_ids):
             team.competences.remove(*a_retirer)
 
 
+def _trier_personnes_affectables(institution_ids, demandes):
+    """Sépare, parmi les identifiants demandés, qui peut rejoindre l'équipe et qui ne peut pas.
+
+    Commun à `TeamViewSet.ajouter_membres` (équipe existante) et `creer_avec_membres` (équipe
+    neuve) : les deux affectent une sélection prise dans l'annuaire d'une association, et les
+    mêmes deux garde-fous valent dans les deux cas.
+
+    - on ne peut affecter que des gens **rattachés à l'institution de l'équipe** (ou à son
+      institution délégataire). Sans ce test, l'action serait un moyen détourné d'ajouter
+      n'importe quel compte de la plateforme à n'importe quelle équipe ;
+    - un membre **SORTI** est refusé nommément. Il est encore dans l'annuaire — on a besoin de
+      savoir qui était là — mais l'envoyer en intervention serait une erreur, et la refuser en
+      silence laisserait croire qu'il est parti sur le terrain.
+
+    La recherche est volontairement SANS `actif=True` : sortir un membre désactive son
+    rattachement (règle tenue au modèle), donc filtrer dessus ici l'aurait fait disparaître
+    avant qu'on puisse dire POURQUOI il est refusé. L'appelant aurait lu « n'est pas membre de
+    cette institution » d'une personne qu'il voit dans l'annuaire — trouvé par un test, pas à
+    l'œil.
+    """
+    rattachements = {
+        str(c.utilisateur_id): c
+        for c in ContactInstitution.objects.filter(
+            institution_id__in=[i for i in institution_ids if i],
+            utilisateur_id__in=[str(u) for u in demandes],
+        )
+    }
+    a_ajouter, refuses = [], []
+    for identifiant in sorted({str(u) for u in demandes}):
+        contact = rattachements.get(identifiant)
+        if contact is None:
+            refuses.append({"utilisateur": identifiant,
+                            "motif": "N'est pas membre de l'institution de l'équipe."})
+        elif contact.statut == ContactInstitution.StatutMembre.SORTI or not contact.actif:
+            refuses.append({"utilisateur": identifiant,
+                            "motif": "Membre sorti de l'association, ou rattachement "
+                                     "désactivé."})
+        else:
+            a_ajouter.append(contact.utilisateur_id)
+    return a_ajouter, refuses
+
+
+def _creneaux_choisis(demandes, utilisateurs_retenus):
+    """Normalise les créneaux pointés à la main dans la grille.
+
+    Demande de Sylvain du 12/11/2026 : « il fut un temps où tu me proposais de sélectionner
+    les personnes mais aussi avec la précision du créneau horaire sur lequel on les
+    sélectionnait, en cliquant sur les créneaux en question ». C'est le geste du modal de
+    recrutement d'un point opérationnel (`recrutement-benevoles-modal`), porté ici sur la
+    grille de l'association.
+
+    Rend `(creneaux, ignores)` : une liste de triplets `(utilisateur, date, creneau)` propres,
+    et la liste nommée de ce qui a été écarté. Un créneau pointé pour quelqu'un que
+    l'affectation a refusé est écarté **avec son motif** plutôt que silencieusement : sinon on
+    croirait avoir couvert une garde qui ne l'est pas.
+    """
+    from .models import Creneau
+
+    retenus = {str(u) for u in utilisateurs_retenus}
+    creneaux, ignores = [], []
+    for entree in demandes or []:
+        if not isinstance(entree, dict):
+            continue
+        identifiant = str(entree.get("utilisateur") or "")
+        creneau = (entree.get("creneau") or "").upper()
+        brute = entree.get("date")
+        try:
+            jour = datetime.date.fromisoformat(str(brute))
+        except (TypeError, ValueError):
+            ignores.append({"utilisateur": identifiant, "date": brute, "creneau": creneau,
+                            "motif": "Date illisible."})
+            continue
+        if creneau not in Creneau.values:
+            ignores.append({"utilisateur": identifiant, "date": brute, "creneau": creneau,
+                            "motif": "Créneau inconnu."})
+            continue
+        if identifiant not in retenus:
+            ignores.append({"utilisateur": identifiant, "date": brute, "creneau": creneau,
+                            "motif": "Personne non affectée : son créneau est sans objet."})
+            continue
+        creneaux.append((identifiant, jour, creneau))
+    return creneaux, ignores
+
+
+def _poser_creneaux_planning(request, team, creneaux):
+    """Écrit les créneaux pointés dans le PLANNING de l'équipe.
+
+    Ajouté le 12/11/2026 avec `CreneauEquipe`. Jusque-là, pointer un créneau hors campagne ne
+    laissait qu'une ligne au journal d'audit : plus rien ensuite ne savait dire « cette équipe
+    tient le soir du 14 ».
+
+    **Les deux écritures coexistent et ne font pas doublon.** Une affectation de rotation
+    (`AffectationRotation`) répond à « qui arme ce tour de garde de cette campagne » ; une
+    ligne de planning répond à « qui tient ce créneau pour cette équipe ». Pointer depuis une
+    grille ouverte sur une campagne produit donc les deux — ce sont deux questions, posées par
+    deux écrans, et n'en écrire qu'une laisserait l'autre vide.
+
+    `CONFIRME` et non `PREVU` : un humain vient de cocher la case. Le statut par défaut sert
+    aux plannings composés à l'avance, pas à une décision prise devant l'écran.
+    """
+    from .planning_equipe import doubles_engagements
+
+    if not creneaux:
+        return 0, []
+
+    # `request` transmise : sans elle, `nom_affichable` rend le vrai nom même en
+    # zone de démonstration.
+    conflits = doubles_engagements(team, creneaux, request)
+    environnement = get_active_environment(request)
+    crise = team.mission_active.crise if (
+        team.mission_active_id and team.mission_active.crise_id) else None
+    poses = 0
+    for utilisateur_id, jour, creneau in creneaux:
+        _, cree = CreneauEquipe.objects.update_or_create(
+            equipe=team, utilisateur_id=utilisateur_id, date=jour, creneau=creneau,
+            defaults={
+                "statut": StatutCreneauEquipe.CONFIRME,
+                "mission": team.mission_active, "crise": crise,
+                "cree_par": request.user, "environment": environnement,
+            },
+        )
+        if cree:
+            poses += 1
+    return poses, conflits
+
+
+def _confirmer_tours_de_garde(request, campagne, creneaux):
+    """Écrit les créneaux pointés dans les tours de garde de la campagne.
+
+    **Pourquoi seulement en campagne.** Rien, dans le modèle, ne stocke « cette équipe tient le
+    soir du 14 » : une équipe a des membres et une mission, pas un planning. Les tours de garde
+    d'une campagne, eux, sont exactement cela (`AffectationRotation` : une rotation, une
+    personne, un créneau) — et ils sont déjà lus par le planificateur. Quand la grille est
+    ouverte sur une campagne, le créneau pointé à la main y va donc, en `CONFIRMEE` : un humain
+    l'a choisi, ce n'est pas une proposition du planificateur.
+
+    **La maille est la rotation, pas le jour**, et c'est une limite à connaître : une rotation
+    couvre plusieurs jours (`duree_rotation_jours`), et son unicité porte sur
+    `(rotation, utilisateur, créneau)`. Pointer le soir du 14 et le soir du 15 dans la même
+    rotation produit donc UNE affectation « soir » sur cette rotation, pas deux. Hors campagne,
+    ou pour une campagne sans tours de garde, rien n'est écrit : les créneaux restent dans le
+    journal d'audit et dans le récapitulatif rendu à l'appelant, et l'écran le dit.
+    """
+    from .models import AffectationRotation, RotationCampagne, StatutAffectationRotation
+
+    if campagne is None or not creneaux:
+        return 0, []
+
+    rotations = list(RotationCampagne.objects.filter(campagne=campagne).order_by("numero"))
+    if not rotations:
+        return 0, [{"motif": "La campagne n'a pas de tours de garde : les créneaux pointés "
+                             "ne sont pas enregistrés."}]
+
+    environnement = get_active_environment(request)
+    ecrits, hors_periode = 0, []
+    for identifiant, jour, creneau in creneaux:
+        rotation = next(
+            (r for r in rotations if r.date_debut <= jour <= r.date_fin), None)
+        if rotation is None:
+            hors_periode.append({
+                "utilisateur": identifiant, "date": jour.isoformat(), "creneau": creneau,
+                "motif": "Hors des tours de garde de la campagne.",
+            })
+            continue
+        _, cree = AffectationRotation.objects.get_or_create(
+            rotation=rotation, utilisateur_id=identifiant, creneau=creneau,
+            defaults={
+                "statut": StatutAffectationRotation.CONFIRMEE,
+                "motif": "Pointé à la main sur la grille de disponibilités.",
+                "environment": environnement,
+            },
+        )
+        if cree:
+            ecrits += 1
+        else:
+            # Une PROPOSEE que l'encadrement vient de pointer devient CONFIRMEE : c'est la
+            # décision humaine que le modèle attend, et la laisser « proposée » ferait
+            # disparaître le choix au prochain recalcul du planificateur.
+            AffectationRotation.objects.filter(
+                rotation=rotation, utilisateur_id=identifiant, creneau=creneau,
+                statut=StatutAffectationRotation.PROPOSEE,
+            ).update(statut=StatutAffectationRotation.CONFIRMEE)
+    return ecrits, hors_periode
+
+
 def _definir_mission(request, team, titre, crise=None):
     """Définit (ou remplace) la mission active de l'équipe : TeamViewSet.definir_mission et
     création d'équipe depuis la page Signalements (OfferViewSet.bulk_create_team)."""
@@ -8459,31 +8654,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if team.institution_delegataire_id:
             institutions.append(team.institution_delegataire_id)
 
-        # Volontairement SANS `actif=True` : sortir un membre désactive son rattachement
-        # (règle tenue au modèle), donc filtrer sur `actif` ici l'aurait fait disparaître
-        # avant qu'on puisse dire POURQUOI il est refusé. L'appelant aurait lu « n'est pas
-        # membre de cette institution » d'une personne qu'il voit dans l'annuaire — trouvé
-        # par un test, pas à l'œil.
-        rattachements = {
-            str(c.utilisateur_id): c
-            for c in ContactInstitution.objects.filter(
-                institution_id__in=[i for i in institutions if i],
-                utilisateur_id__in=[str(u) for u in demandes],
-            )
-        }
-
-        a_ajouter, refuses = [], []
-        for identifiant in {str(u) for u in demandes}:
-            contact = rattachements.get(identifiant)
-            if contact is None:
-                refuses.append({"utilisateur": identifiant,
-                                "motif": "N'est pas membre de l'institution de l'équipe."})
-            elif contact.statut == ContactInstitution.StatutMembre.SORTI or not contact.actif:
-                refuses.append({"utilisateur": identifiant,
-                                "motif": "Membre sorti de l'association, ou rattachement "
-                                         "désactivé."})
-            else:
-                a_ajouter.append(contact.utilisateur_id)
+        a_ajouter, refuses = _trier_personnes_affectables(institutions, demandes)
 
         deja = set(team.members.values_list('id', flat=True))
         nouveaux = [u for u in a_ajouter if u not in deja]
@@ -8503,6 +8674,30 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 validate_crisis_open(crise, field_name="crise_id")
             _definir_mission(request, team, titre, crise)
 
+        campagne = None
+        campagne_id = request.data.get('campagne')
+        if campagne_id:
+            campagne = CampagneDisponibilite.objects.filter(
+                pk=campagne_id, institution_id=team.institution_id,
+                environment=get_active_environment(request),
+            ).first()
+            if campagne is None:
+                return Response(
+                    {"error": "Campagne inconnue pour l'institution de cette équipe."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        creneaux, creneaux_ignores = _creneaux_choisis(
+            request.data.get('creneaux'), a_ajouter)
+        creneaux_enregistres, hors_periode = _confirmer_tours_de_garde(
+            request, campagne, creneaux)
+        creneaux_ignores.extend(hors_periode)
+        # Le planning de l'équipe est écrit DANS TOUS LES CAS, campagne ou non : c'est lui qui
+        # répond à « qui tient ce créneau pour cette équipe », et la rotation ne répond qu'à
+        # « qui arme ce tour de garde ».
+        creneaux_planning, conflits_planning = _poser_creneaux_planning(
+            request, team, creneaux)
+
         audit_log(
             request=request,
             action_code="AFFECTATION",
@@ -8514,6 +8709,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 f"l'équipe « {team.name} »"
                 + (f", {len(refuses)} refusée(s)" if refuses else "")
                 + (f", mission « {titre} »" if titre else "")
+                # Les créneaux pointés sont tracés même quand aucune table ne les stocke
+                # (hors campagne) : c'est la seule mémoire de ce qui a été décidé.
+                + (f", {len(creneaux)} créneau(x) pointé(s)" if creneaux else "")
             ),
         )
 
@@ -8525,7 +8723,163 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Jamais tus : une affectation partielle qui se présente comme un succès fait
             # partir une équipe incomplète en croyant l'avoir au complet.
             "refuses": refuses,
+            "creneaux_pointes": len(creneaux),
+            "creneaux_enregistres": creneaux_enregistres,
+            "creneaux_ignores": creneaux_ignores,
+            "creneaux_planning": creneaux_planning,
+            # Deux équipes qui attendent la même personne au même moment : dit, jamais tu.
+            "conflits_planning": conflits_planning,
         })
+
+    @action(detail=False, methods=['post'], url_path='creer-avec-membres')
+    def creer_avec_membres(self, request):
+        """Constitue une équipe d'intervention **neuve** à partir d'une sélection de personnes.
+
+        Demande de Sylvain du 12/11/2026, depuis la grille de disponibilités : « en
+        sélectionner plusieurs pour constituer une équipe d'intervention, ou les affecter à
+        une équipe déjà en place ». Le second cas est `ajouter-membres` ; celui-ci est le
+        premier, et il ne s'y ramène pas — on part d'une page où l'on vient de lire qui est
+        libre, et l'équipe n'existe pas encore.
+
+        **Pourquoi une action plutôt que le `POST /teams/` ordinaire.** Trois raisons, dont
+        deux de sûreté :
+
+        - `create` exige `IsInstitutionalActor`, c'est-à-dire un TYPE de compte. Un membre du
+          bureau d'une association est le plus souvent `UTIL_SIMPLE` ou `SECOURS` : la
+          création lui serait refusée alors que c'est exactement lui qui compose les équipes.
+          On exige donc ici la qualité qui compte — être au bureau de CETTE association (voir
+          `recrutement_association.peut_instruire`), ou administrateur ;
+        - `POST /teams/` accepte `members` sans vérifier leur rattachement : il ajouterait
+          n'importe quel compte de la plateforme. Ici la sélection passe par le même tri que
+          l'affectation (`_trier_personnes_affectables`), et les refus sont **nommés** ;
+        - la mission se pose dans le même geste. Créer l'équipe, puis la retrouver dans une
+          autre page pour lui donner sa mission, c'est deux écrans pour une seule décision.
+
+        L'équipe est créée **sans échelon** : c'est une équipe opérationnelle, pas un nœud de
+        la hiérarchie territoriale (voir `Team.echelon`). Elle peut être rattachée à une
+        équipe parente, ce qui la place dans l'arborescence de l'association sans lui donner
+        d'échelon propre.
+        """
+        from .recrutement_association import peut_instruire
+
+        institution_id = request.data.get('institution')
+        institution = Institution.objects.filter(pk=institution_id).first() if institution_id \
+            else None
+        if institution is None:
+            return Response({"error": "Institution inconnue."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not peut_instruire(request.user, institution):
+            return Response(
+                {"error": "Seul le bureau de cette association peut constituer une équipe."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        nom = (request.data.get('nom') or '').strip()
+        if not nom:
+            return Response({"error": "Le nom de l'équipe est obligatoire."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        demandes = request.data.get('utilisateurs') or []
+        if not isinstance(demandes, list) or not demandes:
+            return Response({"error": "Aucune personne à affecter."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        parente = None
+        parente_id = request.data.get('equipe_parente')
+        if parente_id:
+            parente = Team.objects.filter(pk=parente_id, institution=institution).first()
+            if parente is None:
+                return Response(
+                    {"error": "Équipe parente inconnue pour cette association."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        crise = None
+        crise_id = request.data.get('crise_id')
+        if crise_id:
+            try:
+                crise = Crisis.objects.get(id=crise_id)
+            except (Crisis.DoesNotExist, ValueError, TypeError):
+                return Response({"error": "Crise introuvable."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            validate_crisis_open(crise, field_name="crise_id")
+
+        campagne = None
+        campagne_id = request.data.get('campagne')
+        if campagne_id:
+            campagne = CampagneDisponibilite.objects.filter(
+                pk=campagne_id, institution=institution,
+                environment=get_active_environment(request),
+            ).first()
+            if campagne is None:
+                return Response({"error": "Campagne inconnue pour cette association."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        a_ajouter, refuses = _trier_personnes_affectables([institution.id], demandes)
+        # Une équipe vide n'est pas une équipe : on ne la crée pas, et on dit pourquoi chaque
+        # personne a été écartée. La créer quand même laisserait une coquille dans
+        # l'arborescence, que personne ne viendrait nettoyer.
+        if not a_ajouter:
+            return Response(
+                {"error": "Aucune des personnes sélectionnées ne peut rejoindre une équipe "
+                          "de cette association.",
+                 "refuses": refuses},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        team = Team.objects.create(
+            name=nom, institution=institution, equipe_parente=parente,
+            description=(request.data.get('description') or '').strip() or None,
+            environment=get_active_environment(request),
+        )
+        team.members.add(*a_ajouter)
+
+        titre = (request.data.get('mission_titre') or '').strip()
+        if titre:
+            _definir_mission(request, team, titre, crise)
+        elif crise is not None:
+            # Rattachement à la crise même sans mission : affecter une équipe à une crise est
+            # une décision à part entière, et l'exiger accompagnée d'un titre de mission
+            # forcerait à inventer une phrase (même chemin que `assigner_crise`).
+            team.assigned_crises.add(crise)
+
+        creneaux, creneaux_ignores = _creneaux_choisis(
+            request.data.get('creneaux'), a_ajouter)
+        creneaux_enregistres, hors_periode = _confirmer_tours_de_garde(
+            request, campagne, creneaux)
+        creneaux_ignores.extend(hors_periode)
+        creneaux_planning, conflits_planning = _poser_creneaux_planning(
+            request, team, creneaux)
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Team",
+            objet_id=team.id,
+            objets_ids=[str(u) for u in a_ajouter],
+            crise=crise,
+            commentaire=(
+                f"Équipe d'intervention « {team.name} » constituée avec "
+                f"{len(a_ajouter)} personne(s)"
+                + (f", {len(refuses)} écartée(s)" if refuses else "")
+                + (f", mission « {titre} »" if titre else "")
+                + (f", {len(creneaux)} créneau(x) pointé(s)" if creneaux else "")
+            ),
+        )
+
+        team.refresh_from_db()
+        return Response({
+            "team": TeamSerializer(team, context=self.get_serializer_context()).data,
+            "ajoutes": len(a_ajouter),
+            "deja_presents": 0,
+            # Jamais tus : une équipe constituée à six quand on en a coché huit doit le dire.
+            "refuses": refuses,
+            "creneaux_pointes": len(creneaux),
+            "creneaux_enregistres": creneaux_enregistres,
+            "creneaux_ignores": creneaux_ignores,
+            "creneaux_planning": creneaux_planning,
+            "conflits_planning": conflits_planning,
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='definir-delegation')
     def definir_delegation(self, request, pk=None):
@@ -13586,10 +13940,11 @@ class DelegationCompetenceViewSet(
             )
         )
 
-#: Les quatre créneaux, dans l'ordre de la journée. Déclaré ici plutôt que déduit de
-#: `Creneau.choices` : l'ordre d'un TextChoices est celui de l'écriture du code, et une
-#: réorganisation du modèle réordonnerait silencieusement toutes les grilles.
-CRENEAUX_ORDONNES = ["MATIN", "MIDI", "SOIR", "NUIT"]
+# Les quatre créneaux dans l'ordre de la journée, et la construction de la grille, vivent
+# désormais dans `core/grille_disponibilites.py` : l'action assemblait cinq tables dans le
+# corps d'une vue, et les campagnes lui en ajoutaient deux. Réexporté ici parce que d'autres
+# vues du fichier s'en servent (voir la grille des ressources d'une crise).
+from .grille_disponibilites import CRENEAUX_ORDONNES  # noqa: E402
 
 
 def _disponibilite_du_jour(declarations, jour):
@@ -13708,37 +14063,29 @@ class DisponibiliteOperationnelleViewSet(
         self._verifier_droit_d_ecriture(instance.affectation)
         instance.delete()
 
-    # Fenêtre de la grille de mobilisation. Quinze jours : c'est l'horizon sur lequel une
-    # association se projette pour armer une garde — au-delà, les gens ne savent pas encore, et
-    # une case remplie trop tôt donne une fausse certitude.
-    JOURS_GRILLE = 15
-
     @action(detail=False, methods=["get"], url_path="grille")
     def grille(self, request):
-        """Qui est disponible, **créneau par créneau**, sur les quinze prochains jours.
+        """Qui est disponible, **créneau par créneau** — et sur quelle période.
 
-        Bascule du 11/11/2026 sur le moteur unique. Cette grille lisait
-        `DisponibiliteOperationnelle` — une déclaration à la journée — alors que la
-        constitution d'équipe (`/admin/teams`) lit `DisponibiliteOffre`, quatre créneaux par
-        jour. Deux sources pour la même question, dont une seule décidait réellement des
-        mobilisations : la grille pouvait afficher « disponible » là où la constitution
-        d'équipe ne voyait rien.
+        Deux fenêtres, et c'est tout l'objet de l'écran :
 
-        Elle lit donc maintenant les mêmes lignes, et la case est le créneau. « Pas de ligne =
-        indisponible » est la règle de ce moteur depuis l'origine : il n'y a pas de troisième
-        état à montrer ici, et en inventer un ferait croire à une nuance que le modèle ne sait
-        pas stocker. Ce qui reste vrai, et que l'écran doit montrer, c'est qu'une ligne vide
-        peut être un silence autant qu'un refus — d'où `a_declare`, qui dit si la personne a
-        déjà touché à sa grille.
+        - **par défaut, les quinze prochains jours** (paramètre `jours`, plafonné à trente et
+          un). C'est l'horizon sur lequel une association se projette pour armer une garde.
+        - **ou la période d'une campagne** (paramètre `campagne`). Une campagne interroge une
+          période nommée — « du 12 au 26 janvier » — souvent hors de la fenêtre courante : ses
+          réponses étaient écrites en base, lues par le planificateur de tours de garde, et
+          invisibles sur l'écran qui sert à mobiliser. Demande de Sylvain du 12/11/2026.
 
-        Les membres SORTIS n'y figurent pas (ils ne sont plus de l'association) et ceux EN CONGÉ
-        non plus — mais leur nombre est rendu, parce qu'une liste qui omet des gens sans le dire
-        laisse chercher où ils sont passés.
+        La construction est dans `core/grille_disponibilites.py`, qui porte le raisonnement :
+        le moteur unique, ce que les campagnes changent, et pourquoi un membre non ciblé n'est
+        pas un silencieux.
 
         Contrôle d'accès porté par l'action elle-même : le ViewSet qui l'héberge n'a pas de
         cadrage par institution (dette constatée le 28/10/2026, voir § 5.12 ter pour le même
-        problème sur les contacts), et il ne faut pas qu'une nouvelle action en hérite. On exige
-        donc d'être membre actif de l'institution interrogée, ou administrateur."""
+        problème sur les contacts), et il ne faut pas qu'une nouvelle action en hérite. On
+        exige donc d'être membre actif de l'institution interrogée, ou administrateur."""
+        from .grille_disponibilites import grille as construire_grille
+
         institution_id = request.query_params.get("institution")
         if not institution_id:
             return Response({"error": "Paramètre `institution` requis."},
@@ -13756,101 +14103,25 @@ class DisponibiliteOperationnelleViewSet(
                 "disponibilités de ses membres."
             )
 
-        try:
-            jours_demandes = int(request.query_params.get("jours", self.JOURS_GRILLE))
-        except (TypeError, ValueError):
-            jours_demandes = self.JOURS_GRILLE
-        # Borné : une grille de six mois n'est pas une grille, c'est un export, et elle ferait
-        # une requête par jour et par membre à l'affichage.
-        nb_jours = max(1, min(jours_demandes, 31))
+        campagne = None
+        campagne_id = request.query_params.get("campagne")
+        if campagne_id:
+            # Cadrée sur l'institution interrogée : sans ce filtre, l'identifiant d'une
+            # campagne d'une AUTRE association ouvrirait sa période et le détail de ses
+            # cibles à qui est membre de celle-ci.
+            campagne = CampagneDisponibilite.objects.filter(
+                pk=campagne_id, institution=institution,
+                environment=get_active_environment(request),
+            ).first()
+            if campagne is None:
+                return Response({"error": "Campagne inconnue pour cette association."},
+                                status=status.HTTP_404_NOT_FOUND)
 
-        debut = timezone.localdate()
-        jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
-        environnement = get_active_environment(request)
-
-        rattachements = ContactInstitution.objects.filter(
-            institution=institution, actif=True,
-        ).exclude(
-            statut__in=[ContactInstitution.StatutMembre.SORTI,
-                        ContactInstitution.StatutMembre.CONGE],
-        ).select_related("utilisateur")
-        en_conge = ContactInstitution.objects.filter(
-            institution=institution, actif=True,
-            statut=ContactInstitution.StatutMembre.CONGE,
-        ).count()
-
-        utilisateurs = [c.utilisateur_id for c in rattachements]
-
-        # Le MOTEUR UNIQUE : les créneaux portés par la ressource de chaque membre (son offre
-        # « Bénévolat » interne). Deux requêtes pour toute la grille — les ressources, puis
-        # leurs créneaux — plutôt qu'une par membre et par jour, qui ferait 15 × l'effectif.
-        from .fiches_benevoles import TYPE_OFFRE_BENEVOLE
-
-        ressources = dict(
-            Offer.objects.filter(
-                author_id__in=utilisateurs, institution=institution,
-                offer_type__type=TYPE_OFFRE_BENEVOLE, environment=environnement,
-            ).values_list("id", "author_id")
-        )
-        par_utilisateur = {}
-        for date_jour, creneau, offre_id in DisponibiliteOffre.objects.filter(
-                offer_id__in=ressources.keys(), date__gte=jours[0], date__lte=jours[-1],
-        ).values_list("date", "creneau", "offer_id"):
-            utilisateur_id = ressources.get(offre_id)
-            if utilisateur_id is None:
-                continue
-            par_utilisateur.setdefault(utilisateur_id, set()).add((date_jour, creneau))
-
-        qualifications_expirees = {}
-        for qualif in QualificationMembre.objects.filter(
-                utilisateur_id__in=utilisateurs, environment=environnement,
-                date_expiration__lt=debut):
-            qualifications_expirees[qualif.utilisateur_id] = \
-                qualifications_expirees.get(qualif.utilisateur_id, 0) + 1
-
-        membres = []
-        for contact in rattachements:
-            siennes = par_utilisateur.get(contact.utilisateur_id, set())
-            membres.append({
-                "utilisateur": contact.utilisateur_id,
-                "nom": nom_affichable(contact.utilisateur, request) or contact.utilisateur.email,
-                "fonction": contact.fonction,
-                "membre_bureau": contact.membre_bureau,
-                # Deux signaux qui décident d'une mobilisation autant que la disponibilité :
-                # un titre périmé vaut un titre absent, une aptitude échue interdit le terrain.
-                "qualifications_expirees": qualifications_expirees.get(
-                    contact.utilisateur_id, 0),
-                "aptitude_valide_jusquau": contact.aptitude_valide_jusquau,
-                # `a_declare` distingue le silence du refus, que ce moteur ne sait pas
-                # stocker : « pas de ligne = indisponible » est sa règle, donc une grille
-                # vierge et une grille où tout a été décoché sont identiques en base. Sans ce
-                # drapeau, on ne saurait pas qui relancer — et c'est l'information qui fait
-                # partir une mobilisation sur un effectif imaginaire.
-                "a_declare": bool(siennes),
-                "jours": [
-                    {
-                        "date": jour,
-                        "creneaux": {
-                            creneau: (jour, creneau) in siennes
-                            for creneau in CRENEAUX_ORDONNES
-                        },
-                    }
-                    for jour in jours
-                ],
-            })
-        membres.sort(key=lambda m: m["nom"].lower())
-
-        return Response({
-            "institution": institution.id,
-            "institution_nom": institution.nom,
-            "debut": jours[0],
-            "fin": jours[-1],
-            "jours": jours,
-            "creneaux": CRENEAUX_ORDONNES,
-            "membres": membres,
-            # Dit, et non tu : une liste qui omet des gens sans le signaler laisse chercher.
-            "membres_en_conge": en_conge,
-        })
+        return Response(construire_grille(
+            institution, request,
+            jours=request.query_params.get("jours"),
+            campagne=campagne,
+        ))
 
     @action(
         detail=True,
@@ -22579,3 +22850,432 @@ class DefinirMonMotDePasseView(generics.GenericAPIView):
                        "votre email et ce mot de passe, ou continuer à utiliser le lien reçu "
                        "par email.",
         })
+
+
+class DossierRelogementViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Suivi des familles à reloger après une crise.
+
+    Pendant de la page « Logement intervenants », pour les sinistrés cette fois. Demande de
+    Sylvain du 12/11/2026 : suivre « tout ce qui est nécessaire pour assurer le suivi de
+    personnes ayant bénéficié d'un relogement », et pouvoir en tirer un bilan.
+
+    **Les données les plus sensibles du produit.** Des personnes sinistrées, nommées, avec
+    l'adresse où elles dorment et des notes d'accompagnement social. Trois conséquences :
+
+    - tout ce qui est nominatif est chiffré au repos (voir les modèles) ;
+    - la lecture est réservée aux acteurs institutionnels, et bornée aux crises où leur
+      institution est impliquée. Un acteur d'une autre crise n'a pas à lire ces fiches ;
+    - l'ouverture d'une fiche est tracée comme le reste (AuditTraceMiddleware). On doit
+      pouvoir répondre à « qui a consulté les coordonnées de cette famille ».
+    """
+
+    queryset = DossierRelogement.objects.select_related(
+        "crise", "institution", "demande", "habitation",
+    ).prefetch_related("solutions").all()
+    serializer_class = DossierRelogementSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        crise_id = self.request.query_params.get("crise")
+        if crise_id:
+            qs = qs.filter(crise_id=crise_id)
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        # Les crises où l'institution de l'appelant est impliquée, au sens déjà retenu
+        # ailleurs : son institution suit le dossier, ou elle a une équipe sur la crise.
+        institutions = list(ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True,
+        ).values_list("institution_id", flat=True))
+        return qs.filter(
+            Q(institution_id__in=institutions)
+            | Q(crise__assigned_teams__institution_id__in=institutions)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        # L'institution n'est pas prise du client : c'est celle de l'appelant, sauf à être
+        # administrateur. Sinon n'importe qui pourrait déposer un dossier au nom d'une autre
+        # collectivité, et le faire disparaître de sa propre liste.
+        institution = serializer.validated_data.get("institution")
+        if institution is None or get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+            contact = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True,
+            ).select_related("institution").first()
+            institution = contact.institution if contact else institution
+        dossier = serializer.save(
+            institution=institution, cree_par=self.request.user,
+            environment=get_active_environment(self.request),
+        )
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="DossierRelogement",
+            objet_id=dossier.id, crise=dossier.crise,
+            commentaire=(f"Dossier de relogement ouvert : {dossier.nombre_personnes} "
+                         f"personne(s)"),
+        )
+
+    def perform_update(self, serializer):
+        dossier = serializer.save()
+        audit_log(
+            request=self.request, action_code="MODIFICATION",
+            objet_type="DossierRelogement", objet_id=dossier.id, crise=dossier.crise,
+            commentaire=f"Dossier de relogement mis à jour ({dossier.get_statut_display()})",
+        )
+
+    @action(detail=True, methods=["post"], url_path="ajouter-solution")
+    def ajouter_solution(self, request, pk=None):
+        """Enregistre un nouvel hébergement pour ce foyer, et clôt le précédent.
+
+        **Une ligne de plus, jamais une mise à jour en place.** Un foyer passe du gymnase à
+        l'hôtel puis au logement communal : écraser la ligne précédente effacerait le parcours,
+        c'est-à-dire exactement ce que le bilan de fin de crise demande.
+
+        La solution en cours est close automatiquement à la veille de la nouvelle : laisser
+        deux hébergements ouverts pour la même famille ferait compter deux fois la même ligne
+        dans la synthèse, et personne ne saurait où elle dort."""
+        dossier = self.get_object()
+        serializer = SolutionRelogementSerializer(
+            data={**request.data, "dossier_relogement": str(dossier.id)},
+            context=self.get_serializer_context(),
+        )
+        serializer.is_valid(raise_exception=True)
+
+        nouvelle_debut = serializer.validated_data["date_debut"]
+        courante = dossier.solution_courante
+        if courante is not None:
+            # `max` et non la date brute : une solution saisie en retard peut commencer AVANT
+            # celle qui est ouverte, et la clore à une date antérieure à son propre début
+            # produirait un hébergement de durée négative dans le parcours.
+            courante.date_fin_effective = max(nouvelle_debut, courante.date_debut)
+            if not courante.motif_fin:
+                courante.motif_fin = "Remplacée par une nouvelle solution"
+            courante.save(update_fields=["date_fin_effective", "motif_fin"])
+
+        solution = serializer.save(
+            cree_par=request.user, environment=get_active_environment(request),
+        )
+
+        # Le statut du dossier suit la solution : une famille qui entre dans un bail n'est plus
+        # « en recherche », et le laisser à la main produirait des listes fausses au premier
+        # oubli.
+        if solution.type_solution == TypeSolutionRelogement.DEFINITIVE:
+            dossier.statut = (
+                StatutDossierRelogement.RETOUR_DOMICILE
+                if solution.titre_occupation == TitreOccupation.RETOUR
+                else StatutDossierRelogement.RELOGEE
+            )
+        else:
+            dossier.statut = StatutDossierRelogement.HEBERGE
+        dossier.save(update_fields=["statut"])
+
+        audit_log(
+            request=request, action_code="CREATION", objet_type="SolutionRelogement",
+            objet_id=solution.id, crise=dossier.crise,
+            commentaire=(f"Hébergement enregistré : {solution.get_type_solution_display()} "
+                         f"({solution.get_titre_occupation_display()})"),
+        )
+        dossier.refresh_from_db()
+        return Response(
+            DossierRelogementSerializer(
+                dossier, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="cloturer-solution")
+    def cloturer_solution(self, request, pk=None):
+        """Marque la fin effective de l'hébergement en cours, sans en ouvrir un autre.
+
+        Le foyer repasse « en recherche » : il n'a plus de solution, et c'est le chiffre que
+        la page doit faire remonter en haut."""
+        dossier = self.get_object()
+        courante = dossier.solution_courante
+        if courante is None:
+            return Response({"error": "Ce foyer n'a aucun hébergement en cours."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        brute = request.data.get("date_fin_effective")
+        try:
+            fin = datetime.date.fromisoformat(str(brute)) if brute else timezone.localdate()
+        except (TypeError, ValueError):
+            return Response({"error": "Date de fin illisible."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        courante.date_fin_effective = fin
+        courante.motif_fin = (request.data.get("motif_fin") or "").strip()
+        courante.save(update_fields=["date_fin_effective", "motif_fin"])
+
+        # Une solution DÉFINITIVE close ne renvoie pas le foyer « en recherche » : s'il est
+        # parti de lui-même, le dossier se clôt ; sinon c'est une rupture, à dire.
+        if dossier.statut not in (StatutDossierRelogement.RELOGEE,
+                                  StatutDossierRelogement.RETOUR_DOMICILE):
+            dossier.statut = StatutDossierRelogement.EN_RECHERCHE
+            dossier.save(update_fields=["statut"])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="SolutionRelogement",
+            objet_id=courante.id, crise=dossier.crise,
+            commentaire=f"Hébergement clos le {fin}" + (
+                f" — {courante.motif_fin}" if courante.motif_fin else ""),
+        )
+        dossier.refresh_from_db()
+        return Response(DossierRelogementSerializer(
+            dossier, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["get"], url_path="synthese")
+    def synthese(self, request):
+        """Les chiffres du bilan, pour une crise : foyers, personnes, et ce qui tient.
+
+        Calculée sur TOUTE la crise et non sur les lignes affichées — c'est la différence
+        entre un chiffre de rapport et un affichage. Voir `core/relogement.py`."""
+        from .relogement import synthese as construire_synthese
+
+        crise_id = request.query_params.get("crise")
+        if not crise_id:
+            return Response({"error": "Paramètre `crise` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        crise = Crisis.objects.filter(pk=crise_id).first()
+        if crise is None:
+            return Response({"error": "Crise inconnue."}, status=status.HTTP_404_NOT_FOUND)
+        # Le même périmètre que la liste : on ne compte pas ce qu'on n'aurait pas le droit de
+        # lire ligne à ligne.
+        if not self.get_queryset().filter(crise=crise).exists() \
+                and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            return Response({"error": "Aucun dossier de relogement accessible sur cette "
+                                      "crise."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(construire_synthese(crise, get_active_environment(request)))
+
+
+class CreneauEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Planning d'une équipe : qui tient quel créneau, quel jour.
+
+    Demande de Sylvain du 12/11/2026, après le constat qu'aucune table ne savait dire « cette
+    équipe tient le soir du 14 » : les créneaux pointés à la main n'avaient de destination que
+    dans les tours de garde d'une campagne. Le raisonnement — pourquoi une quatrième table qui
+    parle de créneaux, et ce qui est signalé plutôt que refusé — est dans
+    `core/planning_equipe.py`.
+
+    L'écriture est réservée à qui gère l'équipe (`_appartient_a_equipe`) : un planning est un
+    ordre de service, pas une suggestion.
+    """
+
+    queryset = CreneauEquipe.objects.select_related(
+        "equipe", "utilisateur", "point", "mission",
+    ).all()
+    serializer_class = CreneauEquipeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        equipe_id = self.request.query_params.get("equipe")
+        if equipe_id:
+            qs = qs.filter(equipe_id=equipe_id)
+        crise_id = self.request.query_params.get("crise")
+        if crise_id:
+            qs = qs.filter(crise_id=crise_id)
+        debut = self.request.query_params.get("debut")
+        fin = self.request.query_params.get("fin")
+        for valeur, champ in ((debut, "date__gte"), (fin, "date__lte")):
+            if valeur:
+                try:
+                    qs = qs.filter(**{champ: datetime.date.fromisoformat(valeur)})
+                except (TypeError, ValueError):
+                    pass
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        # Les équipes de mes institutions, PLUS celles dont je suis membre : un équipier doit
+        # pouvoir lire le planning où il figure, même sans être rattaché à l'institution qui
+        # la porte (une équipe déléguée, un renfort).
+        institutions = list(ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True,
+        ).values_list("institution_id", flat=True))
+        return qs.filter(
+            Q(equipe__institution_id__in=institutions)
+            | Q(equipe__institution_delegataire_id__in=institutions)
+            | Q(equipe__members=self.request.user)
+        ).distinct()
+
+    def _equipe_geree(self, equipe):
+        return _appartient_a_equipe(self.request, equipe) or \
+            get_effective_role(self.request) == UserRole.ADMINISTRATOR
+
+    def perform_create(self, serializer):
+        equipe = serializer.validated_data["equipe"]
+        if not self._equipe_geree(equipe):
+            raise PermissionDenied(
+                "Vous ne pouvez composer le planning que des équipes de votre institution."
+            )
+        serializer.save(cree_par=self.request.user,
+                        environment=get_active_environment(self.request))
+
+    def perform_update(self, serializer):
+        if not self._equipe_geree(serializer.instance.equipe):
+            raise PermissionDenied(
+                "Vous ne pouvez modifier que le planning des équipes de votre institution."
+            )
+        ligne = serializer.save()
+        audit_log(
+            request=self.request, action_code="MODIFICATION", objet_type="CreneauEquipe",
+            objet_id=ligne.id, crise=ligne.crise,
+            commentaire=(f"Créneau {ligne.date} {ligne.creneau} de l'équipe "
+                         f"« {ligne.equipe.name} » : {ligne.get_statut_display()}"),
+        )
+
+    def perform_destroy(self, instance):
+        if not self._equipe_geree(instance.equipe):
+            raise PermissionDenied(
+                "Vous ne pouvez retirer un créneau que du planning des équipes de votre "
+                "institution."
+            )
+        audit_log(
+            request=self.request, action_code="SUPPRESSION", objet_type="CreneauEquipe",
+            objet_id=instance.id, crise=instance.crise,
+            commentaire=(f"Créneau {instance.date} {instance.creneau} retiré du planning de "
+                         f"l'équipe « {instance.equipe.name} »"),
+        )
+        instance.delete()
+
+    @action(detail=False, methods=["post"], url_path="pointer")
+    def pointer(self, request):
+        """Pose (ou met à jour) plusieurs créneaux d'un coup — le geste de la grille.
+
+        **Idempotent par construction** : la clé est `(équipe, personne, jour, créneau)`, et
+        repointer la même case ne crée pas de doublon, elle met le statut à jour. Sans cela,
+        deux clics feraient compter deux présents là où il n'y en a qu'un.
+
+        Rend ce qui a été écrit ET ce qui cloche : doubles engagements et créneaux hors
+        disponibilité déclarée. Aucun des deux n'est bloquant (voir
+        `core/planning_equipe.py`), mais aucun n'est tu non plus."""
+        from .planning_equipe import doubles_engagements, hors_disponibilite
+
+        equipe_id = request.data.get("equipe")
+        equipe = Team.objects.filter(pk=equipe_id).first() if equipe_id else None
+        if equipe is None:
+            return Response({"error": "Équipe inconnue."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not self._equipe_geree(equipe):
+            return Response(
+                {"error": "Vous ne pouvez composer le planning que des équipes de votre "
+                          "institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        creneaux, ignores = _creneaux_choisis(
+            request.data.get("creneaux"),
+            [str(u) for u in equipe.members.values_list("id", flat=True)],
+        )
+        # Le motif rendu par `_creneaux_choisis` parle d'affectation : ici, le refus tient à
+        # l'appartenance à l'équipe, et le dire autrement ferait chercher au mauvais endroit.
+        for ignore in ignores:
+            if ignore["motif"].startswith("Personne non affectée"):
+                ignore["motif"] = "N'est pas membre de cette équipe."
+        if not creneaux:
+            return Response(
+                {"error": "Aucun créneau exploitable.", "ignores": ignores},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statut = request.data.get("statut") or StatutCreneauEquipe.PREVU
+        if statut not in StatutCreneauEquipe.values:
+            return Response({"error": "Statut inconnu."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        point = None
+        point_id = request.data.get("point")
+        if point_id:
+            point = PointOperationnel.objects.filter(pk=point_id).first()
+            if point is None:
+                return Response({"error": "Point opérationnel inconnu."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        crise = None
+        crise_id = request.data.get("crise")
+        if crise_id:
+            crise = Crisis.objects.filter(pk=crise_id).first()
+            if crise is None:
+                return Response({"error": "Crise inconnue."},
+                                status=status.HTTP_400_BAD_REQUEST)
+        elif equipe.mission_active_id and equipe.mission_active.crise_id:
+            crise = equipe.mission_active.crise
+
+        role = (request.data.get("role") or "").strip()
+        environnement = get_active_environment(request)
+
+        conflits = doubles_engagements(equipe, creneaux, request)
+        ecarts = hors_disponibilite(
+            equipe.institution, creneaux, environnement, request)
+
+        crees = modifies = 0
+        for utilisateur_id, jour, creneau in creneaux:
+            ligne, cree = CreneauEquipe.objects.update_or_create(
+                equipe=equipe, utilisateur_id=utilisateur_id, date=jour, creneau=creneau,
+                defaults={
+                    "statut": statut, "role": role, "point": point, "crise": crise,
+                    "mission": equipe.mission_active, "cree_par": request.user,
+                    "environment": environnement,
+                },
+            )
+            if cree:
+                crees += 1
+            else:
+                modifies += 1
+
+        audit_log(
+            request=request, action_code="AFFECTATION", objet_type="Team",
+            objet_id=equipe.id, crise=crise,
+            objets_ids=sorted({str(u) for u, _, _ in creneaux}),
+            commentaire=(f"Planning de l'équipe « {equipe.name} » : {crees} créneau(x) posé(s)"
+                         + (f", {modifies} mis à jour" if modifies else "")
+                         + (f", {len(conflits)} double(s) engagement(s)" if conflits else "")),
+        )
+
+        return Response({
+            "poses": crees,
+            "mis_a_jour": modifies,
+            "ignores": ignores,
+            # Jamais tus : « 3 conflits » sans dire lesquels n'a jamais permis de décider.
+            "conflits": conflits,
+            "hors_disponibilite": ecarts,
+        }, status=status.HTTP_201_CREATED if crees else status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="planning")
+    def planning(self, request):
+        """Le planning d'une équipe, jours en colonnes et personnes en lignes.
+
+        `effectif_cible` (optionnel) fait rendre en plus la liste des créneaux sous-armés :
+        la chercher à l'œil dans une grille de quatorze colonnes est exactement ce qu'un écran
+        doit éviter de faire faire."""
+        from .planning_equipe import creneaux_non_couverts, planning as construire_planning
+
+        equipe_id = request.query_params.get("equipe")
+        equipe = Team.objects.filter(pk=equipe_id).first() if equipe_id else None
+        if equipe is None:
+            return Response({"error": "Paramètre `equipe` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not self._peut_lire(equipe):
+            raise PermissionDenied("Vous n'avez pas accès au planning de cette équipe.")
+
+        debut = None
+        brut = request.query_params.get("debut")
+        if brut:
+            try:
+                debut = datetime.date.fromisoformat(brut)
+            except (TypeError, ValueError):
+                debut = None
+
+        donnees = construire_planning(
+            equipe, debut=debut, jours=request.query_params.get("jours"),
+            environnement=get_active_environment(request), request=request,
+        )
+        try:
+            cible = int(request.query_params.get("effectif_cible") or 0)
+        except (TypeError, ValueError):
+            cible = 0
+        donnees["effectif_cible"] = cible
+        donnees["non_couverts"] = creneaux_non_couverts(donnees, cible)
+        return Response(donnees)
+
+    def _peut_lire(self, equipe):
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return True
+        if equipe.members.filter(pk=self.request.user.pk).exists():
+            return True
+        return _appartient_a_equipe(self.request, equipe)
