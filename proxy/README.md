@@ -86,6 +86,26 @@ nouveau fichier dans le conteneur vivant + `nginx -t` + `nginx -s reload` (zéro
 que recréer le conteneur — voir l'historique de la marque blanche Réserve Résilience pour le
 patron exact (`docker cp` + test + reload, backup avant/suppression après).
 
+### Bloc par défaut : les Host inconnus s'arrêtent ici (2026-11-12)
+
+`nginx.conf` déclare en tête un `server { listen 80 default_server; server_name _; return 421; }`.
+
+Avant lui, une requête portant un `Host` non déclaré tombait sur le **premier** bloc du fichier
+(celui d'`assista-crise.fr`) et était relayée telle quelle à Django, qui levait
+`DisallowedHost` — remontée en `ERROR` dans le journal, donc en **alerte Matrix**. Une IP
+publique reçoit des scans en continu avec un `Host` arbitraire : c'était la première source de
+bruit des alertes. Le filtrage appartient à nginx, pas à Django.
+
+Conséquence directe : **tout domaine servi doit désormais être nommé dans un `server_name`**.
+Le bloc principal liste donc explicitement `assista-crise.fr`, `www.`, `demo.`,
+`assista-crise.duckdns.org`, ainsi que `172.16.1.114` (adresse sondée par le job
+`blackbox-https` de Prometheus) et `localhost` / `127.0.0.1`. Un domaine oublié ne donne pas une
+page d'erreur parlante : il renvoie 421.
+
+`return 421` et non `return 444` : 444 ferme la connexion sans réponse, ce qui ferait
+journaliser à `ac_waf` — qui est devant — un « upstream prematurely closed connection » et
+renvoyer un 502. On remplacerait un bruit par un autre.
+
 ## Certificat (Let's Encrypt, DNS-01 via IONOS)
 
 - **Renouvellement automatique** : `~/scripts/renew-certs.sh` (cron quotidien à 4h30, voir
