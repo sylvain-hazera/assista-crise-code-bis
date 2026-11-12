@@ -104,12 +104,12 @@
       <p class="help-text">
         <span class="material-icons">info</span>
         <span>
-          <strong>Un membre sorti perd ses accès</strong> : changer son statut désactive son
-          rattachement, ce n'est pas une simple étiquette. Un membre <strong>en congé</strong>
-          garde ses accès et son ancienneté, mais n'apparaît plus dans les disponibilités d'une
-          mobilisation. Les échéances en orange arrivent dans moins de
-          {{ JOURS_ALERTE }} jours, celles en rouge sont dépassées — et une qualification
-          périmée vaut une qualification absente.
+          <strong>Changer le statut d'un membre a un effet réel.</strong> Un membre
+          <strong>sorti</strong> perd ses accès : son rattachement est désactivé. Un membre
+          <strong>en congé</strong> conserve ses accès et son ancienneté, mais n'apparaît plus
+          dans les disponibilités lors d'une mobilisation. Les échéances affichées en orange
+          arrivent dans moins de {{ JOURS_ALERTE }} jours, celles en rouge sont dépassées :
+          une qualification périmée ne compte pas davantage qu'une qualification absente.
         </span>
       </p>
 
@@ -902,8 +902,8 @@
                           placeholder="Hors zone d'intervention, dossier incomplet…"></textarea>
               </label>
               <p class="page-hint">
-                Obligatoire : sans motif, la même candidature revient à l'identique six mois
-                plus tard et personne ne sait pourquoi elle avait été écartée.
+                Obligatoire : sans motif, si la même candidature revient dans six mois,
+                vous n'aurez plus trace de la raison du refus.
               </p>
               <div class="refus-actions">
                 <button type="button" class="btn-secondary" (click)="refusEnCours = null">

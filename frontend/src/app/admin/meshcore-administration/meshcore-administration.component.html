@@ -3,8 +3,8 @@
     <h1><span class="material-icons">settings_remote</span> Administration MeshCore</h1>
     <p class="explication">
       Lire et régler un répéteur <strong>par la radio</strong>, sans se déplacer. Trois gestes,
-      dans cet ordre : réclamer le répéteur en disant par quoi on l'administre, prouver qu'on le
-      contrôle, puis opérer.
+      dans cet ordre : réclamer le répéteur en indiquant par quel appareil vous l'administrez,
+      prouver que vous le contrôlez, puis opérer.
     </p>
     <p class="explication avertissement-lecture">
       <strong>À lire avant d'agir.</strong> Contrairement à Meshtastic, il n'y a ici
@@ -123,7 +123,7 @@
         <input type="password" [(ngModel)]="reclamation.mot_de_passe" name="mdp"
                autocomplete="new-password">
         <small>
-          Conservé <strong>chiffré</strong> et jamais renvoyé par l'API. Il faut le conserver :
+          Conservé <strong>chiffré</strong> et jamais réaffiché. Gardez-en une copie :
           une opération est exécutée par le pont quelques minutes plus tard, parfois après un
           réessai, et personne n'est devant l'écran à ce moment-là.
         </small>
@@ -232,8 +232,7 @@
           <span class="material-icons">warning_amber</span>
           <span>
             Cette opération <strong>écrit</strong> sur le répéteur, et sa preuve de contrôle
-            n'est pas faite. Lancez <em>Vérifier</em> sur ce répéteur d'abord — sinon le serveur
-            refusera.
+            n'est pas faite. Lancez <em>Vérifier</em> sur ce répéteur d'abord — sans elle, l'opération sera refusée.
           </span>
         </div>
       }
