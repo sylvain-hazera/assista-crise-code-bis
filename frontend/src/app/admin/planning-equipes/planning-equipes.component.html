@@ -4,9 +4,9 @@
     <div class="header-left">
       <h1><span class="material-icons">calendar_month</span> Planning des équipes</h1>
       <p class="subtitle">
-        Qui tient quel créneau, quel jour. Même découpage que la grille de disponibilités —
-        matin, midi, soir, nuit — mais ici on <strong>affecte</strong> : une disponibilité dit
-        ce qu'une personne peut faire, un planning dit ce qu'on attend d'elle.
+        Composez les tours de garde de votre équipe, créneau par créneau : matin, midi,
+        soir, nuit. À la différence des disponibilités, qui indiquent quand chacun
+        <em>peut</em> venir, le planning indique qui est <strong>attendu</strong>.
       </p>
     </div>
   </header>
@@ -47,8 +47,8 @@
       </select>
     </label>
 
-    <label title="Combien de personnes il faut par créneau. Les créneaux en dessous sont
-                  listés sous le tableau.">
+    <label title="Nombre de personnes attendues par créneau. Les créneaux qui n'atteignent
+                  pas ce nombre sont listés sous le tableau.">
       Effectif cible
       <input type="number" min="0" [(ngModel)]="effectifCible" (ngModelChange)="charger()"
              name="cible" class="court">
@@ -76,10 +76,10 @@
 
   @if (planning && !chargement) {
     <p class="page-hint">
-      <strong>Cliquez une case</strong> pour poser le créneau avec le statut choisi ; cliquez-la
-      de nouveau pour le retirer. Les totaux du bas comptent les créneaux
-      <strong>réellement tenus</strong> : un créneau annulé ou une absence ne compte pas, sinon
-      une garde paraîtrait armée alors qu'elle ne l'est pas.
+      <strong>Cliquez une case</strong> pour placer la personne sur ce créneau, avec le statut
+      choisi ci-dessus ; cliquez-la de nouveau pour la retirer. La ligne de totaux ne compte
+      que les créneaux <strong>réellement tenus</strong> : les créneaux annulés et les
+      absences en sont exclus.
     </p>
 
     <div class="grille-defilante">
@@ -125,7 +125,8 @@
           } @empty {
             <tr>
               <td [attr.colspan]="planning.jours.length + 1" class="empty">
-                Cette équipe n'a aucun membre : il n'y a personne à placer.
+                Cette équipe ne compte aucun membre pour le moment : il n'y a personne à
+                placer sur le planning.
               </td>
             </tr>
           }
@@ -162,7 +163,7 @@
       <span class="case absent">M</span> absent
       <span class="case libre">M</span> libre
       <span class="note-legende">
-        {{ totalCreneauxTenus }} créneau(x) tenus sur la fenêtre affichée.
+        {{ totalCreneauxTenus }} créneau(x) tenu(s) sur la période affichée.
       </span>
     </p>
 
@@ -192,9 +193,9 @@
           {{ conflits.length }} double(s) engagement(s)
         </h3>
         <p class="page-hint">
-          Ces personnes sont attendues <strong>par une autre équipe</strong> au même moment.
-          Le créneau a quand même été posé — il existe des cas légitimes — mais quelqu'un doit
-          trancher.
+          Ces personnes sont déjà attendues <strong>par une autre équipe</strong> sur le même
+          créneau. Le créneau a tout de même été enregistré, car la situation peut être
+          volontaire — à vous de confirmer ou de réorganiser.
         </p>
         <ul>
           @for (c of conflits; track c.utilisateur + c.date + c.creneau) {
@@ -214,8 +215,8 @@
           {{ horsDisponibilite.length }} créneau(x) hors disponibilité déclarée
         </h3>
         <p class="page-hint">
-          Ce n'est pas une erreur : un chef d'équipe a le droit d'appeler. Mais ces personnes
-          n'ont pas coché ces créneaux, et leur présence reste à confirmer.
+          Ces personnes n'ont pas déclaré être disponibles sur ces créneaux. Vous pouvez tout
+          à fait les y placer, mais pensez à confirmer leur présence avec elles.
         </p>
         <ul>
           @for (e of horsDisponibilite; track e.utilisateur + e.date + e.creneau) {

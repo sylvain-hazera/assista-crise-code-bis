@@ -4,8 +4,8 @@
     <div class="header-left">
       <h1><span class="material-icons">family_restroom</span> Relogement des familles</h1>
       <p class="subtitle">
-        Qui a été sinistré, où cette famille dort ce soir, jusqu'à quand — et ce qui tient
-        vraiment. Pendant de « Logement intervenants », pour les sinistrés.
+        Suivez les foyers sinistrés que votre institution accompagne : où ils sont
+        hébergés aujourd'hui, jusqu'à quand, et où en est leur relogement.
       </p>
     </div>
     <div class="header-actions">
@@ -48,22 +48,32 @@
       <div class="tuile" [class.alerte]="s.sans_solution > 0">
         <span class="chiffre">{{ s.sans_solution }}</span>
         <span class="etiquette">foyer(s) sans solution</span>
-        <span class="precision">Personne ne sait où ils dorment ce soir.</span>
+        <span class="precision">
+          Aucun hébergement n'est enregistré pour eux. À traiter en priorité.
+        </span>
       </div>
       <div class="tuile" [class.alerte]="s.termes_depasses > 0">
         <span class="chiffre">{{ s.termes_depasses }}</span>
         <span class="etiquette">terme(s) dépassé(s)</span>
-        <span class="precision">Fin prévue passée, aucune sortie enregistrée.</span>
+        <span class="precision">
+          La date de fin prévue est passée sans qu'une sortie soit enregistrée.
+          Vérifiez où en sont ces familles.
+        </span>
       </div>
       <div class="tuile" [class.attention]="s.arrivent_a_terme > 0">
         <span class="chiffre">{{ s.arrivent_a_terme }}</span>
         <span class="etiquette">arrivent à leur terme</span>
-        <span class="precision">Sous {{ s.jours_alerte_terme }} jours.</span>
+        <span class="precision">
+          Leur hébergement prend fin dans moins de {{ s.jours_alerte_terme }} jours.
+        </span>
       </div>
       <div class="tuile bon">
         <span class="chiffre">{{ s.relogees_durablement }}</span>
         <span class="etiquette">relogé(s) durablement</span>
-        <span class="precision">Solution définitive seulement — l'hôtel ne compte pas.</span>
+        <span class="precision">
+          Seules les solutions définitives sont comptées : un hébergement d'urgence ou
+          temporaire n'est pas encore un relogement.
+        </span>
       </div>
       <div class="tuile">
         <span class="chiffre">{{ s.foyers }}</span>
@@ -85,9 +95,8 @@
         <span class="material-icons">content_copy</span> Copier
       </button>
       <p class="page-hint">
-        Les chiffres portent sur toute la crise, pas sur les lignes filtrées à l'écran :
-        c'est la même source que les tuiles ci-dessus, pour qu'un bilan écrit ne puisse pas
-        diverger de ce que la page montre.
+        Ces chiffres portent sur l'ensemble de la crise, et non sur les lignes affichées
+        après filtrage. Vous pouvez les reprendre tels quels dans un point de situation.
       </p>
     </details>
   }
@@ -202,7 +211,7 @@
                 @if (sol.point_nom) { <span class="detail">{{ sol.point_nom }}</span> }
                 @else if (sol.commune_nom) { <span class="detail">{{ sol.commune_nom }}</span> }
               } @else {
-                <span class="rien">Aucune — à loger</span>
+                <span class="rien">Aucun hébergement</span>
               }
             </td>
             <td>
@@ -269,7 +278,7 @@
                     <h4>Parcours ({{ d.solutions.length }} hébergement(s))</h4>
                     @if (!d.solutions.length) {
                       <p class="vide-inline">
-                        Aucun hébergement enregistré : ce foyer n'a encore rien.
+                        Aucun hébergement n'a encore été enregistré pour ce foyer.
                       </p>
                     } @else {
                       <ol class="parcours">
@@ -389,9 +398,9 @@
         </label>
       </div>
       <p class="page-hint">
-        Nom, coordonnées, notes d'accompagnement et adresses d'hébergement sont
-        <strong>chiffrés au repos</strong> : ce sont les données les plus sensibles du
-        produit, et leur consultation est tracée.
+        Vous renseignez ici des informations sur des personnes sinistrées. Le nom, les
+        coordonnées, l'adresse d'hébergement et les notes d'accompagnement sont
+        <strong>protégés</strong>, et chaque consultation est enregistrée.
       </p>
       <div class="actions-panneau">
         <button type="button" class="btn-secondary" (click)="fermerFormulaire()">
@@ -412,9 +421,8 @@
       <h2>Hébergement — {{ cible.nom_referent }}</h2>
       @if (cible.solution_courante) {
         <p class="page-hint">
-          L'hébergement en cours sera <strong>clos</strong> à la date de début de celui-ci :
-          un foyer ne dort pas à deux endroits, et deux lignes ouvertes le feraient compter
-          deux fois dans le bilan.
+          L'hébergement en cours se terminera automatiquement à la date de début de
+          celui-ci : un foyer n'occupe qu'un logement à la fois.
         </p>
       }
       <div class="champs">
@@ -482,9 +490,8 @@
         </label>
       </div>
       <p class="page-hint">
-        Le <strong>terme prévu</strong> est ce qui fait tout le suivi : sans lui, « arrive à
-        son terme » ne peut pas se calculer, et la sortie se découvre le jour où la famille
-        appelle.
+        Renseignez la <strong>date de fin prévue</strong> dès que vous la connaissez :
+        c'est elle qui permet de vous prévenir avant la fin de l'hébergement.
       </p>
       <div class="actions-panneau">
         <button type="button" class="btn-secondary" (click)="fermerSolution()">Annuler</button>

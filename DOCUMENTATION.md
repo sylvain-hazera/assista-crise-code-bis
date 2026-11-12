@@ -4114,6 +4114,47 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ## 13. Conventions de développement
 
+### 13.0 Les textes de l'interface s'adressent à celui qui les lit
+
+Règle posée le 12/11/2026, après un constat sans appel : beaucoup de textes d'écran, d'emails
+et de documents étaient écrits **comme on écrit à celui qui a commandé la fonctionnalité** —
+on y justifiait une décision de conception, on citait un chemin d'URL, on dramatisait pour
+convaincre. Ce n'est pas la bonne personne. Celui qui lit est un bénévole, un agent, un
+sinistré, et il veut savoir quoi faire.
+
+**Ce qui ne change pas** : on explique. Le projet assume des écrans qui enseignent leur propre
+métier, et cette habitude est bonne — un outil de crise sert à des gens qui l'ouvrent deux fois
+par an, parfois en urgence, souvent sans formation.
+
+**Ce qui change, c'est à qui l'on parle.** Sept règles :
+
+1. **Vouvoyer, et s'adresser au lecteur.** « Vous pouvez… », « Renseignez… », « Cette page vous
+   montre… ». Jamais « on », qui désigne l'équipe qui construit l'outil.
+2. **Dire quoi faire, pas pourquoi on l'a codé ainsi.** « Renseignez la date de fin prévue :
+   c'est elle qui permet de vous prévenir avant la fin de l'hébergement » — et non « sans
+   elle, le calcul du terme est impossible ».
+3. **Aucun terme d'implémentation** : table, base, serveur, API, endpoint, null, chiffré au
+   repos, sérialisation. Le lecteur ne sait pas ce qu'est une table, et ne devrait pas avoir à
+   le savoir pour remplir un formulaire.
+4. **Aucun chemin d'URL ni nom de fichier** dans un texte visible. On nomme l'écran
+   (« le planning de l'équipe »), pas sa route.
+5. **Pas de dramatisation.** « Personne ne sait où ils dorment ce soir » est une phrase de
+   réunion, pas d'écran. « Aucun hébergement n'est enregistré pour eux. À traiter en
+   priorité. » dit la même chose et respecte le lecteur, qui connaît son métier.
+6. **Pas de participe passé genré** quand le destinataire est inconnu : « Vous faites
+   désormais partie de l'équipe » plutôt que « Vous avez été ajouté ».
+7. **Un refus ou un vide s'explique et donne la suite.** Ce qui vaut pour les erreurs vaut
+   pour les pages vides : dire ce que la page fait, pourquoi elle est vide pour ce compte, et
+   à qui s'adresser.
+
+Cela vaut pour **les écrans, les emails (`core/modeles_messages.py`) et les documents produits**
+(attestations, exports). Et particulièrement en marque blanche : un bénévole des Casques Jaunes
+lit « Réserve Résilience », jamais « Assista-Crise » (voir `core/branding.py`).
+
+Le **commentaire de code**, lui, garde l'autre registre : il s'adresse au prochain développeur,
+explique le pourquoi, les pièges et les décisions. Les deux registres coexistent dans le même
+fichier — le texte entre balises parle à l'utilisateur, le commentaire au mainteneur.
+
 - Commentaires et messages de commit **en français**, phrase au présent décrivant le changement.
 - Un commentaire explique **pourquoi** (contrainte, piège, raison d'un choix), en une ou deux
   lignes ; pas ce que fait le code, ni l'historique (dates, conversations, incidents : git et

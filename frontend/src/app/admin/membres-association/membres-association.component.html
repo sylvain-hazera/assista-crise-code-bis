@@ -949,11 +949,11 @@
       <p class="help-text">
         <span class="material-icons">info</span>
         <span>
-          Trois états, et le troisième compte autant que les deux autres : disponible,
-          indisponible, et <strong>non renseigné</strong>. Une case vide n'est
-          <strong>pas</strong> un refus — c'est quelqu'un qui n'a pas répondu, et c'est lui
-          qu'il faut relancer. Partir en mobilisation en comptant les silences comme des refus,
-          ou comme des présences, donne un effectif imaginaire.
+          Chaque case peut avoir trois états : disponible, indisponible, ou
+          <strong>non renseigné</strong>. Une case vide ne signifie pas un refus — la personne
+          n'a simplement pas encore répondu. Les membres concernés portent la mention
+          « sans réponse » : ce sont eux qu'il est utile de relancer avant d'arrêter un
+          effectif.
         </span>
       </p>
 
@@ -1006,14 +1006,14 @@
           <p>
             {{ campagne.nombre_reponses }} réponse(s) sur
             {{ campagne.nombre_cibles }} personne(s) sollicitée(s).
-            Les colonnes ne portent que les créneaux que la campagne a posés
-            ({{ campagne.creneaux.length }}) : les autres n'ont jamais été demandés.
+            Seuls les {{ campagne.creneaux.length }} créneau(x) demandés par cette campagne
+            sont affichés : les autres n'ont pas fait l'objet d'une question.
           </p>
           @if (grille?.tronquee) {
             <p class="alerte">
               <span class="material-icons">warning_amber</span>
-              La période dépasse ce qu'une grille peut montrer : seuls les premiers jours
-              sont affichés.
+              Cette campagne couvre une période trop longue pour être affichée en entier :
+              seuls les premiers jours sont visibles.
             </p>
           }
         </section>
@@ -1239,10 +1239,10 @@
           <span class="creneau silence">M</span> aucune déclaration
           <span class="creneau oui pointe">M</span> pris sur ce créneau
           <span class="note-legende">
-            Une colonne par jour, les créneaux empilés : <strong>M</strong>atin,
-            <strong>Mi</strong>di, <strong>S</strong>oir, <strong>N</strong>uit — la même
-            grille que la constitution d'équipe. <strong>Cliquez une case</strong> pour
-            prendre la personne sur ce créneau précis.
+            Une colonne par jour, et dans chaque colonne les créneaux de la journée :
+            <strong>M</strong>atin, <strong>Mi</strong>di, <strong>S</strong>oir,
+            <strong>N</strong>uit. <strong>Cliquez une case</strong> pour retenir la personne
+            sur ce créneau précis.
           </span>
         </p>
 
@@ -1398,22 +1398,21 @@
 
         <p class="page-hint">
           @if (modeAffectation === 'nouvelle') {
-            L'équipe est créée dans cette association, <strong>sans échelon</strong> : c'est
-            une équipe opérationnelle, pas un niveau de la hiérarchie territoriale. Réservé au
-            bureau.
+            L'équipe sera créée dans votre association comme <strong>équipe
+            d'intervention</strong>, et non comme un échelon de l'organisation territoriale.
+            Seuls les membres du bureau peuvent en créer une.
           } @else {
-            L'affectation <strong>ajoute</strong> à l'équipe, elle ne remplace pas ses
-            membres. La mission vaut pour l'équipe entière — une équipe n'a qu'une mission
-            active.
+            Les personnes sélectionnées <strong>s'ajoutent</strong> aux membres déjà présents
+            dans l'équipe : personne n'en est retiré. La mission, si vous en indiquez une,
+            vaut pour toute l'équipe.
           }
           @if (totalCreneauxPointes) {
             <br>
-            Les créneaux pointés sont posés au <strong>planning de l'équipe</strong>
-            (/admin/planning-equipes), en « confirmé ».
+            Les créneaux que vous avez retenus seront inscrits au
+            <strong>planning de l'équipe</strong>, avec le statut « confirmé ».
             @if (campagneChoisie) {
-              Ils alimentent <strong>en plus</strong> les tours de garde de la campagne quand
-              elle en a : ce sont deux questions distinctes — qui tient ce créneau pour cette
-              équipe, et qui arme ce tour de garde.
+              Ils complètent également les tours de garde de cette campagne, lorsqu'elle en
+              comporte.
             }
           }
         </p>
@@ -1447,8 +1446,9 @@
           {{ conflitsPlanning.length }} double(s) engagement(s)
         </h3>
         <p class="page-hint">
-          Ces personnes sont attendues par une autre équipe sur le même créneau. Le créneau a
-          été posé quand même — il existe des cas légitimes — mais quelqu'un doit trancher.
+          Ces personnes sont déjà attendues par une autre équipe sur le même créneau. Le
+          créneau a tout de même été enregistré, car la situation peut être volontaire — à
+          vous de confirmer ou de réorganiser.
         </p>
         <ul>
           @for (c of conflitsPlanning; track $index) {
