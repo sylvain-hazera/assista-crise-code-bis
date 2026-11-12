@@ -1453,6 +1453,62 @@ Le cadre entier disparaît pour une mairie sans rien de spécial à écrire : to
 portent `visibilite: 'membres-association'`, et le menu masque déjà un cadre dont aucune entrée
 n'est visible.
 
+#### L'arborescence des équipes : deux cadres par équipe, fiches, recherche et affectation
+
+Demande du 12/11/2026. L'onglet « Équipes et justificatifs » montrait un nom par membre et rien
+d'autre. Il montre désormais, par équipe, **deux cadres dépliables** et, par personne, **une
+fiche** — plus la recherche, le tri et la sélection multiple qui permettent de composer une
+équipe terrain sans quitter l'arbre.
+
+**Les deux cadres, et pourquoi ce découpage.** Le premier porte les **cadres de l'équipe**
+(`Team.membres_encadrement`, plus le chef et le régulateur) ; le second, le **niveau en
+dessous** — pour une équipe de coordination, les cadres des équipes rattachées, parce que c'est
+ainsi qu'on lit une chaîne de commandement ; pour une équipe départementale, qui n'a rien
+dessous, ses intervenants. Une équipe qui a des sous-équipes **et** des équipiers en propre
+montre les deux : les taire les ferait disparaître de l'écran.
+
+Le rôle d'une personne dans une équipe (`CHEF`, `REGULATEUR`, `CADRE`, `INTERVENANT`) est
+**calculé par le serveur** (`annuaire_association._roles_dans_les_equipes`) et non redéduit côté
+navigateur : la même personne est cadre ici et intervenante là, et un rôle recomposé à partir de
+listes d'identifiants recopiées finit par diverger de ce que le serveur retient.
+
+**Un seul appel pour l'annuaire enrichi.** `GET /api/contacts-institutions/annuaire-association/`
+assemble ce qui vivait dans cinq tables : rattachement (fonction, statut, bureau), compte
+(courriel, téléphone), fiche bénévole (commune, métier), ressource (`Offer.competences`) et
+`DisponibiliteOffre` pour savoir qui a déclaré ses créneaux. Les mêmes sources que
+`core/ciblage_benevoles.py`, délibérément : une personne trouvée par une recherche dans l'arbre
+doit être exactement celle qu'une campagne ciblerait.
+
+**Deux cercles de lecture.** La page est ouverte à tout membre d'une AASC, pas seulement à son
+bureau (`membresAssociationGuard`). Téléphone, commune et métier sont donc réservés au bureau et
+aux administrateurs, comme `ContactInstitutionSerializer.CHAMPS_SUIVI_ASSOCIATIF` le fait déjà
+pour l'aptitude. Ils sont **absents** de la réponse sinon, jamais rendus à `null` : afficher
+« — » affirmerait qu'il n'y a pas de téléphone, alors qu'on n'a pas le droit de le savoir. Le
+drapeau `coordonnees_visibles` dit laquelle des deux réponses l'écran est en train de lire, et
+celui-ci écrit la phrase plutôt que de laisser un tiret.
+
+**L'affectation en masse passe par `POST /api/teams/<id>/ajouter-membres/`, jamais par un
+`PATCH member_ids`.** Un PATCH envoie la liste entière telle que ce navigateur la connaissait :
+deux régulateurs qui affectent en même temps, et le second efface les ajouts du premier sans que
+personne ne le voie. L'action ajoute, donc l'ordre des appels n'a plus d'importance. Elle
+n'accepte que des personnes **rattachées activement à l'institution de l'équipe** (sinon elle
+serait un moyen détourné d'ajouter n'importe quel compte à n'importe quelle équipe), refuse
+nommément un membre sorti, et **rend ses refus** : une affectation partielle présentée comme un
+succès fait partir une équipe incomplète en croyant l'avoir au complet. La mission est posée
+dans la foulée (`_definir_mission`), parce qu'une équipe n'a qu'une mission active.
+
+Piège rencontré en écrivant l'action, attrapé par un test : filtrer les rattachements sur
+`actif=True` faisait disparaître le membre sorti **avant** qu'on puisse dire pourquoi il était
+refusé — sortir quelqu'un désactive son rattachement. L'appelant lisait « n'est pas membre de
+cette institution » d'une personne qu'il voyait dans l'annuaire.
+
+**La recherche porte sur tous les critères** — nom, fonction, rôle, commune, métier,
+compétences, coordonnées quand on y a droit — plus des filtres structurés (rôle, compétence,
+bureau, sans disponibilité déclarée, titre périmé, sans fiche ressource) et cinq tris. Filtres et
+cadres sont recalculés dans `recalculerLesVues()` et non dans le gabarit : avec 125 équipes,
+trier et filtrer dans une expression de template se refait à chaque cycle de détection de
+changements.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

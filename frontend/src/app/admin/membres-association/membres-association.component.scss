@@ -748,3 +748,399 @@
   background: var(--ac-orange-bg, #fff7ed);
   color: var(--ac-orange-text, #9a3412);
 }
+
+/* ══ Arborescence enrichie : recherche, cadres, fiches et sélection ════════════════════════
+   Ajouté le 12/11/2026. Trois contraintes ont décidé de ces styles :
+   - la page doit rester lisible à quatre niveaux d'indentation (national → zone → région →
+     département), donc les cadres s'indentent peu et se distinguent par leur fond ;
+   - un signal d'alerte ne doit JAMAIS reposer sur la seule couleur : chaque pastille porte
+     une icône et une infobulle ;
+   - le fond de carte du projet reste clair même en thème sombre, mais pas cet écran : toutes
+     les couleurs passent par les variables `--ac-*` avec un repli clair. */
+
+.barre-recherche {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .6rem;
+  margin: .85rem 0 .25rem;
+  padding: .7rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--ac-surface-2, #f9fafb);
+
+  .champ-recherche {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex: 1 1 18rem;
+    padding: .35rem .5rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    border-radius: 6px;
+    background: var(--ac-surface, white);
+
+    .material-icons { font-size: 1.05rem; color: var(--ac-text-muted, #9ca3af); }
+    input { flex: 1; border: none; background: none; font: inherit; outline: none;
+            color: var(--ac-text, #374151); min-width: 0; }
+  }
+
+  .champ-filtre {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    font-size: .76rem;
+    color: var(--ac-text-muted, #6b7280);
+
+    select {
+      padding: .3rem .4rem;
+      border: 1px solid var(--ac-border-strong, #d1d5db);
+      border-radius: 6px;
+      background: var(--ac-surface, white);
+      color: var(--ac-text, #374151);
+      font: inherit;
+      font-size: .82rem;
+    }
+  }
+
+  .cases-filtres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    font-size: .8rem;
+    color: var(--ac-text, #374151);
+
+    label { display: inline-flex; align-items: center; gap: .25rem; cursor: pointer; }
+  }
+
+  .resultats-filtre {
+    flex: 1 1 100%;
+    font-size: .82rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+}
+
+.lien {
+  padding: 0 .3rem;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: .8rem;
+  color: var(--ac-blue-text, #1d4ed8);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.page-hint.restriction {
+  display: flex;
+  align-items: flex-start;
+  gap: .35rem;
+  margin-top: .6rem;
+
+  .material-icons { font-size: 1rem; }
+}
+
+/* L'œil : même geste sur une équipe et sur une personne, donc même bouton. */
+.oeil {
+  display: inline-flex;
+  padding: .15rem;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--ac-text-muted, #9ca3af);
+  cursor: pointer;
+
+  &:hover { background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #374151); }
+  &.ouvert { color: var(--ac-blue-text, #1d4ed8); }
+
+  .material-icons { font-size: 1.05rem; }
+}
+
+.pastille.correspond {
+  background: var(--ac-blue-text, #1d4ed8);
+  color: white;
+}
+
+.detail-equipe {
+  margin: .3rem 0 .5rem 1.6rem;
+  padding: .6rem .75rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--ac-surface-2, #f9fafb);
+
+  .description { margin: 0 0 .5rem; font-size: .85rem; color: var(--ac-text, #374151); }
+}
+
+/* Listes de définitions : le même rendu pour la fiche d'une équipe et celle d'une personne. */
+.detail-equipe dl,
+.fiche-personne dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: .4rem .9rem;
+  margin: 0;
+
+  dt {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--ac-text-muted, #6b7280);
+  }
+  dd {
+    margin: 0;
+    font-size: .86rem;
+    color: var(--ac-text, #374151);
+
+    &.bientot { color: var(--ac-orange-text, #9a3412); font-weight: 600; }
+    &.depasse { color: var(--ac-red-text, #991b1b); font-weight: 600; }
+    &.restreint { color: var(--ac-text-subtle, #9ca3af); font-style: italic; }
+    &.alerte-texte { color: var(--ac-orange-text, #9a3412); }
+  }
+}
+
+.cadres-equipe {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  margin: .3rem 0 .6rem 1.6rem;
+}
+
+.cadre {
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--ac-surface, white);
+  overflow: hidden;
+
+  .cadre-entete {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    width: 100%;
+    padding: .4rem .5rem;
+    border: none;
+    background: var(--ac-surface-2, #f9fafb);
+    font: inherit;
+    text-align: left;
+    color: var(--ac-text, #374151);
+    cursor: pointer;
+
+    &:hover { background: var(--ac-border, #f3f4f6); }
+
+    .material-icons { font-size: 1.05rem; color: var(--ac-text-muted, #6b7280); }
+    .icone { color: var(--ac-blue-text, #2563eb); }
+    .titre { font-weight: 600; font-size: .85rem; flex: 1; }
+    .compte {
+      padding: .05rem .4rem;
+      border-radius: 999px;
+      background: var(--ac-border, #e5e7eb);
+      color: var(--ac-text, #374151);
+      font-size: .74rem;
+    }
+  }
+
+  .vide-inline { padding: .4rem .6rem; }
+  .tout-cocher { margin: 0 0 .4rem .6rem; }
+
+  .groupe {
+    padding: .35rem .5rem .1rem;
+
+    h4 {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      margin: .2rem 0;
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--ac-text-muted, #6b7280);
+
+      .compte { font-weight: 400; }
+    }
+  }
+}
+
+.personnes {
+  list-style: none;
+  margin: .25rem 0 .4rem;
+  padding: 0 .5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.ligne-personne {
+  padding: .35rem .5rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--ac-surface, white);
+
+  &.attend { border-left-color: var(--ac-red-text, #991b1b); }
+  &.selectionnee {
+    border-color: #2563eb;
+    background: var(--ac-blue-bg, #eff6ff);
+  }
+
+  .personne-entete {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .35rem;
+    font-size: .86rem;
+  }
+
+  .case { display: inline-flex; cursor: pointer; }
+  .nom { font-weight: 600; }
+  .fonction { color: var(--ac-text-muted, #6b7280); font-size: .78rem; }
+
+  /* Le rôle est une étiquette et non une couleur seule : « Cadre » reste lisible en
+     niveaux de gris, et c'est l'information qui structure tout cet écran. */
+  .role {
+    padding: .05rem .4rem;
+    border-radius: 999px;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--ac-text-muted, #6b7280);
+    white-space: nowrap;
+
+    &.role-chef { border-color: #c2410c; background: var(--ac-orange-bg, #fff7ed);
+                  color: var(--ac-orange-text, #9a3412); }
+    &.role-regulateur { border-color: #2563eb; background: var(--ac-blue-bg, #eff6ff);
+                        color: var(--ac-blue-text, #1d4ed8); }
+    &.role-cadre { border-color: #16a34a; background: var(--ac-green-bg, #f0fdf4);
+                   color: var(--ac-green-text, #166534); }
+  }
+
+  .competence {
+    padding: .05rem .4rem;
+    border-radius: 4px;
+    background: var(--ac-surface-2, #f3f4f6);
+    color: var(--ac-text, #374151);
+    font-size: .72rem;
+
+    &.plus { color: var(--ac-text-muted, #6b7280); }
+  }
+
+  .signaux { display: inline-flex; align-items: center; gap: .25rem; margin-left: auto; }
+
+  .signal {
+    display: inline-flex;
+    align-items: center;
+    gap: .1rem;
+    font-size: .72rem;
+
+    .material-icons { font-size: .95rem; }
+
+    &.perime { color: var(--ac-red-text, #991b1b); }
+    &.muet { color: var(--ac-orange-text, #9a3412); }
+    &.sans-ressource { color: var(--ac-text-subtle, #9ca3af); }
+  }
+}
+
+.fiche-personne {
+  margin-top: .45rem;
+  padding: .6rem;
+  border-top: 1px dashed var(--ac-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+
+  h4 {
+    display: flex;
+    align-items: baseline;
+    gap: .4rem;
+    margin: 0 0 .3rem;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--ac-text-muted, #6b7280);
+
+    .compte { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  }
+
+  .puces {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* La barre d'affectation suit la page : on compose une équipe en piochant dans plusieurs
+   branches, et remonter en haut à chaque ajout rendrait le geste impraticable. */
+.barre-selection {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: .75rem;
+  padding: .7rem .85rem;
+  border: 1px solid #2563eb;
+  border-radius: 8px;
+  background: var(--ac-surface, white);
+  box-shadow: 0 -2px 12px rgba(15, 23, 42, .12);
+
+  .selection-resume {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: .5rem;
+    font-size: .86rem;
+
+    .noms {
+      flex: 1 1 14rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--ac-text-muted, #6b7280);
+      font-size: .78rem;
+    }
+  }
+
+  .selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: .6rem;
+    margin-top: .5rem;
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+      font-size: .74rem;
+      color: var(--ac-text-muted, #6b7280);
+    }
+
+    select, input[type="text"] {
+      padding: .35rem .45rem;
+      border: 1px solid var(--ac-border-strong, #d1d5db);
+      border-radius: 6px;
+      background: var(--ac-surface, white);
+      color: var(--ac-text, #374151);
+      font: inherit;
+      font-size: .84rem;
+      min-width: 12rem;
+    }
+  }
+}
+
+.refus-affectation {
+  margin-top: .6rem;
+  padding: .7rem .85rem;
+  border: 1px solid var(--ac-orange-border, #fed7aa);
+  border-radius: 8px;
+  background: var(--ac-orange-bg, #fff7ed);
+  color: var(--ac-orange-text, #9a3412);
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    margin: 0 0 .35rem;
+    font-size: .9rem;
+  }
+
+  ul { margin: 0; padding-left: 1.1rem; font-size: .84rem; }
+}

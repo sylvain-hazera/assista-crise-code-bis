@@ -8416,6 +8416,117 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
+    @action(detail=True, methods=['post'], url_path='ajouter-membres')
+    def ajouter_membres(self, request, pk=None):
+        """Affecte plusieurs personnes à cette équipe d'un seul geste, avec sa mission.
+
+        Demande de Sylvain du 12/11/2026 : depuis l'arborescence de l'association, cocher
+        plusieurs membres puis « les affecter à une équipe d'intervention terrain avec
+        missions ».
+
+        **Elle AJOUTE, elle ne remplace pas**, et c'est la raison d'être de cette action plutôt
+        qu'un `PATCH member_ids` depuis le navigateur. Un PATCH envoie la liste entière telle
+        que le navigateur la connaissait : deux régulateurs qui affectent en même temps, et le
+        second efface les ajouts du premier sans que personne ne le voie. Ici chaque appel est
+        une addition, et l'ordre des appels n'a plus d'importance.
+
+        Deux garde-fous qu'un PATCH n'avait pas non plus :
+
+        - on ne peut affecter que des gens **rattachés activement à l'institution de l'équipe**
+          (ou à son institution délégataire). Sans ce test, l'action serait un moyen détourné
+          d'ajouter n'importe quel compte de la plateforme à n'importe quelle équipe ;
+        - un membre **SORTI** est refusé nommément. Il est encore dans l'annuaire — on a besoin
+          de savoir qui était là — mais l'envoyer en intervention serait une erreur, et la
+          refuser en silence laisserait croire qu'il est parti sur le terrain.
+
+        La mission est optionnelle et vaut pour l'équipe entière (une équipe n'a qu'une mission
+        active) : la définir ici évite d'avoir à rouvrir la page Équipes juste après.
+        """
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez affecter des membres qu'aux équipes de votre "
+                          "institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        demandes = request.data.get('utilisateurs') or []
+        if not isinstance(demandes, list) or not demandes:
+            return Response({"error": "Aucune personne à affecter."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        institutions = [team.institution_id]
+        if team.institution_delegataire_id:
+            institutions.append(team.institution_delegataire_id)
+
+        # Volontairement SANS `actif=True` : sortir un membre désactive son rattachement
+        # (règle tenue au modèle), donc filtrer sur `actif` ici l'aurait fait disparaître
+        # avant qu'on puisse dire POURQUOI il est refusé. L'appelant aurait lu « n'est pas
+        # membre de cette institution » d'une personne qu'il voit dans l'annuaire — trouvé
+        # par un test, pas à l'œil.
+        rattachements = {
+            str(c.utilisateur_id): c
+            for c in ContactInstitution.objects.filter(
+                institution_id__in=[i for i in institutions if i],
+                utilisateur_id__in=[str(u) for u in demandes],
+            )
+        }
+
+        a_ajouter, refuses = [], []
+        for identifiant in {str(u) for u in demandes}:
+            contact = rattachements.get(identifiant)
+            if contact is None:
+                refuses.append({"utilisateur": identifiant,
+                                "motif": "N'est pas membre de l'institution de l'équipe."})
+            elif contact.statut == ContactInstitution.StatutMembre.SORTI or not contact.actif:
+                refuses.append({"utilisateur": identifiant,
+                                "motif": "Membre sorti de l'association, ou rattachement "
+                                         "désactivé."})
+            else:
+                a_ajouter.append(contact.utilisateur_id)
+
+        deja = set(team.members.values_list('id', flat=True))
+        nouveaux = [u for u in a_ajouter if u not in deja]
+        if nouveaux:
+            team.members.add(*nouveaux)
+
+        titre = (request.data.get('mission_titre') or '').strip()
+        if titre:
+            crise = None
+            crise_id = request.data.get('crise_id')
+            if crise_id:
+                try:
+                    crise = Crisis.objects.get(id=crise_id)
+                except (Crisis.DoesNotExist, ValueError, TypeError):
+                    return Response({"error": "Crise introuvable."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                validate_crisis_open(crise, field_name="crise_id")
+            _definir_mission(request, team, titre, crise)
+
+        audit_log(
+            request=request,
+            action_code="AFFECTATION",
+            objet_type="Team",
+            objet_id=team.id,
+            objets_ids=[str(u) for u in nouveaux],
+            commentaire=(
+                f"Affectation en masse : {len(nouveaux)} personne(s) ajoutée(s) à "
+                f"l'équipe « {team.name} »"
+                + (f", {len(refuses)} refusée(s)" if refuses else "")
+                + (f", mission « {titre} »" if titre else "")
+            ),
+        )
+
+        team.refresh_from_db()
+        return Response({
+            "team": TeamSerializer(team, context=self.get_serializer_context()).data,
+            "ajoutes": len(nouveaux),
+            "deja_presents": len(a_ajouter) - len(nouveaux),
+            # Jamais tus : une affectation partielle qui se présente comme un succès fait
+            # partir une équipe incomplète en croyant l'avoir au complet.
+            "refuses": refuses,
+        })
+
     @action(detail=True, methods=['post'], url_path='definir-delegation')
     def definir_delegation(self, request, pk=None):
         """Délègue l'équipe à une institution/association qui la gère au quotidien pour le
@@ -15962,6 +16073,43 @@ class ContactInstitutionViewSet(
             commentaire=f"Création contact institution : {contact.utilisateur} pour {contact.institution.nom}",
         )
         self._ouvrir_les_droits(contact)
+
+    @action(detail=False, methods=['get'], url_path='annuaire-association')
+    def annuaire_association(self, request):
+        """L'effectif d'une association, enrichi pour l'arborescence des équipes.
+
+        Pourquoi une action plutôt que la liste ordinaire des contacts : l'écran a besoin, pour
+        CHAQUE membre, de choses qui vivent dans quatre tables (le rattachement, le compte, la
+        fiche bénévole, la ressource qui porte les compétences) et d'une cinquième pour savoir
+        qui a déclaré ses créneaux. Les assembler côté navigateur demandait quatre listes
+        complètes et autant d'occasions de les voir diverger ; les assembler ici coûte cinq
+        requêtes, quel que soit l'effectif.
+
+        Contrôle d'accès porté par l'action, comme pour la grille de disponibilités : le
+        ViewSet qui l'héberge autorise une question ciblée sur une institution à tout rôle
+        institutionnel (voir `get_queryset`), et il ne faut pas qu'une action qui sert des
+        coordonnées en hérite. On exige donc d'être membre actif de l'association interrogée,
+        ou administrateur -- et le module `annuaire_association` réserve en plus les
+        coordonnées au bureau."""
+        from .annuaire_association import annuaire
+
+        institution_id = request.query_params.get("institution")
+        if not institution_id:
+            return Response({"error": "Paramètre `institution` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        institution = Institution.objects.filter(pk=institution_id).first()
+        if institution is None:
+            return Response({"error": "Institution inconnue."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        est_admin = get_effective_role(request) == UserRole.ADMINISTRATOR
+        if not est_admin and not ContactInstitution.objects.filter(
+                institution=institution, utilisateur=request.user, actif=True).exists():
+            raise PermissionDenied(
+                "Vous devez être membre de cette association pour consulter son annuaire."
+            )
+
+        return Response(annuaire(institution, request))
 
     @action(detail=False, methods=['post'], url_path='inviter',
             permission_classes=[IsInstitutionalActor])

@@ -160,3 +160,59 @@ export interface GrilleDisponibilites {
    * est rendu : une liste qui omet des gens sans le dire laisse chercher. */
   membres_en_conge: number;
 }
+
+// ══ Annuaire enrichi, pour l'arborescence des équipes ═══════════════════════════════════════
+
+/** Place d'une personne DANS une équipe donnée. Calculée par le serveur et non déduite ici :
+ * la même personne peut être cadre dans une équipe et simple intervenant dans une autre, et un
+ * rôle recomposé côté navigateur finirait par diverger de ce que le serveur retient. */
+export type RoleDansEquipe = 'CHEF' | 'REGULATEUR' | 'CADRE' | 'INTERVENANT';
+
+export const LIBELLES_ROLE_EQUIPE: Record<RoleDansEquipe, string> = {
+  CHEF: "Chef d'équipe", REGULATEUR: 'Régulateur', CADRE: 'Cadre',
+  INTERVENANT: 'Intervenant',
+};
+
+/** Une ligne de l'annuaire enrichi (`/api/contacts-institutions/annuaire-association/`).
+ *
+ * **Les coordonnées sont OPTIONNELLES au sens fort** : elles sont absentes de la réponse quand
+ * le lecteur n'est pas au bureau, et non mises à `null`. Les afficher comme « — » affirmerait
+ * qu'il n'y a pas de téléphone, alors qu'on n'a simplement pas le droit de le savoir — d'où
+ * `coordonneesVisibles` sur l'enveloppe, qui dit lequel des deux cas on est en train de lire. */
+export interface MembreAnnuaire {
+  utilisateur: string;
+  contact: string;
+  nom: string;
+  fonction: string;
+  membre_bureau: boolean;
+  statut: StatutMembre;
+  competences: { id: string; nom: string }[];
+  /** A touché à sa grille de créneaux. Seul signal qui distingue le silence du refus : ce
+   * moteur tient « pas de ligne = indisponible » et ne sait pas stocker « non renseigné ». */
+  a_declare: boolean;
+  /** Sans ressource, la personne est invisible aux campagnes et à la constitution d'équipe. */
+  a_ressource: boolean;
+  a_fiche: boolean;
+  fiche_complete: boolean;
+  titres: number;
+  titres_verifies: number;
+  titres_perimes: number;
+  // ── Réservé au bureau : absent sinon ───────────────────────────────────────
+  email?: string;
+  telephone?: string;
+  ville?: string;
+  commune_code?: string | null;
+  departement_code?: string | null;
+  metier?: string;
+  aptitude_valide_jusquau?: string | null;
+  adhesion_valide_jusquau?: string | null;
+}
+
+export interface AnnuaireAssociation {
+  institution: string;
+  institution_nom: string;
+  membres: MembreAnnuaire[];
+  coordonnees_visibles: boolean;
+  /** `{ equipeId: { utilisateurId: rôle } }`. */
+  roles_par_equipe: Record<string, Record<string, RoleDansEquipe>>;
+}

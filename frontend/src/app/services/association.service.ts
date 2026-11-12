@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
+  AnnuaireAssociation,
   CandidatureAssociation, GrilleDisponibilites, InvitationAssociation, Qualification,
   QualificationMembre,
   QualificationsAVerifier,
@@ -24,6 +25,7 @@ export class AssociationService {
   // modele : viser `disponibilites-operationnelles` renvoyait un 404 sur toute la grille,
   // y compris apres deploiement (constate le 28/10/2026 dans les journaux du proxy).
   private disponibilites = `${environment.apiUrl}/disponibilites`;
+  private contacts = `${environment.apiUrl}/contacts-institutions`;
 
   constructor(private http: HttpClient) {}
 
@@ -161,6 +163,20 @@ export class AssociationService {
   getGrille(institutionId: string, jours = 15): Observable<GrilleDisponibilites> {
     return this.http.get<GrilleDisponibilites>(`${this.disponibilites}/grille/`, {
       params: { institution: institutionId, jours: String(jours) },
+    });
+  }
+
+  // ── Annuaire enrichi ────────────────────────────────────────────────────────────────────
+
+  /** L'effectif, avec pour chacun fonction, compétences, coordonnées et état de ses titres.
+   *
+   * Un seul appel plutôt que quatre listes recoupées dans le navigateur : les informations
+   * vivent dans quatre tables, et les assembler ici donnait quatre occasions de les voir
+   * diverger. Les coordonnées sont servies au seul bureau — `coordonnees_visibles` dit
+   * laquelle des deux réponses on vient de recevoir. */
+  getAnnuaire(institutionId: string): Observable<AnnuaireAssociation> {
+    return this.http.get<AnnuaireAssociation>(`${this.contacts}/annuaire-association/`, {
+      params: { institution: institutionId },
     });
   }
 }

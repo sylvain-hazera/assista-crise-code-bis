@@ -8,12 +8,15 @@ import { AuthService } from '../../auth/services/auth.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionService } from '../../services/institution.service';
 import {
-  CandidatureAssociation, ETAPES_CIRCUIT, EtapeCandidature, GrilleDisponibilites,
-  InvitationAssociation, Qualification, QualificationMembre, QualificationsAVerifier,
+  AnnuaireAssociation, CandidatureAssociation, ETAPES_CIRCUIT, EtapeCandidature,
+  GrilleDisponibilites, InvitationAssociation, LIBELLES_ROLE_EQUIPE, MembreAnnuaire,
+  Qualification, QualificationMembre, QualificationsAVerifier, RoleDansEquipe,
   StatutMembre,
 } from '../../shared/models/association.model';
 import { Team, rangEchelon } from '../../shared/models/team.model';
 import { TeamService } from '../../services/team.service';
+import { CrisisService } from '../../services/crisis.service';
+import { Crisis } from '../../shared/models/crisis.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
 import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
 import { environment } from '../../../environments/environment';
@@ -30,7 +33,29 @@ export interface NoeudEquipe {
   /** Idem, en comptant toutes les équipes en dessous : c'est ce nombre que porte la pastille
    * d'une branche repliée, sinon replier une branche masquerait ce qui attend dedans. */
   aVerifierTotal: number;
+  /** Les deux cadres dépliables de l'équipe, calculés une fois par `recalculerLesVues()` et
+   * non à chaque appel du gabarit : avec 125 équipes, trier et filtrer dans une expression de
+   * template se refait à chaque cycle de détection de changements. */
+  cadres: MembreAnnuaire[];
+  groupes: GroupePersonnes[];
+  /** Combien de personnes de CETTE équipe passent le filtre courant. */
+  correspondants: number;
+  /** Idem, branche entière : c'est lui qui permet d'ouvrir ce qui correspond à une recherche
+   * sans déplier les 125 équipes. */
+  correspondantsTotal: number;
 }
+
+/** Un bloc de personnes à l'intérieur du second cadre d'une équipe : les cadres d'une
+ * sous-équipe, ou les intervenants de l'équipe elle-même. */
+export interface GroupePersonnes {
+  cle: string;
+  libelle: string;
+  /** Équipe d'où viennent ces personnes — sert à afficher leur rôle dans LA BONNE équipe. */
+  equipeId: string;
+  membres: MembreAnnuaire[];
+}
+
+export type TriAnnuaire = 'nom' | 'fonction' | 'commune' | 'perimes' | 'silencieux';
 
 /** Code de l'InstitutionType des AASC -- compare en insensible a la casse, comme cote serveur
  * (institution_attachment.CODE_TYPE_AASC) : les lignes de catalogue existent en « AASC »
@@ -126,6 +151,39 @@ export class MembresAssociationComponent implements OnInit {
   aVerifier: QualificationsAVerifier = { total: 0, par_membre: {} };
   refusPieceEnCours: { id: string; motif: string } | null = null;
 
+  // ── Annuaire enrichi, recherche, sélection ─────────────────────────────────
+  /** L'effectif indexé par utilisateur. Sert les fiches, la recherche et les filtres. */
+  annuaire = new Map<string, MembreAnnuaire>();
+  /** Faux = le lecteur n'est pas au bureau. L'écran doit alors DIRE qu'il ne voit pas les
+   * coordonnées, pas les afficher vides : « — » affirmerait qu'il n'y a pas de téléphone. */
+  coordonneesVisibles = false;
+  rolesParEquipe: Record<string, Record<string, RoleDansEquipe>> = {};
+  readonly LIBELLES_ROLE = LIBELLES_ROLE_EQUIPE;
+
+  recherche = '';
+  tri: TriAnnuaire = 'nom';
+  filtreRole: '' | RoleDansEquipe = '';
+  filtreCompetence = '';
+  filtreBureau = false;
+  filtreSansDeclaration = false;
+  filtreTitresPerimes = false;
+  filtreSansRessource = false;
+
+  /** Clés `equipeId:cadres` et `equipeId:niveau` : les deux cadres se replient séparément. */
+  cadresDeplies = new Set<string>();
+  detailsEquipe = new Set<string>();
+  detailsMembre = new Set<string>();
+
+  /** Sélection multiple, par identifiant d'utilisateur. Volontairement transverse à l'arbre :
+   * on compose une équipe terrain en piochant dans plusieurs branches. */
+  selection = new Set<string>();
+  equipeCible: string | null = null;
+  missionTitre = '';
+  criseCible: string | null = null;
+  crises: Crisis[] = [];
+  affectationEnCours = false;
+  refusAffectation: { nom: string; motif: string }[] = [];
+
   // Saisie d'un lien d'invitation.
   nouveauLien = { libelle: '', date_expiration: '' };
   refusEnCours: { id: string; motif: string } | null = null;
@@ -136,6 +194,7 @@ export class MembresAssociationComponent implements OnInit {
     private institutionService: InstitutionService,
     private authService: AuthService,
     private teamService: TeamService,
+    private crisisService: CrisisService,
   ) {}
 
   ngOnInit(): void {
@@ -195,6 +254,11 @@ export class MembresAssociationComponent implements OnInit {
     this.institutionChoisie = id || null;
     this.grille = null;
     this.membreSelectionne = null;
+    // Une sélection faite dans une association n'a aucun sens dans une autre : la garder
+    // ferait proposer d'affecter des gens que l'équipe cible ne peut pas accueillir.
+    this.selection.clear();
+    this.equipeCible = null;
+    this.annuaire.clear();
     if (this.institutionChoisie) { this.chargerInstitution(); }
   }
 
@@ -225,7 +289,23 @@ export class MembresAssociationComponent implements OnInit {
       },
       error: () => undefined,
     });
+    this.associationService.getAnnuaire(id).subscribe({
+      next: (a) => this.appliquerAnnuaire(a),
+      // Silencieux : l'arbre reste lisible sans l'annuaire (noms et justificatifs viennent
+      // d'ailleurs). Afficher une erreur ferait croire la page cassée alors que l'essentiel
+      // est là — mais les fiches, elles, diront qu'elles n'ont rien à montrer.
+      error: () => this.appliquerAnnuaire(
+        { institution: id, institution_nom: '', membres: [], coordonnees_visibles: false,
+          roles_par_equipe: {} }),
+    });
     this.chargerAVerifier();
+  }
+
+  private appliquerAnnuaire(a: AnnuaireAssociation): void {
+    this.annuaire = new Map(a.membres.map(m => [m.utilisateur, m]));
+    this.coordonneesVisibles = a.coordonnees_visibles;
+    this.rolesParEquipe = a.roles_par_equipe ?? {};
+    this.construireArborescence();
   }
 
   // ══ Arborescence et justificatifs ═════════════════════════════════════════
@@ -248,7 +328,10 @@ export class MembresAssociationComponent implements OnInit {
     const noeuds = new Map<string, NoeudEquipe>();
     for (const equipe of this.equipes) {
       if (!equipe.id) { continue; }
-      noeuds.set(equipe.id, { equipe, enfants: [], aVerifier: 0, aVerifierTotal: 0 });
+      noeuds.set(equipe.id, {
+        equipe, enfants: [], aVerifier: 0, aVerifierTotal: 0,
+        cadres: [], groupes: [], correspondants: 0, correspondantsTotal: 0,
+      });
     }
 
     const racines: NoeudEquipe[] = [];
@@ -280,6 +363,312 @@ export class MembresAssociationComponent implements OnInit {
       rangEchelon(a.equipe.echelon) - rangEchelon(b.equipe.echelon)
       || a.equipe.name.localeCompare(b.equipe.name, 'fr'));
     this.arborescence = racines;
+    this.recalculerLesVues();
+  }
+
+  // ══ Les deux cadres, la recherche et les filtres ═══════════════════════════
+
+  /** Reconstruit, pour chaque équipe, ses deux cadres et son décompte de correspondances.
+   *
+   * Fait ici et non dans le gabarit : trier et filtrer dans une expression de template se
+   * refait à chaque cycle de détection de changements, et l'arborescence réelle compte 125
+   * équipes. Rappelée à chaque changement de filtre, pas davantage. */
+  recalculerLesVues(): void {
+    const parcourir = (noeud: NoeudEquipe, vus: Set<string>): number => {
+      if (noeud.equipe.id && vus.has(noeud.equipe.id)) { return 0; }
+      if (noeud.equipe.id) { vus.add(noeud.equipe.id); }
+      const equipeId = noeud.equipe.id ?? '';
+      const tous = this.personnesDe(noeud);
+      const cadres = tous.filter(m => this.roleDans(equipeId, m.utilisateur) !== 'INTERVENANT');
+      const intervenants = tous.filter(
+        m => this.roleDans(equipeId, m.utilisateur) === 'INTERVENANT');
+
+      noeud.cadres = this.trier(cadres.filter(m => this.retenu(m, equipeId)));
+
+      // Second cadre : « le niveau N-1 ». Pour une équipe de coordination, ce sont les CADRES
+      // des équipes rattachées — c'est ainsi qu'on lit une chaîne de commandement. Pour une
+      // équipe départementale, qui n'a rien en dessous, ce sont ses propres intervenants. Les
+      // deux coexistent quand une équipe a des sous-équipes ET des équipiers en propre : les
+      // taire en ferait disparaître de l'écran.
+      const groupes: GroupePersonnes[] = [];
+      for (const enfant of noeud.enfants) {
+        const id = enfant.equipe.id ?? '';
+        const membres = this.trier(
+          this.personnesDe(enfant)
+            .filter(m => this.roleDans(id, m.utilisateur) !== 'INTERVENANT')
+            .filter(m => this.retenu(m, id)));
+        if (membres.length) {
+          groupes.push({ cle: `${equipeId}:${id}`, libelle: enfant.equipe.name,
+                         equipeId: id, membres });
+        }
+      }
+      const propres = this.trier(intervenants.filter(m => this.retenu(m, equipeId)));
+      if (propres.length) {
+        groupes.push({ cle: `${equipeId}:propres`, libelle: 'Intervenants de cette équipe',
+                       equipeId, membres: propres });
+      }
+      noeud.groupes = groupes;
+
+      noeud.correspondants = noeud.cadres.length + propres.length;
+      noeud.correspondantsTotal = noeud.correspondants
+        + noeud.enfants.reduce((total, enfant) => total + parcourir(enfant, vus), 0);
+      return noeud.correspondantsTotal;
+    };
+    const vus = new Set<string>();
+    this.arborescence.forEach(r => parcourir(r, vus));
+  }
+
+  /** L'effectif d'une équipe, enrichi par l'annuaire.
+   *
+   * Une personne absente de l'annuaire reste affichée avec son seul nom : elle est membre de
+   * l'équipe sans rattachement actif à l'association (rattachée ailleurs, ou sortie). La
+   * masquer ferait mentir l'effectif affiché juste au-dessus. */
+  private personnesDe(noeud: NoeudEquipe): MembreAnnuaire[] {
+    return (noeud.equipe.members_info ?? []).map(
+      info => this.annuaire.get(info.id) ?? this.inconnu(info.id, info.nom));
+  }
+
+  private inconnu(id: string, nom: string): MembreAnnuaire {
+    return {
+      utilisateur: id, contact: '', nom, fonction: '', membre_bureau: false,
+      statut: 'ACTIF', competences: [], a_declare: false, a_ressource: false,
+      a_fiche: false, fiche_complete: false, titres: 0, titres_verifies: 0,
+      titres_perimes: 0,
+    };
+  }
+
+  /** Combien de personnes dans le second cadre, tous groupes confondus. */
+  comptePersonnes(groupes: GroupePersonnes[]): number {
+    return groupes.reduce((total, g) => total + g.membres.length, 0);
+  }
+
+  roleDans(equipeId: string, utilisateurId: string): RoleDansEquipe {
+    return this.rolesParEquipe[equipeId]?.[utilisateurId] ?? 'INTERVENANT';
+  }
+
+  libelleRole(role: RoleDansEquipe): string {
+    return this.LIBELLES_ROLE[role];
+  }
+
+  /** Le filtre, appliqué aux critères ET au texte libre.
+   *
+   * Le texte cherche dans tout ce que la fiche montre — nom, fonction, rôle, commune, métier,
+   * compétences, coordonnées quand on y a droit. Chercher « plongeur » ou « 35 » ou « Rennes »
+   * doit trouver, sans avoir à savoir dans quelle colonne l'information se range. */
+  private retenu(membre: MembreAnnuaire, equipeId: string): boolean {
+    if (this.filtreBureau && !membre.membre_bureau) { return false; }
+    if (this.filtreSansDeclaration && membre.a_declare) { return false; }
+    if (this.filtreTitresPerimes && !membre.titres_perimes) { return false; }
+    if (this.filtreSansRessource && membre.a_ressource) { return false; }
+    if (this.filtreRole && this.roleDans(equipeId, membre.utilisateur) !== this.filtreRole) {
+      return false;
+    }
+    if (this.filtreCompetence
+        && !membre.competences.some(c => c.id === this.filtreCompetence)) {
+      return false;
+    }
+    const q = this.recherche.trim().toLowerCase();
+    if (!q) { return true; }
+    const champs = [
+      membre.nom, membre.fonction, membre.ville ?? '', membre.metier ?? '',
+      membre.email ?? '', membre.telephone ?? '', membre.departement_code ?? '',
+      this.libelleRole(this.roleDans(equipeId, membre.utilisateur)),
+      ...membre.competences.map(c => c.nom),
+    ];
+    return champs.some(valeur => (valeur || '').toLowerCase().includes(q));
+  }
+
+  private trier(membres: MembreAnnuaire[]): MembreAnnuaire[] {
+    const parNom = (a: MembreAnnuaire, b: MembreAnnuaire) =>
+      (a.nom || '').localeCompare(b.nom || '', 'fr');
+    return [...membres].sort((a, b) => {
+      switch (this.tri) {
+        case 'fonction':
+          return (a.fonction || '').localeCompare(b.fonction || '', 'fr') || parNom(a, b);
+        case 'commune':
+          return (a.ville || '').localeCompare(b.ville || '', 'fr') || parNom(a, b);
+        // Les deux tris « ce qui cloche d'abord » : ce sont eux qu'on ouvre avant une
+        // mobilisation, pour savoir qui relancer et qui ne peut pas partir.
+        case 'perimes':
+          return b.titres_perimes - a.titres_perimes || parNom(a, b);
+        case 'silencieux':
+          return Number(a.a_declare) - Number(b.a_declare) || parNom(a, b);
+        default:
+          return parNom(a, b);
+      }
+    });
+  }
+
+  /** Rappelée par tous les contrôles de la barre de recherche. */
+  filtresChanges(): void {
+    this.recalculerLesVues();
+  }
+
+  reinitialiserFiltres(): void {
+    this.recherche = '';
+    this.tri = 'nom';
+    this.filtreRole = '';
+    this.filtreCompetence = '';
+    this.filtreBureau = false;
+    this.filtreSansDeclaration = false;
+    this.filtreTitresPerimes = false;
+    this.filtreSansRessource = false;
+    this.recalculerLesVues();
+  }
+
+  get filtreActif(): boolean {
+    return !!(this.recherche.trim() || this.filtreRole || this.filtreCompetence
+      || this.filtreBureau || this.filtreSansDeclaration || this.filtreTitresPerimes
+      || this.filtreSansRessource);
+  }
+
+  get nombreCorrespondants(): number {
+    return this.arborescence.reduce((t, n) => t + n.correspondantsTotal, 0);
+  }
+
+  /** Le catalogue des compétences réellement portées par l'effectif, pour la liste
+   * déroulante. Pris sur les membres et non sur le catalogue général : proposer un filtre
+   * « Plongée » dans une association qui n'a aucun plongeur ne rend que du vide. */
+  get competencesDeLEffectif(): { id: string; nom: string }[] {
+    const vues = new Map<string, string>();
+    this.annuaire.forEach(m => m.competences.forEach(c => vues.set(c.id, c.nom)));
+    return [...vues.entries()].map(([id, nom]) => ({ id, nom }))
+      .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  }
+
+  /** Déplie tout ce qui mène à une personne retenue par le filtre, et rien d'autre. */
+  ouvrirCeQuiCorrespond(): void {
+    const ouvrir = (noeud: NoeudEquipe): void => {
+      if (noeud.correspondantsTotal > 0 && noeud.equipe.id) {
+        this.depliees.add(noeud.equipe.id);
+        this.cadresDeplies.add(`${noeud.equipe.id}:cadres`);
+        this.cadresDeplies.add(`${noeud.equipe.id}:niveau`);
+      }
+      noeud.enfants.forEach(ouvrir);
+    };
+    this.arborescence.forEach(ouvrir);
+  }
+
+  // ══ Dépliage des cadres et des fiches ══════════════════════════════════════
+
+  basculerCadre(cle: string): void {
+    if (this.cadresDeplies.has(cle)) { this.cadresDeplies.delete(cle); }
+    else { this.cadresDeplies.add(cle); }
+  }
+
+  cadreOuvert(cle: string): boolean {
+    return this.cadresDeplies.has(cle);
+  }
+
+  basculerDetailEquipe(noeud: NoeudEquipe): void {
+    const id = noeud.equipe.id;
+    if (!id) { return; }
+    if (this.detailsEquipe.has(id)) { this.detailsEquipe.delete(id); }
+    else { this.detailsEquipe.add(id); }
+  }
+
+  detailEquipeOuvert(noeud: NoeudEquipe): boolean {
+    return !!noeud.equipe.id && this.detailsEquipe.has(noeud.equipe.id);
+  }
+
+  /** La fiche d'une personne s'ouvre PAR ÉQUIPE : la même personne peut figurer dans deux
+   * cadres (cadre ici, intervenant là), et une clé par personne ouvrirait les deux. */
+  basculerDetailMembre(equipeId: string, utilisateurId: string): void {
+    const cle = `${equipeId}:${utilisateurId}`;
+    if (this.detailsMembre.has(cle)) { this.detailsMembre.delete(cle); }
+    else { this.detailsMembre.add(cle); }
+  }
+
+  detailMembreOuvert(equipeId: string, utilisateurId: string): boolean {
+    return this.detailsMembre.has(`${equipeId}:${utilisateurId}`);
+  }
+
+  // ══ Sélection multiple et affectation terrain ══════════════════════════════
+
+  basculerSelection(utilisateurId: string): void {
+    if (this.selection.has(utilisateurId)) { this.selection.delete(utilisateurId); }
+    else { this.selection.add(utilisateurId); }
+    if (this.selection.size && !this.crises.length) { this.chargerCrises(); }
+  }
+
+  estSelectionne(utilisateurId: string): boolean {
+    return this.selection.has(utilisateurId);
+  }
+
+  /** Coche (ou décoche) tout un cadre d'un geste : c'est l'intérêt d'une sélection en masse. */
+  basculerGroupe(membres: MembreAnnuaire[]): void {
+    const tous = membres.every(m => this.selection.has(m.utilisateur));
+    membres.forEach(m => tous ? this.selection.delete(m.utilisateur)
+                              : this.selection.add(m.utilisateur));
+    if (this.selection.size && !this.crises.length) { this.chargerCrises(); }
+  }
+
+  groupeEntierSelectionne(membres: MembreAnnuaire[]): boolean {
+    return membres.length > 0 && membres.every(m => this.selection.has(m.utilisateur));
+  }
+
+  viderSelection(): void {
+    this.selection.clear();
+    this.refusAffectation = [];
+  }
+
+  get nomsSelectionnes(): string[] {
+    return [...this.selection]
+      .map(id => this.annuaire.get(id)?.nom ?? id)
+      .sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  /** Les équipes où l'on peut affecter : celles de l'association. Les opérationnelles (sans
+   * échelon) d'abord — ce sont les équipes d'intervention terrain, et c'est ce qu'on cherche
+   * ici ; les équipes de coordination restent proposées, parce qu'on y nomme aussi des gens. */
+  get equipesAffectables(): Team[] {
+    return [...this.equipes]
+      .filter(e => e.peut_gerer !== false)
+      .sort((a, b) =>
+        Number(!!a.echelon) - Number(!!b.echelon)
+        || a.name.localeCompare(b.name, 'fr'));
+  }
+
+  private chargerCrises(): void {
+    this.crisisService.getAll().subscribe({
+      next: (liste) => this.crises = (liste ?? []).filter(c => c.is_open !== false),
+      error: () => this.crises = [],
+    });
+  }
+
+  affecter(): void {
+    if (!this.equipeCible || !this.selection.size || this.affectationEnCours) { return; }
+    this.affectationEnCours = true;
+    this.refusAffectation = [];
+    const equipeId = this.equipeCible;
+    this.teamService.ajouterMembres(
+      equipeId, [...this.selection], this.missionTitre.trim() || undefined,
+      this.criseCible || undefined,
+    ).subscribe({
+      next: (res) => {
+        this.affectationEnCours = false;
+        const nom = this.equipes.find(e => e.id === equipeId)?.name ?? "l'équipe";
+        // Les refus sont NOMMÉS, jamais fondus dans un « c'est fait » : une affectation
+        // partielle présentée comme un succès fait partir une équipe incomplète.
+        this.refusAffectation = (res.refuses ?? []).map(r => ({
+          nom: this.annuaire.get(r.utilisateur)?.nom ?? r.utilisateur, motif: r.motif,
+        }));
+        this.message = `${res.ajoutes} personne(s) affectée(s) à « ${nom} »`
+          + (res.deja_presents ? `, ${res.deja_presents} y étaient déjà` : '')
+          + (this.missionTitre.trim() ? `, mission « ${this.missionTitre.trim()} »` : '')
+          + '.';
+        this.erreur = '';
+        this.selection.clear();
+        this.missionTitre = '';
+        this.criseCible = null;
+        // L'équipe a changé : recharger pour que l'arbre montre les nouveaux arrivants.
+        this.chargerInstitution();
+      },
+      error: (err) => {
+        this.affectationEnCours = false;
+        this.erreur = err?.error?.error || "L'affectation a échoué.";
+      },
+    });
   }
 
   basculer(noeud: NoeudEquipe): void {
@@ -293,10 +682,24 @@ export class MembresAssociationComponent implements OnInit {
   }
 
   /** Déplie tout ce qui mène à une pièce en attente, et rien d'autre : c'est le geste que
-   * cherche le manager en arrivant sur l'onglet avec une pastille. */
+   * cherche le manager en arrivant sur l'onglet avec une pastille.
+   *
+   * Ouvre aussi les deux cadres et la fiche des personnes concernées : depuis que les
+   * justificatifs vivent dans la fiche d'une personne, déplier la seule branche laissait
+   * encore trois clics entre la pastille et la pièce. */
   deplierCeQuiAttend(): void {
     const ouvrir = (noeud: NoeudEquipe): void => {
-      if (noeud.aVerifierTotal > 0 && noeud.equipe.id) { this.depliees.add(noeud.equipe.id); }
+      const id = noeud.equipe.id;
+      if (noeud.aVerifierTotal > 0 && id) {
+        this.depliees.add(id);
+        this.cadresDeplies.add(`${id}:cadres`);
+        this.cadresDeplies.add(`${id}:niveau`);
+        for (const membre of noeud.equipe.members_info ?? []) {
+          if (this.nombreAVerifierPour(membre.id)) {
+            this.detailsMembre.add(`${id}:${membre.id}`);
+          }
+        }
+      }
       noeud.enfants.forEach(ouvrir);
     };
     this.arborescence.forEach(ouvrir);
@@ -304,13 +707,16 @@ export class MembresAssociationComponent implements OnInit {
 
   toutReplier(): void {
     this.depliees.clear();
+    this.cadresDeplies.clear();
+    this.detailsEquipe.clear();
+    this.detailsMembre.clear();
   }
 
-  /** Les membres d'une équipe, pris dans `members_info` que sert le serializer : les noms sans
-   * requête supplémentaire. */
-  membresDe(noeud: NoeudEquipe): { id: string; nom: string }[] {
-    const info = noeud.equipe.members_info ?? [];
-    return [...info].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  /** La ligne d'annuaire d'une personne, ou `undefined` si elle n'y est pas (membre d'équipe
+   * sans rattachement actif à l'association). La fiche le dit alors plutôt que d'afficher des
+   * champs vides. */
+  ficheDe(utilisateurId: string): MembreAnnuaire | undefined {
+    return this.annuaire.get(utilisateurId);
   }
 
   nombreAVerifierPour(utilisateurId: string): number {

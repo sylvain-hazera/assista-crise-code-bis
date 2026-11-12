@@ -42,6 +42,22 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${id}/inviter-membre/`, data);
   }
 
+  /** Affecte plusieurs personnes à l'équipe d'un seul geste, avec sa mission.
+   *
+   * **Jamais un `patch({ member_ids })` pour cela** : un PATCH envoie la liste entière telle
+   * que ce navigateur la connaissait, donc deux régulateurs qui affectent en même temps et le
+   * second efface les ajouts du premier. Cette action-ci ajoute, et l'ordre des appels n'a
+   * plus d'importance. Elle refuse aussi nommément un membre sorti — et le dit dans
+   * `refuses` : une affectation partielle qui se présente comme un succès fait partir une
+   * équipe incomplète en croyant l'avoir au complet. */
+  ajouterMembres(id: string, utilisateurs: string[], missionTitre?: string, criseId?: string)
+      : Observable<AjoutMembresResultat> {
+    const corps: Record<string, unknown> = { utilisateurs };
+    if (missionTitre) { corps['mission_titre'] = missionTitre; }
+    if (criseId) { corps['crise_id'] = criseId; }
+    return this.http.post<AjoutMembresResultat>(`${this.url}/${id}/ajouter-membres/`, corps);
+  }
+
   definirMission(id: string, titre: string, criseId?: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/definir-mission/`, { titre, crise_id: criseId });
   }
@@ -183,4 +199,12 @@ export class TeamService {
     const params = type ? { type } : undefined;
     return this.http.get<{ id: string; nom: string }[]>(`${this.url}/${id}/institutions-liees/`, { params });
   }
+}
+
+/** Résultat d'une affectation en masse. Les refus sont rendus, jamais tus. */
+export interface AjoutMembresResultat {
+  team: Team;
+  ajoutes: number;
+  deja_presents: number;
+  refuses: { utilisateur: string; motif: string }[];
 }

@@ -255,8 +255,8 @@
                 <strong>{{ aVerifier.total }} pièce(s) attendent votre vérification.</strong>
                 Les branches qui en contiennent portent une pastille rouge.
               } @else {
-                Aucune pièce en attente. Dépliez une équipe pour consulter les justificatifs
-                de ses membres.
+                Dépliez une équipe pour voir ses cadres, ses intervenants et leurs
+                justificatifs.
               }
             </p>
           </div>
@@ -274,6 +274,97 @@
           </div>
         </div>
 
+        <!-- Recherche, tri et filtres. Un seul champ libre qui cherche dans TOUT ce que la
+             fiche montre : on cherche « plongeur », « Rennes » ou « 35 » sans avoir à savoir
+             dans quelle colonne l'information se range. Les cases à cocher, elles, portent
+             les trois questions qu'on se pose avant une mobilisation. -->
+        <div class="barre-recherche">
+          <label class="champ-recherche">
+            <span class="material-icons">search</span>
+            <input type="search" [(ngModel)]="recherche" (ngModelChange)="filtresChanges()"
+                   placeholder="Nom, fonction, compétence, commune, métier, téléphone…"
+                   aria-label="Rechercher dans l'effectif">
+          </label>
+
+          <label class="champ-filtre">
+            <span>Trier par</span>
+            <select [(ngModel)]="tri" (ngModelChange)="filtresChanges()">
+              <option value="nom">Nom</option>
+              <option value="fonction">Fonction</option>
+              <option value="commune">Commune</option>
+              <option value="perimes">Titres périmés d'abord</option>
+              <option value="silencieux">Sans disponibilité d'abord</option>
+            </select>
+          </label>
+
+          <label class="champ-filtre">
+            <span>Rôle</span>
+            <select [(ngModel)]="filtreRole" (ngModelChange)="filtresChanges()">
+              <option value="">Tous</option>
+              <option value="CHEF">Chef d'équipe</option>
+              <option value="REGULATEUR">Régulateur</option>
+              <option value="CADRE">Cadre</option>
+              <option value="INTERVENANT">Intervenant</option>
+            </select>
+          </label>
+
+          @if (competencesDeLEffectif.length) {
+            <label class="champ-filtre">
+              <span>Compétence</span>
+              <select [(ngModel)]="filtreCompetence" (ngModelChange)="filtresChanges()">
+                <option value="">Toutes</option>
+                @for (c of competencesDeLEffectif; track c.id) {
+                  <option [value]="c.id">{{ c.nom }}</option>
+                }
+              </select>
+            </label>
+          }
+
+          <div class="cases-filtres">
+            <label>
+              <input type="checkbox" [(ngModel)]="filtreBureau"
+                     (ngModelChange)="filtresChanges()">
+              Bureau
+            </label>
+            <label title="Personne qui n'a pas touché à sa grille de créneaux">
+              <input type="checkbox" [(ngModel)]="filtreSansDeclaration"
+                     (ngModelChange)="filtresChanges()">
+              Sans disponibilité déclarée
+            </label>
+            <label title="Un titre périmé vaut un titre absent le jour du départ">
+              <input type="checkbox" [(ngModel)]="filtreTitresPerimes"
+                     (ngModelChange)="filtresChanges()">
+              Titre périmé
+            </label>
+            <label title="Sans fiche ressource, la personne est invisible aux campagnes et à la constitution d'équipe">
+              <input type="checkbox" [(ngModel)]="filtreSansRessource"
+                     (ngModelChange)="filtresChanges()">
+              Sans fiche ressource
+            </label>
+          </div>
+
+          @if (filtreActif) {
+            <div class="resultats-filtre">
+              <strong>{{ nombreCorrespondants }} personne(s)</strong> correspondent.
+              <button type="button" class="lien" (click)="ouvrirCeQuiCorrespond()">
+                Ouvrir ce qui correspond
+              </button>
+              <button type="button" class="lien" (click)="reinitialiserFiltres()">
+                Effacer les filtres
+              </button>
+            </div>
+          }
+        </div>
+
+        @if (!coordonneesVisibles) {
+          <p class="page-hint restriction">
+            <span class="material-icons">lock</span>
+            Les coordonnées (téléphone, commune, métier) ne sont servies qu'au bureau de
+            l'association. Elles sont <strong>absentes</strong> de ce que vous voyez, et non
+            vides.
+          </p>
+        }
+
         @if (!arborescence.length) {
           <p class="vide">
             Aucune équipe pour cette association. Les justificatifs se consultent par équipe :
@@ -289,6 +380,77 @@
           </ul>
         }
       </section>
+
+      <!-- Barre d'affectation. Apparaît avec la sélection et la suit : on compose une équipe
+           terrain en piochant dans plusieurs branches, et remonter en haut de page à chaque
+           ajout rendrait le geste impraticable. -->
+      @if (selection.size) {
+        <section class="barre-selection">
+          <div class="selection-resume">
+            <strong>{{ selection.size }} personne(s) sélectionnée(s)</strong>
+            <span class="noms">{{ nomsSelectionnes.join(', ') }}</span>
+            <button type="button" class="lien" (click)="viderSelection()">Tout décocher</button>
+          </div>
+
+          <div class="selection-actions">
+            <label>
+              <span>Affecter à l'équipe</span>
+              <select [(ngModel)]="equipeCible">
+                <option [ngValue]="null">Choisir une équipe…</option>
+                @for (e of equipesAffectables; track e.id) {
+                  <option [ngValue]="e.id">
+                    {{ e.name }}{{ e.echelon_libelle ? ' (' + e.echelon_libelle + ')' : '' }}
+                  </option>
+                }
+              </select>
+            </label>
+
+            <label>
+              <span>Mission (facultatif)</span>
+              <input type="text" [(ngModel)]="missionTitre"
+                     placeholder="Reconnaissance berges, point de rassemblement…">
+            </label>
+
+            @if (crises.length) {
+              <label>
+                <span>Crise (facultatif)</span>
+                <select [(ngModel)]="criseCible">
+                  <option [ngValue]="null">Hors crise</option>
+                  @for (c of crises; track c.id) {
+                    <option [ngValue]="c.id">{{ c.name }}</option>
+                  }
+                </select>
+              </label>
+            }
+
+            <button type="button" class="btn-primary"
+                    [disabled]="!equipeCible || affectationEnCours"
+                    (click)="affecter()">
+              <span class="material-icons">group_add</span>
+              {{ affectationEnCours ? 'Affectation…' : 'Affecter' }}
+            </button>
+          </div>
+
+          <p class="page-hint">
+            L'affectation <strong>ajoute</strong> à l'équipe, elle ne remplace pas ses membres.
+            La mission vaut pour l'équipe entière — une équipe n'a qu'une mission active.
+          </p>
+        </section>
+      }
+
+      @if (refusAffectation.length) {
+        <section class="refus-affectation">
+          <h3>
+            <span class="material-icons">report_problem</span>
+            {{ refusAffectation.length }} personne(s) n'ont pas été affectées
+          </h3>
+          <ul>
+            @for (r of refusAffectation; track r.nom) {
+              <li><strong>{{ r.nom }}</strong> — {{ r.motif }}</li>
+            }
+          </ul>
+        </section>
+      }
 
       <!-- Une seule définition, réemployée à chaque niveau : l'arborescence est de profondeur
            variable (national → zone → région → département), et l'écrire niveau par niveau
@@ -315,6 +477,24 @@
               </span>
             </button>
 
+            <button type="button" class="oeil"
+                    [class.ouvert]="detailEquipeOuvert(noeud)"
+                    (click)="basculerDetailEquipe(noeud)"
+                    [attr.aria-expanded]="detailEquipeOuvert(noeud)"
+                    [attr.aria-label]="'Détails de ' + noeud.equipe.name"
+                    title="Voir le détail de l'équipe">
+              <span class="material-icons">
+                {{ detailEquipeOuvert(noeud) ? 'visibility_off' : 'visibility' }}
+              </span>
+            </button>
+
+            @if (filtreActif && noeud.correspondantsTotal) {
+              <span class="pastille correspond"
+                    [title]="noeud.correspondantsTotal + ' personne(s) correspondent dans cette branche'">
+                {{ noeud.correspondantsTotal }}
+              </span>
+            }
+
             <!-- La pastille d'une branche repliée compte TOUT ce qui est en dessous : sinon
                  replier une branche masquerait ce qui attend dedans. -->
             @if (noeud.aVerifierTotal) {
@@ -324,103 +504,157 @@
             }
           </div>
 
-          @if (estDepliee(noeud)) {
-            <ul class="membres-equipe">
-              @if (!membresDe(noeud).length) {
-                <li class="vide-inline">Aucun membre dans cette équipe.</li>
+          @if (detailEquipeOuvert(noeud)) {
+            <div class="detail-equipe">
+              @if (noeud.equipe.description) {
+                <p class="description">{{ noeud.equipe.description }}</p>
               }
-              @for (membre of membresDe(noeud); track membre.id) {
-                <li class="ligne-membre" [class.attend]="nombreAVerifierPour(membre.id) > 0">
-                  <div class="membre-entete">
-                    <span class="material-icons">person</span>
-                    <strong>{{ membre.nom }}</strong>
-                    @if (nombreAVerifierPour(membre.id)) {
-                      <span class="pastille alerte">{{ nombreAVerifierPour(membre.id) }}</span>
+              <dl>
+                @if (noeud.equipe.echelon_libelle) {
+                  <div><dt>Échelon</dt><dd>
+                    {{ noeud.equipe.echelon_libelle }}
+                    @if (noeud.equipe.territoire_libelle) {
+                      — {{ noeud.equipe.territoire_libelle }}
                     }
-                  </div>
+                  </dd></div>
+                }
+                <div><dt>Chef d'équipe</dt>
+                     <dd>{{ noeud.equipe.leader_nom || 'Non désigné' }}</dd></div>
+                <div><dt>Régulateur</dt>
+                     <dd>{{ noeud.equipe.regulateur_nom || 'Non désigné' }}</dd></div>
+                @if (noeud.equipe.equipe_parente_nom) {
+                  <div><dt>Rattachée à</dt>
+                       <dd>{{ noeud.equipe.equipe_parente_nom }}</dd></div>
+                }
+                @if (noeud.enfants.length) {
+                  <div><dt>Équipes rattachées</dt>
+                       <dd>{{ noeud.enfants.length }}</dd></div>
+                }
+                @if (noeud.equipe.institution_delegataire_nom) {
+                  <div><dt>Déléguée à</dt>
+                       <dd>{{ noeud.equipe.institution_delegataire_nom }}</dd></div>
+                }
+                @if (noeud.equipe.themes_libelles?.length) {
+                  <div><dt>Thèmes</dt>
+                       <dd>{{ noeud.equipe.themes_libelles?.join(', ') }}</dd></div>
+                }
+                @if (noeud.equipe.departements?.length) {
+                  <div><dt>Départements</dt>
+                       <dd>{{ noeud.equipe.departements.join(', ') }}</dd></div>
+                }
+                @if (noeud.equipe.communes?.length) {
+                  <div><dt>Communes</dt>
+                       <dd>{{ noeud.equipe.communes.length }} déclarée(s)</dd></div>
+                }
+                <div><dt>Mission active</dt><dd>
+                  @if (noeud.equipe.mission_active_titre) {
+                    {{ noeud.equipe.mission_active_titre }}
+                    @if (noeud.equipe.mission_active_crise_nom) {
+                      <span class="marque">{{ noeud.equipe.mission_active_crise_nom }}</span>
+                    }
+                  } @else { Aucune }
+                </dd></div>
+                @if (noeud.equipe.vehicules_count) {
+                  <div><dt>Véhicules affectés</dt>
+                       <dd>{{ noeud.equipe.vehicules_count }}</dd></div>
+                }
+                <div><dt>Engagement</dt><dd>
+                  @if (noeud.equipe.engagement_debut) {
+                    Engagée depuis le
+                    {{ noeud.equipe.engagement_debut | date:'dd/MM/yyyy' }}
+                  } @else { Au repos }
+                </dd></div>
+              </dl>
+            </div>
+          }
 
-                  @if (!piecesDe(membre.id).length) {
-                    <p class="vide-inline">Aucune qualification enregistrée.</p>
+          @if (estDepliee(noeud)) {
+            <!-- Deux cadres par équipe : les cadres de l'équipe, puis le niveau en dessous.
+                 Pour une équipe de coordination, ce sont les CADRES des équipes rattachées —
+                 c'est ainsi qu'on lit une chaîne de commandement. Pour une équipe
+                 départementale, qui n'a rien en dessous, ce sont ses intervenants. -->
+            <div class="cadres-equipe">
+              <section class="cadre">
+                <button type="button" class="cadre-entete"
+                        (click)="basculerCadre(noeud.equipe.id + ':cadres')"
+                        [attr.aria-expanded]="cadreOuvert(noeud.equipe.id + ':cadres')">
+                  <span class="material-icons">
+                    {{ cadreOuvert(noeud.equipe.id + ':cadres') ? 'expand_more' : 'chevron_right' }}
+                  </span>
+                  <span class="material-icons icone">military_tech</span>
+                  <span class="titre">Cadres de l'équipe</span>
+                  <span class="compte">{{ noeud.cadres.length }}</span>
+                </button>
+                @if (cadreOuvert(noeud.equipe.id + ':cadres')) {
+                  @if (!noeud.cadres.length) {
+                    <p class="vide-inline">
+                      @if (filtreActif) { Aucun cadre ne correspond au filtre. }
+                      @else {
+                        Aucun cadre désigné. L'encadrement se définit depuis la page Équipes.
+                      }
+                    </p>
                   } @else {
-                    <ul class="pieces">
-                      @for (q of piecesDe(membre.id); track q.id) {
-                        <li [class]="classeStatutPiece(q)">
-                          <div class="piece-entete">
-                            <strong>{{ q.qualification_nom || q.qualification }}</strong>
-                            <span class="etat">{{ q.statut_libelle || q.statut }}</span>
-                            @if (q.expiree) { <span class="perimee">périmée</span> }
-                          </div>
-                          <div class="piece-detail">
-                            @if (q.date_obtention) {
-                              <span>obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span>
-                            }
-                            @if (q.date_expiration) {
-                              <span>valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}</span>
-                            }
-                            @if (q.organisme) { <span>{{ q.organisme }}</span> }
-                            @if (q.verifie_par_nom) {
-                              <span>vérifiée par {{ q.verifie_par_nom }}</span>
-                            }
-                          </div>
-                          @if (q.statut === 'REFUSEE' && q.motif_refus) {
-                            <p class="motif">Refusée : {{ q.motif_refus }}</p>
-                          }
-
-                          <div class="piece-actions">
-                            @if (q.a_justificatif) {
-                              <button type="button" class="voir-piece" (click)="voirPiece(q)">
-                                <span class="material-icons">description</span>
-                                {{ q.justificatif_nom || 'Consulter la pièce' }}
-                              </button>
-                            } @else {
-                              <span class="sans-piece">
-                                <span class="material-icons">report_gmailerrorred</span>
-                                Aucune pièce déposée — déclaratif
-                              </span>
-                            }
-                            @if (q.statut !== 'VERIFIEE' && q.a_justificatif) {
-                              <button type="button" class="btn-primary sm"
-                                      (click)="verifierPiece(q)">
-                                <span class="material-icons">verified</span>
-                                Valider
-                              </button>
-                            }
-                            @if (q.statut !== 'REFUSEE' && q.a_justificatif) {
-                              <button type="button" class="btn-danger sm"
-                                      (click)="ouvrirRefusPiece(q)">
-                                <span class="material-icons">block</span>
-                                Refuser
-                              </button>
-                            }
-                          </div>
-
-                          @if (refusPieceEnCours?.id === q.id) {
-                            <div class="refus">
-                              <label>
-                                Motif du refus <span class="required">*</span>
-                                <textarea [(ngModel)]="refusPieceEnCours!.motif" rows="2"
-                                          placeholder="Document illisible, attestation expirée, nom qui ne correspond pas…"></textarea>
-                              </label>
-                              <p class="page-hint">
-                                Obligatoire, et lu par le membre : sans motif il redéposera la
-                                même pièce sans savoir ce qui n'allait pas.
-                              </p>
-                              <div class="refus-actions">
-                                <button type="button" class="btn-secondary"
-                                        (click)="refusPieceEnCours = null">Annuler</button>
-                                <button type="button" class="btn-danger"
-                                        [disabled]="!refusPieceEnCours!.motif.trim()"
-                                        (click)="confirmerRefusPiece()">Confirmer le refus</button>
-                              </div>
-                            </div>
-                          }
-                        </li>
+                    <ul class="personnes">
+                      @for (m of noeud.cadres; track m.utilisateur) {
+                        <ng-container [ngTemplateOutlet]="personne"
+                                      [ngTemplateOutletContext]="{ membre: m, equipeId: noeud.equipe.id }">
+                        </ng-container>
                       }
                     </ul>
+                    <button type="button" class="lien tout-cocher"
+                            (click)="basculerGroupe(noeud.cadres)">
+                      {{ groupeEntierSelectionne(noeud.cadres) ? 'Décocher' : 'Cocher' }}
+                      ces {{ noeud.cadres.length }} personne(s)
+                    </button>
                   }
-                </li>
-              }
-            </ul>
+                }
+              </section>
+
+              <section class="cadre">
+                <button type="button" class="cadre-entete"
+                        (click)="basculerCadre(noeud.equipe.id + ':niveau')"
+                        [attr.aria-expanded]="cadreOuvert(noeud.equipe.id + ':niveau')">
+                  <span class="material-icons">
+                    {{ cadreOuvert(noeud.equipe.id + ':niveau') ? 'expand_more' : 'chevron_right' }}
+                  </span>
+                  <span class="material-icons icone">groups_2</span>
+                  <span class="titre">
+                    @if (noeud.enfants.length) { Cadres des équipes rattachées (N-1) }
+                    @else { Intervenants }
+                  </span>
+                  <span class="compte">{{ comptePersonnes(noeud.groupes) }}</span>
+                </button>
+                @if (cadreOuvert(noeud.equipe.id + ':niveau')) {
+                  @if (!noeud.groupes.length) {
+                    <p class="vide-inline">
+                      @if (filtreActif) { Personne ne correspond au filtre à ce niveau. }
+                      @else if (noeud.enfants.length) {
+                        Aucun cadre désigné dans les équipes rattachées.
+                      } @else { Aucun intervenant dans cette équipe. }
+                    </p>
+                  }
+                  @for (groupe of noeud.groupes; track groupe.cle) {
+                    <div class="groupe">
+                      <h4>
+                        {{ groupe.libelle }}
+                        <span class="compte">{{ groupe.membres.length }}</span>
+                        <button type="button" class="lien"
+                                (click)="basculerGroupe(groupe.membres)">
+                          {{ groupeEntierSelectionne(groupe.membres) ? 'Décocher' : 'Cocher' }}
+                        </button>
+                      </h4>
+                      <ul class="personnes">
+                        @for (m of groupe.membres; track m.utilisateur) {
+                          <ng-container [ngTemplateOutlet]="personne"
+                                        [ngTemplateOutletContext]="{ membre: m, equipeId: groupe.equipeId }">
+                          </ng-container>
+                        }
+                      </ul>
+                    </div>
+                  }
+                }
+              </section>
+            </div>
 
             @if (noeud.enfants.length) {
               <ul class="sous-equipes">
@@ -431,6 +665,240 @@
                 }
               </ul>
             }
+          }
+        </li>
+      </ng-template>
+
+      <!-- Une personne dans un cadre. `equipeId` sert à deux choses : afficher son rôle dans
+           LA BONNE équipe, et distinguer deux occurrences de la même personne (cadre ici,
+           intervenant là) quand on ouvre sa fiche. -->
+      <ng-template #personne let-membre="membre" let-equipeId="equipeId">
+        <li class="ligne-personne" [class.attend]="nombreAVerifierPour(membre.utilisateur) > 0"
+            [class.selectionnee]="estSelectionne(membre.utilisateur)">
+          <div class="personne-entete">
+            <label class="case" [attr.aria-label]="'Sélectionner ' + membre.nom">
+              <input type="checkbox" [checked]="estSelectionne(membre.utilisateur)"
+                     (change)="basculerSelection(membre.utilisateur)">
+            </label>
+
+            <span class="role" [class]="'role-' + roleDans(equipeId, membre.utilisateur).toLowerCase()">
+              {{ libelleRole(roleDans(equipeId, membre.utilisateur)) }}
+            </span>
+
+            <strong class="nom">{{ membre.nom }}</strong>
+
+            @if (membre.fonction) { <span class="fonction">{{ membre.fonction }}</span> }
+            @if (membre.membre_bureau) { <span class="marque">Bureau</span> }
+
+            @for (c of membre.competences.slice(0, 3); track c.id) {
+              <span class="competence">{{ c.nom }}</span>
+            }
+            @if (membre.competences.length > 3) {
+              <span class="competence plus">+{{ membre.competences.length - 3 }}</span>
+            }
+
+            <span class="signaux">
+              @if (membre.titres_perimes) {
+                <span class="signal perime"
+                      [title]="membre.titres_perimes + ' titre(s) périmé(s) — un titre périmé vaut un titre absent'">
+                  <span class="material-icons">schedule</span>{{ membre.titres_perimes }}
+                </span>
+              }
+              @if (!membre.a_declare) {
+                <span class="signal muet" title="N'a pas déclaré ses disponibilités">
+                  <span class="material-icons">help_outline</span>
+                </span>
+              }
+              @if (!membre.a_ressource) {
+                <span class="signal sans-ressource"
+                      title="Sans fiche ressource : invisible aux campagnes et à la constitution d'équipe">
+                  <span class="material-icons">person_off</span>
+                </span>
+              }
+              @if (nombreAVerifierPour(membre.utilisateur)) {
+                <span class="pastille alerte">{{ nombreAVerifierPour(membre.utilisateur) }}</span>
+              }
+            </span>
+
+            <button type="button" class="oeil"
+                    [class.ouvert]="detailMembreOuvert(equipeId, membre.utilisateur)"
+                    (click)="basculerDetailMembre(equipeId, membre.utilisateur)"
+                    [attr.aria-expanded]="detailMembreOuvert(equipeId, membre.utilisateur)"
+                    [attr.aria-label]="'Fiche de ' + membre.nom"
+                    title="Voir la fiche de la personne">
+              <span class="material-icons">
+                {{ detailMembreOuvert(equipeId, membre.utilisateur) ? 'visibility_off' : 'visibility' }}
+              </span>
+            </button>
+          </div>
+
+          @if (detailMembreOuvert(equipeId, membre.utilisateur)) {
+            <div class="fiche-personne">
+              @if (!ficheDe(membre.utilisateur)) {
+                <p class="vide-inline">
+                  Cette personne est membre de l'équipe sans rattachement actif à
+                  l'association : son annuaire n'est pas celui-ci.
+                </p>
+              }
+
+              <dl>
+                <div><dt>Rôle dans l'équipe</dt>
+                     <dd>{{ libelleRole(roleDans(equipeId, membre.utilisateur)) }}</dd></div>
+                <div><dt>Fonction dans l'association</dt>
+                     <dd>{{ membre.fonction || 'Non renseignée' }}</dd></div>
+                <div><dt>Statut</dt><dd>{{ libelleStatut(membre.statut) }}</dd></div>
+
+                @if (coordonneesVisibles) {
+                  <div><dt>Courriel</dt><dd>{{ membre.email || '—' }}</dd></div>
+                  <div><dt>Téléphone</dt><dd>{{ membre.telephone || '—' }}</dd></div>
+                  <div><dt>Commune</dt><dd>
+                    {{ membre.ville || '—' }}
+                    @if (membre.departement_code) { ({{ membre.departement_code }}) }
+                  </dd></div>
+                  <div><dt>Métier déclaré</dt><dd>{{ membre.metier || '—' }}</dd></div>
+                  @if (membre.aptitude_valide_jusquau) {
+                    <div><dt>Aptitude</dt>
+                         <dd [class]="etatEcheance(membre.aptitude_valide_jusquau)">
+                           valable jusqu'au
+                           {{ membre.aptitude_valide_jusquau | date:'dd/MM/yyyy' }}
+                         </dd></div>
+                  }
+                  @if (membre.adhesion_valide_jusquau) {
+                    <div><dt>Adhésion</dt>
+                         <dd [class]="etatEcheance(membre.adhesion_valide_jusquau)">
+                           valable jusqu'au
+                           {{ membre.adhesion_valide_jusquau | date:'dd/MM/yyyy' }}
+                         </dd></div>
+                  }
+                } @else {
+                  <div><dt>Coordonnées</dt>
+                       <dd class="restreint">Réservées au bureau de l'association.</dd></div>
+                }
+
+                <div><dt>Disponibilités</dt><dd>
+                  @if (membre.a_declare) { Déclarées }
+                  @else {
+                    Jamais déclarées — à relancer
+                  }
+                </dd></div>
+
+                @if (!membre.a_ressource) {
+                  <div><dt>Fiche ressource</dt>
+                       <dd class="alerte-texte">
+                         Absente : cette personne n'est ni ciblée par les campagnes, ni
+                         proposée à la constitution d'équipe.
+                       </dd></div>
+                } @else if (!membre.fiche_complete) {
+                  <div><dt>Fiche bénévole</dt>
+                       <dd class="alerte-texte">
+                         Incomplète : sans adresse, on ne sait pas d'où la personne part.
+                       </dd></div>
+                }
+              </dl>
+
+              <div class="bloc-competences">
+                <h4>Compétences</h4>
+                @if (!membre.competences.length) {
+                  <p class="vide-inline">Aucune compétence déclarée sur sa fiche ressource.</p>
+                } @else {
+                  <ul class="puces">
+                    @for (c of membre.competences; track c.id) {
+                      <li class="competence">{{ c.nom }}</li>
+                    }
+                  </ul>
+                }
+              </div>
+
+              <div class="bloc-titres">
+                <h4>
+                  Qualifications et justificatifs
+                  @if (membre.titres) {
+                    <span class="compte">
+                      {{ membre.titres_verifies }}/{{ membre.titres }} vérifié(s)
+                    </span>
+                  }
+                </h4>
+                @if (!piecesDe(membre.utilisateur).length) {
+                  <p class="vide-inline">Aucune qualification enregistrée.</p>
+                } @else {
+                  <ul class="pieces">
+                    @for (q of piecesDe(membre.utilisateur); track q.id) {
+                      <li [class]="classeStatutPiece(q)">
+                        <div class="piece-entete">
+                          <strong>{{ q.qualification_nom || q.qualification }}</strong>
+                          <span class="etat">{{ q.statut_libelle || q.statut }}</span>
+                          @if (q.expiree) { <span class="perimee">périmée</span> }
+                        </div>
+                        <div class="piece-detail">
+                          @if (q.date_obtention) {
+                            <span>obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span>
+                          }
+                          @if (q.date_expiration) {
+                            <span>valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}</span>
+                          }
+                          @if (q.organisme) { <span>{{ q.organisme }}</span> }
+                          @if (q.verifie_par_nom) {
+                            <span>vérifiée par {{ q.verifie_par_nom }}</span>
+                          }
+                        </div>
+                        @if (q.statut === 'REFUSEE' && q.motif_refus) {
+                          <p class="motif">Refusée : {{ q.motif_refus }}</p>
+                        }
+
+                        <div class="piece-actions">
+                          @if (q.a_justificatif) {
+                            <button type="button" class="voir-piece" (click)="voirPiece(q)">
+                              <span class="material-icons">description</span>
+                              {{ q.justificatif_nom || 'Consulter la pièce' }}
+                            </button>
+                          } @else {
+                            <span class="sans-piece">
+                              <span class="material-icons">report_gmailerrorred</span>
+                              Aucune pièce déposée — déclaratif
+                            </span>
+                          }
+                          @if (q.statut !== 'VERIFIEE' && q.a_justificatif) {
+                            <button type="button" class="btn-primary sm"
+                                    (click)="verifierPiece(q)">
+                              <span class="material-icons">verified</span>
+                              Valider
+                            </button>
+                          }
+                          @if (q.statut !== 'REFUSEE' && q.a_justificatif) {
+                            <button type="button" class="btn-danger sm"
+                                    (click)="ouvrirRefusPiece(q)">
+                              <span class="material-icons">block</span>
+                              Refuser
+                            </button>
+                          }
+                        </div>
+
+                        @if (refusPieceEnCours?.id === q.id) {
+                          <div class="refus">
+                            <label>
+                              Motif du refus <span class="required">*</span>
+                              <textarea [(ngModel)]="refusPieceEnCours!.motif" rows="2"
+                                        placeholder="Document illisible, attestation expirée, nom qui ne correspond pas…"></textarea>
+                            </label>
+                            <p class="page-hint">
+                              Obligatoire, et lu par le membre : sans motif il redéposera la
+                              même pièce sans savoir ce qui n'allait pas.
+                            </p>
+                            <div class="refus-actions">
+                              <button type="button" class="btn-secondary"
+                                      (click)="refusPieceEnCours = null">Annuler</button>
+                              <button type="button" class="btn-danger"
+                                      [disabled]="!refusPieceEnCours!.motif.trim()"
+                                      (click)="confirmerRefusPiece()">Confirmer le refus</button>
+                            </div>
+                          </div>
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+              </div>
+            </div>
           }
         </li>
       </ng-template>
