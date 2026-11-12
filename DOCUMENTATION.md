@@ -1380,10 +1380,24 @@ pas lancer une campagne sans équipe : elle viserait des gens dont il n'a pas la
 
 #### Tours de garde : la règle de répartition
 
-`core/rotations_campagne.py`. La période est découpée par `duree_rotation_jours` (la dernière
+`core/rotations_campagne.py`. **C'est une option explicite** (`tours_de_garde`, migration
+`0258`, demande du 12/11/2026), décochée par défaut : le défaut va vers le moins d'effet pour une
+option qui propose d'affecter des gens, et beaucoup de campagnes ne veulent que recueillir des
+disponibilités — « qui peut venir la semaine prochaine ? » n'appelle aucun tour de garde. La
+première version s'en remettait à `effectif_cible = 0`, c'est-à-dire une décision d'organisation
+portée par un nombre laissé à zéro, que personne ne lit comme telle dans un formulaire.
+
+Trois conséquences : le sérialiseur **refuse** `tours_de_garde` sans effectif (on n'arme pas une
+garde avec zéro personne par créneau, et laisser passer promettrait dans le message une
+organisation jamais produite) ; l'action `rotations` répond 400 quand l'option est fermée plutôt
+qu'un bilan vide, qu'on prendrait pour « aucun volontaire disponible » — deux situations
+opposées ; et **désactiver l'option supprime les tours existants**, parce qu'une grille de garde
+orpheline que plus rien n'alimente est pire qu'aucune grille : quelqu'un la lira un jour en
+croyant qu'elle vaut encore.
+
+Quand l'option est active, la période est découpée par `duree_rotation_jours` (la dernière
 tranche peut être plus courte — refuser le dernier jour laisserait un trou de garde), et chaque
-`(tour, créneau)` cherche `effectif_cible` personnes. `effectif_cible = 0` crée les tranches
-sans affecter personne : on recueille des disponibilités sans armer de garde.
+`(tour, créneau)` cherche `effectif_cible` personnes.
 
 La règle est ordonnée, et chaque niveau répond à une objection :
 
@@ -1407,6 +1421,25 @@ Deux garde-fous qui rendent la génération automatique acceptable :
 
 Chaque proposition porte son `motif` en clair (« disponible, 3 jours déjà posés, à 12 km de la
 crise ») : une proposition qu'on ne peut pas expliquer ne se relit pas, elle se subit.
+
+#### Inscription d'un bénévole : la case « membre » est cochée par défaut
+
+Demande du 12/11/2026. La case n'apparaît **que** sur un site de marque blanche ayant sa propre
+réserve (`afficherCaseReserve`, qui lit `Branding.reserve_active`) : jamais sur le site
+généraliste, où la pré-cocher serait indéfendable. Qui s'inscrit sur `cj.assista-crise.fr` vient
+de l'association ; lui faire cocher une case pour dire ce qu'il est venu faire est un obstacle
+de plus au pire moment.
+
+**Une case pré-cochée demande en retour d'être explicite sur ce qu'elle engage** — sans quoi
+c'est un consentement arraché par défaut. D'où l'avertissement sous la case, qui dit quatre
+choses : ce n'est pas une adhésion automatique (l'association décide) ; quelles données lui
+deviennent visibles et pour quoi ; qu'on peut décocher et garder un compte citoyen ; et comment
+revenir sur ce choix.
+
+Ce dernier point est volontairement formulé « il suffit de le demander à l'association » et
+**non** « depuis vos paramètres » : la page des paramètres affiche l'état de la candidature mais
+n'offre aucun retrait. Promettre un bouton qui n'existe pas aurait été pire que de ne rien
+promettre. Un retrait en libre-service reste à faire si on le veut.
 
 #### La rubrique « Mon association » dans le menu
 

@@ -300,9 +300,22 @@
               formControlName="souhaiteRejoindreReserve"
               class="form-checkbox">
             <span class="checkbox-text">
-              Je souhaite rejoindre la réserve {{ branding?.nom_affichage }}
+              Je souhaite devenir membre de la réserve {{ branding?.nom_affichage }}
             </span>
           </label>
+          <!-- La case est cochée par défaut : l'avertissement doit donc dire exactement ce
+               qu'elle engage, et rappeler qu'on peut la décocher. Une case pré-cochée sans
+               explication est un consentement arraché. -->
+          <p class="checkbox-hint">
+            En laissant cette case cochée, vous demandez à rejoindre la réserve de
+            {{ branding?.nom_affichage }}. <strong>Ce n'est pas une adhésion automatique</strong> :
+            votre demande est transmise à l'association, qui décide de l'accepter. Vos
+            coordonnées et votre commune lui deviennent visibles, afin qu'elle puisse vous
+            contacter et vous solliciter lors d'une mobilisation — et seulement à elle.
+            Décochez-la pour créer un compte citoyen simple : vous pourrez toujours proposer
+            votre aide ponctuellement. Pour revenir sur ce choix plus tard, il suffit de le
+            demander à l'association.
+          </p>
         </div>
       }
 

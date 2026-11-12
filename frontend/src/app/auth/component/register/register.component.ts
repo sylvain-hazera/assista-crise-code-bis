@@ -121,7 +121,16 @@ export class RegisterComponent implements OnInit, OnDestroy {
       // AASC/RCSC : comptes Secours seulement, mutuellement exclusives.
       isAasc: [false],
       isRcsc: [false],
-      souhaiteRejoindreReserve: [false],
+      // COCHÉE PAR DÉFAUT (demande de Sylvain du 12/11/2026). Elle n'apparaît que sur un
+      // site de marque blanche avec sa propre réserve (voir `afficherCaseReserve`) : qui
+      // s'inscrit sur cj.assista-crise.fr vient de l'association, pas du site généraliste, et
+      // lui faire cocher une case pour dire ce qu'il est venu faire est un obstacle de plus
+      // au pire moment.
+      //
+      // Une case pré-cochée demande en retour d'être EXPLICITE sur ce qu'elle engage : d'où
+      // l'avertissement sous la case, qui dit ce que l'association verra et rappelle qu'on
+      // peut décocher. Sans lui, ce serait un consentement arraché par défaut.
+      souhaiteRejoindreReserve: [true],
       acceptTerms: [false, Validators.requiredTrue]
     });
   }

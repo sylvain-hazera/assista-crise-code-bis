@@ -273,33 +273,58 @@
 
       <section class="bloc">
         <h2>3. Tours de garde</h2>
-        <p class="page-hint">
-          Pour que personne ne reste mobilisé toute la période. Laissez l'effectif à zéro pour
-          seulement recueillir des disponibilités, sans armer de tours.
-        </p>
 
-        <div class="champs">
-          <label>
-            <span>Durée d'un tour (jours)</span>
-            <input type="number" name="duree" min="1" max="31"
-                   [(ngModel)]="saisie.duree_rotation_jours">
-          </label>
-          <label>
-            <span>Repos minimum (jours)</span>
-            <input type="number" name="repos" min="0" max="31"
-                   [(ngModel)]="saisie.repos_min_jours">
-          </label>
-          <label>
-            <span>Personnes par créneau</span>
-            <input type="number" name="effectif" min="0" max="999"
-                   [(ngModel)]="saisie.effectif_cible">
-          </label>
-        </div>
+        <!-- OPTION, pas un réglage par défaut : beaucoup de campagnes ne veulent que savoir
+             qui peut venir. Les trois champs n'apparaissent qu'une fois cochée — les montrer
+             en permanence laisse croire qu'il faut les remplir. -->
+        <label class="case">
+          <input type="checkbox" name="tours" [checked]="saisie.tours_de_garde"
+                 (change)="basculerToursDeGarde()">
+          <span>
+            Organiser des <strong>tours de garde</strong> sur cette période
+            <em>
+              la plateforme découpe la période en tours et propose qui tient quel créneau, pour
+              que personne ne reste mobilisé du premier au dernier jour. Sans cette option, la
+              campagne recueille seulement des disponibilités — ce qui suffit le plus souvent.
+            </em>
+          </span>
+        </label>
 
-        @if (nombreDeTours) {
+        @if (saisie.tours_de_garde) {
+          <div class="champs">
+            <label>
+              <span>Durée d'un tour (jours)</span>
+              <input type="number" name="duree" min="1" max="31"
+                     [(ngModel)]="saisie.duree_rotation_jours">
+            </label>
+            <label>
+              <span>Repos minimum (jours)</span>
+              <input type="number" name="repos" min="0" max="31"
+                     [(ngModel)]="saisie.repos_min_jours">
+            </label>
+            <label>
+              <span>Personnes par créneau <span class="required">*</span></span>
+              <input type="number" name="effectif" min="1" max="999"
+                     [(ngModel)]="saisie.effectif_cible">
+            </label>
+          </div>
+
+          @if (!saisie.effectif_cible) {
+            <p class="page-hint alerte-texte">
+              Précisez combien de personnes sont attendues par créneau : on n'arme pas une
+              garde avec zéro.
+            </p>
+          } @else if (nombreDeTours) {
+            <p class="page-hint">
+              La période donnera <strong>{{ nombreDeTours }} tour(s)</strong> de
+              {{ saisie.duree_rotation_jours }} jour(s), à
+              {{ saisie.effectif_cible }} personne(s) par créneau.
+            </p>
+          }
+
           <p class="page-hint">
-            La période donnera <strong>{{ nombreDeTours }} tour(s)</strong> de
-            {{ saisie.duree_rotation_jours }} jour(s).
+            Les propositions ne sont jamais acquises : vous les confirmez une par une après
+            l'envoi, dans le suivi de la campagne.
           </p>
         }
       </section>
@@ -427,6 +452,16 @@
         </section>
       }
 
+      @if (!campagne.tours_de_garde) {
+        <section class="bloc">
+          <h2>Tours de garde</h2>
+          <p class="page-hint">
+            Cette campagne ne les organise pas : elle recueille des disponibilités. La
+            couverture ci-dessus dit sur qui vous pouvez compter, jour par jour et créneau par
+            créneau.
+          </p>
+        </section>
+      } @else {
       <section class="bloc">
         <div class="entete-suivi">
           <h2>Tours de garde</h2>
@@ -486,6 +521,8 @@
           </article>
         }
       </section>
+
+      }
 
       <section class="bloc">
         <h2>Qui a répondu</h2>

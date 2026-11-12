@@ -389,3 +389,11 @@
     width: 100%;
   }
 }
+/* Avertissement sous une case à cocher. Aligné sur le texte de la case (et non sur son
+   carré), pour se lire comme sa suite et non comme un paragraphe indépendant. */
+.checkbox-hint {
+  margin: .35rem 0 0 1.9rem;
+  font-size: .8rem;
+  line-height: 1.5;
+  color: var(--ac-text-muted, #6b7280);
+}

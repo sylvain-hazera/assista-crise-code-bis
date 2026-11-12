@@ -427,6 +427,87 @@ class TestQuiPeutLancer:
 
 
 @pytest.mark.django_db
+class TestToursDeGardeEnOption:
+    """Demande de Sylvain du 12/11/2026 : « tour de garde est une option activable ».
+
+    La première version s'en remettait à `effectif_cible = 0`, donc une décision
+    d'organisation portée par un nombre laissé à zéro — personne ne lit un formulaire comme
+    ça. Beaucoup de campagnes ne veulent d'ailleurs que recueillir des disponibilités."""
+
+    def test_desactive_par_defaut(self, asso):
+        """Le défaut va vers le moins d'effet : c'est une option qui propose d'affecter des
+        gens."""
+        assert _campagne(asso).tours_de_garde is False
+
+    def test_aucun_tour_n_est_cree_quand_l_option_est_fermee(self, create_user, asso):
+        from core.rotations_campagne import generer_rotations
+        from core.models import RotationCampagne
+
+        campagne = _campagne(asso)
+
+        bilan = generer_rotations(campagne)
+
+        assert bilan["desactive"] is True
+        assert bilan["rotations"] == 0
+        assert not RotationCampagne.objects.filter(campagne=campagne).exists()
+
+    def test_desactiver_l_option_SUPPRIME_les_tours_existants(self, create_user, asso):
+        """Une grille de garde orpheline, que plus rien n'alimente, est pire qu'aucune
+        grille : quelqu'un la lira un jour en croyant qu'elle vaut encore."""
+        from core.models import RotationCampagne
+        from core.rotations_campagne import generer_rotations
+
+        campagne = _campagne(asso, tours_de_garde=True, effectif_cible=1,
+                             duree_rotation_jours=3)
+        generer_rotations(campagne)
+        assert RotationCampagne.objects.filter(campagne=campagne).exists()
+
+        campagne.tours_de_garde = False
+        campagne.save(update_fields=["tours_de_garde"])
+        bilan = generer_rotations(campagne)
+
+        assert bilan["supprimees"] >= 1
+        assert not RotationCampagne.objects.filter(campagne=campagne).exists()
+
+    def test_l_API_refuse_de_generer_quand_l_option_est_fermee(self, create_user, asso):
+        """Dit, plutôt que de rendre un bilan vide qu'on prendrait pour « aucun volontaire
+        disponible » : ce sont deux situations opposées."""
+        bureau, _ = _benevole(create_user, "opt1", asso, bureau=True)
+        campagne = _campagne(asso)
+
+        reponse = _client(bureau).post(f"{URL}{campagne.id}/rotations/")
+
+        assert reponse.status_code == 400
+        assert "pas activ" in reponse.data["error"]
+
+    def test_l_API_refuse_une_campagne_a_tours_sans_effectif(self, create_user, asso):
+        """Refusé à la saisie plutôt que découvert à la génération, qui créerait des tours
+        vides — et le message, lui, aurait promis une organisation."""
+        bureau, _ = _benevole(create_user, "opt2", asso, bureau=True)
+
+        reponse = _client(bureau).post(URL, {
+            "institution": str(asso.id), "intitule": "Garde", "motif": "CRISE_EN_COURS",
+            "periode_debut": str(timezone.localdate() + datetime.timedelta(days=1)),
+            "periode_fin": str(timezone.localdate() + datetime.timedelta(days=4)),
+            "tours_de_garde": True, "effectif_cible": 0,
+        }, format="json")
+
+        assert reponse.status_code == 400
+        assert "effectif_cible" in reponse.data
+
+    def test_le_message_n_annonce_aucun_tour_sans_l_option(self, asso):
+        """« par tranches de 0 jour » n'informe personne : la phrase change de nature."""
+        from core.campagnes_disponibilite import _phrase_rotation
+
+        sans = _phrase_rotation(_campagne(asso))
+        avec = _phrase_rotation(_campagne(asso, tours_de_garde=True, effectif_cible=2,
+                                          duree_rotation_jours=3, repos_min_jours=2))
+
+        assert "n'engage" in sans or "engageons à rien" in sans
+        assert "3 jour" in avec
+
+
+@pytest.mark.django_db
 class TestRotations:
 
     @pytest.fixture
@@ -435,6 +516,7 @@ class TestRotations:
             asso,
             periode_debut=timezone.localdate() + datetime.timedelta(days=1),
             periode_fin=timezone.localdate() + datetime.timedelta(days=6),
+            tours_de_garde=True,
             duree_rotation_jours=3, repos_min_jours=0, effectif_cible=1,
             creneaux=["MATIN"],
         )
@@ -462,7 +544,7 @@ class TestRotations:
         campagne = _campagne(
             asso, periode_debut=timezone.localdate(),
             periode_fin=timezone.localdate() + datetime.timedelta(days=3),
-            duree_rotation_jours=3, effectif_cible=0)
+            tours_de_garde=True, duree_rotation_jours=3, effectif_cible=0)
 
         bilan = generer_rotations(campagne)
 
@@ -565,8 +647,8 @@ class TestRotations:
         campagne = _campagne(
             asso, periode_debut=timezone.localdate(),
             periode_fin=timezone.localdate() + datetime.timedelta(days=5),
-            duree_rotation_jours=3, repos_min_jours=5, effectif_cible=1,
-            creneaux=["MATIN"])
+            tours_de_garde=True, duree_rotation_jours=3, repos_min_jours=5,
+            effectif_cible=1, creneaux=["MATIN"])
         seul, offre = _benevole(create_user, "mm", asso)
         CibleCampagne.objects.create(campagne=campagne, utilisateur=seul, ressource=offre,
                                      environment="PROD")

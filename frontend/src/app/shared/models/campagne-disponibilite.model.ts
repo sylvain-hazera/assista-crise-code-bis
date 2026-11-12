@@ -78,9 +78,14 @@ export interface CampagneDisponibilite {
   titres_a_jour: boolean;
   equipe: string | null;
   equipe_nom?: string | null;
+  /** Option explicite (12/11/2026). Avant, « pas de tours » se disait par un effectif laissé
+   * à zéro : une décision d'organisation portée par un nombre, que personne ne lit comme
+   * telle. Beaucoup de campagnes ne veulent que recueillir des disponibilités. */
+  tours_de_garde: boolean;
   duree_rotation_jours: number;
   repos_min_jours: number;
-  /** 0 = on recueille des disponibilités sans armer de tours de garde. */
+  /** Combien de personnes par créneau. Exigé dès que `tours_de_garde` est vrai : on n'arme
+   * pas une garde avec zéro personne. */
   effectif_cible: number;
   statut: StatutCampagne;
   statut_libelle?: string;
@@ -142,6 +147,10 @@ export interface BilanRotations {
   rotations: number;
   proposees: number;
   conservees: number;
+  /** Vrai quand l'option est désactivée : les tours existants ont alors été supprimés. Une
+   * grille de garde orpheline que plus rien n'alimente est pire qu'aucune grille. */
+  desactive?: boolean;
+  supprimees?: number;
   manques: { rotation: number; creneau: string; attendus: number; trouves: number }[];
 }
 

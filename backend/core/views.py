@@ -16541,6 +16541,12 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
         campagne = self.get_object()
         if request.method == "POST":
             self._verifier_le_droit(campagne.institution, campagne.equipe)
+            if not campagne.tours_de_garde:
+                # Dit, plutôt que de rendre un bilan vide qu'on prendrait pour « aucun
+                # volontaire disponible » : ce sont deux situations opposées.
+                return Response(
+                    {"error": "Les tours de garde ne sont pas activés sur cette campagne."},
+                    status=status.HTTP_400_BAD_REQUEST)
             bilan = generer_rotations(campagne)
             audit_log(
                 request=request, action_code="MODIFICATION",

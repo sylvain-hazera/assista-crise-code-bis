@@ -29,6 +29,7 @@ describe('CampagnesDisponibiliteComponent', () => {
     periode_debut: '2027-01-12', periode_fin: '2027-01-26', creneaux: [],
     echelon: 'NATIONAL', territoire_code: '', rayon_km: null,
     competences: [], qualifications: [], titres_a_jour: true, equipe: null,
+    tours_de_garde: false,
     duree_rotation_jours: 3, repos_min_jours: 2, effectif_cible: 0,
     statut: 'BROUILLON',
   };
@@ -79,6 +80,50 @@ describe('CampagnesDisponibiliteComponent', () => {
       composant.saisie = { ...CAMPAGNE, echelon: 'NATIONAL' };
       expect(composant.demandeUnTerritoire).toBeFalse();
       expect(composant.peutEnregistrer).toBeTrue();
+    });
+  });
+
+  describe('les tours de garde, en option', () => {
+    it('sont désactivés par défaut', () => {
+      // Le défaut va vers le moins d'effet : c'est une option qui propose d'affecter des gens.
+      composant.nouvelle();
+      expect(composant.saisie.tours_de_garde).toBeFalse();
+      // Et l'absence de tours n'empêche pas d'enregistrer : la plupart des campagnes ne
+      // veulent que recueillir des disponibilités.
+      composant.saisie.intitule = 'Vigilance';
+      composant.saisie.periode_debut = '2027-01-12';
+      composant.saisie.periode_fin = '2027-01-26';
+      expect(composant.peutEnregistrer).toBeTrue();
+    });
+
+    it('proposent un effectif dès qu\'on les active', () => {
+      composant.saisie = { ...CAMPAGNE, tours_de_garde: false, effectif_cible: 0 };
+
+      composant.basculerToursDeGarde();
+
+      // On vient de cocher une option, pas de remplir un formulaire : laisser un zéro
+      // bloquant obligerait à deviner ce qu'on attend.
+      expect(composant.saisie.tours_de_garde).toBeTrue();
+      expect(composant.saisie.effectif_cible).toBe(2);
+    });
+
+    it('refusent un effectif à zéro', () => {
+      composant.saisie = { ...CAMPAGNE, tours_de_garde: true, effectif_cible: 0 };
+      // On n'arme pas une garde avec zéro personne par créneau.
+      expect(composant.peutEnregistrer).toBeFalse();
+
+      composant.saisie.effectif_cible = 3;
+      expect(composant.peutEnregistrer).toBeTrue();
+    });
+
+    it('rendent l\'effectif saisi en se réactivant', () => {
+      composant.saisie = { ...CAMPAGNE, tours_de_garde: true, effectif_cible: 6 };
+
+      composant.basculerToursDeGarde();
+      composant.basculerToursDeGarde();
+
+      // L'effectif déjà choisi n'est pas écrasé par la proposition.
+      expect(composant.saisie.effectif_cible).toBe(6);
     });
   });
 

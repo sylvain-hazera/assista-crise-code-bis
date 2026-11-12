@@ -104,13 +104,22 @@ def generer_rotations(campagne):
         AffectationRotation, RotationCampagne, StatutAffectationRotation,
     )
 
+    if not campagne.tours_de_garde:
+        # Option désactivée : on ne laisse pas traîner des tours d'une activation précédente.
+        # Une grille de garde orpheline, que plus rien n'alimente, est pire qu'aucune grille :
+        # quelqu'un la lira un jour en croyant qu'elle vaut encore.
+        supprimees = RotationCampagne.objects.filter(campagne=campagne).delete()[0]
+        return {"rotations": 0, "proposees": 0, "conservees": 0, "manques": [],
+                "desactive": True, "supprimees": supprimees}
+
     creneaux = campagne.creneaux_effectifs
     cible = campagne.effectif_cible
     declarations = _declarations_par_personne(campagne)
     distances = _distances(campagne)
     noms = _noms(campagne)
 
-    bilan = {"rotations": 0, "proposees": 0, "conservees": 0, "manques": []}
+    bilan = {"rotations": 0, "proposees": 0, "conservees": 0, "manques": [],
+             "desactive": False}
 
     with transaction.atomic():
         # Les PROPOSÉES sont effacées, les CONFIRMÉES gardées : un recalcul ne doit pas
@@ -158,9 +167,11 @@ def generer_rotations(campagne):
         ).delete()
 
         if cible <= 0:
-            # Effectif cible à zéro : on recueille des disponibilités, on n'arme pas de garde.
-            # Les tranches sont tout de même créées — elles donnent le découpage que le
-            # message annonce aux bénévoles.
+            # Tours de garde activés mais effectif laissé à zéro : les tranches sont créées —
+            # elles donnent le découpage que le message annonce aux bénévoles — et personne
+            # n'est affecté. Le sérialiseur refuse normalement cette combinaison ; on la tient
+            # quand même, parce qu'une campagne créée par script ou par l'admin Django ne
+            # passe pas par lui.
             return bilan
 
         for numero, debut, fin in tranches:

@@ -81,7 +81,7 @@ def _phrase_rotation(campagne):
 
     Rien plutôt qu'une phrase vide : « par tranches de 0 jour » n'informe personne, et une
     ligne de remplissage dans un message qu'on veut voir lu est une ligne de trop."""
-    if campagne.effectif_cible <= 0:
+    if not campagne.tours_de_garde:
         return ("Nous ne vous engageons à rien : il s'agit de savoir sur qui nous pouvons "
                 "compter.")
     return (f"L'organisation se fera par tours de {campagne.duree_rotation_jours} jour(s), "

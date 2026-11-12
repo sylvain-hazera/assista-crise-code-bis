@@ -5281,7 +5281,8 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
                   'crise', 'crise_nom', 'periode_debut', 'periode_fin', 'nombre_de_jours',
                   'creneaux', 'echelon', 'echelon_libelle', 'territoire_code', 'rayon_km',
                   'competences', 'qualifications', 'titres_a_jour', 'equipe', 'equipe_nom',
-                  'duree_rotation_jours', 'repos_min_jours', 'effectif_cible',
+                  'tours_de_garde', 'duree_rotation_jours', 'repos_min_jours',
+                  'effectif_cible',
                   'statut', 'statut_libelle', 'cree_par', 'cree_par_nom',
                   'date_creation', 'date_envoi', 'date_cloture', 'suivi']
         read_only_fields = ['id', 'statut', 'cree_par', 'date_creation', 'date_envoi',
@@ -5336,6 +5337,20 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
                              getattr(self.instance, 'territoire_code', '')):
                 raise serializers.ValidationError(
                     {"territoire_code": "Précisez le territoire visé pour cet échelon."})
+
+        # Tours de garde activés sans effectif : refusé à la saisie plutôt que découvert à la
+        # génération, qui créerait des tours vides. On ne peut pas armer une garde avec zéro
+        # personne par créneau, et laisser passer reviendrait à promettre une organisation
+        # dans le message sans jamais la produire.
+        tours = attrs.get('tours_de_garde',
+                          getattr(self.instance, 'tours_de_garde', False))
+        effectif = attrs.get('effectif_cible',
+                             getattr(self.instance, 'effectif_cible', 0))
+        if tours and not effectif:
+            raise serializers.ValidationError({
+                "effectif_cible": "Avec les tours de garde, précisez combien de personnes "
+                                  "sont attendues par créneau.",
+            })
         return attrs
 
 

@@ -8526,6 +8526,18 @@ class CampagneDisponibilite(EnvironmentScopedModel):
     )
 
     # ── Rotations ───────────────────────────────────────────────────────────────────────────
+    #: Les tours de garde sont une OPTION, explicitement activée (demande de Sylvain du
+    #: 12/11/2026). La première version s'en remettait à `effectif_cible = 0`, ce qui faisait
+    #: dépendre une décision d'organisation d'un nombre laissé à zéro — personne ne lit un
+    #: formulaire comme ça. Beaucoup de campagnes ne veulent d'ailleurs que recueillir des
+    #: disponibilités : « qui peut venir la semaine prochaine ? » n'appelle aucun tour de garde.
+    tours_de_garde = models.BooleanField(
+        default=False,
+        help_text="Active le découpage de la période en tours de garde et la proposition "
+                   "d'affectations. Sans elle, la campagne recueille seulement des "
+                   "disponibilités.",
+    )
+
     duree_rotation_jours = models.PositiveSmallIntegerField(
         default=3,
         help_text="Longueur d'un tour de garde. Les rotations découpent la période par "
@@ -8537,8 +8549,8 @@ class CampagneDisponibilite(EnvironmentScopedModel):
     )
     effectif_cible = models.PositiveSmallIntegerField(
         default=0,
-        help_text="Combien de personnes par créneau et par rotation. 0 = pas de génération "
-                   "de tours de garde, on se contente de recueillir les disponibilités.",
+        help_text="Combien de personnes par créneau et par rotation. N'a de sens qu'avec "
+                   "`tours_de_garde`.",
     )
 
     statut = models.CharField(

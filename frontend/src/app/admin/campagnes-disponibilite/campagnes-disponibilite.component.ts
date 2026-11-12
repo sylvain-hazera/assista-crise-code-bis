@@ -111,6 +111,9 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       periode_debut: dans(2), periode_fin: dans(9),
       creneaux: [], echelon: 'NATIONAL', territoire_code: '', rayon_km: null,
       competences: [], qualifications: [], titres_a_jour: true, equipe: null,
+      // Désactivés par défaut : le défaut va vers le moins d'effet, ce qui est le bon sens
+      // pour une option qui propose d'affecter des gens.
+      tours_de_garde: false,
       duree_rotation_jours: 3, repos_min_jours: 2, effectif_cible: 0,
     };
   }
@@ -262,7 +265,20 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       && !!this.saisie.periode_debut && !!this.saisie.periode_fin
       && !this.periodeIncoherente
       && (!this.demandeUnTerritoire || !!this.saisie.territoire_code?.trim())
-      && (!this.demandeUneCrise || (!!this.saisie.crise && !!this.saisie.rayon_km));
+      && (!this.demandeUneCrise || (!!this.saisie.crise && !!this.saisie.rayon_km))
+      // Tours de garde activés sans effectif : refusé ici comme côté serveur. On ne peut pas
+      // armer une garde avec zéro personne par créneau, et laisser passer promettrait dans le
+      // message une organisation qui ne serait jamais produite.
+      && (!this.saisie.tours_de_garde || !!this.saisie.effectif_cible);
+  }
+
+  /** Activer les tours propose un effectif plutôt que de laisser un zéro bloquant : on vient
+   * de cocher une option, pas de remplir un formulaire administratif. */
+  basculerToursDeGarde(): void {
+    this.saisie.tours_de_garde = !this.saisie.tours_de_garde;
+    if (this.saisie.tours_de_garde && !this.saisie.effectif_cible) {
+      this.saisie.effectif_cible = 2;
+    }
   }
 
   enregistrer(): void {
