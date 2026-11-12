@@ -163,9 +163,14 @@ def segments_sms(texte):
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # CATALOGUE
 #
-# Les textes par défaut sont ceux déjà envoyés aujourd'hui, repris tels quels : le but est que
-# RIEN ne change pour une institution qui ne personnalise pas. Chaque entrée dit quand le
-# message part et à qui, parce qu'une institution qui réécrit un texte doit le savoir.
+# Les textes par défaut s'adressent au DESTINATAIRE : ils le vouvoient, lui disent ce qui
+# vient de se passer, ce qu'il peut faire ensuite, et à qui s'adresser si quelque chose cloche
+# (voir DOCUMENTATION.md § 13.0). Ils évitent les participes genrés — le destinataire est
+# inconnu — et ne mentionnent jamais la mécanique interne. Chaque entrée dit quand le message
+# part et à qui, parce qu'une institution qui réécrit un texte doit le savoir.
+#
+# Les reprendre a changé ce que reçoivent les institutions qui n'ont PAS personnalisé : c'était
+# le but. Celles qui ont écrit leur propre version gardent la leur, intacte.
 #
 # `relisible=True` = le message part vers quelqu'un d'AUTRE que celui qui agit : une fenêtre de
 # relecture y a du sens. Les accusés qu'on s'envoie à soi-même en s'inscrivant sont à False.
@@ -188,8 +193,8 @@ CATALOGUE = {m.cle: m for m in [
             "- Activation du compte : [LIEN_ACTIVATION]\n\n"
             "Vous pourrez ensuite vous reconnecter à tout moment via : [LIEN_CONNEXION]\n\n"
             "Ces liens sont valables pendant 7 jours.\n\n"
-            "Une fois rattaché à votre institution, vous recevrez un second email avec les "
-            "instructions pour accéder à la messagerie de votre équipe.\n\n"
+            "Une fois votre rattachement à l'institution effectué, vous recevrez un second "
+            "message avec les instructions d'accès à la messagerie de votre équipe.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("INSTITUTION", "LIEN_ACTIVATION", "LIEN_CONNEXION", "SIGNATURE"),
@@ -203,9 +208,10 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Compte créé - En attente de validation",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Votre compte ([TYPE_COMPTE]) sur [INSTITUTION] a bien été créé.\n"
-            "Cependant, il est en attente de validation par un administrateur.\n"
-            "Vous recevrez un email dès que votre compte sera validé.\n\n"
+            "Votre compte ([TYPE_COMPTE]) sur [INSTITUTION] a bien été créé.\n\n"
+            "Il doit maintenant être validé par un administrateur avant que vous "
+            "puissiez l'utiliser. Vous recevrez un message dès que ce sera fait : "
+            "inutile de renouveler votre demande entre-temps.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NOM", "TYPE_COMPTE", "INSTITUTION", "SIGNATURE"),
@@ -215,13 +221,12 @@ CATALOGUE = {m.cle: m for m in [
         cle="COMPTE_VALIDE",
         libelle="Compte validé",
         quand="Quand un administrateur ou une mairie valide un compte en attente.",
-        # Texte repris MOT POUR MOT de ce qui partait avant la migration vers les modèles :
-        # une institution qui ne personnalise pas ne doit voir AUCUN changement.
-        sujet="Votre compte a été validé !",
+        sujet="Votre compte a été validé",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Bonne nouvelle ! Votre compte ([TYPE_COMPTE]) a été validé.\n"
-            "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
+            "Bonne nouvelle : votre compte ([TYPE_COMPTE]) vient d'être validé.\n\n"
+            "Vous pouvez dès à présent vous connecter et accéder à l'ensemble des "
+            "fonctionnalités qui vous sont ouvertes.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NOM", "TYPE_COMPTE", "SIGNATURE"),
@@ -236,10 +241,11 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Votre demande de compte a été refusée",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Nous sommes désolés de vous informer que votre demande de compte ([TYPE_COMPTE]) "
-            "n'a pas été acceptée.\n\n"
-            "Raison : [MOTIF]\n\n"
-            "Pour plus d'informations, vous pouvez nous contacter.\n\n"
+            "Votre demande de compte ([TYPE_COMPTE]) n'a pas pu être acceptée.\n\n"
+            "Motif : [MOTIF]\n\n"
+            "Si cette décision vous paraît reposer sur une erreur, ou si votre situation "
+            "a changé depuis votre demande, répondez simplement à ce message : nous la "
+            "réexaminerons.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NOM", "TYPE_COMPTE", "MOTIF", "SIGNATURE"),
@@ -325,8 +331,9 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Vous rejoignez l'équipe [EQUIPE]",
         corps=(
             "Bonjour [PRENOM],\n\n"
-            "Vous avez été ajouté à l'équipe « [EQUIPE] » de [INSTITUTION].\n\n"
-            "Accès à l'équipe : [LIEN_EQUIPE]\n\n"
+            "Vous faites désormais partie de l'équipe « [EQUIPE] » de [INSTITUTION].\n\n"
+            "Vous y retrouverez ses missions en cours, ses membres et sa messagerie :\n"
+            "[LIEN_EQUIPE]\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "EQUIPE", "INSTITUTION", "LIEN_EQUIPE", "SIGNATURE"),
@@ -339,9 +346,10 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Invitation à rejoindre [INSTITUTION]",
         corps=(
             "Bonjour [PRENOM],\n\n"
-            "Vous êtes invité à rejoindre l'équipe « [EQUIPE] » de [INSTITUTION].\n\n"
+            "L'équipe « [EQUIPE] » de [INSTITUTION] vous invite à la rejoindre.\n\n"
             "Pour activer votre accès : [LIEN_ACTIVATION]\n\n"
-            "Ce lien est valable 7 jours.\n\n"
+            "Ce lien est valable 7 jours. Passé ce délai, demandez-en un nouveau à la "
+            "personne qui vous a invité.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "EQUIPE", "INSTITUTION", "LIEN_ACTIVATION", "SIGNATURE"),
@@ -383,8 +391,12 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Votre dossier [NUMERO_DOSSIER] est clôturé",
         corps=(
             "Bonjour [PRENOM],\n\n"
-            "Votre dossier [NUMERO_DOSSIER] a été clôturé.\n\n"
-            "Suivi du dossier : [LIEN_SUIVI]\n\n"
+            "Votre dossier [NUMERO_DOSSIER] est désormais clôturé : les démarches qu'il "
+            "concernait sont terminées de notre côté.\n\n"
+            "Vous pouvez le relire à tout moment ici :\n"
+            "[LIEN_SUIVI]\n\n"
+            "Si votre situation évolue ou si quelque chose vous semble incomplet, "
+            "répondez à ce message.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NUMERO_DOSSIER", "LIEN_SUIVI", "SIGNATURE"),
@@ -397,8 +409,10 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Votre demande a bien été reçue",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Votre demande a bien été enregistrée par [INSTITUTION].\n\n"
-            "Vous pouvez en suivre l'avancement ici : [LIEN_SUIVI]\n\n"
+            "Votre demande a bien été enregistrée par [INSTITUTION]. Elle va être examinée ; "
+            "vous serez prévenu dès qu'elle avance.\n\n"
+            "Vous pouvez en suivre l'avancement à tout moment ici :\n"
+            "[LIEN_SUIVI]\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NOM", "INSTITUTION", "LIEN_SUIVI", "SIGNATURE"),
@@ -411,8 +425,11 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Votre proposition d'aide a bien été reçue",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Merci : votre proposition d'aide a bien été enregistrée par [INSTITUTION].\n\n"
-            "Vous pouvez la suivre ici : [LIEN_SUIVI]\n\n"
+            "Merci de votre proposition d'aide : elle a bien été enregistrée par "
+            "[INSTITUTION]. Elle sera étudiée, et vous serez recontacté si elle "
+            "correspond à un besoin.\n\n"
+            "Vous pouvez la consulter ou la modifier ici :\n"
+            "[LIEN_SUIVI]\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "NOM", "INSTITUTION", "LIEN_SUIVI", "SIGNATURE"),
@@ -441,8 +458,10 @@ CATALOGUE = {m.cle: m for m in [
         sujet="Votre rattachement n'a pas été accepté",
         corps=(
             "Bonjour [PRENOM],\n\n"
-            "Votre rattachement à « [ADRESSE] » n'a pas été accepté.\n\n"
+            "Votre rattachement à « [ADRESSE] » n'a pas pu être accepté.\n\n"
             "Motif : [MOTIF]\n\n"
+            "Si vous pensez qu'il s'agit d'une erreur, répondez à ce message en "
+            "précisant votre situation.\n\n"
             "[SIGNATURE]"
         ),
         placeholders=("PRENOM", "ADRESSE", "MOTIF", "SIGNATURE"),

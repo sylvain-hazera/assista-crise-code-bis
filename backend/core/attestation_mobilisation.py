@@ -36,12 +36,15 @@ DARK = colors.HexColor("#1e293b")
 GREY = colors.HexColor("#6b7280")
 LIGHT_BORDER = colors.HexColor("#d1d5db")
 
+# Adressé à la personne qui tient le document, et non rédigé à son sujet : c'est elle qui le
+# présentera, et le contenu juridique est inchangé (voir DOCUMENTATION.md § 13.0).
 TEXTE_LEGAL = (
-    "Le titulaire déclare être en pleine possession de ses moyens et, le cas échéant, "
-    "titulaire des permis de conduire et/ou certifications CACES requis pour la mission "
-    "confiée. Ce document n'est ni une réquisition légale (article L. 2215-1 du CGCT), ni un "
-    "laissez-passer opposable aux forces de l'ordre : il atteste une demande formelle émise "
-    "par l'autorité mentionnée en zone 1, vérifiable via le QR code ci-dessus."
+    "En présentant ce document, vous déclarez être en pleine possession de vos moyens et, le "
+    "cas échéant, titulaire des permis de conduire et des certifications (CACES) requis pour "
+    "la mission qui vous est confiée. Ce document n'est ni une réquisition au sens de "
+    "l'article L. 2215-1 du CGCT, ni un laissez-passer opposable aux forces de l'ordre : il "
+    "atteste d'une demande formelle émise par l'autorité mentionnée en zone 1, et peut être "
+    "vérifié en scannant le QR code ci-dessus."
 )
 
 STYLE_TITRE_ZONE = ParagraphStyle(

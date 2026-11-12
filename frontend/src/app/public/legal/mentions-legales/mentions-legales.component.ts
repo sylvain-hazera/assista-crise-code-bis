@@ -4,9 +4,11 @@ import {
   CONTACT_ADRESSE, CONTACT_EMAIL, CONTACT_NOM, CONTACT_TELEPHONE,
 } from '../../../shared/utils/contact-obfusque.util';
 
+import { BandeauMarqueBlancheComponent } from '../../../shared/components/common/bandeau-marque-blanche/bandeau-marque-blanche.component';
+
 @Component({
   selector: 'app-mentions-legales',
-  imports: [RouterLink],
+  imports: [RouterLink, BandeauMarqueBlancheComponent],
   templateUrl: './mentions-legales.component.html',
   styleUrl: './mentions-legales.component.scss'
 })

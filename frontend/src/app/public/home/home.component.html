@@ -142,9 +142,9 @@
       <div class="info-card">
         <h3>Informations importantes</h3>
         <p>
-          Bienvenue sur Assista Crise, la plateforme d'entraide en situation d'urgence.
-          Vous pouvez ici consulter les crises en cours, proposer votre aide ou 
-          demander de l'assistance.
+          Bienvenue sur {{ (branding$ | async)?.nom_affichage || 'Assista Crise' }}, la
+          plateforme d'entraide en situation d'urgence. Vous pouvez y consulter les crises en
+          cours, proposer votre aide ou demander de l'assistance.
         </p>
         <p>
           En cas de danger immédiat, contactez les services d'urgence au <strong>112</strong>.

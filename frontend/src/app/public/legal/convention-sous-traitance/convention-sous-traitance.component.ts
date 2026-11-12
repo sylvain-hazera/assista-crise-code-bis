@@ -8,9 +8,11 @@ import { CONTACT_ADRESSE, CONTACT_EMAIL, CONTACT_NOM } from '../../../shared/uti
  * qui détermine si une institution doit ré-accepter après une mise à jour du texte. */
 export const CONVENTION_VERSION = '2026-09-18';
 
+import { BandeauMarqueBlancheComponent } from '../../../shared/components/common/bandeau-marque-blanche/bandeau-marque-blanche.component';
+
 @Component({
   selector: 'app-convention-sous-traitance',
-  imports: [RouterLink],
+  imports: [RouterLink, BandeauMarqueBlancheComponent],
   templateUrl: './convention-sous-traitance.component.html',
   styleUrl: './convention-sous-traitance.component.scss'
 })

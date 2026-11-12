@@ -1,12 +1,18 @@
-"""Migration des envois vers le catalogue de modèles : le texte ne doit PAS changer.
+"""Migration des envois vers le catalogue de modèles : le texte ne change pas par accident.
 
 Le risque de cette migration est unique et il est silencieux : remplacer un texte en dur par un
 modèle dont le défaut diffère d'une virgule change le contenu d'un mail sans que rien ne le
-signale. Les tests ci-dessous comparent donc le rendu du modèle au texte exact qui partait
-avant, caractère par caractère.
+signale. Les tests ci-dessous comparent donc le rendu du modèle au texte attendu, caractère par
+caractère.
 
 C'est aussi ce qui permet de migrer les 48 points d'envoi **par lots** : chaque lot vient avec
 sa comparaison, plutôt qu'un commit de 37 extractions de f-strings où la casse serait invisible.
+
+**Le 12/11/2026, les textes attendus ont été RÉÉCRITS**, délibérément : ils s'adressaient au
+destinataire sur un ton administratif et genré (« Vous avez été ajouté », « Nous sommes désolés
+de vous informer »). Voir DOCUMENTATION.md § 13.0. Ce fichier ne compare donc plus au texte
+historique mais au texte voulu aujourd'hui — sa fonction reste la même : aucune modification
+d'un envoi ne doit passer inaperçue.
 """
 import pytest
 from django.core import mail
@@ -31,10 +37,11 @@ SIGNATURE = "Cordialement,\nL'équipe Assista-Crise"
 COMPARAISONS = {
     "COMPTE_VALIDE": (
         {"PRENOM": "Jean", "NOM": "Dupont", "TYPE_COMPTE": "Secours organisés"},
-        "Votre compte a été validé !",
+        "Votre compte a été validé",
         "Bonjour Jean Dupont,\n\n"
-        "Bonne nouvelle ! Votre compte (Secours organisés) a été validé.\n"
-        "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
+        "Bonne nouvelle : votre compte (Secours organisés) vient d'être validé.\n\n"
+        "Vous pouvez dès à présent vous connecter et accéder à l'ensemble des "
+        "fonctionnalités qui vous sont ouvertes.\n\n"
         + SIGNATURE,
     ),
     "COMPTE_REFUSE": (
@@ -42,19 +49,21 @@ COMPARAISONS = {
          "MOTIF": "Commune hors périmètre"},
         "Votre demande de compte a été refusée",
         "Bonjour Jean Dupont,\n\n"
-        "Nous sommes désolés de vous informer que votre demande de compte "
-        "(Secours organisés) n'a pas été acceptée.\n\n"
-        "Raison : Commune hors périmètre\n\n"
-        "Pour plus d'informations, vous pouvez nous contacter.\n\n"
+        "Votre demande de compte (Secours organisés) n'a pas pu être acceptée.\n\n"
+        "Motif : Commune hors périmètre\n\n"
+        "Si cette décision vous paraît reposer sur une erreur, ou si votre situation a "
+        "changé depuis votre demande, répondez simplement à ce message : nous la "
+        "réexaminerons.\n\n"
         + SIGNATURE,
     ),
     "COMPTE_EN_ATTENTE_VALIDATION": (
         {"PRENOM": "Jean", "NOM": "Dupont", "TYPE_COMPTE": "Secours organisés"},
         "Compte créé - En attente de validation",
         "Bonjour Jean Dupont,\n\n"
-        "Votre compte (Secours organisés) sur Assista-Crise a bien été créé.\n"
-        "Cependant, il est en attente de validation par un administrateur.\n"
-        "Vous recevrez un email dès que votre compte sera validé.\n\n"
+        "Votre compte (Secours organisés) sur Assista-Crise a bien été créé.\n\n"
+        "Il doit maintenant être validé par un administrateur avant que vous puissiez "
+        "l'utiliser. Vous recevrez un message dès que ce sera fait : inutile de renouveler "
+        "votre demande entre-temps.\n\n"
         + SIGNATURE,
     ),
     "MOT_DE_PASSE_OUBLIE": (
@@ -148,4 +157,4 @@ class TestEnvoiParModele:
         assert "Reserve Migration" in mail.outbox[0].body
         # Le sujet n'a pas été réécrit : il retombe sur le défaut, sans qu'on ait eu à le
         # recopier.
-        assert mail.outbox[0].subject == "Votre compte a été validé !"
+        assert mail.outbox[0].subject == "Votre compte a été validé"

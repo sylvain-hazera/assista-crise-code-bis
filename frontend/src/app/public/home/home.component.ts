@@ -2,8 +2,9 @@ import { Component, OnInit } from '@angular/core';
 import { MapComponent } from "../../shared/components/common/map/map.component";
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, Observable } from 'rxjs';
 import { AuthService } from '../../auth/services/auth.service';
+import { BrandingService, Branding } from '../../services/branding.service';
 import { CrisisService } from '../../services/crisis.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { Crisis } from '../../shared/models/crisis.model';
@@ -35,6 +36,14 @@ export interface GroupeSituation {
   ]
 })
 export class HomeComponent implements OnInit {
+  /** Le nom affiché suit la marque blanche : un bénévole des Casques Jaunes lit
+   * « Réserve Résilience », pas « Assista Crise ».
+   *
+   * Affecté dans le constructeur et non à la déclaration : avec `useDefineForClassFields`,
+   * un initialiseur de champ s'exécute avant l'affectation des propriétés de paramètre, et
+   * `this.brandingService` y serait encore indéfini. */
+  readonly branding$: Observable<Branding>;
+
   canDeclareCrisis = false;
 
   // ══ Récapitulatif public, au-dessus de la carte ════════════════════════════
@@ -49,11 +58,14 @@ export class HomeComponent implements OnInit {
   recapIndisponible = false;
 
   constructor(
+    private brandingService: BrandingService,
     private router: Router,
     private authService: AuthService,
     private crisisService: CrisisService,
     private pointService: PointOperationnelService,
-  ) {}
+  ) {
+    this.branding$ = this.brandingService.branding$;
+  }
 
   ngOnInit(): void {
     const user = this.authService.getCurrentUser();

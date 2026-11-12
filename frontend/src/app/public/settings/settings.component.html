@@ -200,10 +200,11 @@
           <div class="position-suivi-block">
             <h3><span class="material-icons">my_location</span> Suivi de position pendant mes missions</h3>
             <p class="tab-hint">
-              Une fois activé, ta position est transmise régulièrement à assista-crise pendant que
-              tu as l'application ouverte, pour que les régulateurs puissent suivre les équipes sur
-              la carte — quelle que soit l'équipe à laquelle tu es rattaché sur le moment. L'accord
-              n'est demandé qu'une seule fois par ton navigateur ; tu peux désactiver à tout moment.
+              Une fois le suivi activé, votre position est transmise régulièrement pendant que
+              l'application reste ouverte, afin que les régulateurs puissent suivre les équipes
+              sur la carte — quelle que soit l'équipe à laquelle vous êtes rattaché à ce
+              moment-là. Votre navigateur ne vous demandera l'autorisation qu'une seule fois, et
+              vous pouvez désactiver le suivi quand vous le souhaitez.
             </p>
             <button type="button" class="btn" [class.btn-primary]="!suiviPosition.actif" [class.btn-secondary]="suiviPosition.actif" (click)="basculerSuiviPosition()">
               <span class="material-icons">{{ suiviPosition.actif ? 'location_off' : 'my_location' }}</span>
@@ -609,9 +610,9 @@
       @if (activeTab === 'radio') {
         <div class="tab-panel">
           <p class="tab-hint">
-            Réclame ton propre boîtier radio (MeshCore ou Meshtastic) pour qu'il soit rattaché à
-            ton compte — assista-crise saura alors que les messages qui en proviennent sont les
-            tiens, et t'enverra un message de bienvenue une fois réclamé.
+            Déclarez votre propre boîtier radio (MeshCore ou Meshtastic) pour le rattacher à
+            votre compte. Les messages qui en proviennent vous seront alors associés, et vous
+            recevrez un message de bienvenue dès que le rattachement sera effectif.
           </p>
 
           @if (isDemoZone) {

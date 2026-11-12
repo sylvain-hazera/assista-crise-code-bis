@@ -2,9 +2,11 @@ import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CONTACT_ADRESSE, CONTACT_EMAIL, CONTACT_NOM } from '../../../shared/utils/contact-obfusque.util';
 
+import { BandeauMarqueBlancheComponent } from '../../../shared/components/common/bandeau-marque-blanche/bandeau-marque-blanche.component';
+
 @Component({
   selector: 'app-rgpd',
-  imports: [RouterLink],
+  imports: [RouterLink, BandeauMarqueBlancheComponent],
   templateUrl: './rgpd.component.html',
   styleUrl: './rgpd.component.scss'
 })

@@ -138,9 +138,9 @@
           </p>
         } @else if (nombreDeJours) {
           <p class="page-hint">
-            <strong>{{ nombreDeJours }} jour(s)</strong> à couvrir. Cette période part en base,
-            pas seulement dans le texte du mail : c'est elle que le bénévole verra, et elle qui
-            servira à constituer les équipes.
+            <strong>{{ nombreDeJours }} jour(s)</strong> à couvrir. Cette période est celle
+            que vos bénévoles verront dans leur grille, et celle qui servira à constituer les
+            équipes : elle ne figure pas seulement dans le texte du message.
           </p>
         }
 
@@ -311,8 +311,8 @@
 
           @if (!saisie.effectif_cible) {
             <p class="page-hint alerte-texte">
-              Précisez combien de personnes sont attendues par créneau : on n'arme pas une
-              garde avec zéro.
+              Indiquez combien de personnes sont attendues sur chaque créneau : en dessous
+              de ce nombre, le créneau vous sera signalé comme incomplet.
             </p>
           } @else if (nombreDeTours) {
             <p class="page-hint">
@@ -341,8 +341,9 @@
         <section class="bloc verification">
           <h2>Vérifier la cible avant d'envoyer</h2>
           <p class="page-hint">
-            On ne peut pas « dé-écrire » à des centaines de personnes. Ce bouton fige la liste
-            et vous dit <strong>combien</strong> — sans envoyer quoi que ce soit.
+            Un message envoyé à des centaines de personnes ne se rattrape pas. Ce bouton fixe
+            la liste des destinataires et vous indique <strong>leur nombre</strong>, sans rien
+            envoyer.
           </p>
           <button type="button" class="btn-secondary" [disabled]="enCours"
                   (click)="verifierLaCible()">
@@ -412,8 +413,8 @@
             }
           </ul>
           <p class="page-hint">
-            « Sans réponse » ne compte pas ceux qui ont répondu « aucune disponibilité » : les
-            confondre ferait relancer quelqu'un qui a déjà répondu non.
+            « Sans réponse » ne compte pas les personnes ayant indiqué n'avoir aucune
+            disponibilité : elles vous ont répondu, il est inutile de les relancer.
           </p>
         }
       </section>
