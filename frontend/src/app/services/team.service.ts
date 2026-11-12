@@ -36,6 +36,12 @@ export class TeamService {
   /** GET /api/teams/ressources-mobilisees/ — récap personnes/matériel mobilisés. */
   ressourcesMobilisees():                   Observable<RessourceMobilisee[]> { return this.http.get<RessourceMobilisee[]>(`${this.url}/ressources-mobilisees/`); }
 
+  /** POST /api/teams/<id>/rejoindre/ — entrer soi-même dans une équipe de son institution
+   * ou d'une institution fille. Celui qui crée une équipe n'en est pas membre d'office. */
+  rejoindre(id: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/rejoindre/`, {});
+  }
+
   inviterMembre(id: string, data: {
     first_name: string; last_name: string; email: string; phone_number: string; role_code: string;
   }): Observable<Team> {

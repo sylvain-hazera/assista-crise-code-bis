@@ -17,6 +17,31 @@
       </button>
     </div>
 
+    @if (fiche; as f) {
+      <!-- LA FICHE : qui, quand, quoi, comment. Le résumé de la liste dit qu'il s'est passé
+           quelque chose ; c'est ici qu'on comprend quoi, avant de décider d'aller plus loin. -->
+      <div class="notification-fiche">
+        <button type="button" class="fiche-retour" (click)="retourALaListe()">
+          <span class="material-icons">arrow_back</span> Toutes les notifications
+        </button>
+        <h4>{{ f.titre }}</h4>
+        <p class="fiche-message">{{ f.message }}</p>
+        <dl>
+          @for (d of f.details; track d.libelle) {
+            <div>
+              <dt>{{ d.libelle }}</dt>
+              <dd>{{ d.valeur }}</dd>
+            </div>
+          }
+        </dl>
+        @if (f.lien) {
+          <button type="button" class="fiche-lien" (click)="suivreLien(f)">
+            {{ f.lien_libelle || 'Ouvrir' }}
+            <span class="material-icons">arrow_forward</span>
+          </button>
+        }
+      </div>
+    } @else {
     <div class="notification-list">
       @for (notification of notifications; track notification.id) {
         <div class="notification-item" [class.unread]="!notification.lu" (click)="onNotificationClick(notification)">
@@ -35,5 +60,6 @@
         </div>
       }
     </div>
+    }
   </div>
 }

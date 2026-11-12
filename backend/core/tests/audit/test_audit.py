@@ -16,8 +16,16 @@ from core.models import AuditAction, AuditLog, InstitutionType, Institution
 class TestAuditLogCreation:
     """La main courante doit tracer les créations d'entités et de comptes (qui/quoi/quand/IP)."""
 
-    def test_institution_creation_writes_audit_log(self, authenticated_client):
-        client, user = authenticated_client
+    def test_institution_creation_writes_audit_log(self, create_user):
+        """Créée par un administrateur depuis le 12/11/2026 : le type MAIRIE relève du
+        référentiel national (voir core/creation_institution.py). Ce que ce test tient est
+        inchangé — toute création d'institution laisse une trace en main courante."""
+        from rest_framework.test import APIClient
+
+        user = create_user(username="admin-audit-inst@test.fr",
+                           email="admin-audit-inst@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
 
         url = reverse('institution-list')

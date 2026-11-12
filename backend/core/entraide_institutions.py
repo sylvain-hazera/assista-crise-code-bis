@@ -33,6 +33,7 @@ def referents_de_la_crise(crise, environnement):
     Les collectivités d'abord : ce sont elles qui acceptent une offre d'aide, et donc elles
     qu'il faut joindre. Les autres acteurs suivent — savoir qui est déjà sur place évite de
     proposer ce qui est couvert."""
+    from .atouts import besoins_couverts
     from .models import ImplicationInstitution, StatutImplication, TypeImplication
     from .views import _institution_est_autorite_locale
 
@@ -55,6 +56,9 @@ def referents_de_la_crise(crise, environnement):
             "role_sur_la_crise": implication.get_type_implication_display(),
             # Coordonnées de l'ORGANISATION, pas d'une personne : c'est le standard qu'on
             # appelle quand on propose son aide, pas le portable du responsable.
+            # Ce que cette institution a déclaré pouvoir apporter (core/atouts.py) : savoir
+            # qu'il y a déjà une cuisine sur place évite d'en proposer une seconde.
+            "peut_apporter": besoins_couverts(institution.atouts),
             "telephone": institution.telephone or None,
             "email": institution.email or None,
             # Le nom du responsable désigné, pour demander la bonne personne — sans ses

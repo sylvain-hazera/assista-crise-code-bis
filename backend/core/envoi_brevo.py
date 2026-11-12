@@ -125,3 +125,108 @@ def _message_erreur(reponse):
     code = corps.get("code")
     message = corps.get("message") or (reponse.text or "")[:300]
     return f"{code} — {message}" if code else message
+
+
+# ══ SMS et crédits : la même clé API ══════════════════════════════════════════════════════════
+#
+# Ajouté le 12/11/2026. Contrat vérifié contre l'API réelle, sans rien envoyer :
+#
+# - `POST /v3/transactionalSMS/send` avec un corps vide répond 400 « Sender name is missing » :
+#   l'endpoint existe et accepte la clé `xkeysib-` des emails. Corps : `sender`, `recipient`,
+#   `content`, `type` ;
+# - `GET /v3/account` rend `plan: [{type, credits, creditsType, startDate, endDate}]`. Le
+#   nombre rendu est le RESTANT (19 995 puis 19 994 après un envoi), pas le quota. Les crédits
+#   SMS y figurent comme une entrée de type « sms » quand le compte en a acheté ; leur absence
+#   veut dire zéro.
+
+URL_BREVO_SMS = "https://api.brevo.com/v3/transactionalSMS/send"
+URL_BREVO_COMPTE = "https://api.brevo.com/v3/account"
+
+
+def expediteur_sms(nom):
+    """Nom d'expéditeur accepté par Brevo : 11 caractères alphanumériques au plus.
+
+    « Réserve Résilience - Casques Jaunes » ne passe pas tel quel. On retire accents, espaces
+    et ponctuation plutôt que de laisser l'API refuser l'envoi au moment où l'on en a besoin."""
+    import re
+    import unicodedata
+
+    sans_accent = unicodedata.normalize("NFKD", nom or "").encode("ascii", "ignore").decode()
+    propre = re.sub(r"[^A-Za-z0-9]", "", sans_accent)
+    return propre[:11] or "Alerte"
+
+
+def numero_international(numero):
+    """Numéro au format attendu par Brevo : indicatif pays, sans « + » ni espace.
+
+    Un numéro français saisi « 06 12 34 56 78 » devient « 33612345678 ». Un numéro déjà
+    international est seulement nettoyé. Rend None quand rien d'exploitable ne reste : envoyer
+    à un numéro deviné serait pire que ne pas envoyer."""
+    import re
+
+    chiffres = re.sub(r"[^0-9+]", "", numero or "")
+    if chiffres.startswith("+"):
+        chiffres = chiffres[1:]
+    elif chiffres.startswith("00"):
+        chiffres = chiffres[2:]
+    elif chiffres.startswith("0") and len(chiffres) == 10:
+        chiffres = "33" + chiffres[1:]
+    return chiffres if chiffres.isdigit() and 8 <= len(chiffres) <= 15 else None
+
+
+def envoyer_sms_brevo(cle_api, expediteur, numero, message):
+    """Envoie un SMS transactionnel et renvoie sa référence. Lève `EchecBrevo` sinon."""
+    destinataire = numero_international(numero)
+    if destinataire is None:
+        raise EchecBrevo(f"Numéro de téléphone inexploitable : « {numero} ».")
+    try:
+        reponse = requests.post(
+            URL_BREVO_SMS,
+            headers={"api-key": cle_api, "content-type": "application/json",
+                     "accept": "application/json"},
+            data=json.dumps({
+                "sender": expediteur_sms(expediteur), "recipient": destinataire,
+                "content": message, "type": "transactional",
+            }),
+            timeout=DELAI_MAX_S,
+        )
+    except requests.RequestException as erreur:
+        raise EchecBrevo(f"Brevo injoignable : {erreur}") from erreur
+    if not 200 <= reponse.status_code < 300:
+        raise EchecBrevo(f"Brevo a refusé le SMS ({reponse.status_code}) : {reponse.text[:300]}")
+    try:
+        corps = reponse.json()
+    except ValueError:
+        corps = {}
+    return str(corps.get("messageId") or corps.get("reference") or "")
+
+
+def lire_credits_brevo(cle_api):
+    """Les crédits RESTANTS du compte : `{"email": n|None, "sms": n, "fin_periode": date|None}`.
+
+    `email` vaut None quand le compte n'a pas de plafond lisible (certaines formules) : on ne
+    transforme pas « inconnu » en zéro, ce qui déclencherait une alerte pour rien. `sms` vaut
+    zéro en l'absence d'entrée, parce que là l'absence veut bien dire « aucun crédit »."""
+    try:
+        reponse = requests.get(
+            URL_BREVO_COMPTE, headers={"api-key": cle_api, "accept": "application/json"},
+            timeout=DELAI_MAX_S)
+    except requests.RequestException as erreur:
+        raise EchecBrevo(f"Brevo injoignable : {erreur}") from erreur
+    if reponse.status_code != 200:
+        raise EchecBrevo(f"Brevo a refusé la lecture du compte ({reponse.status_code}) : "
+                         f"{reponse.text[:300]}")
+    try:
+        plans = reponse.json().get("plan") or []
+    except ValueError as erreur:
+        raise EchecBrevo("Réponse illisible de Brevo.") from erreur
+
+    email, sms, fin = None, 0, None
+    for plan in plans:
+        credits = plan.get("credits")
+        if (plan.get("type") or "").lower() == "sms":
+            sms = int(credits or 0)
+        elif credits is not None and plan.get("creditsType") == "sendLimit":
+            email = int(credits) if email is None else email + int(credits)
+            fin = plan.get("endDate") or fin
+    return {"email": email, "sms": sms, "fin_periode": fin}

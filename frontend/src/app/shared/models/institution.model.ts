@@ -21,6 +21,15 @@ export interface Institution {
    * `email`, qui identifie l'institution. Les confondre fait répondre dans le vide
    * quand l'adresse de contact n'est pas relevée. */
   email_reply_to?: string | null;
+  /** Institution dont celle-ci dépend (CCAS sous une mairie, comité sous une association
+   * nationale). Posée par le serveur à la création, jamais choisie dans un formulaire. */
+  institution_parente?: string | null;
+  institution_parente_nom?: string | null;
+  /** L'équipe née avec l'institution — présente UNIQUEMENT dans la réponse de création. */
+  equipe_creee?: { id: string; name: string } | null;
+  /** Clés du catalogue d'atouts (`AtoutCatalogue.cle`) : ce que l'institution a déjà et qui
+   * peut servir en cas de crise. Une proposition, jamais un engagement. */
+  atouts?: string[];
   adresse?: string | null;
   commune_code?: string | null;
   commune_nom?: string | null;
@@ -90,4 +99,12 @@ export interface AffectationRoleOperationnel {
   zone?: string | null;               // UUID de la Zone (catalogue de l'institution)
   zone_precise?: string | null;       // WKT, dessin optionnel propre à cette affectation
   responsabilite?: string | null;     // Intitulé libre du périmètre de responsabilité
+}
+
+/** Une question « avez-vous… ? » et l'idée qu'elle ouvre (backend/core/atouts.py). */
+export interface AtoutCatalogue {
+  cle: string;
+  question: string;
+  besoin: string;
+  idee: string;
 }

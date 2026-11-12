@@ -221,4 +221,6 @@ export interface ReferentCrise {
   email: string | null;
   /** Le nom du responsable désigné, pour demander la bonne personne au standard. */
   responsable_nom: string | null;
+  /** Les besoins que cette institution a déclaré pouvoir couvrir (catalogue d'atouts). */
+  peut_apporter?: string[];
 }

@@ -10,6 +10,7 @@ import { ModeleCatalogue, ModeleMessage } from '../../shared/models/brouillon-en
 import { BrouillonsEnvoiService } from '../../core/brouillons-envoi.service';
 import { InstitutionTypeService } from '../../services/institution-type.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
+import { TeamService } from '../../services/team.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionDomaineService } from '../../services/institution-domaine.service';
 import { UserService } from '../../services/user.service';
@@ -39,15 +40,14 @@ import {
   RoleOperationnel,
   ContactInstitution,
   InstitutionDomaine,
-  AffectationRoleOperationnel,
-} from '../../shared/models/institution.model';
+  AffectationRoleOperationnel, AtoutCatalogue } from '../../shared/models/institution.model';
 import { User } from '../../shared/models/user.model';
 import { Competence } from '../../shared/models/competence.model';
 
 type MainTab = 'institutions' | 'types' | 'roles';
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
-type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois' | 'modeles';
+type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois' | 'modeles' | 'atouts';
 
 @Component({
   selector: 'app-institutions',
@@ -170,6 +170,7 @@ export class InstitutionsComponent implements OnInit {
     private institutionTypeService: InstitutionTypeService,
     private roleOperationnelService: RoleOperationnelService,
     private contactService: ContactInstitutionService,
+    private teamService: TeamService,
     private domaineService: InstitutionDomaineService,
     private userService: UserService,
     private competenceService: CompetenceService,
@@ -368,6 +369,9 @@ export class InstitutionsComponent implements OnInit {
       brevo_expediteur_nom: config.brevo_expediteur_nom,
       fournisseur_sms: config.fournisseur_sms,
       sms_expediteur: config.sms_expediteur,
+      brevo_seuil_alerte_email: config.brevo_seuil_alerte_email,
+      brevo_seuil_alerte_sms: config.brevo_seuil_alerte_sms,
+      brevo_admin_email: config.brevo_admin_email,
     };
     // Une clé n'est envoyée que si elle a été saisie : un champ vide signifie « inchangée »,
     // pas « effacée ». Sans cette distinction, ouvrir l'onglet et enregistrer effacerait la
@@ -426,6 +430,20 @@ export class InstitutionsComponent implements OnInit {
         "Configuration enregistrée, mais l'adresse de réponse n'a pas pu être modifiée.",
     });
   }
+
+  /** Relit les crédits chez Brevo à la demande. Le relevé automatique est espacé d'une
+   * demi-heure (un appel par email envoyé doublerait le trafic vers leur API) : qui regarde
+   * l'écran veut le chiffre du moment. */
+  rafraichirCredits(): void {
+    if (!this.selectedInstitution?.id || this.creditsEnCours) { return; }
+    this.creditsEnCours = true;
+    this.institutionService.getConfigurationEnvoi(this.selectedInstitution.id, true).subscribe({
+      next: (config) => { this.configEnvoi = config; this.creditsEnCours = false; },
+      error: () => this.creditsEnCours = false,
+    });
+  }
+
+  creditsEnCours = false;
 
   /** Efface la clé Brevo côté serveur — geste explicite, distinct d'un champ laissé vide. */
   effacerCleBrevo(): void {
@@ -585,8 +603,122 @@ export class InstitutionsComponent implements OnInit {
     if (this.institutionForm.invalid) { this.institutionForm.markAllAsTouched(); return; }
     this.isSaving = true;
     this.institutionService.create(this.institutionForm.value).subscribe({
-      next: () => { this.reloadInstitutions(); this.showSuccess('Institution créée.'); this.closeModal(); this.isSaving = false; },
-      error: (err) => { this.showError('Erreur lors de la création.', err); this.isSaving = false; },
+      next: (creee) => {
+        this.reloadInstitutions();
+        this.showSuccess('Institution créée.');
+        this.closeModal();
+        this.isSaving = false;
+        // Une équipe est née avec l'institution : on propose aussitôt d'y entrer ou d'y
+        // inviter ses membres. Celui qui crée n'en est pas membre d'office — un DSI crée
+        // l'équipe de la médiathèque sans en faire partie.
+        if (creee?.equipe_creee && creee.id) {
+          this.equipeNee = { institutionId: creee.id, institutionNom: creee.nom,
+                             equipeId: creee.equipe_creee.id, equipeNom: creee.equipe_creee.name };
+          this.invitationsEmails = '';
+          this.invitationsResultat = [];
+          this.equipeRejointe = false;
+        }
+      },
+      error: (err) => {
+        // Le serveur explique le refus (type réservé au référentiel national, compte sans
+        // institution) : son message vaut mieux qu'un « erreur lors de la création ».
+        this.showError(err?.error?.error || 'Erreur lors de la création.', err);
+        this.isSaving = false;
+      },
+    });
+  }
+
+  // ══ Après la création : entrer dans l'équipe, ou y inviter du monde ═══════════════════
+  equipeNee: { institutionId: string; institutionNom: string; equipeId: string;
+               equipeNom: string } | null = null;
+  invitationsEmails = '';
+  invitationsResultat: { email: string; ok: boolean; message: string }[] = [];
+  invitationsEnCours = false;
+  equipeRejointe = false;
+
+  rejoindreEquipeNee(): void {
+    if (!this.equipeNee) { return; }
+    this.teamService.rejoindre(this.equipeNee.equipeId).subscribe({
+      next: () => this.equipeRejointe = true,
+      error: (err) => this.showError(
+        err?.error?.error || "Impossible de rejoindre cette équipe.", err),
+    });
+  }
+
+  /** Une adresse par ligne, ou séparées par des virgules : on colle une liste telle qu'on
+   * l'a sous la main. Chaque adresse est traitée à part, et son résultat est DIT — une liste
+   * de dix dont une échoue ne doit pas se présenter comme un succès. */
+  inviterDansEquipeNee(): void {
+    if (!this.equipeNee || this.invitationsEnCours) { return; }
+    const emails = [...new Set(this.invitationsEmails.split(/[\s,;]+/)
+      .map(e => e.trim().toLowerCase()).filter(e => e.includes('@')))];
+    if (!emails.length) { return; }
+    this.invitationsEnCours = true;
+    this.invitationsResultat = [];
+    const cible = this.equipeNee;
+    let restants = emails.length;
+    const fin = () => { if (--restants === 0) { this.invitationsEnCours = false; } };
+    for (const email of emails) {
+      this.contactService.inviter(cible.institutionId, email, cible.equipeId)
+        .subscribe({
+          next: () => {
+            this.invitationsResultat.push({ email, ok: true, message: 'invitation envoyée' });
+            fin();
+          },
+          error: (err) => {
+            this.invitationsResultat.push({
+              email, ok: false, message: err?.error?.error || "l'invitation a échoué" });
+            fin();
+          },
+        });
+    }
+    this.invitationsEmails = '';
+  }
+
+  fermerEquipeNee(): void {
+    this.equipeNee = null;
+  }
+
+  // ══ Atouts : ce que l'institution a déjà, et à quoi cela peut servir ══════════════════
+  catalogueAtouts: AtoutCatalogue[] = [];
+  atoutsCoches = new Set<string>();
+  atoutsEnregistrement = false;
+  atoutsSucces = '';
+
+  ouvrirOngletAtouts(): void {
+    this.detailTab = 'atouts';
+    this.atoutsSucces = '';
+    this.atoutsCoches = new Set(this.selectedInstitution?.atouts ?? []);
+    if (!this.catalogueAtouts.length) {
+      this.institutionService.catalogueAtouts().subscribe({
+        next: (c) => this.catalogueAtouts = c,
+        error: () => this.catalogueAtouts = [],
+      });
+    }
+  }
+
+  basculerAtout(cle: string): void {
+    if (this.atoutsCoches.has(cle)) { this.atoutsCoches.delete(cle); }
+    else { this.atoutsCoches.add(cle); }
+    this.atoutsSucces = '';
+  }
+
+  enregistrerAtouts(): void {
+    if (!this.selectedInstitution?.id) { return; }
+    this.atoutsEnregistrement = true;
+    const atouts = [...this.atoutsCoches];
+    this.institutionService.patch(this.selectedInstitution.id, { atouts }).subscribe({
+      next: () => {
+        this.atoutsEnregistrement = false;
+        if (this.selectedInstitution) { this.selectedInstitution.atouts = atouts; }
+        this.atoutsSucces = 'Enregistré. Merci — ces informations aideront à savoir à qui '
+          + 'faire appel le moment venu.';
+        this.reloadInstitutions();
+      },
+      error: (err) => {
+        this.atoutsEnregistrement = false;
+        this.showError(err?.error?.error || "Impossible d'enregistrer.", err);
+      },
     });
   }
 

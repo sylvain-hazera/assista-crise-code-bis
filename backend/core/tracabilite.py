@@ -197,6 +197,21 @@ def perimetre_de(modele, data, request=None):
 
     if modele is Crisis:
         crises = {_identifiant(e.get('id')) for e in elements if isinstance(e, dict)} - {None}
+        # Une action de CrisisViewSet ne rend pas toujours des crises : `proposer-aide` rend
+        # une implication, dont l'`id` était pris ici pour celui d'une crise — et la ligne
+        # de main courante partait avec une clé étrangère vers une crise qui n'existe pas
+        # (trouvé le 12/11/2026 par une violation de contrainte au démontage d'un test). On
+        # ne retient donc que les identifiants qui SONT des crises ; pour le reste, la crise
+        # est celle de l'URL quand la réponse dit laquelle.
+        if crises:
+            reelles_en_base = {
+                str(pk) for pk in Crisis.objects.filter(pk__in=crises).values_list('pk', flat=True)
+            }
+            if reelles_en_base != {str(c) for c in crises}:
+                portees = {
+                    _identifiant(e.get('crise')) for e in elements if isinstance(e, dict)
+                } - {None}
+                crises = {c for c in crises if str(c) in reelles_en_base} | portees
         if parametre and not crises:
             crises = {parametre}
     else:

@@ -267,6 +267,69 @@
     </div>
   }
 
+  <!-- ══════════════ APRÈS LA CRÉATION : L'ÉQUIPE QUI VIENT DE NAÎTRE ══════════════
+       Celui qui crée n'en est pas membre d'office : un DSI crée l'équipe de la médiathèque
+       sans en faire partie. On lui propose donc, au choix, d'y entrer ou d'y inviter ses
+       vrais membres par leur adresse email. -->
+  @if (equipeNee; as nee) {
+    <div class="modal-overlay" (click)="fermerEquipeNee()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>L'équipe « {{ nee.equipeNom }} » est créée</h3>
+          <button class="modal-close" (click)="fermerEquipeNee()">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="hint">
+            Avec {{ nee.institutionNom }}, une équipe du même nom vient d'être créée : c'est
+            elle qui pourra être sollicitée lors d'une crise. Elle est vide pour l'instant.
+            Vous pouvez y inviter ses membres, ou y entrer vous-même si vous en faites partie.
+          </p>
+
+          <label>Inviter ses membres par email
+            <textarea rows="3" [(ngModel)]="invitationsEmails" [ngModelOptions]="{standalone: true}"
+                      placeholder="Une adresse par ligne, ou séparées par des virgules"></textarea>
+          </label>
+          <button type="button" class="btn-primary" [disabled]="invitationsEnCours"
+                  (click)="inviterDansEquipeNee()">
+            <span class="material-icons">mail</span>
+            {{ invitationsEnCours ? 'Envoi…' : 'Envoyer les invitations' }}
+          </button>
+          <p class="hint">
+            Chaque personne recevra un message pour activer son accès et complétera elle-même
+            son nom : inutile de le deviner à sa place.
+          </p>
+
+          @if (invitationsResultat.length) {
+            <ul class="resultat-invitations">
+              @for (r of invitationsResultat; track r.email) {
+                <li [class.echec]="!r.ok">
+                  <span class="material-icons">{{ r.ok ? 'check_circle' : 'error_outline' }}</span>
+                  {{ r.email }} — {{ r.message }}
+                </li>
+              }
+            </ul>
+          }
+
+          <hr>
+          @if (equipeRejointe) {
+            <p class="hint">
+              <span class="material-icons">check_circle</span> Vous faites partie de cette équipe.
+            </p>
+          } @else {
+            <button type="button" class="btn-secondary" (click)="rejoindreEquipeNee()">
+              <span class="material-icons">person_add</span> J'en fais partie : m'ajouter à l'équipe
+            </button>
+          }
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="fermerEquipeNee()">Terminer</button>
+        </div>
+      </div>
+    </div>
+  }
+
   <!-- ══════════════════════ MODAL DELETE INSTITUTION ══════════════════════ -->
   @if (modal === 'delete') {
     <div class="modal-overlay" (click)="closeModal()">
@@ -315,6 +378,9 @@
           </button>
           <button class="tab" [class.active]="detailTab === 'mes-risques'" (click)="detailTab = 'mes-risques'">
             <span class="material-icons">report_problem</span> Mes risques
+          </button>
+          <button class="tab" [class.active]="detailTab === 'atouts'" (click)="ouvrirOngletAtouts()">
+            <span class="material-icons">volunteer_activism</span> Ce que nous pouvons apporter
           </button>
           <button class="tab" [class.active]="detailTab === 'envois'" (click)="ouvrirOngletEnvois()">
             <span class="material-icons">send</span> Envois
@@ -791,6 +857,44 @@
           <!-- ── ENVOIS : identifiants propres a l'institution ──────────────
                Les cles ne sont JAMAIS relues depuis le serveur : les champs restent vides a
                l'ouverture, et une saisie vide signifie << inchangee >>. -->
+          <!-- ATOUTS. On part de ce que l'institution POSSÈDE, jamais de ce qui lui manque :
+               la question est « avez-vous… ? », et une commune de trois cents habitants coche
+               deux cases sans que rien ne lui dise qu'elle en a raté onze. Voir
+               backend/core/atouts.py pour le raisonnement et le catalogue. -->
+          @if (detailTab === 'atouts') {
+            <p class="hint">
+              En cas de crise, beaucoup de choses utiles existent déjà autour de vous. Cochez
+              ce dont votre institution dispose : cela ne vous <strong>engage à rien</strong>,
+              mais permettra, le moment venu, de savoir à qui s'adresser — et vous donnera
+              peut-être des idées.
+            </p>
+            <ul class="liste-atouts">
+              @for (a of catalogueAtouts; track a.cle) {
+                <li [class.coche]="atoutsCoches.has(a.cle)">
+                  <label>
+                    <input type="checkbox" [checked]="atoutsCoches.has(a.cle)"
+                           (change)="basculerAtout(a.cle)">
+                    <span class="question">{{ a.question }}</span>
+                  </label>
+                  <p class="idee">
+                    <span class="besoin">{{ a.besoin }}</span>
+                    {{ a.idee }}
+                  </p>
+                </li>
+              }
+            </ul>
+            @if (atoutsSucces) {
+              <div class="alert alert-success">
+                <span class="material-icons">check_circle</span> {{ atoutsSucces }}
+              </div>
+            }
+            <button type="button" class="btn-primary" [disabled]="atoutsEnregistrement"
+                    (click)="enregistrerAtouts()">
+              <span class="material-icons">save</span>
+              {{ atoutsEnregistrement ? 'Enregistrement…' : 'Enregistrer' }}
+            </button>
+          }
+
           @if (detailTab === 'envois') {
             <p class="hint">
               Quand une clé est fournie, les emails de cette institution partent de
@@ -878,6 +982,90 @@
                    configure les emails, et le chercher dans la fiche d'identite de
                    l'institution n'avait aucun sens (constate a l'usage le 12/11/2026). La
                    methode d'enregistrement envoie donc deux requetes quand il a change. -->
+              <!-- CRÉDITS. Brevo rend le RESTANT, pas le quota : la jauge se lit sur le
+                   plus haut niveau vu depuis le début de la période. Le seuil se règle en
+                   nombre de crédits — « il reste 500 emails » se comprend sans calcul. -->
+              @if (configEnvoi.credits; as credits) {
+                @if (credits.releve_le) {
+                  <div class="bloc-credits">
+                    <h5>
+                      <span class="material-icons">data_usage</span> Crédits Brevo restants
+                      <button type="button" class="lien" [disabled]="creditsEnCours"
+                              (click)="rafraichirCredits()">
+                        {{ creditsEnCours ? 'Lecture…' : 'Actualiser' }}
+                      </button>
+                    </h5>
+                    <ul>
+                      <li [class.bas]="credits.email.niveau === 'BAS'"
+                          [class.epuise]="credits.email.niveau === 'EPUISE'">
+                        <strong>Emails</strong>
+                        @if (credits.email.restant === null) {
+                          <span>Illimités, ou non communiqués par Brevo</span>
+                        } @else {
+                          <span>{{ credits.email.restant }} restant(s)</span>
+                          @if (credits.email.part !== null) {
+                            <span class="jauge">
+                              <span class="jauge-remplie"
+                                    [style.width.%]="credits.email.part"></span>
+                            </span>
+                          }
+                        }
+                      </li>
+                      @if (configEnvoi.fournisseur_sms === 'BREVO') {
+                        <li [class.bas]="credits.sms.niveau === 'BAS'"
+                            [class.epuise]="credits.sms.niveau === 'EPUISE'">
+                          <strong>SMS</strong>
+                          <span>{{ credits.sms.restant || 0 }} restant(s)</span>
+                        </li>
+                      }
+                    </ul>
+                    @if (credits.fin_periode) {
+                      <p class="hint">
+                        Période en cours jusqu'au
+                        {{ credits.fin_periode | date:'dd/MM/yyyy' }}.
+                      </p>
+                    }
+                    @if (credits.email.niveau === 'EPUISE') {
+                      <div class="alert alert-error">
+                        <span class="material-icons">error_outline</span>
+                        Vos crédits sont épuisés : les emails repartent par l'adresse de
+                        secours de la plateforme, et les SMS ne partent plus. Rechargez votre
+                        compte Brevo.
+                      </div>
+                    } @else if (credits.email.niveau === 'BAS') {
+                      <div class="alert alert-warning">
+                        <span class="material-icons">warning_amber</span>
+                        Il reste peu de crédits. Pensez à recharger avant un envoi en nombre.
+                      </div>
+                    }
+                  </div>
+                }
+              }
+
+              <div class="form-group">
+                <label class="form-label">Seuil d'alerte — emails</label>
+                <input type="number" min="0" class="form-input"
+                       [(ngModel)]="configEnvoi.brevo_seuil_alerte_email">
+                <p class="hint">
+                  En dessous de ce nombre de crédits restants, nous prévenons. En nombre et
+                  non en pourcentage : c'est ce qui dit si vous pouvez encore écrire à tous
+                  vos bénévoles.
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Administrateur du compte Brevo</label>
+                <input type="email" class="form-input"
+                       [(ngModel)]="configEnvoi.brevo_admin_email"
+                       placeholder="tresorier@votre-domaine.fr">
+                <p class="hint">
+                  La personne qui gère l'abonnement et peut le recharger — souvent pas celle
+                  qui envoie les messages. Elle sera prévenue une fois à l'approche du seuil,
+                  une fois à l'épuisement. Cette alerte part de la plateforme, jamais de votre
+                  compte Brevo : il serait à sec au moment où il faudrait l'envoyer.
+                </p>
+              </div>
+
               <div class="form-group">
                 <label class="form-label">Adresse de réponse (Reply-To)</label>
                 <input type="email" class="form-input" [(ngModel)]="replyToSaisi"

@@ -2405,7 +2405,10 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = "__all__"
-        read_only_fields = ["utilisateur", "dossier", "crise", "titre", "message", "date_creation"]
+        # Seul `lu` est modifiable par le destinataire : une notification raconte un fait,
+        # elle ne se réécrit pas.
+        read_only_fields = ["utilisateur", "dossier", "crise", "titre", "message",
+                            "details", "lien", "lien_libelle", "date_creation"]
 
 class DemandeMobilisationSerializer(serializers.ModelSerializer):
     """Cible résolue en cible_type/cible_nom/cible_contact pour le frontend."""
@@ -2820,6 +2823,10 @@ class InstitutionSerializer(
     institution_parente_nom = serializers.CharField(
         source="institution_parente.nom", read_only=True, default=None)
 
+    #: L'équipe née avec cette institution, rendue UNE fois, dans la réponse de création :
+    #: l'écran enchaîne en proposant d'y entrer ou d'y inviter ses membres.
+    equipe_creee = serializers.SerializerMethodField()
+
     class Meta:
 
         model = Institution
@@ -2832,6 +2839,22 @@ class InstitutionSerializer(
             "convention_sous_traitance_acceptee_par",
             "convention_sous_traitance_version",
         ]
+
+    def validate_atouts(self, valeur):
+        """Uniquement des clés du catalogue (`core/atouts.py`), sans doublon."""
+        from .atouts import CLES
+
+        if not isinstance(valeur, list):
+            raise serializers.ValidationError("Liste attendue.")
+        inconnues = [v for v in valeur if v not in CLES]
+        if inconnues:
+            raise serializers.ValidationError(
+                f"Atout(s) inconnu(s) : {', '.join(map(str, inconnues))}.")
+        return sorted(set(valeur))
+
+    def get_equipe_creee(self, obj):
+        equipe = getattr(obj, "_equipe_creee", None)
+        return {"id": str(equipe.id), "name": equipe.name} if equipe else None
 
     def get_salons_matrix(self, obj):
         salons = {s.type: s for s in obj.salons_matrix.all()}
@@ -5025,6 +5048,10 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
     # réduisent le travail de qui la cherche.
     brevo_cle_api_renseignee = serializers.SerializerMethodField()
     sms_cle_api_renseignee = serializers.SerializerMethodField()
+    #: Crédits Brevo restants et niveau d'alerte (voir core/credits_brevo.py). Lus au dernier
+    #: relevé, jamais appelés depuis le sérialiseur : une lecture d'écran ne doit pas
+    #: dépendre de la disponibilité de Brevo.
+    credits = serializers.SerializerMethodField()
 
     class Meta:
         model = ConfigurationEnvoiInstitution
@@ -5034,6 +5061,8 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
             'brevo_expediteur_email', 'brevo_expediteur_nom',
             'fournisseur_sms', 'sms_cle_api', 'sms_cle_api_renseignee', 'sms_expediteur',
             'email_configure', 'sms_configure',
+            'brevo_seuil_alerte_email', 'brevo_seuil_alerte_sms', 'brevo_admin_email',
+            'credits',
             'dernier_envoi_email_le', 'derniere_erreur_email',
             'dernier_envoi_sms_le', 'derniere_erreur_sms',
             'date_modification',
@@ -5052,6 +5081,11 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
 
     def get_sms_cle_api_renseignee(self, obj):
         return bool(obj.sms_cle_api)
+
+    def get_credits(self, obj):
+        from .credits_brevo import etat
+
+        return etat(obj)
 
     def validate_brevo_cle_api(self, value):
         """Une chaîne vide EFFACE la clé ; une valeur la remplace.

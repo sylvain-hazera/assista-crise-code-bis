@@ -94,11 +94,21 @@ export class AdminNotificationsComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** La notification dont la fiche est ouverte, ou null quand on est sur la liste. */
+  fiche: AppNotification | null = null;
+
   onNotificationClick(notification: AppNotification): void {
-    this.fermer();
-    // Une notification liée à une crise ouvre cette crise (?id=).
-    if (notification.crise) {
-      this.router.navigate(['/admin/crises'], { queryParams: { id: notification.crise } });
+    // Une notification qui porte une fiche l'OUVRE au lieu d'emmener ailleurs : le résumé
+    // dit qu'il s'est passé quelque chose, la fiche dit qui, quand, quoi et comment. C'est
+    // depuis la fiche qu'on choisit d'aller plus loin.
+    if (notification.details?.length) {
+      this.fiche = notification;
+    } else {
+      this.fermer();
+      // Une notification liée à une crise ouvre cette crise (?id=).
+      if (notification.crise) {
+        this.router.navigate(['/admin/crises'], { queryParams: { id: notification.crise } });
+      }
     }
     if (notification.lu) return;
     this.notificationService.markAsRead(notification.id).subscribe({
@@ -107,6 +117,21 @@ export class AdminNotificationsComponent implements OnInit, OnDestroy {
         if (idx !== -1) this.notifications[idx] = updated;
       },
     });
+  }
+
+  retourALaListe(): void {
+    this.fiche = null;
+  }
+
+  /** Suit le lien de la fiche. Relatif uniquement : une notification ne doit pas pouvoir
+   * emmener hors du site, quel que soit ce que la base contient. */
+  suivreLien(notification: AppNotification): void {
+    const lien = notification.lien || '';
+    this.fiche = null;
+    this.fermer();
+    if (lien.startsWith('/') && !lien.startsWith('//')) {
+      this.router.navigateByUrl(lien);
+    }
   }
 
   notificationTime(dateStr: string): string {

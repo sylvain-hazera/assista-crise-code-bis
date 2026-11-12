@@ -1313,6 +1313,12 @@ class Institution(EnvironmentScopedModel):
                    "réseau).",
     )
 
+    #: Ce que l'institution a déjà et qui peut servir en cas de crise : clés du catalogue
+    #: `core/atouts.py` (« SALLE_ACCUEIL », « CUISINE », « LOISIRS »…). Une proposition, jamais
+    #: un engagement : cocher « cantine scolaire » dit qu'il existe une cuisine et à qui en
+    #: parler, pas qu'un repas est promis.
+    atouts = models.JSONField(default=list, blank=True)
+
     # Dénormalisés par save() à chaque changement de commune_code.
     epci_code = models.CharField(max_length=10, null=True, blank=True)
     departement_code = models.CharField(max_length=3, null=True, blank=True)
@@ -1518,6 +1524,28 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
                    "fournisseur autorise.",
     )
 
+    # ── Crédits Brevo ────────────────────────────────────────────────────────────────────
+    # Relevés depuis `GET /v3/account` (voir core/credits_brevo.py). L'API rend le RESTANT,
+    # pas le quota : `*_reference` garde le plus haut niveau vu sur la période, ce qui permet
+    # d'afficher une jauge sans demander à l'utilisateur de recopier son contrat.
+    brevo_credits_email = models.IntegerField(null=True, blank=True)
+    brevo_credits_email_reference = models.IntegerField(null=True, blank=True)
+    brevo_credits_sms = models.IntegerField(null=True, blank=True)
+    brevo_periode_fin = models.DateField(null=True, blank=True)
+    brevo_credits_releves_le = models.DateTimeField(null=True, blank=True)
+    #: En dessous de ce nombre de crédits restants, on prévient. Un nombre et non un
+    #: pourcentage : « il reste 500 emails » se comprend sans calcul, et c'est ce qui dit si
+    #: l'on peut encore écrire à tous ses bénévoles.
+    brevo_seuil_alerte_email = models.PositiveIntegerField(default=1000)
+    brevo_seuil_alerte_sms = models.PositiveIntegerField(default=50)
+    #: Qui gère le compte Brevo et doit être prévenu — souvent pas celui qui envoie. Adresse
+    #: de fonction ; écrite par le bureau, jamais devinée.
+    brevo_admin_email = models.EmailField(blank=True)
+    #: Dernière alerte envoyée, et à quel niveau : sans cette mémoire, chaque envoi sous le
+    #: seuil renverrait un message, et l'alerte deviendrait le bruit qu'on apprend à ignorer.
+    brevo_alerte_envoyee_le = models.DateTimeField(null=True, blank=True)
+    brevo_alerte_niveau = models.CharField(max_length=10, blank=True, default="")
+
     # Dernier résultat observé, posé par les fonctions d'envoi. Sert à l'écran de configuration :
     # une clé acceptée à la saisie peut être révoquée ensuite, et sans cette trace personne ne
     # le verrait avant qu'un destinataire ne signale l'absence de message.
@@ -1537,7 +1565,20 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
 
     @property
     def sms_configure(self):
-        return bool(self.fournisseur_sms and self.sms_cle_api)
+        return bool(self.fournisseur_sms and self.cle_sms_effective)
+
+    @property
+    def cle_sms_effective(self):
+        """La clé à présenter au fournisseur SMS.
+
+        Brevo sert emails et SMS avec UNE clé : la redemander dans un second champ ferait
+        saisir deux fois le même secret, et le jour où elle est régénérée on n'en mettrait à
+        jour qu'un. Avec Brevo, le champ SMS vide veut donc dire « la même »."""
+        if self.sms_cle_api:
+            return self.sms_cle_api
+        if self.fournisseur_sms == "BREVO":
+            return self.brevo_cle_api
+        return ""
 
     def __str__(self):
         return f"Configuration d'envoi de {self.institution.nom}"
@@ -3360,6 +3401,33 @@ class Notification(EnvironmentScopedModel):
     )
 
     message = models.TextField()
+
+    # ── La fiche derrière le résumé ─────────────────────────────────────────────────────
+    # Ajouté le 12/11/2026 : « le régulateur en voit un résumé, clique dessus, et ouvre la
+    # fiche de la notification avec qui, quand, quoi, comment ».
+    #
+    # Une notification tenait jusqu'ici en un titre et un paragraphe, et le clic emmenait au
+    # mieux sur une crise — à charge pour le lecteur de retrouver de quoi on lui parlait.
+    # `details` porte les faits sous forme de couples libellé/valeur, affichés tels quels :
+    # c'est la forme qui convient à toutes les notifications sans en figer aucune.
+    #
+    # ⚠ `details` N'EST PAS CHIFFRÉ. On n'y met donc que ce qui peut être lu en clair dans la
+    # base : des noms d'institutions, des dates, des libellés de besoin. Jamais le nom, le
+    # téléphone ou l'adresse d'une personne — ces informations vivent dans leur modèle, et la
+    # fiche renvoie vers lui par `lien`.
+    details = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de {\"libelle\": ..., \"valeur\": ...} affichée dans la fiche. "
+                   "Aucune donnée personnelle : ce champ n'est pas chiffré.",
+    )
+
+    #: Route de l'application à ouvrir depuis la fiche (ex: « /admin/crises?id=… »). Relative,
+    #: jamais une URL absolue : une notification ne doit pas pouvoir emmener hors du site.
+    lien = models.CharField(max_length=500, blank=True, default="")
+
+    #: Intitulé du bouton qui suit `lien` — « Ouvrir la crise », « Voir la demande ». Sans
+    #: lui, le bouton dirait « Ouvrir » sans dire quoi.
+    lien_libelle = models.CharField(max_length=80, blank=True, default="")
 
     lu = models.BooleanField(
         default=False

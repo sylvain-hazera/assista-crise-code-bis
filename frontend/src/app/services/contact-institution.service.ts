@@ -44,4 +44,12 @@ export class ContactInstitutionService {
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
+
+  /** Invite quelqu'un par son seul email dans une institution — la sienne, ou une
+   * institution fille — et, si `equipeId` est donné, l'ajoute à cette équipe. */
+  inviter(institutionId: string, email: string, equipeId?: string): Observable<unknown> {
+    const corps: Record<string, string> = { institution: institutionId, email };
+    if (equipeId) { corps['equipe'] = equipeId; }
+    return this.http.post(`${this.url}/inviter/`, corps);
+  }
 }

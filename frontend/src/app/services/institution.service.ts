@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { EMPTY, Observable, expand, reduce } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Institution } from '../shared/models/institution.model';
+import { Institution, AtoutCatalogue } from '../shared/models/institution.model';
 import { MatrixMessage } from '../shared/models/team.model';
 import { ConfigurationEnvoi, ConfigurationEnvoiPatch } from '../shared/models/configuration-envoi.model';
 
@@ -40,6 +40,11 @@ export class InstitutionService {
     return this.http.get<Institution>(`${this.url}/${id}/`);
   }
 
+  /** Les questions « avez-vous… ? » du catalogue d'atouts, et l'idée que chacune ouvre. */
+  catalogueAtouts(): Observable<AtoutCatalogue[]> {
+    return this.http.get<AtoutCatalogue[]>(`${this.url}/catalogue-atouts/`);
+  }
+
   create(data: Partial<Institution>): Observable<Institution> {
     return this.http.post<Institution>(`${this.url}/`, data);
   }
@@ -61,8 +66,9 @@ export class InstitutionService {
    *
    * La ligne est créée au premier appel plutôt que de rendre 404 : l'onglet doit s'ouvrir sur
    * un formulaire vide, pas sur une erreur. Les clés ne sont jamais rendues — voir le modèle. */
-  getConfigurationEnvoi(id: string): Observable<ConfigurationEnvoi> {
-    return this.http.get<ConfigurationEnvoi>(`${this.url}/${id}/configuration-envoi/`);
+  getConfigurationEnvoi(id: string, rafraichirCredits = false): Observable<ConfigurationEnvoi> {
+    const params = rafraichirCredits ? { rafraichir: '1' } : undefined;
+    return this.http.get<ConfigurationEnvoi>(`${this.url}/${id}/configuration-envoi/`, { params });
   }
 
   /** PATCH /api/institutions/<id>/configuration-envoi/ — une clé absente du corps est

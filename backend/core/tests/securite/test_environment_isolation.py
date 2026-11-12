@@ -149,9 +149,21 @@ class TestInstitutionAsymmetricVisibility:
         assert str(demo_institution.id) not in ids
 
     def test_institution_created_in_demo_is_tagged_demo(self, institutional_client):
+        """Depuis le 12/11/2026, créer une institution c'est créer SOUS la sienne (voir
+        core/creation_institution.py) : l'acteur est donc rattaché à une mairie, ce qui est
+        aussi le cas réel. Ce que ce test tient est inchangé — une institution créée en zone
+        de démonstration y reste et n'apparaît jamais en production."""
+        from core.models import ContactInstitution
+
         client, user = institutional_client
         user.demo_role = "AUT_LOCALE"
         user.save()
+        type_mairie = InstitutionType.objects.create(code="MAIRIE_ENV_TEST", libelle="Mairie")
+        mere = Institution.objects.create(nom="Mairie mère démo", type=type_mairie)
+        ContactInstitution.objects.create(institution=mere, utilisateur=user, actif=True)
+        # Le raccourci User.institution est posé en base par ContactInstitution.save() :
+        # l'objet tenu par le client de test doit être relu pour le voir.
+        user.refresh_from_db()
         itype = InstitutionType.objects.create(code="ENTREPRISE_ENV_TEST", libelle="Entreprise")
 
         response = _post(client, reverse('institution-list'), {

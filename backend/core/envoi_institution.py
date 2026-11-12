@@ -73,6 +73,15 @@ def envoyer_email_pour_institution(request, institution, sujet, message, destina
         return False, str(erreur)
 
     _noter_succes_email(config)
+    # Les crédits baissent à chaque envoi : on les relit, au plus une fois par demi-heure
+    # (voir credits_brevo.INTERVALLE_RELEVE). C'est ce qui permet d'alerter AVANT la panne
+    # plutôt que de la constater.
+    try:
+        from .credits_brevo import relever
+
+        relever(config, request=request)
+    except Exception:  # noqa: BLE001 - un suivi de consommation ne fait pas échouer un envoi
+        logger.exception("Relevé des crédits Brevo impossible pour « %s ».", institution.nom)
     return True, identifiant
 
 

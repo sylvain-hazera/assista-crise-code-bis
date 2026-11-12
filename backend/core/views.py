@@ -3080,8 +3080,10 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         implication.themes.set(Besoin.objects.filter(pk__in=themes))
         _etendre_zone_crise_pour_implication(implication)
-        if statut == StatutImplication.EN_ATTENTE:
-            _notifier_demande_validation_implication(request, implication)
+        # Dans les deux cas : une collectivité qui engage ses moyens est l'information la
+        # plus utile de la journée pour celles qui pilotent, même si aucune validation n'est
+        # requise (demande du 12/11/2026).
+        _notifier_demande_validation_implication(request, implication)
 
         audit_log(
             request=request, action_code="CREATION",
@@ -8726,6 +8728,30 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
+    @action(detail=True, methods=['post'], url_path='rejoindre')
+    def rejoindre(self, request, pk=None):
+        """Entrer soi-même dans une équipe de son institution, ou d'une institution fille.
+
+        Le pendant de l'invitation, proposé juste après la création d'une équipe fille : celui
+        qui la crée n'en est pas membre d'office (un DSI crée l'équipe de la médiathèque sans
+        en faire partie), mais il peut choisir d'y entrer. Idempotent."""
+        from .creation_institution import gere_institution
+
+        team = self.get_object()
+        if not gere_institution(request.user, team.institution,
+                                get_effective_role(request) == UserRole.ADMINISTRATOR):
+            return Response(
+                {"error": "Vous ne pouvez rejoindre que les équipes de votre institution, ou "
+                          "d'une institution qui dépend de la vôtre."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        team.members.add(request.user)
+        audit_log(
+            request=request, action_code="AFFECTATION", objet_type="Team", objet_id=team.id,
+            commentaire=f"A rejoint l'équipe « {team.name} »",
+        )
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
     @action(detail=True, methods=['post'], url_path='ajouter-membres')
     def ajouter_membres(self, request, pk=None):
         """Affecte plusieurs personnes à cette équipe d'un seul geste, avec sa mission.
@@ -13576,7 +13602,9 @@ class InstitutionViewSet(
         d'autre qu'un administrateur ne crée une institution de plein exercice. La mère est
         posée d'office et n'est pas demandée : l'appelant n'a pas le choix de la mettre
         ailleurs."""
-        from .creation_institution import CreationRefusee, institution_mere, verifier_creation
+        from .creation_institution import (
+            CreationRefusee, creer_equipe_fille, institution_mere, verifier_creation,
+        )
 
         est_admin = get_effective_role(self.request) == UserRole.ADMINISTRATOR
         mere = institution_mere(self.request.user)
@@ -13591,14 +13619,28 @@ class InstitutionViewSet(
         institution = serializer.save(
             environment=get_active_environment(self.request), institution_parente=parente,
         )
+        # L'équipe naît avec l'institution fille, sous celle de la mère : une institution
+        # est une entité administrative, c'est l'ÉQUIPE qui reçoit les campagnes, porte les
+        # missions et entre dans la constitution d'équipe. Les créer séparément obligeait à y
+        # penser le jour où l'on en a besoin (demande du 12/11/2026).
+        equipe = None
+        if parente is not None:
+            equipe = creer_equipe_fille(
+                institution, parente, self.request.user,
+                get_active_environment(self.request))
+
         audit_log(
             request=self.request,
             action_code="CREATION",
             objet_type="Institution",
             objet_id=institution.id,
             commentaire=(f"Création institution : {institution.nom}"
-                         + (f" (rattachée à {parente.nom})" if parente else "")),
+                         + (f" (rattachée à {parente.nom})" if parente else "")
+                         + (f", équipe « {equipe.name} » créée" if equipe else "")),
         )
+        # Rendue avec la réponse (voir InstitutionSerializer.get_equipe_creee) : l'écran
+        # enchaîne en proposant d'y entrer ou d'y inviter du monde.
+        institution._equipe_creee = equipe
 
         if self.request.user.is_authenticated:
             contact, created = ContactInstitution.objects.get_or_create(
@@ -13649,6 +13691,14 @@ class InstitutionViewSet(
                 f"{nb} élément(s) (zones/équipes/plans) y sont encore rattachés."
             )
         instance.delete()
+
+    @action(detail=False, methods=['get'], url_path='catalogue-atouts',
+            permission_classes=[permissions.IsAuthenticated])
+    def catalogue_atouts(self, request):
+        """Les questions « avez-vous… ? » et l'idée que chacune ouvre (`core/atouts.py`)."""
+        from .atouts import CATALOGUE
+
+        return Response(CATALOGUE)
 
     @action(detail=False, methods=['post'], url_path='inviter',
             permission_classes=[IsInstitutionalActor])
@@ -13774,6 +13824,14 @@ class InstitutionViewSet(
         )
 
         if request.method == 'GET':
+            # Relevé opportuniste, espacé (voir credits_brevo.INTERVALLE_RELEVE) : ouvrir
+            # l'écran rafraîchit les crédits sans qu'on ait à cliquer, mais sans appeler
+            # Brevo à chaque affichage. `?rafraichir=1` force, pour qui veut le chiffre exact.
+            if config.brevo_cle_api:
+                from .credits_brevo import relever
+
+                relever(config, force=request.query_params.get('rafraichir') == '1',
+                        request=request)
             return Response(ConfigurationEnvoiInstitutionSerializer(
                 config, context={'request': request}).data)
 
@@ -16048,19 +16106,60 @@ def _regulateurs_aut_locale_de_la_crise(crise):
 
 
 def _notifier_demande_validation_implication(request, implication):
-    """Notification + email (send_mail_env_aware) à chaque régulateur AUT_LOCALE de la crise
-    quand une institution non-AUT_LOCALE déclare ACTEUR — reste en attente tant qu'aucun
-    régulateur ne l'a validée (voir ImplicationInstitutionViewSet.valider/refuser)."""
-    titre = f"Déclaration en attente de validation : {implication.institution.nom}"
-    message = (
-        f"{implication.institution.nom} s'est déclarée acteur opérationnel sur la crise "
-        f"« {implication.crise.name} » et attend votre validation (onglet Institutions de la "
-        "crise)."
-    )
+    """Prévient les régulateurs de la collectivité qu'une institution propose son renfort.
+
+    Notification dans l'application ET email, à chaque régulateur AUT_LOCALE de la crise.
+
+    **Les deux cas sont notifiés, et c'est le changement du 12/11/2026.** Une déclaration
+    d'association reste en attente et appelle une décision ; celle d'une collectivité est
+    acquise d'emblée. On ne prévenait que la première — personne n'apprenait donc qu'une
+    mairie voisine venait d'engager ses moyens, ce qui est pourtant l'information la plus
+    utile de la journée.
+
+    La notification porte une **fiche** (`details`) : qui propose, quand, sur quoi, et ce
+    qu'on attend du lecteur. Le résumé seul obligeait à retrouver dans la crise de quoi on
+    lui parlait."""
+    en_attente = implication.statut == StatutImplication.EN_ATTENTE
+    institution = implication.institution
+    themes = ", ".join(t.nom for t in implication.themes.all()) or "non précisé"
+
+    if en_attente:
+        titre = f"Renfort proposé par {institution.nom} — à valider"
+        message = (
+            f"{institution.nom} propose son renfort sur la crise « {implication.crise.name} » "
+            "et attend votre accord pour intervenir."
+        )
+        attendu = "Votre accord est nécessaire avant toute intervention de leur part."
+    else:
+        titre = f"{institution.nom} intervient sur « {implication.crise.name} »"
+        message = (
+            f"{institution.nom} s'est déclarée acteur sur la crise "
+            f"« {implication.crise.name} ». Aucune validation n'est requise."
+        )
+        attendu = "Aucune action attendue : cette déclaration est acquise."
+
+    details = [
+        {"libelle": "Qui", "valeur": institution.nom},
+        {"libelle": "Type d'organisation",
+         "valeur": getattr(institution.type, "libelle", "—")},
+        {"libelle": "Quand",
+         "valeur": timezone.localtime(implication.date_creation).strftime("%d/%m/%Y à %H:%M")},
+        {"libelle": "Crise", "valeur": implication.crise.name},
+        {"libelle": "Sur quels besoins", "valeur": themes},
+        {"libelle": "Comment les joindre",
+         "valeur": " · ".join(filter(None, [institution.telephone, institution.email]))
+                   or "Aucune coordonnée renseignée"},
+        {"libelle": "Ce qui est attendu de vous", "valeur": attendu},
+    ]
+    if implication.commentaire:
+        details.insert(5, {"libelle": "Ce qu'ils proposent", "valeur": implication.commentaire})
+
     for user in _regulateurs_aut_locale_de_la_crise(implication.crise):
         Notification.objects.create(
             utilisateur=user, titre=titre, message=message, environment=implication.environment,
-            crise=implication.crise,
+            crise=implication.crise, details=details,
+            lien=f"/admin/crises?id={implication.crise_id}",
+            lien_libelle="Ouvrir la crise",
         )
         if user.email:
             try:
@@ -16196,7 +16295,9 @@ class ImplicationInstitutionViewSet(
         if invited:
             send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
 
-        if statut == StatutImplication.EN_ATTENTE:
+        if type_implication == TypeImplication.ACTEUR:
+            # Notifiée qu'elle soit en attente ou acquise : voir
+            # _notifier_demande_validation_implication.
             _notifier_demande_validation_implication(self.request, implication)
 
         audit_log(
@@ -16567,14 +16668,24 @@ class ContactInstitutionViewSet(
 
         # On n'invite que chez soi : la même limite que pour une équipe. Un administrateur
         # arbitre les rattachements et n'est pas concerné.
-        if get_effective_role(request) != UserRole.ADMINISTRATOR and not _appartient_a_institution(
-            request, institution
-        ):
+        # ...ou chez une institution FILLE de la sienne : la mairie qui a créé la médiathèque
+        # y invite ses membres, sinon son équipe naîtrait vide (voir creation_institution).
+        from .creation_institution import gere_institution
+        if not gere_institution(request.user, institution,
+                                get_effective_role(request) == UserRole.ADMINISTRATOR):
             return Response(
                 {"error": "Vous ne pouvez inviter que dans une institution dont vous êtes "
-                          "membre."},
+                          "membre, ou qui dépend de la vôtre."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        equipe = None
+        equipe_id = request.data.get('equipe')
+        if equipe_id:
+            equipe = Team.objects.filter(pk=equipe_id, institution=institution).first()
+            if equipe is None:
+                return Response({"error": "Équipe inconnue pour cette institution."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         email = (request.data.get('email') or '').strip().lower()
         if not email:
@@ -16600,11 +16711,14 @@ class ContactInstitutionViewSet(
 
         contact, cree = _get_or_create_contact_institution(
             institution, user, fonction or 'Membre')
-        if not cree and not invite:
+        deja_dans_l_equipe = bool(equipe) and equipe.members.filter(pk=user.pk).exists()
+        if not cree and not invite and (equipe is None or deja_dans_l_equipe):
             return Response(
                 {"error": f"{email} figure déjà dans l'annuaire de {institution.nom}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if equipe is not None:
+            equipe.members.add(user)
 
         if invite:
             send_institution_account_email(request, user)

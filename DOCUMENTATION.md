@@ -1694,6 +1694,82 @@ bureau associatif donnait l'impression d'un accès plus large. « Institutions �
 à tout compte institutionnel, volontairement : c'est par cette page qu'une association
 configure ses envois, et sa liste est déjà bornée à « chez moi + ma zone ».
 
+#### L'équipe naît avec l'institution fille, et une notification porte sa fiche
+
+**Créer une institution fille crée son équipe** (`creation_institution.creer_equipe_fille`),
+rattachée à l'équipe de tête de la mère. Une institution est une entité administrative : elle
+ne reçoit pas de campagne, ne porte pas de mission, n'entre pas dans la constitution d'équipe —
+c'est l'ÉQUIPE qui le fait. La médiathèque créée par la mairie peut ainsi être sollicitée pour
+animer un centre d'accueil.
+
+**Celui qui crée n'en est pas membre d'office** : un DSI crée l'équipe de la médiathèque sans en
+faire partie. La réponse de création porte `equipe_creee`, et l'écran propose aussitôt d'y
+**entrer** (`POST /api/teams/<id>/rejoindre/`) ou d'y **inviter ses membres par email**
+(`contacts-institutions/inviter/`, qui accepte désormais `equipe`). Les deux reposent sur
+`gere_institution` : une mère agit pour ses filles, la réciproque est fausse.
+
+**Une notification peut porter une fiche** (`Notification.details`, `lien`, `lien_libelle`,
+migration 0262). Le résumé dit qu'il s'est passé quelque chose ; la fiche dit *qui, quand, quoi,
+comment*, et un bouton mène plus loin. Premier usage : une institution propose son renfort sur
+une crise — et **les deux cas notifient** désormais, alors que seule une déclaration en attente
+prévenait quelqu'un : une collectivité voisine qui engage ses moyens ne se découvrait qu'en
+ouvrant la crise. ⚠ `details` n'est pas chiffré : noms d'institutions, dates, libellés — jamais
+une donnée personnelle. `lien` est toujours relatif, et l'écran refuse d'en suivre un autre.
+
+#### Les atouts : être force de proposition (`core/atouts.py`)
+
+Inspiré des quatorze besoins fondamentaux de Virginia Henderson, sur une idée de Sylvain, ancien
+infirmier. « Vous avez une médiathèque ? → divertissements. Une cantine scolaire ? → repas. Une
+salle omnisports ? → centre d'accueil. Des vestiaires avec douche ? → hygiène. »
+
+Trois partis pris, qui font tout l'intérêt de la chose :
+
+- on part de ce que l'institution **possède**, jamais de ce qui lui manque. La question est
+  « avez-vous… ? » ; une commune de trois cents habitants coche deux cases sans que rien ne lui
+  dise qu'elle en a raté onze ;
+- **rien de ce qui relève du soin** : respirer, la douleur, c'est le métier des secours. Un test
+  le tient ;
+- cocher **n'engage à rien** : cela dit qu'il existe une cuisine et à qui en parler.
+
+`Institution.atouts` (migration 0263) porte les clés ; le catalogue est **en code**, parce que
+c'est un vocabulaire éditorial pesé, pas un référentiel que chacun enrichit. Les référents d'une
+crise affichent ce que chacun peut apporter (`peut_apporter`).
+
+#### La main courante ne se trompe plus de crise
+
+`tracabilite.perimetre_de` prenait l'`id` de toute réponse d'une action de `CrisisViewSet` pour
+celui d'une crise. `proposer-aide` rend une implication : une ligne de main courante partait
+avec une clé étrangère vers une crise inexistante. On ne retient plus que les identifiants qui
+**sont** des crises ; à défaut, celle que la réponse désigne.
+
+#### Brevo : SMS par la même clé, et suivi des crédits (`core/credits_brevo.py`)
+
+Vérifié contre l'API réelle le 12/11/2026, sans rien envoyer : `POST /v3/transactionalSMS/send`
+accepte la clé `xkeysib-` des emails (corps vide → 400 « Sender name is missing »), et
+`GET /v3/account` rend `plan: [{credits, creditsType, endDate}]`.
+
+**Une seule clé.** `ConfigurationEnvoiInstitution.cle_sms_effective` : avec Brevo, un champ SMS
+vide signifie « la même que les emails ». La redemander ferait saisir deux fois le même secret,
+et une régénération n'en mettrait qu'un à jour. Le nom d'expéditeur est ramené à onze
+caractères alphanumériques (« Réserve Résilience - Casques Jaunes » → `ReserveResi`) et les
+numéros au format international, faute de quoi Brevo refuse au moment où l'on en a besoin.
+
+**L'API rend le RESTANT, pas le quota.** On garde donc le plus haut niveau vu sur la période
+(`brevo_credits_email_reference`) pour dessiner une jauge, et le seuil d'alerte se règle en
+**nombre de crédits**, pas en pourcentage : « il reste 500 emails » se comprend sans calcul.
+Relevé après chaque envoi réussi et à l'ouverture de l'onglet « Envois », espacé d'une
+demi-heure — un appel par email doublerait le trafic vers leur API pour une donnée qui bouge
+lentement. `?rafraichir=1` force.
+
+**L'alerte ne part JAMAIS par Brevo** : prévenir que le compte est à sec en l'utilisant, c'est
+scier la branche. Elle part par le SMTP de la plateforme vers `brevo_admin_email` — la personne
+qui gère l'abonnement, souvent pas celle qui envoie — et le bureau la voit en notification.
+**Une alerte par niveau** (`BAS`, puis `EPUISE`), remise à zéro au rechargement : sans cette
+mémoire, chaque envoi sous le seuil renverrait un message et l'alerte deviendrait du bruit.
+
+Enfin, `restant: null` veut dire inconnu, et **inconnu n'est pas zéro** : un plan sans plafond
+lisible ne déclenche rien.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

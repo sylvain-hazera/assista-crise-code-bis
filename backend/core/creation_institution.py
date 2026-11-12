@@ -64,3 +64,81 @@ def verifier_creation(utilisateur, est_admin, type_cible, mere):
             "régie, un comité départemental — mais pas une mairie, une préfecture ou un "
             "service de l'État. Signalez-nous l'institution manquante et nous l'ajouterons."
         )
+
+
+def equipe_de_rattachement(institution):
+    """L'équipe sous laquelle accrocher celle d'une institution fille.
+
+    On prend l'équipe de tête de la mère : celle qui n'a pas elle-même de parente, et la plus
+    ancienne s'il y en a plusieurs. Une mairie peut avoir dix équipes (logistique, accueil,
+    astreinte) ; accrocher la médiathèque à l'une d'elles au hasard donnerait un arbre faux,
+    tandis que la racine est toujours le bon niveau — le chef d'équipe la déplacera s'il le
+    souhaite, et c'est un geste qui lui appartient."""
+    from .models import Team
+
+    if institution is None:
+        return None
+    return (Team.objects
+            .filter(institution=institution, actif=True, equipe_parente__isnull=True)
+            .order_by("created_at")
+            .first())
+
+
+def creer_equipe_fille(institution_fille, institution_mere, utilisateur, environnement):
+    """Crée l'équipe de l'institution fille, rattachée à celle de la mère.
+
+    Demande de Sylvain du 12/11/2026 : « la création de la médiathèque entraîne la création de
+    l'équipe médiathèque, avec leurs coordonnées, et la possibilité de les contacter en
+    campagne pour savoir si l'équipe médiathèque peut apporter son soutien pour les
+    divertissements sur un centre d'accueil ».
+
+    **Pourquoi l'équipe et pas seulement l'institution.** Une institution est une entité
+    administrative : elle ne reçoit pas de campagne de disponibilité, ne porte pas de mission
+    et n'apparaît pas dans la constitution d'équipe. C'est l'ÉQUIPE qui est l'unité
+    opérationnelle. Créer l'une sans l'autre obligeait à y penser ensuite — et personne n'y
+    pense le jour où l'on en a besoin.
+
+    Elle hérite des coordonnées de son institution : c'est le même standard, le même
+    téléphone, et les resaisir serait les faire diverger au premier changement.
+
+    **Celui qui crée n'en devient PAS membre** (correction de Sylvain, le soir même) : un DSI
+    crée l'équipe de la médiathèque sans en faire partie pour autant. L'écran lui propose
+    ensuite, au choix, d'y entrer lui-même ou d'inviter ses vrais membres par leur adresse
+    email — voir `TeamViewSet.rejoindre` et `ContactInstitutionViewSet.inviter`.
+
+    La création échoue en silence — jamais au prix de l'institution elle-même. L'équipe se
+    recrée à la main depuis la page Équipes ; l'institution, non.
+    """
+    from .models import Team
+
+    try:
+        parente = equipe_de_rattachement(institution_mere)
+        equipe = Team.objects.create(
+            name=institution_fille.nom_affichage or institution_fille.nom,
+            description=f"Équipe de {institution_fille.nom}.",
+            institution=institution_fille,
+            equipe_parente=parente,
+            environment=environnement,
+        )
+        return equipe
+    except Exception:  # noqa: BLE001 - voir la docstring : jamais au prix de l'institution
+        return None
+
+
+def gere_institution(utilisateur, institution, est_admin=False):
+    """Ce compte peut-il agir pour cette institution — elle-même, ou sa mère ?
+
+    Une mère répond de ses filles : la mairie qui a créé la médiathèque doit pouvoir y
+    inviter du monde, sinon l'équipe naîtrait vide et le resterait. La réciproque est fausse,
+    et volontairement : un membre de la médiathèque n'agit pas pour la mairie."""
+    from .models import ContactInstitution
+
+    if est_admin:
+        return True
+    if institution is None or not getattr(utilisateur, "is_authenticated", False):
+        return False
+    cibles = [institution.id]
+    if institution.institution_parente_id:
+        cibles.append(institution.institution_parente_id)
+    return ContactInstitution.objects.filter(
+        institution_id__in=cibles, utilisateur=utilisateur, actif=True).exists()

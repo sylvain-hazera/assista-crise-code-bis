@@ -293,12 +293,18 @@ class TestImplicationThemesEtResponsable:
         implication = ImplicationInstitution.objects.get(id=response.data["id"])
         assert implication.responsable == invited
 
-        # 2 emails désormais : l'invitation/activation du compte régulateur, et l'accès à la
-        # messagerie d'équipe envoyé la première fois qu'un membre rejoint l'équipe de son
-        # institution (voir grant_institution_and_demo_access/_envoyer_email_acces_messagerie_
-        # equipe, ajouté le 2026-10-08) -- les deux adressés au même nouvel invité.
-        assert len(mail.outbox) == 2
-        assert all(invited.email in email.to for email in mail.outbox)
+        # Deux emails pour le nouvel invité : l'invitation/activation de son compte
+        # régulateur, et l'accès à la messagerie d'équipe envoyé la première fois qu'un membre
+        # rejoint l'équipe de son institution (voir grant_institution_and_demo_access/
+        # _envoyer_email_acces_messagerie_equipe, ajouté le 2026-10-08).
+        pour_l_invite = [e for e in mail.outbox if invited.email in e.to]
+        assert len(pour_l_invite) == 2
+        # Plus, depuis le 12/11/2026, la notification aux régulateurs de la collectivité :
+        # une déclaration ACTEUR les prévient même lorsqu'elle est acquise d'emblée, sans quoi
+        # personne n'apprenait qu'une institution venait d'engager ses moyens.
+        autres = [e for e in mail.outbox if invited.email not in e.to]
+        assert len(autres) == 1
+        assert institution.nom in autres[0].subject
 
     def test_designating_a_non_contact_as_responsable_attaches_and_promotes_them(
         self, local_authority_client, institution, create_user

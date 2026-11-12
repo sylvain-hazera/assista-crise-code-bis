@@ -359,6 +359,11 @@
                           Demandez {{ r.responsable_nom }}, responsable pour cette crise.
                         </span>
                       }
+                      @if (r.peut_apporter?.length) {
+                        <span class="detail">
+                          Peut apporter : {{ r.peut_apporter!.join(' · ') }}
+                        </span>
+                      }
                     </li>
                   }
                 </ul>

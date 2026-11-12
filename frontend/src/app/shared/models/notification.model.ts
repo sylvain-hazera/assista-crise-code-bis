@@ -8,6 +8,12 @@ export interface AppNotification {
   message: string;
   lu: boolean;
   date_creation: string;
+  /** La fiche derrière le résumé : qui, quand, quoi, comment — des couples libellé/valeur
+   * affichés tels quels. Vide pour les notifications qui tiennent en une phrase. */
+  details?: { libelle: string; valeur: string }[];
+  /** Route de l'application à ouvrir depuis la fiche. Toujours relative. */
+  lien?: string;
+  lien_libelle?: string;
 }
 
 /** Réponse légère de NotificationViewSet.resume — destinée à un polling fréquent, voir

@@ -59,9 +59,24 @@ def _envoyer_mobimel(cle_api, expediteur, numero, message):
     )
 
 
+def _envoyer_brevo(cle_api, expediteur, numero, message):
+    """SMS transactionnel par Brevo — la même clé API que pour les emails."""
+    from .envoi_brevo import EchecBrevo, envoyer_sms_brevo
+
+    try:
+        return envoyer_sms_brevo(cle_api, expediteur, numero, message)
+    except EchecBrevo as echec:
+        raise EchecSms(echec.detail) from echec
+
+
 #: Fournisseurs connus. La clé est ce qu'on stocke dans
 #: `ConfigurationEnvoiInstitution.fournisseur_sms`.
 FOURNISSEURS = {
+    "BREVO": {
+        "libelle": "Brevo (même clé que les emails)",
+        "envoyer": _envoyer_brevo,
+        "implemente": True,
+    },
     "MOBIMEL": {
         "libelle": "Mobimel",
         "envoyer": _envoyer_mobimel,
@@ -107,7 +122,7 @@ def envoyer_sms_pour_institution(institution, numero, message):
 
     try:
         identifiant = fournisseur["envoyer"](
-            cle_api=config.sms_cle_api,
+            cle_api=config.cle_sms_effective,
             expediteur=config.sms_expediteur or (institution.nom_affichage or institution.nom),
             numero=numero,
             message=message,
