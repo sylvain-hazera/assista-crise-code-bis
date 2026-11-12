@@ -334,6 +334,7 @@ export class InstitutionsComponent implements OnInit {
 
   ouvrirOngletEnvois(): void {
     this.detailTab = 'envois';
+    this.replyToSaisi = this.selectedInstitution?.email_reply_to || '';
     // Chargé à l'ouverture de l'onglet et non avec la fiche : l'endpoint est réservé au bureau
     // et répond 403 aux autres, inutile de le solliciter pour tout le monde.
     if (this.configEnvoi || !this.selectedInstitution?.id) return;
@@ -349,6 +350,14 @@ export class InstitutionsComponent implements OnInit {
       },
     });
   }
+
+  /** Reply-To en cours de saisie dans l'onglet Envois.
+   *
+   * Tenu à part de `configEnvoi` parce qu'il ne lui appartient pas : il vit sur
+   * l'institution (`Institution.email_reply_to`) et vaut aussi pour les messages partis du
+   * SMTP Assista-Crise, quand Brevo n'est pas actif ou vient d'échouer. Il se saisit
+   * néanmoins ici, qui est l'écran des emails. */
+  replyToSaisi = '';
 
   enregistrerConfigEnvoi(): void {
     if (!this.selectedInstitution?.id || !this.configEnvoi) return;
@@ -374,13 +383,15 @@ export class InstitutionsComponent implements OnInit {
     this.modeleOuvert = null;
     this.modelesErreur = '';
     this.modelesSucces = '';
-    this.institutionService.majConfigurationEnvoi(this.selectedInstitution.id, patch).subscribe({
+    const institutionId = this.selectedInstitution.id;
+    this.institutionService.majConfigurationEnvoi(institutionId, patch).subscribe({
       next: (maj) => {
         this.configEnvoi = maj;
         this.brevoCleSaisie = '';
         this.smsCleSaisie = '';
         this.configEnvoiEnregistrement = false;
         this.configEnvoiSucces = "Configuration enregistrée.";
+        this.enregistrerReplyTo(institutionId);
       },
       error: (err) => {
         this.configEnvoiEnregistrement = false;
@@ -392,6 +403,27 @@ export class InstitutionsComponent implements OnInit {
           corps.brevo_cle_api?.[0] || corps.brevo_expediteur_email?.[0]
           || corps.error || "Erreur lors de l'enregistrement.";
       },
+    });
+  }
+
+  /** Enregistre le Reply-To, qui appartient à l'institution et non à la configuration
+   * d'envoi — d'où une seconde requête.
+   *
+   * Envoyée seulement s'il a CHANGÉ : un PATCH d'institution à chaque enregistrement de la
+   * configuration écrirait une ligne de main courante pour rien, et toucherait un objet que
+   * l'utilisateur n'a pas modifié. Son échec ne doit pas faire croire que rien n'a été
+   * enregistré — la configuration d'envoi, elle, est déjà sauvée quand on arrive ici. */
+  private enregistrerReplyTo(institutionId: string): void {
+    const voulu = this.replyToSaisi.trim();
+    if (voulu === (this.selectedInstitution?.email_reply_to || '')) { return; }
+    this.institutionService.patch(institutionId, { email_reply_to: voulu }).subscribe({
+      next: () => {
+        if (this.selectedInstitution) { this.selectedInstitution.email_reply_to = voulu; }
+        this.reloadInstitutions();
+        this.configEnvoiSucces = "Configuration et adresse de réponse enregistrées.";
+      },
+      error: () => this.configEnvoiErreur =
+        "Configuration enregistrée, mais l'adresse de réponse n'a pas pu être modifiée.",
     });
   }
 
@@ -447,11 +479,6 @@ export class InstitutionsComponent implements OnInit {
       description: [''],
       telephone: [''],
       email: ['', Validators.email],
-      // Reply-To des messages envoyés AU NOM de cette institution. Le champ existait au
-      // modèle (`Institution.email_reply_to`) et était servi par l'API, mais aucun écran ne
-      // permettait de le saisir : il fallait passer par le shell Django (constaté le
-      // 12/11/2026 en configurant Brevo pour Réserve Résilience).
-      email_reply_to: ['', Validators.email],
       adresse: [''],
       commune_code: [null],
       commune_nom: [null],
@@ -572,7 +599,6 @@ export class InstitutionsComponent implements OnInit {
       description: institution.description,
       telephone: institution.telephone,
       email: institution.email,
-      email_reply_to: institution.email_reply_to,
       adresse: institution.adresse,
       commune_code: institution.commune_code,
       commune_nom: institution.commune_nom,
