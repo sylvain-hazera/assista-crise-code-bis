@@ -17,6 +17,10 @@ export interface Institution {
   description?: string | null;
   telephone?: string | null;
   email?: string | null;
+  /** Reply-To des messages envoyés AU NOM de cette institution — distinct de
+   * `email`, qui identifie l'institution. Les confondre fait répondre dans le vide
+   * quand l'adresse de contact n'est pas relevée. */
+  email_reply_to?: string | null;
   adresse?: string | null;
   commune_code?: string | null;
   commune_nom?: string | null;

@@ -519,3 +519,14 @@
 .modele-actions {
   display: flex; align-items: center; gap: .5rem; margin-top: .8rem;
 }
+
+// Aide sous un champ de formulaire : explique une distinction que le libellé seul ne porte
+// pas (email de l'institution vs adresse de réponse de ses messages).
+.modal-body label small.aide {
+  display: block;
+  margin-top: .2rem;
+  font-size: .74rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--ac-text-muted, #6b7280);
+}

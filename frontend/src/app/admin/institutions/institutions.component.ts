@@ -447,6 +447,11 @@ export class InstitutionsComponent implements OnInit {
       description: [''],
       telephone: [''],
       email: ['', Validators.email],
+      // Reply-To des messages envoyés AU NOM de cette institution. Le champ existait au
+      // modèle (`Institution.email_reply_to`) et était servi par l'API, mais aucun écran ne
+      // permettait de le saisir : il fallait passer par le shell Django (constaté le
+      // 12/11/2026 en configurant Brevo pour Réserve Résilience).
+      email_reply_to: ['', Validators.email],
       adresse: [''],
       commune_code: [null],
       commune_nom: [null],
@@ -567,6 +572,7 @@ export class InstitutionsComponent implements OnInit {
       description: institution.description,
       telephone: institution.telephone,
       email: institution.email,
+      email_reply_to: institution.email_reply_to,
       adresse: institution.adresse,
       commune_code: institution.commune_code,
       commune_nom: institution.commune_nom,

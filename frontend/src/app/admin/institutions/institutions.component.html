@@ -229,6 +229,17 @@
           <label>Email
             <input type="email" formControlName="email"/>
           </label>
+          <!-- Distinct de l'email ci-dessus : celui-là identifie l'institution, celui-ci dit
+               OÙ ARRIVENT LES RÉPONSES des messages envoyés en son nom. Les confondre fait
+               répondre dans le vide quand l'adresse de contact n'est pas relevée. -->
+          <label>Adresse de réponse (Reply-To)
+            <input type="email" formControlName="email_reply_to"
+                   placeholder="contact@exemple.org"/>
+            <small class="aide">
+              Où arrivent les réponses aux messages envoyés au nom de cette institution.
+              Vide = pas de Reply-To.
+            </small>
+          </label>
           <label>Adresse
             <textarea formControlName="adresse" rows="2"></textarea>
           </label>
