@@ -185,14 +185,22 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'badge', label: 'Membres', route: '/admin/membres-association', groupe: 'association', visibilite: 'membres-association' },
   { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'association', visibilite: 'membres-association' },
 
+  // Reste ouvert à tout compte institutionnel, volontairement : c'est par cette page que le
+  // bureau d'une association configure ses envois (onglet « Envois »), et la liste est déjà
+  // cloisonnée à « chez moi + ma zone » côté serveur. Ce qui posait problème était la
+  // CRÉATION, désormais encadrée (voir backend/core/creation_institution.py).
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },
   // Messages retenus avant envoi (voir backend/core/brouillons_envoi.py). La fenetre de
   // relecture s'ouvre d'elle-meme apres l'action ; cette page retrouve ce qui a ete manque.
   { icon: 'drafts', label: 'Messages a relire', route: '/admin/messages-a-relire', groupe: 'administration' },
   { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins', groupe: 'administration' },
   { icon: 'inventory_2', label: 'Matériel', route: '/admin/materiel', groupe: 'administration' },
-  { icon: 'sync_problem', label: 'Conflits de synchronisation', route: '/admin/conflits-synchronisation', groupe: 'administration' },
-  { icon: 'link', label: 'Correspondances', route: '/admin/correspondances', groupe: 'administration' },
+  // Conflits de synchronisation entre le central et un satellite, et correspondances du
+  // référentiel métier : deux écrans d'exploitation de la plateforme. Les données sont déjà
+  // cloisonnées côté serveur, mais les laisser dans le menu d'un bureau associatif donnait
+  // l'impression d'un accès plus large qu'il ne l'est (revue d'accès du 12/11/2026).
+  { icon: 'sync_problem', label: 'Conflits de synchronisation', route: '/admin/conflits-synchronisation', groupe: 'administration', visibilite: 'sysadmin' },
+  { icon: 'link', label: 'Correspondances', route: '/admin/correspondances', groupe: 'administration', visibilite: 'sysadmin' },
   { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs', groupe: 'administration', visibilite: 'sysadmin' },
   // Comptes Secours en attente de validation (voir accountValidationGuard).
   { icon: 'how_to_reg', label: 'Validations de comptes', route: '/admin/validations-comptes', groupe: 'administration', visibilite: 'validation-comptes' },

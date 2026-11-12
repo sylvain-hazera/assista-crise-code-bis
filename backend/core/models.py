@@ -1284,6 +1284,35 @@ class Institution(EnvironmentScopedModel):
                    "communes homonymes, jamais recalculé automatiquement.",
     )
 
+    # ── Rattachement à une institution mère ─────────────────────────────────────────────
+    # Posé le 12/11/2026 : jusque-là, n'importe quel compte institutionnel créait des
+    # institutions FLOTTANTES, au même rang que les mairies du référentiel national — d'où
+    # les « Mairie debug test » qui traînent dans la liste.
+    #
+    # Les deux cas légitimes, nommés par Sylvain, sont tous deux des rattachements :
+    #
+    # - une collectivité crée ses satellites administratifs : CCAS/CIAS, médiathèque
+    #   municipale, régie — des entités réelles, distinctes de la mairie, mais qui en
+    #   dépendent ;
+    # - une association crée ses échelons : un comité départemental sous l'association
+    #   nationale.
+    #
+    # Dans les deux cas, la fille n'existe QUE sous sa mère. Le champ le dit, et
+    # `InstitutionViewSet.perform_create` le pose d'office à partir du compte créateur — on
+    # ne demande pas à l'utilisateur de déclarer un rattachement qu'il n'a pas le choix de
+    # mettre ailleurs.
+    #
+    # PROTECT : supprimer une mère qui a des filles effacerait leur rattachement en silence,
+    # et avec lui la seule trace de qui en répond.
+    institution_parente = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="institutions_filles",
+        help_text="Institution dont celle-ci dépend : CCAS ou médiathèque sous une mairie, "
+                   "comité départemental sous une association nationale. Vide pour une "
+                   "institution de plein exercice (mairie, préfecture, association tête de "
+                   "réseau).",
+    )
+
     # Dénormalisés par save() à chaque changement de commune_code.
     epci_code = models.CharField(max_length=10, null=True, blank=True)
     departement_code = models.CharField(max_length=3, null=True, blank=True)

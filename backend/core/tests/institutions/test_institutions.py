@@ -29,8 +29,16 @@ def _activation_url(user):
 @pytest.mark.django_db
 class TestInstitutionCRUD:
 
-    def test_create_institution_authenticated(self, authenticated_client):
-        client, user = authenticated_client
+    def test_un_administrateur_cree_une_institution_du_referentiel(self, create_user):
+        """Depuis le 12/11/2026, créer une MAIRIE relève du référentiel national : seul un
+        administrateur de la plateforme le fait (voir core/creation_institution.py). Avant,
+        n'importe quel compte authentifié le pouvait, d'où les « Mairie debug test »."""
+        from rest_framework.test import APIClient
+
+        admin = create_user(username="admin-inst@test.fr", email="admin-inst@test.fr",
+                            type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
 
         response = client.post(
@@ -42,6 +50,20 @@ class TestInstitutionCRUD:
         assert response.status_code == status.HTTP_201_CREATED
         assert Institution.objects.filter(nom="Mairie de Test").exists()
         assert response.data["type_libelle"] == "Mairie"
+
+    def test_un_compte_sans_institution_ne_cree_rien(self, authenticated_client):
+        """Une institution créée ici dépend forcément de celle du créateur : sans
+        rattachement, il n'y a pas de mère possible."""
+        client, _user = authenticated_client
+        institution_type = InstitutionType.objects.create(code="CCAS", libelle="CCAS")
+
+        response = client.post(
+            reverse('institution-list'),
+            {"nom": "CCAS orphelin", "type": str(institution_type.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not Institution.objects.filter(nom="CCAS orphelin").exists()
 
     def test_list_institutions_requires_authentication(self, api_client):
         response = api_client.get(reverse('institution-list'))
@@ -117,8 +139,16 @@ class TestInstitutionAutoAttachment:
     rattacher à la vraie institution. Exception : la création directe d'une institution par un
     utilisateur déjà authentifié (celui-là a déjà prouvé son identité via son propre login)."""
 
-    def test_creator_becomes_principal_contact(self, authenticated_client):
-        client, user = authenticated_client
+    def test_creator_becomes_principal_contact(self, create_user):
+        """Créée par un administrateur depuis le 12/11/2026 : le type SDIS relève du
+        référentiel national. Ce que ce test tient reste le même — qui crée devient le
+        contact principal."""
+        from rest_framework.test import APIClient
+
+        user = create_user(username="admin-sdis@test.fr", email="admin-sdis@test.fr",
+                           type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
         institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
 
         response = client.post(

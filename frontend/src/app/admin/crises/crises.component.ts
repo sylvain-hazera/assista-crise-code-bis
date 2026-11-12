@@ -6,6 +6,7 @@ import { forkJoin, map, of } from 'rxjs';
 
 import { CrisisService } from '../../services/crisis.service';
 import { ImplicationService } from '../../services/implication.service';
+import { ReferentCrise } from '../../services/crisis.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { PointTypeService } from '../../services/point-type.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
@@ -74,6 +75,13 @@ export class CrisesComponent implements OnInit {
   editingPoint: PointOperationnel | null = null;
 
   // ── Déclarer une institution actrice (thèmes + responsable) ────
+  /** À qui s'adresser sur la crise ouverte : les institutions déjà engagées, collectivités
+   * en tête — ce sont elles qui acceptent une offre d'aide. Chargé à l'ouverture de la fiche
+   * et non avec la liste : la liste des crises en contient des dizaines, et personne n'a
+   * besoin de savoir qui gère celles qu'il ne regarde pas. */
+  referents: ReferentCrise[] = [];
+  referentsChargement = false;
+
   acteurDirectInstitutionId: string | null = null;
   acteurDirectThemes: string[] = [];
   acteurDirectContacts: ContactInstitution[] = [];
@@ -259,6 +267,7 @@ export class CrisesComponent implements OnInit {
     this.acteurDirectInstitutionId = null;
     this.acteurDirectThemes = [];
     this.acteurDirectContacts = [];
+    this.chargerReferents(crisis);
     this.responsableMode = 'moi';
     this.responsableContactId = null;
     this.responsableEmail = '';
@@ -863,6 +872,18 @@ export class CrisesComponent implements OnInit {
   private showSuccess(msg: string): void {
     this.successMessage = msg;
     setTimeout(() => this.successMessage = '', 3000);
+  }
+
+  private chargerReferents(crisis: Crisis): void {
+    this.referents = [];
+    if (!crisis.id) { return; }
+    this.referentsChargement = true;
+    this.crisisService.referents(crisis.id).subscribe({
+      next: (liste) => { this.referents = liste; this.referentsChargement = false; },
+      // Silencieux : le reste de la fiche reste utile sans cette liste, et une erreur
+      // afficherait une alarme pour une information d'appoint.
+      error: () => { this.referents = []; this.referentsChargement = false; },
+    });
   }
 
   private showError(msg: string): void {

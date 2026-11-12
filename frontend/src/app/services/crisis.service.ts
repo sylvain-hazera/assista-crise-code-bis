@@ -51,6 +51,24 @@ export class CrisisService {
   }
 
   /** GET /api/crises/<id>/preview/ — 403 si pas auteur/acteur institutionnel. */
+  /** Les institutions à qui s'adresser pour cette crise, collectivités en tête.
+   *
+   * Coordonnées de l'ORGANISATION et nom du responsable désigné, jamais ses coordonnées
+   * personnelles : on passe par le standard, comme au téléphone. */
+  referents(id: string): Observable<ReferentCrise[]> {
+    return this.http.get<ReferentCrise[]>(`${this.apiUrl}/${id}/referents/`);
+  }
+
+  /** « Nous proposons notre aide sur cette crise. »
+   *
+   * Pour une institution qui n'est pas une collectivité, la proposition reste EN ATTENTE
+   * jusqu'à ce qu'un régulateur de la collectivité l'accepte : c'est le mandat exigé d'une
+   * association qui n'intervient pas sur délégation. Proposer deux fois renvoie 409 avec
+   * l'état de la première. */
+  proposerAide(id: string, themes: string[], message?: string): Observable<unknown> {
+    return this.http.post(`${this.apiUrl}/${id}/proposer-aide/`, { themes, message });
+  }
+
   preview(id: string): Observable<Blob> {
     return this.http.get(`${this.apiUrl}/${id}/preview/`, { responseType: 'blob' });
   }
@@ -189,4 +207,18 @@ export class CrisisService {
       
       return fd;
     }
+}
+
+/** Une institution engagée sur une crise, telle que `referents()` la rend. */
+export interface ReferentCrise {
+  institution: string;
+  nom: string;
+  type: string | null;
+  /** Les collectivités décident : elles sont rendues en tête de liste. */
+  autorite_locale: boolean;
+  role_sur_la_crise: string;
+  telephone: string | null;
+  email: string | null;
+  /** Le nom du responsable désigné, pour demander la bonne personne au standard. */
+  responsable_nom: string | null;
 }

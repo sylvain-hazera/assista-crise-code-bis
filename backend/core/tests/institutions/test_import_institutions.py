@@ -106,10 +106,15 @@ class TestImporterInstitutions:
 
 @pytest.mark.django_db
 class TestImportInstitutionsViews:
+    """L'import en masse crée des institutions SANS mère : il alimente le référentiel
+    national, ce que la règle du 12/11/2026 réserve aux administrateurs de la plateforme
+    (voir core/creation_institution.py). Les comptes de ces tests sont donc passés
+    d'AUT_LOCALE à ADMIN — le refus d'une autorité locale est couvert par
+    test_creation_et_entraide.py."""
 
     def test_import_end_to_end_via_api(self, create_user):
         InstitutionType.objects.create(code="MAIRIE4", libelle="Mairie")
-        user = create_user(username="import-inst-e2e@test.fr", email="import-inst-e2e@test.fr", type="AUT_LOCALE")
+        user = create_user(username="import-inst-e2e@test.fr", email="import-inst-e2e@test.fr", type="ADMIN")
         client = APIClient()
         client.force_authenticate(user=user)
 
@@ -137,7 +142,7 @@ class TestImportInstitutionsViews:
         assert response.status_code == 403
 
     def test_import_without_type_mapping_returns_400(self, create_user):
-        user = create_user(username="import-inst-nomapping@test.fr", email="import-inst-nomapping@test.fr", type="AUT_LOCALE")
+        user = create_user(username="import-inst-nomapping@test.fr", email="import-inst-nomapping@test.fr", type="ADMIN")
         client = APIClient()
         client.force_authenticate(user=user)
 

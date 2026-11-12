@@ -418,3 +418,52 @@
   gap: .5rem;
   cursor: pointer;
 }
+
+// À qui s'adresser sur une crise : les institutions déjà engagées et leurs coordonnées.
+// Posé AVANT le formulaire de déclaration : on regarde qui est là avant de se proposer.
+.bloc-referents {
+  margin: 1rem 0;
+  padding: .85rem 1rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--ac-accent, #2563eb);
+  background: var(--ac-surface-2, #f8fafc);
+
+  h4 {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0 0 .6rem;
+    font-size: .9rem;
+  }
+
+  ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .6rem; }
+
+  li { font-size: .86rem; }
+
+  .marque.decide {
+    margin-left: .35rem;
+    padding: .05rem .4rem;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, .15);
+    color: #1d4ed8;
+    font-size: .7rem;
+    font-weight: 600;
+  }
+
+  .detail {
+    display: block;
+    font-size: .78rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  .coordonnees {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem .9rem;
+    margin-top: .15rem;
+    font-size: .82rem;
+
+    a { color: #1d4ed8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  }
+}

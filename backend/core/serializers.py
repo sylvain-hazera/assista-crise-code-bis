@@ -2815,6 +2815,11 @@ class InstitutionSerializer(
     # prefetch_related('salons_matrix').
     salons_matrix = serializers.SerializerMethodField()
 
+    #: Nom de l'institution mère, pour l'afficher sans un second appel. Un CCAS se lit
+    #: « CCAS de X — rattaché à Mairie de X », et c'est ce rattachement qui dit qui en répond.
+    institution_parente_nom = serializers.CharField(
+        source="institution_parente.nom", read_only=True, default=None)
+
     class Meta:
 
         model = Institution

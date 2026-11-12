@@ -325,6 +325,51 @@
               }
             }
 
+            <!-- À QUI S'ADRESSER. Proposer son aide à une organisation dont on ne peut
+                 joindre personne ne mène nulle part. On rend les coordonnées de
+                 l'ORGANISATION et le nom du responsable désigné, jamais ses coordonnées
+                 personnelles : on demande la bonne personne au standard. -->
+            @if (referents.length) {
+              <section class="bloc-referents">
+                <h4>
+                  <span class="material-icons">support_agent</span>
+                  À qui s'adresser pour cette crise
+                </h4>
+                <ul>
+                  @for (r of referents; track r.institution) {
+                    <li>
+                      <strong>{{ r.nom }}</strong>
+                      @if (r.autorite_locale) {
+                        <span class="marque decide">décide des renforts</span>
+                      }
+                      <span class="detail">{{ r.type }} — {{ r.role_sur_la_crise }}</span>
+                      <span class="coordonnees">
+                        @if (r.telephone) {
+                          <a [href]="'tel:' + r.telephone">{{ r.telephone }}</a>
+                        }
+                        @if (r.email) {
+                          <a [href]="'mailto:' + r.email">{{ r.email }}</a>
+                        }
+                        @if (!r.telephone && !r.email) {
+                          <em>Aucune coordonnée renseignée</em>
+                        }
+                      </span>
+                      @if (r.responsable_nom) {
+                        <span class="detail">
+                          Demandez {{ r.responsable_nom }}, responsable pour cette crise.
+                        </span>
+                      }
+                    </li>
+                  }
+                </ul>
+                <p class="page-hint">
+                  Les collectivités apparaissent en premier : ce sont elles qui acceptent une
+                  offre de renfort. Pour proposer la vôtre, déclarez votre institution actrice
+                  ci-dessous — votre déclaration leur sera transmise.
+                </p>
+              </section>
+            }
+
             @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               @if (!showActeurDirectForm) {
                 <button class="btn-secondary sm" (click)="showActeurDirectForm = true">

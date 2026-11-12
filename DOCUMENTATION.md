@@ -1648,6 +1648,52 @@ ce n'est pas un détail d'implémentation : les listes d'annonces arrivent sans 
 objet par objet. Afficher l'objet déjà chargé par la liste montrerait une fiche sans contact et
 contournerait la trace.
 
+#### Qui crée une institution, et comment une institution en aide une autre
+
+Deux décisions du 12/11/2026, prises après une revue d'accès demandée par Sylvain (« je veux
+éviter les fuites de données »).
+
+**Créer une institution, c'est créer SOUS la sienne** (`core/creation_institution.py`,
+`Institution.institution_parente`, migration 0261). Jusque-là, tout compte institutionnel
+créait des institutions flottantes, au même rang qu'une mairie du référentiel national — d'où
+les « Mairie debug test » restées dans la liste. Le besoin légitime existe pourtant, et il a
+deux visages : une collectivité crée ses satellites (CCAS, CIAS, médiathèque, régie), une
+association crée ses échelons (un comité départemental sous l'association nationale). Dans les
+deux cas la fille n'existe que sous sa mère. **On ne retire pas le droit de créer, on retire le
+droit de créer à côté.**
+
+- la mère est posée d'office depuis le rattachement de l'appelant, et **une valeur envoyée par
+  le client est ignorée** — sinon la règle ne vaudrait rien ;
+- les types du référentiel national (mairie, EPCI, préfecture, SDIS, gendarmerie, conseils)
+  sont fermés, avec un message qui invite à signaler l'institution manquante ;
+- le rattachement **ne se déplace pas** depuis le formulaire : il dit qui répond de la fille ;
+- l'**import en masse**, qui crée sans mère, passe aux administrateurs seuls ;
+- un administrateur reste libre : c'est lui qui tient le référentiel national.
+
+**Proposer son aide à une institution en crise** (`core/entraide_institutions.py`). Le
+mécanisme existait — une institution se déclare acteur, et si elle n'est pas une collectivité
+sa déclaration attend l'accord d'un régulateur, mandat exigé d'une association qui n'intervient
+pas sur délégation. Les crises sont publiques et leur liste n'est pas filtrée par zone,
+« pour permettre à une institution de candidater n'importe où ». Deux choses manquaient :
+
+| Endpoint | Ce qu'il apporte |
+|---|---|
+| `POST /api/crises/<id>/proposer-aide/` | Un geste : les besoins sur lesquels on peut intervenir, un message libre. Proposer deux fois renvoie 409 **en disant où en est la première** — une institution impatiente inonderait sinon la collectivité le jour où elle en a le moins le temps |
+| `GET /api/crises/<id>/referents/` | À qui parler : les institutions engagées, **collectivités en tête** puisque ce sont elles qui acceptent |
+
+`referents` répond **sans ouvrir l'annuaire** : coordonnées de l'ORGANISATION (celles du papier
+à en-tête) et **nom** du responsable désigné, jamais ses coordonnées personnelles — on demande
+la bonne personne au standard, comme au téléphone. Une déclaration encore en attente n'y figure
+pas : elle ferait appeler quelqu'un qui n'a rien accepté. Les deux actions sont réservées aux
+comptes institutionnels : une crise est publique, savoir qui la gère et comment le joindre ne
+l'est pas.
+
+**Au menu**, « Conflits de synchronisation » et « Correspondances » sont passés en `sysadmin`,
+URL comprise — leurs données étaient déjà cloisonnées, mais les laisser dans le menu d'un
+bureau associatif donnait l'impression d'un accès plus large. « Institutions » **reste ouvert**
+à tout compte institutionnel, volontairement : c'est par cette page qu'une association
+configure ses envois, et sa liste est déjà bornée à « chez moi + ma zone ».
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

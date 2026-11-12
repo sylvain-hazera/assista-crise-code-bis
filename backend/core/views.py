@@ -2555,6 +2555,18 @@ class ImportInstitutionsView(APIView):
     permission_classes = [IsInstitutionalActor]
 
     def post(self, request):
+        # L'import crée des institutions SANS mère (voir imports.importer_institutions) : il
+        # alimente le référentiel national, ce que la règle du 12/11/2026 réserve aux
+        # administrateurs. La création à l'unité, elle, reste ouverte — elle rattache d'office
+        # (voir InstitutionViewSet.perform_create et core/creation_institution.py).
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            return Response(
+                {"error": "L'import en masse alimente le référentiel national des "
+                          "institutions : il est réservé aux administrateurs de la "
+                          "plateforme. Pour créer une entité qui dépend de la vôtre (CCAS, "
+                          "régie, comité départemental), utilisez « Nouvelle institution »."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
@@ -2979,7 +2991,110 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "commune":
             return [permissions.IsAuthenticated()]
+        # Une crise est publique ; savoir QUI la gère et comment le joindre, non.
+        if self.action in ("referents", "proposer_aide"):
+            return [IsInstitutionalActor()]
         return [AllowAny()]
+
+    @action(detail=True, methods=["get"], url_path="referents")
+    def referents(self, request, pk=None):
+        """À qui s'adresser pour cette crise, quand on veut proposer son aide.
+
+        Rend les institutions déjà engagées — collectivités d'abord, ce sont elles qui
+        acceptent — avec les coordonnées de l'ORGANISATION et le nom du responsable désigné,
+        jamais ses coordonnées personnelles. Voir `core/entraide_institutions.py`.
+
+        Réservé aux comptes institutionnels : une crise est publique, la liste de qui la gère
+        et comment le joindre ne l'est pas."""
+        from .entraide_institutions import referents_de_la_crise
+
+        crise = self.get_object()
+        return Response(referents_de_la_crise(crise, get_active_environment(request)))
+
+    @action(detail=True, methods=["post"], url_path="proposer-aide")
+    def proposer_aide(self, request, pk=None):
+        """« Nous proposons notre aide sur cette crise. »
+
+        Un geste, pas un formulaire d'implication : l'appelant dit sur quels besoins il peut
+        intervenir et, s'il le souhaite, ce qu'il apporte. Le reste suit les règles déjà en
+        place — une institution qui n'est pas une collectivité reste EN ATTENTE jusqu'à ce
+        qu'un régulateur de la collectivité accepte, parce que c'est le mandat qu'exige une
+        intervention sur le terrain.
+
+        Proposer deux fois ne crée pas deux déclarations : la seconde est refusée en disant où
+        en est la première. Sans cela, une institution impatiente inonderait la collectivité de
+        demandes identiques le jour où elle en a le moins le temps."""
+        crise = self.get_object()
+        validate_crisis_open(crise)
+
+        institution_id = request.data.get("institution")
+        institution = Institution.objects.filter(pk=institution_id).first() \
+            if institution_id else getattr(request.user, "institution", None)
+        if institution is None:
+            return Response(
+                {"error": "Votre compte n'est rattaché à aucune institution : vous ne pouvez "
+                          "pas proposer d'aide au nom de l'une d'elles."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not ContactInstitution.objects.filter(
+                utilisateur=request.user, institution=institution, actif=True).exists() \
+                and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Vous ne pouvez proposer de l'aide qu'au nom d'une institution à laquelle "
+                "vous êtes rattaché."
+            )
+
+        existante = ImplicationInstitution.objects.filter(
+            crise=crise, institution=institution, actif=True,
+            type_implication=TypeImplication.ACTEUR,
+        ).first()
+        if existante is not None:
+            etats = {
+                StatutImplication.EN_ATTENTE: "Votre proposition a déjà été transmise et "
+                                              "attend la réponse de la collectivité.",
+                StatutImplication.VALIDEE: "Votre institution est déjà acteur sur cette crise.",
+                StatutImplication.REFUSEE: "Une proposition précédente a été refusée pour "
+                                           "cette crise. Prenez contact avec la collectivité "
+                                           "avant d'en déposer une nouvelle.",
+            }
+            return Response({"error": etats.get(existante.statut, "Proposition déjà déposée."),
+                             "statut": existante.statut},
+                            status=status.HTTP_409_CONFLICT)
+
+        themes = request.data.get("themes") or []
+        if not themes:
+            return Response(
+                {"error": "Indiquez au moins un besoin sur lequel vous pouvez intervenir : "
+                          "c'est ce qui permet à la collectivité de savoir ce que vous "
+                          "apportez."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statut = (StatutImplication.VALIDEE if _institution_est_publique(institution)
+                  else StatutImplication.EN_ATTENTE)
+        implication = ImplicationInstitution.objects.create(
+            crise=crise, institution=institution, utilisateur=request.user,
+            type_implication=TypeImplication.ACTEUR, statut=statut,
+            commentaire=(request.data.get("message") or "").strip() or None,
+            environment=get_active_environment(request),
+        )
+        implication.themes.set(Besoin.objects.filter(pk__in=themes))
+        _etendre_zone_crise_pour_implication(implication)
+        if statut == StatutImplication.EN_ATTENTE:
+            _notifier_demande_validation_implication(request, implication)
+
+        audit_log(
+            request=request, action_code="CREATION",
+            objet_type="ImplicationInstitution", objet_id=implication.id, crise=crise,
+            commentaire=(f"{institution.nom} propose son aide sur « {crise.name} »"
+                         + (" (en attente de validation)"
+                            if statut == StatutImplication.EN_ATTENTE else "")),
+        )
+        return Response(
+            ImplicationInstitutionSerializer(
+                implication, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["get"])
     def commune(self, request, pk=None):
@@ -13454,13 +13569,35 @@ class InstitutionViewSet(
         return qs.filter(condition)
 
     def perform_create(self, serializer):
-        institution = serializer.save(environment=get_active_environment(self.request))
+        """Crée l'institution SOUS celle du compte appelant.
+
+        Règle du 12/11/2026 (voir `core/creation_institution.py`) : une collectivité crée ses
+        satellites — CCAS, médiathèque, régie — et une association ses échelons, mais personne
+        d'autre qu'un administrateur ne crée une institution de plein exercice. La mère est
+        posée d'office et n'est pas demandée : l'appelant n'a pas le choix de la mettre
+        ailleurs."""
+        from .creation_institution import CreationRefusee, institution_mere, verifier_creation
+
+        est_admin = get_effective_role(self.request) == UserRole.ADMINISTRATOR
+        mere = institution_mere(self.request.user)
+        try:
+            verifier_creation(self.request.user, est_admin,
+                              serializer.validated_data.get("type"), mere)
+        except CreationRefusee as refus:
+            raise ValidationError({"error": str(refus)})
+
+        # Un administrateur peut rattacher explicitement, ou laisser l'institution autonome.
+        parente = serializer.validated_data.get("institution_parente") if est_admin else mere
+        institution = serializer.save(
+            environment=get_active_environment(self.request), institution_parente=parente,
+        )
         audit_log(
             request=self.request,
             action_code="CREATION",
             objet_type="Institution",
             objet_id=institution.id,
-            commentaire=f"Création institution : {institution.nom}",
+            commentaire=(f"Création institution : {institution.nom}"
+                         + (f" (rattachée à {parente.nom})" if parente else "")),
         )
 
         if self.request.user.is_authenticated:
@@ -13482,6 +13619,24 @@ class InstitutionViewSet(
                     objet_id=contact.id,
                     commentaire=f"Rattachement automatique du créateur à l'institution {institution.nom}",
                 )
+
+    def perform_update(self, serializer):
+        """Le rattachement à une institution mère ne se déplace pas depuis le formulaire.
+
+        Il dit QUI RÉPOND de cette institution : le laisser modifier permettrait de sortir une
+        fille de sa mère, ou de l'accrocher à une autre, sans que personne ne l'ait décidé.
+        Seul un administrateur de la plateforme peut le changer."""
+        if "institution_parente" in serializer.validated_data \
+                and get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+            ancienne = serializer.instance.institution_parente_id
+            demandee = serializer.validated_data["institution_parente"]
+            if (demandee.pk if demandee else None) != ancienne:
+                raise ValidationError({
+                    "institution_parente":
+                        "Le rattachement d'une institution à sa structure mère ne peut être "
+                        "modifié que par un administrateur de la plateforme.",
+                })
+        serializer.save()
 
     def perform_destroy(self, instance):
         # Zone.institution, Team.institution et Plan.institution sont en PROTECT : supprimer
