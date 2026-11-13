@@ -187,7 +187,7 @@ class TestSupervisionPcCrise:
         assert contacts, "la page doit bien lister un contact de secours"
         for contact in contacts:
             assert "Jean" not in contact["nom"] and "Dupont" not in contact["nom"]
-            assert contact["telephone"] != "0612345678"
+            assert contact["telephone"] != "+33612345678"
             assert contact["email"] != "jean.dupont@mairie-reelle.fr"
             assert contact["email"].endswith("@zone.demo")
             # La fonction reste : elle dit à qui on s'adresse sans désigner personne.
@@ -203,7 +203,9 @@ class TestSupervisionPcCrise:
         contacts = [c for ligne in reponse.data for c in ligne["contacts_secours"]]
         assert contacts
         assert contacts[0]["nom"] == "Jean Dupont"
-        assert contacts[0]["telephone"] == "0612345678"
+        # E.164 depuis le 12/11/2026 (core/telephone.py) ; ce que ce test tient est
+        # inchangé : en production, le vrai numéro reste lisible.
+        assert contacts[0]["telephone"] == "+33612345678"
         assert contacts[0]["email"] == "jean.dupont@mairie-reelle.fr"
 
 

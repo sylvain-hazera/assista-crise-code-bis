@@ -157,21 +157,14 @@ def expediteur_sms(nom):
 
 
 def numero_international(numero):
-    """Numéro au format attendu par Brevo : indicatif pays, sans « + » ni espace.
+    """Numéro tel que Brevo l'attend : E.164 **sans** le « + ».
 
-    Un numéro français saisi « 06 12 34 56 78 » devient « 33612345678 ». Un numéro déjà
-    international est seulement nettoyé. Rend None quand rien d'exploitable ne reste : envoyer
-    à un numéro deviné serait pire que ne pas envoyer."""
-    import re
+    La conversion elle-même vit dans `core/telephone.py`, avec la table des indicatifs
+    d'outre-mer : chaque fournisseur a sa manie de présentation, aucun n'a besoin de sa
+    propre table."""
+    from .telephone import pour_fournisseur
 
-    chiffres = re.sub(r"[^0-9+]", "", numero or "")
-    if chiffres.startswith("+"):
-        chiffres = chiffres[1:]
-    elif chiffres.startswith("00"):
-        chiffres = chiffres[2:]
-    elif chiffres.startswith("0") and len(chiffres) == 10:
-        chiffres = "33" + chiffres[1:]
-    return chiffres if chiffres.isdigit() and 8 <= len(chiffres) <= 15 else None
+    return pour_fournisseur(numero, avec_plus=False)
 
 
 def envoyer_sms_brevo(cle_api, expediteur, numero, message):

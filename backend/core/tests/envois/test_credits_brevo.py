@@ -84,6 +84,24 @@ class TestLeFormatExigeParBrevo:
     def test_les_numeros_sont_mis_au_format_international(self, saisi, attendu):
         assert numero_international(saisi) == attendu
 
+    @pytest.mark.parametrize("saisi,attendu", [
+        # La Réunion et Mayotte partagent le +262 ; la règle naïve « 0 -> 33 » envoyait ces
+        # SMS vers un numéro métropolitain qui n'était pas le bon. Le projet a un satellite à
+        # La Réunion : l'erreur serait passée inaperçue jusqu'au jour où il aurait fallu
+        # joindre quelqu'un.
+        ("0692 12 34 56", "262692123456"),   # Réunion, mobile
+        ("0262 12 34 56", "262262123456"),   # Réunion, fixe
+        ("0639 12 34 56", "262639123456"),   # Mayotte, mobile
+        ("0690 12 34 56", "590690123456"),   # Guadeloupe, mobile
+        ("0696 12 34 56", "596696123456"),   # Martinique, mobile
+        ("0694 12 34 56", "594694123456"),   # Guyane, mobile
+    ])
+    def test_l_outre_mer_n_est_pas_en_33(self, saisi, attendu):
+        assert numero_international(saisi) == attendu
+
+    def test_un_numero_deja_international_n_est_pas_retouche(self):
+        assert numero_international("+262 692 12 34 56") == "262692123456"
+
     @pytest.mark.parametrize("saisi", ["", "pas un numéro", "12"])
     def test_un_numero_inexploitable_rend_none(self, saisi):
         """Envoyer à un numéro deviné serait pire que ne pas envoyer."""

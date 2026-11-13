@@ -214,7 +214,8 @@ class TestContenuSupervision:
         assert ligne["satellite_etat"] == "PERDU"
         assert len(ligne["contacts_secours"]) == 1
         assert ligne["contacts_secours"][0]["nom"] == "Jean Dupont"
-        assert ligne["contacts_secours"][0]["telephone"] == "0600000000"
+        # E.164 depuis le 12/11/2026, voir core/telephone.py.
+        assert ligne["contacts_secours"][0]["telephone"] == "+33600000000"
 
     def test_derniere_activite_humaine_null_si_aucun_audit_log(
         self, create_user, institution_a, institution_b, implication_a, crisis_a

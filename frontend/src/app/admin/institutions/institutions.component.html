@@ -1089,27 +1089,48 @@
                 <label class="form-label">Fournisseur</label>
                 <select class="form-input" [(ngModel)]="configEnvoi.fournisseur_sms">
                   <option value="">— Aucun envoi de SMS —</option>
+                  <option value="BREVO">Brevo — la même clé que vos emails</option>
                   <option value="MOBIMEL">Mobimel (en attente de sa documentation API)</option>
                 </select>
-                <p class="hint">
-                  L'envoi par Mobimel n'est pas encore opérationnel : sa documentation API est
-                  nécessaire pour écrire l'adaptateur. Tout le reste est en place — la clé peut
-                  déjà être enregistrée ici.
-                </p>
+                @if (configEnvoi.fournisseur_sms === 'BREVO') {
+                  <p class="hint">
+                    Brevo envoie les SMS avec <strong>la clé API déjà saisie plus haut</strong>
+                    pour les emails : rien à ressaisir ici. Les crédits SMS sont facturés à
+                    part des emails — vous les retrouvez dans le bloc « Crédits Brevo ».
+                  </p>
+                } @else if (configEnvoi.fournisseur_sms === 'MOBIMEL') {
+                  <p class="hint">
+                    L'envoi par Mobimel n'est pas encore opérationnel : sa documentation API
+                    est nécessaire pour écrire l'adaptateur. Tout le reste est en place — la
+                    clé peut déjà être enregistrée ci-dessous.
+                  </p>
+                }
               </div>
-              <div class="form-group">
-                <label class="form-label">Clé API SMS</label>
-                <input type="password" class="form-input" autocomplete="off"
-                       [(ngModel)]="smsCleSaisie"
-                       [placeholder]="configEnvoi.sms_cle_api_renseignee
-                         ? 'Clé enregistrée — laisser vide pour ne pas la changer'
-                         : 'Clé fournie par l\'opérateur'">
-              </div>
+              <!-- Masqué pour Brevo : il n'a pas de seconde clé, et un champ vide à côté
+                   d'un fournisseur configuré se lit comme un oubli. -->
+              @if (configEnvoi.fournisseur_sms && configEnvoi.fournisseur_sms !== 'BREVO') {
+                <div class="form-group">
+                  <label class="form-label">Clé API SMS</label>
+                  <input type="password" class="form-input" autocomplete="off"
+                         [(ngModel)]="smsCleSaisie"
+                         [placeholder]="configEnvoi.sms_cle_api_renseignee
+                           ? 'Clé enregistrée — laisser vide pour ne pas la changer'
+                           : 'Clé fournie par l\'opérateur'">
+                </div>
+              }
               <div class="form-group">
                 <label class="form-label">Expéditeur présenté</label>
                 <input type="text" class="form-input" maxlength="30"
                        [(ngModel)]="configEnvoi.sms_expediteur"
                        placeholder="Nom ou numéro, selon ce que l'opérateur autorise">
+                @if (configEnvoi.fournisseur_sms === 'BREVO') {
+                  <p class="hint">
+                    Brevo n'accepte que <strong>11 caractères</strong>, lettres et chiffres
+                    sans accent. Un nom plus long est raccourci automatiquement : « Réserve
+                    Résilience&nbsp;» devient « ReserveResi ». Laissez vide pour reprendre le
+                    nom de l'institution.
+                  </p>
+                }
               </div>
 
               <button type="button" class="btn-primary"

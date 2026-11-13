@@ -114,7 +114,9 @@ class TestLesCoordonneesNeSontPasDeLAnnuaireOuvert:
         assert reponse.data["coordonnees_visibles"] is True
         ligne = next(m for m in reponse.data["membres"]
                      if m["utilisateur"] == str(cible.id))
-        assert ligne["telephone"] == "0612345678"
+        # Enregistré en E.164 depuis le 12/11/2026 : c'est le format que tous les
+        # fournisseurs de SMS acceptent (voir core/telephone.py).
+        assert ligne["telephone"] == "+33612345678"
         assert ligne["ville"] == "Rennes"
         assert ligne["metier"] == "Infirmier"
 

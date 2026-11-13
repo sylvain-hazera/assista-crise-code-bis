@@ -267,6 +267,16 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         self.email_bidx = blind_index(self.email)
+        # Numéro enregistré en E.164 (« +262692123456 »), quelle que soit la façon dont il a
+        # été saisi : c'est la seule écriture que tous les fournisseurs de SMS acceptent, et
+        # la seule qui dise de quel PAYS il s'agit (voir core/telephone.py). Posé ici et non
+        # dans les sérialiseurs, pour couvrir aussi les imports de fichiers et les scripts.
+        # Un numéro illisible est conservé TEL QUEL : l'écraser ferait perdre le seul moyen
+        # de joindre quelqu'un.
+        if self.phone_number:
+            from .telephone import normaliser
+
+            self.phone_number = normaliser(self.phone_number) or self.phone_number
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -2470,6 +2480,15 @@ class InterlocuteurAlertePCS(EnvironmentScopedModel):
     def __str__(self):
         return f"{self.nom} ({self.organisme or self.get_categorie_display()})"
 
+
+    def save(self, *args, **kwargs):
+        """Numéro en E.164 : c'est à ce téléphone que part l'alerte PCS par SMS, et un
+        préfixe mal deviné l'envoie à quelqu'un d'autre (voir core/telephone.py)."""
+        if self.telephone:
+            from .telephone import normaliser
+
+            self.telephone = normaliser(self.telephone) or self.telephone
+        super().save(*args, **kwargs)
 
 class NotificationAlertePCS(EnvironmentScopedModel):
     """Une ligne par (crise, interlocuteur), créée à la déclaration de la crise : checklist et

@@ -483,7 +483,8 @@ class TestDossierRegulateurContact:
         regulateurs = response.data['regulateurs']
         assert len(regulateurs) == 1
         assert regulateurs[0]['email'] == "regul-contact@test.fr"
-        assert regulateurs[0]['telephone'] == "0611223344"
+        # E.164 depuis le 12/11/2026, voir core/telephone.py.
+        assert regulateurs[0]['telephone'] == "+33611223344"
 
         dossier.environment = "DEMO"
         dossier.save(update_fields=['environment'])
@@ -491,4 +492,4 @@ class TestDossierRegulateurContact:
         response = client.get(reverse('dossier-detail', args=[dossier.id]))
         regulateurs = response.data['regulateurs']
         assert regulateurs[0]['email'] != "regul-contact@test.fr"
-        assert regulateurs[0]['telephone'] != "0611223344"
+        assert regulateurs[0]['telephone'] != "+33611223344"

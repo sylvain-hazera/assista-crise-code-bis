@@ -1742,6 +1742,35 @@ celui d'une crise. `proposer-aide` rend une implication : une ligne de main cour
 avec une clé étrangère vers une crise inexistante. On ne retient plus que les identifiants qui
 **sont** des crises ; à défaut, celle que la réponse désigne.
 
+#### Les numéros de téléphone sont enregistrés en E.164 (`core/telephone.py`)
+
+`+262692123456` : indicatif pays, numéro national sans son zéro, rien d'autre. C'est la seule
+écriture qu'acceptent sans discuter Brevo, Twilio, OVH ou Orange Contact Everyone ; chacun a
+ensuite sa manie (Brevo veut le même numéro **sans** le `+`), et `pour_fournisseur` s'en
+charge au moment d'appeler l'API, pas au moment d'enregistrer.
+
+**Pourquoi un format d'ENREGISTREMENT et pas seulement une conversion à l'envoi.** Trois
+raisons, découvertes dans cet ordre :
+
+1. **l'outre-mer n'est pas en +33.** Un portable réunionnais saisi « 0692 12 34 56 » et
+   converti par la règle naïve « 0 → 33 » part vers un numéro métropolitain qui n'est pas le
+   sien. Le projet a un satellite à La Réunion : l'erreur serait restée invisible jusqu'au
+   jour où il aurait fallu joindre quelqu'un ;
+2. en base, « 0692… » ne dit pas s'il s'agit d'un numéro réunionnais ou d'une faute de
+   saisie — l'information de pays était perdue à la saisie et devinée trop tard ;
+3. un numéro **étranger** (un renfort belge, un prestataire suisse) n'avait aucune façon
+   correcte d'être saisi.
+
+La normalisation est posée dans `save()` (`User.phone_number`,
+`InterlocuteurAlertePCS.telephone`) et non dans les sérialiseurs, pour couvrir aussi les
+imports de fichiers et les scripts. **Ce qui n'est pas reconnu est conservé tel quel** : une
+saisie du genre « voir le standard » peut être le seul moyen de joindre quelqu'un, et
+l'écraser par une interprétation hasardeuse serait pire que de la laisser.
+
+La reprise de l'existant se fait par `manage.py normaliser_telephones`, **à blanc par
+défaut** : ces colonnes sont chiffrées, une réécriture en masse ne se relit pas par un
+`SELECT` pour vérifier après coup.
+
 #### Brevo : SMS par la même clé, et suivi des crédits (`core/credits_brevo.py`)
 
 Vérifié contre l'API réelle le 12/11/2026, sans rien envoyer : `POST /v3/transactionalSMS/send`
@@ -1749,7 +1778,8 @@ accepte la clé `xkeysib-` des emails (corps vide → 400 « Sender name is miss
 `GET /v3/account` rend `plan: [{credits, creditsType, endDate}]`.
 
 **Une seule clé.** `ConfigurationEnvoiInstitution.cle_sms_effective` : avec Brevo, un champ SMS
-vide signifie « la même que les emails ». La redemander ferait saisir deux fois le même secret,
+vide signifie « la même que les emails » — et l'écran ne montre même plus le champ quand Brevo
+est choisi, un champ vide à côté d'un fournisseur configuré se lisant comme un oubli. La redemander ferait saisir deux fois le même secret,
 et une régénération n'en mettrait qu'un à jour. Le nom d'expéditeur est ramené à onze
 caractères alphanumériques (« Réserve Résilience - Casques Jaunes » → `ReserveResi`) et les
 numéros au format international, faute de quoi Brevo refuse au moment où l'on en a besoin.
