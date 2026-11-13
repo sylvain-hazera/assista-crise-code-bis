@@ -192,7 +192,7 @@ export class SettingsComponent implements OnInit {
     this.route.queryParamMap.subscribe(params => {
       const requestedTab = params.get('tab');
       if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
-        this.activeTab = requestedTab as typeof this.activeTab;
+        this.setActiveTab(requestedTab as typeof this.activeTab);
       }
     });
   }
@@ -554,7 +554,35 @@ export class SettingsComponent implements OnInit {
     return !!this.currentUser?.est_benevole_association;
   }
 
+  // ── Quel groupe est déplié (surtout sur smartphone) ───────────────────────────────
+  //
+  // Sur un écran large les trois groupes tiennent côte à côte et restent tous ouverts. Sur un
+  // téléphone, dix onglets sur une seule bande devenaient des pictogrammes de 24 px sans
+  // libellé, impossibles à viser — constaté le 13/11/2026 sur un Android de 412 px. On
+  // n'ouvre donc qu'un groupe à la fois, avec les mots en entier et des lignes de la hauteur
+  // d'un doigt.
+  groupeOuvert: 'aide' | 'benevole' | 'compte' = 'aide';
+
+  private groupeDe(tab: typeof this.activeTab): 'aide' | 'benevole' | 'compte' | null {
+    if (['request', 'dossier', 'declaration', 'information', 'crisis'].includes(tab)) {
+      return 'aide';
+    }
+    if (['offer', 'radio'].includes(tab)) { return 'benevole'; }
+    if (['profile', 'password'].includes(tab)) { return 'compte'; }
+    return null;   // la vue d'ensemble n'appartient à aucun groupe
+  }
+
+  ouvrirGroupe(groupe: 'aide' | 'benevole' | 'compte'): void {
+    // Replier le groupe courant en recliquant dessus ferait disparaître l'onglet actif de
+    // l'écran sans rien mettre à la place : un en-tête de groupe ouvre, il ne ferme pas.
+    this.groupeOuvert = groupe;
+  }
+
   setActiveTab(tab: typeof this.activeTab): void {
+    // Le groupe suit l'onglet : arriver par un lien `?tab=dossier` doit déplier « J'ai besoin
+    // d'aide », sinon l'onglet actif serait invisible dans la barre.
+    const groupe = this.groupeDe(tab);
+    if (groupe) { this.groupeOuvert = groupe; }
     this.activeTab = tab;
     this.clearMessages();
   }

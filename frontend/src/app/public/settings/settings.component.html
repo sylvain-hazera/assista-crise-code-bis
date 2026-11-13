@@ -35,82 +35,114 @@
          Les groupes sont TOUJOURS affichés, même vides : quelqu'un qui n'a jamais rien
          demandé doit pouvoir le faire, et masquer le secteur le lui cacherait. -->
     <div class="tabs">
-      <button class="tab-button" [class.active]="activeTab === 'apercu'"
+      <button class="tab-button seul" [class.active]="activeTab === 'apercu'"
               (click)="setActiveTab('apercu')">
         <span class="material-icons">dashboard</span>
         <span class="tab-text">Vue d'ensemble</span>
       </button>
 
-      <div class="tab-group" role="group" aria-label="Quand j'ai besoin d'aide">
-        <span class="tab-group-label">
-          <span class="material-icons">support</span> J'ai besoin d'aide
-        </span>
-        <button class="tab-button" [class.active]="activeTab === 'request'"
-                (click)="setActiveTab('request')">
-          <span class="material-icons">emergency</span>
-          <span class="tab-text">Mes demandes d'aide</span>
-          @if (demandesEnCours.length) {
-            <span class="tab-compteur">{{ demandesEnCours.length }}</span>
-          }
+      <div class="tab-group" [class.ouvert]="groupeOuvert === 'aide'"
+           role="group" aria-label="Quand j'ai besoin d'aide">
+        <button type="button" class="tab-group-label" (click)="ouvrirGroupe('aide')"
+                [attr.aria-expanded]="groupeOuvert === 'aide'">
+          <span class="material-icons">support</span>
+          <span class="tab-group-texte">J'ai besoin d'aide</span>
+          <span class="material-icons chevron">expand_more</span>
         </button>
-        <button class="tab-button" [class.active]="activeTab === 'dossier'"
-                (click)="setActiveTab('dossier')">
-          <span class="material-icons">folder</span>
-          <span class="tab-text">Où en sont mes démarches</span>
-          @if (demarchesEnCours.length) {
-            <span class="tab-compteur">{{ demarchesEnCours.length }}</span>
-          }
-        </button>
-        <button class="tab-button" [class.active]="activeTab === 'declaration'"
-                (click)="setActiveTab('declaration')">
-          <span class="material-icons">verified_user</span>
-          <span class="tab-text">Je suis en sécurité</span>
-        </button>
-        <button class="tab-button" [class.active]="activeTab === 'information'"
-                (click)="setActiveTab('information')">
-          <span class="material-icons">report</span>
-          <span class="tab-text">Ce que j'ai signalé</span>
-        </button>
-        <button class="tab-button" [class.active]="activeTab === 'crisis'"
-                (click)="setActiveTab('crisis')">
-          <span class="material-icons">local_fire_department</span>
-          <span class="tab-text">Les crises que j'ai déclarées</span>
-        </button>
+        <div class="tab-group-entrees">
+          <button class="tab-button" [class.active]="activeTab === 'request'"
+                  (click)="setActiveTab('request')">
+            <span class="material-icons">emergency</span>
+            <span class="tab-text">Mes demandes d'aide</span>
+            @if (demandesEnCours.length) {
+              <span class="tab-compteur">{{ demandesEnCours.length }}</span>
+            }
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'dossier'"
+                  (click)="setActiveTab('dossier')">
+            <span class="material-icons">folder</span>
+            <span class="tab-text">Où en sont mes démarches</span>
+            @if (demarchesEnCours.length) {
+              <span class="tab-compteur">{{ demarchesEnCours.length }}</span>
+            }
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'declaration'"
+                  (click)="setActiveTab('declaration')">
+            <span class="material-icons">verified_user</span>
+            <span class="tab-text">Je suis en sécurité</span>
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'information'"
+                  (click)="setActiveTab('information')">
+            <span class="material-icons">report</span>
+            <span class="tab-text">Ce que j'ai signalé</span>
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'crisis'"
+                  (click)="setActiveTab('crisis')">
+            <span class="material-icons">local_fire_department</span>
+            <span class="tab-text">Les crises que j'ai déclarées</span>
+          </button>
+        </div>
       </div>
 
-      <div class="tab-group" role="group" aria-label="Quand je donne un coup de main">
-        <span class="tab-group-label">
-          <span class="material-icons">volunteer_activism</span> Je donne un coup de main
-        </span>
-        <button class="tab-button" [class.active]="activeTab === 'offer'"
-                (click)="setActiveTab('offer')">
+      <div class="tab-group" [class.ouvert]="groupeOuvert === 'benevole'"
+           role="group" aria-label="Quand je donne un coup de main">
+        <button type="button" class="tab-group-label" (click)="ouvrirGroupe('benevole')"
+                [attr.aria-expanded]="groupeOuvert === 'benevole'">
           <span class="material-icons">volunteer_activism</span>
-          <span class="tab-text">Ce que je propose</span>
-          @if (offresEnCours.length) {
-            <span class="tab-compteur">{{ offresEnCours.length }}</span>
+          <span class="tab-group-texte">Je donne un coup de main</span>
+          <span class="material-icons chevron">expand_more</span>
+        </button>
+        <div class="tab-group-entrees">
+          <button class="tab-button" [class.active]="activeTab === 'offer'"
+                  (click)="setActiveTab('offer')">
+            <span class="material-icons">volunteer_activism</span>
+            <span class="tab-text">Ce que je propose</span>
+            @if (offresEnCours.length) {
+              <span class="tab-compteur">{{ offresEnCours.length }}</span>
+            }
+          </button>
+          <a class="tab-button" routerLink="/mes-interventions">
+            <span class="material-icons">assignment</span>
+            <span class="tab-text">Mes missions</span>
+            @if (missionsEnCours.length) {
+              <span class="tab-compteur">{{ missionsEnCours.length }}</span>
+            }
+          </a>
+          @if (estBenevoleAssociation) {
+            <a class="tab-button" routerLink="/ma-fiche-benevole"
+               [queryParams]="{ onglet: 'justificatifs' }">
+              <span class="material-icons">folder_shared</span>
+              <span class="tab-text">Mes justificatifs</span>
+            </a>
           }
-        </button>
-        <button class="tab-button" [class.active]="activeTab === 'radio'"
-                (click)="setActiveTab('radio')">
-          <span class="material-icons">settings_input_antenna</span>
-          <span class="tab-text">Mes radios</span>
-        </button>
+          <button class="tab-button" [class.active]="activeTab === 'radio'"
+                  (click)="setActiveTab('radio')">
+            <span class="material-icons">settings_input_antenna</span>
+            <span class="tab-text">Mes radios</span>
+          </button>
+        </div>
       </div>
 
-      <div class="tab-group" role="group" aria-label="Mon compte">
-        <span class="tab-group-label">
-          <span class="material-icons">person</span> Mon compte
-        </span>
-        <button class="tab-button" [class.active]="activeTab === 'profile'"
-                (click)="setActiveTab('profile')">
-          <span class="material-icons">account_circle</span>
-          <span class="tab-text">Mes informations</span>
+      <div class="tab-group" [class.ouvert]="groupeOuvert === 'compte'"
+           role="group" aria-label="Mon compte">
+        <button type="button" class="tab-group-label" (click)="ouvrirGroupe('compte')"
+                [attr.aria-expanded]="groupeOuvert === 'compte'">
+          <span class="material-icons">person</span>
+          <span class="tab-group-texte">Mon compte</span>
+          <span class="material-icons chevron">expand_more</span>
         </button>
-        <button class="tab-button" [class.active]="activeTab === 'password'"
-                (click)="setActiveTab('password')">
-          <span class="material-icons">lock</span>
-          <span class="tab-text">Ma connexion</span>
-        </button>
+        <div class="tab-group-entrees">
+          <button class="tab-button" [class.active]="activeTab === 'profile'"
+                  (click)="setActiveTab('profile')">
+            <span class="material-icons">account_circle</span>
+            <span class="tab-text">Mes informations</span>
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'password'"
+                  (click)="setActiveTab('password')">
+            <span class="material-icons">lock</span>
+            <span class="tab-text">Ma connexion</span>
+          </button>
+        </div>
       </div>
     </div>
 

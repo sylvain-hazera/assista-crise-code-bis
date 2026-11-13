@@ -136,4 +136,39 @@ describe('SettingsComponent', () => {
       expect(component.aUnVecuDeBenevole).toBeTrue();
     });
   });
+
+  /**
+   * Le repliement par groupe (13/11/2026). Sur smartphone, un seul groupe est déplié : dix
+   * onglets empilés feraient six cents pixels de navigation avant le premier contenu. Ce qui
+   * compte est qu'on ne puisse jamais se retrouver avec l'onglet actif dans un groupe fermé —
+   * il serait alors invisible dans la barre, sans rien pour le retrouver.
+   */
+  describe('le groupe déplié', () => {
+
+    it('suit l\'onglet choisi', () => {
+      component.setActiveTab('dossier');
+      expect(component.groupeOuvert).toBe('aide');
+
+      component.setActiveTab('radio');
+      expect(component.groupeOuvert).toBe('benevole');
+
+      component.setActiveTab('password');
+      expect(component.groupeOuvert).toBe('compte');
+    });
+
+    it('ne change rien pour la vue d\'ensemble, qui n\'appartient à aucun groupe', () => {
+      component.setActiveTab('radio');
+      component.setActiveTab('apercu');
+      // Le groupe reste tel quel : refermer tout laisserait la barre sans repère au retour.
+      expect(component.groupeOuvert).toBe('benevole');
+    });
+
+    it('un en-tête de groupe ouvre, il ne referme pas', () => {
+      // Replier le groupe courant ferait disparaître l'onglet actif sans rien mettre à la
+      // place.
+      component.ouvrirGroupe('compte');
+      component.ouvrirGroupe('compte');
+      expect(component.groupeOuvert).toBe('compte');
+    });
+  });
 });

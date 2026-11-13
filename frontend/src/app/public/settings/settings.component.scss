@@ -630,18 +630,85 @@
     }
   }
 
+  // ══ La barre d'onglets devient une LISTE sur smartphone ═══════════════════════════
+  //
+  // Les règles d'origine masquaient le libellé (`.tab-text { display: none }`) pour faire
+  // tenir les onglets sur une bande horizontale. Avec dix entrées groupées, cela donnait une
+  // rangée de pictogrammes de 24 px sans mot, impossibles à viser et impossibles à
+  // comprendre — constaté le 13/11/2026 sur un Android de 412 px.
+  //
+  // À la place : une colonne, les mots en entier, un groupe déplié à la fois, et des lignes
+  // d'au moins 44 px (la cible tactile recommandée, qui correspond à la pulpe d'un doigt).
   .tabs {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    border-bottom: none;
+    overflow-x: visible;
+
     .tab-button {
-      padding: 0.75rem 1rem;
-      font-size: 0.9rem;
+      width: 100%;
+      min-height: 44px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.95rem;
+      justify-content: flex-start;
+      white-space: normal;
+      text-align: left;
+      border-bottom: none;
+      border-left: 3px solid transparent;
+      border-radius: 8px;
 
-      .tab-text {
-        display: none;
-      }
+      .tab-text { display: inline; }
 
-      .material-icons {
-        font-size: 1.5rem;
+      .material-icons { font-size: 1.25rem; }
+
+      &.active {
+        border-bottom-color: transparent;
+        border-left-color: #667eea;
+        background: var(--ac-surface-2, #f5f5f5);
       }
+    }
+
+    // L'entrée « Vue d'ensemble » n'a pas de groupe : on lui donne le cadre que les groupes
+    // portent, pour qu'elle ne flotte pas seule au-dessus d'eux.
+    .tab-button.seul {
+      border: 1px solid var(--ac-border, #e2e8f0);
+      border-left-width: 3px;
+    }
+  }
+
+  .tab-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+
+    // Replié par défaut : seul le groupe ouvert montre ses entrées. Dix lignes empilées
+    // feraient six cents pixels de navigation avant le premier contenu.
+    .tab-group-entrees { display: none; }
+
+    &.ouvert .tab-group-entrees {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.35rem;
+    }
+
+    &.ouvert .tab-group-label .chevron { transform: rotate(180deg); }
+  }
+
+  .tab-group-label {
+    width: 100%;
+    min-height: 48px;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.78rem;
+
+    .tab-group-texte { flex: 1; }
+
+    .chevron {
+      display: inline;
+      transition: transform 0.2s ease;
     }
   }
 
@@ -703,14 +770,11 @@
     font-size: 1.3rem;
   }
 
-  .tabs {
-    justify-content: space-around;
-    
-    .tab-button {
-      flex: 1;
-      padding: 0.75rem 0.5rem;
-      min-width: 0;
-    }
+  // Volontairement VIDE de ce qui compressait les onglets : `flex: 1` sur chaque bouton les
+  // réduisait à des colonnes égales de quelques pixels. En liste verticale, la largeur n'est
+  // plus la ressource rare.
+  .tabs .tab-button {
+    padding: 0.7rem 0.8rem;
   }
 
   .data-table {
@@ -880,6 +944,17 @@
   white-space: nowrap;
 
   .material-icons { font-size: 1rem; }
+
+  .chevron { display: none; }
+}
+
+/* En-tête de groupe : c'est un bouton, mais sur écran large il ne sert qu'à étiqueter —
+   aucun repliement, les trois groupes tiennent côte à côte. */
+.tab-group-label {
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: default;
 }
 
 .tab-compteur {

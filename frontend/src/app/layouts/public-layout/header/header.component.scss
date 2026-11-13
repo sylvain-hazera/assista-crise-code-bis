@@ -604,14 +604,47 @@
       }
     }
 
+    // DEUX LIGNES SUR SMARTPHONE (13/11/2026). `white-space: nowrap` gardait
+    // « Menu d'administration » sur une seule ligne : le pavé poussait le bouton de compte
+    // hors de l'écran, et le menu « Mon espace » devenait littéralement inatteignable —
+    // constaté sur un Android de 412 px de large.
     .admin-menu-link {
-      padding: 0.4rem 0.7rem;
-      font-size: 0.75rem;
+      padding: 0.35rem 0.6rem;
+      font-size: 0.7rem;
+      white-space: normal;
+      line-height: 1.15;
+      text-align: left;
+      // Deux lignes au plus : au-delà, c'est le logo qui se ferait écraser.
+      max-width: 7.5rem;
+      flex-shrink: 1;
+      min-width: 0;
     }
 
     .env-toggle-public {
       padding: 0.35rem 0.6rem;
       font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    // Le bouton de compte et le hamburger ne se compriment JAMAIS : ce sont les deux seules
+    // portes de sortie de l'écran.
+    .header-right {
+      flex-shrink: 0;
+      gap: 0.75rem;
+    }
+
+    .container {
+      gap: 0.5rem;
+    }
+
+    .logo {
+      flex-shrink: 1;
+      min-width: 0;
+
+      .logo-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     }
 
     // Cacher la navigation desktop

@@ -4464,6 +4464,21 @@ quelqu'un, et c'est celui que les tests tiennent.
 | « Mon compte » | `/admin/dashboard`, la gestion de crise | « Tableau de bord de crise » |
 | « Paramètres », en dernier | `/settings` | « Mon espace », en premier et pour tout le monde |
 
+**Sur smartphone, la barre d'onglets est une liste.** Première version corrigée le jour même,
+après essai sur un Android de 412 px : les règles existantes masquaient le libellé
+(`.tab-text { display: none }`) pour faire tenir les onglets sur une bande horizontale, ce qui
+donnait, avec dix entrées groupées, une rangée de pictogrammes de 24 px — ni visables ni
+compréhensibles. Sous 768 px, les onglets passent donc en **colonne**, mots en entier, lignes
+d'au moins 44 px, et **un seul groupe déplié à la fois** (`groupeOuvert`) : dix lignes empilées
+feraient six cents pixels de navigation avant le premier contenu. Le groupe suit toujours
+l'onglet actif — un onglet actif dans un groupe fermé serait invisible, sans rien pour le
+retrouver — et un en-tête de groupe **ouvre sans refermer**, pour la même raison.
+
+Dans l'en-tête, `Menu d'administration` portait `white-space: nowrap` : sur un écran étroit le
+pavé poussait le bouton de compte hors de l'écran, et « Mon espace » devenait littéralement
+inatteignable. Il passe sur deux lignes sous 768 px, et `.header-right` ne se comprime plus —
+le bouton de compte et le hamburger sont les deux seules portes de sortie de l'écran.
+
 Enfin, « Les crises » est devenu **« Les crises que j'ai déclarées »** : le filtre est
 `author_email`, donc parler de crises « qui me concernent » aurait été faux. Et
 `/ma-fiche-benevole` accepte désormais `?onglet=justificatifs`, pour que le lien du secteur
