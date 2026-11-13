@@ -28,6 +28,7 @@ import { SuiviPositionPermanentService } from '../../services/suivi-position-per
 import { PieceIdentiteReserveService } from '../../services/piece-identite-reserve.service';
 import { PieceIdentiteReserve } from '../../shared/models/piece-identite-reserve.model';
 
+import { AssociationService } from '../../services/association.service';
 import { TeamService } from '../../services/team.service';
 import { Team, teamDisplayName } from '../../shared/models/team.model';
 import {
@@ -154,6 +155,7 @@ export class SettingsComponent implements OnInit {
     private router: Router,
     private route: ActivatedRoute,
     private teamService: TeamService,
+    private associationService: AssociationService,
     private noeudMeshCoreService: NoeudMeshUtilisateurService,
     private noeudMeshtasticService: NoeudUtilisateurMeshtasticService,
     private compagnonMeshtasticService: CompagnonMeshtasticService,
@@ -184,6 +186,7 @@ export class SettingsComponent implements OnInit {
     this.initForms();
     this.loadAll();
     this.loadEquipes();
+    this.loadDocumentsAValider();
 
     if (this.currentUser?.souhaite_rejoindre_reserve) {
       this.chargerPieceIdentiteReserve();
@@ -576,10 +579,28 @@ export class SettingsComponent implements OnInit {
       .sort((a, b) => this.nomEquipe(a).localeCompare(this.nomEquipe(b), 'fr'));
   }
 
-  /** L'entrée « Mes justificatifs » ne vaut que pour un adhérent d'association : elle mène à
-   * sa fiche de bénévole, qui n'existe pas pour les autres. */
+  /** Adhérent d'une association agréée : ouvre « Ma fiche de bénévole », qui n'existe que
+   * pour eux. **Ne conditionne PAS l'onglet « Mes documents »** : une pièce justificative est
+   * rattachée à la personne, et quelqu'un qui propose son aide sans être adhérent a un permis
+   * à faire vérifier comme les autres. */
   get estBenevoleAssociation(): boolean {
     return !!this.currentUser?.est_benevole_association;
+  }
+
+  /** Les documents qui attendent une action de ma part — un refus à corriger, un titre sans
+   * pièce. Alimente la pastille de l'onglet : un refus qu'on découvrirait en rouvrant la page
+   * par hasard ne serait jamais corrigé. */
+  documentsAValider = 0;
+
+  private loadDocumentsAValider(): void {
+    // Chargé par la page et non par le composant de dépôt : la pastille doit se voir AVANT
+    // d'ouvrir l'onglet, donc avant que ce composant n'existe. Une requête, et seulement un
+    // compte — le détail reste au composant.
+    this.associationService.getQualificationsMembres().subscribe({
+      next: (titres) => this.documentsAValider = titres.filter(
+        q => q.statut === 'REFUSEE' || !q.a_justificatif).length,
+      error: () => this.documentsAValider = 0,
+    });
   }
 
   // ── Quel groupe est déplié (surtout sur smartphone) ───────────────────────────────

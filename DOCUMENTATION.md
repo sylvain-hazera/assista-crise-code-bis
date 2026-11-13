@@ -4489,13 +4489,28 @@ passe le même jour, après essai :
   liens : partir sur une autre page pour savoir ce qu'on a à faire, c'est perdre le fil de son
   espace. L'écran de terrain complet (photos, priorités, réordonnancement) reste
   `/mes-interventions`.
-- **Le dépôt des pièces est passé dans « Mon compte »**, par un composant partagé
+- **« Mes documents » dans « Mon compte »**, par un composant partagé
   `app-mes-justificatifs` — le même que celui de « Ma fiche de bénévole ». Deux copies
   auraient divergé au premier correctif, et ce formulaire décide de la destruction d'un
   fichier : ce n'est pas un endroit où se permettre deux vérités. Il montre d'abord **ce qui
-  attend une action** (refus à corriger, titre sans pièce), ensuite l'état de chaque titre,
-  enfin le formulaire — mettre le formulaire en premier obligerait à faire défiler pour savoir
-  s'il y a quelque chose à faire.
+  attend une action** (refus à corriger, titre sans pièce), puis le **tableau de suivi**
+  (document, déposé le, fin de validité, statut, œil), enfin le formulaire de dépôt — mettre
+  le formulaire en premier obligerait à faire défiler pour savoir s'il y a quelque chose à
+  faire.
+
+  **L'onglet n'est conditionné à rien.** Première version réservée aux adhérents d'association
+  (`est_benevole_association`) : elle disparaissait donc pour tous les autres, y compris le
+  compte qui l'avait demandée. Une pièce justificative est rattachée à la **personne** — pas à
+  une association — et quelqu'un qui propose son aide sans adhérer a un permis à faire
+  vérifier comme les autres.
+
+  **Le statut est une phrase, pas un mot.** `VERIFIEE` ne dit rien du sort du FICHIER, et
+  c'est pourtant la question qu'on se pose en revenant : *est-ce que mon permis est encore
+  quelque part ?* Deux documents au même statut ont connu deux sorts opposés selon leur
+  régime de conservation. La colonne rend donc « Validé — la copie a été détruite, comme prévu
+  pour ce type de document » ou « Validé — vous pouvez le reconsulter », et l'œil n'apparaît
+  que si la pièce existe encore : une icône qui ouvrirait une erreur serait pire que pas
+  d'icône, et une pièce disparue sans explication passe pour un bug.
 
 **Correctif de sécurité trouvé en chemin.** Depuis que chaque équipe porte **deux** salons
 (Intervenants / Encadrement), trois endroits prenaient

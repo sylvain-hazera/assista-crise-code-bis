@@ -44,81 +44,92 @@
       </section>
     }
 
+    <!-- ══ LE SUIVI, EN TABLEAU ═══════════════════════════════════════════════════════
+         Demande du 13/11/2026 : « avec un tableau… date de dépôt, fin de validité ».
+         « Validé » ne dit rien de ce qui est arrivé au FICHIER, et c'est pourtant la
+         question qu'on se pose en revenant ici : est-ce que mon permis est encore quelque
+         part ? Deux documents au même statut peuvent avoir connu deux sorts opposés selon
+         leur régime de conservation — la colonne Statut le dit donc en toutes lettres. -->
     <section class="bloc">
-      <h3>Mes titres et leurs pièces</h3>
+      <h3>Mes documents et leur suivi</h3>
       @if (!mesQualifications.length) {
         <p class="vide">
-          Aucun titre enregistré pour l'instant. Déposez une première pièce ci-dessous : votre
-          encadrement la vérifiera.
+          Aucun document enregistré pour l'instant. Déposez-en un ci-dessous : votre
+          encadrement le vérifiera et vous verrez ici où en est la validation.
         </p>
       } @else {
-        <ul class="pieces">
-          @for (q of mesQualifications; track q.id) {
-            <li [class]="classeStatut(q)">
-              <div class="entete">
-                <strong>{{ q.qualification_nom || q.qualification }}</strong>
-                <span class="etat">{{ q.statut_libelle || q.statut }}</span>
-              </div>
-              <div class="detail">
-                @if (q.date_obtention) {
-                  <span>Obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span>
-                }
-                @if (q.date_expiration) {
-                  <span [class.perimee]="q.expiree">
-                    Valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}
-                    @if (q.expiree) { (périmée) }
-                  </span>
-                }
-                @if (q.organisme) { <span>{{ q.organisme }}</span> }
-              </div>
-
-              @if (q.statut === 'VERIFIEE') {
-                <p class="motif ok">
-                  <span class="material-icons">verified</span>
-                  Vérifiée
-                  @if (q.verifie_par_nom) { par {{ q.verifie_par_nom }} }
-                  @if (q.verifie_le) { le {{ q.verifie_le | date:'dd/MM/yyyy' }} }
-                </p>
-              } @else if (q.statut === 'DECLAREE' && q.a_justificatif) {
-                <p class="motif attente-verif">
-                  <span class="material-icons">hourglass_empty</span>
-                  Déposée, en attente de vérification par votre encadrement.
-                </p>
+        <div class="table-defilante">
+          <table class="suivi">
+            <thead>
+              <tr>
+                <th>Document</th>
+                <th>Déposé le</th>
+                <th>Fin de validité</th>
+                <th>Statut</th>
+                <th><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (q of mesQualifications; track q.id) {
+                <tr [class]="classeStatut(q)">
+                  <th scope="row">
+                    {{ q.qualification_nom || q.qualification }}
+                    @if (q.organisme) {
+                      <span class="organisme">{{ q.organisme }}</span>
+                    }
+                  </th>
+                  <td>
+                    @if (q.justificatif_depose_le) {
+                      {{ q.justificatif_depose_le | date:'dd/MM/yyyy' }}
+                    } @else {
+                      <span class="sans">—</span>
+                    }
+                  </td>
+                  <td>
+                    @if (q.date_expiration) {
+                      <span [class.perimee]="q.expiree">
+                        {{ q.date_expiration | date:'dd/MM/yyyy' }}
+                        @if (q.expiree) { (périmée) }
+                      </span>
+                    } @else {
+                      <span class="sans">sans péremption</span>
+                    }
+                  </td>
+                  <td class="statut">
+                    <span class="pastille-statut">{{ etatLisible(q) }}</span>
+                    @if (q.statut === 'VERIFIEE' && q.verifie_le) {
+                      <span class="sous-detail">
+                        le {{ q.verifie_le | date:'dd/MM/yyyy' }}
+                        @if (q.verifie_par_nom) { par {{ q.verifie_par_nom }} }
+                      </span>
+                    }
+                  </td>
+                  <td class="actions-suivi">
+                    @if (peutConsulter(q)) {
+                      <button type="button" class="oeil" (click)="voirPiece(q)"
+                              [title]="'Consulter ' + (q.justificatif_nom || 'le document')">
+                        <span class="material-icons">visibility</span>
+                      </button>
+                    }
+                    <label class="remplacer" [title]="q.a_justificatif
+                      ? 'Remplacer ce document' : 'Déposer un document'">
+                      <span class="material-icons">upload_file</span>
+                      <input type="file" (change)="remplacer(q, $event)" hidden>
+                    </label>
+                  </td>
+                </tr>
               }
-
-              @if (q.piece_detruite_le && !q.a_justificatif) {
-                <p class="motif ok">
-                  <span class="material-icons">delete_sweep</span>
-                  Pièce détruite le {{ q.piece_detruite_le | date:'dd/MM/yyyy' }}, comme prévu :
-                  ce document se vérifie et ne se conserve pas. Votre titre, lui, reste
-                  enregistré.
-                </p>
-              }
-
-              <div class="piece-actions">
-                @if (q.a_justificatif) {
-                  <button type="button" class="lien" (click)="voirPiece(q)">
-                    <span class="material-icons">description</span>
-                    {{ q.justificatif_nom || 'Voir la pièce déposée' }}
-                  </button>
-                  <label class="remplacer">
-                    <span class="material-icons">upload_file</span>
-                    Remplacer
-                    <input type="file" (change)="remplacer(q, $event)" hidden>
-                  </label>
-                }
-              </div>
-            </li>
-          }
-        </ul>
+            </tbody>
+          </table>
+        </div>
       }
     </section>
 
     <section class="bloc">
-      <h3>Déposer une nouvelle pièce</h3>
+      <h3>Déposer un document</h3>
       <div class="champs">
         <label>
-          <span>Titre concerné</span>
+          <span>Type de document</span>
           <select name="titre" [(ngModel)]="depot.qualification" (ngModelChange)="onTitreChoisi()">
             <option value="">Choisir…</option>
             @for (t of catalogue; track t.id) {

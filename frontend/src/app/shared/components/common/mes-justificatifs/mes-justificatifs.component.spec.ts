@@ -108,4 +108,45 @@ describe('MesJustificatifsComponent', () => {
     composant.depot.qualification = 'q1';
     expect(composant.regleDuTitreChoisi?.regime).toBe('VERIFIER_DETRUIRE');
   });
+
+  /**
+   * Le statut dit en clair (13/11/2026). « Validé » ne dit rien du sort du FICHIER, et c'est
+   * pourtant la question qu'on se pose en revenant sur cette page : est-ce que mon permis est
+   * encore quelque part ? Deux documents au même statut ont connu deux sorts opposés selon
+   * leur régime de conservation, et une pièce disparue sans explication passe pour un bug.
+   */
+  describe('le statut lisible', () => {
+
+    it('dit que la copie a été détruite, et que c\'était prévu', () => {
+      const permis = piece({
+        statut: 'VERIFIEE', a_justificatif: false,
+        piece_detruite_le: '2026-11-10T09:00:00Z',
+      });
+
+      expect(composant.etatLisible(permis)).toContain('détruite');
+      expect(composant.etatLisible(permis)).toContain('comme prévu');
+      // Pas d'œil : il ouvrirait une erreur, ce qui est pire que pas d'icône.
+      expect(composant.peutConsulter(permis)).toBeFalse();
+    });
+
+    it('dit qu\'un document conservé reste consultable', () => {
+      const attestation = piece({ statut: 'VERIFIEE', a_justificatif: true });
+
+      expect(composant.etatLisible(attestation)).toContain('reconsulter');
+      expect(composant.peutConsulter(attestation)).toBeTrue();
+    });
+
+    it('rend le motif du refus, qui est la seule chose actionnable', () => {
+      const refusee = piece({ statut: 'REFUSEE', motif_refus: 'Document illisible' });
+
+      expect(composant.etatLisible(refusee)).toContain('Document illisible');
+    });
+
+    it('distingue « en attente » de « rien déposé »', () => {
+      expect(composant.etatLisible(piece({ statut: 'DECLAREE', a_justificatif: true })))
+        .toContain('attente');
+      expect(composant.etatLisible(piece({ statut: 'DECLAREE', a_justificatif: false })))
+        .toContain('Aucun document');
+    });
+  });
 });

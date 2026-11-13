@@ -153,6 +153,40 @@ export class MesJustificatifsComponent implements OnInit {
     return q.statut.toLowerCase();
   }
 
+  // ══ Le statut, dit en clair ═══════════════════════════════════════════════════════════
+  //
+  // Demande de Sylvain du 13/11/2026 : « permis : validé => photo détruite pour raisons de
+  // confidentialité / attestation x : validée, vous pouvez la reconsulter en cliquant sur
+  // l'œil ».
+  //
+  // « VERIFIEE » ne dit rien de ce qui est arrivé au FICHIER, et c'est pourtant la question
+  // qu'on se pose en revenant sur cette page : est-ce que mon permis est encore quelque part ?
+  // Deux titres au même statut peuvent avoir connu deux sorts opposés selon leur régime de
+  // conservation. L'écran doit donc dire lequel, sans quoi une pièce disparue passe pour un
+  // bug.
+
+  etatLisible(q: QualificationMembre): string {
+    if (q.statut === 'REFUSEE') {
+      return q.motif_refus ? `Refusé — ${q.motif_refus}` : 'Refusé';
+    }
+    if (q.statut === 'VERIFIEE') {
+      if (q.piece_detruite_le) {
+        return 'Validé — la copie a été détruite, comme prévu pour ce type de document';
+      }
+      return q.a_justificatif
+        ? 'Validé — vous pouvez le reconsulter'
+        : 'Validé';
+    }
+    if (!q.a_justificatif) { return 'Aucun document déposé pour ce titre'; }
+    return 'Déposé, en attente de vérification par votre encadrement';
+  }
+
+  /** Vrai quand la pièce est encore consultable : conditionne l'œil. Une icône qui ouvrirait
+   * une erreur 404 serait pire que pas d'icône. */
+  peutConsulter(q: QualificationMembre): boolean {
+    return q.a_justificatif;
+  }
+
   /** Ouvre la pièce dans un onglet. Passe par un blob et non par un lien direct : la route
    * exige l'en-tête d'authentification que pose l'intercepteur, qu'un `<a href>` n'enverrait
    * pas. L'URL temporaire est révoquée au bout d'une minute. */

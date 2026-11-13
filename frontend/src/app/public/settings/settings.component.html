@@ -144,13 +144,18 @@
             <span class="material-icons">lock</span>
             <span class="tab-text">Ma connexion</span>
           </button>
-          @if (estBenevoleAssociation) {
-            <button class="tab-button" [class.active]="activeTab === 'justificatifs'"
-                    (click)="setActiveTab('justificatifs')">
-              <span class="material-icons">folder_shared</span>
-              <span class="tab-text">Mes pièces justificatives</span>
-            </button>
-          }
+          <!-- SANS CONDITION (13/11/2026). C'était réservé aux adhérents d'association,
+               et l'onglet disparaissait donc pour tous les autres. Une pièce justificative
+               est rattachée à la PERSONNE et non à une association : quelqu'un qui propose
+               son aide sans être adhérent a un permis à faire vérifier comme les autres. -->
+          <button class="tab-button" [class.active]="activeTab === 'justificatifs'"
+                  (click)="setActiveTab('justificatifs')">
+            <span class="material-icons">folder_shared</span>
+            <span class="tab-text">Mes documents</span>
+            @if (documentsAValider) {
+              <span class="tab-compteur">{{ documentsAValider }}</span>
+            }
+          </button>
         </div>
       </div>
     </div>
@@ -422,7 +427,7 @@
            n'est pas un endroit où se permettre deux implémentations. -->
       @if (activeTab === 'justificatifs') {
         <div class="tab-panel">
-          <h2 class="titre-panneau">Mes pièces justificatives</h2>
+          <h2 class="titre-panneau">Mes documents</h2>
           <app-mes-justificatifs></app-mes-justificatifs>
         </div>
       }

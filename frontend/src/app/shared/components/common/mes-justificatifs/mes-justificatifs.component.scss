@@ -228,3 +228,108 @@
 
   &:disabled { opacity: .5; cursor: not-allowed; }
 }
+
+/* ══ Le tableau de suivi ═══════════════════════════════════════════════════════════════
+   Ce qu'on vient y chercher : où en est la validation, et si le document est encore
+   consultable. La colonne Statut porte donc une phrase et non un mot — « Validé » ne dit
+   rien du sort du fichier, et deux documents au même statut peuvent avoir connu deux sorts
+   opposés selon leur régime de conservation. */
+.table-defilante {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.suivi {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+
+  th,
+  td {
+    padding: .6rem .7rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--ac-border, #e2e8f0);
+  }
+
+  thead th {
+    font-size: .76rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ac-text-muted, #64748b);
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 600;
+    /* Le nom du document reste visible quand on fait défiler le tableau sur un téléphone :
+       sans lui, les dates et les statuts n'appartiennent plus à rien. */
+    position: sticky;
+    left: 0;
+    background: var(--ac-surface, #fff);
+  }
+
+  /* Un liseré par état, repris de la liste : c'est ce qu'on balaye des yeux. */
+  tbody tr.verifiee th { box-shadow: inset 3px 0 0 var(--ac-success, #16a34a); }
+  tbody tr.refusee th { box-shadow: inset 3px 0 0 var(--ac-danger, #dc2626); }
+  tbody tr.declaree th { box-shadow: inset 3px 0 0 var(--ac-warning, #d97706); }
+
+  td { font-variant-numeric: tabular-nums; }
+}
+
+.organisme {
+  display: block;
+  font-weight: 400;
+  font-size: .78rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.sans { color: var(--ac-text-muted, #94a3b8); }
+
+.statut {
+  min-width: 16rem;
+  font-variant-numeric: normal;
+}
+
+.pastille-statut { display: block; }
+
+.sous-detail {
+  display: block;
+  font-size: .78rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.actions-suivi {
+  display: flex;
+  gap: .35rem;
+  align-items: center;
+}
+
+/* L'œil et le dépôt : carrés de 44 px, c'est une cible tactile. Le libellé est dans le
+   `title` — dans un tableau, une colonne d'actions avec du texte pousse tout le reste hors
+   de l'écran. */
+.oeil,
+.actions-suivi .remplacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+
+  &:hover { border-color: var(--ac-primary, #2563eb); }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
