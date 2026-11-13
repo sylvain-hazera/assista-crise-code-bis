@@ -21,7 +21,8 @@ import { ContactInstitution, Institution } from '../../shared/models/institution
 import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
 import { environment } from '../../../environments/environment';
 
-type Onglet = 'membres' | 'arborescence' | 'candidatures' | 'disponibilites' | 'liens';
+type Onglet = 'membres' | 'arborescence' | 'candidatures' | 'disponibilites' | 'liens'
+  | 'catalogue';
 
 /** Un nœud de l'arborescence des équipes. Construit côté client à partir de `equipe_parente` :
  * le serveur sert une liste plate, et la hiérarchie est déjà dans les données. */
@@ -84,10 +85,19 @@ const CODE_TYPE_AASC = 'aasc';
  */
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
+import {
+  ConservationPiecesComponent,
+} from '../../shared/components/common/conservation-pieces/conservation-pieces.component';
+import { ConservationPiecesService } from '../../services/conservation-pieces.service';
+import {
+  PieceConservation, TableConservation,
+} from '../../shared/models/conservation-piece.model';
+
 @Component({
   selector: 'app-membres-association',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, FormsModule, BlocAjoutComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, BlocAjoutComponent,
+            ConservationPiecesComponent],
   templateUrl: './membres-association.component.html',
   styleUrl: './membres-association.component.scss',
 })
@@ -217,10 +227,17 @@ export class MembresAssociationComponent implements OnInit {
     private authService: AuthService,
     private teamService: TeamService,
     private crisisService: CrisisService,
+    private conservationService: ConservationPiecesService,
   ) {}
 
   ngOnInit(): void {
     this.charger();
+    // La liste des catégories vient du serveur, jamais d'une constante recopiée ici : c'est
+    // la même table qui décide de détruire le fichier.
+    this.conservationService.table().subscribe({
+      next: (table) => this.tableConservation = table,
+      error: () => undefined,
+    });
   }
 
   private charger(): void {
@@ -876,6 +893,76 @@ export class MembresAssociationComponent implements OnInit {
 
   classeStatutPiece(q: QualificationMembre): string {
     return q.statut.toLowerCase();
+  }
+
+  // ══ Requalifier une pièce mal rangée ══════════════════════════════════════
+  //
+  // « Si le bénévole se plante et met permis dans diplôme, le management doit pouvoir
+  // modifier cela » (13/11/2026). Ce n'est pas cosmétique : le titre décide du régime de
+  // conservation, donc du sort du fichier. Corriger AVANT de valider est la seule façon
+  // d'appliquer la bonne règle — d'où la correction posée là où la décision se prend, et
+  // non dans un écran d'édition séparé.
+
+  requalificationEnCours: { id: string; qualification: string } | null = null;
+
+  ouvrirRequalification(q: QualificationMembre): void {
+    this.requalificationEnCours = { id: q.id, qualification: q.qualification };
+  }
+
+  annulerRequalification(): void {
+    this.requalificationEnCours = null;
+  }
+
+  confirmerRequalification(): void {
+    const demande = this.requalificationEnCours;
+    if (!demande?.qualification) { return; }
+    this.associationService.requalifierPiece(demande.id, demande.qualification).subscribe({
+      next: (maj) => {
+        this.requalificationEnCours = null;
+        this.qualifications = this.qualifications.map(x => (x.id === maj.id ? maj : x));
+        this.message = 'Pièce requalifiée. Elle est à instruire sous son nouveau titre, et '
+          + 'c\'est la règle de conservation de CE titre qui s\'appliquera.';
+        this.erreur = '';
+        this.chargerAVerifier();
+      },
+      error: (err) => this.erreur = err?.error?.error
+        || 'Impossible de requalifier cette pièce.',
+    });
+  }
+
+  // ══ Catalogue des titres ══════════════════════════════════════════════════
+
+  /** Les catégories de conservation proposées, servies par le serveur. On ne les code pas
+   * ici : c'est la même table qui décide de détruire le fichier. */
+  get categoriesProposables(): PieceConservation[] {
+    return (this.tableConservation?.pieces ?? []).filter(p => p.deposable);
+  }
+
+  tableConservation: TableConservation | null = null;
+
+  categorieDe(titre: Qualification): string {
+    return titre.categorie_piece || '';
+  }
+
+  changerCategorie(titre: Qualification, categorie: string): void {
+    if (!categorie || categorie === titre.categorie_piece) { return; }
+    this.associationService.definirCategoriePiece(titre.id, categorie).subscribe({
+      next: (maj) => {
+        this.catalogue = this.catalogue.map(t => (t.id === maj.id ? maj : t));
+        this.message = `« ${maj.nom} » : ${maj.conservation?.duree ?? 'règle mise à jour'}.`;
+        this.erreur = '';
+      },
+      error: (err) => this.erreur = err?.error?.categorie_piece?.[0]
+        || err?.error?.error || 'Impossible de changer cette catégorie.',
+    });
+  }
+
+  /** Les titres dont la catégorie n'a jamais été réglée restent sur le défaut prudent
+   * (conservation). Les nommer est le seul moyen que quelqu'un s'en occupe : sinon un permis
+   * reste conservé cinq ans sans que personne ne s'en aperçoive. */
+  get titresARegler(): Qualification[] {
+    return this.catalogue.filter(t => !t.categorie_piece
+      || t.categorie_piece === 'SECOURISME');
   }
 
   // ══ Annuaire ══════════════════════════════════════════════════════════════

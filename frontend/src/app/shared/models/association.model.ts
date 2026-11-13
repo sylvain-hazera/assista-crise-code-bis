@@ -1,3 +1,5 @@
+import { PieceConservation } from './conservation-piece.model';
+
 /** Modèles de la gestion des membres d'une association agréée de sécurité civile.
  *
  * Voir backend/core/recrutement_association.py et DOCUMENTATION.md § 5.12 bis. Deux principes
@@ -71,6 +73,12 @@ export interface Qualification {
   /** Durée habituelle, pour préremplir l'échéance. Vide = sans péremption. */
   validite_mois?: number | null;
   actif: boolean;
+  /** Clé dans core/conservation_pieces.py : c'est elle qui décide si le justificatif est
+   * détruit après validation. */
+  categorie_piece?: string;
+  /** La règle applicable, servie avec le titre pour qu'on puisse l'annoncer AU MOMENT du
+   * choix, et pas dans une page d'aide que personne n'ouvre. */
+  conservation?: PieceConservation;
 }
 
 export interface QualificationMembre {
@@ -107,6 +115,12 @@ export interface QualificationMembre {
   a_justificatif: boolean;
   justificatif_nom?: string;
   justificatif_depose_le?: string | null;
+  /** Renseigné quand le fichier a été détruit — après décision pour une pièce qui se vérifie
+   * sans se conserver, ou faute de décision dans les délais. Permet de distinguer « aucune
+   * pièce déposée » de « vérifiée, puis détruite comme prévu », deux états que le seul
+   * booléen `a_justificatif` confondait. */
+  piece_detruite_le?: string | null;
+  conservation?: PieceConservation;
 }
 
 /** Ce qui attend une vérification, pour la pastille de notification. */

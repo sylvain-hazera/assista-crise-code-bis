@@ -1264,3 +1264,69 @@ table.grille {
 
   .material-icons { font-size: 1rem; }
 }
+
+/* Ce que la validation fait vraiment à la pièce.
+   Dit SUR le bouton, pas dans une politique à côté : « Valider » qui détruit un document est
+   une conséquence qu'on ne découvre pas après coup. */
+.piece-regle {
+  margin: .35rem 0 0;
+  padding: .4rem .6rem;
+  border-left: 3px solid var(--ac-border, #cbd5e1);
+  border-radius: 4px;
+  background: var(--ac-surface-alt, #f8fafc);
+  font-size: .82rem;
+  color: var(--ac-text-muted, #475569);
+
+  &.destruction { border-left-color: var(--ac-danger, #dc2626); }
+}
+
+.piece-loi {
+  display: block;
+  margin-top: .15rem;
+  font-style: italic;
+}
+
+/* Requalifier une pièce mal rangée, là où la décision se prend.
+   Le titre décide du régime de conservation : corriger avant de valider est la seule façon
+   d'appliquer la bonne règle. */
+.requalification {
+  margin-top: .5rem;
+  padding: .6rem .75rem;
+  border-left: 3px solid var(--ac-primary, #2563eb);
+  border-radius: 4px;
+  background: var(--ac-surface-alt, #f8fafc);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .85rem;
+    font-weight: 600;
+  }
+
+  select { max-width: 24rem; }
+}
+
+.requalification-actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+/* Catalogue des titres : la colonne qui dit ce qu'il advient de la pièce doit se lire d'un
+   coup d'œil, c'est elle qui engage. */
+.duree-titre {
+  display: block;
+  font-weight: 600;
+
+  &.destruction { color: var(--ac-danger, #dc2626); }
+}
+
+.loi-titre {
+  display: block;
+  font-size: .8rem;
+  font-style: italic;
+  color: var(--ac-text-muted, #475569);
+}
+
+tr.a-regler { background: var(--ac-surface-alt, #fffbeb); }

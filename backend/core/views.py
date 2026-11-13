@@ -8251,6 +8251,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if institution is not None:
             _notify_institution_referent_of_team(team, institution, self.request)
 
+        # Les salons de l'équipe naissent avec elle (13/11/2026) : voir
+        # core/matrix.py, provisionner_salons_equipe. Les membres y sont inscrits par le pont,
+        # en continu — y compris ceux qui rejoindront l'équipe demain.
+        from .matrix import provisionner_salons_equipe
+
+        provisionner_salons_equipe(team, get_active_environment(self.request), self.request)
+
         for membre in team.members.all():
             _notify_new_team_member(team, membre, self.request)
 
@@ -8974,6 +8981,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             environment=get_active_environment(request),
         )
         team.members.add(*a_ajouter)
+        # Les salons naissent avec l'équipe, ici comme dans perform_create : une équipe
+        # d'intervention constituée dans l'urgence est précisément celle qui a besoin de
+        # pouvoir se parler tout de suite.
+        from .matrix import provisionner_salons_equipe
+
+        provisionner_salons_equipe(team, get_active_environment(request), request)
 
         titre = (request.data.get('mission_titre') or '').strip()
         if titre:
@@ -11613,6 +11626,27 @@ class BrandingView(APIView):
         })
 
 
+class ConservationPiecesView(APIView):
+    """La politique de conservation des pièces justificatives, servie à l'interface.
+
+    Demande du 13/11/2026 : afficher le tableau, le texte de loi applicable et le pourquoi
+    **sur la page de dépôt et sur la page de validation**. Servie depuis le serveur et non
+    recopiée dans deux gabarits Angular, pour une raison de fond : c'est la MÊME table qui
+    décide de la destruction du fichier (core/pieces_conformite.py). Deux copies finiraient
+    par diverger, et c'est l'écran qui aurait tort — il promettrait une destruction qui
+    n'aurait pas lieu.
+
+    Ouverte à tout compte connecté : la politique de conservation n'est pas un secret, c'est
+    une information que l'on doit à celui à qui l'on demande une pièce."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .conservation_pieces import table
+
+        return Response(table())
+
+
 class PieceIdentiteReserveViewSet(viewsets.ModelViewSet):
     """Photos recto/verso de pièce d'identité pour une candidature réserve (voir
     PieceIdentiteReserve) -- chiffrées au repos (core/file_crypto.py), jamais exposées comme URL
@@ -11674,6 +11708,117 @@ class PieceIdentiteReserveViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="telecharger-verso")
     def telecharger_verso(self, request, pk=None):
         return self._telecharger_champ(request, pk, "permis_verso")
+
+    # ── Vérifier, consigner, détruire (13/11/2026) ─────────────────────────────────────
+    #
+    # Jusqu'ici ce modèle n'avait aucune décision : la pièce arrivait, et restait. Le
+    # responsable de réserve pouvait la télécharger sans jamais pouvoir dire « c'est bon ».
+    # Conséquence : la seule issue possible pour un permis déposé était d'être conservé
+    # indéfiniment, exactement l'inverse de la politique annoncée (régime « vérifier puis
+    # détruire », core/conservation_pieces.py).
+
+    def _piece_a_instruire(self, request, pk):
+        """La pièce et le droit de l'instruire, ou une réponse d'erreur.
+
+        Le droit d'instruire est le même que le droit de consulter : on ne valide pas une
+        pièce qu'on n'a pas pu regarder. Et jamais la sienne."""
+        piece = (PieceIdentiteReserve.objects.filter(pk=pk)
+                 .select_related("utilisateur").first())
+        if piece is None:
+            return None, Response(status=404)
+        if not self._peut_telecharger(request, piece):
+            return None, Response(status=403)
+        if piece.utilisateur_id == request.user.id:
+            return None, Response(
+                {"error": "Vous ne pouvez pas valider votre propre pièce."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return piece, None
+
+    @action(detail=True, methods=["post"])
+    def verifier(self, request, pk=None):
+        """Consigne le contrôle, puis DÉTRUIT les images.
+
+        `valable_jusqu_au` est relevé sur la pièce au moment du contrôle : c'est ce qui permet
+        de redemander un document à jour plus tard sans en avoir gardé la copie. C'est
+        d'ailleurs toute l'idée — la trace remplace la photocopie, elle ne la complète pas."""
+        from .pieces_conformite import supprimer_fichier
+
+        piece, refus = self._piece_a_instruire(request, pk)
+        if refus is not None:
+            return refus
+
+        piece.statut = StatutQualification.VERIFIEE
+        piece.verifie_par = request.user
+        piece.verifie_le = timezone.now()
+        piece.motif_refus = ""
+        echeance = request.data.get("valable_jusqu_au")
+        if echeance:
+            piece.valable_jusqu_au = echeance
+        piece.save(update_fields=["statut", "verifie_par", "verifie_le", "motif_refus",
+                                  "valable_jusqu_au"])
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="PieceIdentiteReserve", objet_id=piece.id,
+            commentaire="Pièce vérifiée ; images détruites dans la foulée.",
+        )
+        for champ in ("permis_recto", "permis_verso"):
+            supprimer_fichier(piece, champ)
+        piece.refresh_from_db()
+        return Response(self.get_serializer(piece).data)
+
+    @action(detail=True, methods=["post"])
+    def refuser(self, request, pk=None):
+        """Refuse la pièce avec un motif obligatoire, et détruit les images.
+
+        Le motif est la seule chose qui rende le refus actionnable : sans lui, la personne
+        redéposera la même photo floue."""
+        from .pieces_conformite import supprimer_fichier
+
+        piece, refus = self._piece_a_instruire(request, pk)
+        if refus is not None:
+            return refus
+
+        motif = (request.data.get("motif") or "").strip()
+        if not motif:
+            return Response(
+                {"error": "Un motif est requis : sans lui, la personne ne saura pas quoi "
+                          "corriger et redéposera la même pièce."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        piece.statut = StatutQualification.REFUSEE
+        piece.verifie_par = request.user
+        piece.verifie_le = timezone.now()
+        piece.motif_refus = motif
+        piece.save(update_fields=["statut", "verifie_par", "verifie_le", "motif_refus"])
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="PieceIdentiteReserve", objet_id=piece.id,
+            commentaire=f"Pièce refusée : {motif}",
+        )
+        for champ in ("permis_recto", "permis_verso"):
+            supprimer_fichier(piece, champ)
+        piece.refresh_from_db()
+        return Response(self.get_serializer(piece).data)
+
+    @action(detail=False, methods=["get"], url_path="a-instruire")
+    def a_instruire(self, request):
+        """Les pièces en attente de décision dans la réserve dont j'ai la charge.
+
+        Sans cette liste, la validation était inatteignable : le responsable aurait dû
+        connaître l'identifiant de la pièce pour la télécharger. Une politique de destruction
+        qui dépend d'une validation que personne ne peut déclencher ne s'applique jamais."""
+        institutions = AffectationRoleOperationnel.objects.filter(
+            utilisateur=request.user, role__code="RESPONSABLE", actif=True,
+        ).values_list("institution_id", flat=True)
+        if not institutions:
+            return Response([])
+        pieces = (PieceIdentiteReserve.objects
+                  .filter(utilisateur__reserve_institution_id__in=list(institutions),
+                          statut=StatutQualification.DECLAREE)
+                  .select_related("utilisateur", "verifie_par")
+                  .order_by("date_depot"))
+        return Response(self.get_serializer(pieces, many=True).data)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -13518,6 +13663,16 @@ class InstitutionTypeViewSet(
             )
         instance.delete()
 
+def _est_membre_bureau(utilisateur, institution):
+    """Membre du bureau de CETTE institution. Un administrateur de la plateforme l'est aussi :
+    c'est le recours documenté quand un bureau a perdu ses accès (voir visibilite_membres)."""
+    if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
+        return True
+    return ContactInstitution.objects.filter(
+        utilisateur=utilisateur, institution=institution, actif=True, membre_bureau=True,
+    ).exists()
+
+
 class InstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -13888,7 +14043,7 @@ class InstitutionViewSet(
 
     @action(
         detail=True, methods=['get', 'post'],
-        url_path=r'salon-matrix-messages/(?P<type_salon>PERMANENTS|BENEVOLES)',
+        url_path=r'salon-matrix-messages/(?P<type_salon>PERMANENTS|BENEVOLES|ANNONCES)',
     )
     def salon_matrix_messages(self, request, pk=None, type_salon=None):
         """Chat intégré des salons généraux d'institution -- même relais côté bot que
@@ -13923,6 +14078,18 @@ class InstitutionViewSet(
         nom = nom_affichable(request.user, request) or request.user.email
 
         if request.method == 'POST':
+            # ANNONCES est une DIFFUSION : tout le monde la reçoit, seul le bureau y publie.
+            # Le contrôle est aussi posé dans Matrix lui-même (niveaux de pouvoir appliqués
+            # par le pont) ; il est répété ici parce que ce relais écrit AVEC le compte du bot,
+            # qui est administrateur du salon — sans ce garde-fou, passer par l'interface web
+            # contournerait la restriction que l'on vient d'appliquer dans Element.
+            if type_salon == TypeSalonInstitution.ANNONCES and not _est_membre_bureau(
+                    request.user, institution):
+                return Response(
+                    {"error": "Les annonces de l'association sont réservées au bureau. Vous "
+                              "pouvez écrire dans le salon « Bénévoles mobilisés »."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             texte = (request.data.get('texte') or '').strip()
             if not texte:
                 return Response({"error": "texte requis."}, status=status.HTTP_400_BAD_REQUEST)
@@ -16950,6 +17117,68 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         return reponse
 
     @action(detail=True, methods=['post'])
+    def requalifier(self, request, pk=None):
+        """Corrige le TITRE sous lequel une pièce a été déposée.
+
+        Demande de Sylvain du 13/11/2026 : « si le bénévole se plante et met permis dans
+        diplôme, le management doit pouvoir modifier cela ».
+
+        Ce n'est pas un détail d'affichage, c'est **ce qui décide du sort du fichier** : un
+        permis rangé sous « Diplôme » serait conservé cinq ans au lieu d'être détruit à la
+        validation. Corriger avant de valider est donc la seule façon d'appliquer la bonne
+        règle, et l'écran doit le proposer là où la décision se prend.
+
+        Le statut retombe à DECLAREE : on se prononce sur le titre corrigé, pas sur celui
+        qu'on vient de remplacer. Et la pièce déjà vérifiée n'est plus requalifiable — son
+        fichier peut avoir été détruit, et la déplacer sous un régime conservateur ferait
+        croire à une pièce qu'on n'a plus."""
+        objet, refus = self._qualification_ou_403(pk)
+        if refus is not None:
+            return refus
+        if objet.utilisateur_id == request.user.id:
+            return Response({"error": "Vous ne pouvez pas instruire votre propre titre."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if objet.statut == StatutQualification.VERIFIEE:
+            return Response(
+                {"error": "Ce titre est déjà vérifié. Refusez-le d'abord si la pièce ne "
+                          "correspond pas : sa requalification changerait la règle de "
+                          "conservation d'un document peut-être déjà détruit."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        cible = Qualification.objects.filter(pk=request.data.get('qualification')).first()
+        if cible is None:
+            return Response({"error": "Titre inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+        if cible.id == objet.qualification_id:
+            return Response(self.get_serializer(objet).data)
+
+        # La contrainte d'unicité (utilisateur, qualification, environment) interdit deux
+        # lignes du même titre : on le dit plutôt que de rendre une erreur de base de données.
+        if QualificationMembre.objects.filter(
+                utilisateur=objet.utilisateur, qualification=cible,
+                environment=objet.environment).exclude(pk=objet.pk).exists():
+            return Response(
+                {"error": f"Cette personne a déjà une ligne « {cible.nom} ». Complétez-la "
+                          f"plutôt que d'en créer une seconde, puis supprimez celle-ci."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        ancien = objet.qualification
+        objet.qualification = cible
+        objet.statut = StatutQualification.DECLAREE
+        objet.verifie_par = None
+        objet.verifie_le = None
+        objet.motif_refus = ""
+        objet.save(update_fields=['qualification', 'statut', 'verifie_par', 'verifie_le',
+                                  'motif_refus'])
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="QualificationMembre", objet_id=objet.id,
+            commentaire=f"Pièce requalifiée : « {ancien} » → « {cible} ».",
+        )
+        return Response(self.get_serializer(objet).data)
+
+    @action(detail=True, methods=['post'])
     def verifier(self, request, pk=None):
         """Marque le titre comme vérifié. Réservé à ceux qui peuvent voir la pièce.
 
@@ -16975,6 +17204,13 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             objet_type="QualificationMembre", objet_id=objet.id,
             commentaire=f"Titre « {objet.qualification} » vérifié",
         )
+        from .pieces_conformite import appliquer_apres_decision
+
+        # LA DESTRUCTION SUIT IMMÉDIATEMENT LA VALIDATION, dans la même requête, pour les
+        # pièces qui se vérifient sans se conserver (permis, pièce d'identité) : la différer à
+        # une tâche de nuit laisserait une fenêtre pendant laquelle la politique annoncée à
+        # l'écran serait fausse. Voir core/pieces_conformite.py.
+        appliquer_apres_decision(objet, request=request)
         return Response(self.get_serializer(objet).data)
 
     @action(detail=True, methods=['post'])
@@ -17009,6 +17245,11 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             objet_type="QualificationMembre", objet_id=objet.id,
             commentaire=f"Titre « {objet.qualification} » refusé : {motif}",
         )
+        from .pieces_conformite import appliquer_apres_decision
+
+        # Même règle qu'à la validation : une copie de permis refusée n'a plus rien à prouver,
+        # et le membre va en redéposer une autre.
+        appliquer_apres_decision(objet, request=request)
         # Le membre est prévenu : un refus qu'il découvrirait par hasard en rouvrant sa page
         # ne serait pas corrigé.
         institution = (
@@ -22802,50 +23043,19 @@ class MaFicheBenevoleView(generics.GenericAPIView):
                 )
 
     def _replacer_dans_son_equipe(self, request, fiche):
-        """Déplace le bénévole vers l'équipe départementale de sa nouvelle adresse.
+        """Déplace le bénévole vers la section départementale de sa nouvelle adresse.
 
-        Il est RETIRÉ de son ancienne équipe départementale au passage : quelqu'un qui
-        déménage de Gironde en Savoie ne doit pas rester mobilisable en Gironde, ni figurer
-        dans deux salons Matrix départementaux. Seules les équipes à échelon DÉPARTEMENTAL sont
-        touchées — ses autres équipes (opérationnelles, missions) ne regardent pas son
-        adresse."""
-        from .fiches_benevoles import departement_de_la_fiche
+        Il est RETIRÉ de son ancienne section au passage : quelqu'un qui déménage de Gironde
+        en Savoie ne doit pas rester mobilisable en Gironde, ni figurer dans deux salons
+        Matrix départementaux. Seules les équipes à échelon DÉPARTEMENTAL sont touchées — ses
+        autres équipes (opérationnelles, missions) ne regardent pas son adresse.
 
-        departement, _origine, _motif = departement_de_la_fiche(fiche)
-        if not departement:
-            return
+        La logique vit dans `core/rattachement_departemental.py` depuis le 13/11/2026 : elle
+        sert aussi à l'adhésion, où le même rattachement doit avoir lieu sans attendre un
+        changement d'adresse."""
+        from .rattachement_departemental import rattacher
 
-        institutions = ContactInstitution.objects.filter(
-            utilisateur=fiche.utilisateur, actif=True,
-        ).values_list('institution_id', flat=True)
-
-        cible = Team.objects.filter(
-            institution_id__in=institutions, echelon=EchelonEquipe.DEPARTEMENTAL,
-            territoire_code=departement,
-        ).first()
-        if cible is None:
-            return
-
-        anciennes = Team.objects.filter(
-            institution_id__in=institutions, echelon=EchelonEquipe.DEPARTEMENTAL,
-            members=fiche.utilisateur,
-        ).exclude(pk=cible.pk)
-        for equipe in anciennes:
-            equipe.members.remove(fiche.utilisateur)
-            audit_log(
-                request=request, action_code="MODIFICATION", objet_type="Team",
-                objet_id=equipe.id,
-                commentaire=f"{fiche.utilisateur.email} retiré : déménagement vers "
-                            f"le département {departement}.",
-            )
-
-        if not cible.members.filter(pk=fiche.utilisateur.pk).exists():
-            cible.members.add(fiche.utilisateur)
-            audit_log(
-                request=request, action_code="MODIFICATION", objet_type="Team",
-                objet_id=cible.id,
-                commentaire=f"{fiche.utilisateur.email} rattaché d'après son adresse.",
-            )
+        rattacher(fiche.utilisateur, request=request, retirer_les_autres=True)
 
 
 class MesDisponibilitesView(generics.GenericAPIView):

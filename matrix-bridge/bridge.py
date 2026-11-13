@@ -204,27 +204,76 @@ class SynapseClient:
             return False
         return True
 
-    async def creer_salon(self, nom):
+    async def creer_salon(self, nom, lecture_seule=False):
         # power_level_content_override : le preset "private_chat" laisse state_default à 50,
         # donc par défaut seul le bot (power level 100) pourrait poser un événement d'état --
         # or m.beacon_info (MSC3489, partage de position en direct) EST un événement d'état,
         # keyé par l'utilisateur qui partage. Sans cette dérogation, Element refuse le partage
         # de position à tout membre normal (power level 0) avec une erreur de permission,
         # constaté avec Sylvain le 24/09.
+        niveaux = {
+            "events": {
+                "m.beacon_info": 0,
+                "org.matrix.msc3672.beacon_info": 0,
+            },
+        }
+        if lecture_seule:
+            # SALON DE DIFFUSION (13/11/2026) : tout le monde le reçoit, seuls les rédacteurs
+            # désignés par Django y publient. `events_default` est le niveau requis pour
+            # envoyer un message ordinaire ; le porter à 50 verrouille le salon pour les
+            # membres (niveau 0), et `appliquer_redacteurs` élève ensuite le bureau à 50.
+            niveaux["events_default"] = 50
+            # La position live redeviendrait impossible si on la laissait à 0 dans un salon
+            # verrouillé : on ne l'autorise pas ici, un salon d'annonces n'est pas un salon de
+            # terrain.
+            niveaux["events"] = {}
         response = await self._client.post(
             f"{self.base_url}/_matrix/client/v3/createRoom", headers=self._headers(),
             json={
                 "name": nom, "preset": "private_chat", "visibility": "private",
-                "power_level_content_override": {
-                    "events": {
-                        "m.beacon_info": 0,
-                        "org.matrix.msc3672.beacon_info": 0,
-                    },
-                },
+                "power_level_content_override": niveaux,
             },
         )
         response.raise_for_status()
         return response.json()["room_id"]
+
+    async def appliquer_redacteurs(self, room_id, redacteurs):
+        """Donne le droit d'écrire aux seuls rédacteurs désignés, et le retire aux autres.
+
+        Reposé à chaque cycle, comme le sujet du salon : quelqu'un qui quitte le bureau doit
+        perdre ce droit sans qu'un geste manuel soit nécessaire. On relit l'état courant avant
+        d'écrire — republier des niveaux identiques fait repartir un événement d'état dans
+        tous les clients à chaque cycle de 30 s, exactement l'erreur qui avait saturé Synapse
+        le 22/10 avec les noms d'affichage.
+
+        Le bot garde 100 : c'est lui qui relaie les messages écrits depuis l'interface web."""
+        actuel = await self._client.get(
+            f"{self.base_url}/_matrix/client/v3/rooms/{room_id}/state/m.room.power_levels",
+            headers=self._headers(),
+        )
+        if actuel.status_code != 200:
+            logger.warning("Niveaux de pouvoir illisibles pour %s : %s", room_id,
+                           actuel.status_code)
+            return
+        contenu = actuel.json()
+        users = dict(contenu.get("users") or {})
+        voulu = {self.user_id: 100}
+        voulu.update({identifiant: 50 for identifiant in redacteurs})
+        # On ne touche qu'aux niveaux que NOUS posons : un opérateur qui aurait promu
+        # quelqu'un à la main dans Element verrait son geste défait à chaque cycle.
+        conserves = {k: v for k, v in users.items() if v > 50}
+        nouveau = {**conserves, **voulu}
+        if nouveau == users and contenu.get("events_default") == 50:
+            return
+        contenu["users"] = nouveau
+        contenu["events_default"] = 50
+        reponse = await self._client.put(
+            f"{self.base_url}/_matrix/client/v3/rooms/{room_id}/state/m.room.power_levels",
+            headers=self._headers(), json=contenu,
+        )
+        if reponse.status_code != 200:
+            logger.warning("Échec de pose des droits d'écriture sur %s : %s %s", room_id,
+                           reponse.status_code, reponse.text[:200])
 
     async def definir_sujet(self, room_id, sujet):
         """Sujet du salon (m.room.topic) -- affiché en en-tête par la quasi-totalité des
@@ -355,7 +404,11 @@ async def _synchroniser_salons_equipe(django, synapse, environnement):
                                 salon.get("type", "?"), salon["equipe_nom"])
 
 
-TYPE_SALON_INSTITUTION_LIBELLE = {"PERMANENTS": "Permanents", "BENEVOLES": "Bénévoles mobilisés"}
+TYPE_SALON_INSTITUTION_LIBELLE = {
+    "PERMANENTS": "Permanents",
+    "BENEVOLES": "Bénévoles mobilisés",
+    "ANNONCES": "Annonces",
+}
 
 
 async def boucle_provisionnement_salons_institution(django, synapse):
@@ -384,11 +437,20 @@ async def _synchroniser_salons_institution(django, synapse, environnement):
         libelle = TYPE_SALON_INSTITUTION_LIBELLE.get(salon["type"], salon["type"])
         nom_salon = f"{PREFIXE_NOM_SALON[environnement]}{salon['institution_nom']} — {libelle}"
 
+        lecture_seule = bool(salon.get("lecture_seule"))
+
         room_id = salon.get("room_id")
         if not room_id:
-            room_id = await synapse.creer_salon(nom_salon[:64])
+            room_id = await synapse.creer_salon(nom_salon[:64], lecture_seule=lecture_seule)
             await django.rapporter_salon_institution(salon["id"], room_id, environnement)
             logger.info("Salon institution créé pour « %s » : %s", nom_salon, room_id)
+
+        # Reposé à chaque cycle et pas seulement à la création : la composition du bureau
+        # change, et un ancien trésorier ne doit pas garder le droit d'écrire à toute
+        # l'association. Django reste la source de cette liste (voir
+        # SalonMatrixInstitutionSerializer.get_redacteurs).
+        if lecture_seule:
+            await synapse.appliquer_redacteurs(room_id, salon.get("redacteurs") or [])
 
         actuels = await synapse.membres_actuels(room_id)
         for matrix_id in cibles:

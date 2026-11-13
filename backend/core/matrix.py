@@ -354,3 +354,39 @@ def user_id_from_matrix_id(matrix_user_id_str: str):
         return uuid.UUID(localpart[1:])
     except ValueError:
         return None
+
+
+def provisionner_salons_equipe(team, environment, request=None):
+    """Crée les deux lignes de salon Matrix d'une équipe (Intervenants, Encadrement).
+
+    Demande du 13/11/2026 : « la création automatique des canaux en même temps que la
+    création de l'équipe ». C'était jusqu'ici un second geste, à faire depuis la fiche de
+    l'équipe — et que personne ne faisait. Une équipe sans salon est une équipe qui n'a aucun
+    moyen de se parler, ce qui n'est l'intention de personne au moment où on la crée.
+
+    `room_id` reste vide : c'est matrix-bridge qui crée le salon côté Synapse au cycle
+    suivant, puis y inscrit les membres **en continu**. L'inscription d'un bénévole qui
+    rejoint l'équipe plus tard est donc acquise par le même mécanisme, sans rien à déclencher.
+
+    Idempotent, et silencieux en cas d'échec : la création de l'équipe ne doit pas échouer
+    parce que la messagerie a un problème."""
+    from .models import SalonMatrixEquipe, TypeSalonEquipe
+    from .audit import audit_log
+
+    salons = []
+    try:
+        for type_salon in (TypeSalonEquipe.INTERVENANTS, TypeSalonEquipe.ENCADREMENT):
+            salon, cree = SalonMatrixEquipe.objects.get_or_create(
+                equipe=team, type=type_salon, defaults={"environment": environment},
+            )
+            salons.append(salon)
+            if cree:
+                audit_log(
+                    request=request, action_code="CREATION",
+                    objet_type="SalonMatrixEquipe", objet_id=salon.id,
+                    commentaire=f"Salon Matrix {salon.get_type_display()} créé avec l'équipe "
+                                f"« {team.name} ».",
+                )
+    except Exception:
+        logger.exception("Provisionnement des salons impossible pour l'équipe %s", team.id)
+    return salons

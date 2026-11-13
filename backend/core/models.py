@@ -2852,6 +2852,18 @@ class RattachementHabitation(EnvironmentScopedModel):
         return (self.prenom_demandeur or '').strip() or (self.nom_demandeur or '').strip()
 
 
+class StatutQualification(models.TextChoices):
+    """État d'instruction d'une qualification.
+
+    DECLAREE est le défaut, et le mot compte : tant que l'encadrement ne s'est pas prononcé,
+    la qualification est une affirmation de son titulaire. La confondre avec VERIFIEE ferait
+    envoyer en intervention quelqu'un sur la foi d'une case qu'il a cochée lui-même."""
+
+    DECLAREE = "DECLAREE", "Déclarée par le membre"
+    VERIFIEE = "VERIFIEE", "Vérifiée par l'encadrement"
+    REFUSEE = "REFUSEE", "Refusée"
+
+
 class PieceIdentiteReserve(EnvironmentScopedModel):
     """Permis ou pièce d'identité d'un candidat à une réserve en marque blanche (exigence
     d'assurance du partenaire). Fichier chiffré au repos (core/file_crypto.py,
@@ -2871,6 +2883,37 @@ class PieceIdentiteReserve(EnvironmentScopedModel):
     )
 
     date_depot = models.DateTimeField(auto_now_add=True)
+
+    # ── VÉRIFIER PUIS DÉTRUIRE (13/11/2026) ────────────────────────────────────────────
+    #
+    # Ce modèle gardait le permis indéfiniment : rien ne le validait, rien ne le supprimait,
+    # et la seule date portée était celle du dépôt. C'était l'inverse exact de la politique de
+    # conservation du projet (core/conservation_pieces.py, régime VERIFIER_DETRUIRE) sur la
+    # pièce qui en est l'exemple même.
+    #
+    # Désormais : on consigne QUI a vérifié, QUAND, et jusqu'à quand la pièce était valable —
+    # puis on détruit les images. C'est cette trace, et non la photo du permis, qui prouve que
+    # le contrôle a eu lieu. Le numéro du permis n'est jamais saisi : il est aussi identifiant
+    # que la copie.
+    statut = models.CharField(
+        max_length=12, choices=StatutQualification.choices,
+        default=StatutQualification.DECLAREE,
+    )
+    verifie_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pieces_identite_verifiees",
+    )
+    verifie_le = models.DateTimeField(null=True, blank=True)
+    valable_jusqu_au = models.DateField(
+        null=True, blank=True,
+        help_text="Date de fin de validité relevée sur la pièce au moment du contrôle. "
+                  "Permet de redemander une pièce à jour sans en avoir gardé la copie.",
+    )
+    motif_refus = models.TextField(
+        blank=True,
+        help_text="Obligatoire au refus : la personne doit savoir quoi corriger.",
+    )
+    piece_detruite_le = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Pièce identité réserve — {self.utilisateur}"
@@ -6141,6 +6184,21 @@ class Qualification(models.Model):
 
     description = models.TextField(blank=True, null=True)
 
+    # CE QUI DÉCIDE DE LA DESTRUCTION DU FICHIER (13/11/2026). Clé d'une ligne de
+    # core/conservation_pieces.py : régime, durée, base légale et « pourquoi », affichés sur la
+    # page de dépôt comme sur la page de validation. Une pièce du régime « vérifier puis
+    # détruire » (permis, pièce d'identité) voit son justificatif supprimé dès qu'une décision
+    # est prise — voir core/pieces_conformite.py.
+    #
+    # Pas de `choices=` : la table vit en Python et évolue sans migration, et une clé inconnue
+    # retombe sur la catégorie par défaut plutôt que de bloquer une entrée de catalogue créée
+    # par une institution.
+    categorie_piece = models.CharField(
+        max_length=32, blank=True, default="SECOURISME",
+        help_text="Catégorie de conservation (voir core/conservation_pieces.py) : elle "
+                  "décide si le justificatif est détruit après validation.",
+    )
+
     # Durée de validité habituelle, pour préremplir l'échéance à la saisie. Null = sans
     # péremption (un permis de conduire, un diplôme). Jamais appliquée de force : c'est la date
     # portée par le titre réel qui fait foi, pas notre calcul.
@@ -6311,18 +6369,6 @@ class FicheBenevole(EnvironmentScopedModel):
         return f"Fiche de {self.utilisateur.email}"
 
 
-class StatutQualification(models.TextChoices):
-    """État d'instruction d'une qualification.
-
-    DECLAREE est le défaut, et le mot compte : tant que l'encadrement ne s'est pas prononcé,
-    la qualification est une affirmation de son titulaire. La confondre avec VERIFIEE ferait
-    envoyer en intervention quelqu'un sur la foi d'une case qu'il a cochée lui-même."""
-
-    DECLAREE = "DECLAREE", "Déclarée par le membre"
-    VERIFIEE = "VERIFIEE", "Vérifiée par l'encadrement"
-    REFUSEE = "REFUSEE", "Refusée"
-
-
 class QualificationMembre(EnvironmentScopedModel):
     """Qualification détenue par une personne, avec ses dates.
 
@@ -6380,6 +6426,13 @@ class QualificationMembre(EnvironmentScopedModel):
                    "l'écran afficherait « a3f2…pdf » au lieu de « PSC1-2024.pdf ».",
     )
     justificatif_depose_le = models.DateTimeField(null=True, blank=True)
+
+    # LA TRACE QUI SURVIT AU FICHIER (13/11/2026). Renseignée quand le justificatif a été
+    # détruit — après décision pour une pièce qui se vérifie sans se conserver, ou faute de
+    # décision sous 30 jours. Sans ce champ, une pièce détruite serait indiscernable d'une
+    # pièce jamais déposée, et l'écran dirait « aucune pièce » là où il faut dire « vérifiée,
+    # puis détruite comme prévu ».
+    piece_detruite_le = models.DateTimeField(null=True, blank=True)
 
     statut = models.CharField(
         max_length=12, choices=StatutQualification.choices,
@@ -7100,9 +7153,25 @@ class SalonMatrixEquipe(EnvironmentScopedModel):
 
 
 class TypeSalonInstitution(models.TextChoices):
-    """PERMANENTS : personnel de l'institution ; BENEVOLES : membres de ses équipes actives."""
+    """PERMANENTS : personnel de l'institution ; BENEVOLES : membres de ses équipes actives ;
+    ANNONCES : tout le monde, mais seul le bureau y écrit.
+
+    ANNONCES, demandé le 13/11/2026, n'est pas un troisième salon de discussion : c'est une
+    **diffusion**. Tout membre de l'association le reçoit, et seuls les membres du bureau
+    (`ContactInstitution.membre_bureau`) peuvent y publier — techniquement, un niveau de
+    pouvoir Matrix de 50 pour eux et 0 pour les autres (voir matrix-bridge).
+
+    Pourquoi un salon à part plutôt qu'une consigne dans le salon « Bénévoles mobilisés » :
+    une annonce qui compte (convocation, consigne de sécurité, information d'assemblée
+    générale) doit être lisible sans remonter trente messages de coordination. Et une consigne
+    de politesse ne tient pas en situation : c'est au salon de garantir le silence, pas aux
+    gens.
+
+    L'inverse — un salon où l'on peut répondre — reste BENEVOLES : la diffusion ne remplace
+    pas la conversation, elle la décharge."""
     PERMANENTS = "PERMANENTS", "Permanents"
     BENEVOLES = "BENEVOLES", "Bénévoles mobilisés"
+    ANNONCES = "ANNONCES", "Annonces de l'association"
 
 
 class SalonMatrixInstitution(EnvironmentScopedModel):

@@ -3,7 +3,7 @@ import json
 import os
 import re
 from django.conf import settings
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -3349,11 +3349,38 @@ class ContactInstitutionSerializer(
         return data
 
 class QualificationSerializer(serializers.ModelSerializer):
-    """Catalogue des titres (PSE1, radio, permis, CACES…)."""
+    """Catalogue des titres (PSE1, radio, permis, CACES…).
+
+    `conservation` accompagne chaque entrée depuis le 13/11/2026 : le régime, la durée, la
+    base légale et le pourquoi, pris dans core/conservation_pieces.py. Il est servi ICI, avec
+    le titre, pour que l'écran de dépôt puisse dire « ce que vous déposez sera détruit dès
+    validation » **au moment du choix du titre**, et non dans une page d'aide que personne
+    n'ouvre."""
+
+    conservation = serializers.SerializerMethodField()
 
     class Meta:
         model = Qualification
         fields = "__all__"
+
+    def get_conservation(self, obj):
+        from .conservation_pieces import piece
+
+        return piece(obj.categorie_piece)
+
+    def validate_categorie_piece(self, valeur):
+        """Refuse une catégorie inconnue plutôt que de la laisser retomber en silence.
+
+        Le repli existe pour les entrées de catalogue créées avant cette table ; il ne doit
+        pas servir d'excuse à une faute de frappe au moment où quelqu'un règle justement la
+        conservation d'un titre. Se tromper ici décide du sort d'un fichier."""
+        from .conservation_pieces import CLES_DEPOSABLES
+
+        if valeur and valeur not in CLES_DEPOSABLES:
+            raise serializers.ValidationError(
+                f"Catégorie inconnue. Valeurs possibles : {', '.join(CLES_DEPOSABLES)}."
+            )
+        return valeur
 
 
 class QualificationMembreSerializer(serializers.ModelSerializer):
@@ -3388,6 +3415,10 @@ class QualificationMembreSerializer(serializers.ModelSerializer):
     # contrôle des droits (voir QualificationMembreViewSet). Servir une URL ici contournerait
     # ce contrôle — c'est la leçon des cinq endpoints de secrets mesh.
     a_justificatif = serializers.SerializerMethodField()
+    # Ce que devient la pièce, et quand. Servi avec le titre pour que l'écran distingue
+    # « aucune pièce déposée » de « pièce vérifiée puis détruite comme prévu » — deux états
+    # que le seul booléen `a_justificatif` confondait.
+    conservation = serializers.SerializerMethodField()
 
     class Meta:
         model = QualificationMembre
@@ -3398,7 +3429,7 @@ class QualificationMembreSerializer(serializers.ModelSerializer):
             # qualification en « vérifiée » et viderait de son sens la vérification par
             # l'encadrement. Il ne bouge que par `verifier` / `refuser`.
             "statut", "verifie_par", "verifie_le", "motif_refus",
-            "justificatif_depose_le",
+            "justificatif_depose_le", "piece_detruite_le",
         )
         extra_kwargs = {
             # Le fichier s'envoie, ne se relit pas : seule l'action dédiée le rend.
@@ -3413,6 +3444,15 @@ class QualificationMembreSerializer(serializers.ModelSerializer):
 
     def get_a_justificatif(self, obj):
         return bool(obj.justificatif)
+
+    def get_conservation(self, obj):
+        from .conservation_pieces import JOURS_AVANT_PURGE_NON_VALIDEE, piece
+
+        regle = piece(getattr(obj.qualification, "categorie_piece", ""))
+        return {
+            **regle,
+            "jours_avant_purge_non_validee": JOURS_AVANT_PURGE_NON_VALIDEE,
+        }
 
     def validate_justificatif(self, fichier):
         """Mémorise le nom d'origine : le nom réel est un UUID, et l'écran afficherait
@@ -3780,10 +3820,15 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
 
     institution_nom = serializers.CharField(source='institution.nom', read_only=True)
     membres = serializers.SerializerMethodField()
+    # DIFFUSION : qui a le droit d'y écrire, et donc qui le pont élève au niveau 50. Vide pour
+    # un salon de discussion ordinaire, où tout le monde parle.
+    redacteurs = serializers.SerializerMethodField()
+    lecture_seule = serializers.SerializerMethodField()
 
     class Meta:
         model = SalonMatrixInstitution
-        fields = ['id', 'institution', 'institution_nom', 'type', 'room_id', 'membres', 'date_creation', 'derniere_synchronisation']
+        fields = ['id', 'institution', 'institution_nom', 'type', 'room_id', 'membres',
+                  'redacteurs', 'lecture_seule', 'date_creation', 'derniere_synchronisation']
         read_only_fields = ['id', 'institution', 'type', 'date_creation']
 
     def get_membres(self, obj):
@@ -3791,6 +3836,16 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
 
         if obj.type == TypeSalonInstitution.PERMANENTS:
             queryset = obj.institution.utilisateurs.filter(is_active=True, type__in=ROLES_PERMANENTS_INSTITUTION)
+        elif obj.type == TypeSalonInstitution.ANNONCES:
+            # TOUT LE MONDE, et c'est la différence avec « Bénévoles mobilisés » : les membres
+            # des équipes actives, mais aussi les adhérents que rien ne mobilise en ce moment.
+            # Une annonce d'assemblée générale ou une consigne de sécurité ne s'adresse pas
+            # qu'à ceux qui sont déjà engagés — c'est même l'inverse qui est utile.
+            queryset = User.objects.filter(
+                Q(teams__institution=obj.institution, teams__actif=True)
+                | Q(institutions__institution=obj.institution, institutions__actif=True),
+                is_active=True,
+            ).distinct()
         else:
             # Union des membres de toutes les équipes ACTIVES de l'institution -- une équipe
             # désactivée (mission terminée) n'alimente plus ce salon, voir docstring du modèle.
@@ -3803,6 +3858,27 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
              "nom": nom_affichable(m, self.context.get("request")) or m.email}
             for m in queryset
         ]
+
+    def get_lecture_seule(self, obj):
+        return obj.type == TypeSalonInstitution.ANNONCES
+
+    def get_redacteurs(self, obj):
+        """Les identifiants Matrix du bureau, pour un salon de diffusion ; vide ailleurs.
+
+        Calculé ici et non dans le pont, comme la composition des salons : le pont ne connaît
+        ni les rattachements ni la notion de bureau, et c'est très bien ainsi — qui a le droit
+        d'écrire à toute une association est une décision métier."""
+        from .matrix import matrix_user_id
+
+        if obj.type != TypeSalonInstitution.ANNONCES:
+            return []
+        bureau = User.objects.filter(
+            is_active=True,
+            institutions__institution=obj.institution,
+            institutions__actif=True,
+            institutions__membre_bureau=True,
+        ).distinct()
+        return [matrix_user_id(m) for m in bureau]
 
 
 class LiaisonMeshtasticSerializer(serializers.ModelSerializer):
@@ -4428,11 +4504,20 @@ class PieceIdentiteReserveSerializer(SansIndexAveugleMixin, serializers.ModelSer
 
     a_recto = serializers.SerializerMethodField()
     a_verso = serializers.SerializerMethodField()
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    verifie_par_nom = serializers.SerializerMethodField()
+    conservation = serializers.SerializerMethodField()
 
     class Meta:
         model = PieceIdentiteReserve
-        fields = ['id', 'utilisateur', 'permis_recto', 'permis_verso', 'a_recto', 'a_verso', 'date_depot']
-        read_only_fields = ['utilisateur', 'date_depot']
+        fields = ['id', 'utilisateur', 'permis_recto', 'permis_verso', 'a_recto', 'a_verso',
+                  'date_depot', 'statut', 'statut_libelle', 'verifie_par', 'verifie_par_nom',
+                  'verifie_le', 'valable_jusqu_au', 'motif_refus', 'piece_detruite_le',
+                  'conservation']
+        # Le STATUT ne se pose pas par PATCH, comme pour QualificationMembre : sans cela, le
+        # candidat validerait son propre permis. Il ne bouge que par `verifier` / `refuser`.
+        read_only_fields = ['utilisateur', 'date_depot', 'statut', 'verifie_par', 'verifie_le',
+                            'motif_refus', 'piece_detruite_le']
         extra_kwargs = {
             'permis_recto': {'write_only': True, 'required': False},
             'permis_verso': {'write_only': True, 'required': False},
@@ -4443,6 +4528,20 @@ class PieceIdentiteReserveSerializer(SansIndexAveugleMixin, serializers.ModelSer
 
     def get_a_verso(self, obj):
         return bool(obj.permis_verso)
+
+    def get_verifie_par_nom(self, obj):
+        if not obj.verifie_par:
+            return None
+        return (nom_affichable(obj.verifie_par, self.context.get("request"))
+                or obj.verifie_par.email)
+
+    def get_conservation(self, obj):
+        """Toujours le régime du permis de conduire : c'est la seule pièce que ce modèle
+        porte, et c'est l'exemple même du « vérifier puis détruire »."""
+        from .conservation_pieces import JOURS_AVANT_PURGE_NON_VALIDEE, piece
+
+        return {**piece("PERMIS"),
+                "jours_avant_purge_non_validee": JOURS_AVANT_PURGE_NON_VALIDEE}
 
 
 class ModuleDegatsCriseSerializer(serializers.ModelSerializer):

@@ -304,6 +304,17 @@ def grant_institution_and_demo_access(user, institution, request=None):
             )
             _envoyer_email_acces_messagerie_equipe(user, team, request)
 
+    # SECTION DÉPARTEMENTALE (13/11/2026). Posée ici parce que cette fonction est le passage
+    # obligé de TOUS les chemins de rattachement : la poser dans l'un d'eux reproduirait le
+    # trou décrit ci-dessus, où « ajouter un contact » ne passait pas par ici.
+    #
+    # Best-effort et silencieux quand il n'y a pas de section, ou quand la fiche n'est pas
+    # encore géocodée : l'adhésion doit aboutir, et le rattachement se rejoue au premier
+    # enregistrement de la fiche.
+    from .rattachement_departemental import rattacher_sans_echouer
+
+    rattacher_sans_echouer(user, institution_ids=[institution.id], request=request)
+
 
 def attach_user_with_role(user, institution, role_code, request=None, fonction='Membre', contact_principal=False):
     """Rattache explicitement l'utilisateur à `institution` avec le rôle qu'il a choisi — appelé

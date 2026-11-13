@@ -70,6 +70,10 @@
               (click)="ouvrirOnglet('disponibilites')">
         <span class="material-icons">event_available</span> Disponibilités
       </button>
+      <button type="button" [class.actif]="onglet === 'catalogue'"
+              (click)="ouvrirOnglet('catalogue')">
+        <span class="material-icons">rule</span> Catalogue des titres
+      </button>
       <button type="button" [class.actif]="onglet === 'liens'"
               (click)="ouvrirOnglet('liens')">
         <span class="material-icons">link</span> Liens d'invitation
@@ -740,6 +744,10 @@
                 }
               </div>
 
+              <app-conservation-pieces
+                titre="Politique de conservation des pièces — ce que vous devez à vos membres">
+              </app-conservation-pieces>
+
               <div class="bloc-titres">
                 <h4>
                   Qualifications et justificatifs
@@ -776,6 +784,28 @@
                           <p class="motif">Refusée : {{ q.motif_refus }}</p>
                         }
 
+                        @if (q.conservation; as regle) {
+                          <p class="piece-regle"
+                             [class.destruction]="regle.regime === 'VERIFIER_DETRUIRE'">
+                            @if (regle.regime === 'VERIFIER_DETRUIRE') {
+                              <strong>Valider détruit la pièce.</strong>
+                              C'est voulu : ce document se vérifie et ne se conserve pas. Il
+                              restera votre nom, la date, et l'échéance que vous aurez
+                              relevée.
+                            } @else {
+                              Conservation : {{ regle.duree | lowercase }}.
+                            }
+                            <span class="piece-loi">{{ regle.base_legale }}</span>
+                          </p>
+                        }
+                        @if (q.piece_detruite_le && !q.a_justificatif) {
+                          <p class="motif">
+                            Pièce détruite le
+                            {{ q.piece_detruite_le | date:'dd/MM/yyyy' }} — vérification
+                            consignée, document non conservé.
+                          </p>
+                        }
+
                         <div class="piece-actions">
                           @if (q.a_justificatif) {
                             <button type="button" class="voir-piece" (click)="voirPiece(q)">
@@ -789,6 +819,11 @@
                             </span>
                           }
                           @if (q.statut !== 'VERIFIEE' && q.a_justificatif) {
+                            <button type="button" class="btn-secondary sm"
+                                    (click)="ouvrirRequalification(q)">
+                              <span class="material-icons">swap_horiz</span>
+                              Ce n'est pas le bon titre
+                            </button>
                             <button type="button" class="btn-primary sm"
                                     (click)="verifierPiece(q)">
                               <span class="material-icons">verified</span>
@@ -803,6 +838,34 @@
                             </button>
                           }
                         </div>
+
+                        @if (requalificationEnCours?.id === q.id) {
+                          <div class="requalification">
+                            <label>
+                              Titre réel de cette pièce
+                              <select [(ngModel)]="requalificationEnCours!.qualification"
+                                      [name]="'requal-' + q.id">
+                                @for (t of catalogue; track t.id) {
+                                  <option [ngValue]="t.id">{{ t.nom }}</option>
+                                }
+                              </select>
+                            </label>
+                            <p class="page-hint">
+                              Le titre décide de ce qu'on fait du fichier : un permis rangé
+                              sous « diplôme » serait conservé des années au lieu d'être
+                              détruit une fois vérifié. Corriger ici remet la pièce à
+                              instruire sous son vrai titre.
+                            </p>
+                            <div class="requalification-actions">
+                              <button type="button" class="btn-secondary sm"
+                                      (click)="annulerRequalification()">Annuler</button>
+                              <button type="button" class="btn-primary sm"
+                                      (click)="confirmerRequalification()">
+                                Requalifier
+                              </button>
+                            </div>
+                          </div>
+                        }
 
                         @if (refusPieceEnCours?.id === q.id) {
                           <div class="refus">
@@ -1251,6 +1314,78 @@
     }
 
     <!-- ══ Liens d'invitation ══════════════════════════════════════════════ -->
+    <!-- ══ Catalogue des titres ═══════════════════════════════════════════════
+         Le réglage qui manquait : la catégorie d'un titre décide de ce qu'on fait des
+         pièces déposées sous ce titre. Sans cet écran, tout restait sur le défaut prudent
+         (conservation) et un permis n'aurait jamais été détruit. -->
+    @if (onglet === 'catalogue') {
+      <section class="bloc">
+        <h2>Catalogue des titres et conservation des pièces</h2>
+        <p class="page-hint">
+          Ce catalogue est partagé par toutes les associations de la plateforme : « PSE1 »,
+          « permis C », « CACES » sont un vocabulaire commun. Ce qui se règle ici, c'est
+          <strong>ce que devient la pièce déposée sous chaque titre</strong> — vérifiée puis
+          détruite, ou conservée, et combien de temps.
+        </p>
+
+        @if (titresARegler.length) {
+          <div class="alert alert-warning">
+            <span class="material-icons">rule_folder</span>
+            <div>
+              <strong>{{ titresARegler.length }} titre(s) sur le réglage par défaut.</strong>
+              Par prudence, un titre dont la catégorie n'a jamais été choisie est traité
+              comme un titre de secourisme, donc <em>conservé</em>. Tant qu'un permis ou une
+              pièce d'identité y reste, sa copie ne sera jamais détruite.
+            </div>
+          </div>
+        }
+
+        <app-conservation-pieces
+          titre="La politique appliquée, régime par régime">
+        </app-conservation-pieces>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Titre</th>
+                <th>Catégorie de conservation</th>
+                <th>Ce qu'il advient de la pièce</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of catalogue; track t.id) {
+                <tr [class.a-regler]="!t.categorie_piece">
+                  <th scope="row">{{ t.nom }}</th>
+                  <td>
+                    <select [ngModel]="categorieDe(t)" [name]="'cat-' + t.id"
+                            (ngModelChange)="changerCategorie(t, $event)">
+                      @for (c of categoriesProposables; track c.cle) {
+                        <option [value]="c.cle">{{ c.libelle }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td>
+                    @if (t.conservation; as regle) {
+                      <span class="duree-titre"
+                            [class.destruction]="regle.regime === 'VERIFIER_DETRUIRE'">
+                        {{ regle.duree }}
+                      </span>
+                      <span class="loi-titre">{{ regle.base_legale }}</span>
+                    } @else {
+                      <span class="vide">—</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="3" class="empty">Catalogue vide.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
     @if (onglet === 'liens') {
       <p class="help-text">
         <span class="material-icons">info</span>

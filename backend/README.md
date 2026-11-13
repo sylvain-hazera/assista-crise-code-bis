@@ -131,12 +131,13 @@ Les clés de chiffrement doivent être présentes dans `.env`, sinon une quinzai
 | `generate_benevoles_pompiers_national [--total N]` | idem sur toute la France, sur de vraies adresses BAN |
 | `cleanup_crises [--dry-run]` | supprime les données des crises closes depuis plus de 30 jours (RGPD), avec archive CSV sans coordonnées |
 | `purge_audit_logs` | supprime les entrées d'`AuditLog` plus anciennes que `AUDIT_LOG_RETENTION_DAYS` |
+| `purger_pieces_non_validees [--appliquer]` | détruit les justificatifs déposés depuis plus de 30 jours que personne n'a instruits, après un rappel à J-7 (simulation par défaut) |
 | `verifier_alertes_sismiques` | diffuse sur le mesh les séismes récents proches des institutions abonnées |
 | `backfill_zones_mon_territoire` | rattrapage de la Zone « Mon territoire » des collectivités créées avant son automatisation |
 | `synchroniser_sortant` / `synchroniser_entrant` | synchronisation satellite ↔ central (sur un satellite `full`) |
 
-`cleanup_crises`, `purge_audit_logs` et `verifier_alertes_sismiques` sont prévues pour être
-planifiées (cron) en production.
+`cleanup_crises`, `purge_audit_logs`, `purger_pieces_non_validees` et
+`verifier_alertes_sismiques` sont prévues pour être planifiées (cron) en production.
 
 Scripts de développement à la racine du backend :
 

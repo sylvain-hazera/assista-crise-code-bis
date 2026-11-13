@@ -265,7 +265,14 @@
           <p class="aide">
             Permis, diplômes, attestations de formation. Ces fichiers sont chiffrés et ne sont
             consultables que par votre encadrement — jamais par les autres membres.
+            <strong>Nous ne les gardons que le temps où ils servent</strong> : certaines
+            pièces sont détruites dès qu'elles ont été vérifiées.
           </p>
+
+          <app-conservation-pieces
+            [seulementDeposables]="true"
+            titre="Ce que deviennent vos pièces, et pourquoi nous les demandons">
+          </app-conservation-pieces>
 
           @if (mesQualifications.length === 0) {
             <p class="vide">Aucune qualification enregistrée pour l'instant.</p>
@@ -300,6 +307,15 @@
                       Vérifiée
                       @if (q.verifie_par_nom) { par {{ q.verifie_par_nom }} }
                       @if (q.verifie_le) { le {{ q.verifie_le | date:'dd/MM/yyyy' }} }
+                    </p>
+                  }
+
+                  @if (q.piece_detruite_le && !q.a_justificatif) {
+                    <p class="motif ok">
+                      <span class="material-icons">delete_sweep</span>
+                      Pièce détruite le {{ q.piece_detruite_le | date:'dd/MM/yyyy' }}, comme
+                      prévu : ce document se vérifie et ne se conserve pas. Votre titre, lui,
+                      reste enregistré.
                     </p>
                   }
 
@@ -355,6 +371,32 @@
                      placeholder="Croix-Rouge, préfecture…">
             </label>
           </div>
+
+          @if (regleDuTitreChoisi; as regle) {
+            <div class="regle-du-depot" [class.destruction]="regle.regime === 'VERIFIER_DETRUIRE'">
+              <span class="material-icons">
+                {{ regle.regime === 'VERIFIER_DETRUIRE' ? 'auto_delete' : 'lock_clock' }}
+              </span>
+              <div>
+                <p class="regle-titre">
+                  @if (regle.regime === 'VERIFIER_DETRUIRE') {
+                    Ce document sera détruit dès qu'il aura été vérifié.
+                  } @else {
+                    Ce document sera conservé : {{ regle.duree | lowercase }}.
+                  }
+                </p>
+                <p class="regle-pourquoi">{{ regle.pourquoi }}</p>
+                <p class="regle-loi">{{ regle.base_legale }}</p>
+                @if (regle.jours_avant_purge_non_validee) {
+                  <p class="regle-pourquoi">
+                    S'il n'est relu par personne, il sera détruit au bout de
+                    {{ regle.jours_avant_purge_non_validee }} jours et vous en serez
+                    prévenu(e).
+                  </p>
+                }
+              </div>
+            </div>
+          }
 
           <label class="fichier">
             <span class="material-icons">attach_file</span>

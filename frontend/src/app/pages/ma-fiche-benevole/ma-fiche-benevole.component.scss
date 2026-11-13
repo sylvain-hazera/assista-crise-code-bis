@@ -438,3 +438,34 @@ label {
   white-space: nowrap;
   border: 0;
 }
+
+/* Ce qui arrivera à la pièce qu'on s'apprête à déposer, dit AVANT l'envoi.
+   Placé juste au-dessus du sélecteur de fichier, et non dans une page d'aide : apprendre
+   après coup que sa photo de permis a été détruite — ou au contraire gardée cinq ans — n'est
+   pas un consentement. */
+.regle-du-depot {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  margin: 1rem 0;
+  padding: .75rem .9rem;
+  border-left: 3px solid var(--ac-primary, #2563eb);
+  border-radius: 6px;
+  background: var(--ac-surface-alt, #f8fafc);
+
+  &.destruction { border-left-color: var(--ac-danger, #dc2626); }
+
+  .material-icons { color: var(--ac-text-muted, #475569); }
+
+  p { margin: 0; }
+}
+
+.regle-titre { font-weight: 600; }
+
+.regle-pourquoi,
+.regle-loi {
+  font-size: .85rem;
+  color: var(--ac-text-muted, #475569);
+}
+
+.regle-loi { font-style: italic; margin-top: .2rem !important; }

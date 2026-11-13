@@ -1,0 +1,81 @@
+<section class="conservation">
+  <button type="button" class="conservation-entete" (click)="basculer()"
+          [attr.aria-expanded]="ouvert">
+    <span class="material-icons">gavel</span>
+    <span class="conservation-titre">{{ titre }}</span>
+    <span class="material-icons chevron">{{ ouvert ? 'expand_less' : 'expand_more' }}</span>
+  </button>
+
+  @if (erreur) {
+    <p class="conservation-erreur">{{ erreur }}</p>
+  }
+
+  @if (ouvert && table) {
+    <div class="conservation-corps">
+      <p class="conservation-intro">
+        Nous ne gardons un document que le temps où il sert à quelque chose. Trois régimes
+        suffisent à dire ce qui arrive à chaque pièce :
+      </p>
+
+      <ul class="regimes">
+        @for (r of regimes; track r.code) {
+          <li [class]="classeRegime(r.code)">
+            <strong>{{ r.libelle }}</strong>
+            <span class="regime-resume">{{ r.resume }}</span>
+            <span class="regime-pourquoi">{{ r.pourquoi }}</span>
+          </li>
+        }
+      </ul>
+
+      @for (famille of familles; track famille.code) {
+        <h4 class="famille">{{ famille.libelle }}</h4>
+        <div class="table-defilante">
+          <table class="table-conservation">
+            <thead>
+              <tr>
+                <th>Pièce</th>
+                <th>Pourquoi nous la demandons</th>
+                <th>Ce qu'elle devient</th>
+                <th>Texte applicable</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (p of famille.pieces; track p.cle) {
+                <tr>
+                  <th scope="row">{{ p.libelle }}</th>
+                  <td>{{ p.pourquoi }}</td>
+                  <td>
+                    <span class="puce" [class]="classeRegime(p.regime)">
+                      {{ libelleRegime(p.regime) }}
+                    </span>
+                    <span class="duree">{{ p.duree }}</span>
+                    @if (!p.ferme) {
+                      <span class="indicative">
+                        Durée recommandée : aucun texte ne l'impose, elle suit le délai
+                        pendant lequel l'association peut avoir à se justifier.
+                      </span>
+                    }
+                  </td>
+                  <td class="base-legale">{{ p.base_legale }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <p class="conservation-note">
+        Une pièce déposée que personne n'a relue est détruite au bout de
+        {{ table.jours_avant_purge_non_validee }} jours, après un avertissement
+        {{ table.jours_avant_rappel_purge }} jours avant. Le titre et ses dates sont
+        conservés : seul le fichier disparaît, et une nouvelle pièce peut être déposée.
+      </p>
+      <p class="conservation-note">
+        Les durées accompagnées d'une référence d'article sont imposées par la loi. Les autres
+        sont celles que nous recommandons. Cette politique est destinée à être validée par le
+        délégué à la protection des données de votre association, qui l'inscrira à son
+        registre des traitements.
+      </p>
+    </div>
+  }
+</section>

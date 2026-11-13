@@ -120,6 +120,11 @@ def creer_equipe_fille(institution_fille, institution_mere, utilisateur, environ
             equipe_parente=parente,
             environment=environnement,
         )
+        # Les salons naissent avec l'équipe (13/11/2026) : créer l'équipe de la médiathèque
+        # sans lui donner d'endroit où se parler ne sert à rien.
+        from .matrix import provisionner_salons_equipe
+
+        provisionner_salons_equipe(equipe, environnement)
         return equipe
     except Exception:  # noqa: BLE001 - voir la docstring : jamais au prix de l'institution
         return None

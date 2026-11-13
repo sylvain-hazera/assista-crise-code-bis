@@ -33,10 +33,15 @@ type Onglet = 'fiche' | 'disponibilites' | 'justificatifs' | 'acces';
  *   d'instruction (déclarée / vérifiée / refusée) et le motif d'un refus, sans quoi le membre
  *   redépose la même pièce sans savoir ce qui n'allait pas.
  */
+import {
+  ConservationPiecesComponent,
+} from '../../shared/components/common/conservation-pieces/conservation-pieces.component';
+import { PieceConservation } from '../../shared/models/conservation-piece.model';
+
 @Component({
   selector: 'app-ma-fiche-benevole',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ConservationPiecesComponent],
   templateUrl: './ma-fiche-benevole.component.html',
   styleUrl: './ma-fiche-benevole.component.scss',
 })
@@ -321,6 +326,14 @@ export class MaFicheBenevoleComponent implements OnInit {
 
   /** Préremplit l'échéance depuis la durée habituelle du titre — une proposition, pas une
    * contrainte : c'est la date portée par l'attestation qui fait foi. */
+  /** Ce qui arrivera à la pièce qu'on s'apprête à déposer. Annoncé AVANT l'envoi : apprendre
+   * après coup que sa photo de permis a été détruite, ou au contraire conservée cinq ans,
+   * n'est pas un consentement. */
+  get regleDuTitreChoisi(): PieceConservation | null {
+    const titre = this.catalogue.find(q => q.id === this.depot.qualification);
+    return titre?.conservation ?? null;
+  }
+
   onTitreChoisi(): void {
     const titre = this.catalogue.find(q => q.id === this.depot.qualification);
     const base = this.depot.date_obtention;

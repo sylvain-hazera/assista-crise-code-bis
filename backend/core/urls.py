@@ -97,6 +97,7 @@ from .views import (
     HabitationHistoriqueViewSet,
     RattachementHabitationViewSet,
     ModuleDegatsCriseViewSet,
+    ConservationPiecesView,
     PieceIdentiteReserveViewSet,
     BrandingView,
     SondeView,
@@ -311,6 +312,9 @@ urlpatterns = [
     # le seul moteur du projet : ce n'est pas une seconde source, c'est un acces simplifie
     # (voir MesDisponibilitesView).
     path('mes-disponibilites/', MesDisponibilitesView.as_view(), name='mes_disponibilites'),
+    # Politique de conservation des pièces justificatives : régime, durée, base légale et
+    # « pourquoi ». Affichée sur la page de dépôt comme sur la page de validation.
+    path('conservation-pieces/', ConservationPiecesView.as_view(), name='conservation_pieces'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),

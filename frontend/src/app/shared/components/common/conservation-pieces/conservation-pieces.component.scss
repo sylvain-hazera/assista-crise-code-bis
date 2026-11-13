@@ -1,0 +1,129 @@
+/* Politique de conservation des pièces.
+   Repliée par défaut : trente lignes de droit au-dessus d'un bouton « Déposer » ne se lisent
+   pas. Ce qui se lit, c'est la phrase sur la pièce qu'on s'apprête à déposer, affichée par la
+   page appelante ; ce bloc est là pour qui veut tout vérifier. */
+.conservation {
+  margin: 1rem 0;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  overflow: hidden;
+}
+
+.conservation-entete {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  padding: .75rem 1rem;
+  border: 0;
+  background: var(--ac-surface-alt, #f8fafc);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  .conservation-titre {
+    flex: 1;
+    font-weight: 600;
+  }
+
+  .material-icons { color: var(--ac-text-muted, #475569); }
+}
+
+.conservation-erreur {
+  margin: 0;
+  padding: .6rem 1rem;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #475569);
+}
+
+.conservation-corps {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.conservation-intro,
+.conservation-note {
+  margin: 0;
+  font-size: .88rem;
+  color: var(--ac-text-muted, #475569);
+}
+
+.regimes {
+  display: grid;
+  gap: .6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    padding: .6rem .75rem;
+    border-left: 3px solid var(--ac-border, #cbd5e1);
+    border-radius: 4px;
+    background: var(--ac-surface-alt, #f8fafc);
+    font-size: .88rem;
+  }
+}
+
+/* Une couleur par régime : c'est l'information qui décide du sort du fichier, elle doit se
+   repérer d'un coup d'œil dans un tableau de trente lignes. */
+.regime-verifier-detruire { border-left-color: var(--ac-danger, #dc2626); }
+.regime-conserver-engagement { border-left-color: var(--ac-warning, #d97706); }
+.regime-duree-legale { border-left-color: var(--ac-primary, #2563eb); }
+
+.regime-resume { color: var(--ac-text, #0f172a); }
+.regime-pourquoi { color: var(--ac-text-muted, #475569); }
+
+.famille {
+  margin: .5rem 0 0;
+  font-size: .95rem;
+}
+
+.table-defilante { overflow-x: auto; }
+
+.table-conservation {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+
+  th, td {
+    padding: .5rem .6rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--ac-border, #e2e8f0);
+  }
+
+  thead th {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ac-text-muted, #475569);
+  }
+
+  tbody th { font-weight: 600; }
+}
+
+.puce {
+  display: inline-block;
+  padding: .1rem .45rem;
+  margin-bottom: .25rem;
+  border-radius: 999px;
+  border-left: 3px solid var(--ac-border, #cbd5e1);
+  background: var(--ac-surface-alt, #f1f5f9);
+  font-size: .78rem;
+}
+
+.duree { display: block; font-weight: 600; }
+
+.indicative,
+.base-legale {
+  display: block;
+  color: var(--ac-text-muted, #475569);
+}
+
+.indicative { font-size: .8rem; font-style: italic; }

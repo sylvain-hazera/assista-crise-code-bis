@@ -136,6 +136,22 @@ export class AssociationService {
                          { responseType: 'blob' });
   }
 
+  /** Corrige le titre sous lequel une pièce a été déposée.
+   *
+   * Pas un détail d'affichage : c'est ce qui décide du sort du fichier. Un permis rangé sous
+   * « Diplôme » serait conservé cinq ans au lieu d'être détruit à la validation. */
+  requalifierPiece(id: string, qualificationId: string): Observable<QualificationMembre> {
+    return this.http.post<QualificationMembre>(
+      `${this.qualificationsMembres}/${id}/requalifier/`, { qualification: qualificationId });
+  }
+
+  /** Règle la catégorie de conservation d'une entrée du CATALOGUE — donc de toutes les
+   * pièces déposées sous ce titre. Réservé aux comptes institutionnels côté serveur. */
+  definirCategoriePiece(id: string, categorie: string): Observable<Qualification> {
+    return this.http.patch<Qualification>(`${this.qualifications}/${id}/`,
+                                          { categorie_piece: categorie });
+  }
+
   verifierQualification(id: string): Observable<QualificationMembre> {
     return this.http.post<QualificationMembre>(`${this.qualificationsMembres}/${id}/verifier/`, {});
   }

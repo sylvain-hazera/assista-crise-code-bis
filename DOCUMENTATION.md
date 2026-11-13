@@ -1176,6 +1176,126 @@ d'authentification, et le navigateur afficherait une page de refus.
 savoir ce qui n'allait pas. Redéposer remet le titre à instruire : c'est la seule façon de
 répondre à un refus.
 
+#### Politique de conservation : ce qu'on annonce est ce qu'on fait
+
+`core/conservation_pieces.py` (la table) et `core/pieces_conformite.py` (ce qui l'exécute),
+migration `0267`. Demande du 13/11/2026 : afficher le tableau, le texte de loi applicable et
+le pourquoi **sur la page de dépôt et sur la page de validation**, et appliquer la règle —
+« pour le permis, la destruction du fichier une fois validé, et une destruction à 30 jours
+s'il n'est pas validé ».
+
+**La table est une donnée du logiciel, pas un texte recopié dans deux gabarits.** C'est elle
+qui décide de détruire le fichier ; l'écran l'affiche, il ne la redit pas. Deux copies
+finiraient par diverger, et c'est l'écran qui aurait tort : il promettrait une destruction qui
+n'aurait pas lieu, ce qui est pire que ne rien promettre. Servie par
+`GET /api/conservation-pieces/`, et attachée à chaque titre du catalogue (`conservation`) pour
+que la règle puisse être annoncée **au moment du choix du titre**.
+
+Trois régimes, portés par `Qualification.categorie_piece` :
+
+| Régime | Ce qui reste | Exemples |
+|---|---|---|
+| `VERIFIER_DETRUIRE` | la trace (qui, quand, valable jusqu'au), jamais la copie ni le numéro | pièce d'identité, permis, titre de séjour, justificatif de domicile |
+| `CONSERVER_ENGAGEMENT` | la pièce, le temps de l'engagement + la prescription | PSE1/2, formation continue, certificat médical |
+| `DUREE_LEGALE` | la pièce, pour la durée imposée par un texte | RIB et pièces comptables (10 ans, art. L123-22 c. com.) |
+
+Quatre règles tiennent l'ensemble :
+
+- **La trace survit au fichier.** `piece_detruite_le` distingue « aucune pièce déposée » de
+  « vérifiée, puis détruite comme prévu » — deux états que le seul booléen `a_justificatif`
+  confondait. Sans cette trace, personne n'oserait détruire : il ne resterait plus rien pour
+  montrer que le contrôle a eu lieu.
+- **La destruction suit la décision dans la même requête**, validation comme refus. La
+  différer à une tâche de nuit laisserait une fenêtre pendant laquelle la politique affichée
+  serait fausse.
+- **Trente jours sans décision, et le fichier part** (`purger_pieces_non_validees`, simulation
+  par défaut, rappel à J-7). La LIGNE survit : supprimer tout ferait perdre au membre la date
+  et l'organisme qu'il avait saisis, une double peine pour une négligence qui n'est pas la
+  sienne.
+- **Une catégorie inconnue ne détruit rien.** Une entrée de catalogue créée par une
+  institution retombe sur `SECOURISME` : se tromper fait garder une pièce de trop, jamais
+  perdre une pièce qu'il fallait.
+
+**`PieceIdentiteReserve` était l'exception, et c'était un défaut.** Le permis d'un candidat à
+une réserve y était conservé indéfiniment : aucun état de validation, aucune suppression, la
+seule date portée étant celle du dépôt — l'inverse exact de la politique, sur la pièce qui en
+est l'exemple même. Il porte désormais le même cycle (`verifier` / `refuser`, `valable_jusqu_au`
+relevé au contrôle, images détruites dans la foulée) et une liste `a-instruire` : une politique
+de destruction qui dépend d'une validation que personne ne peut déclencher ne s'applique
+jamais.
+
+Les durées marquées `ferme` citent un article et sont opposables ; les autres sont
+**recommandées** et alignées sur les délais de prescription (art. 2224 et 2226 du code civil).
+L'écran le dit — présenter une recommandation comme une obligation est une faute symétrique de
+l'inverse. Le registre des traitements reste à valider par le DPO de l'association.
+
+**Régler le catalogue, et corriger une pièce mal rangée.** Deux ajouts du 13/11/2026 sans
+lesquels la politique s'affiche sans jamais s'appliquer :
+
+- Onglet **Catalogue des titres** de `/admin/membres-association` : la catégorie de
+  conservation se règle par entrée du catalogue, avec la durée et le texte applicable en
+  regard. L'écran compte et signale les titres restés sur le défaut — tant qu'un permis y
+  reste, sa copie ne sera jamais détruite, et personne ne s'en apercevrait. Le serveur refuse
+  une catégorie inconnue (`validate_categorie_piece`) : le repli silencieux existe pour les
+  entrées antérieures à cette table, pas pour couvrir une faute de frappe au moment où l'on
+  décide du sort d'un fichier.
+- Action **`requalifier`** sur `QualificationMembre`, proposée à côté du bouton « Valider » :
+  « si le bénévole se plante et met permis dans diplôme, le management doit pouvoir modifier
+  cela ». Le titre décide du régime, donc corriger **avant** de valider est la seule façon
+  d'appliquer la bonne règle — d'où la correction posée là où la décision se prend, et non
+  dans un écran d'édition séparé. Le statut retombe à `DECLAREE` (on se prononce sur le titre
+  corrigé), une pièce déjà vérifiée n'est plus requalifiable (son fichier peut avoir été
+  détruit, la déplacer sous un régime conservateur ferait croire à une pièce qu'on n'a plus),
+  et le doublon interdit par la contrainte `(personne, titre, environnement)` est annoncé en
+  409 plutôt que rendu en erreur de base de données.
+
+#### Section départementale : où arrive un bénévole qui adhère
+
+`core/rattachement_departemental.py`. Une « section départementale » n'est pas un concept de
+plus : c'est une `Team` d'échelon `DEPARTEMENTAL` dont `territoire_code` porte le code INSEE du
+département. Le rattachement est posé dans `grant_institution_and_demo_access` — le passage
+obligé de **tous** les chemins de rattachement, et non dans l'un d'eux, pour ne pas reproduire
+le trou où « ajouter un contact » n'y passait pas.
+
+Pourquoi un défaut plutôt qu'une question : un bénévole qui s'inscrit ne connaît pas
+l'organigramme, et le lui demander produit soit un choix au hasard, soit un champ vide. Or
+quelqu'un rattaché à rien n'est dans aucun salon, ne reçoit aucune campagne ciblée par
+territoire et n'apparaît sur aucune grille — il a adhéré pour rien. Le département vient du
+**géocodage** et non du code postal (la Corse partage `20xxx`, l'outre-mer demande trois
+chiffres).
+
+Ce n'est pas une assignation : l'encadrement déplace qui il veut, et un déménagement retire de
+l'ancienne section (`retirer_les_autres=True`) — rester mobilisable à 700 km et figurer dans
+deux salons départementaux serait pire que ne pas être rattaché du tout. Sans section dans le
+département, rien n'est inventé : la personne reste dans l'équipe de tête.
+
+#### Les salons naissent avec l'équipe, et le salon d'annonces
+
+`matrix.provisionner_salons_equipe`, appelé par `TeamViewSet.perform_create`,
+`creer_avec_membres` et `creer_equipe_fille`. Les deux salons (Intervenants, Encadrement)
+existent dès la création : c'était un second geste depuis la fiche de l'équipe, que personne ne
+faisait. L'**inscription** des membres n'a rien demandé de plus — le pont resynchronise la
+composition en continu, donc quelqu'un qui rejoint l'équipe demain y entre tout seul.
+
+`TypeSalonInstitution.ANNONCES` (migration `0268`) est une **diffusion**, pas un troisième
+salon de discussion : tous les membres de l'association le reçoivent — y compris ceux
+qu'aucune équipe active ne mobilise, ce qui le distingue de « Bénévoles mobilisés » — et seul
+le bureau (`ContactInstitution.membre_bureau`) y publie. Techniquement : `events_default: 50`
+posé à la création du salon, et niveau 50 accordé aux seuls rédacteurs que Django désigne
+(`SalonMatrixInstitutionSerializer.get_redacteurs`), reposé à chaque cycle — un ancien
+trésorier ne doit pas garder le droit d'écrire à toute l'association. Le pont ne relit et ne
+republie que si les niveaux ont changé : republier un état identique toutes les 30 s est ce
+qui avait saturé Synapse le 22/10 avec les noms d'affichage.
+
+Le contrôle est **répété côté web** (`_est_membre_bureau`) parce que le relais de chat écrit
+avec le compte du bot, qui est administrateur du salon : sans ce garde-fou, passer par
+l'interface contournerait la restriction posée dans Element.
+
+Pourquoi un salon à part plutôt qu'une consigne dans le salon des bénévoles : une annonce qui
+compte doit être lisible sans remonter trente messages de coordination, et une consigne de
+politesse ne tient pas en situation — c'est au salon de garantir le silence, pas aux gens. La
+diffusion ne remplace pas la conversation, elle la décharge.
+
 #### L'arborescence repliable et sa pastille
 
 Onglet **Équipes et justificatifs** de `/admin/membres-association`. Le serveur sert une liste
