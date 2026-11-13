@@ -466,3 +466,101 @@ toucher au domaine, c'est que l'abstraction a épousé la forme de la première.
    politique de clé et le quota de tuiles, et à choisir le **second fournisseur de repli**,
    l'IGN n'offrant aucune garantie de service. À remplacer avant la mise en magasin : le style
    tiers hébergé sur GitHub qu'utilise le web aujourd'hui.
+
+---
+
+# Annexe A — Relais série par le navigateur
+
+**Chantier distinct, indépendant des lots 0 à 5.** Autre public, autre calendrier, bien plus
+court. Il ne dépend d'aucun jalon de l'application mobile et peut être mené en parallèle.
+
+## Le besoin, et il est réel
+
+Cas présenté le 13/11/2026 : **urgence sur un poste verrouillé où l'on ne peut rien installer**
+— typiquement un PC de mairie sous contrôle informatique. Pas de Docker, pas d'exécutable, pas
+de pilote. **Mais l'USB fonctionne**, et quelqu'un a un nœud LoRa dans la poche.
+
+Le profil `gw` du satellite répond déjà à « un PC qui sert de passerelle », en mieux : c'est un
+service, il survit au redémarrage, il gère les deux radios et le Wi-Fi. **Mais il exige
+Docker.** Sur ce poste-là, il est hors d'atteinte. C'est la seule situation qui justifie une
+seconde voie — et elle ne la remplace pas.
+
+**Préalables vérifiés sur le poste réel avant d'écrire la moindre ligne**, et tous deux passés
+le 13/11/2026 :
+
+1. **Chrome autorise Web Serial** (la politique d'entreprise `DefaultSerialGuardSetting` peut
+   le désactiver — le même verrouillage qui interdit d'installer restreint souvent les API de
+   périphériques) ;
+2. **le nœud apparaît comme port série sans pilote.** Dépend de la puce USB : ESP32-S3 en USB
+   natif et CP2102 passent sur Windows 10/11 ; **CH340 exige un pilote**, donc échoue. Sur une
+   autre carte, à revérifier.
+
+## La conception : un tuyau, pas un client
+
+```
+Nœud USB ──Web Serial── Navigateur ──WebSocket── Central ── meshcore-bridge existant
+```
+
+**Le navigateur ne parle pas le protocole.** Il ne fait que transporter des octets. Le central
+ouvre une socket locale par session et y branche le pont **tel quel**, par son transport
+`create_tcp` qui existe déjà.
+
+C'est ce qui rend ce chantier court, et la raison mérite d'être écrite : sans cela il faudrait
+une **troisième implémentation** du protocole MeshCore — après le Python du pont et le Kotlin de
+l'application mobile. Trois implémentations du même protocole, ce sont trois fois les mêmes
+bugs, découverts à trois moments différents.
+
+Conséquences :
+
+- **aucun codec à écrire**, nulle part ;
+- **le décodage et les règles restent sur le serveur**, où ils sont déjà écrits et testés ;
+- **les deux radios marchent d'emblée** — le tuyau ignore ce qui passe dedans ;
+- le code navigateur tient en **quelques centaines de lignes**.
+
+### Conscient des trames, aveugle au contenu
+
+Le navigateur **découpe** les trames sans les interpréter. Le cadrage est trivial :
+
+| Réseau | Début de trame | Longueur |
+|---|---|---|
+| MeshCore | `0x3e` | 2 octets, little-endian |
+| Meshtastic | `0x94 0xC3` | 2 octets |
+
+(MeshCore relevé dans `meshcore/reader.py` de la bibliothèque que notre pont utilise déjà.)
+
+Pourquoi découper plutôt que relayer le flux brut : à la reconnexion d'une WebSocket, un flux
+brut laisse **une demi-trame** sur le fil. La bibliothèque sait se resynchroniser en cherchant
+l'octet de début — c'est à cela qu'il sert — mais vingt lignes de découpage évitent d'en
+dépendre.
+
+## Ce qui reste dur
+
+- **L'onglet doit rester ouvert.** Incontournable. Demander un verrou d'écran (*Wake Lock*) et
+  afficher un état sans ambiguïté : « ce poste relaie, ne fermez pas cet onglet ». Une page
+  n'est pas un service, et il faut le dire plutôt que de le laisser découvrir.
+- **Le central porte un état par navigateur connecté** : une socket et une session par relais.
+  Plus lourd à exploiter qu'un satellite qui appelle. Borner le nombre de relais simultanés et
+  nettoyer les sessions mortes.
+- **L'authentification est critique.** Le relais injecte des trames dans le maillage : il doit
+  être rattaché à un compte authentifié **et à un companion précis**, sinon n'importe qui émet
+  sur la radio d'autrui.
+- **Chrome et Edge uniquement**, en HTTPS. Ni Firefox, ni Safari, ni iOS. À dire dans
+  l'interface, pas à laisser découvrir.
+
+## Lots
+
+| Lot | Contenu | Fini quand |
+|---|---|---|
+| **R0** | Point d'entrée WebSocket côté central, session liée à un compte et à un companion, socket locale branchée sur le pont existant | Un client de test qui rejoue un flux série enregistré fait apparaître des messages dans Assista-Crise |
+| **R1** | Page « Devenir passerelle » : Web Serial, choix du port, découpage des trames, état de la liaison | Un nœud branché en USB sur un poste verrouillé relaie réellement vers le central |
+| **R2** | Robustesse : reconnexion, verrou d'écran, bornes de sessions, nettoyage | Fermer et rouvrir l'onglet, débrancher et rebrancher le nœud, sans intervention côté serveur |
+
+R0 est intégralement vérifiable **sans matériel ni navigateur** : un flux série enregistré
+suffit. C'est donc la partie qui va à pleine vitesse.
+
+## Ce que ce chantier n'est pas
+
+**Ce n'est pas un satellite.** Il ajoute de la portée radio au central ; il n'ajoute **aucune
+résilience**. Si internet tombe, le navigateur ne joint plus l'API — contrairement à un
+satellite `full`, qui porte son propre Django. Les deux répondent à des besoins opposés et ne se
+remplacent pas.
