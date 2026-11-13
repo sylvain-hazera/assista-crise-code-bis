@@ -55,6 +55,26 @@ apparaît **« Actif »** environ une minute plus tard.
 | Identifiants perdus / compromis | bouton **Régénérer les identifiants** sur la page Satellites |
 | Vérifier l'état | `docker compose --profile <gw\|full> ps` |
 
+> **Le satellite porte la charte de son institution**, recopiée à l'enrôlement : nom affiché,
+> couleurs, polices et logo (téléchargé une fois, puis servi hors ligne). Elle est **figée** —
+> un changement de logo côté central n'arrive ici qu'à la prochaine mise à jour — et
+> **mono-institution**, un satellite appartenant à une institution et à une seule. Un
+> satellite enrôlé avant le 13/11/2026 affiche « Assista-Crise » tant qu'il n'a pas été
+> réenrôlé : la charte est capturée à l'enrôlement, pas rattrapée après coup.
+
+> **Les fichiers déposés sur un satellite restent sur ce satellite.**
+> `FILE_ENCRYPTION_KEY` est générée **localement** par `installer.sh` et n'est pas celle du
+> central : une pièce d'identité ou un justificatif chiffré ici n'est **pas** lisible là-bas,
+> et réciproquement. Ces pièces ne sont pas dans le périmètre de synchronisation, donc rien
+> ne remonte — c'est cohérent, mais il faut le savoir avant de demander à un bénévole de
+> déposer son permis depuis le satellite. **Sauvegardez `.env`** : cette clé perdue, les
+> fichiers déjà déposés sur place deviennent définitivement illisibles.
+
+> **`demarrer` reconstruit les images sur place** (`up -d --build`). En profil `full`, cela
+> inclut le build Angular de production : c'est lourd pour un Raspberry Pi. En cas de doute,
+> lancer d'abord `docker compose --profile full build backend frontend` pour voir si la
+> construction passe, et ajouter du swap si elle échoue par manque de mémoire.
+
 ### Ancien parcours (installations commencées avant le 20/10/2026)
 
 `./installer.sh enroler <jeton> <nom> <gw|full>`, validation (identifiants affichés une seule

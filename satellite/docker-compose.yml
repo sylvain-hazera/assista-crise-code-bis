@@ -277,11 +277,32 @@ services:
       - "${BACKEND_PORT:-8010}:8000"
     volumes:
       - media_volume:/app/media
+      # Charte graphique de l'institution propriétaire : le logo téléchargé une fois à
+      # l'enrôlement (satellite/installer.sh, appliquer_branding) et servi ensuite hors ligne
+      # sous /media/branding-satellite/. En lecture seule — c'est une ressource d'affichage,
+      # le backend n'a aucune raison d'y écrire.
+      - ./data/branding:/app/media/branding-satellite:ro
     environment:
       - SECRET_KEY=${SECRET_KEY}
       # chiffrement des champs personnels (core/crypto_fields.py) : générées par installer.sh
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
       - FIELD_BLIND_INDEX_KEY=${FIELD_BLIND_INDEX_KEY}
+      # Chiffrement des FICHIERS déposés sur place (pièces d'identité, justificatifs).
+      # PROPRE À CE SATELLITE : elle n'est pas celle du central, donc un fichier chiffré ici
+      # n'est pas lisible là-bas, et réciproquement. Sans conséquence aujourd'hui — les pièces
+      # justificatives ne sont pas dans le périmètre de synchronisation — mais le jour où on
+      # voudra les y mettre, il faudra trancher d'où vient la clé.
+      - FILE_ENCRYPTION_KEY=${FILE_ENCRYPTION_KEY}
+      # Charte figée à l'enrôlement (voir core/branding.py::branding_satellite) : on arrive
+      # ici par l'IP locale, donc aucun domaine ne correspond et le branding retomberait
+      # sinon sur « Assista-Crise », même déployé au nom d'une association.
+      - SATELLITE_BRANDING_NOM=${SATELLITE_BRANDING_NOM:-}
+      - SATELLITE_BRANDING_LOGO=${SATELLITE_BRANDING_LOGO:-}
+      - SATELLITE_BRANDING_COULEUR_PRIMAIRE=${SATELLITE_BRANDING_COULEUR_PRIMAIRE:-}
+      - SATELLITE_BRANDING_COULEUR_SECONDAIRE=${SATELLITE_BRANDING_COULEUR_SECONDAIRE:-}
+      - SATELLITE_BRANDING_POLICE_TITRE=${SATELLITE_BRANDING_POLICE_TITRE:-}
+      - SATELLITE_BRANDING_POLICE_TEXTE=${SATELLITE_BRANDING_POLICE_TEXTE:-}
+      - SATELLITE_BRANDING_RESERVE_ACTIVE=${SATELLITE_BRANDING_RESERVE_ACTIVE:-False}
       - DEBUG=False
       - DB_HOST=db
       - DB_NAME=assista-db

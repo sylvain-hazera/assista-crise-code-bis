@@ -47,4 +47,8 @@ export interface TableConservation {
   pieces: PieceConservation[];
   jours_avant_purge_non_validee: number;
   jours_avant_rappel_purge: number;
+  /** Vrai quand la page est servie par un SATELLITE. Les fichiers y sont chiffrés avec une
+   * clé locale et ne remontent pas au central : découvrir après coup que sa pièce n'est
+   * visible que sur place, c'est la déposer deux fois. */
+  instance_satellite?: boolean;
 }

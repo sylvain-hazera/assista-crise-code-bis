@@ -426,3 +426,21 @@ class TestLeCatalogueDuSocle:
 
         for nom, categorie, _validite in CATALOGUE:
             assert categorie in CLES_DEPOSABLES, nom
+
+
+class TestLAvertissementSatellite:
+    """Sur un satellite, les fichiers sont chiffrés avec une clé LOCALE (voir
+    satellite/installer.sh) et ne remontent pas au central. Le découvrir après coup, c'est
+    déposer deux fois sa pièce d'identité — l'écran doit donc le dire avant le dépôt."""
+
+    def test_le_central_ne_se_declare_pas_satellite(self, membre):
+        reponse = _client(membre).get(reverse("conservation_pieces"))
+
+        assert reponse.data["instance_satellite"] is False
+
+    def test_un_satellite_se_declare(self, membre, settings):
+        settings.INSTANCE_SATELLITE_LOCALE = True
+
+        reponse = _client(membre).get(reverse("conservation_pieces"))
+
+        assert reponse.data["instance_satellite"] is True

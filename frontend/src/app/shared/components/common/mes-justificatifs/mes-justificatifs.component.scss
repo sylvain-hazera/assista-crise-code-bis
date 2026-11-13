@@ -333,3 +333,18 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* L'avertissement « installation locale » : il concerne la portée du dépôt, pas une erreur.
+   Teinte ambre — ce n'est ni un succès ni une panne, c'est une limite à connaître avant
+   d'agir. */
+.bandeau.satellite {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  background: var(--ac-amber-bg, #fffbeb);
+  color: var(--ac-amber-text, #92400e);
+
+  .material-icons { font-size: 1.2rem; }
+
+  strong { display: block; }
+}

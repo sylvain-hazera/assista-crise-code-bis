@@ -6,6 +6,21 @@
     <p class="attente">Chargement de vos pièces…</p>
   } @else {
 
+    <!-- Sur un satellite, le fichier est chiffré avec une clé LOCALE et ne remonte pas au
+         central. Le dire ICI, avant le dépôt : le découvrir après coup, c'est déposer deux
+         fois — et pour une pièce d'identité, ce n'est pas anodin. -->
+    @if (surUnSatellite) {
+      <div class="bandeau satellite">
+        <span class="material-icons">cloud_off</span>
+        <div>
+          <strong>Vous êtes sur une installation locale.</strong>
+          Les documents déposés ici restent sur cet équipement : ils ne sont pas transmis au
+          site national et n'y seront pas consultables. Si votre encadrement vous les demande
+          au niveau national, déposez-les depuis le site principal.
+        </div>
+      </div>
+    }
+
     <p class="intro">
       Permis, diplômes, attestations de formation. Ces fichiers sont chiffrés et ne sont
       consultables que par votre encadrement — jamais par les autres membres.

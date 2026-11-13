@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
 import { AssociationService } from '../../../../services/association.service';
+import { ConservationPiecesService } from '../../../../services/conservation-pieces.service';
 import { Qualification, QualificationMembre } from '../../../models/association.model';
 import { PieceConservation } from '../../../models/conservation-piece.model';
 import { ConservationPiecesComponent } from '../conservation-pieces/conservation-pieces.component';
@@ -44,9 +45,21 @@ export class MesJustificatifsComponent implements OnInit {
   depot = { qualification: '', date_obtention: '', date_expiration: '', organisme: '' };
   fichierChoisi: File | null = null;
 
-  constructor(private associationService: AssociationService) {}
+  /** Vrai sur un satellite : les fichiers déposés y restent, le central ne les verra pas. */
+  surUnSatellite = false;
+
+  constructor(
+    private associationService: AssociationService,
+    private conservationService: ConservationPiecesService,
+  ) {}
 
   ngOnInit(): void {
+    // Lu à part du reste : l'avertissement doit s'afficher même si le catalogue échoue, et
+    // la table est déjà partagée entre les deux pages qui l'affichent.
+    this.conservationService.table().subscribe({
+      next: (table) => this.surUnSatellite = !!table.instance_satellite,
+      error: () => this.surUnSatellite = false,
+    });
     forkJoin({
       catalogue: this.associationService.getCatalogueQualifications(),
       miennes: this.associationService.getQualificationsMembres(),

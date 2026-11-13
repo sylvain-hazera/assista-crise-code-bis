@@ -4423,6 +4423,40 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ## 13. Conventions de développement
 
+#### La charte d'un satellite (`core/branding.py::branding_satellite`)
+
+Question de Sylvain du 13/11/2026 : *« si les Casques Jaunes déploient un satellite, aura-t-il
+leur charte graphique ? »* — non, et pour **trois** raisons indépendantes, chacune suffisante :
+
+1. le branding se résout par le **nom d'hôte HTTP** (`InstitutionWebDomaine` vs
+   `request.get_host()`), or on arrive sur un satellite par son IP locale : aucun domaine ne
+   correspond, `resolve_institution_branding` rend `None`, et tout retombe sur le défaut ;
+2. la fiche `Institution` **n'est pas dans le périmètre de synchronisation** d'un satellite
+   (`sync_referentiel.selection` : équipes, companions, relais, canaux, contacts, nœuds) — il
+   n'y aurait donc rien à lire même avec un domaine correspondant ;
+3. le **logo est un fichier média**, qui ne descend pas davantage.
+
+La charte est donc **recopiée à l'enrôlement** — le seul moment où un satellite apprend à qui
+il appartient : la réponse d'`enroler` porte `branding`, `installer.sh` l'écrit dans `.env` et
+télécharge le logo pendant qu'internet est encore là, puis le satellite le sert lui-même sous
+`/media/branding-satellite/` (bind-mount en lecture seule).
+
+Deux choix explicites de Sylvain, à ne pas « améliorer » sans le lui redemander :
+
+- **Figée jusqu'à mise à jour.** Pas de rafraîchissement continu : un changement de logo côté
+  central n'arrive sur le satellite qu'au prochain `git pull` + `./installer.sh demarrer`.
+- **Mono-institution.** Un satellite appartient à une institution et à une seule
+  (`Satellite.institution`) ; un satellite mutualisé entre deux associations n'est pas prévu,
+  et cette fonction le fige.
+
+Deux garde-fous dans le code : `branding_satellite()` rend `None` si
+`INSTANCE_SATELLITE_LOCALE` est faux — **le central ne se prend jamais pour un satellite**, sa
+résolution par domaine reste la seule source — et `None` également si aucun nom n'est
+enregistré : on ne fabrique pas une identité à partir de valeurs par défaut. Un satellite
+enrôlé avant cette date affiche donc « Assista-Crise » tant qu'il n'a pas été réenrôlé. Les
+valeurs viennent toutes de l'**environnement serveur**, jamais du client : même garantie que
+`resolve_institution_branding`.
+
 ### 13.0 bis « Mon espace » : deux rôles, pas neuf onglets
 
 Réorganisation du 13/11/2026, à la demande de Sylvain : *« un bénévole ou un bénéficiaire

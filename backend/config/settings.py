@@ -379,6 +379,20 @@ INSTANCE_SATELLITE_LOCALE = os.environ.get('INSTANCE_SATELLITE_LOCALE', 'False')
 if os.environ.get('SATELLITE_WEB_LOCAL', 'False') == 'True':
     ALLOWED_HOSTS = ['*']
 
+# Charte de l'institution propriétaire du satellite, FIGÉE À L'ENRÔLEMENT (13/11/2026).
+# Écrites dans le .env par satellite/installer.sh à partir de ce que le central a renvoyé.
+# Voir core/branding.py::branding_satellite pour le pourquoi : on arrive sur un satellite par
+# son IP locale, donc aucun InstitutionWebDomaine ne correspond et tout retombait sur
+# « Assista-Crise », y compris sur un dispositif déployé au nom d'une association.
+# Vides sur le central, où la résolution par domaine reste la seule source.
+SATELLITE_BRANDING_NOM = os.environ.get('SATELLITE_BRANDING_NOM', '')
+SATELLITE_BRANDING_LOGO = os.environ.get('SATELLITE_BRANDING_LOGO', '')
+SATELLITE_BRANDING_COULEUR_PRIMAIRE = os.environ.get('SATELLITE_BRANDING_COULEUR_PRIMAIRE', '')
+SATELLITE_BRANDING_COULEUR_SECONDAIRE = os.environ.get('SATELLITE_BRANDING_COULEUR_SECONDAIRE', '')
+SATELLITE_BRANDING_POLICE_TITRE = os.environ.get('SATELLITE_BRANDING_POLICE_TITRE', '')
+SATELLITE_BRANDING_POLICE_TEXTE = os.environ.get('SATELLITE_BRANDING_POLICE_TEXTE', '')
+SATELLITE_BRANDING_RESERVE_ACTIVE = os.environ.get('SATELLITE_BRANDING_RESERVE_ACTIVE', 'False') == 'True'
+
 SATELLITE_SYNC_SORTANT_INTERVALLE_S = int(os.environ.get('SATELLITE_SYNC_SORTANT_INTERVALLE_S', 300))
 
 # compte de service de ce satellite auprès du central (SATELLITE_ID : obtenu à l'enrôlement)

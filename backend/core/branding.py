@@ -63,11 +63,59 @@ def resolve_institution_branding(request):
     return domaine.institution if domaine else None
 
 
+def branding_satellite() -> Optional[Branding]:
+    """La charte de l'institution propriétaire d'un SATELLITE, figée à l'enrôlement.
+
+    Demande de Sylvain du 13/11/2026. Un satellite déployé par une association doit porter SA
+    charte : on y arrive par l'IP locale (`http://192.168.1.50`), donc `InstitutionWebDomaine`
+    ne correspond à rien et tout retombait sur « Assista-Crise ». Sur un dispositif déployé au
+    nom de l'association, en crise, c'est précisément la cohérence visuelle qui fait
+    reconnaître l'outil comme le sien.
+
+    **Figée à l'enrôlement, et assumée comme telle** : les valeurs sont écrites dans le `.env`
+    du satellite par `installer.sh`, à partir de ce que le central a renvoyé. Un changement de
+    logo côté central n'arrive donc ici qu'à la prochaine mise à jour (`git pull` +
+    `./installer.sh demarrer`). C'est le choix de Sylvain : pas de rafraîchissement continu
+    tant que le besoin n'est pas là.
+
+    **Mono-institution, et c'est structurel** : un satellite appartient à une institution et à
+    une seule (voir `Satellite.institution`). Un satellite mutualisé entre deux associations
+    n'est pas prévu, et cette fonction le fige.
+
+    Les valeurs viennent du SERVEUR (son environnement), jamais du client : même garantie que
+    `resolve_institution_branding`, dont le docstring explique pourquoi un paramètre fourni par
+    le navigateur serait trivialement falsifiable.
+    """
+    from django.conf import settings
+
+    if not settings.INSTANCE_SATELLITE_LOCALE:
+        return None
+    nom = (settings.SATELLITE_BRANDING_NOM or "").strip()
+    if not nom:
+        # Satellite enrôlé avant cette fonctionnalité, ou institution sans charte : on ne
+        # fabrique pas une identité à partir de rien, on retombe sur Assista-Crise.
+        return None
+    return Branding(
+        nom_affichage=nom,
+        logo_url=(settings.SATELLITE_BRANDING_LOGO or "").strip() or None,
+        couleur_primaire=(settings.SATELLITE_BRANDING_COULEUR_PRIMAIRE
+                          or DEFAULT_BRANDING.couleur_primaire),
+        couleur_secondaire=(settings.SATELLITE_BRANDING_COULEUR_SECONDAIRE
+                            or DEFAULT_BRANDING.couleur_secondaire),
+        police_titre=settings.SATELLITE_BRANDING_POLICE_TITRE or "",
+        police_texte=settings.SATELLITE_BRANDING_POLICE_TEXTE or "",
+        reserve_active=settings.SATELLITE_BRANDING_RESERVE_ACTIVE,
+    )
+
+
 def branding_for_institution(institution) -> Branding:
     """Construit l'objet Branding d'affichage pour une institution (ou les valeurs par défaut
     si None/pas de branding configuré) -- utilisé par la vue /api/branding/."""
     if institution is None:
-        return DEFAULT_BRANDING
+        # Sur un satellite, « aucun domaine ne correspond » ne veut pas dire « site
+        # généraliste » : cela veut dire qu'on y accède par son IP locale. La charte de son
+        # institution prend donc le pas sur le défaut Assista-Crise.
+        return branding_satellite() or DEFAULT_BRANDING
     return Branding(
         nom_affichage=institution.nom_affichage or institution.nom,
         logo_url=institution.logo.url if institution.logo else None,

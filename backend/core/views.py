@@ -11657,9 +11657,16 @@ class ConservationPiecesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        from django.conf import settings
+
         from .conservation_pieces import table
 
-        return Response(table())
+        # `instance_satellite` : sur un satellite, les fichiers sont chiffrés avec une clé
+        # LOCALE (voir satellite/installer.sh) et ne remontent pas au central. L'écran de
+        # dépôt le dit à celui qui dépose — découvrir après coup que sa pièce n'est visible
+        # que sur place, c'est la déposer deux fois.
+        return Response({**table(),
+                         "instance_satellite": settings.INSTANCE_SATELLITE_LOCALE})
 
 
 class PieceIdentiteReserveViewSet(viewsets.ModelViewSet):
@@ -20774,6 +20781,29 @@ def _appliquer_evenement_synchronisation(satellite, evenement, request):
         return {"id": evenement_id, "resultat": "erreur", "detail": str(exc)}
 
 
+def _branding_pour_satellite(request, institution):
+    """La charte à recopier sur un satellite : nom, couleurs, polices, logo en URL absolue.
+
+    URL absolue et non relative : le satellite télécharge le fichier depuis le central au
+    moment de l'enrôlement, alors qu'il a encore internet. Ensuite il le sert lui-même, hors
+    ligne — c'est tout l'intérêt."""
+    logo = None
+    if getattr(institution, "logo", None):
+        try:
+            logo = request.build_absolute_uri(institution.logo.url)
+        except Exception:   # noqa: BLE001 - un logo illisible ne doit pas casser l'enrôlement
+            logo = None
+    return {
+        "nom_affichage": institution.nom_affichage or institution.nom,
+        "logo_url": logo,
+        "couleur_primaire": institution.couleur_primaire or "",
+        "couleur_secondaire": institution.couleur_secondaire or "",
+        "police_titre": institution.police_titre or "",
+        "police_texte": institution.police_texte or "",
+        "reserve_active": bool(institution.reserve_active),
+    }
+
+
 class SatelliteViewSet(
     EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -20887,6 +20917,13 @@ class SatelliteViewSet(
                 "institution_nom": jeton.institution.nom,
                 # Département de l'institution : zone des cartes hors ligne (profil full).
                 "departement": jeton.institution.departement_code or "",
+                # CHARTE GRAPHIQUE, figée ici (13/11/2026). Un satellite s'ouvre par son IP
+                # locale : aucun InstitutionWebDomaine ne correspond, et il affichait donc
+                # « Assista-Crise » même déployé au nom d'une association. L'enrôlement est le
+                # seul moment où il apprend à qui il appartient — c'est donc ici qu'on la lui
+                # donne. `installer.sh` l'écrit dans son .env ; elle ne bouge plus jusqu'à la
+                # prochaine mise à jour, choix assumé de ne pas rafraîchir en continu.
+                "branding": _branding_pour_satellite(request, jeton.institution),
             },
             status=status.HTTP_201_CREATED,
         )

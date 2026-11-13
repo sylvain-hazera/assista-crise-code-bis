@@ -100,6 +100,17 @@ except Exception:
 print("" if v is None else v)' "$1" "$2"
 }
 
+json_champ_imbrique() {
+    # json_champ_imbrique <json> <objet> <cle> -> valeur (vide si absente). Le branding arrive
+    # dans un sous-objet : json_champ ne sait lire que la racine.
+    python3 -c 'import json,sys
+try:
+    v = (json.loads(sys.argv[1]).get(sys.argv[2]) or {}).get(sys.argv[3])
+except Exception:
+    v = None
+print("" if v is None else v)' "$1" "$2" "$3"
+}
+
 secret_aleatoire() {
     python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
 }
@@ -129,6 +140,62 @@ fixer_env() {
     fi
 }
 
+appliquer_branding() {
+    # Charte graphique de l'institution propriétaire, FIGÉE À L'ENRÔLEMENT (13/11/2026).
+    #
+    # Sans elle, un satellite déployé par une association affichait « Assista-Crise » : on y
+    # arrive par l'IP locale, donc aucun domaine ne correspond côté central et le branding
+    # retombait sur le défaut. Sur un dispositif déployé au nom de l'association, en crise,
+    # c'est la cohérence visuelle qui fait reconnaître l'outil comme le sien.
+    #
+    # Figée : un changement de logo côté central n'arrive ici qu'à la prochaine mise à jour
+    # (git pull + ./installer.sh demarrer). Choix assumé — pas de rafraîchissement continu.
+    # Mono-institution : un satellite appartient à une institution et à une seule.
+    local nom logo_url
+    nom="$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_NOM)"
+    [ -n "$nom" ] || return 0
+
+    fixer_env SATELLITE_BRANDING_NOM "$nom"
+    fixer_env SATELLITE_BRANDING_COULEUR_PRIMAIRE "$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_COULEUR_PRIMAIRE)"
+    fixer_env SATELLITE_BRANDING_COULEUR_SECONDAIRE "$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_COULEUR_SECONDAIRE)"
+    fixer_env SATELLITE_BRANDING_POLICE_TITRE "$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_POLICE_TITRE)"
+    fixer_env SATELLITE_BRANDING_POLICE_TEXTE "$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_POLICE_TEXTE)"
+    fixer_env SATELLITE_BRANDING_RESERVE_ACTIVE "$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_RESERVE_ACTIVE)"
+
+    # Le logo est téléchargé MAINTENANT, tant qu'internet est là : ensuite le satellite le
+    # sert lui-même, hors ligne, depuis ./data/branding monté en lecture seule dans le backend.
+    logo_url="$(valeur_fichier "$FICHIER_ENROLEMENT" BRANDING_LOGO_URL)"
+    if [ -n "$logo_url" ]; then
+        mkdir -p "$REPERTOIRE_SCRIPT/data/branding"
+        local extension fichier
+        extension="$(python3 -c 'import sys,os;from urllib.parse import urlparse
+chemin = urlparse(sys.argv[1]).path
+print((os.path.splitext(chemin)[1] or ".png").lower()[:5])' "$logo_url")"
+        fichier="logo$extension"
+        if [ -s "$REPERTOIRE_SCRIPT/data/branding/$fichier" ]; then
+            # Déjà là : on ne retélécharge pas. Un satellite redémarre souvent hors ligne, et
+            # écraser un logo valide par un échec réseau serait un recul.
+            fixer_env SATELLITE_BRANDING_LOGO "/media/branding-satellite/$fichier"
+        elif curl -fsSL --max-time 30 -o "$REPERTOIRE_SCRIPT/data/branding/.logo.part" "$logo_url" \
+             && [ -s "$REPERTOIRE_SCRIPT/data/branding/.logo.part" ]; then
+            # Téléchargé à part puis déplacé : un curl interrompu ne doit pas laisser un
+            # fichier tronqué que le satellite servirait ensuite comme logo.
+            mv "$REPERTOIRE_SCRIPT/data/branding/.logo.part" \
+               "$REPERTOIRE_SCRIPT/data/branding/$fichier"
+            fixer_env SATELLITE_BRANDING_LOGO "/media/branding-satellite/$fichier"
+            log "Logo de « $nom » récupéré pour l'affichage hors ligne."
+        else
+            # Pas bloquant : la charte sans logo vaut mieux que pas de charte du tout, et le
+            # logo se rattrapera au prochain démarrage avec internet.
+            rm -f "$REPERTOIRE_SCRIPT/data/branding/.logo.part"
+            log "AVERTISSEMENT : logo de « $nom » non téléchargé. Le satellite affichera son"
+            log "nom et ses couleurs, sans logo. Réessayez avec : $0 demarrer"
+        fi
+    fi
+    log "Charte graphique de « $nom » appliquée (figée : elle ne suivra un changement côté"
+    log "central qu'à la prochaine mise à jour de ce satellite)."
+}
+
 cles_chiffrement() {
     # Clés de chiffrement des champs personnels du backend local (core/crypto_fields.py) :
     # sans elles il ne démarre pas (« FIELD_BLIND_INDEX_KEY n'est pas configurée », constaté le
@@ -138,6 +205,19 @@ cles_chiffrement() {
     fi
     if [ -z "$(valeur_env FIELD_BLIND_INDEX_KEY)" ]; then
         fixer_env FIELD_BLIND_INDEX_KEY "$(secret_aleatoire)"
+    fi
+    # Chiffrement des FICHIERS déposés sur place (core/file_crypto.py) : pièces d'identité,
+    # justificatifs de qualification. Ajoutée le 13/11/2026 — elle manquait, et le dépôt d'une
+    # pièce depuis un satellite échouait donc sur « FILE_ENCRYPTION_KEY n'est pas configurée ».
+    # Le satellite démarrait quand même : l'erreur ne survient qu'à l'écriture d'un fichier,
+    # ce qui la rendait invisible jusqu'à ce qu'un bénévole essaie.
+    if [ -z "$(valeur_env FILE_ENCRYPTION_KEY)" ]; then
+        fixer_env FILE_ENCRYPTION_KEY "$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+        log "Clé de chiffrement des fichiers générée POUR CE SATELLITE."
+        log "ATTENTION : elle lui est propre et n'est pas partagée avec le central. Les pièces"
+        log "justificatives déposées ici restent donc LOCALES — elles ne remontent pas, et le"
+        log "central ne saurait pas les déchiffrer. Sauvegardez .env : cette clé perdue, les"
+        log "fichiers déjà déposés sur place deviennent illisibles."
     fi
 }
 
@@ -473,6 +553,11 @@ EOF
     fixer_env VERSION_LOGICIELLE "$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)"
     if [ "$profil" = "full" ]; then
         cles_chiffrement
+        # Rejouée à chaque démarrage, mais depuis le fichier d'enrôlement : les valeurs y
+        # sont celles capturées le jour de l'enrôlement, donc la charte reste FIGÉE. C'est ce
+        # passage qui la repose si quelqu'un a édité .env à la main, et qui rattrape un logo
+        # dont le téléchargement avait échoué.
+        appliquer_branding
         reglages_mqtt          # broker MQTT local : comptes et IP du LAN (profil full seulement)
         ports_publies
         aligner_mot_de_passe_db
@@ -585,6 +670,13 @@ SATELLITE_NOM=$(json_champ "$corps" nom)
 PROFIL=$(json_champ "$corps" profil | tr '[:upper:]' '[:lower:]')
 DEPARTEMENT=$(json_champ "$corps" departement)
 INSTITUTION=$(json_champ "$corps" institution_nom)
+BRANDING_NOM=$(json_champ_imbrique "$corps" branding nom_affichage)
+BRANDING_LOGO_URL=$(json_champ_imbrique "$corps" branding logo_url)
+BRANDING_COULEUR_PRIMAIRE=$(json_champ_imbrique "$corps" branding couleur_primaire)
+BRANDING_COULEUR_SECONDAIRE=$(json_champ_imbrique "$corps" branding couleur_secondaire)
+BRANDING_POLICE_TITRE=$(json_champ_imbrique "$corps" branding police_titre)
+BRANDING_POLICE_TEXTE=$(json_champ_imbrique "$corps" branding police_texte)
+BRANDING_RESERVE_ACTIVE=$(json_champ_imbrique "$corps" branding reserve_active)
 EOF
         echo "$satellite_id" > "$REPERTOIRE_SCRIPT/.satellite_id"
         log "Enrôlé : « $nom » pour $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION) (profil $(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL))."
