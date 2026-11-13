@@ -190,6 +190,11 @@ export const NAV_ITEMS: NavItem[] = [
   // cloisonnée à « chez moi + ma zone » côté serveur. Ce qui posait problème était la
   // CRÉATION, désormais encadrée (voir backend/core/creation_institution.py).
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },
+  // Qui est membre de quelle institution — l'entrée par la PERSONNE, qui manquait : on ne
+  // pouvait voir que les membres d'une institution à la fois. Recherche et pagination côté
+  // serveur, parce qu'une même personne peut appartenir à plusieurs institutions et qu'il y
+  // en aura des milliers.
+  { icon: 'how_to_reg', label: 'Rattachements', route: '/admin/rattachements', groupe: 'administration' },
   // Messages retenus avant envoi (voir backend/core/brouillons_envoi.py). La fenetre de
   // relecture s'ouvre d'elle-meme apres l'action ; cette page retrouve ce qui a ete manque.
   { icon: 'drafts', label: 'Messages a relire', route: '/admin/messages-a-relire', groupe: 'administration' },

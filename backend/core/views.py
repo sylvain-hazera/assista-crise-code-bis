@@ -25,7 +25,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
-from rest_framework.filters import OrderingFilter
+from rest_framework.filters import OrderingFilter, SearchFilter
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q, F, Func, IntegerField, Prefetch, Count, Exists, Max, OuterRef
@@ -11999,6 +11999,56 @@ class UserMeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+
+class InstitutionActiveView(APIView):
+    """Pour quelle institution je travaille en ce moment, et comment en changer.
+
+    Demande de Sylvain du 13/11/2026 : « un utilisateur peut être membre de plusieurs
+    institutions. Une mairie et une asso. » L'appartenance vit dans `ContactInstitution` (une
+    ligne par institution) ; `User.institution` n'est qu'un **contexte**, et il était posé au
+    PREMIER rattachement sans jamais pouvoir changer. Un agent de mairie également adhérent
+    d'une association voyait donc son périmètre territorial dépendre de l'ordre de ses
+    inscriptions — un ordre que personne ne connaît et que rien n'affiche.
+
+    GET rend les institutions où l'on est membre actif et celle qui est active.
+    POST bascule, APRÈS vérification de l'appartenance : ce champ décide d'un périmètre
+    territorial (voir core/zone_scoping.py), donc accepter un identifiant sans contrôle
+    reviendrait à laisser quiconque s'attribuer la zone de n'importe quelle institution.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _etat(self, request):
+        from .institution_courante import institutions_de
+
+        institutions = institutions_de(request.user)
+        return {
+            "active": str(request.user.institution_id) if request.user.institution_id else None,
+            "institutions": [
+                {"id": str(i.id), "nom": i.nom,
+                 "nom_affichage": i.nom_affichage or i.nom,
+                 "type_libelle": i.type.libelle if i.type_id else ""}
+                for i in institutions
+            ],
+        }
+
+    def get(self, request):
+        return Response(self._etat(request))
+
+    def post(self, request):
+        from .institution_courante import definir_institution_active
+
+        institution, erreur = definir_institution_active(
+            request.user, request.data.get("institution"))
+        if erreur:
+            return Response({"error": erreur}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="User",
+            objet_id=request.user.id,
+            commentaire=f"Contexte de travail basculé sur « {institution.nom} ».",
+        )
+        return Response(self._etat(request))
+
 class ChangePasswordView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -14181,6 +14231,11 @@ class AffectationRoleOperationnelViewSet(
     serializer_class = (
         AffectationRoleOperationnelSerializer
     )
+
+    # Filtrable par institution depuis le 13/11/2026 : la fiche d'une institution chargeait
+    # sinon les affectations de TOUTES les institutions pour n'en afficher qu'une. À l'échelle
+    # visée (des milliers d'institutions), c'est la table entière envoyée au navigateur.
+    filterset_fields = ["institution", "role", "actif"]
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
@@ -16664,6 +16719,28 @@ class ContactInstitutionViewSet(
     # demander les contacts d'UNE institution au lieu de tout tirer puis de jeter (voir
     # get_queryset).
     filterset_fields = ["institution", "utilisateur", "actif"]
+
+    # PAGINATION OPT-IN et RECHERCHE SERVEUR (13/11/2026) — « fais gaffe, car à terme je
+    # pourrais avoir des milliers d'institutions ».
+    #
+    # `OptionalPageNumberPagination` ne s'active que si l'appelant passe `?page=` : les cinq
+    # pages existantes qui attendent un tableau brut ne changent pas de contrat, et la
+    # nouvelle page des rattachements demande explicitement sa pagination. Sans cela, afficher
+    # les rattachements de mille institutions reviendrait à rapatrier la table entière dans le
+    # navigateur.
+    #
+    # La recherche porte sur le NOM et l'EMAIL de la personne et sur le nom de l'institution :
+    # c'est exactement ce qu'on tape quand on cherche « qui est membre de quoi ». Elle traverse
+    # une FK, donc elle reste côté base — filtrer après coup dans le navigateur supposerait
+    # d'avoir déjà tout chargé, ce qu'on cherche précisément à éviter.
+    pagination_class = OptionalPageNumberPagination
+    filter_backends = [filters.DjangoFilterBackend, SearchFilter, OrderingFilter]
+    search_fields = [
+        "utilisateur__last_name", "utilisateur__first_name", "utilisateur__email",
+        "institution__nom", "fonction",
+    ]
+    ordering_fields = ["institution__nom", "utilisateur__last_name", "date_creation"]
+    ordering = ["institution__nom", "utilisateur__last_name"]
 
     def get_queryset(self):
         """Qui voit quels contacts.

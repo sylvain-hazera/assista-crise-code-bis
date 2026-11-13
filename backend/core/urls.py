@@ -98,6 +98,7 @@ from .views import (
     RattachementHabitationViewSet,
     ModuleDegatsCriseViewSet,
     ConservationPiecesView,
+    InstitutionActiveView,
     PieceIdentiteReserveViewSet,
     BrandingView,
     SondeView,
@@ -321,6 +322,9 @@ urlpatterns = [
     path('activate-account/<str:uidb64>/<str:token>/', AccountActivationView.as_view(), name='activate_account'),
     path('magic-login/<str:uidb64>/<str:token>/', MagicLoginView.as_view(), name='magic_login'),
     path('me/', UserMeView.as_view(), name='auth_me'),
+    # Contexte de travail d'un compte multi-appartenance (mairie ET association) : voir
+    # core/institution_courante.py. Hors du routeur — c'est toujours celui de l'appelant.
+    path('me/institution-active/', InstitutionActiveView.as_view(), name='institution_active'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
     # Le meme verdict en JSON, pour le scanner integre a l'application (voir
     # VerifierDemandeMobilisationJsonView). Sous le meme prefixe, parce que c'est le meme fait

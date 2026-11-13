@@ -798,3 +798,35 @@
     padding: 0.5rem 1rem;
   }
 }
+/* Sélecteur de contexte de travail (comptes membres de plusieurs institutions).
+   Dans le menu du compte et non dans la barre : on en change rarement, mais quand on le
+   fait, c'est une décision — pas un filtre qu'on bascule en passant. */
+.dropdown-institution {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  padding: .7rem 1rem;
+
+  select {
+    min-height: 40px;
+    padding: .35rem .5rem;
+    border: 1px solid var(--ac-border, #cbd5e1);
+    border-radius: 8px;
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font: inherit;
+  }
+}
+
+.dropdown-institution-titre {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.dropdown-institution-aide {
+  font-size: .78rem;
+  color: var(--ac-text-muted, #64748b);
+}

@@ -1,0 +1,101 @@
+<div class="page">
+  <header class="entete">
+    <h1>Rattachements</h1>
+    <p>
+      Qui est membre de quelle institution. Une même personne peut l'être de plusieurs — une
+      mairie et une association, par exemple : toutes ses appartenances sont regroupées sous
+      son nom.
+    </p>
+  </header>
+
+  <div class="barre">
+    <label class="recherche">
+      <span class="material-icons">search</span>
+      <input type="search" [ngModel]="recherche"
+             (ngModelChange)="onRecherche($event)"
+             placeholder="Un nom, un email, une institution…">
+    </label>
+    <label class="inclure">
+      <input type="checkbox" [checked]="inclureInactifs" (change)="basculerInactifs()">
+      Inclure les rattachements désactivés
+    </label>
+  </div>
+
+  @if (message) { <div class="alerte succes">{{ message }}</div> }
+  @if (erreur) { <div class="alerte erreur">{{ erreur }}</div> }
+
+  @if (chargement) {
+    <p class="attente">Recherche en cours…</p>
+  } @else if (!rattachements.length) {
+    <p class="vide">
+      @if (recherche) {
+        Aucun rattachement ne correspond à « {{ recherche }} ».
+      } @else {
+        Aucun rattachement enregistré.
+      }
+    </p>
+  } @else {
+    <p class="compte">
+      {{ total }} rattachement(s) — page {{ page }} sur {{ nombreDePages }}
+    </p>
+
+    @for (personne of parPersonne; track personne.email + personne.nom) {
+      <section class="personne">
+        <header>
+          <span class="material-icons">person</span>
+          <div>
+            <strong>{{ personne.nom }}</strong>
+            @if (personne.email) { <span class="email">{{ personne.email }}</span> }
+          </div>
+          @if (personne.lignes.length > 1) {
+            <span class="multi">{{ personne.lignes.length }} institutions</span>
+          }
+        </header>
+
+        <ul class="appartenances">
+          @for (l of personne.lignes; track l.id) {
+            <li [class.inactif]="!l.actif">
+              <div class="institution">
+                <span class="nom">{{ l.institution_nom || l.institution }}</span>
+                @if (l.institution_type) {
+                  <span class="type">{{ l.institution_type }}</span>
+                }
+              </div>
+              <div class="qualites">
+                @if (l.fonction) { <span class="fonction">{{ l.fonction }}</span> }
+                @if (l.membre_bureau) { <span class="puce bureau">Bureau</span> }
+                @if (l.contact_principal) { <span class="puce principal">Contact principal</span> }
+                @if (!l.actif) { <span class="puce retire">Désactivé</span> }
+              </div>
+              <div class="actions">
+                @if (l.actif) {
+                  <button type="button" class="btn-secondary sm"
+                          (click)="retirerLesDroits(l)"
+                          title="Retire les droits sans effacer l'historique">
+                    Désactiver
+                  </button>
+                } @else {
+                  <button type="button" class="btn-secondary sm" (click)="reactiver(l)">
+                    Réactiver
+                  </button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <nav class="pagination">
+      <button type="button" class="btn-secondary sm"
+              [disabled]="page <= 1" (click)="pagePrecedente()">
+        <span class="material-icons">chevron_left</span> Précédent
+      </button>
+      <span>Page {{ page }} / {{ nombreDePages }}</span>
+      <button type="button" class="btn-secondary sm"
+              [disabled]="page >= nombreDePages" (click)="pageSuivante()">
+        Suivant <span class="material-icons">chevron_right</span>
+      </button>
+    </nav>
+  }
+</div>

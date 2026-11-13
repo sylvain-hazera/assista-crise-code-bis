@@ -13,8 +13,16 @@ export class AffectationRoleOperationnelService {
 
   constructor(private http: HttpClient) {}
 
-  getAll(): Observable<AffectationRoleOperationnel[]> {
-    return this.http.get<AffectationRoleOperationnel[]>(`${this.url}/`);
+  /** Toutes, ou celles d'UNE institution.
+   *
+   * Le filtre existe depuis le 13/11/2026 : sans lui, la fiche d'une institution chargeait les
+   * affectations de toutes les institutions de la plateforme pour n'en afficher qu'une. À
+   * l'échelle visée (des milliers d'institutions), c'est la table entière rapatriée dans le
+   * navigateur. */
+  getAll(filtres?: { institution?: string }): Observable<AffectationRoleOperationnel[]> {
+    const params: Record<string, string> = {};
+    if (filtres?.institution) { params['institution'] = filtres.institution; }
+    return this.http.get<AffectationRoleOperationnel[]>(`${this.url}/`, { params });
   }
 
   create(data: Partial<AffectationRoleOperationnel>): Observable<AffectationRoleOperationnel> {

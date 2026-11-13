@@ -3,6 +3,9 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../auth/services/auth.service';
 import { User, UserRole } from '../../../shared/models/user.model';
+import { FormsModule } from '@angular/forms';
+
+import { RattachementService } from '../../../services/rattachement.service';
 import { TeamService } from '../../../services/team.service';
 import { UserAvatarComponent } from '../../../shared/components/common/user-avatar/user-avatar.component';
 import { Observable } from 'rxjs';
@@ -13,6 +16,7 @@ import { ThemeService } from '../../../services/theme.service';
   selector: 'app-header',
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     UserAvatarComponent,
   ],
@@ -31,6 +35,7 @@ export class HeaderComponent {
   constructor(
     public authService: AuthService, private router: Router, private teamService: TeamService,
     private brandingService: BrandingService, public theme: ThemeService,
+    private rattachementService: RattachementService,
   ) {
     this.branding$ = this.brandingService.branding$;
     this.currentUser = this.authService.getCurrentUser();
@@ -43,6 +48,7 @@ export class HeaderComponent {
         next: (teams) => { this.myTeamId = teams[0]?.id ?? null; },
         error: () => {},
       });
+      this.chargerInstitutions();
     }
   }
 
@@ -90,6 +96,48 @@ export class HeaderComponent {
     } else {
       this.router.navigate(['/login']);
     }
+  }
+
+  // ══ Contexte de travail d'un compte multi-appartenance ════════════════════════════════
+  //
+  // « Un utilisateur peut être membre de plusieurs institutions. Une mairie et une asso »
+  // (13/11/2026). `User.institution` n'est qu'un CONTEXTE — il pilote le périmètre
+  // territorial — et il était posé au premier rattachement sans jamais pouvoir changer. Le
+  // sélecteur n'apparaît qu'au-delà d'une institution : pour tous les autres, il n'y a rien à
+  // choisir et un menu de plus serait du bruit.
+
+  institutionsRattachees: { id: string; nom: string; nom_affichage: string; type_libelle: string }[] = [];
+  institutionActive: string | null = null;
+
+  private chargerInstitutions(): void {
+    if (!this.authService.isLoggedIn()) { return; }
+    this.rattachementService.institutionActive().subscribe({
+      next: (etat) => {
+        this.institutionsRattachees = etat.institutions;
+        this.institutionActive = etat.active;
+      },
+      error: () => this.institutionsRattachees = [],
+    });
+  }
+
+  get aPlusieursInstitutions(): boolean {
+    return this.institutionsRattachees.length > 1;
+  }
+
+  get nomInstitutionActive(): string {
+    return this.institutionsRattachees.find(i => i.id === this.institutionActive)
+      ?.nom_affichage || '';
+  }
+
+  changerInstitutionActive(id: string): void {
+    if (!id || id === this.institutionActive) { return; }
+    this.rattachementService.definirInstitutionActive(id).subscribe({
+      // Rechargement complet, et c'est volontaire : le contexte décide du périmètre
+      // territorial, donc des données déjà affichées par toutes les pages ouvertes. Les
+      // rafraîchir une par une serait long à écrire et faux à la première oubliée.
+      next: () => window.location.reload(),
+      error: () => undefined,
+    });
   }
 
   goToSettings() {

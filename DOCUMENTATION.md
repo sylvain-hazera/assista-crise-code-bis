@@ -4423,6 +4423,63 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ## 13. Conventions de développement
 
+#### Multi-appartenance : membre d'une mairie ET d'une association
+
+Avertissement de Sylvain du 13/11/2026 : *« un utilisateur peut être membre de plusieurs
+institutions. Une mairie et une asso »*, et *« fais gaffe, car à terme je pourrais avoir des
+milliers d'institutions »*. Les deux ont conduit au même lot de travaux.
+
+**Deux questions, deux sources. Les confondre est le piège.**
+
+| Question | Source | Forme |
+|---|---|---|
+| De qui est-il membre ? | `ContactInstitution` | une **liste** : une ligne par appartenance |
+| Pour qui travaille-t-il en ce moment ? | `User.institution` | un **champ unique** : un contexte |
+
+`User.institution` pilote le périmètre territorial (`core/zone_scoping.py`), la « Vue Ma
+Collectivité » et le branding des emails. Il était posé au **premier** rattachement et ne
+bougeait plus : un agent de mairie également adhérent d'une association voyait donc son
+périmètre dépendre de l'ordre de ses inscriptions — un ordre que personne ne connaît et que
+rien n'affichait. Le champ ne portait d'ailleurs aucun commentaire disant qu'il n'était qu'un
+contexte, ce qui en faisait un piège pour quiconque écrirait `user.institution` en croyant
+lire l'appartenance.
+
+`core/institution_courante.py` ferme les deux trous : `est_membre()` et `institutions_de()`
+répondent à la première question, `definir_institution_active()` à la seconde — **après
+vérification de l'appartenance**, parce que ce champ décide d'un contrôle d'accès et non d'un
+affichage. `POST /api/me/institution-active/` l'expose, et le menu du compte montre un
+sélecteur **uniquement** au-delà d'une institution : ailleurs il n'y a rien à choisir.
+Changer de contexte recharge la page — il décide des données de tous les écrans ouverts, les
+rafraîchir un par un serait faux à la première page oubliée.
+
+`institution_courante()` retombe sur l'unique appartenance quand le raccourci est vide, mais
+**ne devine pas** au-delà : choisir à la place de quelqu'un son périmètre territorial serait
+pire que de le lui demander.
+
+**Un rattachement unique par (personne, institution)** — migration `0269`, après fusion des
+4 doublons qui existaient en production. La contrainte **n'interdit pas** la multi-appartenance :
+deux institutions différentes font deux paires différentes. Seule la répétition de la même
+paire est refusée. La fusion garde la ligne la plus ancienne (elle porte la date d'adhésion
+réelle) et lui reporte ce que les autres avaient de plus — actif, bureau, contact principal,
+fonction, zone : garder la plus récente aurait fait perdre l'ancienneté, supprimer sans
+reporter aurait pu retirer le bureau à quelqu'un qui l'avait.
+
+**La page `/admin/rattachements`**, qui manquait : on ne pouvait voir que les membres d'**une**
+institution à la fois (fiche institution, onglet Contacts), jamais partir d'une personne. Elle
+groupe **par personne** — c'est la question posée — avec recherche et pagination **côté
+serveur**. Le groupement porte sur une page : quelqu'un dont les deux institutions tombent de
+part et d'autre d'une coupure apparaît dans les deux. Assumé — paginer par personne obligerait
+le serveur à agréger avant de compter, pour un cas que la recherche résout mieux.
+
+**Le chargement global de `/admin/institutions`, supprimé.** La page tirait à l'ouverture
+`userService.getAll()` (tous les comptes), `contactService.getAll()` (tous les rattachements)
+et `affectationRoleService.getAll()` (toutes les affectations) — son commentaire affirmait
+pourtant « au chargement, seulement les miens », ce qui était faux. À 1 000 institutions de 20
+membres, cela faisait 20 000 rattachements et tous les comptes rapatriés pour afficher 25
+lignes. Les contacts et les affectations suivent désormais l'institution ouverte, et le nom
+d'un compte est servi **avec** le rattachement (`utilisateur_nom`, `institution_nom`) plutôt
+que retrouvé dans une table chargée en entier.
+
 #### La charte d'un satellite (`core/branding.py::branding_satellite`)
 
 Question de Sylvain du 13/11/2026 : *« si les Casques Jaunes déploient un satellite, aura-t-il

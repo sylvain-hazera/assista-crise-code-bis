@@ -63,7 +63,11 @@ class TestContactInstitutionZone:
 
     def test_update_contact_zone(self, own_institution_client, mairie, zone, create_user):
         client, user = own_institution_client
-        contact = ContactInstitution.objects.create(institution=mairie, utilisateur=user, actif=True)
+        # Le rattachement posé par la fixture, et non un second : depuis le 13/11/2026 une
+        # personne ne peut avoir qu'UNE ligne par institution (contrainte
+        # `uq_rattachement_par_personne_et_institution`). Le test créait un doublon — ce que
+        # rien n'interdisait, et qui existait bel et bien en production.
+        contact = ContactInstitution.objects.get(institution=mairie, utilisateur=user)
 
         response = client.put(
             reverse('contactinstitution-detail', args=[contact.id]),

@@ -103,6 +103,7 @@ export const ADMIN_ROUTES: Routes = [
 
   // ── Administration ──
   { path: 'institutions', loadComponent: () => import('./institutions/institutions.component').then(m => m.InstitutionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'rattachements', loadComponent: () => import('./rattachements/rattachements.component').then(m => m.RattachementsComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'besoins', loadComponent: () => import('./besoins/besoins.component').then(m => m.BesoinsComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'materiel', loadComponent: () => import('./materiel/materiel.component').then(m => m.MaterielComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'conflits-synchronisation', loadComponent: () => import('./conflits-synchronisation/conflits-synchronisation.component').then(m => m.ConflitsSynchronisationComponent), canActivate: [sysAdminGuard] },

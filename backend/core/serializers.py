@@ -3274,6 +3274,13 @@ class ContactInstitutionSerializer(
 
     utilisateur_nom = serializers.SerializerMethodField()
     utilisateur_email = serializers.CharField(source="utilisateur.email", read_only=True, default=None)
+    # Servis avec le rattachement pour que la page « qui est membre de quoi » n'ait pas à
+    # charger le catalogue des institutions pour afficher un nom — c'est précisément le
+    # chargement global qu'on cherche à supprimer.
+    institution_nom = serializers.CharField(source="institution.nom", read_only=True,
+                                            default=None)
+    institution_type = serializers.CharField(source="institution.type.libelle",
+                                             read_only=True, default=None)
 
     class Meta:
 

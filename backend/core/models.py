@@ -197,12 +197,31 @@ class User(AbstractUser):
     pending_commune_name = models.CharField(max_length=255, null=True, blank=True)
     pending_commune_code = models.CharField(max_length=20, null=True, blank=True)
 
+    # ── CE CHAMP N'EST PAS L'APPARTENANCE ────────────────────────────────────────────────
+    #
+    # « Dans quelle institution est cette personne » a deux réponses en base, et une seule fait
+    # autorité : `ContactInstitution`, qui est une table de LIAISON — autant de lignes que
+    # d'appartenances. Quelqu'un peut être à la fois agent d'une mairie et adhérent d'une
+    # association, et c'est le cas courant, pas l'exception (8 comptes sur 54 en novembre 2026).
+    #
+    # Ce champ-ci est le **contexte actif** : l'institution pour laquelle la personne travaille
+    # EN CE MOMENT. Il pilote la « Vue Ma Collectivité », le périmètre territorial
+    # (`core/zone_scoping.py`) et le branding des emails. Il est posé au premier rattachement
+    # (`ContactInstitution.save`, qui ne le détourne jamais s'il est déjà rempli) et se change
+    # explicitement — voir `core/institution_courante.py` et
+    # `POST /api/me/institution-active/`.
+    #
+    # **Ne jamais lire ce champ pour répondre « est-il membre de X ? »** : interroger
+    # `ContactInstitution`. Un compte multi-appartenance n'aurait ici que l'une de ses
+    # institutions, et laquelle dépendrait de l'ordre de ses inscriptions.
     institution = models.ForeignKey(
         "Institution",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="utilisateurs"
+        related_name="utilisateurs",
+        help_text="Institution ACTIVE (contexte de travail), pas la liste des appartenances : "
+                  "celle-ci vit dans ContactInstitution.",
     )
 
     objects = UserManager()
@@ -6116,7 +6135,24 @@ class ContactInstitution(EnvironmentScopedModel):
                     contact_principal=True
                 ),
                 name="uq_contact_principal_institution"
-            )
+            ),
+
+            # UN SEUL RATTACHEMENT PAR (personne, institution) — 13/11/2026.
+            #
+            # N'interdit PAS la multi-appartenance, et c'est tout l'objet de la nuance : une
+            # personne à la fois à la mairie de X et dans l'association Y a deux lignes, avec
+            # deux institutions différentes. Seule la répétition de la MÊME paire est
+            # interdite.
+            #
+            # Il y en avait 4 en production. Un doublon fausse tout comptage d'effectif, fait
+            # apparaître la personne deux fois dans un annuaire, et oblige chaque lecture à se
+            # protéger (`_get_or_create_contact_institution` existe pour cette seule raison,
+            # après un MultipleObjectsReturned constaté le 02/10/2026). À l'échelle de
+            # milliers d'institutions, ces doublons se multiplient en silence.
+            models.UniqueConstraint(
+                fields=["institution", "utilisateur", "environment"],
+                name="uq_rattachement_par_personne_et_institution",
+            ),
 
         ]
 

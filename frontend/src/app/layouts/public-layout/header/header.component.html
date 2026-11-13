@@ -106,6 +106,26 @@
               </div>
             </div>
 
+            <!-- Le CONTEXTE de travail, pour qui est membre de plusieurs institutions (une
+                 mairie et une association, par exemple). Il décide du périmètre territorial :
+                 le laisser invisible, c'est laisser quelqu'un travailler sur le mauvais
+                 territoire sans savoir pourquoi. Absent quand il n'y a rien à choisir. -->
+            @if (aPlusieursInstitutions) {
+              <div class="dropdown-institution">
+                <span class="dropdown-institution-titre">Je travaille pour</span>
+                <select [ngModel]="institutionActive"
+                        (ngModelChange)="changerInstitutionActive($event)">
+                  @for (i of institutionsRattachees; track i.id) {
+                    <option [value]="i.id">{{ i.nom_affichage }}</option>
+                  }
+                </select>
+                <span class="dropdown-institution-aide">
+                  Change ce que vous voyez : territoire, équipes, annuaires.
+                </span>
+              </div>
+              <div class="dropdown-divider"></div>
+            }
+
             <div class="dropdown-divider"></div>
 
             <!-- « Mon espace » en premier, et pour tout le monde : c'est là que chacun

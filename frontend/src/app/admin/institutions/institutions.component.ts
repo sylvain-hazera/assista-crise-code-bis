@@ -555,29 +555,41 @@ export class InstitutionsComponent implements OnInit {
     });
   }
 
+  /** Ce que la page charge à l'ouverture, et ce qu'elle NE charge plus.
+   *
+   * Corrigé le 13/11/2026 — « fais gaffe, car à terme je pourrais avoir des milliers
+   * d'institutions ». Trois appels tiraient des tables entières avant le premier affichage :
+   *
+   * - `userService.getAll()` : tous les comptes de la plateforme, pour n'afficher qu'un nom
+   *   par contact. Le serveur sert désormais `utilisateur_nom` avec le rattachement ;
+   * - `contactService.getAll()` : tous les rattachements de toutes les institutions. Seuls
+   *   ceux de l'institution ouverte sont demandés, à l'ouverture de son détail ;
+   * - `affectationRoleService.getAll()` : idem, et les affectations suivent l'institution
+   *   ouverte.
+   *
+   * Le commentaire précédent affirmait déjà « au chargement, seulement les miens » : c'était
+   * faux, `getAll()` ne filtrait rien. À 1 000 institutions de 20 membres, cela faisait
+   * 20 000 rattachements et tous les comptes rapatriés pour afficher une liste de 25 lignes.
+   */
   private loadAll(): void {
     this.isLoading = true;
     forkJoin({
       institutions: this.institutionService.getAll(),
       types: this.institutionTypeService.getAll(),
       roles: this.roleOperationnelService.getAll(),
-      users: this.userService.getAll(),
-      // Au chargement, seulement les miens : ceux d'une institution consultée sont
-      // demandés à l'ouverture de son détail (voir openDetail).
-      contacts: this.contactService.getAll(),
       domaines: this.domaineService.getAll(),
       competences: this.competenceService.getAll(),
-      affectationsRoles: this.affectationRoleService.getAll(),
     }).subscribe({
-      next: ({ institutions, types, roles, users, contacts, domaines, competences, affectationsRoles }) => {
+      next: ({ institutions, types, roles, domaines, competences }) => {
         this.institutions = institutions;
         this.types = types;
         this.roles = roles;
-        this.users = users;
-        this.contacts = contacts;
         this.domaines = domaines;
         this.competences = competences;
-        this.affectationsRoles = affectationsRoles;
+        // Chargés à l'ouverture d'une institution, pas avant (voir openDetail).
+        this.users = [];
+        this.contacts = [];
+        this.affectationsRoles = [];
         this.isLoading = false;
       },
       error: () => {
@@ -596,7 +608,14 @@ export class InstitutionsComponent implements OnInit {
     source.subscribe(data => this.contacts = data);
   }
   reloadDomaines(): void { this.domaineService.getAll().subscribe(data => this.domaines = data); }
-  reloadAffectationsRoles(): void { this.affectationRoleService.getAll().subscribe(data => this.affectationsRoles = data); }
+  reloadAffectationsRoles(): void {
+    // Jamais `getAll()` sans filtre : à l'échelle visée, c'est la table entière pour afficher
+    // les régulateurs d'une seule institution.
+    const id = this.selectedInstitution?.id;
+    if (!id) { this.affectationsRoles = []; return; }
+    this.affectationRoleService.getAll({ institution: id })
+      .subscribe(data => this.affectationsRoles = data);
+  }
 
   // ══ Institutions — CRUD ═══════════════════════════════════════
   openCreate(): void {
@@ -795,6 +814,9 @@ export class InstitutionsComponent implements OnInit {
     // table entière au chargement pour n'en afficher qu'une institution à la fois — et
     // l'endpoint, ouvert à tout compte authentifié, les rendait toutes lisibles.
     this.reloadContacts();
+    // Les affectations de rôles suivent l'institution ouverte, comme les contacts : elles
+    // étaient chargées en entier au démarrage, pour toutes les institutions de la plateforme.
+    this.reloadAffectationsRoles();
     this.detailTab = 'contacts';
     this.showContactForm = false;
     this.showDomaineForm = false;
@@ -1125,7 +1147,14 @@ export class InstitutionsComponent implements OnInit {
     });
   }
 
+  /** Le nom d'un compte, pris sur le RATTACHEMENT et non sur une table des comptes chargée
+   * en entier. `utilisateur_nom` est servi avec chaque contact : c'est ce qui permet de ne
+   * plus rapatrier tous les comptes de la plateforme pour afficher une colonne. Repli sur la
+   * liste locale quand elle est peuplée (fenêtres qui choisissent un compte), puis sur un
+   * fragment d'identifiant — jamais rien d'illisible sans explication. */
   userName(id: string): string {
+    const contact = this.contacts.find(c => c.utilisateur === id && c.utilisateur_nom);
+    if (contact?.utilisateur_nom) { return contact.utilisateur_nom; }
     const u = this.users.find(user => user.id === id);
     return u ? (`${u.first_name} ${u.last_name}`.trim() || u.username) : id.slice(0, 8);
   }

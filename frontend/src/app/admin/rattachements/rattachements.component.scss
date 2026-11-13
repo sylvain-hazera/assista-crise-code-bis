@@ -1,0 +1,176 @@
+/* Rattachements : on lit par PERSONNE, parce que la question posée est « cet utilisateur est
+   membre de quoi ». Chaque personne est un bloc, ses institutions une liste dessous. */
+.page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.entete {
+  margin-bottom: 1.25rem;
+
+  h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+
+  p {
+    margin: 0;
+    max-width: 65ch;
+    color: var(--ac-text-muted, #64748b);
+    font-size: .95rem;
+  }
+}
+
+.barre {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1.25rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.recherche {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex: 1 1 18rem;
+  padding: .35rem .7rem;
+  border: 1px solid var(--ac-border, #cbd5e1);
+  border-radius: 999px;
+  background: var(--ac-surface, #fff);
+
+  input {
+    flex: 1;
+    min-height: 38px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    outline: none;
+  }
+
+  .material-icons { color: var(--ac-text-muted, #64748b); }
+}
+
+.inclure {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.alerte {
+  margin-bottom: .75rem;
+  padding: .6rem .9rem;
+  border-radius: 8px;
+  font-size: .9rem;
+
+  &.succes { background: var(--ac-green-bg, #f0fdf4); color: var(--ac-green-text, #166534); }
+  &.erreur { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+}
+
+.attente,
+.vide,
+.compte {
+  color: var(--ac-text-muted, #64748b);
+  font-size: .9rem;
+}
+
+.personne {
+  margin-bottom: .9rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--ac-surface, #fff);
+  overflow: hidden;
+
+  > header {
+    display: flex;
+    gap: .6rem;
+    align-items: center;
+    padding: .7rem .9rem;
+    background: var(--ac-surface-2, #f8fafc);
+
+    .email {
+      display: block;
+      font-size: .82rem;
+      color: var(--ac-text-muted, #64748b);
+    }
+
+    .material-icons { color: var(--ac-text-muted, #64748b); }
+  }
+}
+
+/* Le compteur n'apparaît qu'au-delà d'une institution : c'est l'information qui compte ici,
+   et l'afficher sur tout le monde la noierait. */
+.multi {
+  margin-left: auto;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  background: var(--brand-primary-lisible, #2563eb);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.appartenances {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1rem;
+    align-items: center;
+    padding: .7rem .9rem;
+    border-top: 1px solid var(--ac-border, #e2e8f0);
+
+    &.inactif { opacity: .6; }
+  }
+}
+
+.institution {
+  flex: 1 1 14rem;
+
+  .nom { font-weight: 600; }
+
+  .type {
+    display: block;
+    font-size: .8rem;
+    color: var(--ac-text-muted, #64748b);
+  }
+}
+
+.qualites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  align-items: center;
+  font-size: .82rem;
+}
+
+.fonction { color: var(--ac-text-muted, #64748b); }
+
+.puce {
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--ac-surface-2, #f1f5f9);
+  color: var(--ac-text-muted, #475569);
+
+  &.bureau { background: var(--ac-indigo-bg, #eef2ff); color: var(--ac-indigo-text, #4338ca); }
+  &.principal { background: var(--ac-green-bg, #f0fdf4); color: var(--ac-green-text, #166534); }
+  &.retire { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+}
+
+.actions { margin-left: auto; }
+
+.pagination {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1.25rem;
+  font-size: .9rem;
+  color: var(--ac-text-muted, #64748b);
+}
