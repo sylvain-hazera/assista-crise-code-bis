@@ -27,7 +27,7 @@
           <div class="ligne-infos">
             <span><span class="material-icons">person</span> {{ fiche.proprietaire.nom }}</span>
             @if (fiche.proprietaire.email) { <span><span class="material-icons">mail</span> {{ fiche.proprietaire.email }}</span> }
-            @if (fiche.proprietaire.telephone) { <span><span class="material-icons">phone</span> {{ fiche.proprietaire.telephone }}</span> }
+            @if (fiche.proprietaire.telephone) { <span><span class="material-icons">phone</span> {{ (fiche.proprietaire.telephone | telephone) }}</span> }
           </div>
         </section>
 

@@ -82,10 +82,12 @@ const CODE_TYPE_AASC = 'aasc';
  * L'écriture est réservée au bureau (ContactInstitution.membre_bureau) ; le serveur l'impose de
  * son côté, cette page ne fait que ne pas proposer ce qui sera refusé.
  */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-membres-association',
   standalone: true,
-  imports: [CommonModule, FormsModule, BlocAjoutComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, BlocAjoutComponent],
   templateUrl: './membres-association.component.html',
   styleUrl: './membres-association.component.scss',
 })

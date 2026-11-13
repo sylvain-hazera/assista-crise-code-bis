@@ -106,7 +106,7 @@
                     <span class="material-icons">badge</span>
                     {{ materiel.proprietaire_nom || 'Propriétaire inconnu' }}
                     @if (materiel.proprietaire_email) { <span class="proprietaire-contact">· {{ materiel.proprietaire_email }}</span> }
-                    @if (materiel.proprietaire_telephone) { <span class="proprietaire-contact">· {{ materiel.proprietaire_telephone }}</span> }
+                    @if (materiel.proprietaire_telephone) { <span class="proprietaire-contact">· {{ (materiel.proprietaire_telephone | telephone) }}</span> }
                   </span>
                   @if (materiel.presence_physique === false) {
                     <span class="warning-badge">Déposé — ne reste pas sur place</span>

@@ -69,7 +69,7 @@
           }
           @if (dossier.contact_telephone) {
             <div class="logistique-row">
-              <strong>Téléphone :</strong> <a [href]="'tel:' + dossier.contact_telephone">{{ dossier.contact_telephone }}</a>
+              <strong>Téléphone :</strong> <a [href]="'tel:' + dossier.contact_telephone">{{ (dossier.contact_telephone | telephone) }}</a>
             </div>
           }
           @if (dossier.contact_email) {
@@ -110,7 +110,7 @@
           @for (regulateur of dossier.regulateurs; track regulateur.id) {
             <div class="logistique-row">
               <strong>Régulateur :</strong> {{ regulateur.nom }}
-              <span class="contact-sub">{{ regulateur.email }}<span *ngIf="regulateur.telephone"> · {{ regulateur.telephone }}</span></span>
+              <span class="contact-sub">{{ regulateur.email }}<span *ngIf="regulateur.telephone"> · {{ (regulateur.telephone | telephone) }}</span></span>
             </div>
           }
         </div>

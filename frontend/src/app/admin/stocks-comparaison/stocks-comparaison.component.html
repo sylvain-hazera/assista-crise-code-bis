@@ -31,7 +31,7 @@
                         <div class="responsable-contact">
                           <span class="responsable-nom">{{ r.nom }}</span>
                           @if (r.telephone) {
-                            <span class="contact-item"><span class="material-icons small">phone</span>{{ r.telephone }}</span>
+                            <span class="contact-item"><span class="material-icons small">phone</span>{{ (r.telephone | telephone) }}</span>
                           }
                           @if (r.email) {
                             <span class="contact-item"><span class="material-icons small">email</span>{{ r.email }}</span>

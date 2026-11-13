@@ -58,7 +58,7 @@
                           <strong>{{ contact.nom }}</strong>
                           @if (contact.fonction) { <span> — {{ contact.fonction }}</span> }
                           <br>
-                          @if (contact.telephone) { <span>{{ contact.telephone }}</span> }
+                          @if (contact.telephone) { <span>{{ (contact.telephone | telephone) }}</span> }
                           @if (contact.telephone && contact.email) { <span> · </span> }
                           <span>{{ contact.email }}</span>
                         </li>

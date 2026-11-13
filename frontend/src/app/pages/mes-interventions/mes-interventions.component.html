@@ -134,7 +134,7 @@
                       <span class="contact-nom">{{ dossier.contact_nom }}</span>
                       @if (dossier.contact_telephone) {
                         <a [href]="'tel:' + dossier.contact_telephone" class="contact-link">
-                          <span class="material-icons">phone</span> {{ dossier.contact_telephone }}
+                          <span class="material-icons">phone</span> {{ (dossier.contact_telephone | telephone) }}
                         </a>
                       }
                       @if (dossier.contact_email) {

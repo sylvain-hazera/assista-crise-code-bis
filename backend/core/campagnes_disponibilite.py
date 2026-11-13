@@ -140,7 +140,13 @@ def envoyer_campagne(campagne, request):
     accroche = ACCROCHES.get(campagne.motif, "")
     rotation = _phrase_rotation(campagne)
 
+    from .canaux_campagne import CANAL_EMAIL, CANAL_MATRIX, CANAL_MOBIMEL, CANAL_SMS
+
+    canaux = campagne.canaux_effectifs
     envoyes, echecs = 0, 0
+    # Un compte par canal : « 87 envoyés » ne dit pas si les SMS sont partis, et c'est
+    # pourtant eux qui coûtent.
+    par_canal = {code: 0 for code in canaux}
     a_contacter = CibleCampagne.objects.filter(
         campagne=campagne, etat=EtatCible.A_CONTACTER,
     ).select_related("utilisateur")
@@ -155,21 +161,55 @@ def envoyer_campagne(campagne, request):
                 request, cible.utilisateur, "magic-login",
                 next_url=f"/ma-fiche-benevole?campagne={campagne.id}",
             )
-            send_modele_mail(
-                request, campagne.institution, "CAMPAGNE_DISPONIBILITE",
-                {
-                    # nom-reel-assume: le prénom du destinataire, dans un message qui lui est
-                    # adressé.
-                    "PRENOM": cible.utilisateur.first_name or "",
-                    "MOTIF": accroche,
-                    "TEXTE": campagne.texte or "",
-                    "PERIODE": periode,
-                    "ROTATION": rotation,
-                    "LIEN_DISPONIBILITES": lien,
-                },
-                recipient_list=[cible.utilisateur.email],
-                fail_silently=False,
-            )
+            atteint = False
+            if CANAL_EMAIL in canaux and cible.utilisateur.email:
+                send_modele_mail(
+                    request, campagne.institution, "CAMPAGNE_DISPONIBILITE",
+                    {
+                        # nom-reel-assume: le prénom du destinataire, dans un message qui lui
+                        # est adressé.
+                        "PRENOM": cible.utilisateur.first_name or "",
+                        "MOTIF": accroche,
+                        "TEXTE": campagne.texte or "",
+                        "PERIODE": periode,
+                        "ROTATION": rotation,
+                        "LIEN_DISPONIBILITES": lien,
+                    },
+                    recipient_list=[cible.utilisateur.email],
+                    fail_silently=False,
+                )
+                par_canal[CANAL_EMAIL] += 1
+                atteint = True
+
+            # Le SMS porte le MÊME lien, mais pas le même texte : 160 caractères, au-delà
+            # desquels l'opérateur facture un second message. On dit l'essentiel — qui
+            # demande, pour quand, et où répondre.
+            if {CANAL_SMS, CANAL_MOBIMEL} & set(canaux) and cible.utilisateur.phone_number:
+                from .envoi_sms import envoyer_sms_pour_institution
+
+                parti, _motif = envoyer_sms_pour_institution(
+                    campagne.institution, cible.utilisateur.phone_number,
+                    _texte_sms(campagne, periode, lien),
+                )
+                if parti:
+                    code = CANAL_SMS if CANAL_SMS in canaux else CANAL_MOBIMEL
+                    par_canal[code] += 1
+                    atteint = True
+
+            if CANAL_MATRIX in canaux:
+                from .matrix import envoyer_dm
+
+                # Silencieux si la personne ne s'est jamais connectée à la messagerie : c'est
+                # le comportement d'`envoyer_dm`, et c'est pourquoi Matrix est annoncé comme
+                # une estimation haute à l'écran.
+                envoyer_dm(cible.utilisateur, _texte_sms(campagne, periode, lien))
+                par_canal[CANAL_MATRIX] += 1
+
+            if not atteint and CANAL_MATRIX not in canaux:
+                raise RuntimeError(
+                    "Aucun canal retenu ne permet de joindre cette personne "
+                    "(ni adresse email, ni numéro de téléphone selon les canaux choisis)."
+                )
             cible.etat = EtatCible.CONTACTE
             cible.date_envoi = timezone.now()
             cible.erreur = ""
@@ -189,7 +229,17 @@ def envoyer_campagne(campagne, request):
         campagne.date_envoi = timezone.now()
         campagne.save(update_fields=["statut", "date_envoi"])
 
-    return {"envoyes": envoyes, "echecs": echecs}
+    return {"envoyes": envoyes, "echecs": echecs, "par_canal": par_canal}
+
+
+def _texte_sms(campagne, periode, lien):
+    """Le texte court, pour le SMS et la messagerie d'équipe.
+
+    Volontairement sec : au-delà de 160 caractères l'opérateur facture un second message, et
+    une campagne à quatre cents personnes paierait deux fois. On garde ce qui décide quelqu'un
+    à cliquer — qui demande, pour quand, et le lien."""
+    nom = campagne.institution.nom_affichage or campagne.institution.nom
+    return f"{nom} : disponibilités demandées du {periode}. Répondez ici : {lien}"
 
 
 def enregistrer_la_reponse(campagne, utilisateur):

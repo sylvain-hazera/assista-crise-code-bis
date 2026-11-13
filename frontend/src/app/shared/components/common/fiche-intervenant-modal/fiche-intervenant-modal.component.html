@@ -19,7 +19,7 @@
           <h3>{{ fiche.identite.prenom }} {{ fiche.identite.nom }}</h3>
           <div class="ligne-infos">
             <span><span class="material-icons">mail</span> {{ fiche.identite.email }}</span>
-            @if (fiche.identite.telephone) { <span><span class="material-icons">phone</span> {{ fiche.identite.telephone }}</span> }
+            @if (fiche.identite.telephone) { <span><span class="material-icons">phone</span> {{ (fiche.identite.telephone | telephone) }}</span> }
             <span><span class="material-icons">verified_user</span> {{ fiche.identite.type_libelle }}</span>
           </div>
           @if (equipeNom) {

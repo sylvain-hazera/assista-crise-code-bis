@@ -5062,6 +5062,7 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
             'fournisseur_sms', 'sms_cle_api', 'sms_cle_api_renseignee', 'sms_expediteur',
             'email_configure', 'sms_configure',
             'brevo_seuil_alerte_email', 'brevo_seuil_alerte_sms', 'brevo_admin_email',
+            'cout_unitaire_email', 'cout_unitaire_sms', 'cout_unitaire_sms_mobimel',
             'credits',
             'dernier_envoi_email_le', 'derniere_erreur_email',
             'dernier_envoi_sms_le', 'derniere_erreur_sms',
@@ -5324,11 +5325,28 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
                   'creneaux', 'echelon', 'echelon_libelle', 'territoire_code', 'rayon_km',
                   'competences', 'qualifications', 'titres_a_jour', 'equipe', 'equipe_nom',
                   'tours_de_garde', 'duree_rotation_jours', 'repos_min_jours',
-                  'effectif_cible',
+                  'effectif_cible', 'canaux',
                   'statut', 'statut_libelle', 'cree_par', 'cree_par_nom',
                   'date_creation', 'date_envoi', 'date_cloture', 'suivi']
         read_only_fields = ['id', 'statut', 'cree_par', 'date_creation', 'date_envoi',
                             'date_cloture']
+
+    def validate_canaux(self, valeur):
+        """Uniquement des canaux connus (voir core/canaux_campagne.py), sans doublon.
+
+        On n'exige PAS qu'ils soient configurés : une campagne se prépare souvent avant que
+        le compte SMS ne le soit, et refuser la préparation obligerait à tout ressaisir
+        ensuite. L'écran dit ce qui est prêt, et l'envoi ne part que par ce qui l'est."""
+        from .canaux_campagne import CANAUX
+
+        connus = {c["code"] for c in CANAUX}
+        if not isinstance(valeur, list):
+            raise serializers.ValidationError("Liste attendue.")
+        inconnus = [v for v in valeur if v not in connus]
+        if inconnus:
+            raise serializers.ValidationError(
+                f"Canal inconnu : {', '.join(map(str, inconnus))}.")
+        return list(dict.fromkeys(valeur))
 
     def get_cree_par_nom(self, obj):
         if obj.cree_par is None:

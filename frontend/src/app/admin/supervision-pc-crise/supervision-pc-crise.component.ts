@@ -19,10 +19,12 @@ interface GroupeCrise {
  * région voit automatiquement ses communes membres (voir SatelliteViewSet.supervision côté
  * API) : pour chaque crise active dans ce périmètre, l'état Actif/Inactif/Perdu du satellite
  * de l'institution actrice, et ses contacts de secours dès qu'il n'est pas joignable. */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-supervision-pc-crise',
   standalone: true,
-  imports: [CommonModule],
+  imports: [TelephonePipe, CommonModule],
   templateUrl: './supervision-pc-crise.component.html',
   styleUrl: './supervision-pc-crise.component.scss',
 })

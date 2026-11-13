@@ -49,10 +49,12 @@ type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
 type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois' | 'modeles' | 'atouts';
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })
@@ -372,6 +374,9 @@ export class InstitutionsComponent implements OnInit {
       brevo_seuil_alerte_email: config.brevo_seuil_alerte_email,
       brevo_seuil_alerte_sms: config.brevo_seuil_alerte_sms,
       brevo_admin_email: config.brevo_admin_email,
+      cout_unitaire_email: config.cout_unitaire_email,
+      cout_unitaire_sms: config.cout_unitaire_sms,
+      cout_unitaire_sms_mobimel: config.cout_unitaire_sms_mobimel,
     };
     // Une clé n'est envoyée que si elle a été saisie : un champ vide signifie « inchangée »,
     // pas « effacée ». Sans cette distinction, ouvrir l'onglet et enregistrer effacerait la

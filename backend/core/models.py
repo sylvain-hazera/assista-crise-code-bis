@@ -1548,6 +1548,18 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
     #: l'on peut encore écrire à tous ses bénévoles.
     brevo_seuil_alerte_email = models.PositiveIntegerField(default=1000)
     brevo_seuil_alerte_sms = models.PositiveIntegerField(default=50)
+    # ── Tarifs déclarés, pour chiffrer une campagne avant de l'envoyer ───────────────────
+    # En CENTIMES, pour ne pas traîner des flottants sur de l'argent. Déclarés par
+    # l'institution : ils dépendent de son contrat, que nous ne connaissons pas. Zéro = non
+    # renseigné, et l'écran dit alors « coût inconnu » plutôt que « gratuit » — annoncer la
+    # gratuité à tort ferait partir un SMS à quatre cents personnes sans y penser.
+    cout_unitaire_email = models.PositiveIntegerField(
+        default=0, help_text="Coût d'un email, en centimes. 0 = non renseigné.")
+    cout_unitaire_sms = models.PositiveIntegerField(
+        default=0, help_text="Coût d'un SMS Brevo, en centimes. 0 = non renseigné.")
+    cout_unitaire_sms_mobimel = models.PositiveIntegerField(
+        default=0, help_text="Coût d'un SMS Mobimel, en centimes. 0 = non renseigné.")
+
     #: Qui gère le compte Brevo et doit être prévenu — souvent pas celui qui envoie. Adresse
     #: de fonction ; écrite par le bureau, jamais devinée.
     brevo_admin_email = models.EmailField(blank=True)
@@ -8908,6 +8920,13 @@ class CampagneDisponibilite(EnvironmentScopedModel):
                    "`tours_de_garde`.",
     )
 
+    #: Par quels canaux la campagne part (voir `core/canaux_campagne.py`). Plusieurs sont
+    #: possibles : écrire par email ET par SMS double les chances d'être lu, et c'est ce que
+    #: l'on fait quand la réponse est urgente — au prix du SMS, que l'écran annonce avant
+    #: l'envoi. Email seul par défaut, parce que c'est le canal le moins cher et le seul qui
+    #: porte un lien cliquable.
+    canaux = models.JSONField(default=list, blank=True)
+
     statut = models.CharField(
         max_length=12, choices=StatutCampagne.choices, default=StatutCampagne.BROUILLON,
     )
@@ -8928,6 +8947,16 @@ class CampagneDisponibilite(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.intitule} ({self.periode_debut} → {self.periode_fin})"
+
+    @property
+    def canaux_effectifs(self):
+        """Les canaux retenus, la liste vide valant « email seul ».
+
+        Même parti pris que `creneaux_effectifs` : une campagne créée avant l'ajout des
+        canaux, ou enregistrée sans y toucher, continue de partir comme avant."""
+        from .canaux_campagne import CANAL_EMAIL
+
+        return list(self.canaux) if self.canaux else [CANAL_EMAIL]
 
     @property
     def creneaux_effectifs(self):

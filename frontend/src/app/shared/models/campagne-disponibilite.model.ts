@@ -52,6 +52,30 @@ export interface SuiviCampagne {
   disponibles: number;
 }
 
+/** Un canal d'envoi, tel que le serveur le décrit à l'écran de composition.
+ *
+ * Tout y est nécessaire à la décision : combien ce canal atteint, combien il laisse de côté,
+ * ce qu'il coûte, ce qu'il reste pour payer. `null` veut partout dire **inconnu** — jamais
+ * zéro, jamais « gratuit » : annoncer la gratuité à tort ferait partir quatre cents SMS sans
+ * y penser. */
+export interface CanalEnvoi {
+  code: string;
+  libelle: string;
+  detail: string;
+  unite: string | null;
+  destinataires: number;
+  /** Les personnes que ce canal laisse de côté. Le chiffre qui manque le plus souvent quand
+   * on choisit « le moins cher ». */
+  non_joignables: number;
+  /** Faux quand le compte d'envoi n'est pas configuré : la case est alors inactive. */
+  disponible: boolean;
+  credits_restants: number | null;
+  cout_unitaire_centimes: number;
+  cout_total_centimes: number | null;
+  /** `null` = solde inconnu. On n'annonce pas « suffisant » sans le savoir. */
+  credits_suffisants: boolean | null;
+}
+
 export interface CampagneDisponibilite {
   id: string;
   institution: string;
@@ -78,6 +102,9 @@ export interface CampagneDisponibilite {
   titres_a_jour: boolean;
   equipe: string | null;
   equipe_nom?: string | null;
+  /** Par quels canaux la campagne part. Vide = email seul : une campagne créée avant le choix
+   * des canaux ne doit pas se mettre à envoyer des SMS. */
+  canaux: string[];
   /** Option explicite (12/11/2026). Avant, « pas de tours » se disait par un effectif laissé
    * à zéro : une décision d'organisation portée par un nombre, que personne ne lit comme
    * telle. Beaucoup de campagnes ne veulent que recueillir des disponibilités. */
@@ -117,6 +144,9 @@ export interface ApercuCiblage {
   total: number;
   cibles: CibleCampagne[];
   tronque: boolean;
+  /** Les quatre canaux chiffrés pour CETTE cible : l'aperçu sert autant à compter les gens
+   * qu'à savoir ce que coûtera de leur écrire. */
+  canaux: CanalEnvoi[];
 }
 
 export interface AffectationRotation {

@@ -230,7 +230,7 @@
               <div class="rattachement-item" [attr.data-statut]="r.statut">
                 <div class="rattachement-info">
                   <strong>{{ r.prenom_demandeur }} {{ r.nom_demandeur }}</strong> — {{ r.type_lien === 'PROPRIETAIRE' ? 'Propriétaire' : 'Locataire' }}
-                  <div class="rattachement-contact">{{ r.email_demandeur }} @if (r.telephone_demandeur) { · {{ r.telephone_demandeur }} }</div>
+                  <div class="rattachement-contact">{{ r.email_demandeur }} @if (r.telephone_demandeur) { · {{ (r.telephone_demandeur | telephone) }} }</div>
                   @if (r.message) { <div class="rattachement-message">{{ r.message }}</div> }
                   <div class="rattachement-date">Demandé le {{ r.date_demande | date:'dd/MM/yyyy' }}</div>
                   @if (r.a_justificatif) {

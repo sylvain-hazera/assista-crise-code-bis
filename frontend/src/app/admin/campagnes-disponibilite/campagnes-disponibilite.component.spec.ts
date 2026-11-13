@@ -5,7 +5,9 @@ import { CampagnesDisponibiliteComponent } from './campagnes-disponibilite.compo
 import { fournisseursDeTest } from '../../testing/test-providers';
 import { AuthService } from '../../auth/services/auth.service';
 import { environment } from '../../../environments/environment';
-import { CampagneDisponibilite } from '../../shared/models/campagne-disponibilite.model';
+import {
+  CampagneDisponibilite, CanalEnvoi,
+} from '../../shared/models/campagne-disponibilite.model';
 
 /**
  * Ce qui est testé ici est ce qui a des conséquences, pas le rendu :
@@ -29,10 +31,17 @@ describe('CampagnesDisponibiliteComponent', () => {
     periode_debut: '2027-01-12', periode_fin: '2027-01-26', creneaux: [],
     echelon: 'NATIONAL', territoire_code: '', rayon_km: null,
     competences: [], qualifications: [], titres_a_jour: true, equipe: null,
+    canaux: ['BREVO_EMAIL'],
     tours_de_garde: false,
     duree_rotation_jours: 3, repos_min_jours: 2, effectif_cible: 0,
     statut: 'BROUILLON',
   };
+
+  const canal = (sur: Partial<CanalEnvoi>): CanalEnvoi => ({
+    code: 'BREVO_EMAIL', libelle: 'Email', detail: '', unite: 'crédit email',
+    destinataires: 10, non_joignables: 0, disponible: true, credits_restants: null,
+    cout_unitaire_centimes: 1, cout_total_centimes: 10, credits_suffisants: null, ...sur,
+  });
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -244,6 +253,80 @@ describe('CampagnesDisponibiliteComponent', () => {
       // grille.
       expect(composant.manques.length).toBe(1);
       expect(composant.manques[0].creneau).toBe('NUIT');
+    });
+  });
+
+  /**
+   * Le choix du canal est une décision de dépense : ce qui compte est que l'écran ne puisse
+   * pas sous-estimer le coût ni surestimer la portée.
+   */
+  describe('le choix des canaux', () => {
+    it('part sur email seul quand rien n\'est coché', () => {
+      composant.saisie = { ...CAMPAGNE, canaux: [] };
+      expect(composant.canauxChoisis).toEqual(['BREVO_EMAIL']);
+      expect(composant.canalCoche('BREVO_SMS')).toBeFalse();
+    });
+
+    it('refuse de cocher un canal non configuré', () => {
+      const sms = canal({ code: 'BREVO_SMS', disponible: false });
+      composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_EMAIL'] };
+
+      composant.basculerCanal(sms);
+
+      expect(composant.canalCoche('BREVO_SMS')).toBeFalse();
+    });
+
+    it('annonce « coût inconnu » plutôt qu\'un zéro quand le tarif manque', () => {
+      // Un total à 0 € ferait partir quatre cents SMS sans y penser.
+      composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_SMS'] };
+      composant.canaux = [canal({
+        code: 'BREVO_SMS', cout_unitaire_centimes: 0, cout_total_centimes: null,
+      })];
+
+      expect(composant.coutTotalCentimes).toBeNull();
+      expect(composant.euros(composant.coutTotalCentimes)).toBe('coût inconnu');
+    });
+
+    it('additionne le coût des canaux cochés, et d\'eux seuls', () => {
+      composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_EMAIL'] };
+      composant.canaux = [
+        canal({ code: 'BREVO_EMAIL', cout_total_centimes: 10 }),
+        canal({ code: 'BREVO_SMS', cout_total_centimes: 600 }),
+      ];
+
+      expect(composant.coutTotalCentimes).toBe(10);
+
+      composant.basculerCanal(composant.canaux[1]);
+      expect(composant.coutTotalCentimes).toBe(610);
+    });
+
+    it('nomme les bénévoles qu\'aucun canal coché ne joint', () => {
+      composant.apercu = { total: 10, noms: [], tronque: false };
+      composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_SMS'] };
+      composant.canaux = [canal({
+        code: 'BREVO_SMS', destinataires: 6, non_joignables: 4,
+      })];
+
+      expect(composant.nonJoignablesParAucunCanal).toBe(4);
+    });
+
+    it('signale un solde insuffisant sans empêcher l\'envoi', () => {
+      composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_SMS'] };
+      composant.canaux = [canal({
+        code: 'BREVO_SMS', credits_restants: 2, credits_suffisants: false,
+      })];
+
+      expect(composant.creditsInsuffisants).toBeTrue();
+      // Rien dans le composant ne bloque : partir quand même est une décision de
+      // l'association.
+      expect(composant.coutTotalCentimes).toBe(10);
+    });
+
+    it('ne dit pas « suffisant » quand le solde est inconnu', () => {
+      composant.saisie = { ...CAMPAGNE, canaux: ['MOBIMEL'] };
+      composant.canaux = [canal({ code: 'MOBIMEL', credits_suffisants: null })];
+
+      expect(composant.creditsInsuffisants).toBeFalse();
     });
   });
 });

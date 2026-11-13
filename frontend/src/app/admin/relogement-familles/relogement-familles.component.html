@@ -255,7 +255,7 @@
                 <div class="fiche-foyer">
                   <dl>
                     <div><dt>Référent</dt><dd>{{ d.nom_referent }}</dd></div>
-                    <div><dt>Téléphone</dt><dd>{{ d.telephone_referent || '—' }}</dd></div>
+                    <div><dt>Téléphone</dt><dd>{{ (d.telephone_referent | telephone) || '—' }}</dd></div>
                     <div><dt>Courriel</dt><dd>{{ d.email_referent || '—' }}</dd></div>
                     <div><dt>Commune d'origine</dt>
                          <dd>{{ d.commune_origine_nom || '—' }}</dd></div>

@@ -345,7 +345,7 @@
                       <span class="detail">{{ r.type }} — {{ r.role_sur_la_crise }}</span>
                       <span class="coordonnees">
                         @if (r.telephone) {
-                          <a [href]="'tel:' + r.telephone">{{ r.telephone }}</a>
+                          <a [href]="'tel:' + r.telephone">{{ (r.telephone | telephone) }}</a>
                         }
                         @if (r.email) {
                           <a [href]="'mailto:' + r.email">{{ r.email }}</a>

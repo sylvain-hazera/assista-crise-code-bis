@@ -4,10 +4,12 @@ import { UserService } from '../../services/user.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { User, UserRole } from '../../shared/models/user.model';
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-account-validations',
   standalone: true,
-  imports: [CommonModule],
+  imports: [TelephonePipe, CommonModule],
   templateUrl: './account-validations.component.html',
   styleUrl: './account-validations.component.scss'
 })

@@ -41,10 +41,12 @@ import {
  * dater et d'en joindre le document — et l'étiquette « convention expirée », parce qu'une
  * convention périmée sur laquelle on compte est pire que pas de convention du tout.
  */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-sites-sensibles',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, FormsModule],
   templateUrl: './sites-sensibles.component.html',
   styleUrl: './sites-sensibles.component.scss',
 })

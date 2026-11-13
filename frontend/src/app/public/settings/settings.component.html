@@ -899,7 +899,7 @@
             </div>
             <div class="detail-row">
               <label>Téléphone :</label>
-              <span>{{ selectedReport!.phone_request }}</span>
+              <span>{{ (selectedReport!.phone_request | telephone) }}</span>
             </div>
             <div class="detail-row">
               <label>Localisation :</label>

@@ -681,7 +681,7 @@
 
                 @if (coordonneesVisibles) {
                   <div><dt>Courriel</dt><dd>{{ membre.email || '—' }}</dd></div>
-                  <div><dt>Téléphone</dt><dd>{{ membre.telephone || '—' }}</dd></div>
+                  <div><dt>Téléphone</dt><dd>{{ (membre.telephone | telephone) || '—' }}</dd></div>
                   <div><dt>Commune</dt><dd>
                     {{ membre.ville || '—' }}
                     @if (membre.departement_code) { ({{ membre.departement_code }}) }
@@ -1139,7 +1139,7 @@
                             <div><dt>Statut</dt><dd>{{ libelleStatut(f.statut) }}</dd></div>
                             @if (coordonneesVisibles) {
                               <div><dt>Courriel</dt><dd>{{ f.email || '—' }}</dd></div>
-                              <div><dt>Téléphone</dt><dd>{{ f.telephone || '—' }}</dd></div>
+                              <div><dt>Téléphone</dt><dd>{{ (f.telephone | telephone) || '—' }}</dd></div>
                               <div><dt>Commune</dt><dd>
                                 {{ f.ville || '—' }}
                                 @if (f.departement_code) { ({{ f.departement_code }}) }

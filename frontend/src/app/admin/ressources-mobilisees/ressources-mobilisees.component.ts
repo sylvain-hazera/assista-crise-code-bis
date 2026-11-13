@@ -32,10 +32,12 @@ interface GroupeEquipe {
 
 /** Ressources mobilisées (personnes et matériel), groupées par équipe
  * (TeamViewSet.ressources_mobilisees, scopé côté serveur). */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-ressources-mobilisees',
   standalone: true,
-  imports: [CommonModule, FormsModule, LogementPickerModalComponent, FicheIntervenantModalComponent, FicheMaterielModalComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, LogementPickerModalComponent, FicheIntervenantModalComponent, FicheMaterielModalComponent],
   templateUrl: './ressources-mobilisees.component.html',
   styleUrl: './ressources-mobilisees.component.scss',
 })

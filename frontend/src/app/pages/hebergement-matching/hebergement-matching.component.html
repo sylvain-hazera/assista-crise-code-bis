@@ -372,7 +372,7 @@
                 <dd>
                   @if (selectedDemande.phone_request) {
                     <a [href]="'tel:' + selectedDemande.phone_request">
-                      {{ selectedDemande.phone_request }}
+                      {{ (selectedDemande.phone_request | telephone) }}
                     </a>
                   } @else { Non communiqué }
                 </dd>

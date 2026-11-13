@@ -38,10 +38,12 @@ const PRIORITE_RANG: Record<string, number> = { URGENTE: 0, NORMALE: 1, BASSE: 2
 
 const PRIORITE_COULEUR: Record<string, string> = { URGENTE: '#dc2626', NORMALE: '#f59e0b', BASSE: '#3b82f6' };
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-mes-interventions',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [TelephonePipe, CommonModule, FormsModule, RouterLink],
   templateUrl: './mes-interventions.component.html',
   styleUrl: './mes-interventions.component.scss',
 })

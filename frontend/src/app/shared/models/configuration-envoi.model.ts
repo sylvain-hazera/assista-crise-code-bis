@@ -12,6 +12,13 @@ export interface ConfigurationEnvoi {
   brevo_seuil_alerte_sms?: number;
   /** Qui gère le compte Brevo — souvent pas celui qui envoie. Prévenu avant la panne. */
   brevo_admin_email?: string;
+  /** Tarifs **déclarés par l'institution**, en centimes : ils dépendent de son contrat et
+   * nous ne les connaissons pas. Zéro = non renseigné, et l'écran de campagne dit alors
+   * « coût inconnu » plutôt que « gratuit » — annoncer la gratuité à tort ferait partir
+   * quatre cents SMS sans y penser. */
+  cout_unitaire_email?: number;
+  cout_unitaire_sms?: number;
+  cout_unitaire_sms_mobimel?: number;
   credits?: CreditsBrevo;
 
   id: string;
@@ -53,6 +60,9 @@ export interface ConfigurationEnvoiPatch {
   brevo_seuil_alerte_email?: number;
   brevo_seuil_alerte_sms?: number;
   brevo_admin_email?: string;
+  cout_unitaire_email?: number;
+  cout_unitaire_sms?: number;
+  cout_unitaire_sms_mobimel?: number;
 }
 
 /** Un compteur de crédits Brevo. `restant` à `null` = inconnu, et inconnu n'est pas zéro :

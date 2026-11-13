@@ -93,10 +93,12 @@ const ORDERING_FIELD_MAP: Partial<Record<SortField, string>> = {
   distanceFromCrisisKm: 'distance_from_crisis',
 };
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-reporting',
   standalone: true,
-  imports: [CommonModule, FormsModule, MinimapComponent, QuiAConsulteComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, MinimapComponent, QuiAConsulteComponent],
   templateUrl: './reporting.component.html',
   styleUrls: ['./reporting.component.scss'],
 })

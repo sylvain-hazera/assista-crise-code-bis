@@ -13,10 +13,12 @@ import { Team, teamDisplayName } from '../../shared/models/team.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { QuiAConsulteComponent } from '../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-recherche-personne-detail',
   standalone: true,
-  imports: [
+  imports: [TelephonePipe, 
     CommonModule,
     FormsModule,
     ZoneMapComponent,

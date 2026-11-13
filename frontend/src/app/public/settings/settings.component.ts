@@ -28,10 +28,12 @@ import { SuiviPositionPermanentService } from '../../services/suivi-position-per
 import { PieceIdentiteReserveService } from '../../services/piece-identite-reserve.service';
 import { PieceIdentiteReserve } from '../../shared/models/piece-identite-reserve.model';
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })

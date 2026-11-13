@@ -334,7 +334,7 @@
                         <span class="contact-email">{{ row.email }}</span>
                       }
                       @if (row.telephone) {
-                        <span class="contact-phone">{{ row.telephone }}</span>
+                        <span class="contact-phone">{{ (row.telephone | telephone) }}</span>
                       }
                     </div>
                   } @else {
@@ -497,7 +497,7 @@
               @if (selectedRow.telephone) {
                 <div class="detail-item">
                   <span class="material-icons">phone</span>
-                  <div><label>Téléphone</label><span>{{ selectedRow.telephone }}</span></div>
+                  <div><label>Téléphone</label><span>{{ (selectedRow.telephone | telephone) }}</span></div>
                 </div>
               }
             </div>

@@ -55,10 +55,12 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
  * spécialité (Besoin), distinguées par estSpecialite. */
 type SavoirFaire = (Competence | Besoin) & { sorte?: string; estSpecialite?: boolean };
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })

@@ -37,10 +37,12 @@ type ResponsableMode = 'moi' | 'contact' | 'email';
 
 type ModalView = 'none' | 'detail';
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })

@@ -363,6 +363,78 @@
                 <p class="noms">
                   {{ apercu.noms.join(', ') }}@if (apercu.tronque) { … }
                 </p>
+                <!-- Le choix du canal vient APRÈS le comptage : on ne peut pas chiffrer
+                     un envoi sans savoir à combien de personnes il part. -->
+                <div class="canaux">
+                  <h3>Par quel canal ?</h3>
+                  <p class="page-hint">
+                    Les coûts dépendent de votre contrat : renseignez-les dans
+                    <em>Envois</em>, sur la fiche de votre association. Tant qu'ils ne le sont
+                    pas, nous préférons afficher « coût inconnu » plutôt qu'un zéro qui
+                    laisserait croire à la gratuité.
+                  </p>
+                  @for (canal of canaux; track canal.code) {
+                    <label class="canal" [class.indisponible]="!canal.disponible"
+                           [class.retenu]="canalCoche(canal.code) && canal.disponible">
+                      <input type="checkbox" [checked]="canalCoche(canal.code)"
+                             [disabled]="!canal.disponible"
+                             (change)="basculerCanal(canal)">
+                      <span class="canal-corps">
+                        <span class="canal-titre">
+                          {{ canal.libelle }}
+                          <span class="canal-chiffre">
+                            {{ canal.destinataires }} destinataire(s)
+                          </span>
+                          @if (canal.destinataires > 0) {
+                            <span class="canal-cout">{{ euros(canal.cout_total_centimes) }}</span>
+                          }
+                        </span>
+                        <span class="canal-detail">{{ canal.detail }}</span>
+                        @if (!canal.disponible) {
+                          <span class="canal-alerte">
+                            Ce canal n'est pas configuré pour votre association. Renseignez-le
+                            dans l'onglet <em>Envois</em> de votre fiche.
+                          </span>
+                        } @else {
+                          @if (canal.non_joignables > 0) {
+                            <span class="canal-manque">
+                              {{ canal.non_joignables }} personne(s) ne seront pas jointes par
+                              ce canal.
+                            </span>
+                          }
+                          @if (canal.credits_restants !== null) {
+                            <span class="canal-solde"
+                                  [class.alerte-texte]="canal.credits_suffisants === false">
+                              Solde : {{ canal.credits_restants }} {{ canal.unite }}(s)
+                              @if (canal.credits_suffisants === false) {
+                                — insuffisant pour cet envoi.
+                              }
+                            </span>
+                          }
+                        }
+                      </span>
+                    </label>
+                  }
+
+                  <p class="canaux-total">
+                    Coût estimé de cet envoi :
+                    <strong>{{ euros(coutTotalCentimes) }}</strong>
+                  </p>
+                  @if (nonJoignablesParAucunCanal > 0) {
+                    <p class="page-hint alerte-texte">
+                      {{ nonJoignablesParAucunCanal }} bénévole(s) ne seront joints par aucun
+                      des canaux cochés. Ajoutez-en un, ou complétez leurs coordonnées.
+                    </p>
+                  }
+                  @if (creditsInsuffisants) {
+                    <p class="page-hint alerte-texte">
+                      Votre solde ne couvre pas tout l'envoi. Vous pouvez partir quand même :
+                      les messages s'arrêteront quand le crédit sera épuisé, et le suivi vous
+                      dira qui n'a pas été joint.
+                    </p>
+                  }
+                </div>
+
                 <button type="button" class="btn-primary" [disabled]="enCours"
                         (click)="envoyer()">
                   <span class="material-icons">send</span>

@@ -75,7 +75,7 @@
           <tr (click)="openDetail(institution)">
             <td>{{ institution.nom }}</td>
             <td>{{ typeLabel(institution) }}</td>
-            <td>{{ institution.telephone || '—' }}</td>
+            <td>{{ (institution.telephone | telephone) || '—' }}</td>
             <td>{{ institution.email || '—' }}</td>
             <td>
               <span class="badge" [class.badge-ok]="institution.actif" [class.badge-off]="!institution.actif">
@@ -1131,6 +1131,41 @@
                     nom de l'institution.
                   </p>
                 }
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Seuil d'alerte — SMS</label>
+                <input type="number" min="0" class="form-input"
+                       [(ngModel)]="configEnvoi.brevo_seuil_alerte_sms">
+                <p class="hint">
+                  Même principe que pour les emails, compté en crédits SMS restants. Les deux
+                  soldes sont indépendants : un compte plein d'emails peut être à sec de SMS.
+                </p>
+              </div>
+
+              <h4 class="bloc-titre">
+                <span class="material-icons">euro</span> Ce que vous coûte un envoi
+              </h4>
+              <p class="hint">
+                Ces tarifs dépendent de votre contrat et nous ne les connaissons pas : en les
+                renseignant ici, vous les verrez au moment de lancer une campagne, avant
+                d'envoyer. Un chiffre laissé à zéro n'est pas lu comme « gratuit » mais comme
+                « coût inconnu ». En <strong>centimes</strong>, pour éviter les virgules.
+              </p>
+              <div class="form-group">
+                <label class="form-label">Un email (centimes)</label>
+                <input type="number" min="0" class="form-input"
+                       [(ngModel)]="configEnvoi.cout_unitaire_email">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Un SMS Brevo (centimes)</label>
+                <input type="number" min="0" class="form-input"
+                       [(ngModel)]="configEnvoi.cout_unitaire_sms">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Un SMS Mobimel (centimes)</label>
+                <input type="number" min="0" class="form-input"
+                       [(ngModel)]="configEnvoi.cout_unitaire_sms_mobimel">
               </div>
 
               <button type="button" class="btn-primary"

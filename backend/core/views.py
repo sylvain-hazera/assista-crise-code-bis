@@ -17139,12 +17139,19 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
             # Nommé, jamais silencieux : un critère sans effet ÉLARGIT la cible.
             return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
 
-        cibles = CibleCampagne.objects.filter(campagne=campagne).select_related("utilisateur")
+        cibles = list(
+            CibleCampagne.objects.filter(campagne=campagne).select_related("utilisateur"))
+        # Le coût est un critère de CHOIX, pas une note de bas de page : écrire à quatre
+        # cents bénévoles ne vaut pas la même chose par email et par SMS, et la décision se
+        # prend ici — pas en découvrant la facture (voir core/canaux_campagne.py).
+        from .canaux_campagne import apercu_des_canaux
+
         return Response({
             **bilan,
             "cibles": CibleCampagneSerializer(
                 cibles[:50], many=True, context={"request": request}).data,
             "tronque": bilan["total"] > 50,
+            "canaux": apercu_des_canaux(campagne, cibles),
         })
 
     @action(detail=True, methods=["post"])

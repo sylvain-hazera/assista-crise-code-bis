@@ -34,10 +34,12 @@ export const DUREE_HEBERGEMENT_LABELS: Record<string, string> = {
  * d'une offre avec une demande sélectionnée — voir compareToDemande()/matchesTolerance(). */
 const CHAMPS_TOLERANCE: (keyof Offer & keyof Request)[] = ['nombre_pieces', 'nombre_chambres', 'capacite_adultes', 'capacite_enfants'];
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-hebergement-matching',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, MinimapComponent, TagSearchInputComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, RouterLink, MinimapComponent, TagSearchInputComponent],
   templateUrl: './hebergement-matching.component.html',
   styleUrl: './hebergement-matching.component.scss',
 })

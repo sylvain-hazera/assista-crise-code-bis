@@ -415,3 +415,87 @@ label {
 .btn-secondary:hover:not(:disabled) { border-color: #9ca3af; }
 .btn-danger { background: var(--ac-surface, white); color: var(--ac-red-text, #991b1b); border-color: var(--ac-red-border, #fecaca); }
 .btn-danger:hover:not(:disabled) { background: var(--ac-red-bg, #fef2f2); }
+
+/* ── Choix des canaux d'envoi ────────────────────────────────────────────────
+   Chaque canal est une ligne qu'on lit entièrement avant de cocher : le nombre de
+   destinataires, le coût, ce qu'il reste. Un canal indisponible reste visible, en retrait,
+   avec la raison — le cacher laisserait croire qu'il n'existe pas. */
+.canaux {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--ac-surface-alt, #f8fafc);
+
+  h3 {
+    margin: 0 0 .25rem;
+    font-size: 1rem;
+  }
+}
+
+.canal {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  padding: .75rem;
+  margin-bottom: .5rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 6px;
+  background: var(--ac-surface, #fff);
+  cursor: pointer;
+
+  &.retenu {
+    border-color: var(--ac-primary, #2563eb);
+    box-shadow: 0 0 0 1px var(--ac-primary, #2563eb) inset;
+  }
+
+  &.indisponible {
+    cursor: not-allowed;
+    opacity: .65;
+  }
+
+  input { margin-top: .2rem; }
+}
+
+.canal-corps {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.canal-titre {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.canal-chiffre,
+.canal-cout {
+  font-weight: 500;
+  font-size: .85rem;
+  padding: .1rem .45rem;
+  border-radius: 999px;
+  background: var(--ac-surface-alt, #f1f5f9);
+  color: var(--ac-text-muted, #475569);
+}
+
+.canal-cout { font-variant-numeric: tabular-nums; }
+
+.canal-detail,
+.canal-manque,
+.canal-solde,
+.canal-alerte {
+  font-size: .85rem;
+  color: var(--ac-text-muted, #475569);
+}
+
+.canal-manque { color: var(--ac-warning, #b45309); }
+.canal-alerte { color: var(--ac-text-muted, #475569); font-style: italic; }
+
+.canaux-total {
+  margin: .75rem 0 0;
+  font-size: .95rem;
+  font-variant-numeric: tabular-nums;
+}

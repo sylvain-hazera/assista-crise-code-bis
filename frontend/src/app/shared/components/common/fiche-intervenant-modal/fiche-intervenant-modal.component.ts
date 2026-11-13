@@ -6,10 +6,12 @@ import { FicheIntervenant } from '../../../models/fiche-intervenant.model';
 
 /** Fiche détaillée d'une personne mobilisée (depuis Ressources mobilisées), avec deux
  * historiques distincts : compte (sécurité) et activité. Un seul appel (FicheIntervenantView). */
+import { TelephonePipe } from '../../../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-fiche-intervenant-modal',
   standalone: true,
-  imports: [CommonModule],
+  imports: [TelephonePipe, CommonModule],
   templateUrl: './fiche-intervenant-modal.component.html',
   styleUrl: './fiche-intervenant-modal.component.scss',
 })

@@ -15,10 +15,12 @@ import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte
 
 type Onglet = 'details' | 'photos' | 'commentaires' | 'historique' | 'rattachement';
 
+import { TelephonePipe } from '../../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-habitation-fiche',
   standalone: true,
-  imports: [CommonModule, FormsModule, QuiAConsulteComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, QuiAConsulteComponent],
   templateUrl: './habitation-fiche.component.html',
   styleUrl: './habitation-fiche.component.scss',
 })

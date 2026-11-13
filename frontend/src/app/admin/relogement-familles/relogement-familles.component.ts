@@ -26,10 +26,12 @@ export type TriRelogement = 'urgence' | 'nom' | 'terme' | 'personnes' | 'ouvertu
  * `core/relogement.py`) : un total recompté sur les lignes affichées changerait avec les
  * filtres, et deux personnes annonceraient deux chiffres différents en réunion.
  */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-relogement-familles',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, FormsModule],
   templateUrl: './relogement-familles.component.html',
   styleUrl: './relogement-familles.component.scss',
 })

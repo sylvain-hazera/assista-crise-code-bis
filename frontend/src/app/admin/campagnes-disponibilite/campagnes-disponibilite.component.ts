@@ -12,8 +12,8 @@ import { CrisisService } from '../../services/crisis.service';
 import { InstitutionService } from '../../services/institution.service';
 import { TeamService } from '../../services/team.service';
 import {
-  BilanRotations, CampagneDisponibilite, CibleCampagne, CouvertureCampagne, ECHELONS, MOTIFS,
-  RotationCampagne,
+  BilanRotations, CampagneDisponibilite, CanalEnvoi, CibleCampagne, CouvertureCampagne,
+  ECHELONS, MOTIFS, RotationCampagne,
 } from '../../shared/models/campagne-disponibilite.model';
 import { Competence } from '../../shared/models/competence.model';
 import { Crisis } from '../../shared/models/crisis.model';
@@ -82,6 +82,8 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   rotations: RotationCampagne[] = [];
   bilanRotations: BilanRotations | null = null;
   apercu: { total: number; noms: string[]; tronque: boolean } | null = null;
+  /** Les canaux chiffrés pour la cible qu'on vient de compter. */
+  canaux: CanalEnvoi[] = [];
 
   constructor(
     private service: CampagneDisponibiliteService,
@@ -113,6 +115,9 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       competences: [], qualifications: [], titres_a_jour: true, equipe: null,
       // Désactivés par défaut : le défaut va vers le moins d'effet, ce qui est le bon sens
       // pour une option qui propose d'affecter des gens.
+      // Email seul : le canal le moins cher est le défaut, et cocher un SMS reste un geste
+      // délibéré. Un défaut qui engage des dizaines d'euros n'est pas un défaut.
+      canaux: ['BREVO_EMAIL'],
       tours_de_garde: false,
       duree_rotation_jours: 3, repos_min_jours: 2, effectif_cible: 0,
     };
@@ -188,6 +193,7 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     this.saisie = this.saisieVide();
     this.campagne = null;
     this.apercu = null;
+    this.canaux = [];
     this.onglet = 'composer';
     this.message = '';
     this.erreur = '';
@@ -197,6 +203,7 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     this.campagne = campagne;
     this.saisie = { ...campagne };
     this.apercu = null;
+    this.canaux = [];
     this.onglet = campagne.statut === 'BROUILLON' ? 'composer' : 'suivi';
     if (this.onglet === 'suivi') { this.chargerSuivi(); }
   }
@@ -317,11 +324,13 @@ export class CampagnesDisponibiliteComponent implements OnInit {
           noms: res.cibles.map(c => c.nom),
           tronque: res.tronque,
         };
+        this.canaux = res.canaux ?? [];
         this.message = '';
       },
       error: (err) => {
         this.enCours = false;
         this.apercu = null;
+        this.canaux = [];
         // Le serveur nomme le critère inapplicable : on l'affiche tel quel, c'est la seule
         // information utile.
         this.erreur = this.premierMessage(err) || 'Ciblage impossible.';
@@ -329,7 +338,85 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     });
   }
 
+  // ── Canaux d'envoi ───────────────────────────────────────────────────────
+
+  /** Les canaux retenus, ou email seul si rien n'est coché : c'est la règle du serveur, et
+   * l'écran doit montrer la même chose que ce qui partira. */
+  get canauxChoisis(): string[] {
+    const choisis = this.saisie.canaux ?? [];
+    return choisis.length ? choisis : ['BREVO_EMAIL'];
+  }
+
+  canalCoche(code: string): boolean {
+    return this.canauxChoisis.includes(code);
+  }
+
+  basculerCanal(canal: CanalEnvoi): void {
+    if (!canal.disponible) { return; }
+    const actuels = this.canauxChoisis;
+    this.saisie.canaux = actuels.includes(canal.code)
+      ? actuels.filter(c => c !== canal.code)
+      : [...actuels, canal.code];
+  }
+
+  /** Ce que l'envoi coûtera en tout, canaux cochés confondus. `null` dès qu'un tarif manque :
+   * un total partiel sous-estimerait la dépense, ce qui est la pire des erreurs ici. */
+  get coutTotalCentimes(): number | null {
+    const retenus = this.canaux.filter(c => this.canalCoche(c.code) && c.disponible);
+    if (!retenus.length) { return 0; }
+    // Matrix est gratuit pour de vrai ; ailleurs, un total nul veut dire tarif non
+    // renseigné, et on ne l'additionne pas comme s'il valait zéro.
+    if (retenus.some(c => c.code !== 'MATRIX' && c.destinataires > 0
+                          && c.cout_total_centimes === null)) {
+      return null;
+    }
+    return retenus.reduce((somme, c) => somme + (c.cout_total_centimes ?? 0), 0);
+  }
+
+  /** Combien de personnes aucun canal coché ne touche. Le chiffre qui décide d'en cocher un
+   * de plus. */
+  get nonJoignablesParAucunCanal(): number {
+    if (!this.apercu) { return 0; }
+    const retenus = this.canaux.filter(c => this.canalCoche(c.code) && c.disponible);
+    if (!retenus.length) { return this.apercu.total; }
+    return Math.max(0, this.apercu.total - Math.max(...retenus.map(c => c.destinataires)));
+  }
+
+  /** Vrai si un canal coché n'a pas assez de crédits. Prévient, ne bloque pas : partir quand
+   * même sur les cent premiers est une décision de l'association. */
+  get creditsInsuffisants(): boolean {
+    return this.canaux.some(c => this.canalCoche(c.code) && c.credits_suffisants === false);
+  }
+
+  euros(centimes: number | null): string {
+    if (centimes === null) { return 'coût inconnu'; }
+    if (centimes === 0) { return 'aucun coût'; }
+    return (centimes / 100).toLocaleString('fr-FR',
+      { style: 'currency', currency: 'EUR' });
+  }
+
   envoyer(): void {
+    if (!this.campagne || !this.apercu) { return; }
+    // Les canaux cochés ne sont pas encore enregistrés : on les écrit AVANT de partir, sinon
+    // la campagne s'enverrait par le canal d'hier.
+    const choisis = this.canauxChoisis;
+    const memes = JSON.stringify([...(this.campagne.canaux ?? [])].sort())
+      === JSON.stringify([...choisis].sort());
+    if (!memes) {
+      this.enCours = true;
+      this.service.modifier(this.campagne.id, { canaux: choisis }).subscribe({
+        next: (maj) => { this.campagne = maj; this.enCours = false; this.envoyerVraiment(); },
+        error: (err) => {
+          this.enCours = false;
+          this.erreur = this.premierMessage(err) || "Le choix des canaux n'a pas pu être enregistré.";
+        },
+      });
+      return;
+    }
+    this.envoyerVraiment();
+  }
+
+  private envoyerVraiment(): void {
     if (!this.campagne || !this.apercu) { return; }
     this.enCours = true;
     this.erreur = '';

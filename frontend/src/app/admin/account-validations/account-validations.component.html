@@ -44,7 +44,7 @@
         </div>
         <div class="info-row" *ngIf="user.phone_number">
           <span class="material-symbols-outlined">call</span>
-          <span>{{ user.phone_number }}</span>
+          <span>{{ (user.phone_number | telephone) }}</span>
         </div>
         <div class="info-row">
           <span class="material-symbols-outlined">location_on</span>

@@ -1272,7 +1272,7 @@
                   <img class="assign-detail-photo" [src]="requestPhotoUrls[d.id]" alt="Photo jointe à la demande">
                 }
                 <div class="assign-detail-info">
-                  <p><span class="material-icons">phone</span> {{ d.phone_request || '—' }}</p>
+                  <p><span class="material-icons">phone</span> {{ (d.phone_request | telephone) || '—' }}</p>
                   <p><span class="material-icons">mail</span> {{ d.email_request || '—' }}</p>
                   @if (d.commune) { <p><span class="material-icons">place</span> {{ d.commune }}</p> }
                   @if (d.description) { <p class="assign-detail-description">{{ d.description }}</p> }

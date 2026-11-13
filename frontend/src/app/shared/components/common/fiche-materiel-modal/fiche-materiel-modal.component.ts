@@ -16,10 +16,12 @@ import { DossierDocument } from '../../../models/dossier-document.model';
  * Photos/documents réutilisent tels quels les endpoints déjà existants (OfferViewSet.preview,
  * OfferPhotoViewSet, DocumentViewSet, tous déjà génériques) -- pas de nouveau mécanisme
  * d'upload/preview, juste les services déjà là. */
+import { TelephonePipe } from '../../../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-fiche-materiel-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, FormsModule],
   templateUrl: './fiche-materiel-modal.component.html',
   styleUrl: './fiche-materiel-modal.component.scss',
 })

@@ -22,10 +22,12 @@ interface SelectedItem {
  * Page dédiée (route `/admin/crises/:crisisId/stocks`) plutôt qu'une modale imbriquée dans le
  * détail du point (point-modal > point-inventaire-modal > cette modale) : le tableau, large par
  * nature (une colonne par centre), était trop à l'étroit dans une modale contrainte. */
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-stocks-comparaison',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, FormsModule],
   templateUrl: './stocks-comparaison.component.html',
   styleUrl: './stocks-comparaison.component.scss'
 })

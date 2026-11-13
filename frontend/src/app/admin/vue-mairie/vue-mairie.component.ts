@@ -56,10 +56,12 @@ const LIMITES_PAR_DEFAUT: Record<CategorieLimite, number | null> = {
 const LIMITES_STORAGE_KEY = 'vueCollectivite.limites';
 const OPTIONS_LIMITE: (number | null)[] = [25, 50, 100, 250, 500, null];
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, BlocAjoutComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, RouterLink, BlocAjoutComponent],
   templateUrl: './vue-mairie.component.html',
   styleUrls: ['./vue-mairie.component.scss'],
 })

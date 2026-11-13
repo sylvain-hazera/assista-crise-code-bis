@@ -1800,6 +1800,43 @@ mémoire, chaque envoi sous le seuil renverrait un message et l'alerte deviendra
 Enfin, `restant: null` veut dire inconnu, et **inconnu n'est pas zéro** : un plan sans plafond
 lisible ne déclenche rien.
 
+#### Par quel canal part une campagne, et ce que ça coûte (`core/canaux_campagne.py`)
+
+Demande du 13/11/2026 : « compte tenu des coûts, on doit avoir la possibilité de choisir entre
+brevo mail / brevo sms / mobimel / Matrix avec un rappel des coûts / solde restant ».
+
+**Le coût est un critère de choix, pas une note de bas de page.** Écrire à quatre cents
+bénévoles vaut quelques centimes par email et plusieurs dizaines d'euros par SMS. La décision
+se prend donc au moment de composer, et l'aperçu (`POST /api/campagnes-disponibilite/<id>/apercu/`)
+rend, pour chacun des quatre canaux : combien de personnes il atteint, **combien il laisse de
+côté**, ce qu'il consomme, ce qu'il reste, et si ça suffit. Le choix se fait **après** le
+comptage — on ne chiffre pas un envoi sans savoir à combien de personnes il part.
+
+Quatre règles tiennent l'écran :
+
+- **Zéro n'est pas gratuit.** Les tarifs (`cout_unitaire_email`, `cout_unitaire_sms`,
+  `cout_unitaire_sms_mobimel`, en centimes) sont **déclarés par l'institution** : ils dépendent
+  de son contrat et nous ne les connaissons pas. Non renseigné → « coût inconnu », jamais
+  « 0 € ». Un total à zéro ferait partir quatre cents SMS sans y penser, et le total global est
+  `null` dès qu'un tarif manque — un total partiel sous-estime la dépense, ce qui est la pire
+  des erreurs ici.
+- **Matrix est gratuit ET partiel.** Il ne joint que les membres d'une équipe de l'institution
+  dont le salon est réellement provisionné (`SalonMatrixEquipe.room_id`), et le chiffre annoncé
+  est une **estimation haute** : être membre d'un salon ne garantit pas s'être connecté à la
+  messagerie, et le vérifier demanderait un appel réseau par bénévole. Le dire est le seul
+  moyen que « gratuit » ne soit pas un piège.
+- **Un solde insuffisant prévient, il ne bloque pas.** Partir quand même sur les cent premiers
+  est une décision de l'association. `credits_suffisants: null` = solde inconnu, et l'écran ne
+  dit alors jamais « suffisant ».
+- **Email seul par défaut** (`CampagneDisponibilite.canaux` vide → `canaux_effectifs ==
+  ['BREVO_EMAIL']`) : une campagne créée avant ce choix ne doit pas se mettre à envoyer des
+  SMS, et un défaut qui engage des dizaines d'euros n'est pas un défaut.
+
+Brevo et Mobimel ne sont jamais proposés ensemble : une institution a **un** fournisseur SMS à
+la fois, et proposer l'autre ferait cocher un canal qui n'enverrait rien. `envoyer_campagne`
+route ensuite par canal et rend un décompte `par_canal` ; une personne qu'aucun canal retenu ne
+peut joindre est comptée en échec, visible dans le suivi.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

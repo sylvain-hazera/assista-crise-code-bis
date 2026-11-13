@@ -35,10 +35,12 @@ const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_A
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
 const VALID_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 
+import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+
 @Component({
   selector: 'app-dossier-suivi',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, MinimapComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, DatePipe, MinimapComponent],
   templateUrl: './dossier-suivi.component.html',
   styleUrls: ['./dossier-suivi.component.scss']
 })

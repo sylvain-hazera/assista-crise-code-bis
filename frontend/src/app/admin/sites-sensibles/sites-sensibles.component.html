@@ -325,7 +325,7 @@
                   </div>
                 }
                 @if (site.telephone) {
-                  <a class="telephone" [href]="'tel:' + site.telephone">{{ site.telephone }}</a>
+                  <a class="telephone" [href]="'tel:' + site.telephone">{{ (site.telephone | telephone) }}</a>
                 }
                 @if (nomAutreSource(site)) {
                   <div class="nom-autre">aussi appelé « {{ nomAutreSource(site) }} »</div>
