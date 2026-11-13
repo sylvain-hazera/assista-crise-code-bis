@@ -13,6 +13,9 @@ import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
 
 import { Team } from '../../shared/models/team.model';
+import {
+  MatrixSalonChatComponent,
+} from '../../admin/teams/matrix-salon-chat/matrix-salon-chat.component';
 import { Mission } from '../../shared/models/mission.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { DernierePosition } from '../../shared/models/derniere-position.model';
@@ -30,7 +33,7 @@ const STATUT_LABELS: Record<string, string> = {
 @Component({
   selector: 'app-mon-equipe',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, MatrixSalonChatComponent],
   templateUrl: './mon-equipe.component.html',
   styleUrl: './mon-equipe.component.scss',
 })
@@ -48,6 +51,20 @@ export class MonEquipeComponent implements OnInit, AfterViewInit, OnDestroy {
   photoUrls: Record<string, string> = {};
 
   private teamId = '';
+
+  /** Le salon de l'équipe est-il utilisable ? `room_id` vide = provisionné côté Django mais
+   * pas encore créé côté Synapse (le pont y passe toutes les 30 s). Afficher un chat qui
+   * répondrait 409 serait pire que d'expliquer l'attente. */
+  get salonPret(): boolean {
+    return !!this.team?.salon_matrix_room_id;
+  }
+
+  /** Les fonctions passées au chat générique. Elles sont des propriétés et non des méthodes
+   * parce que le composant les reçoit en `@Input` et les appelle sans `this` : une méthode
+   * perdrait son contexte. */
+  chargerMessages = () => this.teamService.getSalonMatrixMessages(this.teamId);
+  envoyerMessage = (texte: string, urgent = false) =>
+    this.teamService.envoyerMessageSalonMatrix(this.teamId, texte, urgent);
   private map: maplibregl.Map | null = null;
 
   constructor(

@@ -101,20 +101,22 @@
               <span class="tab-compteur">{{ offresEnCours.length }}</span>
             }
           </button>
-          <a class="tab-button" routerLink="/mes-interventions">
+          <button class="tab-button" [class.active]="activeTab === 'missions'"
+                  (click)="setActiveTab('missions')">
             <span class="material-icons">assignment</span>
             <span class="tab-text">Mes missions</span>
             @if (missionsEnCours.length) {
               <span class="tab-compteur">{{ missionsEnCours.length }}</span>
             }
-          </a>
-          @if (estBenevoleAssociation) {
-            <a class="tab-button" routerLink="/ma-fiche-benevole"
-               [queryParams]="{ onglet: 'justificatifs' }">
-              <span class="material-icons">folder_shared</span>
-              <span class="tab-text">Mes justificatifs</span>
-            </a>
-          }
+          </button>
+          <button class="tab-button" [class.active]="activeTab === 'equipes'"
+                  (click)="setActiveTab('equipes')">
+            <span class="material-icons">groups</span>
+            <span class="tab-text">Mes équipes</span>
+            @if (equipesIntervention.length) {
+              <span class="tab-compteur">{{ equipesIntervention.length }}</span>
+            }
+          </button>
           <button class="tab-button" [class.active]="activeTab === 'radio'"
                   (click)="setActiveTab('radio')">
             <span class="material-icons">settings_input_antenna</span>
@@ -142,6 +144,13 @@
             <span class="material-icons">lock</span>
             <span class="tab-text">Ma connexion</span>
           </button>
+          @if (estBenevoleAssociation) {
+            <button class="tab-button" [class.active]="activeTab === 'justificatifs'"
+                    (click)="setActiveTab('justificatifs')">
+              <span class="material-icons">folder_shared</span>
+              <span class="tab-text">Mes pièces justificatives</span>
+            </button>
+          }
         </div>
       </div>
     </div>
@@ -289,6 +298,132 @@
               }
             </section>
           </div>
+        </div>
+      }
+
+      <!-- ══ MES MISSIONS ═══════════════════════════════════════════════════════════
+           Demande du 13/11/2026 : « je mettrais une vraie intégration de mes missions ». La
+           liste est ici, pas derrière un lien : partir sur une autre page pour savoir ce
+           qu'on a à faire, c'est perdre le fil de son espace. Le détail complet d'une
+           mission (photos, priorités, messagerie) reste sur « Mes interventions », qui est
+           l'écran de terrain. -->
+      @if (activeTab === 'missions') {
+        <div class="tab-panel">
+          <h2 class="titre-panneau">Mes missions</h2>
+          @if (missionsEnCours.length) {
+            <h3 class="sous-titre">En cours</h3>
+            <ul class="liste-apercu">
+              @for (d of missionsEnCours; track d.id) {
+                <li>
+                  <span class="ligne-titre">{{ d.titre }}</span>
+                  <span class="ligne-detail">
+                    {{ d.crise_nom }} — dossier {{ d.numero }}
+                    @if (d.equipe_nom) { · {{ d.equipe_nom }} }
+                    @if (d.priorite === 'URGENTE') { <span class="urgent">urgent</span> }
+                  </span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="secteur-vide">
+              Aucune mission ne vous est confiée en ce moment.
+            </p>
+          }
+
+          @if (missionsPassees.length) {
+            <h3 class="sous-titre">Déjà faites ({{ missionsPassees.length }})</h3>
+            <ul class="liste-apercu passees">
+              @for (d of missionsPassees; track d.id) {
+                <li>
+                  <span class="ligne-titre">{{ d.titre }}</span>
+                  <span class="ligne-detail">
+                    {{ d.crise_nom }}
+                    @if (d.date_cloture) {
+                      · terminée le {{ d.date_cloture | date:'dd/MM/yyyy' }}
+                    }
+                  </span>
+                </li>
+              }
+            </ul>
+          }
+
+          <a class="lien-secteur" routerLink="/mes-interventions">
+            <span class="material-icons">open_in_new</span>
+            Ouvrir l'écran de terrain
+          </a>
+        </div>
+      }
+
+      <!-- ══ MES ÉQUIPES ════════════════════════════════════════════════════════════
+           Engagées d'abord, permanentes ensuite — même règle que la page /mes-equipes,
+           pour que les deux écrans ne se contredisent pas. -->
+      @if (activeTab === 'equipes') {
+        <div class="tab-panel">
+          <h2 class="titre-panneau">Mes équipes</h2>
+          @if (!mesEquipes.length) {
+            <p class="secteur-vide">
+              Vous ne faites partie d'aucune équipe pour l'instant. Une collectivité ou une
+              association vous y ajoutera si votre proposition d'aide correspond à un besoin.
+            </p>
+          } @else {
+            <h3 class="sous-titre">Engagées en ce moment</h3>
+            @if (equipesIntervention.length) {
+              <ul class="liste-apercu">
+                @for (e of equipesIntervention; track e.id) {
+                  <li>
+                    <a [routerLink]="['/mon-equipe', e.id]" class="ligne-lien">
+                      <span class="ligne-titre">{{ nomEquipe(e) }}</span>
+                      <span class="ligne-detail">
+                        @if (e.mission_active_titre) {
+                          Mission « {{ e.mission_active_titre }} »
+                        } @else {
+                          Engagement en cours
+                        }
+                        @if (e.regulateur_nom) { · régulateur : {{ e.regulateur_nom }} }
+                      </span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="secteur-vide">
+                Aucune de vos équipes n'est engagée. C'est une bonne nouvelle.
+              </p>
+            }
+
+            <h3 class="sous-titre">Permanentes</h3>
+            <ul class="liste-apercu">
+              @for (e of equipesPermanentes; track e.id) {
+                <li>
+                  <a [routerLink]="['/mon-equipe', e.id]" class="ligne-lien">
+                    <span class="ligne-titre">{{ nomEquipe(e) }}</span>
+                    <span class="ligne-detail">
+                      @if (e.echelon_libelle) { {{ e.echelon_libelle }} }
+                      @if (e.regulateur_nom) { · régulateur : {{ e.regulateur_nom }} }
+                    </span>
+                  </a>
+                </li>
+              } @empty {
+                <p class="secteur-vide">Aucune équipe permanente.</p>
+              }
+            </ul>
+          }
+          <p class="secteur-vide">
+            Ouvrez une équipe pour y parler à votre responsable et aux autres membres, sans
+            rien installer.
+          </p>
+        </div>
+      }
+
+      <!-- ══ MES PIÈCES JUSTIFICATIVES ══════════════════════════════════════════════
+           « Dans mon compte, je mettrais ici la zone de dépôt des documents et de
+           consultation de leur acceptation / suivi » (13/11/2026). Même composant que « Ma
+           fiche de bénévole » : ce formulaire décide de la destruction d'un fichier, ce
+           n'est pas un endroit où se permettre deux implémentations. -->
+      @if (activeTab === 'justificatifs') {
+        <div class="tab-panel">
+          <h2 class="titre-panneau">Mes pièces justificatives</h2>
+          <app-mes-justificatifs></app-mes-justificatifs>
         </div>
       }
 

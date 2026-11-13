@@ -29,14 +29,18 @@ import { PieceIdentiteReserveService } from '../../services/piece-identite-reser
 import { PieceIdentiteReserve } from '../../shared/models/piece-identite-reserve.model';
 
 import { TeamService } from '../../services/team.service';
-import { Team } from '../../shared/models/team.model';
+import { Team, teamDisplayName } from '../../shared/models/team.model';
+import {
+  MesJustificatifsComponent,
+} from '../../shared/components/common/mes-justificatifs/mes-justificatifs.component';
 
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
+  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule, RouterLink,
+            MesJustificatifsComponent],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
@@ -87,7 +91,7 @@ export class SettingsComponent implements OnInit {
   // sont ses missions ; un bénéficiaire, où en est sa démarche. Ni l'un ni l'autre n'ouvre cette
   // page pour relire son adresse email.
   activeTab: 'apercu' | 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration'
-    | 'information' | 'dossier' | 'radio' = 'apercu';
+    | 'information' | 'dossier' | 'radio' | 'missions' | 'equipes' | 'justificatifs' = 'apercu';
 
   allCrisis:  Crisis[]   = [];  filteredCrisis:  Crisis[]   = [];  isLoadingCrisis  = false;
   allOffers:  Offer[]   = [];  filteredOffers:  Offer[]   = [];  isLoadingOffers  = false;
@@ -188,7 +192,8 @@ export class SettingsComponent implements OnInit {
     // Abonnement à queryParams : les liens rapides changent seulement `tab`, Angular réutilise
     // l'instance et ne relance pas ngOnInit.
     const validTabs: (typeof this.activeTab)[] = ['apercu', 'profile', 'password', 'offer',
-      'request', 'crisis', 'declaration', 'information', 'dossier', 'radio'];
+      'request', 'crisis', 'declaration', 'information', 'dossier', 'radio', 'missions',
+      'equipes', 'justificatifs'];
     this.route.queryParamMap.subscribe(params => {
       const requestedTab = params.get('tab');
       if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
@@ -548,6 +553,29 @@ export class SettingsComponent implements OnInit {
       || this.mesEquipes.length > 0;
   }
 
+  nomEquipe(equipe: Team): string {
+    return teamDisplayName(equipe);
+  }
+
+  /** Les équipes engagées en premier : la page sert à répondre à « où suis-je attendu
+   * aujourd'hui », pas « comment l'association est-elle organisée ». Même règle que la page
+   * /mes-equipes, pour que les deux ne se contredisent pas. */
+  private estEngagee(equipe: Team): boolean {
+    const missionEnCours = !!equipe.mission_active
+      && equipe.mission_active_statut !== 'TERMINEE';
+    return missionEnCours || !!equipe.engagement_debut
+      || (equipe.assigned_crisis_ids?.length ?? 0) > 0;
+  }
+
+  get equipesIntervention(): Team[] {
+    return this.mesEquipes.filter(e => this.estEngagee(e));
+  }
+
+  get equipesPermanentes(): Team[] {
+    return this.mesEquipes.filter(e => !this.estEngagee(e))
+      .sort((a, b) => this.nomEquipe(a).localeCompare(this.nomEquipe(b), 'fr'));
+  }
+
   /** L'entrée « Mes justificatifs » ne vaut que pour un adhérent d'association : elle mène à
    * sa fiche de bénévole, qui n'existe pas pour les autres. */
   get estBenevoleAssociation(): boolean {
@@ -567,8 +595,8 @@ export class SettingsComponent implements OnInit {
     if (['request', 'dossier', 'declaration', 'information', 'crisis'].includes(tab)) {
       return 'aide';
     }
-    if (['offer', 'radio'].includes(tab)) { return 'benevole'; }
-    if (['profile', 'password'].includes(tab)) { return 'compte'; }
+    if (['offer', 'radio', 'missions', 'equipes'].includes(tab)) { return 'benevole'; }
+    if (['profile', 'password', 'justificatifs'].includes(tab)) { return 'compte'; }
     return null;   // la vue d'ensemble n'appartient à aucun groupe
   }
 

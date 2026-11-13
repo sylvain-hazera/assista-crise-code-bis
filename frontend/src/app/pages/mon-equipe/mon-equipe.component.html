@@ -93,6 +93,34 @@
       }
     </section>
 
+    <!-- ══ Parler à son équipe, sans installer quoi que ce soit ═══════════════════════
+         Demande du 13/11/2026 : « une fenêtre de chat Matrix pour chatter avec son
+         responsable et les autres membres même sans l'application ». Les messages transitent
+         par le compte du bot côté serveur — jamais un jeton Matrix dans le navigateur. Qui
+         installe Element un jour retrouve exactement la même conversation. -->
+    <section class="card">
+      <h2>Parler à mon équipe</h2>
+      @if (salonPret) {
+        <app-matrix-salon-chat
+          [cle]="team.id!"
+          titre="Salon de l'équipe"
+          [autoriserUrgent]="true"
+          [chargerMessages]="chargerMessages"
+          [envoyerMessage]="envoyerMessage">
+        </app-matrix-salon-chat>
+        <p class="muted">
+          Ce fil est celui de toute l'équipe, encadrement compris. Vous pouvez y écrire depuis
+          cette page ; si vous installez un jour l'application de messagerie, vous y
+          retrouverez la même conversation.
+        </p>
+      } @else {
+        <p class="muted">
+          Le salon de cette équipe est en cours de création. Il sera disponible d'ici quelques
+          minutes, sans rien à faire de votre part.
+        </p>
+      }
+    </section>
+
     <section class="card">
       <h2>Dossiers ({{ dossiers.length }})</h2>
       @if (dossiers.length) {

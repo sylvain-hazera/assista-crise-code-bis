@@ -4994,7 +4994,10 @@ class CelluleCriseView(generics.GenericAPIView):
     def get(self, request, crise_id):
         crise = get_object_or_404(Crisis, pk=crise_id)
         equipe = self._get_or_create_cellule(request, crise)
-        salon = SalonMatrixEquipe.objects.filter(equipe=equipe).first()
+        # Le salon de la cellule de crise, et non celui de son encadrement : voir la note de
+        # TeamViewSet.salon_matrix_messages sur le `.first()` arbitraire.
+        salon = SalonMatrixEquipe.objects.filter(
+            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS).first()
 
         dossiers_en_attente = Dossier.objects.filter(
             crise=crise,
@@ -9756,7 +9759,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        salon = SalonMatrixEquipe.objects.filter(equipe=team).first()
+        # TYPE EXPLICITE (13/11/2026). Depuis que chaque équipe porte DEUX salons, un
+        # `.first()` sans ordre défini pouvait rendre celui d'ENCADREMENT : un simple membre
+        # se serait retrouvé dans le salon de commandement de son équipe, et y aurait écrit.
+        # `SalonMatrixEquipe` n'a pas d'ordonnancement par défaut, le tirage était donc
+        # réellement arbitraire.
+        salon = SalonMatrixEquipe.objects.filter(
+            equipe=team, type=TypeSalonEquipe.INTERVENANTS).first()
         if salon is None or not salon.room_id:
             return Response(
                 {"error": "Le salon Matrix de cette équipe n'est pas encore provisionné."},
@@ -9980,7 +9989,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if not event_id:
             return Response({"error": "event_id requis."}, status=status.HTTP_400_BAD_REQUEST)
 
-        salon = SalonMatrixEquipe.objects.filter(equipe=team).first()
+        # TYPE EXPLICITE (13/11/2026). Depuis que chaque équipe porte DEUX salons, un
+        # `.first()` sans ordre défini pouvait rendre celui d'ENCADREMENT : un simple membre
+        # se serait retrouvé dans le salon de commandement de son équipe, et y aurait écrit.
+        # `SalonMatrixEquipe` n'a pas d'ordonnancement par défaut, le tirage était donc
+        # réellement arbitraire.
+        salon = SalonMatrixEquipe.objects.filter(
+            equipe=team, type=TypeSalonEquipe.INTERVENANTS).first()
         if salon is None or not salon.room_id:
             return Response({"error": "Le salon Matrix de cette équipe n'est pas encore provisionné."}, status=status.HTTP_409_CONFLICT)
 

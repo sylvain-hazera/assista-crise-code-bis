@@ -11,7 +11,7 @@ import {
   CRENEAUX, Creneau, FREQUENCES_ENGAGEMENT, FicheBenevole, JourCreneaux, MesDisponibilites,
   SITUATIONS,
 } from '../../shared/models/fiche-benevole.model';
-import { Qualification, QualificationMembre } from '../../shared/models/association.model';
+import { QualificationMembre } from '../../shared/models/association.model';
 
 type Onglet = 'fiche' | 'disponibilites' | 'justificatifs' | 'acces';
 
@@ -35,14 +35,13 @@ type Onglet = 'fiche' | 'disponibilites' | 'justificatifs' | 'acces';
  *   redépose la même pièce sans savoir ce qui n'allait pas.
  */
 import {
-  ConservationPiecesComponent,
-} from '../../shared/components/common/conservation-pieces/conservation-pieces.component';
-import { PieceConservation } from '../../shared/models/conservation-piece.model';
+  MesJustificatifsComponent,
+} from '../../shared/components/common/mes-justificatifs/mes-justificatifs.component';
 
 @Component({
   selector: 'app-ma-fiche-benevole',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConservationPiecesComponent],
+  imports: [CommonModule, FormsModule, MesJustificatifsComponent],
   templateUrl: './ma-fiche-benevole.component.html',
   styleUrl: './ma-fiche-benevole.component.scss',
 })
@@ -74,10 +73,11 @@ export class MaFicheBenevoleComponent implements OnInit {
   motDePasseConfirme = '';
 
   // ── Justificatifs ─────────────────────────────────────────────────────────
-  catalogue: Qualification[] = [];
+  /** Les titres de la personne : la page n'en garde que ce qu'il faut pour la PASTILLE de
+   * l'onglet (un refus à corriger). Le dépôt et le suivi vivent dans
+   * `MesJustificatifsComponent`, qui recharge les siens — c'est un appel de plus, et c'est le
+   * prix d'une seule implémentation au lieu de deux. */
   mesQualifications: QualificationMembre[] = [];
-  depot = { qualification: '', date_obtention: '', date_expiration: '', organisme: '' };
-  fichierChoisi: File | null = null;
 
   constructor(
     private ficheService: FicheBenevoleService,
@@ -104,12 +104,10 @@ export class MaFicheBenevoleComponent implements OnInit {
     this.chargement = true;
     forkJoin({
       fiche: this.ficheService.maFiche(),
-      catalogue: this.associationService.getCatalogueQualifications(),
       miennes: this.associationService.getQualificationsMembres(this.monId ?? undefined),
     }).subscribe({
-      next: ({ fiche, catalogue, miennes }) => {
+      next: ({ fiche, miennes }) => {
         this.appliquer(fiche);
-        this.catalogue = catalogue.filter(q => q.actif);
         this.mesQualifications = miennes;
         this.chargement = false;
       },
@@ -338,107 +336,10 @@ export class MaFicheBenevoleComponent implements OnInit {
 
   /** Préremplit l'échéance depuis la durée habituelle du titre — une proposition, pas une
    * contrainte : c'est la date portée par l'attestation qui fait foi. */
-  /** Ce qui arrivera à la pièce qu'on s'apprête à déposer. Annoncé AVANT l'envoi : apprendre
-   * après coup que sa photo de permis a été détruite, ou au contraire conservée cinq ans,
-   * n'est pas un consentement. */
-  get regleDuTitreChoisi(): PieceConservation | null {
-    const titre = this.catalogue.find(q => q.id === this.depot.qualification);
-    return titre?.conservation ?? null;
-  }
-
-  onTitreChoisi(): void {
-    const titre = this.catalogue.find(q => q.id === this.depot.qualification);
-    const base = this.depot.date_obtention;
-    if (!titre?.validite_mois || !base) { return; }
-    const echeance = new Date(base + 'T00:00:00');
-    echeance.setMonth(echeance.getMonth() + titre.validite_mois);
-    this.depot.date_expiration = echeance.toISOString().slice(0, 10);
-  }
-
-  onFichier(evenement: Event): void {
-    const entree = evenement.target as HTMLInputElement;
-    this.fichierChoisi = entree.files?.[0] ?? null;
-  }
-
-  get depotPret(): boolean {
-    return !!this.depot.qualification && !!this.fichierChoisi;
-  }
-
-  deposer(): void {
-    if (!this.depotPret || !this.fichierChoisi) { return; }
-    this.enregistrement = true;
-    this.erreur = '';
-    this.message = '';
-    this.associationService.deposerJustificatif(this.depot.qualification, this.fichierChoisi, {
-      date_obtention: this.depot.date_obtention,
-      date_expiration: this.depot.date_expiration,
-      organisme: this.depot.organisme,
-    }).subscribe({
-      next: (q) => {
-        this.mesQualifications = [...this.mesQualifications.filter(x => x.id !== q.id), q];
-        this.depot = { qualification: '', date_obtention: '', date_expiration: '',
-                       organisme: '' };
-        this.fichierChoisi = null;
-        this.enregistrement = false;
-        this.message = 'Pièce déposée. Votre encadrement en est informé et la vérifiera.';
-      },
-      error: (err) => {
-        this.enregistrement = false;
-        this.erreur = this.premierMessage(err)
-          || "Impossible de déposer cette pièce (déjà présente pour ce titre ?).";
-      },
-    });
-  }
-
-  /** Remplacer une pièce refusée remet le titre à instruire : c'est la seule façon de
-   * répondre à un refus. */
-  remplacer(q: QualificationMembre, evenement: Event): void {
-    const entree = evenement.target as HTMLInputElement;
-    const fichier = entree.files?.[0];
-    if (!fichier) { return; }
-    this.enregistrement = true;
-    this.associationService.remplacerJustificatif(q.id, fichier).subscribe({
-      next: (maj) => {
-        this.mesQualifications = this.mesQualifications.map(x => (x.id === maj.id ? maj : x));
-        this.enregistrement = false;
-        entree.value = '';
-        this.message = 'Nouvelle pièce déposée. Elle repart en vérification.';
-      },
-      error: () => {
-        this.enregistrement = false;
-        entree.value = '';
-        this.erreur = 'Impossible de remplacer cette pièce.';
-      },
-    });
-  }
-
-  /** Les titres encore sans pièce : ce qui reste à faire, mis en avant plutôt que caché dans
-   * la liste déroulante. */
-  get titresSansPiece(): QualificationMembre[] {
-    return this.mesQualifications.filter(q => !q.a_justificatif);
-  }
-
+  /** Un refus à corriger : la pastille de l'onglet « Mes justificatifs ». Un refus qu'on
+   * découvrirait en rouvrant la page par hasard ne serait jamais corrigé. */
   get aUnRefus(): boolean {
     return this.mesQualifications.some(q => q.statut === 'REFUSEE');
-  }
-
-  classeStatut(q: QualificationMembre): string {
-    return q.statut.toLowerCase();
-  }
-
-  /** Ouvre la pièce dans un onglet. Passe par un blob et non par un lien direct : la route
-   * exige l'en-tête d'authentification que pose l'intercepteur, qu'un `<a href>` n'enverrait
-   * pas. L'URL temporaire est révoquée au bout d'une minute — assez pour que l'onglet ait
-   * chargé, assez tôt pour ne pas laisser le fichier en mémoire. */
-  voirPiece(q: QualificationMembre): void {
-    this.associationService.telechargerJustificatif(q.id).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      },
-      error: () => this.erreur = 'Impossible d\'ouvrir cette pièce.',
-    });
   }
 
   /** Premier message lisible d'une réponse d'erreur DRF, qu'elle porte `detail`, `error` ou

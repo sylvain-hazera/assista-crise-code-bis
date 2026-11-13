@@ -1,0 +1,230 @@
+/* Dépôt et suivi des pièces justificatives, partagé par « Ma fiche de bénévole » et
+   « Mon espace ». Les styles vivent ici plutôt que dans les deux pages : deux copies
+   auraient divergé au premier ajustement. */
+.justificatifs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.bandeau {
+  padding: .7rem .9rem;
+  border-radius: 8px;
+  font-size: .9rem;
+
+  &.succes {
+    background: var(--ac-success-bg, #f0fdf4);
+    color: var(--ac-success-text, #166534);
+  }
+
+  &.erreur {
+    background: var(--ac-danger-bg, #fef2f2);
+    color: var(--ac-danger, #b91c1c);
+  }
+}
+
+.attente,
+.vide,
+.intro {
+  margin: 0;
+  color: var(--ac-text-muted, #64748b);
+  font-size: .9rem;
+}
+
+.bloc {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  padding: 1rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--ac-surface, #fff);
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0;
+    font-size: 1rem;
+  }
+}
+
+/* Ce qui attend une action est le seul bloc mis en avant : c'est la raison d'ouvrir cette
+   page quand tout va bien. */
+.a-corriger {
+  border-left: 3px solid var(--ac-warning, #d97706);
+  background: var(--ac-surface-alt, #fffbeb);
+
+  h3 .material-icons { color: var(--ac-warning, #d97706); }
+}
+
+.pieces {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    padding: .75rem .9rem;
+    border: 1px solid var(--ac-border, #e2e8f0);
+    border-left: 3px solid var(--ac-border, #cbd5e1);
+    border-radius: 8px;
+
+    /* Une couleur par état : c'est ce qu'on vient vérifier d'un coup d'œil. */
+    &.verifiee { border-left-color: var(--ac-success, #16a34a); }
+    &.refusee { border-left-color: var(--ac-danger, #dc2626); }
+    &.declaree { border-left-color: var(--ac-warning, #d97706); }
+  }
+}
+
+.entete {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.etat {
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  font-size: .82rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.perimee { color: var(--ac-danger, #dc2626); font-weight: 600; }
+
+.motif {
+  display: flex;
+  align-items: flex-start;
+  gap: .35rem;
+  margin: 0;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #64748b);
+
+  .material-icons { font-size: 1.05rem; }
+
+  &.ok { color: var(--ac-success-text, #166534); }
+  &.attente-verif { color: var(--ac-warning-text, #b45309); }
+}
+
+.piece-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+}
+
+.lien,
+.remplacer {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  /* 44 px : cible tactile, cette page est beaucoup ouverte depuis un téléphone. */
+  min-height: 44px;
+  padding: .4rem .7rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+  cursor: pointer;
+
+  &:hover { border-color: var(--ac-primary, #2563eb); }
+
+  .material-icons { font-size: 1.05rem; }
+}
+
+.champs {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .85rem;
+    font-weight: 600;
+  }
+
+  input,
+  select {
+    min-height: 44px;
+    padding: .45rem .6rem;
+    border: 1px solid var(--ac-border, #cbd5e1);
+    border-radius: 8px;
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font: inherit;
+  }
+}
+
+/* Ce qui arrivera à la pièce, dit AVANT l'envoi et juste au-dessus du sélecteur de fichier :
+   apprendre après coup que sa photo de permis a été détruite n'est pas un consentement. */
+.regle-du-depot {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  padding: .75rem .9rem;
+  border-left: 3px solid var(--ac-primary, #2563eb);
+  border-radius: 6px;
+  background: var(--ac-surface-alt, #f8fafc);
+
+  &.destruction { border-left-color: var(--ac-danger, #dc2626); }
+
+  .material-icons { color: var(--ac-text-muted, #64748b); }
+
+  p { margin: 0; }
+}
+
+.regle-titre { font-weight: 600; font-size: .9rem; }
+
+.regle-pourquoi,
+.regle-loi {
+  font-size: .82rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.regle-loi { font-style: italic; margin-top: .2rem !important; }
+
+.fichier {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  align-self: flex-start;
+  min-height: 44px;
+  padding: .5rem .8rem;
+  border: 1px dashed var(--ac-border, #cbd5e1);
+  border-radius: 8px;
+  font-size: .9rem;
+  cursor: pointer;
+}
+
+.actions .primaire {
+  min-height: 44px;
+  padding: .55rem 1.1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ac-primary, #2563eb);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}

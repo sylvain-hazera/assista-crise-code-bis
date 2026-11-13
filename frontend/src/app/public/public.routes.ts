@@ -115,6 +115,15 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.SettingsComponent)
       },
       {
+        // La LISTE de ses équipes, groupées engagées / permanentes. Le menu ne menait
+        // jusqu'ici qu'à `/mon-equipe/<première trouvée>`, alors qu'on appartient souvent à
+        // plusieurs (sa section, sa commune, l'équipe constituée pour la crise en cours).
+        path: 'mes-equipes',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/mes-equipes/mes-equipes.component')
+          .then(m => m.MesEquipesComponent)
+      },
+      {
         path: 'mon-equipe/:id',
         canActivate: [authGuard],
         loadComponent: () => import('../pages/mon-equipe/mon-equipe.component')

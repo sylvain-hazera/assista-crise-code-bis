@@ -69,18 +69,9 @@ describe('MaFicheBenevoleComponent', () => {
                    miennes: QualificationMembre[] = []): void {
     composant.ngOnInit();
     http.expectOne(`${api}/ma-fiche-benevole/`).flush(fiche);
-    http.expectOne(`${api}/qualifications/`).flush([
-      { id: 'q1', nom: 'PSE1', validite_mois: 12, actif: true },
-      { id: 'q2', nom: 'Permis C', actif: false },
-    ]);
     http.match(r => r.url.includes('/qualifications-membres'))
       .forEach(r => r.flush(miennes));
   }
-
-  it('écarte du catalogue les titres désactivés', () => {
-    charger();
-    expect(composant.catalogue.map(q => q.id)).toEqual(['q1']);
-  });
 
   it('ne signale aucun changement d\'adresse tant qu\'on n\'y touche pas', () => {
     charger();
@@ -142,21 +133,6 @@ describe('MaFicheBenevoleComponent', () => {
     // Remplacer ce message par « mot de passe invalide » ferait perdre la seule information
     // utile : laquelle des règles n'est pas respectée.
     expect(composant.erreur).toContain('trop courant');
-  });
-
-  it('déduit l\'échéance de la durée de validité du titre', () => {
-    charger();
-    composant.depot.qualification = 'q1';
-    composant.depot.date_obtention = '2026-01-15';
-    composant.onTitreChoisi();
-
-    expect(composant.depot.date_expiration).toBe('2027-01-15');
-  });
-
-  it('ne dépose rien sans fichier', () => {
-    charger();
-    composant.depot.qualification = 'q1';
-    expect(composant.depotPret).toBeFalse();
   });
 
   describe('les créneaux (moteur unique)', () => {
@@ -290,6 +266,5 @@ describe('MaFicheBenevoleComponent', () => {
     ]);
 
     expect(composant.aUnRefus).toBeTrue();
-    expect(composant.titresSansPiece).toEqual([]);
   });
 });

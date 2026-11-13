@@ -1,0 +1,189 @@
+<div class="justificatifs">
+  @if (message) { <div class="bandeau succes">{{ message }}</div> }
+  @if (erreur) { <div class="bandeau erreur">{{ erreur }}</div> }
+
+  @if (chargement) {
+    <p class="attente">Chargement de vos pièces…</p>
+  } @else {
+
+    <p class="intro">
+      Permis, diplômes, attestations de formation. Ces fichiers sont chiffrés et ne sont
+      consultables que par votre encadrement — jamais par les autres membres.
+      <strong>Nous ne les gardons que le temps où ils servent</strong> : certaines pièces sont
+      détruites dès qu'elles ont été vérifiées.
+    </p>
+
+    <!-- D'abord ce qui attend quelque chose de VOUS. Mettre le formulaire en premier
+         obligerait à faire défiler pour savoir s'il y a quelque chose à faire. -->
+    @if (aCorriger.length) {
+      <section class="bloc a-corriger">
+        <h3>
+          <span class="material-icons">priority_high</span>
+          Ce qui attend une action de votre part
+        </h3>
+        <ul class="pieces">
+          @for (q of aCorriger; track q.id) {
+            <li [class]="classeStatut(q)">
+              <div class="entete">
+                <strong>{{ q.qualification_nom || q.qualification }}</strong>
+                <span class="etat">{{ q.statut_libelle || q.statut }}</span>
+              </div>
+              @if (q.statut === 'REFUSEE' && q.motif_refus) {
+                <p class="motif">Refusée : {{ q.motif_refus }}</p>
+              } @else {
+                <p class="motif">Aucune pièce déposée pour ce titre.</p>
+              }
+              <label class="remplacer">
+                <span class="material-icons">upload_file</span>
+                Déposer une pièce
+                <input type="file" (change)="remplacer(q, $event)" hidden>
+              </label>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <section class="bloc">
+      <h3>Mes titres et leurs pièces</h3>
+      @if (!mesQualifications.length) {
+        <p class="vide">
+          Aucun titre enregistré pour l'instant. Déposez une première pièce ci-dessous : votre
+          encadrement la vérifiera.
+        </p>
+      } @else {
+        <ul class="pieces">
+          @for (q of mesQualifications; track q.id) {
+            <li [class]="classeStatut(q)">
+              <div class="entete">
+                <strong>{{ q.qualification_nom || q.qualification }}</strong>
+                <span class="etat">{{ q.statut_libelle || q.statut }}</span>
+              </div>
+              <div class="detail">
+                @if (q.date_obtention) {
+                  <span>Obtenue le {{ q.date_obtention | date:'dd/MM/yyyy' }}</span>
+                }
+                @if (q.date_expiration) {
+                  <span [class.perimee]="q.expiree">
+                    Valable jusqu'au {{ q.date_expiration | date:'dd/MM/yyyy' }}
+                    @if (q.expiree) { (périmée) }
+                  </span>
+                }
+                @if (q.organisme) { <span>{{ q.organisme }}</span> }
+              </div>
+
+              @if (q.statut === 'VERIFIEE') {
+                <p class="motif ok">
+                  <span class="material-icons">verified</span>
+                  Vérifiée
+                  @if (q.verifie_par_nom) { par {{ q.verifie_par_nom }} }
+                  @if (q.verifie_le) { le {{ q.verifie_le | date:'dd/MM/yyyy' }} }
+                </p>
+              } @else if (q.statut === 'DECLAREE' && q.a_justificatif) {
+                <p class="motif attente-verif">
+                  <span class="material-icons">hourglass_empty</span>
+                  Déposée, en attente de vérification par votre encadrement.
+                </p>
+              }
+
+              @if (q.piece_detruite_le && !q.a_justificatif) {
+                <p class="motif ok">
+                  <span class="material-icons">delete_sweep</span>
+                  Pièce détruite le {{ q.piece_detruite_le | date:'dd/MM/yyyy' }}, comme prévu :
+                  ce document se vérifie et ne se conserve pas. Votre titre, lui, reste
+                  enregistré.
+                </p>
+              }
+
+              <div class="piece-actions">
+                @if (q.a_justificatif) {
+                  <button type="button" class="lien" (click)="voirPiece(q)">
+                    <span class="material-icons">description</span>
+                    {{ q.justificatif_nom || 'Voir la pièce déposée' }}
+                  </button>
+                  <label class="remplacer">
+                    <span class="material-icons">upload_file</span>
+                    Remplacer
+                    <input type="file" (change)="remplacer(q, $event)" hidden>
+                  </label>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <section class="bloc">
+      <h3>Déposer une nouvelle pièce</h3>
+      <div class="champs">
+        <label>
+          <span>Titre concerné</span>
+          <select name="titre" [(ngModel)]="depot.qualification" (ngModelChange)="onTitreChoisi()">
+            <option value="">Choisir…</option>
+            @for (t of catalogue; track t.id) {
+              <option [value]="t.id">{{ t.nom }}</option>
+            }
+          </select>
+        </label>
+        <label>
+          <span>Date d'obtention</span>
+          <input type="date" name="obtention" [(ngModel)]="depot.date_obtention"
+                 (ngModelChange)="onTitreChoisi()">
+        </label>
+        <label>
+          <span>Valable jusqu'au</span>
+          <input type="date" name="expiration" [(ngModel)]="depot.date_expiration">
+        </label>
+        <label>
+          <span>Organisme</span>
+          <input type="text" name="organisme" [(ngModel)]="depot.organisme"
+                 placeholder="Croix-Rouge, préfecture…">
+        </label>
+      </div>
+
+      @if (regleDuTitreChoisi; as regle) {
+        <div class="regle-du-depot" [class.destruction]="regle.regime === 'VERIFIER_DETRUIRE'">
+          <span class="material-icons">
+            {{ regle.regime === 'VERIFIER_DETRUIRE' ? 'auto_delete' : 'lock_clock' }}
+          </span>
+          <div>
+            <p class="regle-titre">
+              @if (regle.regime === 'VERIFIER_DETRUIRE') {
+                Ce document sera détruit dès qu'il aura été vérifié.
+              } @else {
+                Ce document sera conservé : {{ regle.duree | lowercase }}.
+              }
+            </p>
+            <p class="regle-pourquoi">{{ regle.pourquoi }}</p>
+            <p class="regle-loi">{{ regle.base_legale }}</p>
+            @if (regle.jours_avant_purge_non_validee) {
+              <p class="regle-pourquoi">
+                S'il n'est relu par personne, il sera détruit au bout de
+                {{ regle.jours_avant_purge_non_validee }} jours et vous en serez prévenu(e).
+              </p>
+            }
+          </div>
+        </div>
+      }
+
+      <label class="fichier">
+        <span class="material-icons">attach_file</span>
+        {{ fichierChoisi ? fichierChoisi.name : 'Choisir le fichier (PDF ou image)' }}
+        <input type="file" (change)="onFichier($event)" hidden>
+      </label>
+
+      <div class="actions">
+        <button type="button" class="primaire" [disabled]="!depotPret || enregistrement"
+                (click)="deposer()">
+          {{ enregistrement ? 'Envoi…' : 'Déposer' }}
+        </button>
+      </div>
+    </section>
+
+    <app-conservation-pieces
+      [seulementDeposables]="true"
+      titre="Ce que deviennent vos pièces, et pourquoi nous les demandons">
+    </app-conservation-pieces>
+  }
+</div>

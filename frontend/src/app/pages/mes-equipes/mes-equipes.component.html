@@ -1,0 +1,77 @@
+<div class="page">
+  <header class="entete">
+    <h1>Mes équipes</h1>
+    <p>
+      Celles qui sont engagées en ce moment d'abord, puis celles auxquelles vous appartenez
+      en permanence.
+    </p>
+  </header>
+
+  @if (chargement) {
+    <p class="attente">Chargement de vos équipes…</p>
+  } @else if (erreur) {
+    <div class="alerte">{{ erreur }}</div>
+  } @else if (!equipes.length) {
+    <div class="vide">
+      <span class="material-icons">groups</span>
+      <p>
+        Vous ne faites partie d'aucune équipe pour l'instant. Une collectivité ou une
+        association vous y ajoutera si votre proposition d'aide correspond à un besoin.
+      </p>
+    </div>
+  } @else {
+
+    <!-- En haut, et c'est tout l'objet de cette page : là où vous êtes attendu aujourd'hui. -->
+    <section class="groupe intervention">
+      <h2>
+        <span class="material-icons">bolt</span>
+        Mes équipes d'intervention
+      </h2>
+      @if (equipesIntervention.length) {
+        <ul class="equipes">
+          @for (e of equipesIntervention; track e.id) {
+            <li>
+              <a [routerLink]="['/mon-equipe', e.id]">
+                <span class="nom">{{ nom(e) }}</span>
+                <span class="motif">{{ motifEngagement(e) }}</span>
+                @if (e.regulateur_nom) {
+                  <span class="detail">Régulateur : {{ e.regulateur_nom }}</span>
+                }
+              </a>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="groupe-vide">
+          Aucune de vos équipes n'est engagée en ce moment. C'est une bonne nouvelle.
+        </p>
+      }
+    </section>
+
+    <section class="groupe permanente">
+      <h2>
+        <span class="material-icons">groups</span>
+        Mes équipes permanentes
+      </h2>
+      @if (equipesPermanentes.length) {
+        <ul class="equipes">
+          @for (e of equipesPermanentes; track e.id) {
+            <li>
+              <a [routerLink]="['/mon-equipe', e.id]">
+                <span class="nom">{{ nom(e) }}</span>
+                @if (e.echelon_libelle) {
+                  <span class="detail">{{ e.echelon_libelle }}</span>
+                }
+                @if (e.regulateur_nom) {
+                  <span class="detail">Régulateur : {{ e.regulateur_nom }}</span>
+                }
+              </a>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="groupe-vide">Aucune équipe permanente.</p>
+      }
+    </section>
+  }
+</div>

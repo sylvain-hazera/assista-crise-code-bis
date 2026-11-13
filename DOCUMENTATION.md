@@ -4464,6 +4464,47 @@ quelqu'un, et c'est celui que les tests tiennent.
 | « Mon compte » | `/admin/dashboard`, la gestion de crise | « Tableau de bord de crise » |
 | « Paramètres », en dernier | `/settings` | « Mon espace », en premier et pour tout le monde |
 
+**Où l'on atterrit depuis le menu, et ce que chaque secteur contient vraiment.** Deuxième
+passe le même jour, après essai :
+
+- **« Mon espace » figure dans le menu latéral mobile**, en tête des raccourcis. Il n'était que
+  dans le menu du compte — lui-même hors de l'écran sur un téléphone étroit — alors que c'est
+  la porte d'entrée de tout ce qui suit : les raccourcis qui le suivent ne font qu'ouvrir ses
+  onglets.
+- **`/mes-equipes`** remplace le lien « Mon équipe », qui pointait sur `/mon-equipe/<première
+  trouvée>`. On appartient souvent à plusieurs équipes : sa section départementale, celle de sa
+  commune, et l'équipe d'intervention constituée pour la crise en cours. La page les groupe en
+  **équipes d'intervention** (en haut) et **équipes permanentes** (en bas).
+  *Ce qui fait une équipe « d'intervention » est un ÉTAT, pas une nature* : mission en cours,
+  engagement démarré, ou crise assignée. Une section départementale engagée remonte donc en
+  haut le temps de l'engagement — la page répond à « où suis-je attendu aujourd'hui », pas à
+  « comment l'association est-elle organisée ». La même règle est appliquée à l'identique dans
+  l'onglet « Mes équipes » de Mon espace, pour que les deux écrans ne se contredisent pas.
+- **Un chat Matrix dans la vue d'une équipe** (`/mon-equipe/:id`), via le composant générique
+  `app-matrix-salon-chat` déjà utilisé par la cellule de crise. Les messages transitent par le
+  compte du bot côté serveur — jamais un jeton Matrix dans le navigateur — et qui installe
+  Element un jour retrouve la même conversation. Tant que `room_id` est vide, l'écran explique
+  l'attente au lieu d'afficher un chat qui répondrait 409.
+- **« Mes missions » et « Mes équipes » sont de vrais onglets** du secteur bénévole, et non des
+  liens : partir sur une autre page pour savoir ce qu'on a à faire, c'est perdre le fil de son
+  espace. L'écran de terrain complet (photos, priorités, réordonnancement) reste
+  `/mes-interventions`.
+- **Le dépôt des pièces est passé dans « Mon compte »**, par un composant partagé
+  `app-mes-justificatifs` — le même que celui de « Ma fiche de bénévole ». Deux copies
+  auraient divergé au premier correctif, et ce formulaire décide de la destruction d'un
+  fichier : ce n'est pas un endroit où se permettre deux vérités. Il montre d'abord **ce qui
+  attend une action** (refus à corriger, titre sans pièce), ensuite l'état de chaque titre,
+  enfin le formulaire — mettre le formulaire en premier obligerait à faire défiler pour savoir
+  s'il y a quelque chose à faire.
+
+**Correctif de sécurité trouvé en chemin.** Depuis que chaque équipe porte **deux** salons
+(Intervenants / Encadrement), trois endroits prenaient
+`SalonMatrixEquipe.objects.filter(equipe=...).first()` — sans `Meta.ordering` sur le modèle, le
+tirage était réellement arbitraire, et un simple membre pouvait se retrouver dans le salon de
+commandement de son équipe et y écrire. Le type est désormais explicite
+(`type=TypeSalonEquipe.INTERVENANTS`) dans `salon_matrix_messages`, `salon_matrix_reagir` et la
+cellule de crise.
+
 **Sur smartphone, la barre d'onglets est une liste.** Première version corrigée le jour même,
 après essai sur un Android de 412 px : les règles existantes masquaient le libellé
 (`.tab-text { display: none }`) pour faire tenir les onglets sur une bande horizontale, ce qui

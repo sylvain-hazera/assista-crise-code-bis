@@ -190,6 +190,14 @@
     </a>
     @if (authService.isLoggedIn()) {
       <div class="mobile-nav-divider"></div>
+      <!-- MON ESPACE EN TÊTE (13/11/2026) : il n'était que dans le menu du compte, lui-même
+           hors de l'écran sur un téléphone étroit. C'est pourtant la porte d'entrée de tout
+           ce qui suit — les liens ci-dessous ne sont que des raccourcis vers ses onglets. -->
+      <a class="mobile-quick-link quick-link-espace" routerLink="/settings"
+         (click)="closeAllMenus()">
+        <span class="material-icons">home_work</span>
+        Mon espace
+      </a>
       <a class="mobile-quick-link quick-link-offer" routerLink="/settings" [queryParams]="{tab: 'offer'}" (click)="closeAllMenus()">
         <span class="material-icons">volunteer_activism</span>
         Mes offres
@@ -207,9 +215,12 @@
         Mon dossier
       </a>
       @if (myTeamId) {
-        <a class="mobile-quick-link quick-link-team" [routerLink]="['/mon-equipe', myTeamId]" (click)="closeAllMenus()">
+        <!-- « Mes équipes » au pluriel et sans identifiant : on appartient souvent à
+             plusieurs, et le lien ne menait qu'à la première trouvée. -->
+        <a class="mobile-quick-link quick-link-team" routerLink="/mes-equipes"
+           (click)="closeAllMenus()">
           <span class="material-icons">groups</span>
-          Mon équipe
+          Mes équipes
         </a>
         <a class="mobile-quick-link quick-link-interventions" routerLink="/mes-interventions" (click)="closeAllMenus()">
           <span class="material-icons">checklist</span>
