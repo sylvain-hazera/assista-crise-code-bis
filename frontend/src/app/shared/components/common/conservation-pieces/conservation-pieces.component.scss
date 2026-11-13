@@ -17,7 +17,7 @@
   width: 100%;
   padding: .75rem 1rem;
   border: 0;
-  background: var(--ac-surface-alt, #f8fafc);
+  background: var(--ac-surface-2, #f8fafc);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -65,16 +65,16 @@
     padding: .6rem .75rem;
     border-left: 3px solid var(--ac-border, #cbd5e1);
     border-radius: 4px;
-    background: var(--ac-surface-alt, #f8fafc);
+    background: var(--ac-surface-2, #f8fafc);
     font-size: .88rem;
   }
 }
 
 /* Une couleur par régime : c'est l'information qui décide du sort du fichier, elle doit se
    repérer d'un coup d'œil dans un tableau de trente lignes. */
-.regime-verifier-detruire { border-left-color: var(--ac-danger, #dc2626); }
-.regime-conserver-engagement { border-left-color: var(--ac-warning, #d97706); }
-.regime-duree-legale { border-left-color: var(--ac-primary, #2563eb); }
+.regime-verifier-detruire { border-left-color: var(--ac-red-text, #dc2626); }
+.regime-conserver-engagement { border-left-color: var(--ac-amber-text, #d97706); }
+.regime-duree-legale { border-left-color: var(--brand-primary-lisible, #2563eb); }
 
 .regime-resume { color: var(--ac-text, #0f172a); }
 .regime-pourquoi { color: var(--ac-text-muted, #475569); }
@@ -114,7 +114,7 @@
   margin-bottom: .25rem;
   border-radius: 999px;
   border-left: 3px solid var(--ac-border, #cbd5e1);
-  background: var(--ac-surface-alt, #f1f5f9);
+  background: var(--ac-surface-2, #f1f5f9);
   font-size: .78rem;
 }
 

@@ -1175,15 +1175,15 @@
     align-items: center;
     gap: 0.35rem;
     margin-top: 0.4rem;
-    color: var(--ac-warning, #f59e0b);
+    color: var(--ac-amber-text, #f59e0b);
 
     .material-icons { font-size: 1rem; }
   }
 }
 
 .marque.repondu {
-  background: var(--ac-success-bg, rgba(34, 197, 94, 0.15));
-  color: var(--ac-success, #16a34a);
+  background: var(--ac-green-bg, rgba(34, 197, 94, 0.15));
+  color: var(--ac-green-text, #16a34a);
 }
 
 .marque.creneaux {
@@ -1273,11 +1273,11 @@ table.grille {
   padding: .4rem .6rem;
   border-left: 3px solid var(--ac-border, #cbd5e1);
   border-radius: 4px;
-  background: var(--ac-surface-alt, #f8fafc);
+  background: var(--ac-surface-2, #f8fafc);
   font-size: .82rem;
   color: var(--ac-text-muted, #475569);
 
-  &.destruction { border-left-color: var(--ac-danger, #dc2626); }
+  &.destruction { border-left-color: var(--ac-red-text, #dc2626); }
 }
 
 .piece-loi {
@@ -1292,9 +1292,9 @@ table.grille {
 .requalification {
   margin-top: .5rem;
   padding: .6rem .75rem;
-  border-left: 3px solid var(--ac-primary, #2563eb);
+  border-left: 3px solid var(--brand-primary-lisible, #2563eb);
   border-radius: 4px;
-  background: var(--ac-surface-alt, #f8fafc);
+  background: var(--ac-surface-2, #f8fafc);
 
   label {
     display: flex;
@@ -1319,7 +1319,7 @@ table.grille {
   display: block;
   font-weight: 600;
 
-  &.destruction { color: var(--ac-danger, #dc2626); }
+  &.destruction { color: var(--ac-red-text, #dc2626); }
 }
 
 .loi-titre {
@@ -1329,4 +1329,4 @@ table.grille {
   color: var(--ac-text-muted, #475569);
 }
 
-tr.a-regler { background: var(--ac-surface-alt, #fffbeb); }
+tr.a-regler { background: var(--ac-surface-2, #fffbeb); }

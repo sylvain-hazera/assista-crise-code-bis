@@ -181,7 +181,10 @@ PIECES = [
         "conservées 10 ans.",
         "Un remboursement de frais est une écriture comptable ; son justificatif suit la "
         "même durée que la comptabilité.",
-        ferme=True,
+        # Déposable : c'est bien le bénévole qui fournit son RIB. Il manquait dans la liste
+        # des pièces proposables, ce qui l'aurait rendu absent du choix « Type de document »
+        # alors qu'on le demande à tout le monde.
+        ferme=True, deposable=True,
     ),
     _entree(
         "ASSURANCE_PERSONNELLE", "Attestation d'assurance personnelle", FAMILLE_PERSONNE,

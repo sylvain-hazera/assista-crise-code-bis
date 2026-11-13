@@ -30,8 +30,8 @@
 .alerte {
   padding: .75rem 1rem;
   border-radius: 8px;
-  background: var(--ac-danger-bg, #fef2f2);
-  color: var(--ac-danger, #b91c1c);
+  background: var(--ac-red-bg, #fef2f2);
+  color: var(--ac-red-text, #b91c1c);
 }
 
 .vide {
@@ -57,7 +57,7 @@
     font-size: 1.05rem;
   }
 
-  &.intervention h2 .material-icons { color: var(--ac-warning, #d97706); }
+  &.intervention h2 .material-icons { color: var(--ac-amber-text, #d97706); }
   &.permanente h2 .material-icons { color: var(--ac-text-muted, #64748b); }
 }
 
@@ -83,20 +83,20 @@
     color: inherit;
     text-decoration: none;
 
-    &:hover { border-color: var(--ac-primary, #2563eb); }
+    &:hover { border-color: var(--brand-primary-lisible, #2563eb); }
   }
 }
 
 .intervention .equipes a {
-  border-left-color: var(--ac-warning, #d97706);
-  background: var(--ac-surface-alt, #fffbeb);
+  border-left-color: var(--ac-amber-text, #d97706);
+  background: var(--ac-surface-2, #fffbeb);
 }
 
 .nom { font-weight: 600; }
 
 .motif {
   font-size: .85rem;
-  color: var(--ac-warning-text, #b45309);
+  color: var(--ac-amber-text, #b45309);
 }
 
 .detail {

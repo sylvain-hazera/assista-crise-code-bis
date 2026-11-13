@@ -4504,6 +4504,15 @@ passe le même jour, après essai :
   une association — et quelqu'un qui propose son aide sans adhérer a un permis à faire
   vérifier comme les autres.
 
+  **Le catalogue était vide en production**, constaté le 13/11/2026 : la liste « Type de
+  document » ne proposait donc rien, et personne ne pouvait déposer quoi que ce soit — un
+  écran parfaitement fonctionnel et parfaitement inutilisable.
+  `manage.py initialiser_catalogue_qualifications`, appelé par `entrypoint.sh`, pose un socle
+  de 21 titres **avec leur régime de conservation déjà réglé** : sans cette catégorie, tout
+  resterait sur le défaut prudent et une photo de permis ne serait jamais détruite. Idempotent,
+  et il ne défait **jamais** un reclassement fait à la main — revenir sur la décision d'une
+  association à chaque redémarrage du conteneur serait incompréhensible pour elle.
+
   **Le statut est une phrase, pas un mot.** `VERIFIEE` ne dit rien du sort du FICHIER, et
   c'est pourtant la question qu'on se pose en revenant : *est-ce que mon permis est encore
   quelque part ?* Deux documents au même statut ont connu deux sorts opposés selon leur
@@ -4519,6 +4528,16 @@ tirage était réellement arbitraire, et un simple membre pouvait se retrouver d
 commandement de son équipe et y écrire. Le type est désormais explicite
 (`type=TypeSalonEquipe.INTERVENANTS`) dans `salon_matrix_messages`, `salon_matrix_reagir` et la
 cellule de crise.
+
+**Les variables de thème qui n'existent pas sont pires qu'une couleur en dur.** Corrigé le
+13/11/2026 sur les sept feuilles écrites ce jour-là. La convention du § 6.6 est d'écrire
+`var(--ac-…, <couleur du mode clair>)`, les `--ac-*` n'étant définies **que** sous
+`html[data-theme='sombre']`. Un nom inventé — `--ac-surface-alt`, `--ac-primary`,
+`--ac-danger`, `--ac-success`, `--ac-warning` n'existent pas — résout donc **toujours** vers
+le repli clair, y compris en mode sombre : d'où des pavés clairs portant du texte gris pâle,
+illisibles. Les seuls noms disponibles sont `--ac-surface` / `-2` / `-3`, `--ac-text` /
+`-muted` / `-subtle`, `--ac-border` / `-strong`, les triplets `--ac-<couleur>-bg` / `-text` /
+`-border`, et `--brand-primary-lisible` (la seule définie dans les deux thèmes).
 
 **Sur smartphone, la barre d'onglets est une liste.** Première version corrigée le jour même,
 après essai sur un Android de 412 px : les règles existantes masquaient le libellé

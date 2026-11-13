@@ -928,7 +928,7 @@
   padding: .35rem .5rem;
   border: 1px solid var(--ac-border, #e2e8f0);
   border-radius: 10px;
-  background: var(--ac-surface-alt, rgba(148, 163, 184, .08));
+  background: var(--ac-surface-2, rgba(148, 163, 184, .08));
 }
 
 .tab-group-label {
@@ -963,7 +963,7 @@
   padding: 0 .35rem;
   margin-left: .35rem;
   border-radius: 999px;
-  background: var(--ac-primary, #2563eb);
+  background: var(--brand-primary-lisible, #2563eb);
   color: #fff;
   font-size: .72rem;
   font-weight: 700;
@@ -996,8 +996,8 @@
   /* Une teinte par rôle, pour qu'on sache d'un coup d'œil dans lequel on lit. L'accent est
      porté par le liseré, pas par le fond : deux pavés colorés côte à côte se liraient comme
      deux alertes. */
-  &.beneficiaire { border-top: 3px solid var(--ac-primary, #2563eb); }
-  &.benevole { border-top: 3px solid var(--ac-success, #16a34a); }
+  &.beneficiaire { border-top: 3px solid var(--brand-primary-lisible, #2563eb); }
+  &.benevole { border-top: 3px solid var(--ac-green-text, #16a34a); }
 
   > header {
     display: flex;
@@ -1034,7 +1034,7 @@
   padding: .6rem .5rem;
   border: 1px solid var(--ac-border, #e2e8f0);
   border-radius: 8px;
-  background: var(--ac-surface-alt, rgba(148, 163, 184, .08));
+  background: var(--ac-surface-2, rgba(148, 163, 184, .08));
   color: inherit;
   font: inherit;
   text-align: left;
@@ -1052,7 +1052,7 @@
     color: var(--ac-text-muted, #64748b);
   }
 
-  &:hover { border-color: var(--ac-primary, #2563eb); }
+  &:hover { border-color: var(--brand-primary-lisible, #2563eb); }
 }
 
 .liste-apercu {
@@ -1070,7 +1070,7 @@
     padding: .5rem .6rem;
     border-left: 2px solid var(--ac-border, #cbd5e1);
     border-radius: 4px;
-    background: var(--ac-surface-alt, rgba(148, 163, 184, .06));
+    background: var(--ac-surface-2, rgba(148, 163, 184, .06));
   }
 }
 
@@ -1086,7 +1086,7 @@
   margin-left: .35rem;
   padding: 0 .35rem;
   border-radius: 999px;
-  background: var(--ac-danger, #dc2626);
+  background: var(--ac-red-text, #dc2626);
   color: #fff;
   font-size: .7rem;
   font-weight: 700;
@@ -1117,7 +1117,7 @@
   text-decoration: none;
   cursor: pointer;
 
-  &:hover { border-color: var(--ac-primary, #2563eb); }
+  &:hover { border-color: var(--brand-primary-lisible, #2563eb); }
 
   .material-icons { font-size: 1.05rem; }
 }

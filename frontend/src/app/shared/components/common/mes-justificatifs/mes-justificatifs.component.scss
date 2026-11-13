@@ -13,13 +13,13 @@
   font-size: .9rem;
 
   &.succes {
-    background: var(--ac-success-bg, #f0fdf4);
-    color: var(--ac-success-text, #166534);
+    background: var(--ac-green-bg, #f0fdf4);
+    color: var(--ac-green-text, #166534);
   }
 
   &.erreur {
-    background: var(--ac-danger-bg, #fef2f2);
-    color: var(--ac-danger, #b91c1c);
+    background: var(--ac-red-bg, #fef2f2);
+    color: var(--ac-red-text, #b91c1c);
   }
 }
 
@@ -52,10 +52,10 @@
 /* Ce qui attend une action est le seul bloc mis en avant : c'est la raison d'ouvrir cette
    page quand tout va bien. */
 .a-corriger {
-  border-left: 3px solid var(--ac-warning, #d97706);
-  background: var(--ac-surface-alt, #fffbeb);
+  border-left: 3px solid var(--ac-amber-text, #d97706);
+  background: var(--ac-surface-2, #fffbeb);
 
-  h3 .material-icons { color: var(--ac-warning, #d97706); }
+  h3 .material-icons { color: var(--ac-amber-text, #d97706); }
 }
 
 .pieces {
@@ -76,9 +76,9 @@
     border-radius: 8px;
 
     /* Une couleur par état : c'est ce qu'on vient vérifier d'un coup d'œil. */
-    &.verifiee { border-left-color: var(--ac-success, #16a34a); }
-    &.refusee { border-left-color: var(--ac-danger, #dc2626); }
-    &.declaree { border-left-color: var(--ac-warning, #d97706); }
+    &.verifiee { border-left-color: var(--ac-green-text, #16a34a); }
+    &.refusee { border-left-color: var(--ac-red-text, #dc2626); }
+    &.declaree { border-left-color: var(--ac-amber-text, #d97706); }
   }
 }
 
@@ -105,7 +105,7 @@
   color: var(--ac-text-muted, #64748b);
 }
 
-.perimee { color: var(--ac-danger, #dc2626); font-weight: 600; }
+.perimee { color: var(--ac-red-text, #dc2626); font-weight: 600; }
 
 .motif {
   display: flex;
@@ -117,8 +117,8 @@
 
   .material-icons { font-size: 1.05rem; }
 
-  &.ok { color: var(--ac-success-text, #166534); }
-  &.attente-verif { color: var(--ac-warning-text, #b45309); }
+  &.ok { color: var(--ac-green-text, #166534); }
+  &.attente-verif { color: var(--ac-amber-text, #b45309); }
 }
 
 .piece-actions {
@@ -144,7 +144,7 @@
   font-size: .85rem;
   cursor: pointer;
 
-  &:hover { border-color: var(--ac-primary, #2563eb); }
+  &:hover { border-color: var(--brand-primary-lisible, #2563eb); }
 
   .material-icons { font-size: 1.05rem; }
 }
@@ -181,11 +181,11 @@
   gap: .75rem;
   align-items: flex-start;
   padding: .75rem .9rem;
-  border-left: 3px solid var(--ac-primary, #2563eb);
+  border-left: 3px solid var(--brand-primary-lisible, #2563eb);
   border-radius: 6px;
-  background: var(--ac-surface-alt, #f8fafc);
+  background: var(--ac-surface-2, #f8fafc);
 
-  &.destruction { border-left-color: var(--ac-danger, #dc2626); }
+  &.destruction { border-left-color: var(--ac-red-text, #dc2626); }
 
   .material-icons { color: var(--ac-text-muted, #64748b); }
 
@@ -220,7 +220,7 @@
   padding: .55rem 1.1rem;
   border: 0;
   border-radius: 8px;
-  background: var(--ac-primary, #2563eb);
+  background: var(--brand-primary-lisible, #2563eb);
   color: #fff;
   font: inherit;
   font-weight: 600;
@@ -270,9 +270,9 @@
   }
 
   /* Un liseré par état, repris de la liste : c'est ce qu'on balaye des yeux. */
-  tbody tr.verifiee th { box-shadow: inset 3px 0 0 var(--ac-success, #16a34a); }
-  tbody tr.refusee th { box-shadow: inset 3px 0 0 var(--ac-danger, #dc2626); }
-  tbody tr.declaree th { box-shadow: inset 3px 0 0 var(--ac-warning, #d97706); }
+  tbody tr.verifiee th { box-shadow: inset 3px 0 0 var(--ac-green-text, #16a34a); }
+  tbody tr.refusee th { box-shadow: inset 3px 0 0 var(--ac-red-text, #dc2626); }
+  tbody tr.declaree th { box-shadow: inset 3px 0 0 var(--ac-amber-text, #d97706); }
 
   td { font-variant-numeric: tabular-nums; }
 }
@@ -322,7 +322,7 @@
   color: inherit;
   cursor: pointer;
 
-  &:hover { border-color: var(--ac-primary, #2563eb); }
+  &:hover { border-color: var(--brand-primary-lisible, #2563eb); }
 }
 
 .sr-only {

@@ -425,7 +425,7 @@ label {
   padding: 1rem;
   border: 1px solid var(--ac-border, #e2e8f0);
   border-radius: 8px;
-  background: var(--ac-surface-alt, #f8fafc);
+  background: var(--ac-surface-2, #f8fafc);
 
   h3 {
     margin: 0 0 .25rem;
@@ -445,8 +445,8 @@ label {
   cursor: pointer;
 
   &.retenu {
-    border-color: var(--ac-primary, #2563eb);
-    box-shadow: 0 0 0 1px var(--ac-primary, #2563eb) inset;
+    border-color: var(--brand-primary-lisible, #2563eb);
+    box-shadow: 0 0 0 1px var(--brand-primary-lisible, #2563eb) inset;
   }
 
   &.indisponible {
@@ -477,7 +477,7 @@ label {
   font-size: .85rem;
   padding: .1rem .45rem;
   border-radius: 999px;
-  background: var(--ac-surface-alt, #f1f5f9);
+  background: var(--ac-surface-2, #f1f5f9);
   color: var(--ac-text-muted, #475569);
 }
 
@@ -491,7 +491,7 @@ label {
   color: var(--ac-text-muted, #475569);
 }
 
-.canal-manque { color: var(--ac-warning, #b45309); }
+.canal-manque { color: var(--ac-amber-text, #b45309); }
 .canal-alerte { color: var(--ac-text-muted, #475569); font-style: italic; }
 
 .canaux-total {

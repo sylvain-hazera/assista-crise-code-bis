@@ -83,6 +83,13 @@ for t in types_informations:
 
 EOF
 
+# Socle du catalogue des titres, avec leur régime de conservation. Constaté vide en
+# production le 13/11/2026 : la liste « Type de document » de la page de dépôt ne proposait
+# alors rien, et personne ne pouvait déposer quoi que ce soit. Idempotent, et ne défait jamais
+# un reclassement fait à la main.
+echo "Creating default qualifications..."
+python manage.py initialiser_catalogue_qualifications --silencieux
+
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 

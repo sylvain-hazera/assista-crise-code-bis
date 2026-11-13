@@ -376,3 +376,53 @@ class TestReglerLaCategorieDuCatalogue:
 
         ligne = next(q for q in reponse.data if q["id"] == str(titre_permis.id))
         assert ligne["conservation"]["regime"] == REGIME_VERIFIER_DETRUIRE
+
+
+class TestLeCatalogueDuSocle:
+    """Le catalogue était VIDE en production le 13/11/2026 : la liste « Type de document » de
+    la page de dépôt ne proposait rien, et personne ne pouvait déposer quoi que ce soit. Un
+    écran parfaitement fonctionnel, et parfaitement inutilisable."""
+
+    def test_le_socle_cree_les_titres_avec_leur_categorie(self, db):
+        from django.core.management import call_command
+
+        call_command("initialiser_catalogue_qualifications", "--silencieux")
+
+        permis = Qualification.objects.get(nom="Permis de conduire B")
+        assert permis.categorie_piece == "PERMIS"
+        # Le point qui compte : sans la catégorie, la photo du permis ne serait jamais
+        # détruite et la politique s'afficherait sans jamais s'appliquer.
+        assert detruire_apres_validation(permis.categorie_piece) is True
+
+    def test_relancer_ne_cree_pas_de_doublon(self, db):
+        from django.core.management import call_command
+
+        call_command("initialiser_catalogue_qualifications", "--silencieux")
+        total = Qualification.objects.count()
+        call_command("initialiser_catalogue_qualifications", "--silencieux")
+
+        assert Qualification.objects.count() == total
+
+    def test_un_reclassement_a_la_main_n_est_jamais_defait(self, db):
+        """Sinon la décision d'une association serait défaite à chaque redémarrage du
+        conteneur, sans que personne ne comprenne pourquoi."""
+        from django.core.management import call_command
+
+        call_command("initialiser_catalogue_qualifications", "--silencieux")
+        titre = Qualification.objects.get(nom="Permis de conduire B")
+        titre.categorie_piece = "IDENTITE"
+        titre.save()
+
+        call_command("initialiser_catalogue_qualifications", "--silencieux")
+
+        titre.refresh_from_db()
+        assert titre.categorie_piece == "IDENTITE"
+
+    def test_toutes_les_categories_du_socle_existent(self):
+        """Une clé inconnue retomberait en silence sur « conserver » : la faute de frappe ne
+        se verrait qu'au moment où un permis n'aurait pas été détruit."""
+        from core.conservation_pieces import CLES_DEPOSABLES
+        from core.management.commands.initialiser_catalogue_qualifications import CATALOGUE
+
+        for nom, categorie, _validite in CATALOGUE:
+            assert categorie in CLES_DEPOSABLES, nom
