@@ -4423,6 +4423,53 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ## 13. Conventions de développement
 
+### 13.0 bis « Mon espace » : deux rôles, pas neuf onglets
+
+Réorganisation du 13/11/2026, à la demande de Sylvain : *« un bénévole ou un bénéficiaire
+devrait arriver sur cette page certes, mais avec 2 secteurs : le secteur bénéficiaire avec le
+suivi de ses demandes / démarches ; le secteur bénévole, avec ses offres, ses missions en
+cours, le récap du passé, ses documents justificatifs »*.
+
+`/settings` servait **neuf onglets de même poids**, nommés par le modèle de données
+(« Offres », « Besoins », « Crises », « Mon dossier ») et non par ce que la personne vient y
+faire. Or ce sont **deux rôles différents** — demander de l'aide, et en donner — qu'une même
+personne porte souvent tous les deux. À plat, retrouver l'un ou l'autre oblige à relire la
+liste entière.
+
+Ce qui change, et uniquement côté interface — **rien n'a été ajouté au serveur, tout était
+déjà servi** :
+
+- **La page s'appelle « Mon espace »**, et non « Paramètres du compte » : ce n'est pas un
+  écran de réglages, c'est la page d'accueil d'un bénévole comme d'un bénéficiaire.
+- **Trois groupes d'onglets, avec leur intitulé visible** : « J'ai besoin d'aide », « Je donne
+  un coup de main », « Mon compte ». Sans l'intitulé, le regroupement n'existerait que dans la
+  tête de celui qui l'a écrit. Les groupes sont **toujours affichés, même vides** : quelqu'un
+  qui n'a jamais rien demandé doit pouvoir le faire.
+- **Une vue d'ensemble à l'arrivée** (`activeTab = 'apercu'`), qui ne répète pas les tableaux
+  mais dit, pour chaque rôle, ce qui attend quelque chose. Personne n'ouvre son espace pour
+  relire son adresse email.
+- **Les compteurs ne comptent que ce qui appelle une action.** Un compteur qui additionne les
+  dossiers terminés annonce « 14 » à quelqu'un qui n'a rien à faire.
+
+**La séparation qui compte** : `/dossiers/` rend à la fois les dossiers ouverts **pour** la
+personne et ceux confiés à une **équipe dont elle fait partie**. Les confondre afficherait à un
+bénévole « vos démarches » en parlant des gens qu'il aide. D'où `mesDemarches` / `mesMissions`,
+départagés par `equipe` ∈ `mesEquipes()` — c'est le seul point du travail qui puisse tromper
+quelqu'un, et c'est celui que les tests tiennent.
+
+**Deux libellés de menu corrigés**, qui envoyaient au mauvais endroit :
+
+| Avant | Où ça menait | Après |
+|---|---|---|
+| « Mon compte » | `/admin/dashboard`, la gestion de crise | « Tableau de bord de crise » |
+| « Paramètres », en dernier | `/settings` | « Mon espace », en premier et pour tout le monde |
+
+Enfin, « Les crises » est devenu **« Les crises que j'ai déclarées »** : le filtre est
+`author_email`, donc parler de crises « qui me concernent » aurait été faux. Et
+`/ma-fiche-benevole` accepte désormais `?onglet=justificatifs`, pour que le lien du secteur
+bénévole arrive sur les pièces et non sur le formulaire d'identité — un lien qui dépose les
+gens à côté de ce qu'il annonce est un lien raté.
+
 ### 13.0 Les textes de l'interface s'adressent à celui qui les lit
 
 Règle posée le 12/11/2026, après un constat sans appel : beaucoup de textes d'écran, d'emails

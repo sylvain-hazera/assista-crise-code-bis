@@ -71,4 +71,69 @@ describe('SettingsComponent', () => {
       expect(component.reclamerMeshtasticNom).toBe('Talkie Jean');
     });
   });
+
+  /**
+   * Les deux secteurs (13/11/2026). Ce qui est testé ici est la seule chose qui puisse
+   * tromper quelqu'un : **la séparation entre ce que je demande et ce que je fais pour les
+   * autres**. Les deux viennent du même endpoint (`/dossiers/`), et les confondre montrerait
+   * à un bénévole « vos démarches » en parlant des gens qu'il aide.
+   */
+  describe('les deux secteurs', () => {
+
+    const dossier = (sur: Partial<{ id: string; equipe: string; statut: string }>) => ({
+      id: 'd1', numero: 'D-001', crise: 'c1', crise_nom: 'Inondation',
+      competence: 'co1', competence_nom: 'Hébergement', titre: 'Besoin de draps',
+      description: '', statut: 'EN_COURS', priorite: 'NORMALE' as const, ordre: 0,
+      date_creation: '2026-11-01T08:00:00Z', ...sur,
+    });
+
+    it('arrive sur la vue d\'ensemble, pas sur un formulaire d\'identité', () => {
+      // Personne n'ouvre son espace pour relire son adresse email.
+      expect(component.activeTab).toBe('apercu');
+    });
+
+    it('sépare mes démarches de mes missions', () => {
+      component.mesEquipes = [{ id: 'e1', name: 'Équipe hébergement' } as never];
+      component.allDossiers = [
+        dossier({ id: 'mien' }),                        // ouvert pour moi : aucune équipe
+        dossier({ id: 'mission', equipe: 'e1' }),       // confié à MON équipe
+        dossier({ id: 'ailleurs', equipe: 'e9' }),      // une autre équipe : pas ma mission
+      ];
+
+      expect(component.mesMissions.map(d => d.id)).toEqual(['mission']);
+      expect(component.mesDemarches.map(d => d.id)).toEqual(['mien', 'ailleurs']);
+    });
+
+    it('ne compte que ce qui appelle une action', () => {
+      // Un compteur qui additionne les dossiers terminés dit « 14 » à quelqu'un qui n'a rien
+      // à faire.
+      component.mesEquipes = [{ id: 'e1', name: 'Équipe' } as never];
+      component.allDossiers = [
+        dossier({ id: 'a', equipe: 'e1', statut: 'EN_COURS' }),
+        dossier({ id: 'b', equipe: 'e1', statut: 'CLOTURE' }),
+        dossier({ id: 'c', equipe: 'e1', statut: 'RESOLU' }),
+      ];
+
+      expect(component.missionsEnCours.map(d => d.id)).toEqual(['a']);
+      expect(component.missionsPassees.map(d => d.id)).toEqual(['b', 'c']);
+    });
+
+    it('sans équipe, tout dossier est une démarche et non une mission', () => {
+      component.mesEquipes = [];
+      component.allDossiers = [dossier({ id: 'x', equipe: 'e1' })];
+
+      expect(component.mesMissions).toEqual([]);
+      expect(component.mesDemarches.length).toBe(1);
+    });
+
+    it('reconnaît un vécu de bénévole même sans mission en cours', () => {
+      // Faire partie d'une équipe suffit : le secteur doit s'afficher rempli, pas comme si la
+      // personne n'avait jamais rien fait.
+      component.mesEquipes = [{ id: 'e1', name: 'Équipe' } as never];
+      component.allDossiers = [];
+      component.allOffers = [];
+
+      expect(component.aUnVecuDeBenevole).toBeTrue();
+    });
+  });
 });

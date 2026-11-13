@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { User } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 import { RequestService } from '../../services/request.service';
@@ -28,12 +28,15 @@ import { SuiviPositionPermanentService } from '../../services/suivi-position-per
 import { PieceIdentiteReserveService } from '../../services/piece-identite-reserve.service';
 import { PieceIdentiteReserve } from '../../shared/models/piece-identite-reserve.model';
 
+import { TeamService } from '../../services/team.service';
+import { Team } from '../../shared/models/team.model';
+
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule],
+  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
@@ -79,7 +82,12 @@ export class SettingsComponent implements OnInit {
     return this._errorMessage;
   }
 
-  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration' | 'information' | 'dossier' | 'radio' = 'profile';
+  // « apercu » par défaut depuis le 13/11/2026 : on arrive sur une VUE D'ENSEMBLE de ses deux
+  // rôles, pas sur un formulaire d'identité. Un bénévole qui ouvre son espace veut savoir où en
+  // sont ses missions ; un bénéficiaire, où en est sa démarche. Ni l'un ni l'autre n'ouvre cette
+  // page pour relire son adresse email.
+  activeTab: 'apercu' | 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration'
+    | 'information' | 'dossier' | 'radio' = 'apercu';
 
   allCrisis:  Crisis[]   = [];  filteredCrisis:  Crisis[]   = [];  isLoadingCrisis  = false;
   allOffers:  Offer[]   = [];  filteredOffers:  Offer[]   = [];  isLoadingOffers  = false;
@@ -141,6 +149,7 @@ export class SettingsComponent implements OnInit {
     private pieceIdentiteReserveService: PieceIdentiteReserveService,
     private router: Router,
     private route: ActivatedRoute,
+    private teamService: TeamService,
     private noeudMeshCoreService: NoeudMeshUtilisateurService,
     private noeudMeshtasticService: NoeudUtilisateurMeshtasticService,
     private compagnonMeshtasticService: CompagnonMeshtasticService,
@@ -170,6 +179,7 @@ export class SettingsComponent implements OnInit {
     }
     this.initForms();
     this.loadAll();
+    this.loadEquipes();
 
     if (this.currentUser?.souhaite_rejoindre_reserve) {
       this.chargerPieceIdentiteReserve();
@@ -177,7 +187,8 @@ export class SettingsComponent implements OnInit {
 
     // Abonnement à queryParams : les liens rapides changent seulement `tab`, Angular réutilise
     // l'instance et ne relance pas ngOnInit.
-    const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier', 'radio'];
+    const validTabs: (typeof this.activeTab)[] = ['apercu', 'profile', 'password', 'offer',
+      'request', 'crisis', 'declaration', 'information', 'dossier', 'radio'];
     this.route.queryParamMap.subscribe(params => {
       const requestedTab = params.get('tab');
       if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
@@ -451,6 +462,96 @@ export class SettingsComponent implements OnInit {
       },
       error: () => (this.isLoadingRequests = false)
     });
+  }
+
+  // ══ Les deux secteurs ═══════════════════════════════════════════════════════════════
+  //
+  // Demande de Sylvain du 13/11/2026 : « un bénévole ou un bénéficiaire devrait arriver sur
+  // cette page certes, mais avec 2 secteurs : le secteur bénéficiaire avec le suivi de ses
+  // demandes / démarches ; le secteur bénévole, avec ses offres, ses missions en cours, le
+  // récap du passé, ses documents justificatifs ».
+  //
+  // La page servait neuf onglets de même poids, nommés par le modèle de données (« Offres »,
+  // « Besoins », « Crises ») et non par ce que la personne vient y faire. Or ce sont **deux
+  // rôles différents**, qu'une même personne porte souvent tous les deux : demander de l'aide
+  // et en donner. Les mélanger à plat oblige à relire la liste entière pour retrouver l'un ou
+  // l'autre.
+  //
+  // Rien n'est ajouté côté serveur : tout était déjà servi. Ce qui change est le classement,
+  // les mots, et la vue d'ensemble d'arrivée.
+
+  mesEquipes: Team[] = [];
+
+  private loadEquipes(): void {
+    // Sert à séparer MES DÉMARCHES (dossiers ouverts pour moi) de MES MISSIONS (dossiers
+    // confiés à une équipe dont je fais partie). `getAll()` rend les deux, et les confondre
+    // montrerait à un bénévole « vos démarches » en parlant des gens qu'il aide.
+    this.teamService.mesEquipes().subscribe({
+      next: (teams) => this.mesEquipes = teams,
+      error: () => this.mesEquipes = [],
+    });
+  }
+
+  private get idsDeMesEquipes(): Set<string> {
+    return new Set(this.mesEquipes.map(e => e.id).filter((id): id is string => !!id));
+  }
+
+  /** Les dossiers ouverts POUR MOI : ma démarche, celle dont j'attends l'issue. */
+  get mesDemarches(): Dossier[] {
+    const equipes = this.idsDeMesEquipes;
+    return this.allDossiers.filter(d => !d.equipe || !equipes.has(d.equipe));
+  }
+
+  /** Les dossiers confiés à une équipe dont je fais partie : ce que je fais pour les autres. */
+  get mesMissions(): Dossier[] {
+    const equipes = this.idsDeMesEquipes;
+    return this.allDossiers.filter(d => d.equipe && equipes.has(d.equipe));
+  }
+
+  /** Clos ou non : « en cours » est le seul chiffre qui appelle une action. Un compteur qui
+   * additionne les dossiers terminés dit « 14 » à quelqu'un qui n'a rien à faire. */
+  private estTermine(statut: string | undefined): boolean {
+    return ['CLOTURE', 'CLOTUREE', 'RESOLU', 'RESOLUE', 'ANNULE', 'ANNULEE', 'TERMINE',
+            'TERMINEE'].includes((statut ?? '').toUpperCase());
+  }
+
+  get demarchesEnCours(): Dossier[] {
+    return this.mesDemarches.filter(d => !this.estTermine(d.statut));
+  }
+
+  get missionsEnCours(): Dossier[] {
+    return this.mesMissions.filter(d => !this.estTermine(d.statut));
+  }
+
+  get missionsPassees(): Dossier[] {
+    return this.mesMissions.filter(d => this.estTermine(d.statut));
+  }
+
+  get demandesEnCours(): Request[] {
+    return this.allRequests.filter(r => !this.estTermine(String(r.status)));
+  }
+
+  get offresEnCours(): Offer[] {
+    return this.allOffers.filter(o => !this.estTermine(String(o.status)));
+  }
+
+  /** Vrai dès que la personne a fait quelque chose en tant que bénéficiaire. Sert à ouvrir le
+   * bon secteur en premier plutôt qu'à masquer l'autre : quelqu'un qui n'a jamais rien demandé
+   * doit quand même pouvoir le faire. */
+  get aUnVecuDeBeneficiaire(): boolean {
+    return this.allRequests.length > 0 || this.mesDemarches.length > 0
+      || this.allDeclarations.length > 0 || this.allInformations.length > 0;
+  }
+
+  get aUnVecuDeBenevole(): boolean {
+    return this.allOffers.length > 0 || this.mesMissions.length > 0
+      || this.mesEquipes.length > 0;
+  }
+
+  /** L'entrée « Mes justificatifs » ne vaut que pour un adhérent d'association : elle mène à
+   * sa fiche de bénévole, qui n'existe pas pour les autres. */
+  get estBenevoleAssociation(): boolean {
+    return !!this.currentUser?.est_benevole_association;
   }
 
   setActiveTab(tab: typeof this.activeTab): void {

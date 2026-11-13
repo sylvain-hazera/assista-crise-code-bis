@@ -2,7 +2,7 @@
   <div class="settings-wrapper">
     
     <div class="settings-header">
-      <h1>Paramètres du compte</h1>
+      <h1>Mon espace</h1>
       <div class="user-type-badge" [class.individual]="isIndividual" [class.organization]="isAdmin">
         @if (isAdmin) {
           <span class="material-icons">corporate_fare</span>
@@ -26,47 +26,240 @@
       </div>
     }
 
+    <!-- ══ Deux secteurs, et non neuf onglets à plat ═══════════════════════════════════
+         « Un bénévole ou un bénéficiaire devrait arriver sur cette page certes, mais avec
+         2 secteurs » (13/11/2026). Demander de l'aide et en donner sont deux rôles
+         différents, qu'une même personne porte souvent tous les deux. Les mélanger à plat
+         oblige à relire la liste entière pour retrouver l'un ou l'autre.
+
+         Les groupes sont TOUJOURS affichés, même vides : quelqu'un qui n'a jamais rien
+         demandé doit pouvoir le faire, et masquer le secteur le lui cacherait. -->
     <div class="tabs">
-      <button class="tab-button" [class.active]="activeTab === 'profile'" (click)="setActiveTab('profile')">
-        <span class="material-icons">account_circle</span> 
-        <span class="tab-text">Profil</span>
+      <button class="tab-button" [class.active]="activeTab === 'apercu'"
+              (click)="setActiveTab('apercu')">
+        <span class="material-icons">dashboard</span>
+        <span class="tab-text">Vue d'ensemble</span>
       </button>
-      <button class="tab-button" [class.active]="activeTab === 'password'" (click)="setActiveTab('password')">
-        <span class="material-icons">lock</span> 
-        <span class="tab-text">Mot de passe</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'offer'" (click)="setActiveTab('offer')">
-        <span class="material-icons">volunteer_activism</span> 
-        <span class="tab-text">Offres</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'request'" (click)="setActiveTab('request')">
-        <span class="material-icons">emergency</span> 
-        <span class="tab-text">Besoins</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'crisis'" (click)="setActiveTab('crisis')">
-        <span class="material-icons">local_fire_department</span>
-        <span class="tab-text">Crises</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'declaration'" (click)="setActiveTab('declaration')">
-        <span class="material-icons">verified_user</span>
-        <span class="tab-text">Je suis en sécurité</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'information'" (click)="setActiveTab('information')">
-        <span class="material-icons">report</span>
-        <span class="tab-text">Signalements</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'dossier'" (click)="setActiveTab('dossier')">
-        <span class="material-icons">folder</span>
-        <span class="tab-text">Mon dossier</span>
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'radio'" (click)="setActiveTab('radio')">
-        <span class="material-icons">settings_input_antenna</span>
-        <span class="tab-text">Mes radios</span>
-      </button>
+
+      <div class="tab-group" role="group" aria-label="Quand j'ai besoin d'aide">
+        <span class="tab-group-label">
+          <span class="material-icons">support</span> J'ai besoin d'aide
+        </span>
+        <button class="tab-button" [class.active]="activeTab === 'request'"
+                (click)="setActiveTab('request')">
+          <span class="material-icons">emergency</span>
+          <span class="tab-text">Mes demandes d'aide</span>
+          @if (demandesEnCours.length) {
+            <span class="tab-compteur">{{ demandesEnCours.length }}</span>
+          }
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'dossier'"
+                (click)="setActiveTab('dossier')">
+          <span class="material-icons">folder</span>
+          <span class="tab-text">Où en sont mes démarches</span>
+          @if (demarchesEnCours.length) {
+            <span class="tab-compteur">{{ demarchesEnCours.length }}</span>
+          }
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'declaration'"
+                (click)="setActiveTab('declaration')">
+          <span class="material-icons">verified_user</span>
+          <span class="tab-text">Je suis en sécurité</span>
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'information'"
+                (click)="setActiveTab('information')">
+          <span class="material-icons">report</span>
+          <span class="tab-text">Ce que j'ai signalé</span>
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'crisis'"
+                (click)="setActiveTab('crisis')">
+          <span class="material-icons">local_fire_department</span>
+          <span class="tab-text">Les crises que j'ai déclarées</span>
+        </button>
+      </div>
+
+      <div class="tab-group" role="group" aria-label="Quand je donne un coup de main">
+        <span class="tab-group-label">
+          <span class="material-icons">volunteer_activism</span> Je donne un coup de main
+        </span>
+        <button class="tab-button" [class.active]="activeTab === 'offer'"
+                (click)="setActiveTab('offer')">
+          <span class="material-icons">volunteer_activism</span>
+          <span class="tab-text">Ce que je propose</span>
+          @if (offresEnCours.length) {
+            <span class="tab-compteur">{{ offresEnCours.length }}</span>
+          }
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'radio'"
+                (click)="setActiveTab('radio')">
+          <span class="material-icons">settings_input_antenna</span>
+          <span class="tab-text">Mes radios</span>
+        </button>
+      </div>
+
+      <div class="tab-group" role="group" aria-label="Mon compte">
+        <span class="tab-group-label">
+          <span class="material-icons">person</span> Mon compte
+        </span>
+        <button class="tab-button" [class.active]="activeTab === 'profile'"
+                (click)="setActiveTab('profile')">
+          <span class="material-icons">account_circle</span>
+          <span class="tab-text">Mes informations</span>
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'password'"
+                (click)="setActiveTab('password')">
+          <span class="material-icons">lock</span>
+          <span class="tab-text">Ma connexion</span>
+        </button>
+      </div>
     </div>
 
     <div class="tab-content">
-      
+
+      <!-- ══ VUE D'ENSEMBLE ═════════════════════════════════════════════════════════════
+           La page d'arrivée. Elle ne répète pas les tableaux : elle dit, pour chacun des
+           deux rôles, CE QUI ATTEND quelque chose — et renvoie au bon endroit. Un compteur
+           qui additionnerait les dossiers terminés dirait « 14 » à quelqu'un qui n'a rien à
+           faire. -->
+      @if (activeTab === 'apercu') {
+        <div class="tab-panel">
+          <p class="apercu-intro">
+            Bonjour {{ currentUser?.first_name || currentUser?.last_name }}. Vous retrouvez
+            ici vos démarches quand vous avez besoin d'aide, et vos engagements quand vous en
+            donnez. Les deux peuvent coexister : beaucoup de gens font les deux.
+          </p>
+
+          <div class="secteurs">
+
+            <!-- ── Secteur bénéficiaire ───────────────────────────────────────────── -->
+            <section class="secteur beneficiaire">
+              <header>
+                <span class="material-icons">support</span>
+                <div>
+                  <h2>Quand j'ai besoin d'aide</h2>
+                  <p>Ce que vous avez demandé, et où ça en est.</p>
+                </div>
+              </header>
+
+              <div class="chiffres">
+                <button type="button" class="chiffre" (click)="setActiveTab('request')">
+                  <strong>{{ demandesEnCours.length }}</strong>
+                  <span>demande(s) en cours</span>
+                </button>
+                <button type="button" class="chiffre" (click)="setActiveTab('dossier')">
+                  <strong>{{ demarchesEnCours.length }}</strong>
+                  <span>démarche(s) suivie(s)</span>
+                </button>
+                <button type="button" class="chiffre" (click)="setActiveTab('information')">
+                  <strong>{{ allInformations.length }}</strong>
+                  <span>signalement(s)</span>
+                </button>
+              </div>
+
+              @if (demarchesEnCours.length) {
+                <h3>Vos démarches en cours</h3>
+                <ul class="liste-apercu">
+                  @for (d of demarchesEnCours.slice(0, 4); track d.id) {
+                    <li>
+                      <span class="ligne-titre">{{ d.titre }}</span>
+                      <span class="ligne-detail">
+                        {{ d.crise_nom }} — dossier {{ d.numero }}
+                        @if (d.equipe_nom) { · suivi par {{ d.equipe_nom }} }
+                      </span>
+                    </li>
+                  }
+                </ul>
+                @if (demarchesEnCours.length > 4) {
+                  <button type="button" class="lien-secteur" (click)="setActiveTab('dossier')">
+                    Voir les {{ demarchesEnCours.length }} démarches
+                    <span class="material-icons">arrow_forward</span>
+                  </button>
+                }
+              } @else {
+                <p class="secteur-vide">
+                  Vous n'avez aucune demande en cours. Si vous avez besoin d'aide, vous pouvez
+                  en formuler une depuis la page d'accueil — elle sera transmise à la
+                  collectivité concernée.
+                </p>
+              }
+
+              <button type="button" class="lien-secteur" (click)="setActiveTab('declaration')">
+                <span class="material-icons">verified_user</span>
+                Signaler que je suis en sécurité
+              </button>
+            </section>
+
+            <!-- ── Secteur bénévole ──────────────────────────────────────────────── -->
+            <section class="secteur benevole">
+              <header>
+                <span class="material-icons">volunteer_activism</span>
+                <div>
+                  <h2>Quand je donne un coup de main</h2>
+                  <p>Ce que vous proposez, et ce qui vous est confié.</p>
+                </div>
+              </header>
+
+              <div class="chiffres">
+                <button type="button" class="chiffre" (click)="setActiveTab('offer')">
+                  <strong>{{ offresEnCours.length }}</strong>
+                  <span>proposition(s) active(s)</span>
+                </button>
+                <a class="chiffre" routerLink="/mes-interventions">
+                  <strong>{{ missionsEnCours.length }}</strong>
+                  <span>mission(s) en cours</span>
+                </a>
+                <a class="chiffre" routerLink="/mes-interventions">
+                  <strong>{{ missionsPassees.length }}</strong>
+                  <span>mission(s) terminée(s)</span>
+                </a>
+              </div>
+
+              @if (missionsEnCours.length) {
+                <h3>Vos missions en cours</h3>
+                <ul class="liste-apercu">
+                  @for (d of missionsEnCours.slice(0, 4); track d.id) {
+                    <li>
+                      <span class="ligne-titre">{{ d.titre }}</span>
+                      <span class="ligne-detail">
+                        {{ d.crise_nom }}
+                        @if (d.equipe_nom) { · {{ d.equipe_nom }} }
+                        @if (d.priorite === 'URGENTE') {
+                          <span class="urgent">urgent</span>
+                        }
+                      </span>
+                    </li>
+                  }
+                </ul>
+                <a class="lien-secteur" routerLink="/mes-interventions">
+                  Ouvrir mes interventions
+                  <span class="material-icons">arrow_forward</span>
+                </a>
+              } @else if (mesEquipes.length) {
+                <p class="secteur-vide">
+                  Vous faites partie de
+                  {{ mesEquipes.length }} équipe(s), et aucune mission ne vous est confiée en
+                  ce moment. C'est une bonne nouvelle.
+                </p>
+              } @else {
+                <p class="secteur-vide">
+                  Vous ne faites encore partie d'aucune équipe. Vous pouvez proposer votre
+                  aide : une collectivité ou une association vous contactera si votre
+                  proposition correspond à un besoin.
+                </p>
+              }
+
+              @if (estBenevoleAssociation) {
+                <a class="lien-secteur" routerLink="/ma-fiche-benevole"
+                   [queryParams]="{ onglet: 'justificatifs' }">
+                  <span class="material-icons">folder_shared</span>
+                  Mes justificatifs et mes titres
+                </a>
+              }
+            </section>
+          </div>
+        </div>
+      }
+
       <!-- PROFILE TAB -->
       @if (activeTab === 'profile') {
         <div class="tab-panel">

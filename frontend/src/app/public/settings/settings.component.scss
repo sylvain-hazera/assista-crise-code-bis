@@ -851,3 +851,202 @@
   font-size: 0.85rem;
   padding: 0;
 }
+/* ══ Deux secteurs, et non neuf onglets à plat ═════════════════════════════════════════
+   Demander de l'aide et en donner sont deux rôles différents, qu'une même personne porte
+   souvent tous les deux. Les onglets sont donc groupés, avec l'intitulé du groupe visible :
+   sans lui, le regroupement n'existe que dans la tête de celui qui l'a écrit. */
+
+.tab-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  padding: .35rem .5rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--ac-surface-alt, rgba(148, 163, 184, .08));
+}
+
+.tab-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding-right: .35rem;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ac-text-muted, #64748b);
+  white-space: nowrap;
+
+  .material-icons { font-size: 1rem; }
+}
+
+.tab-compteur {
+  display: inline-block;
+  min-width: 1.4rem;
+  padding: 0 .35rem;
+  margin-left: .35rem;
+  border-radius: 999px;
+  background: var(--ac-primary, #2563eb);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.apercu-intro {
+  margin: 0 0 1.25rem;
+  font-size: .95rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+/* Deux colonnes côte à côte quand l'écran le permet : les voir ENSEMBLE est tout l'objet de
+   cette vue. Empilées sous 900 px, le secteur bénéficiaire en premier. */
+.secteurs {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+}
+
+.secteur {
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+  padding: 1.1rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--ac-surface, rgba(255, 255, 255, .03));
+
+  /* Une teinte par rôle, pour qu'on sache d'un coup d'œil dans lequel on lit. L'accent est
+     porté par le liseré, pas par le fond : deux pavés colorés côte à côte se liraient comme
+     deux alertes. */
+  &.beneficiaire { border-top: 3px solid var(--ac-primary, #2563eb); }
+  &.benevole { border-top: 3px solid var(--ac-success, #16a34a); }
+
+  > header {
+    display: flex;
+    gap: .75rem;
+    align-items: flex-start;
+
+    h2 { margin: 0; font-size: 1.05rem; }
+
+    p {
+      margin: .15rem 0 0;
+      font-size: .85rem;
+      color: var(--ac-text-muted, #64748b);
+    }
+
+    .material-icons { color: var(--ac-text-muted, #64748b); }
+  }
+
+  h3 {
+    margin: .25rem 0 0;
+    font-size: .9rem;
+  }
+}
+
+.chiffres {
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.chiffre {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .6rem .5rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--ac-surface-alt, rgba(148, 163, 184, .08));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+
+  strong {
+    font-size: 1.5rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  span {
+    font-size: .75rem;
+    color: var(--ac-text-muted, #64748b);
+  }
+
+  &:hover { border-color: var(--ac-primary, #2563eb); }
+}
+
+.liste-apercu {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    padding: .5rem .6rem;
+    border-left: 2px solid var(--ac-border, #cbd5e1);
+    border-radius: 4px;
+    background: var(--ac-surface-alt, rgba(148, 163, 184, .06));
+  }
+}
+
+.ligne-titre { font-weight: 600; font-size: .9rem; }
+
+.ligne-detail {
+  font-size: .8rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+.urgent {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: 0 .35rem;
+  border-radius: 999px;
+  background: var(--ac-danger, #dc2626);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.secteur-vide {
+  margin: 0;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+/* Le lien de bas de secteur : une action, pas une décoration. Aligné à gauche comme le
+   reste du bloc, et non centré — centrer en ferait un bouton d'appel à l'action là où il
+   s'agit d'un simple passage. */
+.lien-secteur {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  align-self: flex-start;
+  padding: .45rem .7rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover { border-color: var(--ac-primary, #2563eb); }
+
+  .material-icons { font-size: 1.05rem; }
+}
+
+@media (max-width: 600px) {
+  .chiffres { grid-template-columns: 1fr; }
+}

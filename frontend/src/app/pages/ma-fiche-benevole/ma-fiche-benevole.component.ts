@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
@@ -82,10 +83,21 @@ export class MaFicheBenevoleComponent implements OnInit {
     private ficheService: FicheBenevoleService,
     private associationService: AssociationService,
     private authService: AuthService,
+    private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
     this.charger();
+    // `?onglet=justificatifs` : permet d'arriver directement sur ses pièces depuis « Mon
+    // espace ». Sans cela, le lien déposait les gens sur le formulaire d'identité, à charge
+    // pour eux de retrouver l'onglet — c'est exactement ce qu'un lien doit éviter.
+    this.route.queryParamMap.subscribe(params => {
+      const demande = params.get('onglet');
+      if (demande && (['fiche', 'disponibilites', 'justificatifs', 'acces'] as string[])
+          .includes(demande)) {
+        this.ouvrirOnglet(demande as Onglet);
+      }
+    });
   }
 
   private charger(): void {

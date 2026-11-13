@@ -108,10 +108,25 @@
 
             <div class="dropdown-divider"></div>
 
+            <!-- « Mon espace » en premier, et pour tout le monde : c'est là que chacun
+                 retrouve ses demandes et ses engagements. L'entrée s'appelait
+                 « Paramètres » et arrivait en dernier, ce qui la faisait lire comme un
+                 réglage technique — alors que c'est la page d'accueil d'un bénévole comme
+                 d'un bénéficiaire. -->
+            <button class="dropdown-item" (click)="goToSettings()">
+              <span class="material-icons">home_work</span>
+              Mon espace
+            </button>
+
+            <div class="dropdown-divider"></div>
+
             @if (canEnterAdminArea) {
+              <!-- Nommé par sa destination : ce bouton ouvre le tableau de bord de gestion
+                   de crise, pas une page de compte. S'appeler « Mon compte » envoyait sur
+                   l'administration ceux qui cherchaient leurs informations personnelles. -->
               <button class="dropdown-item" (click)="goToProfile()">
-                <span class="material-icons">account_box</span>
-                Mon compte
+                <span class="material-icons">dashboard</span>
+                Tableau de bord de crise
               </button>
               <div class="dropdown-divider"></div>
             }
@@ -124,13 +139,6 @@
               </a>
               <div class="dropdown-divider"></div>
             }
-
-            <button class="dropdown-item" (click)="goToSettings()">
-              <span class="material-icons">settings</span>
-              Paramètres
-            </button>
-
-            <div class="dropdown-divider"></div>
 
             <button class="dropdown-item logout" (click)="logout()">
               <span class="material-icons">logout</span>
