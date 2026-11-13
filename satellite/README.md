@@ -51,7 +51,7 @@ apparaît **« Actif »** environ une minute plus tard.
 |---|---|
 | Installation interrompue (Ctrl+C, coupure) | `./installer.sh installer` (sans jeton : reprend où il en était) |
 | Radio branchée après l'installation | `./installer.sh connecter-noeud` |
-| Mise à jour | `git pull` puis `./installer.sh demarrer` |
+| **Mise à jour** | **`./installer.sh mettre-a-jour`** (récupère le code et redémarre) |
 | Identifiants perdus / compromis | bouton **Régénérer les identifiants** sur la page Satellites |
 | Vérifier l'état | `docker compose --profile <gw\|full> ps` |
 

@@ -762,7 +762,31 @@ phase_connecter_noeud() {
     phase_demarrer
 }
 
+phase_mettre_a_jour() {
+    # Mise à jour complète : récupérer le code, puis redémarrer. Ajoutée le 13/11/2026 après
+    # que Fred a lancé `./installer.sh` sans argument en croyant que c'était la commande de
+    # mise à jour — le mode d'emploi ne la mentionnait que dans une parenthèse sur la ligne
+    # `demarrer`, et le code de sortie 1 de l'aide ressemblait à une erreur.
+    log "Récupération du code..."
+    if ! git -C "$REPERTOIRE_SCRIPT" pull --ff-only; then
+        erreur "git pull a échoué. Causes habituelles : pas de réseau, ou des modifications
+locales dans le dépôt. Dans ce second cas : 'git -C $REPERTOIRE_SCRIPT status' pour voir quoi,
+puis 'git stash' pour les mettre de côté."
+    fi
+
+    # RELANCE DU SCRIPT, et ce n'est pas une précaution de style : bash lit un script au fil de
+    # son exécution. Si le `git pull` vient de remplacer CE fichier, poursuivre exécuterait un
+    # mélange de l'ancienne et de la nouvelle version — un classique, et silencieux. On repart
+    # donc proprement sur la version fraîchement récupérée.
+    log "Redémarrage du satellite avec la nouvelle version..."
+    exec "$0" demarrer
+}
+
 case "${1:-}" in
+    mettre-a-jour)
+        verifier_prerequis
+        phase_mettre_a_jour
+        ;;
     installer)
         verifier_prerequis
         phase_installer "${2:-}" "${3:-}"
@@ -785,10 +809,11 @@ case "${1:-}" in
         ;;
     *)
         echo "Usage :"
+        echo "  $0 mettre-a-jour        # METTRE À JOUR : récupère le code et redémarre"
         echo "  $0 installer <JETON>    # installation complète, sans question (recommandé)"
         echo "  $0 installer            # reprendre une installation interrompue"
         echo "  $0 connecter-noeud      # radio branchée après l'installation"
-        echo "  $0 demarrer             # redémarrer le satellite (après une mise à jour : git pull d'abord)"
+        echo "  $0 demarrer             # redémarrer sans récupérer le code"
         echo "  $0 acces-web            # URL de l'application et compte admin local (profil full)"
         echo
         echo "Ancien parcours (installations commencées avant le 20/10/2026) :"

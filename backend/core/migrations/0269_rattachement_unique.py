@@ -1,4 +1,19 @@
-"""Dédoublonne les rattachements, AVANT que la contrainte d'unicité ne soit posée.
+"""Dédoublonne les rattachements. La contrainte est posée par 0271, et c'est OBLIGATOIRE.
+
+**Pourquoi deux migrations et pas une.** La première version faisait le `RunPython` puis
+l'`AddConstraint` dans la même migration, donc dans la même transaction. PostgreSQL a refusé :
+
+    cannot ALTER TABLE "core_contactinstitution" because it has pending trigger events
+
+Les `DELETE` du dédoublonnage laissent des événements de déclencheur en attente (contraintes de
+clé étrangère différées), et un `ALTER TABLE` est interdit tant qu'ils ne sont pas vidés. Django
+ouvrant une transaction par migration, séparer les deux suffit : les suppressions sont validées
+avant que la contrainte ne soit ajoutée.
+
+**Ce que les tests ne pouvaient pas voir** : la base de test ne contient aucun doublon, donc le
+`RunPython` ne supprimait rien, donc aucun déclencheur en attente. La suite complète passait au
+vert pendant que la production tombait. Toute migration qui modifie des données PUIS le schéma
+d'une même table doit être scindée, sans attendre qu'un test le prouve.
 
 Un même couple (personne, institution) pouvait exister plusieurs fois : rien ne l'interdisait,
 et il y en avait 4 en production. Conséquences silencieuses — un effectif faux, une personne
@@ -72,12 +87,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Données SEULEMENT. La contrainte est dans 0271 : voir le docstring du module.
         migrations.RunPython(fusionner_doublons, ne_rien_defaire),
-        migrations.AddConstraint(
-            model_name="contactinstitution",
-            constraint=models.UniqueConstraint(
-                fields=("institution", "utilisateur", "environment"),
-                name="uq_rattachement_par_personne_et_institution",
-            ),
-        ),
     ]
