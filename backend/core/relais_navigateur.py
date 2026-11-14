@@ -296,6 +296,7 @@ def fermer(session, motif=""):
     session.fermee_le = timezone.now()
     session.motif_fermeture = (motif or "")[:120]
     session.save(update_fields=["fermee_le", "motif_fermeture"])
+    reattribuer_file(session.radio)
 
 
 def fermer_sessions_mortes(compagnon=None):
@@ -314,7 +315,14 @@ def fermer_sessions_mortes(compagnon=None):
         if compagnon is None:
             return 0
         qs = qs.filter(**{_champ_session(compagnon): compagnon})
-    return qs.update(fermee_le=timezone.now(), motif_fermeture="Silence prolongé")
+    mortes = list(qs.select_related("compagnon", "compagnon_meshtastic"))
+    if not mortes:
+        return 0
+    nombre = qs.update(fermee_le=timezone.now(), motif_fermeture="Silence prolongé")
+    # Une radio dont le relais vient de mourir ne doit pas garder des messages en otage.
+    for radio in {s.radio for s in mortes}:
+        reattribuer_file(radio)
+    return nombre
 
 
 # ══ Ce qu'on propose à l'écran ════════════════════════════════════════════════
@@ -531,3 +539,93 @@ def verifier_identite(compagnon, identite):
         raise RelaisRefuse(
             f"La radio branchée n'est pas « {compagnon.nom} » : elle annonce le nœud "
             f"!{identite['node_num']:08x}, celui attendu est !{compagnon.node_num:08x}.")
+
+
+# ══ Les radios de navigateur dans le choix automatique de l'émetteur ═══════════
+#
+# Correction du 14/11/2026, constatée en répondant à « quelle interaction avec les messages
+# d'équipe ? ». Le serveur choisit seul la radio qui enverra un message (clé de canal d'équipe,
+# message direct) — `_compagnon_pour_equipe`, `meilleur_compagnon_pour_contact`, et l'interface
+# qui retombe sur « la première de la liste ». Aucun ne distinguait une radio de navigateur : une
+# radio branchée une seule fois restait déclarée et active, donc éligible. Les messages lui
+# étaient confiés et attendaient qu'on la rebranche, sans que personne ne le voie.
+#
+# Règle : une radio de navigateur n'est un émetteur que **tant qu'un relais est vivant dessus**.
+
+def _ids_relayes(modele):
+    """Identifiants des companions de ce modèle qui ont un relais vivant en ce moment."""
+    from .models import CompagnonMeshtastic, SessionRelaisNavigateur
+
+    champ = "compagnon_meshtastic_id" if modele is CompagnonMeshtastic else "compagnon_id"
+    return SessionRelaisNavigateur.objects.filter(
+        fermee_le__isnull=True, dernier_contact__gte=_limite_vivante(),
+    ).exclude(**{f"{champ}__isnull": True}).values_list(champ, flat=True)
+
+
+def emetteurs(queryset):
+    """Restreint un queryset de companions à ceux qui peuvent émettre MAINTENANT : tous sauf les
+    radios de navigateur sans relais vivant."""
+    from django.db.models import Q
+
+    from .models import MeshCoreConnexionType
+
+    return queryset.exclude(
+        Q(connexion_type=MeshCoreConnexionType.NAVIGATEUR) & ~Q(pk__in=_ids_relayes(queryset.model))
+    )
+
+
+def peut_emettre(compagnon):
+    from .models import MeshCoreConnexionType
+
+    if compagnon is None:
+        return False
+    if compagnon.connexion_type != MeshCoreConnexionType.NAVIGATEUR:
+        return True
+    return sessions_vivantes(compagnon).exists()
+
+
+def reattribuer_file(compagnon):
+    """Confie à un autre émetteur les messages directs restés en attente sur une radio de
+    navigateur qui vient de perdre son dernier relais. Renvoie le nombre de messages déplacés.
+
+    Sans cela, ce qui n'était pas encore parti au moment où l'on débranche restait bloqué
+    jusqu'au prochain branchement de CETTE radio — peut-être jamais. Le nouvel émetteur est
+    choisi par les mêmes règles que pour un nouveau message, dans la même institution ; s'il
+    n'y en a aucun, les messages restent où ils sont plutôt que de partir d'une radio d'une
+    autre institution.
+    """
+    from .models import (
+        CompagnonMeshtastic, DirectionMessageMesh, MeshCoreConnexionType, MessageMeshLog,
+        MessageMeshtasticLog, StatutMessageMesh,
+    )
+
+    if compagnon is None or compagnon.connexion_type != MeshCoreConnexionType.NAVIGATEUR:
+        return 0
+    if sessions_vivantes(compagnon).exists():
+        return 0
+
+    meshtastic = isinstance(compagnon, CompagnonMeshtastic)
+    modele_message = MessageMeshtasticLog if meshtastic else MessageMeshLog
+    en_attente = modele_message.objects.filter(
+        compagnon=compagnon, direction=DirectionMessageMesh.SORTANT,
+        statut=StatutMessageMesh.EN_ATTENTE,
+    )
+    deplaces = 0
+    for message in en_attente:
+        if meshtastic:
+            candidats = emetteurs(type(compagnon).objects.filter(actif=True).exclude(pk=compagnon.pk))
+            if compagnon.institution_id:
+                candidats = candidats.filter(institution_id=compagnon.institution_id)
+            remplacant = candidats.exclude(connexion_type="MQTT").order_by("-principal").first() \
+                or candidats.order_by("-principal").first()
+        else:
+            from .routage_mesh import meilleur_compagnon_pour_contact
+            remplacant = meilleur_compagnon_pour_contact(
+                pubkey_hex=message.contact_pubkey_hex, institution=compagnon.institution,
+                exclure=compagnon,
+            ).compagnon if compagnon.institution_id else None
+        if remplacant is not None:
+            message.compagnon = remplacant
+            message.save(update_fields=["compagnon"])
+            deplaces += 1
+    return deplaces

@@ -43,12 +43,19 @@ class ResultatSelectionCompagnon:
         }
 
 
-def meilleur_compagnon_pour_contact(pubkey_hex=None, region_tag=None, institution=None, environment=None):
+def meilleur_compagnon_pour_contact(pubkey_hex=None, region_tag=None, institution=None, environment=None,
+                                    exclure=None):
     """`institution`/`environment` restreignent la recherche (jamais choisir le companion d'une
     autre institution) — omis (None) pour une recherche non restreinte (ex. compte
     administrateur global). Renvoie toujours un `ResultatSelectionCompagnon`, dont
     `.compagnon` peut être None si aucun companion actif n'existe du tout."""
-    compagnons_eligibles = CompagnonMeshCore.objects.filter(actif=True)
+    from .relais_navigateur import emetteurs
+
+    # Une radio de navigateur n'est un émetteur que tant qu'un relais est vivant dessus (voir
+    # relais_navigateur.emetteurs) : sinon le message attendrait qu'on la rebranche.
+    compagnons_eligibles = emetteurs(CompagnonMeshCore.objects.filter(actif=True))
+    if exclure is not None:
+        compagnons_eligibles = compagnons_eligibles.exclude(pk=exclure.pk)
     if institution is not None:
         compagnons_eligibles = compagnons_eligibles.filter(institution=institution)
     if environment is not None:

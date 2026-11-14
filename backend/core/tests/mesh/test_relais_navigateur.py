@@ -607,3 +607,114 @@ class TestLaFailleMeshtasticFermee:
             "direction": "SORTANT", "contenu": "test",
         }, format="json")
         assert reponse.status_code != status.HTTP_403_FORBIDDEN
+
+
+class TestUneRadioDeNavigateurNeCaptePasLesMessages:
+    """Correction du 14/11/2026.
+
+    Le serveur choisit seul la radio qui enverra une clé de canal d'équipe ou un message direct.
+    Une radio branchée une seule fois depuis un navigateur restait déclarée et active, donc
+    éligible : les messages lui étaient confiés et attendaient qu'on la rebranche, sans que
+    personne ne le voie."""
+
+    @pytest.fixture
+    def radio_navigateur(self, mairie):
+        return CompagnonMeshCore.objects.create(
+            institution=mairie, nom="Radio d'un bénévole", environment="PROD",
+            connexion_type=MeshCoreConnexionType.NAVIGATEUR, pubkey_hex="ab" * 32)
+
+    def test_eteinte_elle_n_est_pas_choisie_pour_l_equipe(self, radio_navigateur, compagnon, mairie):
+        from core.models import Team
+        from core.views import _compagnon_pour_equipe
+        equipe = Team.objects.create(name="Équipe test", institution=mairie)
+
+        assert _compagnon_pour_equipe(CompagnonMeshCore, equipe) == compagnon
+
+    def test_eteinte_et_seule_elle_n_est_toujours_pas_choisie(self, radio_navigateur, compagnon, mairie):
+        """Mieux vaut « aucune radio » — visible — qu'une file qui attend en silence."""
+        from core.models import Team
+        from core.views import _compagnon_pour_equipe
+        compagnon.delete()
+        equipe = Team.objects.create(name="Équipe seule", institution=mairie)
+
+        assert _compagnon_pour_equipe(CompagnonMeshCore, equipe) is None
+
+    def test_relayee_elle_redevient_un_emetteur(self, radio_navigateur, membre, mairie, compagnon):
+        from core.models import Team
+        from core.views import _compagnon_pour_equipe
+        compagnon.delete()
+        ouvrir(membre, radio_navigateur, "PROD")
+        equipe = Team.objects.create(name="Équipe relayée", institution=mairie)
+
+        assert _compagnon_pour_equipe(CompagnonMeshCore, equipe) == radio_navigateur
+
+    def test_le_routage_des_messages_directs_l_ignore_eteinte(self, radio_navigateur, compagnon, mairie):
+        from core.models import ContactMeshCore
+        from core.routage_mesh import meilleur_compagnon_pour_contact
+        # Même si elle a entendu le destinataire, au plus court :
+        ContactMeshCore.objects.create(compagnon=radio_navigateur, pubkey_hex="cd" * 32,
+                                       nombre_sauts=0, environment="PROD")
+
+        resultat = meilleur_compagnon_pour_contact(pubkey_hex="cd" * 32, institution=mairie)
+
+        assert resultat.compagnon == compagnon
+
+    def test_la_liste_d_envoi_de_l_interface_l_omet(self, radio_navigateur, compagnon, membre):
+        reponse = _client(membre).get("/api/compagnons-meshcore/envoyables/")
+
+        ids = [c["id"] for c in reponse.json()]
+        assert str(compagnon.id) in ids
+        assert str(radio_navigateur.id) not in ids
+
+    def test_un_envoi_explicite_vers_elle_est_refuse(self, radio_navigateur, create_user):
+        regulateur = create_user(username="regul-relais@test.fr", email="regul-relais@test.fr",
+                                 type=UserRole.LOCAL_AUTHORITY)
+
+        reponse = _client(regulateur).post("/api/messages-meshcore/", {
+            "compagnon": str(radio_navigateur.id), "direction": "SORTANT",
+            "contact_pubkey_hex": "cd" * 32, "contenu": "Rentrez",
+        }, format="json")
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert "plus relayée" in str(reponse.data)
+
+    def test_debrancher_rend_ses_messages_en_attente(self, radio_navigateur, compagnon, membre):
+        """Ce qui n'était pas parti au moment où l'on débranche ne reste pas en otage."""
+        session, _ = ouvrir(membre, radio_navigateur, "PROD")
+        message = MessageMeshLog.objects.create(
+            compagnon=radio_navigateur, direction=DirectionMessageMesh.SORTANT,
+            contact_pubkey_hex="cd" * 32, contenu="x", environment="PROD")
+
+        from core.relais_navigateur import fermer
+        fermer(session, "test")
+
+        message.refresh_from_db()
+        assert message.compagnon == compagnon
+
+    def test_un_relais_mort_rend_aussi_ses_messages(self, radio_navigateur, compagnon, membre):
+        session, _ = ouvrir(membre, radio_navigateur, "PROD")
+        message = MessageMeshLog.objects.create(
+            compagnon=radio_navigateur, direction=DirectionMessageMesh.SORTANT,
+            contact_pubkey_hex="cd" * 32, contenu="x", environment="PROD")
+        SessionRelaisNavigateur.objects.filter(pk=session.pk).update(
+            dernier_contact=timezone.now() - timezone.timedelta(seconds=SECONDES_AVANT_SESSION_MORTE + 5))
+
+        fermer_sessions_mortes()
+
+        message.refresh_from_db()
+        assert message.compagnon == compagnon
+
+    def test_sans_autre_radio_dans_l_institution_les_messages_restent(self, radio_navigateur,
+                                                                     compagnon, membre):
+        """Jamais vers une radio d'une autre institution."""
+        compagnon.delete()
+        session, _ = ouvrir(membre, radio_navigateur, "PROD")
+        message = MessageMeshLog.objects.create(
+            compagnon=radio_navigateur, direction=DirectionMessageMesh.SORTANT,
+            contact_pubkey_hex="cd" * 32, contenu="x", environment="PROD")
+
+        from core.relais_navigateur import fermer
+        fermer(session, "test")
+
+        message.refresh_from_db()
+        assert message.compagnon == radio_navigateur

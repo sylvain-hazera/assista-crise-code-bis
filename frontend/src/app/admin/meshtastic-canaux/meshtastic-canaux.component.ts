@@ -101,7 +101,11 @@ export class MeshtasticCanauxComponent implements OnInit, OnDestroy, AfterViewCh
       next: ({ canaux, noeuds, compagnons }) => {
         this.canaux = canaux;
         this.noeuds = noeuds.filter(n => n.actif);
-        const principal = compagnons.find(c => c.principal) ?? compagnons[0];
+        // Faute de radio principale, jamais une radio de navigateur par défaut : elle n'émet
+        // que tant que quelqu'un la relaie (le serveur refuserait le message sinon).
+        const principal = compagnons.find(c => c.principal)
+          ?? compagnons.find(c => c.connexion_type !== 'NAVIGATEUR')
+          ?? compagnons[0];
         this.compagnonPrincipalId = principal?.id ?? null;
         if (!this.canalPourEnvoiId && canaux.length > 0) {
           this.canalPourEnvoiId = (canaux.find(c => c.principal) ?? canaux[0]).id;

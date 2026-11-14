@@ -5861,8 +5861,12 @@ def message_cle_canal_meshtastic(canal) -> str:
 def _compagnon_pour_equipe(modele_compagnon, team):
     """Radio qui envoie les clés d'un canal d'équipe à ses membres : celle de l'institution de
     l'équipe d'abord (radio de son satellite, à portée de ses membres -- une clé partie de
-    Bordeaux n'atteint pas la Loire), puis la radio principale, puis n'importe laquelle."""
-    actifs = modele_compagnon.objects.filter(actif=True)
+    Bordeaux n'atteint pas la Loire), puis la radio principale, puis n'importe laquelle.
+
+    Jamais une radio de navigateur sans relais vivant (14/11/2026) : la clé du canal y attendrait
+    qu'on la rebranche. Une radio MQTT Meshtastic reste éligible — c'est un émetteur réel."""
+    from .relais_navigateur import emetteurs
+    actifs = emetteurs(modele_compagnon.objects.filter(actif=True))
     if team.institution_id:
         locale = actifs.filter(institution_id=team.institution_id).order_by('-principal').first()
         if locale is not None:
@@ -18282,7 +18286,10 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         réseau (tcp_host/pubkey_hex/...) — pour choisir un émetteur de DM sans consulter la
         configuration du pont (voir docstring de la classe). Pas de filtre `environment` :
         même raison que get_queryset ci-dessus."""
-        compagnons = CompagnonMeshCore.objects.filter(actif=True).order_by('-principal', 'nom')
+        from .relais_navigateur import emetteurs
+        # Sans les radios de navigateur éteintes : l'interface retombe sur la première de la
+        # liste faute de radio principale, et y confierait le message.
+        compagnons = emetteurs(CompagnonMeshCore.objects.filter(actif=True)).order_by('-principal', 'nom')
         return Response([
             {"id": str(c.id), "nom": c.nom, "principal": c.principal}
             for c in compagnons
@@ -19093,6 +19100,15 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         environment = get_active_environment(self.request)
         if direction == DirectionMessageMesh.SORTANT:
             _verifier_debit_mesh_sortant(MessageMeshLog, expediteur, environment, contact_pubkey_hex=contact_pubkey_hex)
+            # Une radio de navigateur sans relais vivant n'émettra rien : le message attendrait
+            # qu'on la rebranche, sans que personne ne le voie (14/11/2026). Refus explicite —
+            # une page restée ouverte peut encore la proposer.
+            from .relais_navigateur import peut_emettre
+            choisi = serializer.validated_data.get('compagnon')
+            if choisi is not None and not peut_emettre(choisi):
+                raise ValidationError(
+                    f"La radio « {choisi.nom} » n'est plus relayée par aucun navigateur : "
+                    "choisissez une autre radio, ou rebranchez celle-ci.")
 
         save_kwargs = dict(
             environment=environment, expediteur=expediteur, equipe=equipe,
@@ -19700,7 +19716,8 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         actifs — pour choisir lequel dans le sélecteur de réclamation de nœud (page Paramètres
         du compte) sans passer par actifs-avec-identifiants (réservé au pont, expose les
         identifiants en clair)."""
-        compagnons = self.get_queryset().filter(actif=True)
+        from .relais_navigateur import emetteurs
+        compagnons = emetteurs(self.get_queryset().filter(actif=True))
         return Response([
             {"id": str(c.id), "nom": c.nom, "broker_host": c.broker_host}
             for c in compagnons
@@ -20177,6 +20194,15 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         environment = get_active_environment(self.request)
         if direction == DirectionMessageMesh.SORTANT:
             _verifier_debit_mesh_sortant(MessageMeshtasticLog, expediteur, environment, contact_node_num=contact_node_num)
+            # Une radio de navigateur sans relais vivant n'émettra rien : le message attendrait
+            # qu'on la rebranche, sans que personne ne le voie (14/11/2026). Refus explicite —
+            # une page restée ouverte peut encore la proposer.
+            from .relais_navigateur import peut_emettre
+            choisi = serializer.validated_data.get('compagnon')
+            if choisi is not None and not peut_emettre(choisi):
+                raise ValidationError(
+                    f"La radio « {choisi.nom} » n'est plus relayée par aucun navigateur : "
+                    "choisissez une autre radio, ou rebranchez celle-ci.")
 
         message = serializer.save(environment=environment, expediteur=expediteur, equipe=equipe)
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
