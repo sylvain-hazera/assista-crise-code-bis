@@ -1,6 +1,6 @@
 # Application mobile des intervenants — dossier de conception
 
-État : **projet, aucune ligne de code écrite.** Document de travail du 13/11/2026, **révisé le
+État : **lot 0 écrit le 14/11/2026** (voir § 15), le reste en projet. Document de travail du 13/11/2026, **révisé le
 14/11/2026** sur trois arbitrages de Sylvain : pas d'ordre de priorité entre les deux radios,
 chat natif dès que possible, grand public dans la v1 (§ 1, § 9, § 10, § 13). Le titre garde
 « intervenants » par continuité ; l'application sert désormais aussi les citoyens.
@@ -46,8 +46,9 @@ section dans `DOCUMENTATION.md`, et une clause d'exception de licence qui nomme 
 | | État |
 |---|---|
 | JDK | **21.0.13 présent** — convient à KMP et à l'AGP |
-| SDK Android | **absent** (`ANDROID_HOME` non défini) |
-| `gradle`, `adb`, `sdkmanager` | absents du PATH |
+| SDK Android | **installé le 14/11/2026** dans `~/Android/Sdk` (plateforme 35, outils de build, émulateur) |
+| JDK complet | le poste n'avait que le JRE : JDK 21 posé dans `~/.local/opt` |
+| Gradle | par le lanceur du projet (`mobile/gradlew`), rien à installer |
 
 **Ça ne bloque pas le démarrage.** Les modules `:shared` qui portent la logique testable —
 codecs des deux protocoles, file d'attente, machine à états du lien, règles de domaine — se
@@ -545,6 +546,49 @@ fait déjà chacune de ces choses.
 Reste ouvert : **la bascule vers le satellite de la collectivité** quand le central est
 injoignable (le satellite s'annonce déjà en mDNS, `_ac-local._tcp.local.`). Proposée pour le
 lot 0, non décidée.
+
+---
+
+## 15. Lot 0 — ce qui est écrit (14/11/2026)
+
+Code sous `mobile/`, construit par `scripts/tester-mobile.sh`. Première marque : Réserve
+Résilience (`org.reserve_resilience.app`, serveur `app.reserve-resilience.org`).
+
+| Pièce | État |
+|---|---|
+| Connexion, session gardée d'un lancement à l'autre, rafraîchissement du jeton | fait |
+| **Création de compte** (particulier, case « rejoindre la réserve », conditions d'utilisation) | fait |
+| Mot de passe oublié | fait (demande d'e-mail ; le nouveau mot de passe se choisit sur le site) |
+| Missions lisibles hors ligne | fait |
+| File d'attente persistée, ordonnée, visible, purgée sur accusé | fait |
+| Indicateur de lien permanent | fait (Internet ou rien ; la radio viendra aux lots 5 et 6) |
+| Stockage chiffré par le Keystore | fait |
+
+Vérifié : 25 tests de la logique partagée, et un parcours complet dans un émulateur contre un
+serveur de test (création de compte, connexion, changement de statut serveur coupé, arrêt
+forcé, relance, envoi automatique au retour du serveur). **Pas encore essayé sur un vrai
+téléphone ni contre le serveur de production.**
+
+Quatre écarts avec ce que le dossier prévoyait, à connaître :
+
+1. **Le critère du lot 0 ne vaut que pour les rôles institutionnels.** Le serveur réserve
+   l'écriture d'une mission à ces rôles (`MissionViewSet.get_permissions`). Un bénévole membre
+   d'une équipe voit ses missions mais n'a aucun geste à déclarer : l'application ne lui
+   propose donc pas de bouton. Lui en donner un demande une action côté serveur, à concevoir
+   (« j'y suis », « terminé pour moi ») — ce n'est pas le statut de la mission.
+2. **Seul le compte de particulier se crée dans l'application.** Mairies et secours doivent
+   prouver une institution : ce parcours reste sur le site.
+3. **La base locale est un jeu de fichiers chiffrés**, pas encore SQLite. Suffisant pour des
+   missions et une file ; à remplacer quand la carte et les points arriveront (lot 2).
+4. **La file ne part que tant que l'application tourne.** L'envoi en arrière-plan
+   (WorkManager) viendra avec le service de premier plan du lot 4.
+
+Constat utile à la bascule vers le satellite (§ 14) : sur le Wi-Fi d'un satellite coupé
+d'Internet, Android juge le réseau « sans connexion ». L'indicateur de lien se fie donc
+d'abord à l'échange réel avec le serveur, et seulement à défaut à l'avis du système.
+
+Versions d'outils : Kotlin 2.1.0, AGP 8.7.3, Gradle 8.11.1 — choisies parce que connues pour
+aller ensemble, pas parce qu'elles sont les dernières. À monter avant la mise en magasin.
 
 ---
 
