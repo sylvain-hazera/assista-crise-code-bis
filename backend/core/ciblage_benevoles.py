@@ -228,37 +228,29 @@ def cibler_pour_campagne(campagne):
 def membres_mobilisables(institution, equipe=None):
     """Les personnes que l'institution peut solliciter, fiche ou pas. Renvoie des identifiants.
 
-    Deux sources, parce que les deux existent sur le terrain : le **rattachement**
-    (`ContactInstitution`, c'est l'adhérent d'une association) et l'**équipe** (`Team.members`,
-    c'est le réserviste d'une réserve communale, que la mairie a mis dans une équipe sans
-    forcément lui créer de rattachement). Le ciblage strict ne connaît que la première.
+    **Uniquement ses membres** : un rattachement actif à CETTE institution, statut « actif ».
+    Décision de Sylvain du 14/11/2026 — « pourquoi choisir du personnel hors de son
+    institution ? Non ». Figurer dans une de ses équipes ne suffit donc pas : une équipe peut
+    accueillir des renforts venus d'ailleurs, et leur écrire au nom de l'institution serait
+    solliciter des gens dont elle n'a pas la charge. « Taper large » élargit aux dossiers
+    incomplets, jamais au-delà de l'institution.
 
-    Un membre en congé, sorti, ou dont le rattachement est désactivé reste écarté même s'il
-    figure encore dans une équipe : « taper large » élargit aux dossiers incomplets, pas aux
-    gens qui ont demandé à ne plus être sollicités."""
+    Avec une équipe, on garde ceux de ses membres (branche entière) qui sont rattachés."""
     from django.contrib.auth import get_user_model
 
     from .models import ContactInstitution, Team
     from .visibilite_membres import _equipes_descendantes
 
-    rattachements = ContactInstitution.objects.filter(institution=institution)
-    ecartes = set(rattachements.filter(
-        Q(actif=False) | ~Q(statut=ContactInstitution.StatutMembre.ACTIF),
+    membres = set(ContactInstitution.objects.filter(
+        institution=institution, actif=True,
+        statut=ContactInstitution.StatutMembre.ACTIF,
     ).values_list("utilisateur_id", flat=True))
 
     if equipe is not None:
-        equipes = _equipes_descendantes([equipe.id])
-        membres = set()
-    else:
-        equipes = set(Team.objects.filter(institution=institution, actif=True)
-                      .values_list("id", flat=True))
-        membres = set(rattachements.filter(
-            actif=True, statut=ContactInstitution.StatutMembre.ACTIF,
-        ).values_list("utilisateur_id", flat=True))
+        branche = _equipes_descendantes([equipe.id])
+        membres &= {m for m in Team.objects.filter(id__in=branche, institution=institution)
+                    .values_list("members__id", flat=True) if m}
 
-    membres |= {m for m in Team.objects.filter(id__in=equipes, institution=institution)
-                .values_list("members__id", flat=True) if m}
-    membres -= ecartes
     return set(get_user_model().objects.filter(id__in=membres, is_active=True)
                .values_list("id", flat=True))
 

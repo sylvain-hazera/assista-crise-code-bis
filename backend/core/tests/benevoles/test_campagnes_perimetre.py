@@ -310,19 +310,22 @@ class TestTaperLarge:
         constituer_les_cibles(large)
         assert CibleCampagne.objects.filter(campagne=large).count() == 0
 
-    def test_le_reserviste_d_une_equipe_de_mairie_est_retenu_sans_rattachement(
+    def test_personne_hors_de_l_institution_meme_membre_d_une_de_ses_equipes(
             self, create_user, mairie):
-        """La réserve communale est une ÉQUIPE de la mairie, pas une liste d'adhérents."""
-        reserviste = create_user(username="res@perim.test", email="res@perim.test",
-                                 type="UTIL_SIMPLE")
+        """« Pourquoi choisir du personnel hors de son institution ? Non. »"""
+        renfort = create_user(username="renfort@perim.test", email="renfort@perim.test",
+                              type="UTIL_SIMPLE")
+        reserviste = _membre(create_user, "reserviste", mairie)
         reserve = Team.objects.create(name="Reserve communale essai", institution=mairie,
                                       echelon=EchelonEquipe.DEPARTEMENTAL, environment="PROD")
-        reserve.members.add(reserviste)
+        reserve.members.add(renfort, reserviste)
 
-        large = _campagne(mairie, ciblage_large=True)
-        constituer_les_cibles(large)
-        assert set(CibleCampagne.objects.filter(campagne=large).values_list(
-            "utilisateur_id", flat=True)) == {reserviste.id}
+        for equipe in (None, reserve):
+            large = _campagne(mairie, ciblage_large=True, equipe=equipe)
+            constituer_les_cibles(large)
+            assert set(CibleCampagne.objects.filter(campagne=large).values_list(
+                "utilisateur_id", flat=True)) == {reserviste.id}
+        assert not Offer.objects.filter(author=renfort).exists()
 
     def test_un_critere_inapplicable_reste_une_erreur(self, create_user, asso):
         from core.ciblage_benevoles import CritereInapplicable
