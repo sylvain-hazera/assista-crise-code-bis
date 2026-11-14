@@ -237,6 +237,102 @@ class IsAdministrator(BasePermission):
         )
 
 
+class PeutAgirPourCompagnon(BasePermission):
+    """Écrire dans la file d'un companion radio, ou la lire.
+
+    **Ferme un trou préexistant**, constaté le 13/11/2026 : `MessageMeshLogViewSet` accordait
+    `create`, `partial_update` et `a-envoyer` à `IsAuthenticated` seul, en supposant dans un
+    commentaire que l'appelant était « un compte de service, pas un acteur institutionnel
+    humain » — sans jamais le vérifier. Conséquences concrètes :
+
+    - `/messages-meshcore/a-envoyer/` **sans paramètre `compagnon`** rendait la file sortante
+      de TOUS les companions de la plateforme, à tout compte inscrit — contenu des messages
+      compris ;
+    - n'importe qui pouvait déposer un **faux message entrant** attribué à une radio.
+
+    Trois familles d'appelants légitimes :
+
+    1. le **compte de service d'un pont** ou d'un satellite approuvé, comme aujourd'hui — c'est
+       lui qui tient la radio dans le cas nominal ;
+    2. un **relais navigateur** avec une session vivante sur CE companion (voir
+       `core/relais_navigateur.py`) : le poste verrouillé où l'on ne peut rien installer ;
+    3. un **administrateur au sens du rôle RÉEL**, pour le diagnostic. Jamais le rôle effectif :
+       un `demo_role=ADMIN` prêté pour une démonstration ne donne pas la main sur une radio
+       réelle — même raisonnement que `EstComptePont`.
+
+    **Le companion doit être nommé.** Une requête qui n'en désigne aucun est refusée aux
+    appelants de la famille 2 : c'est précisément la forme qui faisait fuiter toutes les files.
+    Les comptes de service, eux, interrogent parfois sans filtre et gardent ce droit.
+
+    **Ne s'applique PAS à la création d'un message sortant**, et la nuance a coûté 15 tests le
+    13/11/2026 : un message SORTANT est écrit par un HUMAIN — le régulateur qui compose dans le
+    chat radio — et déposé en file pour que le pont l'émette plus tard. Seuls sont des gestes
+    de passerelle : déposer un message ENTRANT (ce que la radio a entendu), lire la file
+    sortante, et marquer un envoi abouti ou échoué. Voir `PeutEcrireMessageMesh`.
+    """
+
+    message = ("Vous ne pouvez agir que pour une radio dont vous relayez activement la "
+               "liaison, ou avec un compte de service de passerelle.")
+
+    def has_permission(self, request, view):
+        from .models import CompagnonMeshCore
+        from .relais_navigateur import session_active
+
+        utilisateur = request.user
+        if not getattr(utilisateur, "is_authenticated", False):
+            return False
+
+        # 1. Compte de service d'un pont / satellite, et 3. administrateur réel : inchangé.
+        if getattr(utilisateur, "compte_service_pont", False):
+            return True
+        if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
+            return True
+        # Import tardif : models importe permissions indirectement par ailleurs. Même
+        # vérification que EstComptePont — un satellite approuvé tient une radio.
+        from .models import Satellite, StatutEnrolementSatellite
+        if Satellite.objects.filter(
+                compte_service=utilisateur,
+                statut_enrolement=StatutEnrolementSatellite.APPROUVE).exists():
+            return True
+
+        # 2. Relais navigateur : le companion doit être nommé, et la session vivante.
+        compagnon_id = (request.data.get("compagnon") if hasattr(request, "data") else None) \
+            or request.query_params.get("compagnon")
+        if not compagnon_id:
+            return False
+        if not CompagnonMeshCore.objects.filter(pk=compagnon_id).exists():
+            return False
+        return session_active(utilisateur, compagnon_id) is not None
+
+
+class PeutEcrireMessageMesh(BasePermission):
+    """Créer un message mesh : la règle dépend de la DIRECTION, pas de l'action.
+
+    Distinction apprise de force le 13/11/2026, après avoir bloqué le chat radio en serrant la
+    vis sur l'ensemble de `create` :
+
+    - **SORTANT** : un humain compose. C'est le régulateur qui écrit « rentrez à la base » dans
+      le chat ; le message part en file et le pont l'émettra. Droit d'acteur institutionnel,
+      comme avant.
+    - **ENTRANT** : c'est un geste de passerelle — on dépose ce que la radio a entendu. Droit
+      réservé à qui tient la radio (voir `PeutAgirPourCompagnon`), sans quoi n'importe qui
+      fabrique un faux message attribué à un intervenant de terrain.
+
+    Serrer les deux de la même façon casse le chat ; les laisser ouverts tous les deux laisse
+    fabriquer de faux messages. Il fallait les séparer.
+    """
+
+    message = PeutAgirPourCompagnon.message
+
+    def has_permission(self, request, view):
+        from .models import DirectionMessageMesh
+
+        direction = (request.data.get("direction") if hasattr(request, "data") else None) or ""
+        if direction == DirectionMessageMesh.ENTRANT:
+            return PeutAgirPourCompagnon().has_permission(request, view)
+        return IsInstitutionalActor().has_permission(request, view)
+
+
 class EstComptePont(BasePermission):
     """Lecture des endpoints qui exposent un SECRET mesh en clair.
 

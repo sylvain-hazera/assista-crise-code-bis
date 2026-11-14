@@ -1,0 +1,152 @@
+/* « Devenir passerelle » : écran d'urgence, lu vite et souvent mal. Les avertissements
+   priment sur l'esthétique, et l'état du relais doit se lire d'un coup d'œil à distance. */
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.entete {
+  margin-bottom: 1.25rem;
+
+  h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+
+  p {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--ac-text-muted, #64748b);
+    font-size: .95rem;
+  }
+}
+
+.alerte {
+  display: flex;
+  gap: .7rem;
+  align-items: flex-start;
+  margin-bottom: .9rem;
+  padding: .8rem 1rem;
+  border-radius: 10px;
+  font-size: .9rem;
+
+  strong { display: block; }
+
+  &.erreur { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+  &.avertissement { background: var(--ac-amber-bg, #fffbeb); color: var(--ac-amber-text, #92400e); }
+  &.info { background: var(--ac-blue-bg, #eff6ff); color: var(--ac-blue-text, #1d4ed8); }
+}
+
+.bloc {
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+  margin-bottom: 1rem;
+  padding: 1.1rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--ac-surface, #fff);
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    font-size: 1.05rem;
+  }
+}
+
+.champ {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  font-size: .85rem;
+  font-weight: 600;
+
+  select {
+    min-height: 44px;
+    padding: .45rem .6rem;
+    border: 1px solid var(--ac-border, #cbd5e1);
+    border-radius: 8px;
+    background: var(--ac-surface, #fff);
+    color: inherit;
+    font: inherit;
+    font-weight: 400;
+  }
+}
+
+.actions { display: flex; gap: .6rem; }
+
+.primaire,
+.secondaire {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-height: 48px;
+  padding: .6rem 1.1rem;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaire {
+  border: 0;
+  background: var(--brand-primary-lisible, #2563eb);
+  color: #fff;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
+.secondaire {
+  border: 1px solid var(--ac-red-text, #dc2626);
+  background: none;
+  color: var(--ac-red-text, #dc2626);
+}
+
+.aide,
+.vide {
+  margin: 0;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #64748b);
+}
+
+/* L'état du relais : visible de loin, parce qu'on y jette un œil en passant pour vérifier
+   que ça tourne toujours. */
+.etat-relais {
+  border-left: 3px solid var(--ac-green-text, #16a34a);
+
+  &.en-attente { border-left-color: var(--ac-amber-text, #d97706); }
+}
+
+.pastille {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ac-amber-text, #d97706);
+
+  &.vivante { background: var(--ac-green-text, #16a34a); }
+}
+
+.compteurs {
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+
+  div {
+    display: flex;
+    flex-direction: column;
+    padding: .6rem .7rem;
+    border-radius: 8px;
+    background: var(--ac-surface-2, #f8fafc);
+  }
+
+  strong {
+    font-size: 1.5rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  span {
+    font-size: .75rem;
+    color: var(--ac-text-muted, #64748b);
+  }
+}

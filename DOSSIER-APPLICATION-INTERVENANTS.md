@@ -495,43 +495,72 @@ le 13/11/2026 :
    natif et CP2102 passent sur Windows 10/11 ; **CH340 exige un pilote**, donc échoue. Sur une
    autre carte, à revérifier.
 
-## La conception : un tuyau, pas un client
+## La conception : le navigateur EST le pont
+
+**Première conception écartée.** Elle passait par une WebSocket transportant des octets bruts,
+le central branchant le pont existant derrière par son transport `create_tcp`. Abandonnée après
+vérification : **le projet est en WSGI pur** — gunicorn, ni Channels ni serveur ASGI. Une
+WebSocket exigeait une dépendance, un processus et une infrastructure nouvelle, et un tuyau
+d'octets imposait en plus un état long par session sur le central. Disproportionné pour un
+chantier annexe.
 
 ```
-Nœud USB ──Web Serial── Navigateur ──WebSocket── Central ── meshcore-bridge existant
+Nœud USB ──Web Serial── Navigateur ──HTTP── endpoints EXISTANTS de meshcore-bridge
 ```
 
-**Le navigateur ne parle pas le protocole.** Il ne fait que transporter des octets. Le central
-ouvre une socket locale par session et y branche le pont **tel quel**, par son transport
-`create_tcp` qui existe déjà.
+**Le navigateur appelle les mêmes endpoints que le pont Python** (`/messages-meshcore/…`) :
+ils existent, ils sont éprouvés, et le serveur n'a rien de nouveau à décoder. Le navigateur est
+un pont qui se trouve tourner dans un onglet.
 
-C'est ce qui rend ce chantier court, et la raison mérite d'être écrite : sans cela il faudrait
-une **troisième implémentation** du protocole MeshCore — après le Python du pont et le Kotlin de
-l'application mobile. Trois implémentations du même protocole, ce sont trois fois les mêmes
-bugs, découverts à trois moments différents.
+### Périmètre réellement couvert, et ce qui ne l'est pas
 
-Conséquences :
+| | État |
+|---|---|
+| **MeshCore en USB** | ✅ implémenté |
+| MeshCore en Wi-Fi / TCP | ❌ **impossible depuis un navigateur** — il ne peut pas ouvrir de TCP brut ; il faudrait un pont WebSocket, donc le serveur qu'on voulait éviter |
+| Meshtastic en USB | ❌ non implémenté — le client ne parle que MeshCore |
+| Meshtastic en Wi-Fi | ❌ non implémenté (techniquement possible : le nœud expose du HTTP) |
+| Canaux, clés, télémétrie, répéteurs | ❌ **exclu volontairement** — voir la règle de sécurité plus bas |
 
-- **aucun codec à écrire**, nulle part ;
-- **le décodage et les règles restent sur le serveur**, où ils sont déjà écrits et testés ;
-- **les deux radios marchent d'emblée** — le tuyau ignore ce qui passe dedans ;
-- le code navigateur tient en **quelques centaines de lignes**.
+Le choix de MeshCore d'abord suit celui des lots : parc dominant, et c'est le protocole que
+notre pont Python parle déjà, donc celui dont les formats sont vérifiables sans matériel.
+
+**Correction d'une affirmation antérieure de ce dossier** : la conception en tuyau d'octets
+aurait fait marcher « les deux radios d'emblée », puisqu'un tuyau ignore ce qui passe dedans.
+La conception retenue — le navigateur parle le protocole — ne le permet pas : chaque réseau
+demande son client. Meshtastic en USB est un ajout court (le cadrage `0x94 0xC3` et quelques
+champs protobuf), mais il reste à écrire.
+
+### Ce qu'il parle du protocole, et rien de plus
+
+Quatre choses : s'annoncer, relever les messages en attente, en envoyer un, lister les contacts.
+Tout le reste — canaux, télémétrie, administration de répéteurs — reste au pont Python. Ce n'est
+pas une réimplémentation du protocole, c'est le strict nécessaire d'un relais.
+
+**Et tout est relevé dans la bibliothèque Python `meshcore` dont dépend déjà notre pont** —
+`reader.py`, `packets.py`, `commands/messaging.py`, `commands/base.py` — pas dans une
+documentation de seconde main. C'est ce qui permet d'écrire ce client **sans radio sous la
+main** et de le vérifier sur des vecteurs :
+
+| | Relevé |
+|---|---|
+| Cadrage série | `0x3e` + longueur sur 2 octets little-endian |
+| `APP_START` / `SEND_TXT_MSG` / `GET_CONTACTS` / `SYNC_NEXT_MESSAGE` | 1 / 2 / 4 / 10 |
+| Envoi d'un message | `0x02 0x00 \| tentative(1) \| horodatage(4 LE) \| destination(6) \| texte` |
+| Destination | **préfixe de 6 octets** de la clé publique, pas la clé entière |
+| Message reçu | type 7, ou type 16 (V3) qui **préfixe 3 octets** — SNR + 2 réservés |
+| Débit série | 115 200 |
+
+Les deux pièges que ces relevés évitent : envoyer 32 octets de destination au lieu de 6 décale
+le texte et fait refuser la commande ; confondre les formats 7 et 16 décale toute la trame et
+produit des messages illisibles sans qu'on sache pourquoi.
 
 ### Conscient des trames, aveugle au contenu
 
-Le navigateur **découpe** les trames sans les interpréter. Le cadrage est trivial :
-
-| Réseau | Début de trame | Longueur |
-|---|---|---|
-| MeshCore | `0x3e` | 2 octets, little-endian |
-| Meshtastic | `0x94 0xC3` | 2 octets |
-
-(MeshCore relevé dans `meshcore/reader.py` de la bibliothèque que notre pont utilise déjà.)
-
-Pourquoi découper plutôt que relayer le flux brut : à la reconnexion d'une WebSocket, un flux
-brut laisse **une demi-trame** sur le fil. La bibliothèque sait se resynchroniser en cherchant
-l'octet de début — c'est à cela qu'il sert — mais vingt lignes de découpage évitent d'en
-dépendre.
+Le découpeur rend des charges utiles sans les interpréter, et **conserve le reliquat** : une
+lecture série coupe une trame n'importe où, c'est la première chose qui casse quand on
+l'oublie. Il jette aussi tout octet précédant un début de trame — un branchement à chaud ou une
+reconnexion laisse du bruit sur le fil, et c'est à cela que sert `0x3e`.
 
 ## Ce qui reste dur
 
@@ -551,12 +580,36 @@ dépendre.
 
 | Lot | Contenu | Fini quand |
 |---|---|---|
-| **R0** | Point d'entrée WebSocket côté central, session liée à un compte et à un companion, socket locale branchée sur le pont existant | Un client de test qui rejoue un flux série enregistré fait apparaître des messages dans Assista-Crise |
-| **R1** | Page « Devenir passerelle » : Web Serial, choix du port, découpage des trames, état de la liaison | Un nœud branché en USB sur un poste verrouillé relaie réellement vers le central |
-| **R2** | Robustesse : reconnexion, verrou d'écran, bornes de sessions, nettoyage | Fermer et rouvrir l'onglet, débrancher et rebrancher le nœud, sans intervention côté serveur |
+| **R0** | Session liée à un compte et à un companion, droit recalculé à chaque appel, plafond d'un relais par radio, ménage des sessions mortes. **Et fermeture d'une faille préexistante** | ✅ **Fait** — 16 tests, dont quatre qui auraient échoué la veille |
+| **R1** | Cadrage et commandes MeshCore, page « Devenir passerelle », Web Serial, cycle de relais | ✅ **Codé** — 14 tests sur les trames. **Reste à valider sur une vraie radio** |
+| **R2** | Reconnexion avec recul progressif, reprise sans geste de l'utilisateur, verrou d'écran, battement, compteurs | ✅ **Codé**, même réserve matérielle |
 
-R0 est intégralement vérifiable **sans matériel ni navigateur** : un flux série enregistré
-suffit. C'est donc la partie qui va à pleine vitesse.
+R0 et le cadrage de R1 sont vérifiables **sans matériel ni navigateur** — c'est précisément
+pourquoi les formats ont été relevés dans la bibliothèque plutôt que dans une documentation.
+Ce qui reste à découvrir sur le poste réel se limite au comportement du port série lui-même.
+
+### La faille que R0 a dû fermer
+
+`MessageMeshLogViewSet` accordait `create`, `partial_update` et `a-envoyer` à `IsAuthenticated`
+seul, en **supposant dans un commentaire** que l'appelant était un compte de service — sans le
+vérifier. Conséquences, jusqu'au 13/11/2026 :
+
+- `/messages-meshcore/a-envoyer/` **sans paramètre** rendait la file sortante de **tous les
+  companions de la plateforme**, contenu des messages compris, à tout compte inscrit ;
+- n'importe qui pouvait déposer un **faux message entrant** attribué à une radio.
+
+Désormais `PeutAgirPourCompagnon` : compte de service de pont, satellite approuvé, administrateur
+au rôle **réel**, ou relais navigateur **avec une session vivante sur cette radio précise**. Et
+un relais ne peut plus interroger sans nommer sa radio.
+
+Deux règles de sécurité posées au passage :
+
+- **le relais ne provisionne aucun canal et ne lit aucune clé.** Il n'entre jamais dans
+  `EstComptePont`, dont le commentaire dit qu'un tel compte « ne doit pas pouvoir être fabriqué
+  par une requête HTTP ». La radio qu'on branche est déjà configurée — son propriétaire
+  l'apporte ;
+- **le droit est recalculé à chaque appel**, jamais porté par la session : un membre sorti de
+  l'institution perd la main immédiatement, sans attendre l'expiration.
 
 ## Ce que ce chantier n'est pas
 

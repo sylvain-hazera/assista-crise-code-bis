@@ -7239,6 +7239,56 @@ class SalonMatrixInstitution(EnvironmentScopedModel):
         return f"Salon Matrix {self.get_type_display()} de {self.institution.nom}"
 
 
+class SessionRelaisNavigateur(EnvironmentScopedModel):
+    """Un poste qui relaie une radio depuis son navigateur (voir core/relais_navigateur.py).
+
+    Existe pour trois raisons, toutes opérationnelles :
+
+    1. **savoir qui relaie quoi** — sinon une radio apparaît active sans qu'on sache d'où ;
+    2. **empêcher deux relais sur la même radio**, qui enverraient chaque message en double ;
+    3. **nettoyer les sessions mortes** : une page web n'annonce pas sa fermeture de façon
+       fiable — onglet tué, portable en veille, Wi-Fi coupé. Sans battement ni ménage, une
+       radio resterait marquée relayée indéfiniment.
+
+    Ce n'est pas un jeton d'authentification : l'appelant est authentifié normalement, et la
+    session dit seulement qu'il a déclaré relayer CE companion. Le droit de le faire est
+    recalculé à chaque appel (`peut_relayer`), jamais porté par la session — un membre sorti de
+    l'institution perd la main immédiatement, sans attendre l'expiration."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(
+        "CompagnonMeshCore", on_delete=models.CASCADE, related_name="sessions_relais",
+    )
+
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="sessions_relais",
+    )
+
+    ouverte_le = models.DateTimeField(auto_now_add=True)
+
+    # Battu à chaque cycle de relais. C'est LUI qui fait foi pour « cette session est vivante »,
+    # pas `fermee_le` : une fermeture propre est l'exception, pas la règle.
+    dernier_contact = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    fermee_le = models.DateTimeField(null=True, blank=True)
+    motif_fermeture = models.CharField(max_length=120, blank=True)
+
+    # Pour diagnostiquer un relais qui ne marche pas : « Chrome 141 sur Windows » explique
+    # beaucoup de choses qu'un identifiant de session n'explique pas.
+    user_agent = models.CharField(max_length=255, blank=True)
+
+    # Compteurs de trafic, pour voir d'un coup d'oeil si le relais fait quelque chose.
+    trames_recues = models.PositiveIntegerField(default=0)
+    trames_envoyees = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-dernier_contact"]
+
+    def __str__(self):
+        return f"Relais {self.compagnon} par {self.utilisateur}"
+
+
 class HistoriquePositionUtilisateur(EnvironmentScopedModel):
     """Trace d'un partage de position live dans Element (MSC3489), alimentée par matrix-bridge :
     permet de rejouer un trajet."""

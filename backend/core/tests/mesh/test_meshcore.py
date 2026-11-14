@@ -86,7 +86,7 @@ class TestCompagnonMeshCore:
         assert response.data['dernier_etat'] is None
 
     def test_rapporter_etat_connecte_sets_pubkey_and_timestamp(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh@test.fr', email='bridge-mesh@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh@test.fr', email='bridge-mesh@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(
@@ -101,7 +101,7 @@ class TestCompagnonMeshCore:
         assert compagnon.derniere_connexion is not None
 
     def test_rapporter_etat_erreur_stores_message(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh2@test.fr', email='bridge-mesh2@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh2@test.fr', email='bridge-mesh2@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(
@@ -115,7 +115,7 @@ class TestCompagnonMeshCore:
         assert compagnon.derniere_erreur == 'Connexion refusée'
 
     def test_rapporter_etat_rejects_invalid_value(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh3@test.fr', email='bridge-mesh3@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh3@test.fr', email='bridge-mesh3@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(
@@ -160,7 +160,7 @@ class TestNoeudMeshUtilisateur:
 class TestMessageMeshLog:
 
     def test_bridge_can_log_incoming_message(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh4@test.fr', email='bridge-mesh4@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh4@test.fr', email='bridge-mesh4@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(reverse('messagemeshlog-list'), {
@@ -172,7 +172,7 @@ class TestMessageMeshLog:
         assert response.data['statut'] == 'RECU'
 
     def test_a_envoyer_lists_only_pending_outgoing_for_this_compagnon(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh5@test.fr', email='bridge-mesh5@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh5@test.fr', email='bridge-mesh5@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         autre_compagnon = CompagnonMeshCore.objects.create(nom='Autre companion', connexion_type='TCP')
@@ -198,7 +198,7 @@ class TestMessageMeshLog:
         rendant le PATCH du pont (DjangoClient.marquer_message, après une tentative d'envoi)
         silencieusement sans effet — un message restait EN_ATTENTE indéfiniment, réessayé en
         boucle par boucle_envoi, jamais marqué en échec ni en envoyé."""
-        bridge_user = create_user(username='bridge-mesh6@test.fr', email='bridge-mesh6@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh6@test.fr', email='bridge-mesh6@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         message = MessageMeshLog.objects.create(
             compagnon=compagnon, direction='SORTANT', statut='EN_ATTENTE',
@@ -214,7 +214,7 @@ class TestMessageMeshLog:
         assert message.statut == 'ENVOYE'
 
     def test_bridge_can_mark_message_failed_with_erreur_via_patch(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-mesh7@test.fr', email='bridge-mesh7@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-mesh7@test.fr', email='bridge-mesh7@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         message = MessageMeshLog.objects.create(
             compagnon=compagnon, direction='SORTANT', statut='EN_ATTENTE',
@@ -243,7 +243,7 @@ class TestMessageMeshLogResolutionEtVisibilite:
 
     def test_message_entrant_resout_expediteur_et_equipe(self, api_client, compagnon, create_user, institution_a):
         from core.models import NoeudMeshUtilisateur, Team
-        bridge_user = create_user(username='bridge-resolve@test.fr', email='bridge-resolve@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-resolve@test.fr', email='bridge-resolve@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         terrain_user = create_user(username='terrain-resolve@test.fr', email='terrain-resolve@test.fr', type='UTIL_SIMPLE')
         equipe = Team.objects.create(name='Équipe résolution test', institution=institution_a)
         equipe.members.add(terrain_user)
@@ -268,7 +268,7 @@ class TestMessageMeshLogResolutionEtVisibilite:
         discussion (qui compare à NoeudMeshUtilisateur.pubkey_hex, toujours complet côté
         front) le retrouve ensuite."""
         from core.models import NoeudMeshUtilisateur, Team
-        bridge_user = create_user(username='bridge-prefixe@test.fr', email='bridge-prefixe@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-prefixe@test.fr', email='bridge-prefixe@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         terrain_user = create_user(username='terrain-prefixe@test.fr', email='terrain-prefixe@test.fr', type='UTIL_SIMPLE')
         equipe = Team.objects.create(name='Équipe préfixe test', institution=institution_a)
         equipe.members.add(terrain_user)
@@ -288,7 +288,7 @@ class TestMessageMeshLogResolutionEtVisibilite:
         assert message.contact_pubkey_hex == cle_complete
 
     def test_message_entrant_pubkey_inconnue_ne_resout_rien(self, api_client, compagnon, create_user):
-        bridge_user = create_user(username='bridge-inconnu@test.fr', email='bridge-inconnu@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-inconnu@test.fr', email='bridge-inconnu@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         response = api_client.post(reverse('messagemeshlog-list'), {
             'compagnon': str(compagnon.id), 'direction': 'ENTRANT',
@@ -429,7 +429,7 @@ class TestContactMeshCore:
 
     def test_synchroniser_contacts_upserts(self, api_client, compagnon, create_user):
         from core.models import ContactMeshCore
-        bridge_user = create_user(username='bridge-contacts@test.fr', email='bridge-contacts@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-contacts@test.fr', email='bridge-contacts@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(
@@ -455,7 +455,7 @@ class TestContactMeshCore:
         front, sans protection anti-doublon — voir la migration 0145 qui a dû dédupliquer des
         répéteurs importés jusqu'à 9 fois en base. Désormais automatique dès la synchro."""
         from core.models import RelaisMeshCore
-        bridge_user = create_user(username='bridge-relais1@test.fr', email='bridge-relais1@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-relais1@test.fr', email='bridge-relais1@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.post(
@@ -472,7 +472,7 @@ class TestContactMeshCore:
 
     def test_synchroniser_contacts_repeteur_ne_duplique_jamais(self, api_client, compagnon, create_user):
         from core.models import RelaisMeshCore
-        bridge_user = create_user(username='bridge-relais2@test.fr', email='bridge-relais2@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-relais2@test.fr', email='bridge-relais2@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         payload = {'contacts': [{'pubkey_hex': 'repeat-bb', 'nom': 'Relais Mairie', 'type_contact': 'REPEATER', 'latitude': 45.1, 'longitude': 5.2}]}
@@ -483,7 +483,7 @@ class TestContactMeshCore:
 
     def test_synchroniser_contacts_repeteur_position_suit_les_mises_a_jour(self, api_client, compagnon, create_user):
         from core.models import RelaisMeshCore
-        bridge_user = create_user(username='bridge-relais3@test.fr', email='bridge-relais3@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-relais3@test.fr', email='bridge-relais3@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         api_client.post(
@@ -503,7 +503,7 @@ class TestContactMeshCore:
 
     def test_synchroniser_contacts_ne_cree_pas_de_relais_pour_un_companion(self, api_client, compagnon, create_user):
         from core.models import RelaisMeshCore
-        bridge_user = create_user(username='bridge-relais4@test.fr', email='bridge-relais4@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-relais4@test.fr', email='bridge-relais4@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         api_client.post(
@@ -516,7 +516,7 @@ class TestContactMeshCore:
 
     def test_synchroniser_contacts_est_idempotent(self, api_client, compagnon, create_user):
         from core.models import ContactMeshCore
-        bridge_user = create_user(username='bridge-contacts2@test.fr', email='bridge-contacts2@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-contacts2@test.fr', email='bridge-contacts2@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         payload = {'contacts': [{'pubkey_hex': 'cc33', 'nom': 'Bob', 'type_contact': 'COMPANION'}]}
@@ -530,7 +530,7 @@ class TestContactMeshCore:
         sans nom ni type_contact — voir la boucle de suivi actif pendant une mission côté
         pont) ne doit jamais écraser le nom/type déjà connus de ce contact."""
         from core.models import ContactMeshCore
-        bridge_user = create_user(username='bridge-contacts3@test.fr', email='bridge-contacts3@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-contacts3@test.fr', email='bridge-contacts3@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         api_client.post(
@@ -605,7 +605,7 @@ class TestPositionsMissionEnCours:
         NoeudMeshUtilisateur.objects.create(utilisateur=user_mission_terminee, pubkey_hex='mission-finie')
         ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='mission-finie', type_contact='COMPANION')
 
-        bridge_user = create_user(username='bridge-positions@test.fr', email='bridge-positions@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-positions@test.fr', email='bridge-positions@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.get(reverse('compagnonmeshcore-pubkeys-a-suivre', args=[compagnon.id]))
@@ -629,7 +629,7 @@ class TestPositionsMissionEnCours:
         from core.models import ContactMeshCore
         ContactMeshCore.objects.create(compagnon=autre_compagnon, pubkey_hex='vue-par-autre', type_contact='COMPANION')
 
-        bridge_user = create_user(username='bridge-positions2@test.fr', email='bridge-positions2@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-positions2@test.fr', email='bridge-positions2@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
 
         response = api_client.get(reverse('compagnonmeshcore-pubkeys-a-suivre', args=[compagnon_a_interroger.id]))
@@ -778,7 +778,7 @@ class TestCanalMeshCoreEquipe:
         equipe = Team.objects.create(name='Équipe canal rapportée', institution=institution_a)
         canal = CanalMeshCore.objects.create(equipe=equipe, nom='Test', cle_partagee_hex='cc' * 16)
 
-        bridge_user = create_user(username='bridge-canal2@test.fr', email='bridge-canal2@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-canal2@test.fr', email='bridge-canal2@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         response = api_client.post(
             reverse('compagnonmeshcore-rapporter-canal-provisionne', args=[compagnon.id]),
@@ -795,7 +795,7 @@ class TestCanalMeshCoreEquipe:
         canal = CanalMeshCore.objects.create(equipe=equipe, nom='Test msg', cle_partagee_hex='dd' * 16)
         message = MessageCanalMeshCore.objects.create(canal=canal, direction='SORTANT', statut='EN_ATTENTE', contenu='Salut équipe')
 
-        bridge_user = create_user(username='bridge-canal3@test.fr', email='bridge-canal3@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-canal3@test.fr', email='bridge-canal3@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         response = api_client.patch(reverse('messagecanalmeshcore-detail', args=[message.id]), {'statut': 'ENVOYE'}, format='json')
 
@@ -810,7 +810,7 @@ class TestCanalMeshCoreEquipe:
         ProvisionCanalMeshCore.objects.create(canal=canal, compagnon=compagnon, canal_idx=5)
         MessageCanalMeshCore.objects.create(canal=canal, direction='SORTANT', statut='EN_ATTENTE', contenu='Message')
 
-        bridge_user = create_user(username='bridge-canal4@test.fr', email='bridge-canal4@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-canal4@test.fr', email='bridge-canal4@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         response = api_client.get(reverse('messagecanalmeshcore-a-envoyer'), {'compagnon': str(compagnon.id)})
 
@@ -1153,7 +1153,7 @@ class TestDemoZoneMessageContent:
         """Un message ENTRANT (déposé par le pont, jamais composé par un humain) ne doit
         jamais être réécrit, même si le pont tourne avec X-Environment: DEMO (ne devrait pas
         arriver en pratique, mais la fonction ne doit s'appliquer qu'à SORTANT)."""
-        bridge_user = create_user(username='bridge-demo-entrant@test.fr', email='bridge-demo-entrant@test.fr', type='UTIL_SIMPLE')
+        bridge_user = create_user(username='bridge-demo-entrant@test.fr', email='bridge-demo-entrant@test.fr', type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         api_client.credentials(HTTP_X_ENVIRONMENT='DEMO')
 

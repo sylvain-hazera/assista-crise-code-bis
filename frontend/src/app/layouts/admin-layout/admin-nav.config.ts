@@ -81,6 +81,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'location_city', label: 'Vue Ma Collectivité', route: '/admin/vue-mairie', groupe: 'permanent' },
   // Route publique : un chef d'équipe peut être un simple citoyen.
   { icon: 'checklist', label: 'Mes interventions', route: '/mes-interventions', groupe: 'permanent', visibilite: 'tous' },
+  // Relais radio depuis un poste où l'on ne peut rien installer : la radio se branche en USB
+  // et le navigateur relaie. Visible de tous — c'est un écran d'urgence, on ne le cherche pas
+  // dans un sous-menu le jour où on en a besoin.
+  { icon: 'usb', label: 'Devenir passerelle', route: '/devenir-passerelle', groupe: 'permanent', visibilite: 'tous' },
   // Route publique également, et `tous` pour la même raison : un bénévole hébergé chez un
   // particulier n'est pas un compte institutionnel. L'entrée reste visible MÊME SANS ÉQUIPE —
   // la page explique alors ce qu'il faut pour qu'elle se remplisse, au lieu de laisser croire

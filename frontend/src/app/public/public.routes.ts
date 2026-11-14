@@ -115,6 +115,15 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.SettingsComponent)
       },
       {
+        // Relais série depuis un navigateur, pour un poste où l'on ne peut rien installer
+        // (voir backend/core/relais_navigateur.py). Authentifiée : le relais injecte des
+        // trames dans le maillage.
+        path: 'devenir-passerelle',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/devenir-passerelle/devenir-passerelle.component')
+          .then(m => m.DevenirPasserelleComponent)
+      },
+      {
         // La LISTE de ses équipes, groupées engagées / permanentes. Le menu ne menait
         // jusqu'ici qu'à `/mon-equipe/<première trouvée>`, alors qu'on appartient souvent à
         // plusieurs (sa section, sa commune, l'équipe constituée pour la crise en cours).

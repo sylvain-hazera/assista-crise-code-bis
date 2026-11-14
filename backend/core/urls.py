@@ -98,6 +98,7 @@ from .views import (
     RattachementHabitationViewSet,
     ModuleDegatsCriseViewSet,
     ConservationPiecesView,
+    RelaisSerieView,
     InstitutionActiveView,
     PieceIdentiteReserveViewSet,
     BrandingView,
@@ -316,6 +317,10 @@ urlpatterns = [
     # Politique de conservation des pièces justificatives : régime, durée, base légale et
     # « pourquoi ». Affichée sur la page de dépôt comme sur la page de validation.
     path('conservation-pieces/', ConservationPiecesView.as_view(), name='conservation_pieces'),
+    # Relais série depuis un navigateur : poste verrouillé où l'on ne peut rien installer, mais
+    # dont l'USB fonctionne (voir core/relais_navigateur.py). Hors du routeur : la session est
+    # toujours celle de l'appelant.
+    path('relais-serie/', RelaisSerieView.as_view(), name='relais_serie'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),

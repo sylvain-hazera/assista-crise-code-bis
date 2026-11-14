@@ -68,6 +68,8 @@ from .institution_attachment import (
 )
 from .permissions import (
     EstComptePont,
+    PeutAgirPourCompagnon,
+    PeutEcrireMessageMesh,
     PeutAccederRadio,
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
@@ -11641,6 +11643,118 @@ class BrandingView(APIView):
         })
 
 
+class RelaisSerieView(APIView):
+    """Ouvrir, maintenir et fermer un relais série depuis un navigateur.
+
+    Voir `core/relais_navigateur.py` pour le pourquoi : un poste verrouillé où l'on ne peut
+    rien installer, mais dont l'USB fonctionne. Le navigateur appelle ensuite les MÊMES
+    endpoints que `meshcore-bridge` (`/messages-meshcore/...`) — ils existent déjà et sont
+    éprouvés ; cette vue ne gère que la session.
+
+    - `GET`  : les radios que je peux relayer, et celle que je relaie déjà le cas échéant.
+    - `POST` : ouvrir ou battre la mesure. `{compagnon, fermer?}`.
+
+    Un seul point d'entrée plutôt que trois actions : le navigateur n'appelle que ça, et un
+    battement est la même opération qu'une ouverture sur une session déjà vivante.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import CompagnonMeshCore, ContactInstitution
+        from .relais_navigateur import (
+            SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, peut_relayer, session_active,
+        )
+
+        fermer_sessions_mortes()
+        institutions = ContactInstitution.objects.filter(
+            utilisateur=request.user, actif=True,
+        ).values_list("institution_id", flat=True)
+        compagnons = CompagnonMeshCore.objects.filter(
+            institution_id__in=list(institutions), actif=True,
+        ).select_related("institution").order_by("nom")
+
+        mienne = None
+        relayables = []
+        for compagnon in compagnons:
+            if not peut_relayer(request.user, compagnon):
+                continue
+            session = session_active(request.user, compagnon.id)
+            relayables.append({
+                "id": str(compagnon.id),
+                "nom": compagnon.nom,
+                "institution_nom": compagnon.institution.nom if compagnon.institution_id else "",
+                "relaye_par_moi": session is not None,
+            })
+            if session is not None:
+                mienne = {
+                    "session": str(session.id),
+                    "compagnon": str(compagnon.id),
+                    "ouverte_le": session.ouverte_le,
+                    "trames_recues": session.trames_recues,
+                    "trames_envoyees": session.trames_envoyees,
+                }
+
+        return Response({
+            "compagnons": relayables,
+            "session": mienne,
+            # Le navigateur en déduit sa cadence de battement : il doit battre nettement plus
+            # souvent que ce délai, sinon il se fait fermer en pleine activité.
+            "secondes_avant_session_morte": SECONDES_AVANT_SESSION_MORTE,
+        })
+
+    def post(self, request):
+        from .models import CompagnonMeshCore
+        from .relais_navigateur import battre, fermer, ouvrir, session_active
+
+        compagnon_id = request.data.get("compagnon")
+        compagnon = CompagnonMeshCore.objects.filter(pk=compagnon_id, actif=True).first()
+        if compagnon is None:
+            return Response({"error": "Radio inconnue."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.data.get("fermer"):
+            session = session_active(request.user, compagnon.id)
+            if session is not None:
+                fermer(session, "Fermée par l'utilisateur")
+                audit_log(
+                    request=request, action_code="MODIFICATION",
+                    objet_type="SessionRelaisNavigateur", objet_id=session.id,
+                    commentaire=f"Relais de « {compagnon.nom} » fermé depuis le navigateur.",
+                )
+            return Response({"session": None})
+
+        deja = session_active(request.user, compagnon.id)
+        session, erreur = ouvrir(
+            request.user, compagnon, get_active_environment(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
+        if erreur:
+            return Response({"error": erreur}, status=status.HTTP_403_FORBIDDEN)
+
+        # Compteurs rapportés par le navigateur à chaque battement : ils ne servent qu'à
+        # montrer que le relais fait quelque chose, donc on les accepte tels quels sans en
+        # faire une source de vérité.
+        for champ, cle in (("trames_recues", "trames_recues"),
+                           ("trames_envoyees", "trames_envoyees")):
+            valeur = request.data.get(cle)
+            if isinstance(valeur, int) and valeur >= 0:
+                setattr(session, champ, valeur)
+        battre(session)
+        session.save(update_fields=["trames_recues", "trames_envoyees"])
+
+        if deja is None:
+            audit_log(
+                request=request, action_code="CREATION",
+                objet_type="SessionRelaisNavigateur", objet_id=session.id,
+                commentaire=f"Relais de « {compagnon.nom} » ouvert depuis un navigateur.",
+            )
+        return Response({
+            "session": str(session.id),
+            "compagnon": str(compagnon.id),
+            "nom": compagnon.nom,
+        })
+
+
 class ConservationPiecesView(APIView):
     """La politique de conservation des pièces justificatives, servie à l'interface.
 
@@ -18792,6 +18906,23 @@ def _contenu_message_mesh_demo(contenu: str) -> str:
     return prefix + contenu
 
 
+def _tient_toutes_les_radios(utilisateur):
+    """Ce compte tient-il l'ensemble des radios, et non une seule ?
+
+    Vrai pour un compte de service de pont, un satellite approuvé et un administrateur réel :
+    eux interrogent légitimement sans filtre. Faux pour un relais navigateur, qui ne tient
+    qu'une radio — celle branchée sur son USB."""
+    from .models import Satellite, StatutEnrolementSatellite
+
+    if getattr(utilisateur, "compte_service_pont", False):
+        return True
+    if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
+        return True
+    return Satellite.objects.filter(
+        compte_service=utilisateur, statut_enrolement=StatutEnrolementSatellite.APPROUVE,
+    ).exists()
+
+
 class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """DM MeshCore privés régulateur <-> équipe. Principe d'accès (voir doc de conception
     « Maillage Terrain ») : administrer un companion n'est pas lire les messages qui y
@@ -18805,11 +18936,19 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsInstitutionalActor()]
-        # create/partial_update/a_envoyer : appelés par le service-pont (dépose un message
-        # entrant, met à jour le statut d'un message sortant après tentative d'envoi, ou
-        # interroge la file d'attente sortante) — compte de service authentifié, pas un acteur
-        # institutionnel humain.
-        return [permissions.IsAuthenticated()]
+        # C'était `IsAuthenticated` seul jusqu'au 13/11/2026, en supposant dans ce commentaire
+        # que l'appelant était un compte de service — sans le vérifier. N'importe quel compte
+        # inscrit pouvait donc lire la file sortante de TOUS les companions (a-envoyer sans
+        # paramètre) et y déposer un faux message entrant.
+        #
+        # La règle dépend de la DIRECTION pour une création, pas de l'action : un message
+        # SORTANT est écrit par un humain (le régulateur dans le chat radio), un message ENTRANT
+        # est déposé par celui qui tient la radio. Serrer les deux pareil casse le chat.
+        if self.action == 'create':
+            return [PeutEcrireMessageMesh()]
+        # a_envoyer / partial_update : gestes de passerelle — lire la file sortante, marquer un
+        # envoi abouti ou échoué.
+        return [PeutAgirPourCompagnon()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -18908,6 +19047,15 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
+        elif not _tient_toutes_les_radios(request.user):
+            # Sans `compagnon`, cette action rendait la file sortante de TOUS les companions de
+            # la plateforme. Seul un compte qui tient réellement l'ensemble des radios (service
+            # de pont, satellite, administrateur) garde ce droit : un relais navigateur ne voit
+            # que la radio qu'il relaie.
+            return Response(
+                {"error": "Précisez la radio : ?compagnon=<identifiant>."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(MessageMeshLogSerializer(qs, many=True, context={'request': request}).data)
 
 

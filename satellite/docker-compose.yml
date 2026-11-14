@@ -242,7 +242,9 @@ services:
     # des ports. SATELLITE_LAN_IP est détectée par installer.sh (fonction ips_privees) ; la
     # valeur de repli 127.0.0.1 est volontairement inutilisable depuis le LAN -- mieux vaut un
     # nœud qui n'arrive pas à se connecter qu'un broker ouvert à tous.
-    ports: ["${SATELLITE_LAN_IP:-127.0.0.1}:1883:1883"]
+    # MQTT_PORT : decale par installer.sh si 1883 est deja pris sur la machine (un autre
+    # broker y tourne deja chez certains exploitants). Le port INTERNE reste 1883.
+    ports: ["${SATELLITE_LAN_IP:-127.0.0.1}:${MQTT_PORT:-1883}:1883"]
     # Mots de passe depuis .env (généré par installer.sh) ; le fichier HACHÉ est reconstruit à
     # chaque démarrage dans /tmp (tmpfs : jamais sur la carte SD, qui finit par s'user et qu'on
     # peut retirer du Pi). `$$` protège le `$` de l'interpolation Compose.

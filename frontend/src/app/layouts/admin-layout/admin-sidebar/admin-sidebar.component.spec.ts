@@ -49,13 +49,22 @@ describe('AdminSidebarComponent', () => {
   });
 
   it('un compte sans aucun droit ne voit que les portes d\'entrée', () => {
-    // Trois entrées, et toutes les trois pour la même raison : elles EXPLIQUENT ce qu'il
-    // faut pour s'en servir au lieu de disparaître. « Accueil radio » dit comment obtenir la
-    // radio et permet de la demander ; « Mes interventions » et « Hébergement » disent, quand
-    // le compte n'est dans aucune équipe, pourquoi la page est vide et à qui s'adresser
-    // (demande du 12/11/2026). Les masquer laisserait croire que ces fonctions n'existent pas.
+    // Toutes pour la même raison : elles EXPLIQUENT ce qu'il faut pour s'en servir au lieu de
+    // disparaître. « Accueil radio » dit comment obtenir la radio et permet de la demander ;
+    // « Mes interventions » et « Hébergement » disent, quand le compte n'est dans aucune
+    // équipe, pourquoi la page est vide et à qui s'adresser (demande du 12/11/2026). Les
+    // masquer laisserait croire que ces fonctions n'existent pas.
+    //
+    // « Devenir passerelle » rejoint la liste le 13/11/2026, et c'est un arbitrage assumé :
+    // c'est un écran d'URGENCE — brancher une radio en USB sur un poste où l'on ne peut rien
+    // installer — qu'on ne doit pas avoir à chercher le jour où il sert. Il explique lui aussi
+    // ce qui manque (« aucune radio ne vous est accessible, demandez à votre encadrement »),
+    // donc il satisfait le critère ci-dessus. Le restreindre se fait en une ligne dans
+    // admin-nav.config.ts si l'entrée s'avère du bruit pour les comptes citoyens.
     const visibles = NAV_ITEMS.filter(i => component.isNavItemVisible(i)).map(i => i.label);
-    expect(visibles).toEqual(['Mes interventions', 'Hébergement', 'Accueil radio']);
+    expect(visibles).toEqual([
+      'Mes interventions', 'Devenir passerelle', 'Hébergement', 'Accueil radio',
+    ]);
   });
 
   it('les pages radio suivent `acces_radio`, pas le rôle', () => {

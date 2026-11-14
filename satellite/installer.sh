@@ -278,7 +278,14 @@ ports_publies() {
     # to set up container networking ... external connectivity »), on prend le suivant libre.
     # Un port déjà tenu par CE satellite (relance) est gardé tel quel.
     local cle defaut service actuel
-    for cle_defaut_service in BACKEND_PORT:8010:backend WEB_PORT:80:frontend; do
+    # MQTT_PORT ajoute le 13/11/2026 : un satellite peut cohabiter avec un AUTRE broker deja
+    # installe sur la machine (constate chez le satellite de la Loire, dont le 1883 etait pris).
+    # Le broker echouait a lier son port, et `backend` ayant un depends_on dessus, `docker
+    # compose up` rapportait un echec sur toute la pile.
+    #
+    # Conséquence à connaître : un noeud Meshtastic deja configure pour 1883 devra etre
+    # reconfigure sur le port publie. La valeur retenue est affichee et ecrite dans .env.
+    for cle_defaut_service in BACKEND_PORT:8010:backend WEB_PORT:80:frontend MQTT_PORT:1883:mosquitto; do
         IFS=: read -r cle defaut service <<< "$cle_defaut_service"
         actuel="$(valeur_env "$cle")"; actuel="${actuel:-$defaut}"
         if port_occupe "$actuel" && [ -z "$(cd "$REPERTOIRE_SCRIPT" && docker compose ps -q "$service" 2>/dev/null)" ]; then
