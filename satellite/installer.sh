@@ -452,6 +452,91 @@ valeur_env() {
     { grep -E "^$1=" "$FICHIER_ENV" 2>/dev/null || true; } | tail -n1 | cut -d= -f2-
 }
 
+garder_cle_signature() {
+    # La clé publique qui signe les versions est COPIÉE ici une fois, hors du dépôt, et n'est
+    # plus jamais remplacée automatiquement : l'agent de mise à jour ne fait confiance qu'à
+    # cette copie. Si elle suivait le dépôt, il suffirait de pousser une nouvelle clé pour
+    # faire accepter n'importe quelle version à tous les satellites -- la signature ne
+    # protégerait plus de rien. Changer de clé se fait donc sur place, délibérément :
+    # supprimer .cle-signature.pub puis relancer ce script.
+    local source="$REPERTOIRE_SCRIPT/../backend/core/signature_satellites.pub"
+    local cible="$REPERTOIRE_SCRIPT/.cle-signature.pub"
+    [ -s "$cible" ] && return 0
+    if grep -q '^ssh-ed25519 ' "$source" 2>/dev/null; then
+        grep '^ssh-ed25519 ' "$source" > "$cible"
+        chmod 644 "$cible"
+        log "Clé de signature des mises à jour gardée sur ce satellite ($cible)."
+    else
+        log "Aucune clé de signature n'est encore publiée : ce satellite n'acceptera pas de"
+        log "mise à jour à distance tant qu'une mise à jour sur place ne lui en aura pas donné une."
+    fi
+}
+
+installer_agent_maj() {
+    # Agent de mise à jour à distance (agent_mise_a_jour.py) : un minuteur systemd SUR LA
+    # MACHINE, pas un conteneur -- une mise à jour remplace les conteneurs, et un conteneur
+    # qui se mettrait à jour lui-même se couperait en plein travail. Idempotent : ne touche à
+    # rien (et ne demande donc pas sudo) si l'installation est déjà en place et identique.
+    # N'échoue JAMAIS l'installation : sans agent, le satellite fonctionne, il se met
+    # seulement à jour à la main.
+    garder_cle_signature
+    if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+        log "systemd absent : pas de mise à jour à distance sur cette machine (mise à jour : $0 mettre-a-jour)."
+        return 0
+    fi
+    local utilisateur dossier_unites service minuteur
+    utilisateur="$(id -un)"
+    dossier_unites="/etc/systemd/system"
+    service="[Unit]
+Description=Assista-Crise : mises a jour du satellite ordonnees par le central
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$utilisateur
+WorkingDirectory=$REPERTOIRE_SCRIPT
+Environment=HOME=$HOME
+ExecStart=/usr/bin/env python3 $REPERTOIRE_SCRIPT/agent_mise_a_jour.py
+TimeoutStartSec=infinity"
+    minuteur="[Unit]
+Description=Assista-Crise : passage de l'agent de mise a jour du satellite
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+
+[Install]
+WantedBy=timers.target"
+
+    if [ "$(cat "$dossier_unites/assista-satellite-maj.service" 2>/dev/null)" = "$service" ] \
+        && [ "$(cat "$dossier_unites/assista-satellite-maj.timer" 2>/dev/null)" = "$minuteur" ] \
+        && systemctl is-enabled --quiet assista-satellite-maj.timer 2>/dev/null; then
+        return 0
+    fi
+
+    # Sans terminal (appel par l'agent lui-même, pendant une mise à jour) : sudo ne doit pas
+    # attendre un mot de passe que personne ne saisira.
+    local SUDO="sudo"
+    [ -t 0 ] || SUDO="sudo -n"
+    [ "$(id -u)" = 0 ] && SUDO=""
+    log "Installation de l'agent de mise à jour à distance (systemd)..."
+    if printf '%s\n' "$service" | $SUDO tee "$dossier_unites/assista-satellite-maj.service" >/dev/null \
+        && printf '%s\n' "$minuteur" | $SUDO tee "$dossier_unites/assista-satellite-maj.timer" >/dev/null \
+        && $SUDO systemctl daemon-reload \
+        && $SUDO systemctl enable --now assista-satellite-maj.timer >/dev/null 2>&1; then
+        # L'agent lance docker sans sudo : il faut que ce compte soit dans le groupe.
+        if ! id -nG "$utilisateur" | tr ' ' '\n' | grep -qx docker; then
+            $SUDO usermod -aG docker "$utilisateur" 2>/dev/null \
+                || log "  Ajoutez ce compte au groupe docker : sudo usermod -aG docker $utilisateur"
+        fi
+        log "  Agent en service : ce satellite peut être mis à jour depuis la page Satellites."
+    else
+        log "  Agent NON installé (droits insuffisants). Le satellite fonctionne ; pour le"
+        log "  mettre à jour à distance, relancer sur place : $0 demarrer"
+    fi
+}
+
 phase_demarrer() {
     installer_docker_si_absent
 
@@ -557,7 +642,7 @@ EOF
     fi
 
     # version affichée sur la page Satellites (signal de vie, etat_connectivite.py)
-    fixer_env VERSION_LOGICIELLE "$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)"
+    fixer_env VERSION_LOGICIELLE "$(git -C "$REPERTOIRE_SCRIPT" rev-parse HEAD 2>/dev/null || echo inconnue)"
     if [ "$profil" = "full" ]; then
         cles_chiffrement
         # Rejouée à chaque démarrage, mais depuis le fichier d'enrôlement : les valeurs y
@@ -572,6 +657,8 @@ EOF
 
     log "Démarrage (profil $profil)..."
     (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil" up -d --build "${scale_args[@]}")
+
+    installer_agent_maj
 
     log "Terminé. Vérifier l'état :"
     echo "  cd $REPERTOIRE_SCRIPT && docker compose --profile $profil ps"
@@ -661,7 +748,7 @@ phase_installer() {
         local reponse code corps
         reponse="$(curl -sS -w '\n%{http_code}' -X POST "${central_url%/}/api/satellites/enroler/" \
             -H 'Content-Type: application/json' \
-            -d "{\"jeton\": \"$jeton\", \"nom\": \"$nom\", \"version_logicielle\": \"$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)\"}")"
+            -d "{\"jeton\": \"$jeton\", \"nom\": \"$nom\", \"version_logicielle\": \"$(git -C "$REPERTOIRE_SCRIPT" rev-parse HEAD 2>/dev/null || echo inconnue)\"}")"
         code="$(echo "$reponse" | tail -n1)"
         corps="$(echo "$reponse" | sed '$d')"
         [ "$code" = "201" ] || erreur "Enrôlement refusé (HTTP $code) : $(json_champ "$corps" error) -- jeton expiré ou déjà utilisé ? Générez-en un nouveau sur la page Satellites."

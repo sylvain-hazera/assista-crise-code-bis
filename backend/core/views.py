@@ -239,6 +239,7 @@ from .models import (
     CalibrationRadio, CouvertureRadioSite, StatutCouvertureRadio,
     TENTATIVES_MAX_TACHE_ADMIN, DELAI_RECLAMATION_TACHE_ADMIN_S, ConfigurationNoeudMeshtastic,
     Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
+    VersionSatellite, MiseAJourSatellite, StatutMiseAJour,
     EvenementSynchronisation, EtatEvenementSynchronisation, ConflitSynchronisation,
     StatutConflitSynchronisation, ModeleSynchronisable,
     AffectationPointBenevole, StatutAffectation,
@@ -701,7 +702,7 @@ from .serializers import (
     TracerouteMeshCoreSerializer,
     AlerteMeshSOSSerializer,
     RelaisMeshCoreSerializer,
-    SatelliteSerializer,
+    SatelliteSerializer, VersionSatelliteSerializer, MiseAJourSatelliteSerializer,
     JetonEnrolementSatelliteSerializer,
     ConflitSynchronisationSerializer,
     CanalMeshCoreSerializer,
@@ -21396,6 +21397,75 @@ def _branding_pour_satellite(request, institution):
     }
 
 
+class VersionSatelliteViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    """Versions signées que les satellites acceptent d'installer.
+
+    **Lire** : tout acteur institutionnel — il doit pouvoir dire vers quoi son satellite sera
+    mis à jour. **Publier ou retirer** : l'administrateur seul. Publier n'est pas un pouvoir en
+    soi — sans la clé privée, on ne peut rien publier d'installable — mais la liste des
+    versions de référence est une décision d'exploitation de la plateforme, pas d'une
+    institution.
+
+    La signature est vérifiée ICI, à la publication, pour qu'une erreur de copier-coller se
+    voie tout de suite et non au premier satellite qui refuse."""
+
+    queryset = VersionSatellite.objects.select_related('publiee_par').all()
+    serializer_class = VersionSatelliteSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'retirer'):
+            return [IsAdministrator(), DenyInDemo()]
+        return [IsInstitutionalActor()]
+
+    def list(self, request, *args, **kwargs):
+        from .signature_satellites import cles_publiques
+
+        return Response({
+            "cle_configuree": bool(cles_publiques()),
+            "versions": self.get_serializer(self.get_queryset(), many=True).data,
+        })
+
+    def create(self, request, *args, **kwargs):
+        from .signature_satellites import SignatureInvalide, verifier
+
+        commit = str(request.data.get('commit') or '').strip().lower()
+        signature = str(request.data.get('signature') or '').strip()
+        try:
+            verifier(commit, signature)
+        except SignatureInvalide as refus:
+            return Response({"error": str(refus)}, status=status.HTTP_400_BAD_REQUEST)
+        if VersionSatellite.objects.filter(commit=commit).exists():
+            return Response({"error": "Cette version est déjà publiée."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        version = VersionSatellite.objects.create(
+            commit=commit, signature=signature,
+            libelle=str(request.data.get('libelle') or '').strip()[:120],
+            publiee_par=request.user,
+        )
+        audit_log(
+            request=request, action_code="CREATION", objet_type="VersionSatellite", objet_id=version.id,
+            commentaire=f"Version de satellite {commit[:10]} publiée (signature vérifiée).",
+        )
+        return Response(self.get_serializer(version).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def retirer(self, request, pk=None):
+        """Ne plus proposer cette version. Les ordres déjà donnés vers elle sont annulés s'ils
+        n'ont pas commencé : une version retirée l'est parce qu'elle pose problème."""
+        version = self.get_object()
+        version.retiree = True
+        version.save(update_fields=['retiree'])
+        MiseAJourSatellite.objects.filter(
+            version=version, statut=StatutMiseAJour.DEMANDEE,
+        ).update(statut=StatutMiseAJour.ANNULEE, date_fin=timezone.now(),
+                 etape="Version retirée avant le démarrage.")
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="VersionSatellite", objet_id=version.id,
+            commentaire=f"Version de satellite {version.commit[:10]} retirée.",
+        )
+        return Response(self.get_serializer(version).data)
+
+
 class SatelliteViewSet(
     EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -21418,15 +21488,17 @@ class SatelliteViewSet(
         # mesh_a_emettre / mesh_emis : comme synchroniser, le contrôle d'identité réel est dans
         # l'action (_exiger_compte_service) — le compte de service d'un satellite est un
         # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
-        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'mesh_a_emettre', 'mesh_emis'):
+        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
+                           'ordre_mise_a_jour', 'rapport_mise_a_jour'):
             return [permissions.IsAuthenticated()]
-        if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants'):
+        if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants',
+                           'mettre_a_jour', 'annuler_mise_a_jour'):
             return [IsInstitutionalActor(), DenyInDemo()]
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
         if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants',
-                           'mesh_a_emettre', 'mesh_emis'):
+                           'mesh_a_emettre', 'mesh_emis', 'ordre_mise_a_jour', 'rapport_mise_a_jour'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -21662,6 +21734,137 @@ class SatelliteViewSet(
         satellite.save(update_fields=update_fields)
 
         return Response(SatelliteSerializer(satellite).data)
+
+    # ── Mises à jour ordonnées depuis le central (core/mises_a_jour_satellites.py) ──────────
+
+    @action(detail=True, methods=['post'], url_path='mettre-a-jour')
+    def mettre_a_jour(self, request, pk=None):
+        """Ordonne la mise à jour de ce satellite vers une version SIGNÉE.
+
+        Qui : l'administrateur, et ceux qui administrent ce satellite — les mêmes que pour le
+        valider ou le révoquer (acteur institutionnel de son institution, voir get_queryset).
+        Décision de Sylvain du 14/11/2026.
+
+        L'ordre n'exécute rien ici : il attend que le satellite vienne le chercher, et le
+        satellite revérifie la signature avec sa propre copie de la clé avant de s'en servir.
+
+        Pendant une crise, la réponse est un 409 qui nomme les crises ; l'écran doit alors
+        demander confirmation et renvoyer `malgre_crise: true`."""
+        from .mises_a_jour_satellites import MiseAJourRefusee, demander
+
+        satellite = self.get_object()
+        version = None
+        if request.data.get('version'):
+            version = VersionSatellite.objects.filter(pk=request.data.get('version')).first()
+            if version is None:
+                return Response({"error": "Version inconnue."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            ordre = demander(satellite, request.user, version=version,
+                             malgre_crise=bool(request.data.get('malgre_crise')))
+        except MiseAJourRefusee as refus:
+            code = status.HTTP_409_CONFLICT if refus.code == "CRISE_EN_COURS" \
+                else status.HTTP_400_BAD_REQUEST
+            return Response({"error": refus.message, "code": refus.code, **refus.details},
+                            status=code)
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Mise à jour du satellite {satellite.nom} demandée vers {ordre.version.commit[:10]}"
+                        + (" (malgré une crise en cours)" if ordre.malgre_crise else "") + ".",
+        )
+        return Response(SatelliteSerializer(satellite, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='annuler-mise-a-jour')
+    def annuler_mise_a_jour(self, request, pk=None):
+        """Annule un ordre que le satellite n'a pas encore pris."""
+        from .mises_a_jour_satellites import MiseAJourRefusee, annuler
+
+        satellite = self.get_object()
+        try:
+            annuler(satellite)
+        except MiseAJourRefusee as refus:
+            return Response({"error": refus.message, "code": refus.code},
+                            status=status.HTTP_400_BAD_REQUEST)
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Mise à jour du satellite {satellite.nom} annulée avant son démarrage.",
+        )
+        return Response(SatelliteSerializer(satellite, context={'request': request}).data)
+
+    @action(detail=True, methods=['get'], url_path='mises-a-jour')
+    def mises_a_jour(self, request, pk=None):
+        """Les dix dernières mises à jour de ce satellite, avec leur journal."""
+        from .mises_a_jour_satellites import rafraichir
+
+        satellite = self.get_object()
+        rafraichir(satellite)
+        ordres = satellite.mises_a_jour.select_related('version', 'demandee_par')[:10]
+        return Response(MiseAJourSatelliteSerializer(
+            ordres, many=True, context={'request': request, 'avec_journal': True}).data)
+
+    @action(detail=True, methods=['get'], url_path='ordre-mise-a-jour')
+    def ordre_mise_a_jour(self, request, pk=None):
+        """Appelé par l'AGENT du satellite : y a-t-il une mise à jour à faire ?
+
+        Rend `{"ordre": null}` ou l'ordre avec le commit et sa signature — que l'agent
+        revérifie lui-même. Ce passage est aussi ce qui dit au central que ce satellite a un
+        agent (`agent_mise_a_jour_vu`) : sans lui, l'écran ne propose pas la mise à jour."""
+        from .mises_a_jour_satellites import ordre_ouvert
+
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        satellite.agent_mise_a_jour_vu = timezone.now()
+        satellite.dernier_contact = satellite.agent_mise_a_jour_vu
+        champs = ['agent_mise_a_jour_vu', 'dernier_contact']
+        # L'agent connaît le commit exact installé : plus fiable que la valeur figée dans
+        # l'environnement du conteneur au dernier démarrage.
+        version = request.query_params.get('version')
+        if version:
+            satellite.version_logicielle = version[:50]
+            champs.append('version_logicielle')
+        satellite.save(update_fields=champs)
+
+        ordre = ordre_ouvert(satellite)
+        if ordre is None:
+            return Response({"ordre": None})
+        return Response({"ordre": {
+            "id": str(ordre.id), "statut": ordre.statut,
+            "commit": ordre.version.commit, "signature": ordre.version.signature,
+        }})
+
+    @action(detail=True, methods=['post'], url_path='rapport-mise-a-jour')
+    def rapport_mise_a_jour(self, request, pk=None):
+        """Appelé par l'AGENT : où en est la mise à jour.
+
+        409 = « arrêtez-vous » (ordre annulé ou expiré). L'agent doit faire accepter un premier
+        rapport `EN_COURS` avant de toucher à quoi que ce soit."""
+        from .mises_a_jour_satellites import enregistrer_rapport
+
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        ordre = MiseAJourSatellite.objects.filter(
+            pk=request.data.get('ordre'), satellite=satellite,
+        ).select_related('version', 'satellite').first()
+        if ordre is None:
+            return Response({"error": "Ordre inconnu pour ce satellite."},
+                            status=status.HTTP_404_NOT_FOUND)
+        etait_fini = ordre.date_fin is not None
+        accepte = enregistrer_rapport(
+            ordre, str(request.data.get('statut') or ''),
+            etape=str(request.data.get('etape') or ''),
+            journal=str(request.data.get('journal') or ''),
+            version=str(request.data.get('version') or ''),
+        )
+        if not accepte:
+            return Response({"error": "Cet ordre n'est plus à exécuter.", "statut": ordre.statut},
+                            status=status.HTTP_409_CONFLICT)
+        if ordre.date_fin is not None and not etait_fini:
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+                commentaire=f"Mise à jour du satellite {satellite.nom} vers {ordre.version.commit[:10]} : "
+                            f"{ordre.get_statut_display().lower()} ({ordre.etape}).",
+            )
+        return Response({"statut": ordre.statut})
 
     def _exiger_compte_service(self, request, satellite):
         """Garde commune à contact()/donnees() : seul le compte de service DE CE satellite,

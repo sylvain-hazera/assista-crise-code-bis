@@ -4,7 +4,11 @@ import { FormsModule } from '@angular/forms';
 
 import { SatelliteService } from '../../services/satellite.service';
 import { AuthService } from '../../auth/services/auth.service';
-import { Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite } from '../../shared/models/satellite.model';
+import {
+  Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, MiseAJourSatellite,
+  VersionSatellite,
+} from '../../shared/models/satellite.model';
+import { UserRole } from '../../shared/models/user.model';
 
 /** Boîtiers Raspberry Pi déployés sur site (pont MeshCore/Meshtastic local, et pour le profil
  * Full une instance assista-crise complète utilisable même sans internet) — voir le cadrage
@@ -92,6 +96,20 @@ export class SatellitesComponent implements OnInit {
 
   actionEnCours: string | null = null;
 
+  // ── Mises à jour ordonnées d'ici (14/11/2026) ────────────────────────────
+  /** Versions signées. La première non retirée est la référence : c'est vers elle qu'un
+   * satellite est mis à jour, et par rapport à elle qu'il est « à jour » ou « en retard ». */
+  versions: VersionSatellite[] = [];
+  /** Faux = le serveur n'a aucune clé publique : rien ne peut être publié. */
+  cleConfiguree = true;
+  estAdministrateur = false;
+  /** Saisie de publication : ce qu'affiche `scripts/satellites/signer-version.sh`. */
+  nouvelleVersion = { commit: '', signature: '', libelle: '' };
+  publicationEnCours = false;
+  /** Satellite dont on regarde l'historique, et cet historique. */
+  historiqueDe: Satellite | null = null;
+  historique: MiseAJourSatellite[] = [];
+
   constructor(
     private service: SatelliteService,
     private authService: AuthService,
@@ -99,7 +117,166 @@ export class SatellitesComponent implements OnInit {
 
   ngOnInit(): void {
     this.isDemo = this.authService.getEnvironment() === 'DEMO';
+    this.estAdministrateur = this.authService.getCurrentUser()?.type === UserRole.ADMIN;
     this.load();
+    this.chargerVersions();
+  }
+
+  chargerVersions(): void {
+    this.service.versions().subscribe({
+      next: (reponse) => { this.versions = reponse.versions; this.cleConfiguree = reponse.cle_configuree; },
+      error: () => undefined,
+    });
+  }
+
+  /** La version vers laquelle on met à jour : la dernière publiée et non retirée. */
+  get versionDeReference(): VersionSatellite | null {
+    return this.versions.find(v => !v.retiree) ?? null;
+  }
+
+  court(commit: string | null | undefined): string {
+    return (commit || '').slice(0, 10);
+  }
+
+  versionLabel(satellite: Satellite): string {
+    if (satellite.etat_version === 'A_JOUR') return 'À jour';
+    if (satellite.etat_version === 'EN_RETARD') return 'En retard';
+    if (satellite.etat_version === 'INCONNUE') return 'Version inconnue';
+    return '';
+  }
+
+  versionClass(satellite: Satellite): string {
+    if (satellite.etat_version === 'A_JOUR') return 'statut-ok';
+    if (satellite.etat_version === 'EN_RETARD') return 'statut-attention';
+    return 'statut-inconnu';
+  }
+
+  /** Un ordre est ouvert : demandé, ou en cours sur le satellite. */
+  miseAJourOuverte(satellite: Satellite): boolean {
+    return ['DEMANDEE', 'EN_COURS'].includes(satellite.mise_a_jour?.statut ?? '');
+  }
+
+  /** Le bouton n'apparaît que là où l'ordre serait accepté : le serveur refuserait le reste,
+   * et un bouton qui échoue à tous les coups n'apprend rien. */
+  peutMettreAJour(satellite: Satellite): boolean {
+    return !this.isDemo && satellite.statut_enrolement === 'APPROUVE'
+      && satellite.agent_present && !!this.versionDeReference
+      && satellite.etat_version !== 'A_JOUR' && !this.miseAJourOuverte(satellite);
+  }
+
+  /** Pourquoi le bouton n'est pas là, quand ce n'est pas évident. */
+  raisonSansMiseAJour(satellite: Satellite): string {
+    if (satellite.statut_enrolement !== 'APPROUVE' || !this.versionDeReference
+        || satellite.etat_version === 'A_JOUR' || this.miseAJourOuverte(satellite)) {
+      return '';
+    }
+    if (!satellite.agent_present) {
+      return "Pas d'agent de mise à jour : sur place, une dernière fois, ./installer.sh mettre-a-jour";
+    }
+    return '';
+  }
+
+  mettreAJour(satellite: Satellite, malgreCrise = false): void {
+    const version = this.versionDeReference;
+    if (!version) return;
+    if (!malgreCrise && !confirm(
+      `Mettre à jour « ${satellite.nom} » vers la version ${this.court(version.commit)} ?\n\n`
+      + "Le satellite reconstruit puis redémarre : s'il sert un site local, celui-ci est "
+      + "indisponible pendant ce temps. L'ordre part à son prochain contact.")) {
+      return;
+    }
+    this.actionEnCours = satellite.id;
+    this.errorMessage = '';
+    this.messageSucces = '';
+    this.service.mettreAJour(satellite.id, malgreCrise).subscribe({
+      next: (maj) => {
+        this.actionEnCours = null;
+        this.remplacer(maj);
+        this.messageSucces = `Mise à jour de « ${satellite.nom} » demandée : il la prendra à son prochain contact (deux minutes environ).`;
+      },
+      error: (err) => {
+        this.actionEnCours = null;
+        // Une crise est en cours : le serveur refuse tant qu'on ne l'a pas dit en toutes
+        // lettres. On nomme les crises — c'est ce qui permet de décider.
+        if (err.status === 409 && err.error?.code === 'CRISE_EN_COURS' && !malgreCrise) {
+          const crises = (err.error.crises as string[] | undefined)?.join(', ') ?? '';
+          if (confirm(`Une crise est en cours pour cette institution (${crises}).\n\n`
+              + 'La mise à jour rend le satellite indisponible le temps de reconstruire. '
+              + 'La lancer quand même ?')) {
+            this.mettreAJour(satellite, true);
+          }
+          return;
+        }
+        this.errorMessage = err.error?.error || 'Impossible de demander la mise à jour.';
+      },
+    });
+  }
+
+  annulerMiseAJour(satellite: Satellite): void {
+    this.actionEnCours = satellite.id;
+    this.errorMessage = '';
+    this.service.annulerMiseAJour(satellite.id).subscribe({
+      next: (maj) => { this.actionEnCours = null; this.remplacer(maj); },
+      error: (err) => {
+        this.actionEnCours = null;
+        this.errorMessage = err.error?.error || "Impossible d'annuler.";
+        this.load();
+      },
+    });
+  }
+
+  private remplacer(maj: Satellite): void {
+    this.satellites = this.satellites.map(s => (s.id === maj.id ? maj : s));
+  }
+
+  voirHistorique(satellite: Satellite): void {
+    if (this.historiqueDe?.id === satellite.id) { this.historiqueDe = null; return; }
+    this.historiqueDe = satellite;
+    this.historique = [];
+    this.service.misesAJour(satellite.id).subscribe({
+      next: (liste) => this.historique = liste,
+      error: () => this.errorMessage = "Impossible de charger l'historique des mises à jour.",
+    });
+  }
+
+  miseAJourClass(maj: MiseAJourSatellite): string {
+    if (maj.statut === 'REUSSIE') return 'statut-ok';
+    if (maj.statut === 'ECHOUEE') return 'statut-erreur';
+    if (maj.statut === 'DEMANDEE' || maj.statut === 'EN_COURS') return 'statut-attention';
+    return 'statut-inconnu';
+  }
+
+  get peutPublier(): boolean {
+    return /^[0-9a-f]{40}$/.test(this.nouvelleVersion.commit.trim().toLowerCase())
+      && this.nouvelleVersion.signature.includes('BEGIN SSH SIGNATURE');
+  }
+
+  publierVersion(): void {
+    if (!this.peutPublier) return;
+    this.publicationEnCours = true;
+    this.errorMessage = '';
+    const v = this.nouvelleVersion;
+    this.service.publierVersion(v.commit.trim().toLowerCase(), v.signature.trim(), v.libelle.trim()).subscribe({
+      next: () => {
+        this.publicationEnCours = false;
+        this.nouvelleVersion = { commit: '', signature: '', libelle: '' };
+        this.messageSucces = 'Version publiée : signature vérifiée.';
+        this.chargerVersions();
+        this.load();
+      },
+      error: (err) => {
+        this.publicationEnCours = false;
+        this.errorMessage = err.error?.error || 'Publication refusée.';
+      },
+    });
+  }
+
+  retirerVersion(version: VersionSatellite): void {
+    if (!confirm(`Retirer la version ${this.court(version.commit)} ? Elle ne sera plus proposée, et les mises à jour demandées vers elle mais pas encore commencées seront annulées.`)) return;
+    this.service.retirerVersion(version.id).subscribe({
+      next: () => { this.chargerVersions(); this.load(); },
+      error: (err) => this.errorMessage = err.error?.error || 'Retrait impossible.',
+    });
   }
 
   load(): void {

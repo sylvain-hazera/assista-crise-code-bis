@@ -51,7 +51,8 @@ apparaît **« Actif »** environ une minute plus tard.
 |---|---|
 | Installation interrompue (Ctrl+C, coupure) | `./installer.sh installer` (sans jeton : reprend où il en était) |
 | Radio branchée après l'installation | `./installer.sh connecter-noeud` |
-| **Mise à jour** | **`./installer.sh mettre-a-jour`** (récupère le code et redémarre) |
+| **Mise à jour sur place** | **`./installer.sh mettre-a-jour`** (récupère le code et redémarre) |
+| **Mise à jour à distance** | bouton **Mettre à jour** de la page Satellites — voir « Mise à jour depuis le central » plus bas |
 | Identifiants perdus / compromis | bouton **Régénérer les identifiants** sur la page Satellites |
 | Vérifier l'état | `docker compose --profile <gw\|full> ps` |
 
@@ -81,6 +82,100 @@ apparaît **« Actif »** environ une minute plus tard.
 fois à l'administrateur), puis `./installer.sh demarrer` (questions interactives). Toujours
 accepté. Fichiers utiles : `.env` (configuration), `.satellite_id` (identifiant du satellite,
 désormais correctement mémorisé), `.profil`.
+
+## Mise à jour depuis le central (14/11/2026)
+
+Un satellite peut être mis à jour depuis la page **Satellites** du central, sans se déplacer
+ni ouvrir de port chez lui : c'est toujours lui qui appelle.
+
+### Ce qui se passe
+
+1. Sur la page Satellites, **Mettre à jour** enregistre un ordre vers la dernière version
+   **signée**. Peuvent le donner : l'administrateur de la plateforme et ceux qui administrent ce
+   satellite (les mêmes que pour le valider ou le révoquer). Pendant une crise ouverte de
+   l'institution, il faut confirmer une seconde fois.
+2. L'**agent** du satellite (`agent_mise_a_jour.py`, lancé toutes les deux minutes par systemd
+   **sur la machine**, pas dans un conteneur) vient chercher l'ordre.
+3. Il **vérifie la signature** avec la clé publique gardée sur place, puis, dans cet ordre :
+   sauvegarde de la base locale (profil complet), récupération du code, **construction**, et
+   seulement si elle réussit, redémarrage. Tant que la construction n'a pas abouti, l'ancienne
+   version continue de tourner.
+4. Chaque étape et le résultat remontent sur la page Satellites (bouton **Historique**, avec le
+   journal des commandes).
+
+### Ce que la signature garantit — et ne garantit pas
+
+Le central **transmet** un numéro de commit et sa signature ; il ne peut rien rendre
+installable. Seul le détenteur de la clé privée le peut, et cette clé n'est ni dans le dépôt ni
+sur le serveur. Prendre la main sur le central, sur un compte d'administrateur ou sur le dépôt
+GitHub ne suffit donc pas à faire exécuter du code sur un satellite.
+
+- **La clé publique est copiée une fois** sur le satellite (`.cle-signature.pub`) et n'est
+  **jamais remplacée automatiquement**. Si elle suivait le dépôt, il suffirait de pousser une
+  nouvelle clé pour tout faire accepter. Changer de clé se fait sur place : supprimer
+  `.cle-signature.pub`, puis `./installer.sh mettre-a-jour`.
+- **Pas de retour en arrière** : l'agent n'installe qu'une version qui est une *suite* de celle
+  en place. Une vieille version reste correctement signée pour toujours ; c'est l'ordre des
+  commits qui interdit de la rejouer pour rouvrir une faille corrigée.
+- **La première confiance** est celle du jour où la clé est copiée : ce jour-là, le satellite
+  croit le dépôt qu'il vient de récupérer — comme pour toute mise à jour faite sur place.
+- **Ce que la signature ne couvre pas** : les images de base téléchargées pendant la
+  construction (Python, Node, PostGIS) et les paquets qu'elles installent.
+
+### Mise en place, une fois
+
+Sur le poste du responsable de la plateforme :
+
+```bash
+scripts/satellites/creer-cle-signature.sh   # crée la clé, protégée par une phrase de passe
+```
+
+La clé privée va dans `~/.config/assista-crise/` — **à sauvegarder hors de la machine**. La clé
+publique est ajoutée à `backend/core/signature_satellites.pub`, à enregistrer dans le dépôt, à
+pousser, puis le central est redéployé.
+
+Sur **chaque satellite déjà installé**, une dernière fois sur place :
+
+```bash
+./installer.sh mettre-a-jour    # garde la clé publique et installe l'agent
+```
+
+### À chaque nouvelle version
+
+```bash
+git push                                   # un satellite récupère son code sur le dépôt distant
+scripts/satellites/signer-version.sh       # demande la phrase de passe, affiche commit + signature
+```
+
+Coller ce que le script affiche dans le cadre **Versions signées** de la page Satellites. La
+version devient la référence : les satellites qui n'y sont pas passent « En retard », et le
+bouton **Mettre à jour** apparaît.
+
+### Quand ça ne se passe pas bien
+
+| Ce que dit l'historique | Ce qui a été modifié | Quoi faire |
+|---|---|---|
+| Signature refusée | rien | vérifier que la version a bien été signée avec la clé que ce satellite connaît |
+| Fichiers modifiés sur place | rien | sur place : `git status`, puis `git stash` |
+| Retour en arrière refusé | rien | publier une version plus récente que celle installée |
+| Moins de 3 Go libres | rien | faire de la place (`docker system prune`) |
+| La sauvegarde a échoué | rien | vérifier que la base locale tourne |
+| La construction a échoué | le code est remis à la version précédente, qui n'a pas cessé de tourner | lire le journal ; sur un Raspberry Pi, souvent la mémoire — ajouter du swap |
+| Le redémarrage a échoué | **le satellite peut être en partie sur la nouvelle version** | sur place : `./installer.sh demarrer`. Sauvegarde dans `satellite/sauvegardes/` |
+| Plus de nouvelles du satellite | inconnu | il rendra compte à son retour ; sinon voir sur place |
+
+Les trois dernières sauvegardes sont gardées dans `satellite/sauvegardes/` (lisibles par le
+seul propriétaire). Revenir en arrière après une migration se fait à la main, à partir de
+l'une d'elles : rien ne le fait automatiquement, parce qu'un retour automatique sur une base
+déjà migrée ferait plus de dégâts qu'il n'en répare.
+
+**Jamais testé sur un vrai satellite à ce jour.** La logique de l'agent est testée avec de
+vrais dépôts git et de vraies signatures (`test_agent_mise_a_jour.py`, 27 tests) et de bout en
+bout contre un serveur de test, mais Docker, `pg_dump` réel, l'unité systemd et la durée d'une
+construction sur Raspberry Pi restent à vérifier au premier essai réel — sur un satellite de
+test, pas sur celui d'une mairie.
+
+Une passerelle Windows n'a pas d'agent : la page ne lui propose pas la mise à jour.
 
 ## Ce que chaque service fait
 

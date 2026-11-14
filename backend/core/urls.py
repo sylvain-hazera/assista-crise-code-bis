@@ -55,7 +55,7 @@ from .views import (
     CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
     TacheAdminMeshtasticViewSet, ConfigurationNoeudMeshtasticViewSet,
     CouvertureRadioSiteViewSet, CalibrationRadioViewSet,
-    SatelliteViewSet,
+    SatelliteViewSet, VersionSatelliteViewSet,
     ConflitSynchronisationViewSet,
     RoleOperationnelViewSet,
     InstitutionCompetenceViewSet,
@@ -154,6 +154,8 @@ router.register(r'noeuds-meshcore', NoeudMeshUtilisateurViewSet)
 router.register(r'messages-meshcore', MessageMeshLogViewSet)
 router.register(r'commandes-meshcore', CommandeMeshCoreViewSet)
 router.register(r'satellites', SatelliteViewSet)
+# Versions signées que les satellites acceptent d'installer (core/signature_satellites.py).
+router.register(r'versions-satellite', VersionSatelliteViewSet)
 router.register(r'conflits-synchronisation', ConflitSynchronisationViewSet)
 router.register(r'relais-meshcore', RelaisMeshCoreViewSet)
 router.register(r'canaux-meshcore', CanalMeshCoreViewSet)

@@ -38,6 +38,13 @@ satellite/.env
 satellite/.profil
 satellite/.satellite_id
 satellite/.sans_noeud
+# Mise à jour à distance : clé publique gardée sur place, verrou, compte rendu en attente,
+# sauvegardes de la base faites avant chaque mise à jour.
+satellite/.cle-signature.pub
+satellite/.maj-verrou
+satellite/.maj-rapport.json
+satellite/.maj-rapport.json.tmp
+satellite/sauvegardes/
 *.pyo
 *.pyd
 

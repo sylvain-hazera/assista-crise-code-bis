@@ -165,3 +165,77 @@
   code { font-size: .78rem; }
 }
 .message-succes { color: var(--ac-green-text, #166534); background: var(--ac-green-bg, #dcfce7); border-radius: 6px; padding: .5rem .8rem; margin-bottom: 1rem; }
+
+
+// ── Mises à jour ordonnées depuis le central (14/11/2026) ────────────────────
+.maj-etat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .15rem;
+  margin-top: .3rem;
+}
+
+.ligne-historique td {
+  background: var(--ac-surface-2, #f3f4f6);
+}
+
+.maj-historique {
+  margin: .5rem 0;
+
+  summary { cursor: pointer; }
+  p { margin: .4rem 0 0; }
+}
+
+.maj-journal {
+  max-height: 22rem;
+  overflow: auto;
+  margin: .4rem 0 0;
+  padding: .6rem .75rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--ac-surface, white);
+  color: var(--ac-text, #374151);
+  font-size: .78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.versions-signees {
+  margin-top: 2rem;
+
+  h2 { font-size: 1.1rem; margin: 0 0 .4rem; }
+}
+
+.publier-version {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  max-width: 44rem;
+  margin: .75rem 0 1rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    font-size: .85rem;
+    color: var(--ac-text-muted, #6b7280);
+  }
+
+  input, textarea {
+    padding: .45rem .55rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    border-radius: 6px;
+    background: var(--ac-surface, white);
+    color: var(--ac-text, #374151);
+    font-size: .85rem;
+  }
+
+  button { align-self: flex-start; }
+}
+
+.version-retiree td { opacity: .6; }
+
+.publier-version .mono, .versions-signees .mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}

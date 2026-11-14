@@ -8878,10 +8878,118 @@ class Satellite(EnvironmentScopedModel):
     # sans qu'un humain ait à les recopier -- usage unique, effacé à la récupération.
     secret_recuperation_hash = models.CharField(max_length=128, null=True, blank=True)
 
+    # Dernière fois que l'AGENT de mise à jour de ce satellite a interrogé le central. Vide =
+    # le satellite n'a pas d'agent (installé avant le 14/11/2026 et jamais mis à jour depuis,
+    # ou passerelle Windows) : lui adresser un ordre serait parler à personne, et l'écran ne
+    # le propose donc pas.
+    agent_mise_a_jour_vu = models.DateTimeField(null=True, blank=True)
+
     date_creation = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.nom} ({self.institution.nom}) — {self.statut_enrolement}"
+
+
+class VersionSatellite(models.Model):
+    """Une version que les satellites acceptent d'installer : un commit, et sa signature.
+
+    **Le central ne fait que transmettre.** La signature est produite hors du serveur, avec une
+    clé privée qui n'y est pas (voir `core/signature_satellites.py`) ; elle est vérifiée ici à
+    la publication, puis une seconde fois par chaque satellite avec sa propre copie de la clé
+    publique. Une ligne de cette table insérée à la main n'installerait donc rien.
+
+    Ni le commit ni la signature ne sont des secrets : ils sont faits pour être montrés. Rien à
+    chiffrer ici."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    commit = models.CharField(
+        max_length=40, unique=True,
+        help_text="Numéro de commit complet (40 caractères).",
+    )
+    libelle = models.CharField(
+        max_length=120, blank=True,
+        help_text="Ce que cette version apporte, en quelques mots. Affiché dans la liste.",
+    )
+    signature = models.TextField()
+
+    publiee_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    date_publication = models.DateTimeField(auto_now_add=True)
+
+    #: Retirée : plus proposée à l'installation. On ne supprime pas la ligne — les mises à jour
+    #: déjà faites vers cette version doivent rester lisibles dans l'historique.
+    retiree = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-date_publication"]
+
+    def __str__(self):
+        return f"{self.commit[:10]} {self.libelle}".strip()
+
+
+class StatutMiseAJour(models.TextChoices):
+    DEMANDEE = "DEMANDEE", "Demandée"
+    EN_COURS = "EN_COURS", "En cours"
+    REUSSIE = "REUSSIE", "Réussie"
+    ECHOUEE = "ECHOUEE", "Échouée"
+    ANNULEE = "ANNULEE", "Annulée"
+    EXPIREE = "EXPIREE", "Expirée"
+
+
+class MiseAJourSatellite(models.Model):
+    """Un ordre de mise à jour adressé à un satellite, et ce qu'il en est advenu.
+
+    C'est le satellite qui vient le chercher (il initie toujours la connexion) : l'ordre attend
+    donc son prochain passage, et expire s'il ne vient pas. Un seul ordre ouvert par satellite
+    (contrainte ci-dessous) — deux mises à jour concurrentes sur une même machine se
+    marcheraient dessus."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    satellite = models.ForeignKey(
+        Satellite, on_delete=models.CASCADE, related_name="mises_a_jour",
+    )
+    version = models.ForeignKey(
+        VersionSatellite, on_delete=models.PROTECT, related_name="mises_a_jour",
+    )
+    demandee_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    statut = models.CharField(
+        max_length=10, choices=StatutMiseAJour.choices, default=StatutMiseAJour.DEMANDEE,
+    )
+    date_demande = models.DateTimeField(auto_now_add=True)
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+
+    #: Où en est le satellite, en clair : « Sauvegarde de la base », « Construction »…
+    etape = models.CharField(max_length=200, blank=True)
+    # Sorties des commandes lancées sur le satellite. Chiffré : un journal de construction ou
+    # de démarrage peut citer des chemins, des noms de machine, des adresses du réseau local.
+    journal = EncryptedTextField(blank=True)
+
+    #: La version installée avant, telle que le satellite l'a rapportée : c'est vers elle qu'il
+    #: faudrait revenir, et la retrouver après coup dans des journaux n'est pas un plan.
+    version_avant = models.CharField(max_length=50, blank=True)
+
+    #: L'ordre a été donné alors qu'une crise était en cours, en connaissance de cause.
+    malgre_crise = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-date_demande"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["satellite"],
+                condition=models.Q(statut__in=["DEMANDEE", "EN_COURS"]),
+                name="uq_une_mise_a_jour_ouverte_par_satellite",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.satellite.nom} → {self.version.commit[:10]} ({self.statut})"
 
 
 class ModeleSynchronisable(models.TextChoices):

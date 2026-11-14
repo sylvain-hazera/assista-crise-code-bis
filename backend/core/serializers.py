@@ -98,7 +98,7 @@ from .models import (
     NotificationAlertePCS,
     SecteurRecherche,
     RelaisMeshCore,
-    Satellite,
+    Satellite, VersionSatellite, MiseAJourSatellite,
     JetonEnrolementSatellite,
     ConflitSynchronisation,
     CanalMeshCore,
@@ -4387,18 +4387,66 @@ class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
         return nom_affichable(obj.expediteur, self.context.get("request")) or obj.expediteur.email
 
 
+class VersionSatelliteSerializer(serializers.ModelSerializer):
+    """Une version signée. La signature est rendue : elle n'a rien de secret, et pouvoir la
+    relire permet de la vérifier ailleurs."""
+
+    publiee_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VersionSatellite
+        fields = ['id', 'commit', 'libelle', 'signature', 'date_publication', 'retiree',
+                  'publiee_par_nom']
+        read_only_fields = fields
+
+    def get_publiee_par_nom(self, obj):
+        if obj.publiee_par is None:
+            return None
+        return nom_affichable(obj.publiee_par, self.context.get('request'))
+
+
+class MiseAJourSatelliteSerializer(serializers.ModelSerializer):
+    """Un ordre de mise à jour. Le journal n'est joint que sur demande (`avec_journal`) : il
+    peut faire quarante mille caractères, et la liste des satellites n'en a pas l'usage."""
+
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    commit = serializers.CharField(source='version.commit', read_only=True)
+    version_libelle = serializers.CharField(source='version.libelle', read_only=True)
+    demandee_par_nom = serializers.SerializerMethodField()
+    journal = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MiseAJourSatellite
+        fields = ['id', 'statut', 'statut_libelle', 'commit', 'version_libelle', 'etape',
+                  'date_demande', 'date_debut', 'date_fin', 'version_avant', 'malgre_crise',
+                  'demandee_par_nom', 'journal']
+        read_only_fields = fields
+
+    def get_demandee_par_nom(self, obj):
+        if obj.demandee_par is None:
+            return None
+        return nom_affichable(obj.demandee_par, self.context.get('request'))
+
+    def get_journal(self, obj):
+        return obj.journal if self.context.get('avec_journal') else None
+
+
 class SatelliteSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True)
     profil_libelle = serializers.CharField(source='get_profil_display', read_only=True)
     statut_enrolement_libelle = serializers.CharField(source='get_statut_enrolement_display', read_only=True)
     etat = serializers.SerializerMethodField()
+    etat_version = serializers.SerializerMethodField()
+    agent_present = serializers.SerializerMethodField()
+    mise_a_jour = serializers.SerializerMethodField()
 
     class Meta:
         model = Satellite
         # Jamais le hash du secret de récupération des identifiants ; compte_service posé
         # seulement par SatelliteViewSet.valider.
         exclude = ['secret_recuperation_hash']
-        read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact']
+        read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact',
+                            'agent_mise_a_jour_vu', 'version_logicielle']
 
     def get_etat(self, obj):
         # Dérivé de dernier_contact et des seuils SATELLITE_* ; None avant le premier contact.
@@ -4410,6 +4458,28 @@ class SatelliteSerializer(serializers.ModelSerializer):
         if silence_minutes > settings.SATELLITE_SEUIL_INACTIF_MINUTES:
             return "INACTIF"
         return "ACTIF"
+
+    def get_etat_version(self, obj):
+        """À jour ou en retard sur la dernière version signée (voir mises_a_jour_satellites)."""
+        from .mises_a_jour_satellites import etat_version
+
+        return etat_version(obj)
+
+    def get_agent_present(self, obj):
+        """Faux = ce satellite ne peut pas être mis à jour d'ici : pas d'agent en service."""
+        from .mises_a_jour_satellites import agent_present
+
+        return agent_present(obj)
+
+    def get_mise_a_jour(self, obj):
+        """Le dernier ordre de mise à jour, ouvert ou terminé — sans son journal."""
+        from .mises_a_jour_satellites import rafraichir
+
+        rafraichir(obj)
+        ordre = obj.mises_a_jour.select_related('version', 'demandee_par').first()
+        if ordre is None:
+            return None
+        return MiseAJourSatelliteSerializer(ordre, context=self.context).data
 
 
 class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):

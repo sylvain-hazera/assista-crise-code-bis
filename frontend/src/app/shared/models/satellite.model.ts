@@ -16,6 +16,51 @@ export interface Satellite {
   version_logicielle: string;
   date_creation: string;
   etat: EtatSatellite;
+  /** À jour ou en retard sur la dernière version SIGNÉE publiée. `null` tant qu'aucune version
+   * n'est publiée : il n'y a alors pas de référence. */
+  etat_version: 'A_JOUR' | 'EN_RETARD' | 'INCONNUE' | null;
+  /** Faux = pas d'agent de mise à jour en service (satellite pas repassé par
+   * `./installer.sh mettre-a-jour`, ou passerelle Windows) : rien à ordonner d'ici. */
+  agent_present: boolean;
+  /** Le dernier ordre de mise à jour, ouvert ou terminé. */
+  mise_a_jour: MiseAJourSatellite | null;
+}
+
+export type StatutMiseAJour = 'DEMANDEE' | 'EN_COURS' | 'REUSSIE' | 'ECHOUEE' | 'ANNULEE' | 'EXPIREE';
+
+export interface MiseAJourSatellite {
+  id: string;
+  statut: StatutMiseAJour;
+  statut_libelle: string;
+  commit: string;
+  version_libelle: string;
+  /** Où en est le satellite, ou pourquoi il s'est arrêté. */
+  etape: string;
+  date_demande: string;
+  date_debut: string | null;
+  date_fin: string | null;
+  version_avant: string;
+  malgre_crise: boolean;
+  demandee_par_nom: string | null;
+  /** Sorties des commandes sur le satellite. Absent de la liste, joint dans l'historique. */
+  journal: string | null;
+}
+
+/** Une version que les satellites acceptent d'installer : un commit et sa signature. */
+export interface VersionSatellite {
+  id: string;
+  commit: string;
+  libelle: string;
+  signature: string;
+  date_publication: string;
+  retiree: boolean;
+  publiee_par_nom: string | null;
+}
+
+export interface VersionsSatellite {
+  /** Faux = aucune clé publique sur le serveur : rien ne peut être publié. */
+  cle_configuree: boolean;
+  versions: VersionSatellite[];
 }
 
 export interface JetonEnrolementSatellite {

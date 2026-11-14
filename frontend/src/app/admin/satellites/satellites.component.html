@@ -156,8 +156,38 @@
             <td>{{ satellite.statut_enrolement_libelle }}</td>
             <td><span class="statut" [ngClass]="etatClass(satellite)">{{ etatLabel(satellite) }}</span></td>
             <td>{{ satellite.dernier_contact ? (satellite.dernier_contact | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
-            <td class="mono">{{ satellite.version_logicielle || '—' }}</td>
             <td>
+              <span class="mono" [title]="satellite.version_logicielle">{{ court(satellite.version_logicielle) || '—' }}</span>
+              @if (versionLabel(satellite)) {
+                <span class="statut" [ngClass]="versionClass(satellite)">{{ versionLabel(satellite) }}</span>
+              }
+              @if (satellite.mise_a_jour; as maj) {
+                <div class="maj-etat">
+                  <span class="statut" [ngClass]="miseAJourClass(maj)">Mise à jour : {{ maj.statut_libelle | lowercase }}</span>
+                  @if (maj.etape) { <span class="page-hint">{{ maj.etape }}</span> }
+                </div>
+              }
+            </td>
+            <td>
+              @if (peutMettreAJour(satellite)) {
+                <button type="button" class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id" (click)="mettreAJour(satellite)"
+                        [title]="'Vers la version signée ' + court(versionDeReference?.commit)">
+                  Mettre à jour
+                </button>
+              }
+              @if (!isDemo && satellite.mise_a_jour?.statut === 'DEMANDEE') {
+                <button type="button" class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id" (click)="annulerMiseAJour(satellite)">
+                  Annuler la mise à jour
+                </button>
+              }
+              @if (satellite.mise_a_jour) {
+                <button type="button" class="btn-secondary-sm" (click)="voirHistorique(satellite)">
+                  {{ historiqueDe?.id === satellite.id ? "Fermer l'historique" : 'Historique' }}
+                </button>
+              }
+              @if (raisonSansMiseAJour(satellite)) {
+                <div class="page-hint">{{ raisonSansMiseAJour(satellite) }}</div>
+              }
               @if (!isDemo && satellite.statut_enrolement === 'EN_ATTENTE') {
                 <button type="button" class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id" (click)="valider(satellite)">
                   Valider
@@ -177,8 +207,114 @@
               }
             </td>
           </tr>
+          @if (historiqueDe?.id === satellite.id) {
+            <tr class="ligne-historique">
+              <td colspan="8">
+                <strong>Mises à jour de « {{ satellite.nom }} »</strong>
+                @for (maj of historique; track maj.id) {
+                  <details class="maj-historique">
+                    <summary>
+                      <span class="statut" [ngClass]="miseAJourClass(maj)">{{ maj.statut_libelle }}</span>
+                      {{ maj.date_demande | date:'dd/MM/yyyy HH:mm' }} —
+                      vers <span class="mono">{{ court(maj.commit) }}</span>
+                      @if (maj.version_libelle) { ({{ maj.version_libelle }}) }
+                      @if (maj.demandee_par_nom) { , demandée par {{ maj.demandee_par_nom }} }
+                      @if (maj.malgre_crise) { <em>— pendant une crise</em> }
+                    </summary>
+                    @if (maj.etape) { <p>{{ maj.etape }}</p> }
+                    @if (maj.version_avant) {
+                      <p class="page-hint">Version avant : <span class="mono">{{ court(maj.version_avant) }}</span></p>
+                    }
+                    @if (maj.journal) {
+                      <pre class="maj-journal">{{ maj.journal }}</pre>
+                    } @else {
+                      <p class="page-hint">Pas de journal : le satellite n'a encore rien rapporté.</p>
+                    }
+                  </details>
+                } @empty {
+                  <p class="page-hint">Chargement…</p>
+                }
+              </td>
+            </tr>
+          }
         }
       }
     </tbody>
   </table>
 </div>
+
+<section class="versions-signees">
+  <h2>Versions signées</h2>
+  <p class="page-hint">
+    Un satellite n'installe qu'une version <strong>signée</strong> par la clé du responsable de
+    la plateforme, et vérifie lui-même cette signature : ce site ne fait que la lui transmettre.
+    La dernière version de la liste est la référence — c'est vers elle que « Mettre à jour »
+    emmène, et par rapport à elle qu'un satellite est « à jour » ou « en retard ».
+  </p>
+
+  @if (!cleConfiguree) {
+    <p class="error-message">
+      Aucune clé de signature n'est configurée sur ce serveur : aucune version ne peut être
+      publiée. À faire une fois : <code>scripts/satellites/creer-cle-signature.sh</code>, puis
+      redéployer.
+    </p>
+  }
+
+  @if (estAdministrateur && !isDemo && cleConfiguree) {
+    <form class="publier-version" (ngSubmit)="publierVersion()">
+      <p class="page-hint">
+        Sur votre poste : <code>scripts/satellites/signer-version.sh</code>, puis collez ici ce
+        qu'il affiche.
+      </p>
+      <label>
+        Numéro de version (les 40 caractères)
+        <input type="text" name="commit" class="mono" maxlength="40" autocomplete="off"
+               [(ngModel)]="nouvelleVersion.commit">
+      </label>
+      <label>
+        Signature
+        <textarea name="signature" class="mono" rows="6" autocomplete="off"
+                  placeholder="-----BEGIN SSH SIGNATURE-----"
+                  [(ngModel)]="nouvelleVersion.signature"></textarea>
+      </label>
+      <label>
+        Ce qu'elle apporte (facultatif)
+        <input type="text" name="libelle" maxlength="120" [(ngModel)]="nouvelleVersion.libelle">
+      </label>
+      <button type="submit" class="btn-primary" [disabled]="!peutPublier || publicationEnCours">
+        Publier cette version
+      </button>
+    </form>
+  }
+
+  @if (versions.length) {
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>Version</th><th>Description</th><th>Publiée le</th><th>Par</th><th></th></tr>
+        </thead>
+        <tbody>
+          @for (version of versions; track version.id) {
+            <tr [class.version-retiree]="version.retiree">
+              <td class="mono" [title]="version.commit">{{ court(version.commit) }}</td>
+              <td>
+                {{ version.libelle || '—' }}
+                @if (version.id === versionDeReference?.id) { <span class="statut statut-ok">Référence</span> }
+                @if (version.retiree) { <span class="statut statut-inconnu">Retirée</span> }
+              </td>
+              <td>{{ version.date_publication | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>{{ version.publiee_par_nom || '—' }}</td>
+              <td>
+                @if (estAdministrateur && !isDemo && !version.retiree) {
+                  <button type="button" class="btn-danger-sm" (click)="retirerVersion(version)">Retirer</button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p class="page-hint">Aucune version publiée pour l'instant.</p>
+  }
+</section>

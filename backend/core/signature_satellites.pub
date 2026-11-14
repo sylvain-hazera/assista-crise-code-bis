@@ -1,0 +1,12 @@
+# Cles publiques autorisees a signer les versions des satellites, une par ligne
+# (format OpenSSH : "ssh-ed25519 AAAA... commentaire").
+#
+# Creee par scripts/satellites/creer-cle-signature.sh, qui ajoute la ligne ici.
+# La cle PRIVEE ne se trouve jamais dans le depot, ni sur le serveur central.
+#
+# Ce fichier est lu a deux endroits :
+#   - par le central, qui refuse de publier une version dont la signature ne verifie pas ;
+#   - par chaque satellite, qui en garde une COPIE a son installation (satellite/.cle-signature.pub)
+#     et ne fait ensuite confiance qu'a cette copie. Modifier ce fichier ne change donc rien sur
+#     un satellite deja installe : c'est voulu, sinon il suffirait de pousser une nouvelle cle
+#     pour prendre la main sur tous les satellites.
