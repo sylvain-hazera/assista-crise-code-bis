@@ -129,9 +129,14 @@ class ClientApi(
         authentifie(HttpMethod.Get, "teams/$idEquipe/messagerie-unifiee/").transformer(::lireMessages)
 
     /** Le serveur diffuse sur toutes les voies de l'équipe à la fois, et rend le fil à jour. */
-    suspend fun ecrireAEquipe(idEquipe: String, texte: String): Reponse<List<MessageEquipe>> =
-        authentifie(HttpMethod.Post, "teams/$idEquipe/messagerie-unifiee/", buildJsonObject { put("texte", texte) })
-            .transformer(::lireMessages)
+    suspend fun ecrireAEquipe(idEquipe: String, texte: String, dejaEmisParRadio: String? = null): Reponse<List<MessageEquipe>> =
+        authentifie(HttpMethod.Post, "teams/$idEquipe/messagerie-unifiee/", buildJsonObject {
+            put("texte", texte)
+            // Le téléphone l'a déjà émis sur le canal radio de l'équipe pendant la coupure :
+            // le serveur ne doit pas le rediffuser sur ce canal une seconde fois.
+            // Il dit par quel protocole : l'autre réseau, lui, reste à servir par les ponts.
+            if (dejaEmisParRadio != null) put("deja_emis_radio", dejaEmisParRadio)
+        }).transformer(::lireMessages)
 
     suspend fun positionsEquipes(): Reponse<List<PositionMembre>> = authentifie(HttpMethod.Get, "positions-equipes/").transformer {
         val liste = if (it is JsonObject) it.getValue("results") else it

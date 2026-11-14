@@ -13,6 +13,9 @@ data class Equipe(
     @SerialName("mission_active_statut") val missionStatut: String? = null,
     /** Posé par un cadre quand l'équipe part sur le terrain, effacé à la mise au repos. */
     @SerialName("engagement_debut") val engagementDebut: String? = null,
+    /** Le canal radio de l'équipe, par protocole : c'est par lui qu'on se parle sans réseau. */
+    @SerialName("canal_meshcore_nom") val canalMeshCore: String? = null,
+    @SerialName("canal_meshtastic_nom") val canalMeshtastic: String? = null,
 ) {
     val engagee: Boolean get() = engagementDebut != null
 }
@@ -33,6 +36,10 @@ data class MessageEquipe(
 ) {
     companion object {
         const val SOURCE_MATRIX = "matrix"
+
+        /** Entendu par la radio de ce téléphone, pas (encore) rendu par le serveur. */
+        const val SOURCE_RADIO_LOCALE = "radio"
+        const val PREFIXE_RADIO_LOCALE = "radio-"
     }
 }
 
@@ -55,7 +62,7 @@ fun filDeMessages(recus: List<MessageEquipe>, file: List<ActionEnAttente>, idEqu
         MessageAffiche(it.id, it.texte, it.auteur, it.horodatage, it.moi, it.source != MessageEquipe.SOURCE_MATRIX, it.urgent)
     } + file.filter { it.genre == ActionEnAttente.GENRE_MESSAGE_EQUIPE && it.cible == idEquipe }.map {
         MessageAffiche(
-            cle = it.id, texte = it.charge, auteur = "", horodatage = it.creeLe, moi = true, parRadio = false,
+            cle = it.id, texte = it.charge, auteur = "", horodatage = it.creeLe, moi = true, parRadio = it.parRadio,
             urgent = false, enAttente = it.etat == EtatAction.EN_ATTENTE,
             refus = if (it.etat == EtatAction.REFUSEE) (it.erreur ?: "Refusé par le serveur") else null,
         )

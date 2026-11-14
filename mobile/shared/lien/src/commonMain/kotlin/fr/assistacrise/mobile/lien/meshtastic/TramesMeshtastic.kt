@@ -76,9 +76,15 @@ object Meshtastic {
         return morceaux
     }
 
+    /** Pour les tests : la fin de configuration que la radio renvoie à une demande (`ToRadio`
+     * champ 3 → `FromRadio` champ 7, même identifiant). */
+    fun lireEcho(veutConfig: ByteArray): ByteArray = veutConfig.copyOf().also { it[0] = 0x38 }
+
     sealed class Evenement {
         data class MonNoeud(val numero: Long) : Evenement()
         data class ConfigTerminee(val identifiant: Long) : Evenement()
+        /** Un emplacement de canal de la radio. `role` : 0 désactivé, 1 primaire, 2 secondaire. */
+        data class Canal(val index: Int, val nom: String, val role: Int) : Evenement()
         data class Texte(val de: Long, val vers: Long, val canal: Int, val texte: String, val id: Long) : Evenement()
         data class Prive(val de: Long, val canal: Int, val charge: ByteArray) : Evenement()
         /** Une trame de la poignée de main : elle prouve que la radio parle encore. */
@@ -91,7 +97,16 @@ object Meshtastic {
         val racine = lireChamps(octets)
         racine.champ(3)?.octets?.let { return Evenement.MonNoeud(lireChamps(it).champ(1)?.nombre ?: 0) }
         racine.champ(7)?.nombre?.let { return Evenement.ConfigTerminee(it) }
-        if (racine.any { it.numero in setOf(4, 5, 9, 10, 13, 15, 17) || it.numero >= 19 }) return Evenement.Progression
+        racine.champ(10)?.octets?.let { canal ->
+            val c = lireChamps(canal)
+            val reglages = c.champ(2)?.octets?.let(::lireChamps) ?: emptyList()
+            return Evenement.Canal(
+                index = (c.champ(1)?.nombre ?: 0).toInt(),
+                nom = reglages.champ(3)?.octets?.decodeToString() ?: "",
+                role = (c.champ(3)?.nombre ?: 0).toInt(),
+            )
+        }
+        if (racine.any { it.numero in setOf(4, 5, 9, 13, 15, 17) || it.numero >= 19 }) return Evenement.Progression
         val paquet = racine.champ(2)?.octets ?: return Evenement.Autre
         val p = lireChamps(paquet)
         val decode = p.champ(4)?.octets ?: return Evenement.Autre      // chiffré pour quelqu'un d'autre

@@ -13,6 +13,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Bluetooth : pour parler a la radio de l'intervenant. Jamais pour le localiser, et
+         l'application reste utilisable sur un telephone qui n'en a pas. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
     <!-- allowBackup="false" : la session et le cache sont chiffres par une cle du Keystore,
          qui ne quitte pas le telephone. Une sauvegarde restauree ailleurs serait illisible,
          et l'en exclure evite surtout de faire voyager des donnees de mission. -->

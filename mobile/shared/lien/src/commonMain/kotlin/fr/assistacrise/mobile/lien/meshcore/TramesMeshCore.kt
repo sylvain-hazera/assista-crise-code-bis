@@ -32,6 +32,8 @@ object MeshCore {
     object Cmd {
         const val APP_START = 1
         const val SEND_TXT_MSG = 2
+        const val SEND_CHANNEL_TXT_MSG = 3
+        const val GET_CHANNEL = 31
         const val SET_DEVICE_TIME = 6
         const val SYNC_NEXT_MESSAGE = 10
         const val DEVICE_QUERY = 22
@@ -43,6 +45,9 @@ object MeshCore {
         const val SELF_INFO = 5
         const val MSG_SENT = 6
         const val CONTACT_MSG_RECV = 7
+        const val CHANNEL_MSG_RECV = 8
+        const val CHANNEL_MSG_RECV_V3 = 17
+        const val CHANNEL_INFO = 18
         const val NO_MORE_MSGS = 10
         const val CONTACT_MSG_RECV_V3 = 16
         const val MESSAGES_WAITING = 0x83
@@ -106,6 +111,47 @@ object MeshCore {
         if (typeTexte == 2) i += 4                           // signature
         if (i > charge.size) return null
         return MessageRecu(prefixe, charge.copyOfRange(i, charge.size).decodeToString(), horodatage)
+    }
+
+    /** Nombre d'emplacements de canal d'une radio companion. */
+    const val EMPLACEMENTS = 40
+
+    data class Canal(val index: Int, val nom: String)
+    data class MessageCanal(val canal: Int, val texte: String, val horodatageS: Long)
+
+    fun demanderCanal(index: Int) = byteArrayOf(Cmd.GET_CHANNEL.toByte(), index.toByte())
+
+    /** `nom` vide : l'emplacement est libre. */
+    fun lireCanal(charge: ByteArray): Canal? {
+        if (charge.size < 34 || (charge[0].toInt() and 0xff) != Rep.CHANNEL_INFO) return null
+        val nom = charge.copyOfRange(2, 34)
+        val fin = nom.indexOf(0).let { if (it < 0) nom.size else it }
+        return Canal(charge[1].toInt() and 0xff, nom.copyOf(fin).decodeToString())
+    }
+
+    /** Message sur un canal. La radio y ajoute elle-même le nom de l'expéditeur. */
+    fun envoyerSurCanal(index: Int, texte: String, secondesUnix: Long): ByteArray {
+        val corps = texte.encodeToByteArray()
+        return ByteArray(7 + corps.size).also {
+            it[0] = Cmd.SEND_CHANNEL_TXT_MSG.toByte()
+            // [1] type de texte : simple.
+            it[2] = index.toByte()
+            it.poserU32(3, secondesUnix)
+            corps.copyInto(it, 7)
+        }.also { require(it.size <= TRAME_MAX) { "Message trop long pour une trame MeshCore." } }
+    }
+
+    fun lireMessageCanal(charge: ByteArray): MessageCanal? {
+        if (charge.isEmpty()) return null
+        val type = charge[0].toInt() and 0xff
+        if (type != Rep.CHANNEL_MSG_RECV && type != Rep.CHANNEL_MSG_RECV_V3) return null
+        var i = 1
+        if (type == Rep.CHANNEL_MSG_RECV_V3) i += 3          // SNR (1) + réservé (2)
+        if (charge.size < i + 7) return null
+        val canal = charge[i].toInt() and 0xff; i += 1
+        i += 2                                               // chemin, type de texte
+        val horodatage = charge.u32(i); i += 4
+        return MessageCanal(canal, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage)
     }
 
     /** Liaison série seulement : `0x3c`, longueur sur deux octets petit-boutistes, charge. */

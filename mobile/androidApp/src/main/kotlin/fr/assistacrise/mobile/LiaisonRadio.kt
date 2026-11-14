@@ -1,0 +1,359 @@
+package fr.assistacrise.mobile
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.ParcelUuid
+import fr.assistacrise.mobile.domaine.Equipe
+import fr.assistacrise.mobile.donnees.EmetteurRadio
+import fr.assistacrise.mobile.lien.CanalRadio
+import fr.assistacrise.mobile.lien.PiloteMeshCore
+import fr.assistacrise.mobile.lien.PiloteMeshtastic
+import fr.assistacrise.mobile.lien.PiloteRadio
+import fr.assistacrise.mobile.lien.Protocole
+import fr.assistacrise.mobile.lien.meshcore.MeshCore
+import fr.assistacrise.mobile.lien.meshtastic.Meshtastic
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
+import kotlin.random.Random
+
+/**
+ * La liaison Bluetooth avec la radio de l'intervenant (dossier § 4 et § 7).
+ *
+ * Elle ne connaît des deux protocoles que leurs identifiants Bluetooth : tout le dialogue
+ * est dans les pilotes (`PiloteRadio`), qui sont testés sans radio. Ici, on transporte des
+ * octets — et on fait ce que le Bluetooth d'Android exige : une seule opération à la fois,
+ * chacune attendue avant la suivante.
+ *
+ * **Cette classe n'a pas pu être essayée** : l'émulateur n'a pas de Bluetooth, et il n'y
+ * avait pas de radio. Elle est écrite d'après les clients de référence ; le premier essai sur
+ * du matériel dira ce qui reste à corriger.
+ */
+@SuppressLint("MissingPermission")   // chaque entrée publique vérifie `autorise` d'abord
+class LiaisonRadio(private val app: Application) : EmetteurRadio {
+
+    enum class Phase { ABSENTE, RECHERCHE, CONNEXION, PRETE }
+
+    data class Etat(
+        val phase: Phase = Phase.ABSENTE,
+        val nom: String? = null,
+        val protocole: Protocole? = null,
+        val canaux: List<CanalRadio> = emptyList(),
+        val erreur: String? = null,
+    )
+
+    data class RadioTrouvee(val adresse: String, val nom: String, val protocole: Protocole)
+
+    private val _etat = MutableStateFlow(Etat())
+    val etat: StateFlow<Etat> = _etat
+    private val _trouvees = MutableStateFlow<List<RadioTrouvee>>(emptyList())
+    val trouvees: StateFlow<List<RadioTrouvee>> = _trouvees
+
+    private val portee = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val adaptateur get() = app.getSystemService(BluetoothManager::class.java)?.adapter
+
+    private var gatt: BluetoothGatt? = null
+    private var pilote: PiloteRadio? = null
+    private var session: Job? = null
+    private var operations = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+
+    /** Ce que l'opération en cours attend du Bluetooth : une seule à la fois. */
+    @Volatile private var attente: CompletableDeferred<ByteArray?>? = null
+
+    /** La radio que la personne a choisie : on y revient seul après une coupure. */
+    private var voulue: RadioTrouvee? = null
+
+    // --- Recherche -----------------------------------------------------------------------
+
+    private val ecouteRecherche = object : ScanCallback() {
+        override fun onScanResult(type: Int, resultat: ScanResult) {
+            val services = resultat.scanRecord?.serviceUuids?.map { it.uuid.toString().lowercase() } ?: return
+            val protocole = when {
+                MeshCore.SERVICE in services -> Protocole.MESHCORE
+                Meshtastic.SERVICE in services -> Protocole.MESHTASTIC
+                else -> return
+            }
+            val radio = RadioTrouvee(resultat.device.address, resultat.device.name ?: resultat.scanRecord?.deviceName ?: "Radio sans nom", protocole)
+            if (_trouvees.value.none { it.adresse == radio.adresse }) _trouvees.value = _trouvees.value + radio
+        }
+    }
+
+    fun chercher() {
+        val scanner = adaptateur?.takeIf { it.isEnabled && autorise(app) }?.bluetoothLeScanner
+        if (scanner == null) {
+            _etat.value = Etat(erreur = "Le Bluetooth est éteint ou indisponible sur ce téléphone.")
+            return
+        }
+        _trouvees.value = emptyList()
+        if (_etat.value.phase == Phase.ABSENTE) _etat.value = Etat(phase = Phase.RECHERCHE)
+        val filtres = listOf(MeshCore.SERVICE, Meshtastic.SERVICE).map {
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(it))).build()
+        }
+        scanner.startScan(filtres, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), ecouteRecherche)
+        // Une recherche qu'on oublie d'arrêter vide la batterie.
+        portee.launch { delay(30_000); arreterLaRecherche() }
+    }
+
+    fun arreterLaRecherche() {
+        runCatching { adaptateur?.bluetoothLeScanner?.stopScan(ecouteRecherche) }
+        if (_etat.value.phase == Phase.RECHERCHE) _etat.value = Etat()
+    }
+
+    // --- Connexion -----------------------------------------------------------------------
+
+    fun connecter(radio: RadioTrouvee) {
+        arreterLaRecherche()
+        voulue = radio
+        portee.launch { app.magasin.ecrire(FICHIER, "${radio.adresse}|${radio.protocole.name}|${radio.nom}") }
+        ouvrir(radio)
+    }
+
+    /** Au démarrage : retrouve la radio choisie la dernière fois. */
+    suspend fun reprendre() {
+        if (!autorise(app) || voulue != null) return
+        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 3) ?: return
+        val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
+        voulue = RadioTrouvee(parties[0], parties.getOrElse(2) { "Radio" }, protocole)
+        ouvrir(voulue!!)
+    }
+
+    fun deconnecter() {
+        voulue = null
+        portee.launch { app.magasin.effacer(FICHIER) }
+        fermer(null)
+    }
+
+    private fun ouvrir(radio: RadioTrouvee) {
+        val appareil = runCatching { adaptateur?.takeIf { it.isEnabled }?.getRemoteDevice(radio.adresse) }.getOrNull()
+        if (appareil == null || !autorise(app)) {
+            _etat.value = Etat(erreur = "Le Bluetooth est éteint ou indisponible sur ce téléphone.")
+            return
+        }
+        fermer(null, garderVoulue = true)
+        pilote = when (radio.protocole) {
+            Protocole.MESHCORE -> PiloteMeshCore()
+            Protocole.MESHTASTIC -> PiloteMeshtastic { Random.nextLong(1, 0xffffffffL) }
+        }
+        operations = Channel(Channel.UNLIMITED)
+        val file = operations
+        session = portee.launch { for (operation in file) runCatching { operation() } }
+        _etat.value = Etat(phase = Phase.CONNEXION, nom = radio.nom, protocole = radio.protocole)
+        gatt = appareil.connectGatt(app, false, ecouteGatt, BluetoothDevice.TRANSPORT_LE)
+    }
+
+    private fun fermer(erreur: String?, garderVoulue: Boolean = false) {
+        session?.cancel(); session = null
+        operations.close()
+        attente?.complete(null); attente = null
+        runCatching { gatt?.disconnect(); gatt?.close() }
+        gatt = null
+        pilote = null
+        app.lien.radio(false)
+        _etat.value = Etat(erreur = erreur)
+        // La radio s'est éloignée ou éteinte : on y revient, sans insister.
+        if (!garderVoulue && erreur != null) voulue?.let { radio ->
+            portee.launch { delay(20_000); if (voulue == radio && gatt == null) ouvrir(radio) }
+        }
+    }
+
+    private val ecouteGatt = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(g: BluetoothGatt, statut: Int, etat: Int) {
+            if (g != gatt) return
+            if (etat == BluetoothProfile.STATE_CONNECTED) {
+                // MeshCore exige des trames de 155 octets au moins ; on demande large.
+                if (!g.requestMtu(247)) g.discoverServices()
+            } else if (etat == BluetoothProfile.STATE_DISCONNECTED) {
+                fermer("La radio n'est plus à portée. Nouvelle tentative dans quelques instants.")
+            }
+        }
+
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, statut: Int) { if (g == gatt) g.discoverServices() }
+
+        override fun onServicesDiscovered(g: BluetoothGatt, statut: Int) {
+            if (g == gatt) operations.trySend { preparer(g) }
+        }
+
+        override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, statut: Int) {
+            attente?.complete(if (statut == BluetoothGatt.GATT_SUCCESS) ByteArray(0) else null)
+        }
+
+        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, statut: Int) {
+            attente?.complete(if (statut == BluetoothGatt.GATT_SUCCESS) ByteArray(0) else null)
+        }
+
+        // Android 13 et plus : la valeur arrive en paramètre.
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, valeur: ByteArray, statut: Int) {
+            attente?.complete(if (statut == BluetoothGatt.GATT_SUCCESS) valeur else null)
+        }
+
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, statut: Int) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                attente?.complete(if (statut == BluetoothGatt.GATT_SUCCESS) c.value ?: ByteArray(0) else null)
+            }
+        }
+
+        override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, valeur: ByteArray) = notifie(c, valeur)
+
+        @Deprecated("Deprecated in Java")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) notifie(c, c.value ?: ByteArray(0))
+        }
+    }
+
+    private fun notifie(c: BluetoothGattCharacteristic, valeur: ByteArray) {
+        when (c.uuid.toString().lowercase()) {
+            // MeshCore : la notification EST la trame.
+            MeshCore.TX -> operations.trySend { traiter(valeur) }
+            // Meshtastic : elle dit seulement « il y a quelque chose à lire ».
+            Meshtastic.FROM_NUM -> operations.trySend { lireToutMeshtastic() }
+        }
+    }
+
+    /** Après la découverte des services : appairage, notifications, présentation. */
+    private suspend fun preparer(g: BluetoothGatt) {
+        val p = pilote ?: return
+        // Le lien transporte du clair et des clés : pas de dialogue sans appairage chiffré.
+        if (g.device.bondState != BluetoothDevice.BOND_BONDED) {
+            g.device.createBond()
+            val appairee = withTimeoutOrNull(60_000) { while (g.device.bondState != BluetoothDevice.BOND_BONDED) delay(500); true }
+            if (appairee == null) { fermer("L'appairage avec la radio n'a pas abouti. Vérifiez le code affiché sur la radio."); return }
+        }
+        val (service, aNotifier) = when (p.protocole) {
+            Protocole.MESHCORE -> MeshCore.SERVICE to MeshCore.TX
+            Protocole.MESHTASTIC -> Meshtastic.SERVICE to Meshtastic.FROM_NUM
+        }
+        val notification = g.getService(UUID.fromString(service))?.getCharacteristic(UUID.fromString(aNotifier))
+        if (notification == null) { fermer("Cette radio ne propose pas le service attendu. Son firmware est peut-être trop ancien."); return }
+        g.setCharacteristicNotification(notification, true)
+        notification.getDescriptor(UUID.fromString(CCCD))?.let { descripteur ->
+            operation {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    g.writeDescriptor(descripteur, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    run { descripteur.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE; g.writeDescriptor(descripteur) }
+                }
+            }
+        }
+        p.ouverture(System.currentTimeMillis() / 1000).forEach { ecrire(it) }
+        if (p.periodeBattementMs > 0) {
+            val file = operations
+            portee.launch {
+                while (pilote === p) { delay(p.periodeBattementMs); p.battement()?.let { b -> file.trySend { ecrire(b) } } }
+            }
+        }
+    }
+
+    /** Une opération Bluetooth, et sa fin attendue. @return ce qu'elle a rendu, ou `null`. */
+    private suspend fun operation(lancer: () -> Boolean): ByteArray? {
+        val fin = CompletableDeferred<ByteArray?>()
+        attente = fin
+        if (!lancer()) { attente = null; return null }
+        return withTimeoutOrNull(8_000) { fin.await() }.also { attente = null }
+    }
+
+    private suspend fun ecrire(octets: ByteArray): Boolean {
+        val g = gatt ?: return false
+        val p = pilote ?: return false
+        val (service, cible) = when (p.protocole) {
+            Protocole.MESHCORE -> MeshCore.SERVICE to MeshCore.RX
+            Protocole.MESHTASTIC -> Meshtastic.SERVICE to Meshtastic.TO_RADIO
+        }
+        val c = g.getService(UUID.fromString(service))?.getCharacteristic(UUID.fromString(cible)) ?: return false
+        val ecrit = operation {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                g.writeCharacteristic(c, octets, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                run { c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT; c.value = octets; g.writeCharacteristic(c) }
+            }
+        } != null
+        // Meshtastic ne pousse rien : après chaque écriture, on va lire ce qu'il répond.
+        if (ecrit && p.protocole == Protocole.MESHTASTIC) lireToutMeshtastic()
+        return ecrit
+    }
+
+    private suspend fun lireToutMeshtastic() {
+        val g = gatt ?: return
+        val c = g.getService(UUID.fromString(Meshtastic.SERVICE))?.getCharacteristic(UUID.fromString(Meshtastic.FROM_RADIO)) ?: return
+        while (true) {
+            val trame = operation { g.readCharacteristic(c) } ?: return
+            if (trame.isEmpty()) return                      // file vide
+            traiter(trame)
+        }
+    }
+
+    /** Une trame de la radio : le pilote dit quoi répondre et ce qu'elle portait. */
+    private suspend fun traiter(trame: ByteArray) {
+        val p = pilote ?: return
+        val reaction = p.recevoir(trame)
+        _etat.value = _etat.value.copy(
+            phase = if (p.prete) Phase.PRETE else Phase.CONNEXION,
+            nom = p.identite ?: _etat.value.nom, canaux = p.canaux, erreur = null,
+        )
+        if (p.prete) app.lien.radio(true)
+        for (message in reaction.messages) {
+            val canal = p.canaux.firstOrNull { it.index == message.canal } ?: continue
+            // Le canal dit de quelle équipe il s'agit ; un canal qui n'est celui d'aucune de
+            // mes équipes ne me concerne pas.
+            val equipe = app.equipes.equipes.value.firstOrNull { p.canalNomme(canalDe(it, p.protocole))?.index == canal.index } ?: continue
+            app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis())
+        }
+        reaction.aEcrire.forEach { ecrire(it) }
+    }
+
+    // --- Émission ------------------------------------------------------------------------
+
+    override suspend fun envoyerAEquipe(equipe: Equipe, texte: String): String? {
+        val p = pilote?.takeIf { it.prete } ?: return null
+        val canal = p.canalNomme(canalDe(equipe, p.protocole)) ?: return null
+        val trames = p.envoyerSurCanal(canal.index, texte, System.currentTimeMillis() / 1000)
+        val fin = CompletableDeferred<Boolean>()
+        if (operations.trySend { fin.complete(trames.all { ecrire(it) }) }.isFailure) return null
+        return if (withTimeoutOrNull(20_000) { fin.await() } == true) p.protocole.name else null
+    }
+
+    /** Le canal de cette équipe sur la radio connectée, s'il y est. */
+    fun canalPour(equipe: Equipe): CanalRadio? = pilote?.let { it.canalNomme(canalDe(equipe, it.protocole)) }
+
+    private fun canalDe(equipe: Equipe, protocole: Protocole): String? =
+        if (protocole == Protocole.MESHCORE) equipe.canalMeshCore else equipe.canalMeshtastic
+
+    companion object {
+        private const val FICHIER = "radio"
+        private const val CCCD = "00002902-0000-1000-8000-00805f9b34fb"
+
+        val PERMISSIONS: Array<String> =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+
+        fun autorise(contexte: Context): Boolean =
+            PERMISSIONS.all { contexte.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    }
+}

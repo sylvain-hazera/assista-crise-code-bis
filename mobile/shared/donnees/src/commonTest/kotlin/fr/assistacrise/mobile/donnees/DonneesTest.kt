@@ -40,7 +40,12 @@ private class Banc(repondre: suspend MockRequestHandleScope.(HttpRequestData) ->
     val api = ClientApi(HttpClient(MockEngine { demande -> demandes += demande; repondre(demande) }), URL, session)
     val depot = DepotMissions(api, magasin, file)
     val equipes = DepotEquipes(api, magasin, file)
-    val synchro = Synchronisation(api, file, depot, equipes)
+    /** Ce que la radio a émis, par équipe. `radioPresente = false` : pas de radio connectée. */
+    val emisParRadio = mutableListOf<Pair<String, String>>()
+    var radioPresente = false
+    val synchro = Synchronisation(api, file, depot, equipes) { equipe, texte ->
+        if (radioPresente && equipe.canalMeshCore != null) { emisParRadio += equipe.nom to texte; "MESHCORE" } else null
+    }
 
     fun chemins() = demandes.map { "${it.method.value} ${it.url.encodedPath.removePrefix("/api/")}" }
 }
@@ -257,7 +262,7 @@ class MessagerieTest {
         val chemin = demande.url.encodedPath
         when {
             chemin.endsWith("token/") -> json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
-            chemin.endsWith("mes-equipes/") -> json("""[{"id":"t1","name":"Alpha","engagement_debut":"2026-11-14T10:00:00Z","mission_active_titre":"Reconnaissance"},{"id":"t2","name":"Bravo","engagement_debut":null}]""")
+            chemin.endsWith("mes-equipes/") -> json("""[{"id":"t1","name":"Alpha","engagement_debut":"2026-11-14T10:00:00Z","mission_active_titre":"Reconnaissance","canal_meshcore_nom":"#alpha"},{"id":"t2","name":"Bravo","engagement_debut":null}]""")
             demande.method == HttpMethod.Post -> if (ecriture() == HttpStatusCode.OK) json(fil) else respond("", ecriture())
             else -> json(fil)
         }
@@ -296,6 +301,79 @@ class MessagerieTest {
         assertTrue(banc.file.actions.value.isEmpty())
         assertEquals(2, banc.equipes.fils.value.getValue("t1").size)
         assertEquals("Nous sommes sur place", banc.demandes.last().corps().getValue("texte").jsonPrimitive.content)
+    }
+}
+
+class CoupureReseauTest {
+    private val fil = """{"messages":[{"event_id":"e9","source":"meshcore","texte":"Alex: Bien reçu","horodatage":5000,"expediteur_nom":"Alex"}]}"""
+
+    private fun banc(code: () -> HttpStatusCode) = Banc { demande ->
+        val chemin = demande.url.encodedPath
+        when {
+            chemin.endsWith("token/") -> json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
+            chemin.endsWith("mes-equipes/") -> json("""[{"id":"t1","name":"Alpha","canal_meshcore_nom":"#alpha"},{"id":"t2","name":"Bravo"}]""")
+            code() == HttpStatusCode.OK -> json(fil)
+            else -> respond("", code())
+        }
+    }
+
+    @Test fun sansReseauLeMessagePartParLaRadioUneSeuleFoisPuisEstRemisAuServeur() = runTest {
+        var code = HttpStatusCode.OK
+        val banc = banc { code }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.rafraichir()
+        code = HttpStatusCode.ServiceUnavailable
+        banc.radioPresente = true
+        banc.equipes.ecrire(banc.equipes.equipes.value.first(), "Nous sommes sur place")
+
+        banc.synchro.envoyerLaFile(force = true)
+        assertEquals(listOf("Alpha" to "Nous sommes sur place"), banc.emisParRadio)
+        val action = banc.file.actions.value.single()
+        assertTrue(action.parRadio && action.etat == EtatAction.EN_ATTENTE)
+        val bulle = filDeMessages(emptyList(), banc.file.actions.value, "t1").single()
+        assertTrue(bulle.parRadio && bulle.enAttente)
+
+        // Nouveaux essais sans réseau : la radio n'émet pas une seconde fois.
+        banc.synchro.envoyerLaFile(force = true)
+        assertEquals(1, banc.emisParRadio.size)
+
+        // Le réseau revient : le serveur reçoit le message, prévenu qu'il a déjà été émis.
+        code = HttpStatusCode.OK
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        assertEquals("MESHCORE", banc.demandes.last().corps().getValue("deja_emis_radio").jsonPrimitive.content)
+        assertTrue(banc.file.actions.value.isEmpty())
+    }
+
+    @Test fun uneEquipeSansCanalOuUnTelephoneSansRadioAttendSimplementLeReseau() = runTest {
+        var code = HttpStatusCode.OK
+        val banc = banc { code }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.rafraichir()
+        code = HttpStatusCode.ServiceUnavailable
+        banc.equipes.ecrire(banc.equipes.equipes.value.first(), "Sans radio")       // pas de radio connectée
+        banc.radioPresente = true
+        banc.equipes.ecrire(banc.equipes.equipes.value.last(), "Sans canal")        // Bravo n'a pas de canal
+        repeat(5) { banc.synchro.envoyerLaFile(force = true) }
+        assertEquals(listOf("Alpha" to "Sans radio"), banc.emisParRadio)            // le premier, une fois la radio là
+        assertEquals(listOf(true, false), banc.file.actions.value.map { it.parRadio })
+    }
+
+    @Test fun unMessageEntenduParLaRadioEntreDansLeFilPuisCedeLaPlaceACeluiDuServeur() = runTest {
+        var code = HttpStatusCode.ServiceUnavailable
+        val banc = banc { code }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 1000)
+        banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 4000)                 // le même, par un second relais
+        banc.equipes.entenduParRadio("t1", "Dominique: Jamais relayé", 2000)
+        val entendus = banc.equipes.fils.value.getValue("t1")
+        assertEquals(listOf("Alex" to "Bien reçu", "Dominique" to "Jamais relayé"), entendus.map { it.auteur to it.texte })
+        assertTrue(filDeMessages(entendus, emptyList(), "t1").all { it.parRadio })
+
+        // Le réseau revient : le serveur rend « Bien reçu » ; l'autre, qu'aucune passerelle
+        // n'a relayé, reste dans le fil du téléphone.
+        code = HttpStatusCode.OK
+        banc.equipes.rafraichirFil("t1")
+        assertEquals(listOf("Jamais relayé", "Bien reçu"), banc.equipes.fils.value.getValue("t1").map { it.texte.removePrefix("Alex: ") })
     }
 }
 

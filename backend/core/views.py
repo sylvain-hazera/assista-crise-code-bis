@@ -9894,6 +9894,18 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             if not texte:
                 return Response({"error": "texte requis."}, status=status.HTTP_400_BAD_REQUEST)
             urgent = bool(request.data.get('urgent'))
+            # Application mobile, après une coupure de réseau (14/11/2026) : le téléphone a
+            # déjà émis ce message sur le canal radio de l'équipe, par la radio de
+            # l'intervenant, et le remet maintenant au serveur. On l'enregistre sur ce
+            # protocole comme DÉJÀ ENVOYÉ : le pont ne le rediffuse pas une seconde fois, et
+            # l'exemplaire qu'une passerelle aurait entendu est reconnu comme son écho
+            # (`_sans_echos`). L'autre protocole, lui, reste à émettre : la radio du téléphone
+            # n'en parle qu'un. Toute autre valeur est ignorée — un client ne peut s'en servir
+            # que pour ne PAS faire émettre son propre message.
+            deja_emis_radio = str(request.data.get('deja_emis_radio') or '').upper()
+
+            def _statut_radio(protocole):
+                return StatutMessageMesh.ENVOYE if deja_emis_radio == protocole else StatutMessageMesh.EN_ATTENTE
 
             if salon.room_id:
                 envoyer_message_salon(salon.room_id, request.user, nom, texte, urgent=urgent)
@@ -9921,13 +9933,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 MessageCanalMeshtastic.objects.create(
                     canal=canal_meshtastic, direction=DirectionMessageMesh.SORTANT,
                     expediteur=request.user, contenu=texte,
-                    statut=StatutMessageMesh.EN_ATTENTE, environment=environment,
+                    statut=_statut_radio("MESHTASTIC"), environment=environment,
                 )
             if canal_meshcore is not None:
                 MessageCanalMeshCore.objects.create(
                     canal=canal_meshcore, direction=DirectionMessageMesh.SORTANT,
                     expediteur=request.user, contenu=texte,
-                    statut=StatutMessageMesh.EN_ATTENTE, environment=environment,
+                    statut=_statut_radio("MESHCORE"), environment=environment,
                 )
 
         noms = {str(m.id): nom_affichable(m, request) or m.email for m in team.members.all()}

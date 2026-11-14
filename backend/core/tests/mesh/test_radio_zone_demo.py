@@ -113,3 +113,31 @@ def test_messagerie_unifiee_masque_l_echo_de_nos_messages(create_user):
 
     assert reponse.status_code == 200, reponse.data
     assert [m["texte"] for m in reponse.data["messages"]] == ["recois tu le mesh ?", "Jean : reçu 5/5"]
+
+
+@pytest.mark.django_db
+def test_message_deja_emis_par_la_radio_du_telephone_n_est_pas_rediffuse(create_user):
+    """Application mobile, retour de réseau : le message a déjà voyagé sur le canal MeshCore
+    par la radio de l'intervenant. Le pont MeshCore ne doit pas le réémettre ; le pont
+    Meshtastic, lui, doit encore le porter à ceux qui sont sur l'autre réseau."""
+    from core.models import SalonMatrixEquipe, Team
+    membre = create_user(username="terrain-radio@test.fr", email="terrain-radio@test.fr", type="ADMIN")
+    equipe = Team.objects.create(name="Alpha radio")
+    equipe.members.add(membre)
+    SalonMatrixEquipe.objects.create(equipe=equipe)            # sans room_id : pas d'appel Matrix
+    meshtastic = CanalMeshtastic.objects.create(nom="AlphaMT", equipe=equipe, psk_hex="00" * 16)
+    meshcore = CanalMeshCore.objects.create(nom="#alpha", equipe=equipe)
+    client = APIClient()
+    client.force_authenticate(user=membre)
+    url = reverse('team-messagerie-unifiee', args=[equipe.id])
+
+    reponse = client.post(url, {"texte": "Nous sommes sur place", "deja_emis_radio": "meshcore"}, format="json")
+
+    assert reponse.status_code == 200
+    assert MessageCanalMeshCore.objects.get(canal=meshcore).statut == "ENVOYE"
+    assert MessageCanalMeshtastic.objects.get(canal=meshtastic).statut == "EN_ATTENTE"
+
+    # Sans le drapeau, ou avec une valeur inconnue, rien ne change : tout part par les ponts.
+    client.post(url, {"texte": "Second message", "deja_emis_radio": "n-importe-quoi"}, format="json")
+    assert MessageCanalMeshCore.objects.filter(canal=meshcore, statut="EN_ATTENTE").count() == 1
+    assert MessageCanalMeshtastic.objects.filter(canal=meshtastic, statut="EN_ATTENTE").count() == 2

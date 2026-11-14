@@ -59,6 +59,14 @@ class FileAttente(
         action
     }
 
+    /**
+     * Note qu'une action est partie par la radio. **À n'appeler que depuis le rappel de
+     * `vider`** : le verrou est déjà tenu, celle-ci ne le reprend pas.
+     */
+    suspend fun noterParRadio(id: String, protocole: String) {
+        enregistrer(_actions.value.map { if (it.id == id) it.copy(radio = protocole) else it })
+    }
+
     suspend fun retirer(id: String) = verrou.withLock {
         enregistrer(_actions.value.filterNot { it.id == id })
     }
@@ -86,10 +94,10 @@ class FileAttente(
                     enregistrer(_actions.value.filterNot { it.id == action.id })
                     accusees++
                 }
-                is Reponse.Refus -> remplacer(action.copy(etat = EtatAction.REFUSEE, erreur = r.message))
+                is Reponse.Refus -> remplacer(courante(action).copy(etat = EtatAction.REFUSEE, erreur = r.message))
                 is Reponse.Injoignable -> {
                     val tentatives = action.tentatives + 1
-                    remplacer(action.copy(
+                    remplacer(courante(action).copy(
                         tentatives = tentatives,
                         prochainEssai = horloge() + recul(tentatives),
                         erreur = r.message,
@@ -103,6 +111,9 @@ class FileAttente(
         }
         accusees
     }
+
+    /** L'action telle qu'elle est maintenant : le rappel a pu la marquer entre-temps. */
+    private fun courante(action: ActionEnAttente) = _actions.value.firstOrNull { it.id == action.id } ?: action
 
     private suspend fun remplacer(action: ActionEnAttente) =
         enregistrer(_actions.value.map { if (it.id == action.id) action else it })

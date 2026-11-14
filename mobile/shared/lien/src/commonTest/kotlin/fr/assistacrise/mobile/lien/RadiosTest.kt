@@ -82,7 +82,7 @@ class MeshtasticTest {
         assertIs<Meshtastic.Evenement.Autre>(Meshtastic.lire("121d0dfecaad0b15cdab34122a0c9999999999999999999999993506000000".depuisHex()))
         assertIs<Meshtastic.Evenement.Autre>(Meshtastic.lire("12150dfecaad0b15cdab34122209080312050d00000000".depuisHex()))
         assertIs<Meshtastic.Evenement.Progression>(Meshtastic.lire("2a0432023803".depuisHex()))
-        assertIs<Meshtastic.Evenement.Progression>(Meshtastic.lire("52130801120d1201011a0846725f454d434f4d1802".depuisHex()))
+        assertEquals(Meshtastic.Evenement.Canal(1, "Fr_EMCOM", 2), Meshtastic.lire("52130801120d1201011a0846725f454d434f4d1802".depuisHex()))
     }
 
     @Test fun uneTrameTronqueeEstRefusee() {
@@ -122,5 +122,69 @@ class TramePositionTest {
         val octets = TramePosition(TramePosition.Genre.POSITION, 1.0, 2.0, 3).enOctets()
         assertNull(TramePosition.lire(octets.copyOf(15)))
         assertNull(TramePosition.lire(octets.copyOf().also { it[0] = 0x21 }))
+    }
+}
+
+class PilotesTest {
+    private fun ficheCanal(index: Int, nom: String) =
+        byteArrayOf(18, index.toByte()) + nom.encodeToByteArray().copyOf(32) + ByteArray(16)
+
+    @Test fun meshCoreLitSesCanauxUnParUnPuisVideSesMessages() {
+        val pilote = PiloteMeshCore()
+        assertEquals(listOf("0103202020202020617373697374" + "61", "0660c51669", "1f00"), pilote.ouverture(1763100000).map { it.enHex() })
+        assertEquals("1f01", pilote.recevoir(ficheCanal(0, "Public")).aEcrire.single().enHex())
+        assertEquals("1f02", pilote.recevoir(ficheCanal(1, "")).aEcrire.single().enHex())          // emplacement libre
+        assertEquals("1f03", pilote.recevoir(ficheCanal(2, "#alpha")).aEcrire.single().enHex())
+        // La radio n'a pas d'emplacement 3 : fin de lecture, on vide les messages en attente.
+        assertEquals("0a", pilote.recevoir(byteArrayOf(1)).aEcrire.single().enHex())
+        assertEquals(true, pilote.prete)
+        assertEquals(listOf(CanalRadio(0, "Public"), CanalRadio(2, "#alpha")), pilote.canaux)
+        assertEquals(2, pilote.canalNomme("Alpha")?.index)
+        assertNull(pilote.canalNomme("bravo"))
+        assertNull(pilote.canalNomme(null))
+    }
+
+    @Test fun meshCoreEnvoieEtEntendSurUnCanal() {
+        val pilote = PiloteMeshCore()
+        assertEquals("03000260c51669" + "Sur place".encodeToByteArray().enHex(), pilote.envoyerSurCanal(2, "Sur place", 1763100000).single().enHex())
+        // Reçu en version 3 : type, SNR, 2 réservés, canal, chemin, type de texte, heure, texte.
+        val trame = ("11" + "0a0000" + "02" + "ff" + "00" + "60c51669").depuisHex() + "Alex: Bien reçu".encodeToByteArray()
+        val reaction = pilote.recevoir(trame)
+        assertEquals(listOf(MessageRadio(2, "Alex: Bien reçu")), reaction.messages)
+        assertEquals("0a", reaction.aEcrire.single().enHex())                                      // et on continue de vider
+        assertEquals("0a", pilote.recevoir(byteArrayOf(0x83.toByte())).aEcrire.single().enHex())
+    }
+
+    @Test fun meshtasticSePresenteEnDeuxTempsEtRetientSesCanaux() {
+        val pilote = PiloteMeshtastic { 7 }
+        assertEquals(listOf(Meshtastic.veutConfig(69420).enHex()), pilote.ouverture(0).map { it.enHex() })
+        pilote.recevoir("08071a0608cdd7d29101".depuisHex())
+        assertEquals("!1234abcd", pilote.identite)
+        pilote.recevoir("52130801120d1201011a0846725f454d434f4d1802".depuisHex())                 // canal 1, Fr_EMCOM
+        pilote.recevoir("520712031201011801".depuisHex())                                         // primaire sans nom
+        val suite = pilote.recevoir(Meshtastic.lireEcho(Meshtastic.veutConfig(69420))).aEcrire
+        assertEquals(listOf("3a020802", Meshtastic.veutConfig(69421).enHex()), suite.map { it.enHex() })
+        assertEquals(false, pilote.prete)
+        pilote.recevoir(Meshtastic.lireEcho(Meshtastic.veutConfig(69421)))
+        assertEquals(true, pilote.prete)
+        assertEquals(1, pilote.canalNomme("fr_emcom")?.index)
+        assertEquals("Primaire", pilote.canaux.first { it.index == 0 }.nom)
+        // Les battements suivants ne se répètent jamais : le firmware jetterait un doublon.
+        assertEquals("3a020803", pilote.battement().enHex())
+    }
+
+    @Test fun meshtasticEnvoieSurLeCanalEtNEcouteQueLesCanaux() {
+        val pilote = PiloteMeshtastic { 5 }
+        val envoi = pilote.envoyerSurCanal(1, "Route coupée D20", 0).single()
+        // À la réception, le même paquet porte en plus l'expéditeur ; le vecteur de référence le montre.
+        val recu = pilote.recevoir("12280dfecaad0b15ffffffff1801221508011211526f75746520636f7570c3a965204432303505000000".depuisHex())
+        assertEquals(listOf(MessageRadio(1, "Route coupée D20")), recu.messages)
+        // Ce que le pilote envoie se relit comme ce qu'il entend : même canal, même texte.
+        val relu = pilote.recevoir(envoi.copyOf().also { it[0] = 0x12 })
+        assertEquals(listOf(MessageRadio(1, "Route coupée D20")), relu.messages)
+        // Un message direct n'est pas un message de canal.
+        val direct = pilote.recevoir(("123d0dfecaad0b15cdab34122215080112114172726976c3a97320737572207a6f6e6535efbeadde3d60c5" +
+            "166945000050c04803609fffffffffffffffff01").depuisHex())
+        assertEquals(emptyList(), direct.messages)
     }
 }

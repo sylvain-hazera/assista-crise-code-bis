@@ -561,10 +561,10 @@ Résilience (`org.reserve_resilience.app`, serveur `app.reserve-resilience.org`)
 | **2** Carte | **fond IGN, ma position, positions des équipes** | points déclarés par un intervenant, photos, région hors ligne à la demande |
 | **3** Grand public | **fait pour trois gestes** : en sécurité, demander de l'aide, signaler | offre d'aide, photo, suivi de mes dépôts, SOS |
 | **4** Géoloc en mission | **fait** | mesure de batterie sur 8 h, envoi de la file application fermée |
-| **5** MeshCore | **protocole porté et testé** | la liaison Bluetooth, à écrire avec une radio en main |
-| **6** Meshtastic | **protocole porté et testé** | idem |
+| **5** MeshCore | **messages d'équipe par le canal radio, écrits et testés hors Bluetooth** | l'essai sur une vraie radio ; la position par radio |
+| **6** Meshtastic | **idem, derrière le même pilote** | idem |
 
-Vérifié : 54 tests de la logique partagée, et des parcours complets dans un émulateur contre
+Vérifié : 61 tests de la logique partagée, et des parcours complets dans un émulateur contre
 un serveur de test — création de compte, connexion, changement de statut serveur coupé puis
 envoi automatique, messagerie d'équipe, carte, démarrage du suivi sur engagement et arrêt à la
 mise au repos, reprise du suivi après arrêt forcé de l'application, les trois dépôts citoyens.
@@ -588,18 +588,43 @@ l'application : Synapse délègue sa connexion au service d'authentification Mat
 délègue à Django. Il faut y **déclarer l'application comme client**, puis essayer la
 connexion sur un vrai téléphone contre le vrai serveur. À faire avec Sylvain, pas à l'aveugle.
 
-### Lots 5 et 6 : ce qui est porté, ce qui ne l'est pas
+### Lots 5 et 6 : le canal radio de l'équipe, quand la 4G tombe
 
-Dans `mobile/shared/lien` : les trames MeshCore (présentation, heure, message direct, fiche
-de la radio), les messages Meshtastic (poignée de main en deux temps, battement, texte direct
-et de canal, port privé) avec un encodage protobuf écrit ici, et la **trame de position de
-seize octets** (§ 14). Les tests reprennent les vecteurs produits par les bibliothèques de
-référence.
+Demande de Sylvain du 14/11/2026 : « pense aux canaux Meshtastic ou MeshCore en cas de
+coupure 4G ». C'est le cas d'usage qui a guidé ces deux lots.
 
-Reste la liaison Bluetooth elle-même, l'appairage avec code, et la bascule à trois états :
-rien de cela ne se vérifie sans une radio. Et côté serveur, **les deux ponts ne savent pas
-encore lire la trame de position** — tant qu'ils ne le savent pas, elle n'a pas de
-destinataire.
+**Ce que fait l'application.** L'intervenant connecte sa radio dans l'écran Compte. Elle se
+décrit (ses canaux), et l'application dit, pour chaque équipe, si son canal s'y trouve. Puis :
+
+- **sans réseau, un message d'équipe part sur le canal radio de l'équipe**, une seule fois.
+  Il reste en file, marqué « parti par radio » : les coéquipiers l'ont entendu, le serveur
+  pas encore ;
+- **au retour du réseau, il est remis au serveur** avec le protocole par lequel il est déjà
+  parti (`deja_emis_radio`). Le serveur l'enregistre comme déjà émis sur ce réseau-là — le
+  pont ne le rediffuse pas, et l'exemplaire qu'une passerelle aurait entendu est reconnu
+  comme son écho — et le fait encore porter à l'autre réseau ;
+- **ce que la radio entend sur le canal d'une de mes équipes entre dans le fil**, marqué
+  « par radio », et y reste tant que le serveur ne le rend pas lui-même.
+
+L'application ne configure pas la radio (§ 2) : le canal doit déjà y être. C'est le serveur
+qui l'y pousse, par message direct, quand un membre équipé rejoint l'équipe.
+
+**Comment c'est construit.** Tout le dialogue est dans des *pilotes* passifs
+(`mobile/shared/lien/PiloteRadio.kt`) : on leur donne ce que la radio a dit, ils rendent ce
+qu'il faut répondre. Ni attente ni fil d'exécution, donc tout se teste sans radio, sur les
+vecteurs des bibliothèques de référence. `LienTerrain` tient sa promesse : au-dessus des
+pilotes, plus rien ne nomme un protocole — le lot 6 n'a pas touché aux lots 0 à 4.
+
+**Ce qui n'est pas vérifié, et il faut le lire comme tel.** La couche Bluetooth
+(`LiaisonRadio.kt`) — recherche, appairage, écritures, notifications — est écrite d'après
+les clients de référence et **n'a jamais parlé à une radio** : il n'y en avait pas, et un
+émulateur n'en simule pas. Le premier essai sur du matériel dira ce qui reste à corriger ;
+l'appairage et la reconnexion sont les deux endroits où je m'attends à des surprises.
+
+Reste à faire : la **position par radio** (la trame de seize octets existe et se teste, mais
+les deux ponts ne savent pas encore la lire, donc elle n'a pas de destinataire), la bascule à
+trois états avec ses délais (§ 14), et la radio tenue par le service de suivi, application
+fermée.
 
 ### Écarts et constats
 
@@ -620,10 +645,14 @@ destinataire.
    toute relecture. C'est le comportement du serveur, pas un choix de l'application.
 6. **La file ne part que tant que l'application ou le suivi tourne.** L'envoi application
    fermée (WorkManager) reste à faire.
-7. **Le mode se déduit du compte et des équipes** : rattaché à une institution, porteur d'un
+7. **Publication** : `scripts/publier-mobile.sh` construit l'APK et le dépose dans
+   `frontend/public/mobile/` ; il est servi par le site à `/mobile/reserve-resilience.apk`.
+   C'est un APK de développement, signé par une clé de test : bon pour des essais, pas pour
+   le Play Store.
+8. **Le mode se déduit du compte et des équipes** : rattaché à une institution, porteur d'un
    rôle institutionnel ou membre d'une équipe, on est intervenant ; sinon citoyen, et l'on ne
    voit que les crises et son compte.
-8. **La base locale est un jeu de fichiers chiffrés**, pas encore SQLite. Suffisant à ce
+9. **La base locale est un jeu de fichiers chiffrés**, pas encore SQLite. Suffisant à ce
    volume.
 
 Constat utile à la bascule vers le satellite (§ 14) : sur le Wi-Fi d'un satellite coupé

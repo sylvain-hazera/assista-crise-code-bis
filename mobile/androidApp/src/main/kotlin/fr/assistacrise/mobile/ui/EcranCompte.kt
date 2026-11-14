@@ -74,6 +74,8 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte) {
                 }
             }
 
+            SectionRadio(modele)
+
             Spacer(Modifier.height(28.dp))
             OutlinedButton(onClick = { confirmer = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Se déconnecter") }
             Spacer(Modifier.height(16.dp))

@@ -36,7 +36,8 @@ class Application : android.app.Application() {
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
     val citoyen by lazy { DepotCitoyen(api, magasin, file) }
-    val synchro by lazy { Synchronisation(api, file, depot, equipes) }
+    val radio by lazy { LiaisonRadio(this) }
+    val synchro by lazy { Synchronisation(api, file, depot, equipes, radio) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
 }

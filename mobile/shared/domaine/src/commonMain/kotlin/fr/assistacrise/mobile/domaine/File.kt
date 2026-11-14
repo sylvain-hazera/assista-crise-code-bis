@@ -31,7 +31,13 @@ data class ActionEnAttente(
     val prochainEssai: Long = 0,
     val etat: EtatAction = EtatAction.EN_ATTENTE,
     val erreur: String? = null,
+    /** Déjà parti par la radio, faute de réseau. Le serveur ne l'a pas encore : l'action
+     * reste en file pour lui être remise, en lui disant de ne pas le rediffuser. */
+    val radio: String? = null,
 ) {
+    /** Le protocole (`MESHCORE`, `MESHTASTIC`) par lequel l'action est déjà partie, s'il y en a un. */
+    val parRadio: Boolean get() = radio != null
+
     companion object {
         const val GENRE_STATUT_MISSION = "STATUT_MISSION"
         const val GENRE_MESSAGE_EQUIPE = "MESSAGE_EQUIPE"

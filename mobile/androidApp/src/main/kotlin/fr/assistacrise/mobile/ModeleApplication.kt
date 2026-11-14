@@ -51,6 +51,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val equipes = app.equipes.equipes
     val fils = app.equipes.fils
     val suivi = app.suivi.etat
+    val radio = app.radio.etat
+    val radiosTrouvees = app.radio.trouvees
     val crises = app.citoyen.crises
     val informations = app.citoyen.informations
     val typesDemande = app.citoyen.typesDemande
@@ -89,6 +91,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.citoyen.restaurer()
             // Le suivi était actif quand l'application a été fermée : il reprend.
             if (compte.value != null && suivi.value.actif) ServiceSuivi.demarrer(app)
+            if (compte.value != null) app.radio.reprendre()
             pret = true
             if (compte.value != null) synchroniser(force = true, bavard = false)
         }
@@ -189,6 +192,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             app.api.deconnecter()
             ServiceSuivi.arreter(app)
+            app.radio.deconnecter()
             app.depot.toutEffacer()
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
@@ -275,6 +279,16 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
         }
     }
+
+    // --- Radio ----------------------------------------------------------------------------
+
+    fun chercherDesRadios() = app.radio.chercher()
+    fun arreterLaRecherche() = app.radio.arreterLaRecherche()
+    fun connecterLaRadio(radio: LiaisonRadio.RadioTrouvee) = app.radio.connecter(radio)
+    fun deconnecterLaRadio() = app.radio.deconnecter()
+
+    /** Le canal de cette équipe sur la radio connectée, s'il y est configuré. */
+    fun canalRadioDe(equipe: Equipe) = app.radio.canalPour(equipe)
 
     // --- Mode citoyen ---------------------------------------------------------------------
 

@@ -63,7 +63,38 @@ class DepotEquipes(
         )
     }
 
+    /**
+     * La radio de ce téléphone vient d'entendre un message sur le canal de cette équipe. Il
+     * entre dans le fil tout de suite, marqué « par radio » : sans réseau, c'est le seul
+     * chemin par lequel il peut arriver.
+     */
+    suspend fun entenduParRadio(idEquipe: String, texte: String, maintenant: Long) {
+        // MeshCore écrit « Nom: texte » ; Meshtastic ne dit pas qui parle.
+        val coupe = texte.indexOf(": ").takeIf { it in 1..32 }
+        val message = MessageEquipe(
+            id = "${MessageEquipe.PREFIXE_RADIO_LOCALE}$maintenant-${texte.hashCode().toUInt().toString(16)}",
+            source = MessageEquipe.SOURCE_RADIO_LOCALE,
+            texte = if (coupe != null) texte.substring(coupe + 2) else texte,
+            horodatage = maintenant,
+            auteur = if (coupe != null) texte.substring(0, coupe) else "Par radio",
+        )
+        val fil = _fils.value[idEquipe] ?: emptyList()
+        // La même trame peut arriver par deux relais à quelques secondes d'écart.
+        if (fil.any { it.texte == message.texte && it.auteur == message.auteur && maintenant - it.horodatage < 120_000 }) return
+        ecrireFil(idEquipe, fil + message)
+    }
+
     internal suspend fun garderFil(idEquipe: String, messages: List<MessageEquipe>) {
+        // Ce que la radio a entendu ici reste dans le fil tant que le serveur ne le rend pas
+        // lui-même : une passerelle l'a peut-être relayé, peut-être pas.
+        val textesServeur = messages.map { it.texte }
+        val entendus = (_fils.value[idEquipe] ?: emptyList()).filter { local ->
+            local.id.startsWith(MessageEquipe.PREFIXE_RADIO_LOCALE) && textesServeur.none { it.endsWith(local.texte) }
+        }
+        ecrireFil(idEquipe, (messages + entendus).sortedBy { it.horodatage })
+    }
+
+    private suspend fun ecrireFil(idEquipe: String, messages: List<MessageEquipe>) {
         // On ne garde que la fin du fil : le téléphone n'est pas l'archive de l'équipe.
         val fin = messages.takeLast(FIL_GARDE)
         magasin.ecrire(fichierFil(idEquipe), json.encodeToString(ListSerializer(MessageEquipe.serializer()), fin))

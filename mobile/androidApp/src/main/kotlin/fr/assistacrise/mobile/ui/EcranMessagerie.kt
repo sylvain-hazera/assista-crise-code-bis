@@ -120,6 +120,8 @@ private fun Bulle(m: MessageAffiche) {
             // L'état est dit en mots : « en attente » n'est pas « envoyé ».
             val etat = when {
                 m.refus != null -> "Non envoyé : ${m.refus}"
+                // Parti par la radio pendant une coupure : les coéquipiers l'ont, le serveur pas encore.
+                m.enAttente && m.parRadio -> "Parti par radio · en attente du réseau"
                 m.enAttente -> "En attente d'envoi"
                 else -> listOfNotNull(heure(m.horodatage), "par radio".takeIf { m.parRadio }, "urgent".takeIf { m.urgent }).joinToString(" · ")
             }
