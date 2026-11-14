@@ -112,7 +112,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 tours++
                 if (compte.value == null) continue
                 val enAttente = file.value.any { it.etat == EtatAction.EN_ATTENTE }
-                if (enAttente || tours % 4 == 0) synchroniser(force = false, bavard = false)
+                // Un échec isolé laisse un doute : on le lève tout de suite, sans attendre
+                // le tour normal.
+                if (enAttente || app.lien.enDoute || tours % 4 == 0) synchroniser(force = app.lien.enDoute, bavard = false)
             }
         }
     }
@@ -125,6 +127,14 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     fun messageLu() { message = null }
+
+    /**
+     * L'application revient à l'écran. Android a pu l'endormir entre-temps : ce qu'elle
+     * affiche date, et ses connexions sont peut-être mortes. On relit tout de suite.
+     */
+    fun auPremierPlan() {
+        if (pret && compte.value != null) viewModelScope.launch { synchroniser(force = true, bavard = false) }
+    }
 
     // --- Compte --------------------------------------------------------------------------
 

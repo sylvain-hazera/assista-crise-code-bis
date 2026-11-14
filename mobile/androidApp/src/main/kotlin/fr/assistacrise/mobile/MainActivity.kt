@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import fr.assistacrise.mobile.ui.BarreDuBas
@@ -41,6 +42,11 @@ class MainActivity : ComponentActivity() {
                 val modele: ModeleApplication = viewModel(factory = ModeleApplication.Fabrique)
                 val compte by modele.compte.collectAsStateWithLifecycle()
                 val bandeau = remember { SnackbarHostState() }
+
+                LifecycleResumeEffect(Unit) {
+                    modele.auPremierPlan()
+                    onPauseOrDispose { }
+                }
 
                 LaunchedEffect(modele.message) {
                     modele.message?.let { bandeau.showSnackbar(it); modele.messageLu() }

@@ -7,7 +7,15 @@ import android.net.NetworkCapabilities
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** Ce que le système sait du réseau : une connexion à Internet, validée par lui, existe-t-elle ? */
+/**
+ * Ce que le système sait du réseau : y en a-t-il un qui prétend mener à Internet ?
+ *
+ * On ne lui demande PAS s'il l'a « validé ». Cette validation est une sonde vers des serveurs
+ * de Google : elle échoue derrière un réseau qui les filtre, sur le Wi-Fi d'un satellite
+ * coupé d'Internet, et elle clignote à chaque changement d'antenne — autant de cas où notre
+ * serveur, lui, répond très bien. Savoir si le serveur répond est le travail de
+ * `IndicateurLien`, qui le lui demande directement.
+ */
 class ObservateurReseau(contexte: Context) {
     private val gestionnaire = contexte.getSystemService(ConnectivityManager::class.java)
 
@@ -26,7 +34,5 @@ class ObservateurReseau(contexte: Context) {
     }
 
     private fun utilisable(capacites: NetworkCapabilities?): Boolean =
-        capacites != null &&
-            capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        capacites != null && capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
