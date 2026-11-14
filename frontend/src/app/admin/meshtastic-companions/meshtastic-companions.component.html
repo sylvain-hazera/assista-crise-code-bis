@@ -8,15 +8,13 @@
     Chiffrement réimplémenté à la main, non encore vérifié sur du vrai matériel — voir
     meshtastic-bridge/README.md.
   </p>
-  <p class="page-hint">
-    <strong>Pas de relais navigateur ici.</strong> Un nœud Meshtastic branché en USB ne peut
-    pas être relayé depuis cette page : son cadrage série (<code>0x94 0xC3</code>) n'est pas
-    implémenté dans le client web, qui ne parle que MeshCore. La page
-    <em>Companions MeshCore</em> propose un bouton « Connecter » ; celle-ci non, et c'est
-    volontaire plutôt qu'un oubli. Pour Meshtastic, il faut une machine où l'on peut installer
-    le profil passerelle du satellite.
-  </p>
 </div>
+
+<!-- « Un simple bouton connecter, et hop » : USB, Bluetooth ou réseau local. La radio se
+     présente elle-même ; une radio inconnue devient passerelle de l'institution courante. -->
+<app-connecter-radio [protocoles]="['MESHTASTIC']" (branche)="apresBranchement()"></app-connecter-radio>
+@if (relaisAvertissement) { <p class="page-hint">{{ relaisAvertissement }}</p> }
+<app-relais-locaux></app-relais-locaux>
 
 <div class="create-panel">
   <h3>Connexion locale directe (détection automatique)</h3>
@@ -123,6 +121,7 @@
           <th appThTri [table]="triCompagnons" cle="statut" libelle="Statut"></th>
           <th appThTri [table]="triCompagnons" cle="connexion" libelle="Dernière connexion"></th>
           <th appThTri [table]="triCompagnons" cle="id" libelle="ID"></th>
+          <th title="Relayer cette radio depuis ce poste">Relais</th>
           <th></th>
         </tr>
         <tr class="ligne-filtres">
@@ -134,6 +133,7 @@
           <th appThFiltre [table]="triCompagnons" cle="statut" libelle="le statut"></th>
           <th appThFiltre [table]="triCompagnons" cle="connexion" libelle="la dernière connexion"></th>
           <th appThFiltre [table]="triCompagnons" cle="id" libelle="l\'identifiant"></th>
+          <th></th>
           <th></th>
         </tr>
       </thead>
@@ -169,6 +169,7 @@
                 <input type="password" class="form-input form-input-sm" placeholder="Mot de passe (laisser vide = inchangé)" [(ngModel)]="editMqttPassword">
               </td>
               <td class="mono id-cell">{{ c.id }}</td>
+              <td></td>
               <td>
                 <button type="button" class="btn-primary sm" [disabled]="saving" (click)="enregistrerEdition(c)">Enregistrer</button>
                 <button type="button" class="btn-secondary sm" [disabled]="saving" (click)="annulerEdition()">Annuler</button>
@@ -199,13 +200,25 @@
               <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
               <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
               <td>
+                @if (!estAppareil(c)) {
+                  <span class="muet" title="Une connexion MQTT n'est pas un appareil : rien à brancher">—</span>
+                } @else if (relaisActifs.has(c.id)) {
+                  <button type="button" class="btn-danger-sm" (click)="debrancher(c)">Débrancher</button>
+                } @else {
+                  <app-connecter-radio [compact]="true" [protocoles]="['MESHTASTIC']"
+                                       [radio]="radioDeLigne(c)" [adresseParDefaut]="c.tcp_host || ''"
+                                       (branche)="apresBranchement()">
+                  </app-connecter-radio>
+                }
+              </td>
+              <td>
                 <button type="button" class="btn-secondary sm" (click)="commencerEdition(c)">Modifier</button>
                 <button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button>
               </td>
             </tr>
           }
         } @empty {
-          <tr><td colspan="9" class="empty">
+          <tr><td colspan="10" class="empty">
             {{ triCompagnons.filtreActif ? 'Aucune connexion ne correspond au filtre.' : 'Aucun companion déclaré pour l\'instant.' }}
           </td></tr>
         }

@@ -19,13 +19,19 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    CompagnonMeshCore, ContactInstitution, Institution, InstitutionType,
-    MeshCoreConnexionType, NoeudMeshUtilisateur, SessionRelaisNavigateur, UserRole,
+    CanalMeshtastic, CompagnonMeshCore, CompagnonMeshtastic, ContactInstitution,
+    DirectionMessageMesh,
+    Institution, InstitutionType, MeshCoreConnexionType, MessageMeshLog, MessageMeshtasticLog,
+    NoeudMeshUtilisateur, NoeudUtilisateurMeshtastic, SessionRelaisNavigateur,
+    StatutMessageMesh, UserRole,
 )
 from core.relais_navigateur import (
-    SECONDES_AVANT_SESSION_MORTE, compagnon_pour_noeud, fermer_sessions_mortes, ouvrir,
-    peut_relayer, radios_relayables, session_active,
+    SECONDES_AVANT_SESSION_MORTE, RelaisRefuse, fermer_sessions_mortes, identifier, ouvrir,
+    peut_relayer, radios_relayables, session_active, verifier_identite,
 )
+
+CLE_T_DECK = "aa" * 32
+IDENTITE_T_DECK = {"pubkey_hex": CLE_T_DECK, "nom": "T-Deck de Sylvain"}
 
 
 @pytest.fixture
@@ -162,46 +168,76 @@ class TestLeNoeudPersonnelDevientPasserelle:
         assert len(noeuds) == 1
         assert noeuds[0].pubkey_hex == "aa" * 32
 
-    def test_le_demarrage_le_promeut_en_companion(self, porteur_de_noeud):
-        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+    def test_brancher_son_noeud_le_declare_comme_passerelle(self, porteur_de_noeud):
+        """Le navigateur rapporte l'identité lue sur la radio ; le serveur reconnaît le nœud."""
+        compagnon, cree = identifier(porteur_de_noeud, "MESHCORE", IDENTITE_T_DECK, "PROD")
 
-        compagnon, erreur = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
-
-        assert erreur is None
-        assert compagnon.pubkey_hex == "aa" * 32
-        assert compagnon.connexion_type == MeshCoreConnexionType.SERIE
-        # La radio est sur le poste de la personne, pas sur le serveur : aucun pont Python ne
-        # doit essayer d'ouvrir ce périphérique.
-        assert compagnon.serie_device == "navigateur"
+        assert cree is True
+        assert compagnon.pubkey_hex == CLE_T_DECK
+        # Sur le poste de la personne, pas sur le serveur : aucun pont ne doit l'ouvrir.
+        assert compagnon.connexion_type == MeshCoreConnexionType.NAVIGATEUR
         assert compagnon.nom == "T-Deck de Sylvain"
 
-    def test_la_promotion_est_idempotente(self, porteur_de_noeud):
+    def test_l_identification_est_idempotente(self, porteur_de_noeud):
         """Rebrancher la radio demain ne doit pas créer un second companion."""
-        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
-
-        premier, _ = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
-        second, _ = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+        premier, _ = identifier(porteur_de_noeud, "MESHCORE", IDENTITE_T_DECK, "PROD")
+        second, cree = identifier(porteur_de_noeud, "MESHCORE", IDENTITE_T_DECK, "PROD")
 
         assert premier.id == second.id
-        assert CompagnonMeshCore.objects.filter(pubkey_hex="aa" * 32).count() == 1
+        assert cree is False
+        assert CompagnonMeshCore.objects.filter(pubkey_hex=CLE_T_DECK).count() == 1
 
     def test_une_fois_promu_il_n_apparait_qu_une_fois(self, porteur_de_noeud):
         """Sinon la même radio serait proposée deux fois dans la liste."""
-        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
-        compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+        identifier(porteur_de_noeud, "MESHCORE", IDENTITE_T_DECK, "PROD")
 
         compagnons, noeuds = radios_relayables(porteur_de_noeud)
 
         assert len(compagnons) == 1
         assert noeuds == []
 
-    def test_on_ne_promeut_pas_le_noeud_d_un_autre(self, porteur_de_noeud, membre):
-        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+    def test_on_ne_prend_pas_la_radio_d_un_autre(self, porteur_de_noeud, membre):
+        """La radio du porteur, branchée chez quelqu'un d'autre, n'est pas à lui."""
+        identifier(porteur_de_noeud, "MESHCORE", IDENTITE_T_DECK, "PROD")
 
-        compagnon, erreur = compagnon_pour_noeud(membre, noeud, "PROD")
+        with pytest.raises(RelaisRefuse):
+            identifier(membre, "MESHCORE", IDENTITE_T_DECK, "PROD")
 
-        assert compagnon is None
-        assert erreur
+    def test_un_benevole_ne_declare_pas_une_radio_inconnue(self, porteur_de_noeud):
+        """Sinon n'importe quel compte inscrit enregistrerait des passerelles."""
+        inconnue = {"pubkey_hex": "cc" * 32, "nom": "?"}
+
+        with pytest.raises(RelaisRefuse, match="Déclarez-la"):
+            identifier(porteur_de_noeud, "MESHCORE", inconnue, "PROD")
+
+    def test_un_responsable_declare_une_radio_inconnue_pour_son_institution(self, membre,
+                                                                             mairie):
+        """« Un simple bouton connecter, et hop, ça me rajoute comme passerelle de l'institution »."""
+        compagnon, cree = identifier(membre, "MESHCORE", {"pubkey_hex": "cc" * 32,
+                                                          "nom": "Heltec mairie"}, "PROD")
+
+        assert cree is True
+        assert compagnon.institution == mairie
+        assert compagnon.nom == "Heltec mairie"
+
+    def test_une_identite_mal_formee_est_refusee(self, administrateur):
+        with pytest.raises(RelaisRefuse):
+            identifier(administrateur, "MESHCORE", {"pubkey_hex": "zz"}, "PROD")
+
+    def test_la_mauvaise_radio_est_detectee(self, compagnon):
+        """Choisir « radio A » puis brancher la radio B attribuerait le trafic de B à A."""
+        compagnon.pubkey_hex = "dd" * 32
+        compagnon.save()
+
+        with pytest.raises(RelaisRefuse, match="n'est pas"):
+            verifier_identite(compagnon, IDENTITE_T_DECK)
+
+    def test_une_cle_inconnue_est_apprise_au_premier_branchement(self, compagnon):
+        """Comme le pont Python à sa première connexion réussie."""
+        verifier_identite(compagnon, IDENTITE_T_DECK)
+
+        compagnon.refresh_from_db()
+        assert compagnon.pubkey_hex == CLE_T_DECK
 
     def test_l_api_ouvre_le_relais_sur_un_noeud_personnel(self, porteur_de_noeud):
         """Le bout en bout : on branche, on démarre, le serveur rend le companion à utiliser."""
@@ -314,7 +350,7 @@ class TestLApi:
 
         assert reponse.status_code == status.HTTP_200_OK
         assert [c["id"] for c in reponse.data["compagnons"]] == [str(compagnon.id)]
-        assert reponse.data["session"] is None
+        assert reponse.data["sessions"] == []
 
     def test_elle_ne_liste_pas_les_radios_des_autres(self, etranger, compagnon):
         reponse = _client(etranger).get(reverse("relais_serie"))
@@ -368,3 +404,206 @@ class TestLaFailleFermee:
                                       {"compagnon": str(compagnon.id)})
 
         assert reponse.status_code == status.HTTP_200_OK
+
+
+class TestUnPontTientDejaLaRadio:
+    def test_on_ne_relaie_pas_une_radio_qu_un_pont_tient(self, membre, compagnon):
+        """Deux relais dépileraient la même file : chaque message partirait deux fois."""
+        compagnon.dernier_etat = "CONNECTE"
+        compagnon.derniere_connexion = timezone.now()
+        compagnon.save()
+
+        session, erreur = ouvrir(membre, compagnon, "PROD")
+
+        assert session is None
+        assert "pont" in erreur
+
+    def test_un_pont_silencieux_ne_bloque_plus(self, membre, compagnon):
+        compagnon.dernier_etat = "CONNECTE"
+        compagnon.derniere_connexion = timezone.now() - timezone.timedelta(minutes=10)
+        compagnon.save()
+
+        session, erreur = ouvrir(membre, compagnon, "PROD")
+
+        assert erreur is None
+
+
+class TestMarquerUnEnvoi:
+    """Régression du 14/11/2026, trouvée en relisant la permission.
+
+    Un relais marque un envoi par `PATCH /messages-meshcore/<id>/ {statut}` — sans répéter son
+    companion. La permission le refusait toujours : en situation, le navigateur aurait renvoyé
+    le même message à chaque cycle, indéfiniment."""
+
+    def test_un_relais_vivant_marque_SON_message_envoye(self, membre, compagnon):
+        ouvrir(membre, compagnon, "PROD")
+        message = MessageMeshLog.objects.create(
+            compagnon=compagnon, direction=DirectionMessageMesh.SORTANT,
+            contact_pubkey_hex="ee" * 32, contenu="Rentrez à la base", environment="PROD")
+
+        reponse = _client(membre).patch(f"/api/messages-meshcore/{message.id}/",
+                                        {"statut": "ENVOYE"}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK, reponse.data
+        message.refresh_from_db()
+        assert message.statut == StatutMessageMesh.ENVOYE
+
+    def test_on_ne_marque_pas_le_message_d_une_autre_radio(self, membre, compagnon, mairie):
+        ouvrir(membre, compagnon, "PROD")
+        autre = CompagnonMeshCore.objects.create(
+            institution=mairie, nom="Autre radio", environment="PROD",
+            connexion_type=MeshCoreConnexionType.SERIE)
+        message = MessageMeshLog.objects.create(
+            compagnon=autre, direction=DirectionMessageMesh.SORTANT,
+            contact_pubkey_hex="ee" * 32, contenu="x", environment="PROD")
+
+        reponse = _client(membre).patch(f"/api/messages-meshcore/{message.id}/",
+                                        {"statut": "ENVOYE"}, format="json")
+
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ══ Meshtastic ════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+def radio_meshtastic(mairie):
+    return CompagnonMeshtastic.objects.create(
+        institution=mairie, nom="T-Beam de la mairie", environment="PROD",
+        connexion_type=MeshCoreConnexionType.NAVIGATEUR, node_num=0x1234ABCD)
+
+
+class TestMeshtastic:
+    def test_brancher_son_noeud_meshtastic_le_declare(self, create_user):
+        porteur = create_user(username="porteur-mt@test.fr", email="porteur-mt@test.fr",
+                              type=UserRole.SIMPLE_USER)
+        NoeudUtilisateurMeshtastic.objects.create(
+            utilisateur=porteur, node_num=0x0BADCAFE, environment="PROD")
+
+        compagnon, cree = identifier(porteur, "MESHTASTIC",
+                                     {"node_num": 0x0BADCAFE, "nom": "Rak de Fred"}, "PROD")
+
+        assert cree is True
+        assert isinstance(compagnon, CompagnonMeshtastic)
+        assert compagnon.node_num == 0x0BADCAFE
+        assert compagnon.connexion_type == MeshCoreConnexionType.NAVIGATEUR
+
+    def test_le_numero_de_diffusion_n_est_pas_un_noeud(self, administrateur):
+        with pytest.raises(RelaisRefuse):
+            identifier(administrateur, "MESHTASTIC", {"node_num": 0xFFFFFFFF}, "PROD")
+
+    def test_la_mauvaise_radio_meshtastic_est_detectee(self, radio_meshtastic):
+        with pytest.raises(RelaisRefuse, match="n'est pas"):
+            verifier_identite(radio_meshtastic, {"node_num": 0x11111111})
+
+    def test_l_api_ouvre_un_relais_meshtastic_par_l_identite(self, membre, radio_meshtastic):
+        reponse = _client(membre).post(reverse("relais_serie"), {
+            "protocole": "MESHTASTIC", "identite": {"node_num": 0x1234ABCD},
+            "transport": "WIFI",
+        }, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK, reponse.data
+        assert reponse.data["compagnon"] == str(radio_meshtastic.id)
+        session = SessionRelaisNavigateur.objects.get(utilisateur=membre)
+        assert session.compagnon_meshtastic == radio_meshtastic
+        assert session.transport == "WIFI"
+
+    def test_un_relais_vivant_lit_SA_file_meshtastic(self, membre, radio_meshtastic):
+        ouvrir(membre, radio_meshtastic, "PROD")
+
+        reponse = _client(membre).get("/api/messages-meshtastic/a-envoyer/",
+                                      {"compagnon": str(radio_meshtastic.id)})
+
+        assert reponse.status_code == status.HTTP_200_OK
+
+    def test_une_session_meshcore_ne_donne_pas_la_file_meshtastic(self, membre, compagnon,
+                                                                  radio_meshtastic):
+        ouvrir(membre, compagnon, "PROD")
+
+        reponse = _client(membre).get("/api/messages-meshtastic/a-envoyer/",
+                                      {"compagnon": str(compagnon.id)})
+
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_un_relais_depose_un_dm_entrant_et_le_marque(self, membre, radio_meshtastic):
+        ouvrir(membre, radio_meshtastic, "PROD")
+        client = _client(membre)
+
+        depot = client.post("/api/messages-meshtastic/", {
+            "compagnon": str(radio_meshtastic.id), "direction": "ENTRANT",
+            "contact_node_num": 0x0BADCAFE, "contenu": "Arrivés sur zone",
+        }, format="json")
+        assert depot.status_code == status.HTTP_201_CREATED, depot.data
+
+        sortant = MessageMeshtasticLog.objects.create(
+            compagnon=radio_meshtastic, direction=DirectionMessageMesh.SORTANT,
+            contact_node_num=0x0BADCAFE, contenu="Reçu", environment="PROD")
+        marque = client.patch(f"/api/messages-meshtastic/{sortant.id}/", {"statut": "ENVOYE"},
+                              format="json")
+        assert marque.status_code == status.HTTP_200_OK, marque.data
+
+    def test_un_relais_depose_un_message_de_canal_entrant(self, membre, radio_meshtastic,
+                                                         mairie):
+        """Le compagnon est nommé dans l'URL : dans le corps, il ciblerait le message.
+
+        Le canal est obligatoire et non nul : le navigateur le retrouve par son NOM, lu dans la
+        configuration de la radio, parmi les canaux déclarés (`/canaux-meshtastic/`, sans PSK).
+        """
+        canal = CanalMeshtastic.objects.create(nom="Fr_EMCOM", institution=mairie,
+                                               environment="PROD")
+        ouvrir(membre, radio_meshtastic, "PROD")
+
+        depot = _client(membre).post(
+            f"/api/messages-canal-meshtastic/?compagnon={radio_meshtastic.id}",
+            {"direction": "ENTRANT", "contact_node_num": 0x0BADCAFE, "contenu": "Route coupée",
+             "canal": str(canal.id)},
+            format="json")
+
+        assert depot.status_code == status.HTTP_201_CREATED, depot.data
+
+    def test_le_pont_meshtastic_n_ouvre_pas_une_radio_de_navigateur(self, create_user,
+                                                                   radio_meshtastic):
+        """Il traite tout type inconnu comme du MQTT : il se connecterait au broker avec
+        l'identité de cette radio."""
+        pont = create_user(username="pont-mt@test.fr", email="pont-mt@test.fr",
+                           type=UserRole.SIMPLE_USER)
+        pont.compte_service_pont = True
+        pont.save()
+
+        reponse = _client(pont).get("/api/compagnons-meshtastic/actifs-avec-identifiants/")
+
+        assert str(radio_meshtastic.id) not in [c["id"] for c in reponse.json()]
+
+
+class TestLaFailleMeshtasticFermee:
+    """Mêmes trous que MeshCore la veille, constatés le 14/11/2026."""
+
+    def test_sans_relais_on_ne_lit_pas_la_file_meshtastic(self, etranger, radio_meshtastic):
+        reponse = _client(etranger).get("/api/messages-meshtastic/a-envoyer/",
+                                        {"compagnon": str(radio_meshtastic.id)})
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_sans_compagnon_la_file_globale_meshtastic_n_est_plus_servie(self, membre,
+                                                                        radio_meshtastic):
+        ouvrir(membre, radio_meshtastic, "PROD")
+        reponse = _client(membre).get("/api/messages-meshtastic/a-envoyer/")
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_on_ne_depose_pas_un_faux_dm_entrant(self, etranger, radio_meshtastic):
+        reponse = _client(etranger).post("/api/messages-meshtastic/", {
+            "compagnon": str(radio_meshtastic.id), "direction": "ENTRANT",
+            "contact_node_num": 1, "contenu": "faux",
+        }, format="json")
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_on_ne_depose_pas_un_faux_message_de_canal(self, etranger, radio_meshtastic):
+        reponse = _client(etranger).post("/api/messages-canal-meshtastic/", {
+            "direction": "ENTRANT", "contact_node_num": 1, "contenu": "faux",
+        }, format="json")
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_le_chat_de_canal_sortant_reste_ouvert(self, etranger):
+        """Le durcissement ne touche que l'entrant : le sortant garde la règle historique."""
+        reponse = _client(etranger).post("/api/messages-canal-meshtastic/", {
+            "direction": "SORTANT", "contenu": "test",
+        }, format="json")
+        assert reponse.status_code != status.HTTP_403_FORBIDDEN

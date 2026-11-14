@@ -15,6 +15,11 @@
     l'application, mais leur paramétrage ne se consulte ni ne se modifie qu'en zone réelle.
   </div>
 } @else {
+<!-- En tête de page : c'est le geste demandé (« un simple bouton connecter, et hop »). La radio
+     se présente elle-même ; une radio inconnue devient passerelle de l'institution courante. -->
+<app-connecter-radio [protocoles]="['MESHCORE']" (branche)="apresBranchement()"></app-connecter-radio>
+<app-relais-locaux></app-relais-locaux>
+
 <div class="create-panel">
   <h3>Connexion locale directe (détection automatique)</h3>
   <p class="page-hint">
@@ -158,12 +163,10 @@
                   Débrancher
                 </button>
               } @else {
-                <button type="button" class="btn-secondary-sm"
-                        [disabled]="!relayable(c) || relaisEnCours === c.id"
-                        [title]="relayable(c) ? 'Choisir le port USB de cette radio et la relayer depuis ce poste' : raisonNonRelayable(c)"
-                        (click)="brancher(c)">
-                  {{ relaisEnCours === c.id ? 'Connexion…' : 'Connecter' }}
-                </button>
+                <!-- Le serveur vérifie que la radio branchée est bien CETTE ligne. -->
+                <app-connecter-radio [compact]="true" [protocoles]="['MESHCORE']"
+                                     [radio]="radioDeLigne(c)" (branche)="apresBranchement()">
+                </app-connecter-radio>
               }
             </td>
             <td>
@@ -188,16 +191,10 @@
     </table>
   </div>
 
-  @if (relaisErreur) {
-    <p class="error-message">{{ relaisErreur }}</p>
-  }
   @if (relaisAvertissement) {
     <p class="page-hint">{{ relaisAvertissement }}</p>
   }
 
-  <!-- Les radios que CE poste relaie. Composant partagé : même liste et mêmes compteurs ici,
-       sur la page Meshtastic et sur la page publique « Devenir passerelle ». -->
-  <app-relais-locaux></app-relais-locaux>
 }
 
 @if (tracerouteCompagnonId) {

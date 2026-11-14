@@ -1,0 +1,72 @@
+<div class="connecter" [class.compact]="compact">
+  @if (!compact) {
+    <div class="entete">
+      <span class="material-icons">settings_input_antenna</span>
+      <div>
+        <strong>Connecter une radio</strong>
+        <p>
+          Elle devient passerelle de votre institution depuis ce poste, sans rien installer.
+          La radio dit elle-même qui elle est : rien à déclarer d'avance.
+        </p>
+      </div>
+    </div>
+
+    @if (protocoles.length > 1) {
+      <div class="protocoles" role="radiogroup" aria-label="Protocole de la radio">
+        @for (p of protocoles; track p) {
+          <label [class.choisi]="protocole === p">
+            <input type="radio" name="protocole" [value]="p" [(ngModel)]="protocole">
+            {{ libelleProtocole(p) }}
+          </label>
+        }
+      </div>
+    }
+  }
+
+  <div class="boutons">
+    @for (t of transports; track t.nom) {
+      <!-- En ligne de tableau, le Wi-Fi MeshCore n'est jamais possible : inutile d'encombrer. -->
+      @if (!(compact && t.nom === 'WIFI' && protocole === 'MESHCORE')) {
+        <button type="button" class="transport"
+                [disabled]="!!raison(t.nom) || !!enCours"
+                [title]="raison(t.nom) || ('Connecter en ' + t.libelle)"
+                (click)="connecter(t.nom)">
+          <span class="material-icons">{{ t.icone }}</span>
+          @if (enCours === t.nom) { Connexion… } @else { {{ t.libelle }} }
+        </button>
+      }
+    }
+  </div>
+
+  @if (saisieAdresse || (!compact && protocole === 'MESHTASTIC' && adresse)) {
+    <form class="adresse" (ngSubmit)="connecter('WIFI')">
+      <label>
+        <span>Adresse de la radio</span>
+        <input type="text" name="adresse" [(ngModel)]="adresse" placeholder="192.168.1.50"
+               autocomplete="off" spellcheck="false">
+      </label>
+      <button type="submit" class="transport" [disabled]="!!enCours || !adresse.trim()">
+        <span class="material-icons">wifi</span>
+        @if (enCours === 'WIFI') { Connexion… } @else { Connecter }
+      </button>
+    </form>
+  }
+
+  @if (!compact && protocole === 'MESHCORE') {
+    <p class="aide">
+      Bluetooth : à la première connexion, le système demande le code d'appairage affiché sur
+      la radio (souvent 123456 sur les modèles sans écran). Le Wi-Fi n'est pas proposé : un
+      companion MeshCore y parle du TCP brut, qu'aucun navigateur ne sait ouvrir.
+    </p>
+  }
+  @if (!compact && protocole === 'MESHTASTIC') {
+    <p class="aide">
+      Réseau local : le navigateur demandera d'autoriser l'accès aux appareils du réseau local.
+      Dans tous les cas, fermez l'application Meshtastic du téléphone sur ce nœud : il ne sert
+      qu'un client à la fois.
+    </p>
+  }
+
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+  @if (avertissement) { <p class="avertissement">{{ avertissement }}</p> }
+</div>

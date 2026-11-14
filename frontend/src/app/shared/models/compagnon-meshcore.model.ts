@@ -1,4 +1,5 @@
-export type MeshCoreConnexionType = 'TCP' | 'SERIE' | 'BLE';
+/** `NAVIGATEUR` : radio relayée par un navigateur (core/relais_navigateur.py). */
+export type MeshCoreConnexionType = 'TCP' | 'SERIE' | 'BLE' | 'NAVIGATEUR';
 
 export interface CompagnonMeshCore {
   id: string;

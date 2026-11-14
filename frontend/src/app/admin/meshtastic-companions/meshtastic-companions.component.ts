@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -10,6 +11,9 @@ import { NoeudUtilisateurMeshtasticService } from '../../services/noeud-utilisat
 import { UserService } from '../../services/user.service';
 import { RattachementNoeudRadioService } from '../../services/rattachement-noeud-radio.service';
 import { AuthService } from '../../auth/services/auth.service';
+import { RelaisLocalService } from '../../services/relais-local.service';
+import { ConnecterRadioComponent } from '../../shared/components/common/connecter-radio/connecter-radio.component';
+import { RelaisLocauxComponent } from '../../shared/components/common/relais-locaux/relais-locaux.component';
 import { CompagnonMeshtastic } from '../../shared/models/compagnon-meshtastic.model';
 import { CanalMeshtastic } from '../../shared/models/canal-meshtastic.model';
 import { ContactMeshtastic } from '../../shared/models/contact-meshtastic.model';
@@ -28,11 +32,17 @@ import { ThFiltreComponent, ThTriComponent } from '../../shared/components/commo
 @Component({
   selector: 'app-meshtastic-companions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ThTriComponent, ThFiltreComponent],
+  imports: [CommonModule, FormsModule, ThTriComponent, ThFiltreComponent, ConnecterRadioComponent,
+            RelaisLocauxComponent],
   templateUrl: './meshtastic-companions.component.html',
   styleUrl: './meshtastic-companions.component.scss',
 })
-export class MeshtasticCompanionsComponent implements OnInit {
+export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
+  /** Relais navigateur (14/11/2026) : les lignes relayées depuis CE poste. */
+  relaisActifs = new Set<string>();
+  relaisAvertissement = '';
+  private abonnementRelais: Subscription | null = null;
+
 
   companions: CompagnonMeshtastic[] = [];
   loading = true;
@@ -156,9 +166,39 @@ export class MeshtasticCompanionsComponent implements OnInit {
     private userService: UserService,
     private rattachementService: RattachementNoeudRadioService,
     private auth: AuthService,
+    private moteurRelais: RelaisLocalService,
   ) {}
 
+  ngOnDestroy(): void {
+    // On se désabonne, on n'arrête PAS les relais : ils vivent dans un service.
+    this.abonnementRelais?.unsubscribe();
+  }
+
+  // ══ Relais navigateur ═══════════════════════════════════════════════════════
+  //
+  // USB, Bluetooth ou réseau local. Un companion MQTT n'est pas un appareil : rien à brancher.
+  // Un companion TCP a déjà son adresse, reprise pour le réseau local.
+
+  estAppareil(c: CompagnonMeshtastic): boolean {
+    return c.connexion_type !== 'MQTT';
+  }
+
+  radioDeLigne(c: CompagnonMeshtastic): { genre: 'compagnon'; id: string; nom: string } {
+    return { genre: 'compagnon', id: c.id, nom: c.nom };
+  }
+
+  debrancher(c: CompagnonMeshtastic): void {
+    void this.moteurRelais.debrancher(c.id);
+  }
+
+  apresBranchement(): void {
+    this.relaisAvertissement = this.moteurRelais.dernierAvertissement;
+    this.load();
+  }
+
   ngOnInit(): void {
+    this.abonnementRelais = this.moteurRelais.liste().subscribe(
+      liste => { this.relaisActifs = new Set(liste.map(r => r.compagnonId)); });
     this.load();
     this.loadCanaux();
     this.loadNoeuds();

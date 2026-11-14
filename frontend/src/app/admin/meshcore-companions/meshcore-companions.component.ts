@@ -6,6 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { CompagnonMeshCoreService } from '../../services/compagnon-meshcore.service';
 import { RelaisLocalService } from '../../services/relais-local.service';
 import { RelaisLocauxComponent } from '../../shared/components/common/relais-locaux/relais-locaux.component';
+import { ConnecterRadioComponent } from '../../shared/components/common/connecter-radio/connecter-radio.component';
 import { MeshLocalDetecterService } from '../../services/mesh-local-detecter.service';
 import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
@@ -44,7 +45,7 @@ interface LigneInfrastructure {
 @Component({
   selector: 'app-meshcore-companions',
   standalone: true,
-  imports: [CommonModule, FormsModule, RelaisLocauxComponent],
+  imports: [CommonModule, FormsModule, RelaisLocauxComponent, ConnecterRadioComponent],
   templateUrl: './meshcore-companions.component.html',
   styleUrl: './meshcore-companions.component.scss',
 })
@@ -56,9 +57,6 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
 
   /** Relais navigateur : branchement d'une radio en USB sur CE poste. Le moteur vit dans un
    * service, donc le relais survit au changement de page — voir RelaisLocalService. */
-  readonly relaisSupporte: boolean;
-  relaisEnCours = '';
-  relaisErreur = '';
   relaisAvertissement = '';
   relaisActifs = new Set<string>();
   private abonnementRelais: Subscription | null = null;
@@ -128,9 +126,7 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     private userService: UserService,
     private authService: AuthService,
     private moteurRelais: RelaisLocalService,
-  ) {
-    this.relaisSupporte = this.moteurRelais.supporte;
-  }
+  ) {}
 
   ngOnInit(): void {
     this.isDemo = this.authService.getEnvironment() === 'DEMO';
@@ -151,43 +147,19 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
 
   // ══ Relais navigateur ═══════════════════════════════════════════════════════
   //
-  // Demande du 14/11/2026 : « un simple bouton connecter, et hop » — sur CETTE page, qui a déjà
-  // la liste des companions, et plusieurs radios à la fois sans changer d'onglet.
-  //
-  // Seules les radios en SÉRIE sont branchables : un navigateur ne peut pas ouvrir de TCP brut,
-  // donc un companion déclaré en TCP ou en BLE n'est pas relayable depuis ici. Le bouton est
-  // désactivé avec la raison en infobulle plutôt que caché — sinon on cherche pourquoi.
+  // Demande du 14/11/2026 : « un simple bouton connecter, et hop » — sur CETTE page, plusieurs
+  // radios sans changer d'onglet. Le branchement lui-même est dans <app-connecter-radio> (USB,
+  // Bluetooth ; le Wi-Fi MeshCore est du TCP brut, impossible depuis un navigateur), le moteur
+  // dans RelaisLocalService. Ici il ne reste qu'à savoir quelles lignes sont relayées.
 
-  relayable(c: CompagnonMeshCore): boolean {
-    return this.relaisSupporte && c.connexion_type === 'SERIE';
+  radioDeLigne(c: CompagnonMeshCore): { genre: 'compagnon'; id: string; nom: string } {
+    return { genre: 'compagnon', id: c.id, nom: c.nom };
   }
 
-  raisonNonRelayable(c: CompagnonMeshCore): string {
-    if (!this.relaisSupporte) {
-      return "Ce navigateur n'expose pas l'accès au port USB. Chrome ou Edge sont nécessaires.";
-    }
-    if (c.connexion_type === 'TCP') {
-      return 'Radio déclarée en TCP : un navigateur ne peut pas ouvrir de connexion TCP brute. '
-        + 'Seul l\'USB est possible depuis ici.';
-    }
-    if (c.connexion_type === 'BLE') {
-      return 'Radio déclarée en Bluetooth : non implémenté depuis le navigateur.';
-    }
-    return '';
-  }
-
-  async brancher(c: CompagnonMeshCore): Promise<void> {
-    this.relaisErreur = '';
-    this.relaisAvertissement = '';
-    this.relaisEnCours = c.id;
-    try {
-      await this.moteurRelais.brancher({ genre: 'compagnon', id: c.id, nom: c.nom });
-      this.relaisAvertissement = this.moteurRelais.dernierAvertissement;
-    } catch (e) {
-      this.relaisErreur = `« ${c.nom} » : ${this.moteurRelais.lisible(e)}`;
-    } finally {
-      this.relaisEnCours = '';
-    }
+  /** Un branchement a peut-être créé un companion (radio inconnue) : on recharge la liste. */
+  apresBranchement(): void {
+    this.relaisAvertissement = this.moteurRelais.dernierAvertissement;
+    this.load();
   }
 
   debrancher(c: CompagnonMeshCore): void {

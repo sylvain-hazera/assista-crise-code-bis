@@ -6719,6 +6719,11 @@ class MeshCoreConnexionType(models.TextChoices):
     TCP = "TCP", "TCP (réseau)"
     SERIE = "SERIE", "Série (USB)"
     BLE = "BLE", "Bluetooth (BLE)"
+    # Radio tenue par un NAVIGATEUR (relais navigateur, core/relais_navigateur.py), branchée sur
+    # le poste de quelqu'un. Aucun pont ne doit essayer de l'ouvrir : elle n'est pas sur sa
+    # machine. Le transport réel (USB, Bluetooth) est porté par la session, pas ici — la même
+    # radio peut être relayée en USB aujourd'hui et en Bluetooth demain.
+    NAVIGATEUR = "NAVIGATEUR", "Relayée par un navigateur"
 
 
 class CompagnonMeshCore(EnvironmentScopedModel):
@@ -7239,6 +7244,14 @@ class SalonMatrixInstitution(EnvironmentScopedModel):
         return f"Salon Matrix {self.get_type_display()} de {self.institution.nom}"
 
 
+class TransportRelais(models.TextChoices):
+    USB = "USB", "USB (Web Serial)"
+    BLE = "BLE", "Bluetooth (Web Bluetooth)"
+    # Meshtastic seulement : l'API HTTP du nœud. MeshCore en Wi-Fi parle du TCP brut, qu'aucun
+    # navigateur ne sait ouvrir.
+    WIFI = "WIFI", "Réseau local (HTTP du nœud)"
+
+
 class SessionRelaisNavigateur(EnvironmentScopedModel):
     """Un poste qui relaie une radio depuis son navigateur (voir core/relais_navigateur.py).
 
@@ -7257,9 +7270,22 @@ class SessionRelaisNavigateur(EnvironmentScopedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+    # Exactement l'un des deux (contrainte ci-dessous). Deux clés étrangères plutôt qu'une clé
+    # générique : on garde l'intégrité référentielle et la suppression en cascade, et deux
+    # protocoles ne justifient pas `contenttypes`.
     compagnon = models.ForeignKey(
         "CompagnonMeshCore", on_delete=models.CASCADE, related_name="sessions_relais",
+        null=True, blank=True,
     )
+    compagnon_meshtastic = models.ForeignKey(
+        "CompagnonMeshtastic", on_delete=models.CASCADE, related_name="sessions_relais",
+        null=True, blank=True,
+    )
+
+    # Par où le navigateur parle à la radio. Porté par la session et non par le companion :
+    # la même radio peut passer de l'USB au Bluetooth d'une intervention à l'autre.
+    transport = models.CharField(max_length=4, choices=TransportRelais.choices,
+                                 default=TransportRelais.USB)
 
     utilisateur = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="sessions_relais",
@@ -7284,9 +7310,22 @@ class SessionRelaisNavigateur(EnvironmentScopedModel):
 
     class Meta:
         ordering = ["-dernier_contact"]
+        constraints = [
+            models.CheckConstraint(
+                name="session_relais_un_seul_compagnon",
+                condition=(
+                    models.Q(compagnon__isnull=False, compagnon_meshtastic__isnull=True)
+                    | models.Q(compagnon__isnull=True, compagnon_meshtastic__isnull=False)
+                ),
+            ),
+        ]
+
+    @property
+    def radio(self):
+        return self.compagnon or self.compagnon_meshtastic
 
     def __str__(self):
-        return f"Relais {self.compagnon} par {self.utilisateur}"
+        return f"Relais {self.radio} par {self.utilisateur}"
 
 
 class HistoriquePositionUtilisateur(EnvironmentScopedModel):
@@ -7390,6 +7429,10 @@ class MeshtasticConnexionType(models.TextChoices):
     TCP = "TCP", "Connexion locale directe (réseau, sans internet)"
     # Appareil branché en USB sur l'hôte du pont (satellite).
     SERIE = "SERIE", "Connexion série (USB, sans internet)"
+    # Radio tenue par un NAVIGATEUR (core/relais_navigateur.py). À exclure IMPÉRATIVEMENT de
+    # `actifs-avec-identifiants` : le pont Meshtastic traite tout type inconnu comme du MQTT, il
+    # ouvrirait donc une connexion au broker avec l'identité de cette radio.
+    NAVIGATEUR = "NAVIGATEUR", "Relayée par un navigateur"
 
 
 class CompagnonMeshtastic(EnvironmentScopedModel):

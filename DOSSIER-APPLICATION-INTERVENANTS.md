@@ -583,6 +583,10 @@ reconnexion laisse du bruit sur le fil, et c'est à cela que sert `0x3e`.
 | **R0** | Session liée à un compte et à un companion, droit recalculé à chaque appel, plafond d'un relais par radio, ménage des sessions mortes. **Et fermeture d'une faille préexistante** | ✅ **Fait** — 16 tests, dont quatre qui auraient échoué la veille |
 | **R1** | Cadrage et commandes MeshCore, page « Devenir passerelle », Web Serial, cycle de relais | ✅ **Codé** — 14 tests sur les trames, cadrage corrigé le 14/11 (voir plus bas). **Reste à valider sur une vraie radio** |
 | **R2** | Reconnexion avec recul progressif, reprise sans geste de l'utilisateur, verrou d'écran, battement, compteurs | ✅ **Codé**, même réserve matérielle |
+| **R3** | Meshtastic : cadrage série, protobuf minimal, configuration, messages directs et de canal | ✅ **Codé** le 14/11 — vecteurs `mesh_pb2`, même réserve matérielle |
+| **R4** | Bluetooth, les deux protocoles | ✅ **Codé** le 14/11, même réserve |
+| **R5** | Réseau local, Meshtastic seulement (API HTTP) | ✅ **Codé** le 14/11, même réserve |
+| **R6** | Identification par la radio, plusieurs radios par poste, bouton sur les pages companions | ✅ **Codé** le 14/11 |
 
 R0 et le cadrage de R1 sont vérifiables **sans matériel ni navigateur** — c'est précisément
 pourquoi les formats ont été relevés dans la bibliothèque plutôt que dans une documentation.
@@ -684,6 +688,99 @@ Donc pour un nœud sur son propre réseau local, deux réponses honnêtes : **le
 ou **installer le profil `gw`** du satellite sur une machine de ce réseau. Le bouton est
 désactivé sur les companions TCP et BLE, avec la raison en infobulle — désactivé plutôt que
 caché, sinon on cherche pourquoi il manque.
+
+## Troisième étape, 14/11/2026 : Meshtastic, Bluetooth et réseau local
+
+Demande : « code les Meshtastic, code le TCP et le BLE ». Résultat :
+
+| | USB (Web Serial) | Bluetooth (Web Bluetooth) | Réseau local |
+|---|---|---|---|
+| **MeshCore** | ✅ | ✅ service UART Nordic | ❌ **impossible** — TCP brut sur le port 5000 |
+| **Meshtastic** | ✅ cadrage `0x94 0xC3` | ✅ TO_RADIO / FROM_NUM / FROM_RADIO | ✅ API HTTP du nœud |
+
+**Le « TCP » MeshCore reste impossible, et ce n'est pas faute d'avoir cherché.** Aucune API de
+navigateur n'ouvre une connexion TCP brute ; Chrome 154 ajoute l'accès local aux *WebSocket*,
+pas au TCP, et le firmware MeshCore ne parle pas WebSocket. **Meshtastic, lui, passe** : son
+firmware expose `PUT /api/v1/toradio` et `GET /api/v1/fromradio` avec
+`Access-Control-Allow-Origin: *` (relevé dans `ContentHandler.cpp`), et Chrome accepte qu'une page
+HTTPS appelle une IP privée en `http://` une fois l'autorisation « appareils du réseau local »
+donnée par l'utilisateur.
+
+### La radio dit qui elle est
+
+Le geste demandé — « un simple bouton connecter, et hop, ça me rajoute comme passerelle de
+l'institution » — n'est possible que si la radio s'identifie elle-même. Le navigateur lit donc,
+avant d'ouvrir la moindre session, la **clé publique** MeshCore (`SELF_INFO`) ou le **numéro de
+nœud** Meshtastic (`MyNodeInfo`), et le serveur retrouve ou crée le companion :
+
+1. radio déjà connue → ce companion, si l'on a la main dessus ;
+2. c'est mon nœud déclaré → promu en passerelle de mon institution courante ;
+3. radio inconnue → créée pour l'institution courante, **par un acteur institutionnel
+   seulement** — sinon n'importe quel compte inscrit enregistrerait des passerelles.
+
+C'est aussi un garde-fou : choisir « radio A » dans une liste puis brancher la radio B
+attribuait le trafic de B à A. Et une reconnexion automatique vérifie que c'est toujours la même
+radio au bout du câble.
+
+Les companions créés ainsi ont `connexion_type = NAVIGATEUR`, **exclu** de
+`actifs-avec-identifiants` : le pont Meshtastic traite tout type inconnu comme du MQTT, il se
+serait donc connecté au broker avec l'identité de cette radio.
+
+### Ce que la relecture a trouvé, et qui aurait cassé en situation
+
+Les quatre défauts ci-dessous étaient dans du code « fini, testé » :
+
+1. **en-tête série MeshCore faux dans le sens application → radio** : `0x3e` au lieu de `0x3c`.
+   Une vraie radio ignorait toutes nos commandes. Le test `encadre une charge utile` attendait
+   `0x3e` — il figeait l'erreur ;
+2. **`APP_START` tronqué** : `0x01` seul au lieu de `0x01 0x03` + 6 octets + nom ;
+3. **un relais navigateur ne pouvait pas marquer un message envoyé** : `PATCH
+   /messages-meshcore/<id>/ {statut}` ne nomme pas le companion, la permission refusait. Le
+   navigateur aurait renvoyé le même message **à chaque cycle, indéfiniment** ;
+4. **la faille fermée la veille côté MeshCore existait aussi côté Meshtastic** et sur les deux
+   files de canaux : lecture des files sortantes de toutes les radios, dépôt de faux entrants.
+
+La correction de méthode qui en découle : **les vecteurs de test sont désormais produits par les
+bibliothèques de référence** (`meshcore` et `mesh_pb2`, exécutées dans les images des ponts),
+jamais écrits à la main. Un test qui vérifie un encodeur contre l'hypothèse de son auteur ne
+prouve rien.
+
+### Vérification croisée avec les clients web de référence
+
+Sur une suggestion de Sylvain, le code a ensuite été relu contre les clients qui font **la même
+chose depuis un navigateur** : `meshtastic/web` (transports HTTP, Bluetooth et série du client
+officiel, et son SDK), `meshcore-dev/meshcore.js`, `liamcottle/meshcore-web` et
+`meshcore-dev/meshcore-ha`. Ce qu'ils ont confirmé : le sens des en-têtes série MeshCore
+(`0x3c` / `0x3e`), la disposition de `SELF_INFO`, les UUID et la lecture en boucle Bluetooth
+Meshtastic, l'approche Local Network Access pour le réseau local.
+
+Ce qu'ils ont **appris**, dont deux points bloquants :
+
+| Constat | Conséquence sans correction |
+|---|---|
+| Depuis le firmware 2.7.23, la radio **jette un `ToRadio` identique au précédent** ; le nonce 1 fait diffuser la fiche du nœud | notre battement fixe `3a00` ne passait qu'une fois — **bloquant** |
+| Tampon de lecture série de 64 Ko (255 octets par défaut) | ESP32-S3 en USB natif : **trames perdues** pendant le téléchargement des nœuds — **bloquant** |
+| Poignée de main Meshtastic en deux temps, `69420` puis `69421`, valeurs traitées à part par le firmware ; ne jamais renvoyer `want_config` dans la même session | tout d'un bloc, et risque de figer le firmware |
+| DTR et RTS levés ensemble à l'ouverture | basculés séparément, un ESP32 peut redémarrer |
+| Délais d'expiration HTTP (7 s / 4 s) | une requête pendue bloquait la lecture pour toujours |
+| Connexion GATT retentée une fois après 750 ms | radio qui sort de veille : échec au premier essai |
+| `DEVICE_QUERY` v3 et mise à l'heure de la radio à la connexion (MeshCore) | nœud sans horloge : annonces horodatées faux |
+| Bluetooth MeshCore : appairage avec code | sans le dire, on croit à une panne |
+
+### Défaut préexistant constaté, non corrigé ici
+
+Le pont Meshtastic, pour un appareil TCP ou série, enregistre les messages de canal reçus avec
+`canal: None` (`bridge.py`, `logger_canal_entrant(None, …)`). Le sérialiseur exige un canal non
+nul : **ces messages sont refusés (400) et perdus en silence depuis toujours.** Le relais
+navigateur, lui, retrouve le canal par son nom parmi ceux déclarés, et affiche ceux qu'il n'a
+pas pu rattacher. Le même correctif est à porter dans le pont.
+
+### Ce qui reste à valider sur du matériel
+
+Rien n'a encore touché une vraie radio : tout est vérifié contre les bibliothèques de référence
+et contre de faux transports. Ordre suggéré : MeshCore USB (le plus simple), Meshtastic USB,
+Meshtastic réseau local, puis les deux en Bluetooth. Sous Linux, Web Bluetooth exige le drapeau
+`chrome://flags/#enable-experimental-web-platform-features`.
 
 ## Ce que ce chantier n'est pas
 

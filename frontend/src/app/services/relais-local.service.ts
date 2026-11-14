@@ -1,68 +1,84 @@
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 
-import { RelaisSerieService } from './relais-serie.service';
+import { DesignationRadio, RelaisSerieService } from './relais-serie.service';
+import { IdentiteRadio, MessageRadio, Pilote, Protocole, creerPilote } from '../shared/mesh/pilotes';
+import { MESHCORE_BLE } from '../shared/mesh/meshcore-trames';
+import { MESHTASTIC_BLE } from '../shared/mesh/meshtastic-trames';
 import {
-  CMD, DecoupeurDeTrames, REP, commandeEnvoiMessage, commandeSimple, encadrer, lireMessageRecu,
-} from '../shared/mesh/meshcore-trames';
-import {
-  PortSerie, VerrouEcran, apiSerie, prendreVerrouEcran, serieDisponible,
-} from '../shared/mesh/web-serial';
+  NomTransport, ProfilBle, Transport, TransportBle, TransportHttpMeshtastic, TransportSerie,
+  bluetoothDisponible,
+} from '../shared/mesh/transports';
+import { VerrouEcran, prendreVerrouEcran, serieDisponible } from '../shared/mesh/web-serial';
 
-/** Débit du lien série companion. Valeur de la bibliothèque Python utilisée par notre pont. */
+/** Débit du lien série. 115 200 pour les deux protocoles (meshcore et meshtastic, Python). */
 const DEBIT_SERIE = 115200;
 
-/** Cadence du cycle de relais. La radio est lente (LoRa) : interroger plus vite ne sert à rien
- * et consomme du temps d'antenne. */
+/** Cadence du cycle de relais. La radio est lente (LoRa) : interroger plus vite ne sert à rien. */
 const CYCLE_MS = 3000;
 
 /** Délai avant nouvelle tentative après une coupure. Croissant, borné. */
 const RECONNEXION_MS = [2000, 5000, 10000, 30000];
 
+const PROFILS_BLE: Record<Protocole, ProfilBle> = {
+  MESHCORE: { service: MESHCORE_BLE.SERVICE, ecriture: MESHCORE_BLE.RX, notification: MESHCORE_BLE.TX },
+  MESHTASTIC: {
+    service: MESHTASTIC_BLE.SERVICE, ecriture: MESHTASTIC_BLE.TO_RADIO,
+    signal: MESHTASTIC_BLE.FROM_NUM, lecture: MESHTASTIC_BLE.FROM_RADIO,
+  },
+};
+
 export type EtatRelais = 'connexion' | 'relais' | 'erreur';
 
-/** Ce qu'un écran a besoin de savoir d'un relais en cours. Sans port ni flux : la vue ne
- * touche jamais au matériel. */
+/** Ce qu'un écran a besoin de savoir d'un relais. Sans transport ni pilote : la vue ne touche
+ * jamais au matériel. */
 export interface RelaisVisible {
   compagnonId: string;
+  protocole: Protocole;
+  transport: NomTransport;
+  liaison: string;
   nom: string;
   etat: EtatRelais;
   tramesRecues: number;
   tramesEnvoyees: number;
   messagesRelayes: number;
+  /** Messages de canal entendus mais non enregistrés : canal inconnu d'Assista-Crise. */
+  canauxIgnores: string[];
   derniereActivite: Date | null;
   erreur: string;
 }
 
-/** L'état interne d'un relais, matériel compris. Ne sort jamais du service. */
 interface Relais extends RelaisVisible {
-  port: PortSerie;
-  lecteur: ReadableStreamDefaultReader<Uint8Array> | null;
-  ecrivain: WritableStreamDefaultWriter<Uint8Array> | null;
-  decoupeur: DecoupeurDeTrames;
+  transportObj: Transport;
+  pilote: Pilote;
+  identite: IdentiteRadio;
   minuterie: ReturnType<typeof setInterval> | null;
   essais: number;
   arrete: boolean;
+  canaux: Map<string, string> | null;
+  /** Identifiants des messages en cours d'émission : un cycle ne doit pas réémettre celui que
+   * le précédent n'a pas fini d'envoyer. */
+  enCours: Set<string>;
+}
+
+/** Ce qu'il faut pour brancher une radio. `radio` désigne une ligne précise ; sans elle, la radio
+ * est identifiée par ce qu'elle dit d'elle-même. */
+export interface Branchement {
+  protocole: Protocole;
+  transport: NomTransport;
+  /** Réseau local (Meshtastic) : IP ou nom en `.local`. */
+  adresse?: string;
+  radio?: { genre: 'compagnon' | 'noeud'; id: string };
 }
 
 /**
- * Le moteur du relais navigateur : **plusieurs radios à la fois, depuis n'importe quel écran**.
+ * Le moteur du relais navigateur : **plusieurs radios, deux protocoles, trois transports**, et il
+ * survit à la navigation (`providedIn: 'root'`).
  *
- * Demande de Sylvain du 14/11/2026 : « sur la même page je peux connecter plusieurs nœuds
- * locaux sans changer d'onglet et avoir la liste des nœuds locaux que je connecte ». La
- * première version tenait le port, le lecteur et la minuterie dans le composant d'une page
- * dédiée : un seul relais, et il mourait au changement de route.
- *
- * Deux conséquences de ce déplacement, et ce sont les deux raisons de le faire :
- *
- * 1. **un service `providedIn: 'root'` survit à la navigation.** On branche une radio depuis la
- *    page des companions, on va voir la carte, le relais continue. Un moteur dans un composant
- *    s'arrête à `ngOnDestroy` — c'est-à-dire au premier clic ailleurs ;
- * 2. **N relais simultanés** : chacun a son port, son découpeur et sa minuterie. Le découpeur
- *    doit être par relais — c'est lui qui garde le reliquat d'une trame coupée, et deux radios
- *    qui le partageraient mélangeraient leurs octets.
- *
- * **Ce n'est pas un satellite** : si internet tombe, la page ne joint plus l'API non plus.
+ * Pour chaque radio : un transport (USB, Bluetooth, réseau local), un pilote (MeshCore,
+ * Meshtastic), et le cycle qui fait le lien avec le serveur. **L'ordre du branchement est le
+ * garde-fou** : on ouvre la liaison, la radio dit qui elle est, et c'est seulement alors que le
+ * serveur ouvre la session — sur la radio réellement branchée, pas sur celle qu'on a cliquée.
  */
 @Injectable({ providedIn: 'root' })
 export class RelaisLocalService implements OnDestroy {
@@ -71,17 +87,20 @@ export class RelaisLocalService implements OnDestroy {
   private sujet = new BehaviorSubject<RelaisVisible[]>([]);
   private verrou: VerrouEcran | null = null;
 
-  /** Web Serial n'existe ni sur Firefox, ni sur Safari, ni sur iOS. */
-  readonly supporte = serieDisponible();
+  readonly usbDisponible = serieDisponible();
+  readonly bleDisponible = bluetoothDisponible();
+  /** Gardé pour les écrans existants : « au moins un transport navigateur est possible ». */
+  readonly supporte = this.usbDisponible || this.bleDisponible;
+
+  /** Renseigné par le dernier branchement quand le serveur a un avertissement à passer. */
+  dernierAvertissement = '';
 
   constructor(private service: RelaisSerieService) {}
 
   ngOnDestroy(): void {
-    // Le service vit aussi longtemps que l'application : on n'arrive ici qu'à la fermeture.
     for (const id of [...this.relais.keys()]) { void this.debrancher(id); }
   }
 
-  /** La liste des radios relayées depuis CE poste, pour l'affichage. */
   liste(): Observable<RelaisVisible[]> {
     return this.sujet.asObservable();
   }
@@ -90,64 +109,89 @@ export class RelaisLocalService implements OnDestroy {
     return this.relais.has(compagnonId);
   }
 
+  /** Pourquoi ce transport est impossible ici, ou '' s'il l'est. Dit AVANT le clic. */
+  raisonIndisponible(protocole: Protocole, transport: NomTransport): string {
+    if (transport === 'USB' && !this.usbDisponible) {
+      return "L'USB n'est accessible que depuis Chrome ou Edge, sur ordinateur ou Android.";
+    }
+    if (transport === 'BLE' && !this.bleDisponible) {
+      return 'Le Bluetooth n\'est accessible que depuis Chrome ou Edge (sous Linux, activer '
+        + 'chrome://flags/#enable-experimental-web-platform-features).';
+    }
+    if (transport === 'WIFI' && protocole === 'MESHCORE') {
+      return 'Un companion MeshCore en Wi-Fi parle du TCP brut, qu\'aucun navigateur ne sait '
+        + 'ouvrir. Branchez-le en USB ou en Bluetooth.';
+    }
+    return '';
+  }
+
   // ══ Brancher ══════════════════════════════════════════════════════════════
 
   /**
-   * Branche une radio : demande le port, ouvre la session, démarre le cycle.
-   *
-   * `radio.genre` vaut `noeud` pour un nœud personnel pas encore déclaré comme passerelle — le
-   * serveur le promeut alors et rend l'identifiant du companion à utiliser ensuite. Voir
-   * `core/relais_navigateur.py`.
+   * Branche une radio. **À appeler directement depuis le clic** : le choix du port ou de
+   * l'appareil Bluetooth exige un geste de l'utilisateur, et c'est la première chose faite ici.
+   * Renvoie l'identifiant du companion relayé.
    */
-  /** Renseigné par le dernier branchement quand le serveur a un avertissement à passer —
-   * typiquement une radio promue sans institution, donc relayable par son seul propriétaire. */
-  dernierAvertissement = '';
+  async brancher(b: Branchement): Promise<string> {
+    const raison = this.raisonIndisponible(b.protocole, b.transport);
+    if (raison) { throw new Error(raison); }
 
-  async brancher(radio: { genre: 'compagnon' | 'noeud'; id: string; nom: string })
-      : Promise<string> {
-    if (!this.supporte) {
-      throw new Error("Ce navigateur n'expose pas l'accès au port USB. Utilisez Chrome ou Edge.");
-    }
+    const transport = await this.choisirTransport(b);
+    const pilote = creerPilote(b.protocole, transport);
+    transport.surDonnees = o => pilote.recevoir(o);
 
-    // Le choix du port EXIGE un geste de l'utilisateur, et c'est voulu par la norme : aucune
-    // page ne peut ouvrir un périphérique sans un clic.
-    const port = await apiSerie().requestPort();
-
-    const ouverture = await this.service.ouvrirOuBattre(radio).toPromise();
-    const compagnonId = ouverture?.compagnon || radio.id;
-    this.dernierAvertissement = ouverture?.avertissement || '';
-
-    if (this.relais.has(compagnonId)) {
-      // Déjà relayée depuis ce poste : on ne la branche pas deux fois, chaque message partirait
-      // en double. Le port tout juste choisi est relâché.
-      try { await port.close(); } catch { /* jamais ouvert */ }
-      throw new Error('Cette radio est déjà relayée depuis ce poste.');
-    }
-
-    const r: Relais = {
-      compagnonId, nom: ouverture?.nom || radio.nom, etat: 'connexion',
-      tramesRecues: 0, tramesEnvoyees: 0, messagesRelayes: 0, derniereActivite: null, erreur: '',
-      port, lecteur: null, ecrivain: null, decoupeur: new DecoupeurDeTrames(),
-      minuterie: null, essais: 0, arrete: false,
-    };
-    this.relais.set(compagnonId, r);
-
+    let identite: IdentiteRadio;
     try {
-      await this.ouvrirLePort(r);
+      await transport.ouvrir();
+      identite = await pilote.demarrer();
     } catch (e) {
-      this.relais.delete(compagnonId);
-      this.publier();
+      await transport.fermer();
       throw e;
     }
 
+    const designation: DesignationRadio = {
+      protocole: b.protocole, identite, transport: b.transport,
+      ...(b.radio ? { [b.radio.genre]: b.radio.id } : {}),
+    };
+    let ouverture;
+    try {
+      ouverture = await firstValueFrom(this.service.ouvrirOuBattre(designation));
+    } catch (e) {
+      await transport.fermer();
+      throw e;
+    }
+    const compagnonId = ouverture.compagnon!;
+    this.dernierAvertissement = ouverture.avertissement || '';
+
+    if (this.relais.has(compagnonId)) {
+      // Déjà relayée depuis ce poste : la brancher deux fois enverrait chaque message en double.
+      await transport.fermer();
+      throw new Error(`« ${ouverture.nom} » est déjà relayée depuis ce poste.`);
+    }
+
+    const r: Relais = {
+      compagnonId, protocole: b.protocole, transport: b.transport, liaison: transport.libelle,
+      nom: ouverture.nom || identite.nom || 'Radio', etat: 'relais',
+      tramesRecues: 0, tramesEnvoyees: 0, messagesRelayes: 0, canauxIgnores: [],
+      derniereActivite: null, erreur: '',
+      transportObj: transport, pilote, identite, minuterie: null, essais: 0, arrete: false,
+      canaux: null, enCours: new Set(),
+    };
+    this.relais.set(compagnonId, r);
+    pilote.surMessage = m => this.relayerEntrant(r, m);
+    transport.surPerte = raison => void this.reconnecter(r, raison);
+
     await this.prendreLeVerrou();
-    r.etat = 'relais';
-    this.publier();
-    void this.envoyer(r, commandeSimple(CMD.APP_START));
     r.minuterie = setInterval(() => void this.unCycle(r), CYCLE_MS);
     void this.unCycle(r);
-    void this.lireEnContinu(r);
+    this.publier();
     return compagnonId;
+  }
+
+  private async choisirTransport(b: Branchement): Promise<Transport> {
+    if (b.transport === 'USB') { return TransportSerie.choisir(DEBIT_SERIE); }
+    if (b.transport === 'BLE') { return TransportBle.choisir(PROFILS_BLE[b.protocole]); }
+    return new TransportHttpMeshtastic(b.adresse || '');
   }
 
   async debrancher(compagnonId: string): Promise<void> {
@@ -155,40 +199,159 @@ export class RelaisLocalService implements OnDestroy {
     if (!r) { return; }
     r.arrete = true;
     if (r.minuterie) { clearInterval(r.minuterie); r.minuterie = null; }
-    await this.libererLePort(r);
+    await r.transportObj.fermer();
     this.relais.delete(compagnonId);
-    this.service.fermer({ genre: 'compagnon', id: compagnonId })
+    this.service.fermer({ protocole: r.protocole, compagnon: compagnonId })
       .subscribe({ error: () => undefined });
     if (!this.relais.size) { await this.relacherLeVerrou(); }
     this.publier();
   }
 
-  // ══ Port ══════════════════════════════════════════════════════════════════
+  // ══ Entrant : radio → serveur ═════════════════════════════════════════════
 
-  private async ouvrirLePort(r: Relais): Promise<void> {
-    await r.port.open({ baudRate: DEBIT_SERIE });
-    r.decoupeur.reinitialiser();
-    r.lecteur = r.port.readable?.getReader() ?? null;
-    r.ecrivain = r.port.writable?.getWriter() ?? null;
-    if (!r.lecteur || !r.ecrivain) {
-      throw new Error('Ce port ne peut pas être lu et écrit.');
+  private relayerEntrant(r: Relais, m: MessageRadio): void {
+    r.derniereActivite = new Date();
+    const echec = () => { r.erreur = "Un message reçu n'a pas pu être transmis."; this.publier(); };
+
+    if (m.genre === 'DM') {
+      r.messagesRelayes++;
+      this.service.deposerDm(r.protocole, r.compagnonId, m.expediteur, m.texte)
+        .subscribe({ error: echec });
+      this.publier();
+      return;
+    }
+    // Message de canal Meshtastic : le serveur exige un canal, retrouvé par son NOM parmi ceux
+    // déclarés. Un canal inconnu d'Assista-Crise n'est pas enregistré — et on le dit.
+    void this.canalPourNom(r, m.canalNom || '').then(canalId => {
+      if (!canalId) {
+        const nom = m.canalNom || 'canal primaire';
+        if (!r.canauxIgnores.includes(nom)) { r.canauxIgnores.push(nom); }
+        this.publier();
+        return;
+      }
+      r.messagesRelayes++;
+      this.service.deposerCanalMeshtastic(r.compagnonId, canalId, Number(m.expediteur), m.texte)
+        .subscribe({ error: echec });
+      this.publier();
+    });
+  }
+
+  private async canalPourNom(r: Relais, nom: string): Promise<string | undefined> {
+    if (!nom) { return undefined; }
+    if (!r.canaux) {
+      try {
+        r.canaux = await firstValueFrom(this.service.canauxMeshtastic());
+      } catch {
+        return undefined;
+      }
+    }
+    return r.canaux.get(nom.toLowerCase());
+  }
+
+  // ══ Cycle : battement, relève, file sortante ══════════════════════════════
+
+  private async unCycle(r: Relais): Promise<void> {
+    if (r.arrete || r.etat !== 'relais') { return; }
+
+    r.tramesRecues = r.pilote.tramesRecues;
+    r.tramesEnvoyees = r.pilote.tramesEnvoyees;
+    // Le battement maintient la session vivante ET remonte les compteurs.
+    this.service.ouvrirOuBattre({ protocole: r.protocole, compagnon: r.compagnonId,
+                                  transport: r.transport },
+                                r.tramesRecues, r.tramesEnvoyees)
+      .subscribe({
+        next: () => { if (r.erreur.startsWith('Le central')) { r.erreur = ''; } },
+        error: () => {
+          r.erreur = "Le central ne répond plus. Le relais continue d'écouter la radio, mais "
+            + "rien ne remonte pour l'instant.";
+          this.publier();
+        },
+      });
+
+    try {
+      await r.pilote.cycle();
+    } catch (e) {
+      r.erreur = this.lisible(e);
+    }
+
+    this.service.aEnvoyer(r.protocole, r.compagnonId).subscribe({
+      next: messages => { for (const m of messages) { void this.transmettre(r, m); } },
+      error: () => undefined,
+    });
+    this.publier();
+  }
+
+  private async transmettre(r: Relais,
+                            m: { id: string; contenu: string; contact_pubkey_hex?: string;
+                                 contact_node_num?: number }): Promise<void> {
+    if (r.enCours.has(m.id)) { return; }
+    r.enCours.add(m.id);
+    const destination = r.protocole === 'MESHTASTIC' ? m.contact_node_num : m.contact_pubkey_hex;
+    try {
+      if (destination === undefined || destination === null) {
+        throw new Error('Destinataire inconnu.');
+      }
+      await r.pilote.envoyerDm(destination, m.contenu);
+      await firstValueFrom(this.service.marquer(r.protocole, m.id, 'ENVOYE'));
+      r.messagesRelayes++;
+      r.derniereActivite = new Date();
+    } catch (e) {
+      // Marqué en échec plutôt que laissé en attente : un message qui reste indéfiniment dans
+      // la file sans que personne ne le sache est pire qu'un échec annoncé.
+      this.service.marquer(r.protocole, m.id, 'ECHEC', this.lisible(e))
+        .subscribe({ error: () => undefined });
+    } finally {
+      r.enCours.delete(m.id);
+      this.publier();
     }
   }
 
-  private async libererLePort(r: Relais): Promise<void> {
-    try { await r.lecteur?.cancel(); } catch { /* déjà fermé */ }
-    try { r.lecteur?.releaseLock(); } catch { /* déjà relâché */ }
-    try { r.ecrivain?.releaseLock(); } catch { /* déjà relâché */ }
-    try { await r.port.close(); } catch { /* déjà fermé */ }
-    r.lecteur = null;
-    r.ecrivain = null;
+  // ══ Reconnexion ═══════════════════════════════════════════════════════════
+
+  private async reconnecter(r: Relais, raison: string): Promise<void> {
+    if (r.arrete || r.etat === 'connexion') { return; }
+    r.etat = 'connexion';
+    r.erreur = raison;
+    await r.transportObj.fermer();
+    this.publier();
+    const delai = RECONNEXION_MS[Math.min(r.essais, RECONNEXION_MS.length - 1)];
+    r.essais++;
+    setTimeout(() => void this.reprendre(r), delai);
   }
 
-  // ══ Verrou d'écran ════════════════════════════════════════════════════════
-  //
-  // Un seul verrou pour tous les relais : il porte sur l'écran, pas sur une radio. Demandé,
-  // jamais exigé — tous les navigateurs ne l'ont pas, et l'écran dit de toute façon de ne pas
-  // fermer l'onglet.
+  /**
+   * Reprise SANS geste de l'utilisateur : même port USB, même appareil Bluetooth, même adresse.
+   * Et la radio doit redire qui elle est — si quelqu'un a branché une autre radio sur ce port
+   * entre-temps, on s'arrête au lieu de lui attribuer le trafic de la première.
+   */
+  private async reprendre(r: Relais): Promise<void> {
+    if (r.arrete) { return; }
+    try {
+      await r.transportObj.ouvrir();
+      const identite = await r.pilote.demarrer();
+      const memeRadio = r.protocole === 'MESHTASTIC'
+        ? identite.node_num === r.identite.node_num
+        : identite.pubkey_hex === r.identite.pubkey_hex;
+      if (!memeRadio) {
+        r.etat = 'erreur';
+        r.erreur = "Une autre radio est branchée à la place de celle-ci : relais arrêté.";
+        r.arrete = true;
+        if (r.minuterie) { clearInterval(r.minuterie); r.minuterie = null; }
+        await r.transportObj.fermer();
+        this.publier();
+        return;
+      }
+      r.essais = 0;
+      r.etat = 'relais';
+      r.erreur = '';
+      this.publier();
+    } catch (e) {
+      r.etat = 'relais';   // pour que reconnecter() reparte
+      void this.reconnecter(r, this.lisible(e));
+    }
+  }
+
+  // ══ Verrou d'écran : un seul pour tous les relais ═════════════════════════
 
   private async prendreLeVerrou(): Promise<void> {
     if (!this.verrou) { this.verrou = await prendreVerrouEcran(); }
@@ -199,152 +362,25 @@ export class RelaisLocalService implements OnDestroy {
     this.verrou = null;
   }
 
-  // ══ Lecture ═══════════════════════════════════════════════════════════════
-
-  private async lireEnContinu(r: Relais): Promise<void> {
-    while (!r.arrete && r.lecteur) {
-      try {
-        const { value, done } = await r.lecteur.read();
-        if (done) { break; }
-        if (value) { this.traiter(r, value); }
-      } catch (e) {
-        if (r.arrete) { return; }
-        // Nœud débranché, port repris par un autre logiciel : on retente, sans boucler vite.
-        r.erreur = this.lisible(e);
-        this.publier();
-        void this.reconnecter(r);
-        return;
-      }
-    }
-    if (!r.arrete) { void this.reconnecter(r); }
-  }
-
-  private traiter(r: Relais, octets: Uint8Array): void {
-    for (const charge of r.decoupeur.pousser(octets)) {
-      r.tramesRecues++;
-      r.derniereActivite = new Date();
-      const recu = lireMessageRecu(charge);
-      if (recu && recu.texte) {
-        r.messagesRelayes++;
-        this.service.deposerEntrant(r.compagnonId, recu.pubkeyPrefix, recu.texte).subscribe({
-          error: () => { r.erreur = "Un message reçu n'a pas pu être transmis."; this.publier(); },
-        });
-        // Il y en a peut-être d'autres en attente dans la radio.
-        void this.envoyer(r, commandeSimple(CMD.SYNC_NEXT_MESSAGE));
-      } else if (charge[0] === REP.MESSAGES_WAITING) {
-        void this.envoyer(r, commandeSimple(CMD.SYNC_NEXT_MESSAGE));
-      }
-    }
-    this.publier();
-  }
-
-  private async envoyer(r: Relais, charge: Uint8Array): Promise<void> {
-    if (!r.ecrivain) { return; }
-    try {
-      await r.ecrivain.write(encadrer(charge));
-      r.tramesEnvoyees++;
-    } catch (e) {
-      r.erreur = this.lisible(e);
-      this.publier();
-    }
-  }
-
-  // ══ Cycle ═════════════════════════════════════════════════════════════════
-
-  private async unCycle(r: Relais): Promise<void> {
-    if (r.arrete || r.etat !== 'relais') { return; }
-
-    // Le battement maintient la session vivante ET remonte les compteurs. Il doit être
-    // nettement plus fréquent que le délai de mort côté serveur, sinon le relais se fait
-    // fermer en pleine activité.
-    this.service.ouvrirOuBattre({ genre: 'compagnon', id: r.compagnonId },
-                                r.tramesRecues, r.tramesEnvoyees)
-      .subscribe({
-        error: () => {
-          r.erreur = "Le central ne répond plus. Le relais continue d'écouter la radio, mais "
-            + "rien ne remonte pour l'instant.";
-          this.publier();
-        },
-      });
-
-    // Relever ce que la radio garde en attente, puis dépiler la file sortante.
-    await this.envoyer(r, commandeSimple(CMD.SYNC_NEXT_MESSAGE));
-    this.service.aEnvoyer(r.compagnonId).subscribe({
-      next: (messages) => messages.forEach(m => void this.transmettre(r, m)),
-      error: () => undefined,
-    });
-  }
-
-  private async transmettre(r: Relais,
-                            m: { id: string; contact_pubkey_hex: string; contenu: string })
-      : Promise<void> {
-    try {
-      await this.envoyer(r, commandeEnvoiMessage(m.contact_pubkey_hex, m.contenu));
-      this.service.marquer(m.id, 'ENVOYE').subscribe({ error: () => undefined });
-      r.messagesRelayes++;
-      r.derniereActivite = new Date();
-      this.publier();
-    } catch (e) {
-      // Marqué en échec plutôt que laissé en attente : un message qui reste indéfiniment dans
-      // la file sans que personne ne le sache est pire qu'un échec annoncé.
-      this.service.marquer(m.id, 'ECHEC', this.lisible(e)).subscribe({ error: () => undefined });
-    }
-  }
-
-  // ══ Reconnexion ═══════════════════════════════════════════════════════════
-
-  private async reconnecter(r: Relais): Promise<void> {
-    if (r.arrete) { return; }
-    r.etat = 'connexion';
-    await this.libererLePort(r);
-    const delai = RECONNEXION_MS[Math.min(r.essais, RECONNEXION_MS.length - 1)];
-    r.essais++;
-    this.publier();
-    setTimeout(() => {
-      if (r.arrete) { return; }
-      void this.reprendreLePort(r);
-    }, delai);
-  }
-
-  /**
-   * Reprise SANS geste de l'utilisateur, en réouvrant **le port de CE relais**.
-   *
-   * On garde la référence au `SerialPort` plutôt que de reprendre `getPorts()[0]` : avec
-   * plusieurs radios branchées, le premier port autorisé n'est pas forcément celui de ce
-   * relais — on parlerait à la mauvaise radio. L'objet reste valide après un débranchement,
-   * c'est ce qui permet de rouvrir au rebranchement sans rien demander.
-   */
-  private async reprendreLePort(r: Relais): Promise<void> {
-    try {
-      await this.ouvrirLePort(r);
-      r.essais = 0;
-      r.etat = 'relais';
-      r.erreur = '';
-      this.publier();
-      void this.envoyer(r, commandeSimple(CMD.APP_START));
-      void this.lireEnContinu(r);
-    } catch (e) {
-      r.erreur = this.lisible(e);
-      void this.reconnecter(r);
-    }
-  }
-
   // ══ Divers ════════════════════════════════════════════════════════════════
 
   private publier(): void {
     this.sujet.next([...this.relais.values()].map(r => ({
-      compagnonId: r.compagnonId, nom: r.nom, etat: r.etat,
-      tramesRecues: r.tramesRecues, tramesEnvoyees: r.tramesEnvoyees,
-      messagesRelayes: r.messagesRelayes, derniereActivite: r.derniereActivite,
-      erreur: r.erreur,
+      compagnonId: r.compagnonId, protocole: r.protocole, transport: r.transport,
+      liaison: r.liaison, nom: r.nom, etat: r.etat,
+      tramesRecues: r.pilote.tramesRecues, tramesEnvoyees: r.pilote.tramesEnvoyees,
+      messagesRelayes: r.messagesRelayes, canauxIgnores: [...r.canauxIgnores],
+      derniereActivite: r.derniereActivite, erreur: r.erreur,
     })));
   }
 
   lisible(e: unknown): string {
+    const err = e as { error?: { error?: string }; message?: string };
+    if (err?.error?.error) { return err.error.error; }       // refus du serveur, fait pour être lu
     const brut = e instanceof Error ? e.message : String(e);
-    if (/No port selected|cancel/i.test(brut)) { return 'Aucun port choisi.'; }
+    if (/No port selected|cancel|User cancelled|chooser/i.test(brut)) { return 'Aucune radio choisie.'; }
     if (/Failed to open|already open|in use/i.test(brut)) {
-      return 'Ce port est déjà ouvert par un autre logiciel. Fermez l\'autre application qui '
+      return "Ce port est déjà ouvert par un autre logiciel. Fermez l'autre application qui "
         + 'utilise la radio, puis réessayez.';
     }
     return brut;

@@ -39,6 +39,10 @@ export class RelaisLocauxComponent implements OnInit, OnDestroy {
     this.abonnement?.unsubscribe();
   }
 
+  icone(transport: string): string {
+    return transport === 'BLE' ? 'bluetooth' : transport === 'WIFI' ? 'wifi' : 'usb';
+  }
+
   debrancher(r: RelaisVisible): void {
     void this.moteur.debrancher(r.compagnonId);
   }

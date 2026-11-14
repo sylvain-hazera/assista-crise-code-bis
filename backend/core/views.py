@@ -69,7 +69,7 @@ from .institution_attachment import (
 from .permissions import (
     EstComptePont,
     PeutAgirPourCompagnon,
-    PeutEcrireMessageMesh,
+    PeutEcrireMessageMesh, PeutEcrireMessageCanal,
     PeutAccederRadio,
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
@@ -11644,119 +11644,158 @@ class BrandingView(APIView):
 
 
 class RelaisSerieView(APIView):
-    """Ouvrir, maintenir et fermer un relais série depuis un navigateur.
+    """Ouvrir, maintenir et fermer un relais radio depuis un navigateur.
 
-    Voir `core/relais_navigateur.py` pour le pourquoi : un poste verrouillé où l'on ne peut
-    rien installer, mais dont l'USB fonctionne. Le navigateur appelle ensuite les MÊMES
-    endpoints que `meshcore-bridge` (`/messages-meshcore/...`) — ils existent déjà et sont
-    éprouvés ; cette vue ne gère que la session.
+    Voir `core/relais_navigateur.py` pour le pourquoi. Le navigateur appelle ensuite les MÊMES
+    endpoints que les ponts Python (`/messages-meshcore/…`, `/messages-meshtastic/…`) — ils
+    existent et sont éprouvés ; cette vue ne gère que la session et l'identification.
 
-    - `GET`  : les radios que je peux relayer, et celle que je relaie déjà le cas échéant.
-    - `POST` : ouvrir ou battre la mesure. `{compagnon, fermer?}`.
+    - `GET`  : les radios que je peux relayer (deux protocoles), et mes relais vivants.
+    - `POST` : `{protocole, identite?, compagnon?, noeud?, transport?, fermer?}`.
 
-    Un seul point d'entrée plutôt que trois actions : le navigateur n'appelle que ça, et un
-    battement est la même opération qu'une ouverture sur une session déjà vivante.
+    **Le cas nominal est `identite` seule** : le navigateur a lu sur la radio sa clé publique
+    (MeshCore) ou son numéro de nœud (Meshtastic), et le serveur retrouve ou crée le companion.
+    `compagnon` et `noeud` restent pour le bouton d'une ligne précise ; l'identité, si elle est
+    fournie, est alors vérifiée contre la radio attendue.
+
+    Un seul point d'entrée plutôt que trois actions : un battement est la même opération qu'une
+    ouverture sur une session déjà vivante.
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
+    @staticmethod
+    def _decrire(compagnon, genre="compagnon"):
+        from .relais_navigateur import protocole_de
+
+        return {
+            "id": str(compagnon.id),
+            "genre": genre,
+            "protocole": protocole_de(compagnon),
+            "nom": compagnon.nom,
+            "institution_nom": compagnon.institution.nom if compagnon.institution_id else "",
+            "connexion_type": compagnon.connexion_type,
+        }
+
     def get(self, request):
         from .relais_navigateur import (
-            SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, radios_relayables,
-            session_active,
+            SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, mes_sessions,
+            protocole_du_noeud, radios_relayables,
         )
 
         fermer_sessions_mortes()
         # Correction du 14/11/2026 : la liste était pré-filtrée sur ContactInstitution, ce qui
-        # contredisait `peut_relayer` — un administrateur, accepté par la règle, voyait quand
-        # même « aucune radio accessible ». C'est désormais `radios_relayables` qui décide, au
-        # même endroit que l'autorisation.
+        # contredisait `peut_relayer`. C'est `radios_relayables` qui décide, au même endroit que
+        # l'autorisation.
         compagnons, noeuds = radios_relayables(request.user)
-
-        mienne = None
-        relayables = []
-        for compagnon in compagnons:
-            session = session_active(request.user, compagnon.id)
-            relayables.append({
-                "id": str(compagnon.id),
-                "genre": "compagnon",
-                "nom": compagnon.nom,
-                "institution_nom": compagnon.institution.nom if compagnon.institution_id else "",
-                "relaye_par_moi": session is not None,
-            })
-            if session is not None:
-                mienne = {
-                    "session": str(session.id),
-                    "compagnon": str(compagnon.id),
-                    "ouverte_le": session.ouverte_le,
-                    "trames_recues": session.trames_recues,
-                    "trames_envoyees": session.trames_envoyees,
-                }
-
-        # Les nœuds personnels pas encore promus en companion. Ils n'ont rien à déclarer
-        # d'avance : la promotion se fait au démarrage du relais.
+        radios = [self._decrire(c) for c in compagnons]
         for noeud in noeuds:
-            relayables.append({
-                "id": str(noeud.id),
-                "genre": "noeud",
-                "nom": (noeud.nom_noeud or "").strip() or f"Mon nœud {noeud.pubkey_hex[:8]}…",
-                "institution_nom": "",
-                "relaye_par_moi": False,
+            protocole = protocole_du_noeud(noeud)
+            libelle = (getattr(noeud, "nom_noeud", "") or "").strip()
+            if not libelle:
+                libelle = (f"Mon nœud {noeud.pubkey_hex[:8]}…" if protocole == "MESHCORE"
+                           else f"Mon nœud !{noeud.node_num:08x}")
+            radios.append({
+                "id": str(noeud.id), "genre": "noeud", "protocole": protocole,
+                "nom": libelle, "institution_nom": "", "connexion_type": "",
             })
+
+        sessions = [{
+            "session": str(s.id),
+            "compagnon": str(s.radio.id),
+            "protocole": "MESHTASTIC" if s.compagnon_meshtastic_id else "MESHCORE",
+            "nom": s.radio.nom,
+            "transport": s.transport,
+            "ouverte_le": s.ouverte_le,
+            "trames_recues": s.trames_recues,
+            "trames_envoyees": s.trames_envoyees,
+        } for s in mes_sessions(request.user)]
 
         return Response({
-            "compagnons": relayables,
-            "session": mienne,
+            "compagnons": radios,
+            "sessions": sessions,
             # Le navigateur en déduit sa cadence de battement : il doit battre nettement plus
             # souvent que ce délai, sinon il se fait fermer en pleine activité.
             "secondes_avant_session_morte": SECONDES_AVANT_SESSION_MORTE,
         })
 
     def post(self, request):
-        from .models import CompagnonMeshCore, NoeudMeshUtilisateur
+        from .models import NoeudMeshUtilisateur, NoeudUtilisateurMeshtastic
         from .relais_navigateur import (
-            battre, compagnon_pour_noeud, fermer, ouvrir, session_active,
+            MESHCORE, MESHTASTIC, PROTOCOLES, RelaisRefuse, battre, compagnon_par_id, fermer,
+            identifier, ouvrir, protocole_de, session_active, verifier_identite,
         )
 
-        # Deux façons de désigner la radio, parce qu'il y a deux situations : un companion
-        # institutionnel déjà déclaré, ou le nœud personnel qu'on vient de brancher. Le second
-        # est le cas central du relais navigateur — il est promu en companion ici, une fois.
+        protocole = (request.data.get("protocole") or MESHCORE).upper()
+        if protocole not in PROTOCOLES:
+            return Response({"error": "Protocole radio inconnu."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        identite = request.data.get("identite")
         compagnon_id = request.data.get("compagnon")
         noeud_id = request.data.get("noeud")
-        compagnon = None
-        if compagnon_id:
-            compagnon = CompagnonMeshCore.objects.filter(pk=compagnon_id, actif=True).first()
-        elif noeud_id:
-            noeud = NoeudMeshUtilisateur.objects.filter(
-                pk=noeud_id, utilisateur=request.user, actif=True,
-            ).first()
-            if noeud is None:
-                return Response({"error": "Nœud inconnu."}, status=status.HTTP_404_NOT_FOUND)
-            if request.data.get("fermer"):
-                # Fermer ne doit jamais rien créer. Un nœud jamais démarré n'a pas de session
-                # à fermer, et c'est un succès, pas une erreur.
-                from .models import CompagnonMeshCore as _C
-                deja = _C.objects.filter(pubkey_hex=noeud.pubkey_hex).first()
-                if deja is None:
-                    return Response({"session": None})
-                compagnon = deja
-            else:
-                compagnon, erreur_promo = compagnon_pour_noeud(
-                    request.user, noeud, get_active_environment(request),
-                )
-                if erreur_promo:
-                    return Response({"error": erreur_promo}, status=status.HTTP_403_FORBIDDEN)
-                audit_log(
-                    request=request, action_code="CREATION",
-                    objet_type="CompagnonMeshCore", objet_id=compagnon.id,
-                    commentaire=(f"Nœud personnel « {compagnon.nom} » utilisé comme passerelle "
-                                 f"depuis un navigateur."),
-                )
-        if compagnon is None:
-            return Response({"error": "Radio inconnue."}, status=status.HTTP_404_NOT_FOUND)
+        veut_fermer = bool(request.data.get("fermer"))
+        environnement = get_active_environment(request)
+        cree = False
 
-        if request.data.get("fermer"):
-            session = session_active(request.user, compagnon.id)
+        try:
+            if compagnon_id:
+                compagnon = compagnon_par_id(compagnon_id, protocole)
+                if compagnon is None or not compagnon.actif:
+                    return Response({"error": "Radio inconnue."},
+                                    status=status.HTTP_404_NOT_FOUND)
+                if identite and not veut_fermer:
+                    verifier_identite(compagnon, identite)
+            elif noeud_id:
+                modele_noeud = (NoeudUtilisateurMeshtastic if protocole == MESHTASTIC
+                                else NoeudMeshUtilisateur)
+                noeud = modele_noeud.objects.filter(
+                    pk=noeud_id, utilisateur=request.user, actif=True).first()
+                if noeud is None:
+                    return Response({"error": "Nœud inconnu."},
+                                    status=status.HTTP_404_NOT_FOUND)
+                if veut_fermer:
+                    # Fermer ne doit jamais rien créer : un nœud jamais démarré n'a pas de
+                    # session, et c'est un succès, pas une erreur.
+                    from .relais_navigateur import _compagnon_existant
+                    cle = ({"pubkey_hex": noeud.pubkey_hex} if protocole == MESHCORE
+                           else {"node_num": noeud.node_num})
+                    compagnon = _compagnon_existant(protocole, cle)
+                    if compagnon is None:
+                        return Response({"session": None})
+                else:
+                    # L'identité du nœud déclaré tient lieu d'identité rapportée ; si la radio a
+                    # aussi parlé, c'est la sienne qui fait foi et elle doit concorder.
+                    declaree = ({"pubkey_hex": noeud.pubkey_hex, "nom": noeud.nom_noeud or ""}
+                                if protocole == MESHCORE
+                                else {"node_num": noeud.node_num,
+                                      "nom": getattr(noeud, "nom_noeud", "") or ""})
+                    compagnon, cree = identifier(request.user, protocole, declaree, environnement)
+                    if identite:
+                        verifier_identite(compagnon, identite)
+            elif identite:
+                if veut_fermer:
+                    return Response({"session": None})
+                compagnon, cree = identifier(request.user, protocole, identite, environnement)
+            else:
+                return Response({"error": "Indiquez la radio : son identité, un companion ou "
+                                          "un nœud."}, status=status.HTTP_400_BAD_REQUEST)
+        except RelaisRefuse as refus:
+            return Response({"error": str(refus)}, status=status.HTTP_403_FORBIDDEN)
+
+        if protocole_de(compagnon) != protocole:
+            return Response({"error": "Cette radio n'est pas du protocole annoncé."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if cree:
+            audit_log(
+                request=request, action_code="CREATION",
+                objet_type=type(compagnon).__name__, objet_id=compagnon.id,
+                commentaire=(f"Radio {protocole} « {compagnon.nom} » déclarée comme passerelle "
+                             f"depuis un navigateur."),
+            )
+
+        if veut_fermer:
+            session = session_active(request.user, compagnon)
             if session is not None:
                 fermer(session, "Fermée par l'utilisateur")
                 audit_log(
@@ -11766,20 +11805,20 @@ class RelaisSerieView(APIView):
                 )
             return Response({"session": None})
 
-        deja = session_active(request.user, compagnon.id)
+        deja = session_active(request.user, compagnon)
         session, erreur = ouvrir(
-            request.user, compagnon, get_active_environment(request),
+            request.user, compagnon, environnement,
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            transport=(request.data.get("transport") or "USB").upper(),
         )
         if erreur:
             return Response({"error": erreur}, status=status.HTTP_403_FORBIDDEN)
 
         # Compteurs rapportés par le navigateur à chaque battement : ils ne servent qu'à
-        # montrer que le relais fait quelque chose, donc on les accepte tels quels sans en
+        # montrer que le relais fait quelque chose, on les accepte donc tels quels sans en
         # faire une source de vérité.
-        for champ, cle in (("trames_recues", "trames_recues"),
-                           ("trames_envoyees", "trames_envoyees")):
-            valeur = request.data.get(cle)
+        for champ in ("trames_recues", "trames_envoyees"):
+            valeur = request.data.get(champ)
             if isinstance(valeur, int) and valeur >= 0:
                 setattr(session, champ, valeur)
         battre(session)
@@ -11789,17 +11828,21 @@ class RelaisSerieView(APIView):
             audit_log(
                 request=request, action_code="CREATION",
                 objet_type="SessionRelaisNavigateur", objet_id=session.id,
-                commentaire=f"Relais de « {compagnon.nom} » ouvert depuis un navigateur.",
+                commentaire=(f"Relais de « {compagnon.nom} » ouvert depuis un navigateur "
+                             f"({session.transport})."),
             )
+
         reponse = {
             "session": str(session.id),
             "compagnon": str(compagnon.id),
+            "protocole": protocole,
             "nom": compagnon.nom,
+            "cree": cree,
         }
         if compagnon.institution_id is None:
-            # Le relais fonctionne quand même — son propriétaire est reconnu par la clé
-            # publique de son nœud — mais la radio n'est rattachée à personne, donc aucun
-            # collègue ne pourra la reprendre. On le dit plutôt que de le laisser découvrir.
+            # Le relais fonctionne quand même — le propriétaire est reconnu par l'identité de
+            # son nœud — mais la radio n'est rattachée à personne, donc aucun collègue ne pourra
+            # la reprendre. On le dit plutôt que de le laisser découvrir.
             reponse["avertissement"] = (
                 "Cette radio n'est rattachée à aucune institution : vous êtes seul à pouvoir "
                 "la relayer. Choisissez votre institution active pour qu'elle devienne une "
@@ -18985,6 +19028,9 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
     queryset = MessageMeshLog.objects.select_related('compagnon', 'expediteur', 'equipe').all()
     serializer_class = MessageMeshLogSerializer
     actions_tous_environnements = ACTIONS_PONTS_RADIO
+    # Lu par PeutAgirPourCompagnon : une session sur une radio de l'autre protocole ne
+    # donne pas la main sur cette file.
+    protocole_relais = "MESHCORE"
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
@@ -19413,6 +19459,9 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     queryset = MessageCanalMeshCore.objects.select_related('canal', 'expediteur').all()
     serializer_class = MessageCanalMeshCoreSerializer
     actions_tous_environnements = ACTIONS_PONTS_RADIO
+    # Lu par PeutAgirPourCompagnon : une session sur une radio de l'autre protocole ne
+    # donne pas la main sur cette file.
+    protocole_relais = "MESHCORE"
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -19426,7 +19475,14 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsInstitutionalActor()]
-        return [permissions.IsAuthenticated()]
+        # Durci le 14/11/2026, comme MessageMeshLogViewSet la veille : jusque-là `create`,
+        # `partial_update` et `a-envoyer` étaient ouverts à tout compte connecté. N'importe quel
+        # inscrit pouvait donc lire la file sortante de TOUTES les radios (a-envoyer sans
+        # paramètre) et y déposer un faux message entrant. La création suit la DIRECTION : un
+        # sortant est écrit par un humain, un entrant est déposé par qui tient la radio.
+        if self.action == 'create':
+            return [PeutEcrireMessageCanal()]
+        return [PeutAgirPourCompagnon()]
 
     def perform_create(self, serializer):
         direction = serializer.validated_data.get('direction')
@@ -19740,7 +19796,11 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         réessayait sans fin d'ouvrir /dev/ttyACM0 du satellite de la Loire, et ce satellite
         ouvrait la connexion MQTT du central avec ses identifiants -- la même identité radio
         connectée deux fois au broker."""
-        compagnons = self.get_queryset().filter(actif=True)
+        # Une radio relayée par un navigateur est sur le poste de quelqu'un : aucun pont ne doit
+        # l'ouvrir. Et pour ce pont-ci c'est pire qu'un échec — il traite tout type inconnu comme
+        # du MQTT, il se connecterait donc au broker avec l'identité de cette radio.
+        compagnons = self.get_queryset().filter(actif=True).exclude(
+            connexion_type=MeshtasticConnexionType.NAVIGATEUR)
         satellite = Satellite.objects.filter(compte_service=request.user).first()
         if satellite is not None:
             compagnons = compagnons.filter(satellite=satellite)
@@ -20070,11 +20130,21 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     queryset = MessageMeshtasticLog.objects.select_related('compagnon', 'expediteur', 'equipe', 'canal').all()
     serializer_class = MessageMeshtasticLogSerializer
     actions_tous_environnements = ACTIONS_PONTS_RADIO
+    # Lu par PeutAgirPourCompagnon : une session sur une radio de l'autre protocole ne
+    # donne pas la main sur cette file.
+    protocole_relais = "MESHTASTIC"
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsInstitutionalActor()]
-        return [permissions.IsAuthenticated()]
+        # Durci le 14/11/2026, comme MessageMeshLogViewSet la veille : jusque-là `create`,
+        # `partial_update` et `a-envoyer` étaient ouverts à tout compte connecté. N'importe quel
+        # inscrit pouvait donc lire la file sortante de TOUTES les radios (a-envoyer sans
+        # paramètre) et y déposer un faux message entrant. La création suit la DIRECTION : un
+        # sortant est écrit par un humain, un entrant est déposé par qui tient la radio.
+        if self.action == 'create':
+            return [PeutEcrireMessageMesh()]
+        return [PeutAgirPourCompagnon()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -20214,6 +20284,9 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
     queryset = MessageCanalMeshtastic.objects.select_related('canal', 'expediteur').all()
     serializer_class = MessageCanalMeshtasticSerializer
     actions_tous_environnements = ACTIONS_PONTS_RADIO
+    # Lu par PeutAgirPourCompagnon : une session sur une radio de l'autre protocole ne
+    # donne pas la main sur cette file.
+    protocole_relais = "MESHTASTIC"
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -20227,7 +20300,14 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsInstitutionalActor()]
-        return [permissions.IsAuthenticated()]
+        # Durci le 14/11/2026, comme MessageMeshLogViewSet la veille : jusque-là `create`,
+        # `partial_update` et `a-envoyer` étaient ouverts à tout compte connecté. N'importe quel
+        # inscrit pouvait donc lire la file sortante de TOUTES les radios (a-envoyer sans
+        # paramètre) et y déposer un faux message entrant. La création suit la DIRECTION : un
+        # sortant est écrit par un humain, un entrant est déposé par qui tient la radio.
+        if self.action == 'create':
+            return [PeutEcrireMessageCanal()]
+        return [PeutAgirPourCompagnon()]
 
     def perform_create(self, serializer):
         direction = serializer.validated_data.get('direction')

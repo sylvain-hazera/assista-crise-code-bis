@@ -13,6 +13,26 @@ seconde voie, et elle ne la remplace pas.
 n'ajoute **aucune résilience** — si internet tombe, le navigateur ne joint plus l'API non plus.
 Les deux répondent à des besoins opposés.
 
+## Deux protocoles, trois transports (14/11/2026)
+
+| | USB (Web Serial) | Bluetooth (Web Bluetooth) | Réseau local |
+|---|---|---|---|
+| **MeshCore** | oui | oui (service UART Nordic) | **impossible** : TCP brut |
+| **Meshtastic** | oui | oui | oui, par l'API HTTP du nœud |
+
+MeshCore en Wi-Fi parle du TCP brut sur le port 5000, et aucune API de navigateur n'ouvre une
+connexion TCP. Meshtastic expose en plus une API HTTP (`/api/v1/toradio`, `/api/v1/fromradio`)
+avec `Access-Control-Allow-Origin: *` ; Chrome autorise une page HTTPS à l'appeler sur une IP
+privée après une autorisation « réseau local » donnée par l'utilisateur.
+
+## La radio dit qui elle est
+
+Le navigateur lit l'identité de la radio **sur la radio elle-même** — clé publique MeshCore dans
+`SELF_INFO`, `my_node_num` Meshtastic dans `MyNodeInfo` — avant d'ouvrir la moindre session. Le
+serveur retrouve le companion correspondant, ou le crée (`identifier`). C'est ce qui permet le
+« un bouton, et hop » demandé, et c'est aussi un garde-fou : choisir « radio A » dans une liste
+puis brancher la radio B attribuerait le trafic de B à A.
+
 ## Pourquoi le navigateur est le pont, et non un tuyau
 
 La première conception passait par une WebSocket transportant des octets bruts, le central
@@ -53,18 +73,80 @@ SECONDES_AVANT_SESSION_MORTE = 120
 #: navigateurs qui dépileraient la même file enverraient chaque message deux fois.
 SESSIONS_MAX_PAR_COMPAGNON = 1
 
+#: Un pont qui a rapporté CONNECTE depuis moins longtemps que ça tient la radio : un relais
+#: navigateur en parallèle dépilerait la même file et doublerait chaque message.
+SECONDES_PONT_VIVANT = 120
+
+MESHCORE = "MESHCORE"
+MESHTASTIC = "MESHTASTIC"
+PROTOCOLES = (MESHCORE, MESHTASTIC)
+
+
+class RelaisRefuse(Exception):
+    """Refus explicable, fait pour être lu à l'écran tel quel."""
+
+
+# ══ Les deux protocoles ═══════════════════════════════════════════════════════
+
+def modele_compagnon(protocole):
+    from .models import CompagnonMeshCore, CompagnonMeshtastic
+
+    if protocole == MESHTASTIC:
+        return CompagnonMeshtastic
+    if protocole == MESHCORE:
+        return CompagnonMeshCore
+    raise RelaisRefuse("Protocole radio inconnu.")
+
+
+def protocole_de(compagnon):
+    from .models import CompagnonMeshtastic
+
+    return MESHTASTIC if isinstance(compagnon, CompagnonMeshtastic) else MESHCORE
+
+
+def _champ_session(compagnon):
+    """Le nom du champ de `SessionRelaisNavigateur` qui désigne ce companion."""
+    return "compagnon_meshtastic" if protocole_de(compagnon) == MESHTASTIC else "compagnon"
+
+
+def compagnon_par_id(compagnon_id, protocole=None):
+    """Retrouve un companion par son identifiant. Sans protocole, essaie les deux : les
+    identifiants sont des UUID, une collision entre les deux tables n'existe pas en pratique."""
+    from .models import CompagnonMeshCore, CompagnonMeshtastic
+
+    if not compagnon_id:
+        return None
+    modeles = [modele_compagnon(protocole)] if protocole else [CompagnonMeshCore,
+                                                                CompagnonMeshtastic]
+    for modele in modeles:
+        try:
+            trouve = modele.objects.filter(pk=compagnon_id).first()
+        except (ValueError, Exception):  # identifiant mal formé : pas une radio
+            trouve = None
+        if trouve is not None:
+            return trouve
+    return None
+
+
+# ══ Qui a la main ═════════════════════════════════════════════════════════════
 
 def _est_mon_noeud(utilisateur, compagnon):
     """Ce companion est-il la radio personnelle de cette personne ?
 
-    Le rattachement se fait par la **clé publique**, parce que c'est la seule chose que les
-    deux modèles ont en commun : `NoeudMeshUtilisateur` dit « cette clé est à moi »,
-    `CompagnonMeshCore` dit « cette clé est une passerelle ». Un même appareil peut être les
-    deux à la fois, et c'est précisément le cas du relais navigateur.
+    Rapprochement par l'identité radio, seule chose que les deux modèles ont en commun : la
+    **clé publique** côté MeshCore (`NoeudMeshUtilisateur`), le **numéro de nœud** côté
+    Meshtastic (`NoeudUtilisateurMeshtastic`). Un même appareil peut être à la fois « mon nœud »
+    et « une passerelle » — c'est précisément le cas du relais navigateur.
     """
-    from .models import NoeudMeshUtilisateur
+    from .models import NoeudMeshUtilisateur, NoeudUtilisateurMeshtastic
 
-    if compagnon is None or not compagnon.pubkey_hex:
+    if compagnon is None:
+        return False
+    if protocole_de(compagnon) == MESHTASTIC:
+        return NoeudUtilisateurMeshtastic.objects.filter(
+            utilisateur=utilisateur, node_num=compagnon.node_num, actif=True,
+        ).exists()
+    if not compagnon.pubkey_hex:
         return False
     return NoeudMeshUtilisateur.objects.filter(
         utilisateur=utilisateur, pubkey_hex=compagnon.pubkey_hex, actif=True,
@@ -77,33 +159,30 @@ def peut_relayer(utilisateur, compagnon):
     **Correction du 14/11/2026.** La première version exigeait l'appartenance à l'institution
     propriétaire d'un companion déjà déclaré, et rien d'autre ne passait. C'était un contresens
     sur le besoin : le cas visé est « quelqu'un **sans** satellite branche **son** nœud en USB ».
-    Par construction cette personne n'a pas de companion institutionnel — on lui demandait donc
-    d'avoir déjà ce que le relais est censé fournir. Pire, la liste servie à l'écran
-    pré-filtrait sur `ContactInstitution`, ce qui contredisait cette fonction : un
-    administrateur acceptable ici voyait quand même une liste vide.
+    Pire, la liste servie à l'écran pré-filtrait sur `ContactInstitution`, ce qui contredisait
+    cette fonction : un administrateur accepté ici voyait quand même une liste vide.
 
     Trois titres, et un seul suffit :
 
     1. **l'administrateur au sens du rôle RÉEL** — jamais le rôle effectif : un `demo_role`
        prêté le temps d'une démonstration ne donne pas la main sur une radio réelle, même
        raisonnement que `EstComptePont` ;
-    2. **le propriétaire du nœud** : la clé publique du companion est déclarée comme sienne
-       dans `NoeudMeshUtilisateur`. C'est le cas central du relais navigateur ;
-    3. **un membre actif de l'institution** propriétaire du companion, pour les passerelles
-       institutionnelles déjà déclarées.
+    2. **le propriétaire du nœud** (voir `_est_mon_noeud`) ;
+    3. **un membre actif de l'institution** propriétaire du companion.
 
-    Dans tous les cas la **possession physique** de la radio reste exigée de fait par l'USB :
-    aucun de ces titres ne permet de relayer une radio qu'on n'a pas en main.
+    Dans tous les cas la **possession physique** de la radio reste exigée de fait : USB,
+    appairage Bluetooth ou réseau local, aucun ne permet de relayer une radio qu'on n'a pas à
+    portée.
     """
     from .models import ContactInstitution, UserRole
 
-    if not getattr(utilisateur, "is_authenticated", False):
+    if not getattr(utilisateur, "is_authenticated", False) or compagnon is None:
         return False
     if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
         return True
     if _est_mon_noeud(utilisateur, compagnon):
         return True
-    if compagnon is None or compagnon.institution_id is None:
+    if compagnon.institution_id is None:
         # Un companion sans institution n'appartient à personne : on ne devine pas à qui le
         # confier. Mieux vaut un relais refusé qu'un relais accordé au hasard.
         return False
@@ -112,135 +191,97 @@ def peut_relayer(utilisateur, compagnon):
     ).exists()
 
 
-def radios_relayables(utilisateur):
-    """Les radios proposées à l'écran : `(companions, noeuds_personnels)`.
+def tenu_par_un_pont(compagnon):
+    """Un pont Python tient-il déjà cette radio ?
 
-    Deux listes parce qu'il y a deux situations, et que les confondre était l'erreur de la
-    première version :
+    Deux relais sur la même radio dépileraient la même file sortante : chaque message partirait
+    deux fois. On se fie au dernier état rapporté par le pont — `CONNECTE` récent — et on
+    ignore les companions créés par un navigateur, qu'aucun pont n'ouvre jamais."""
+    from .models import MeshCoreConnexionType
 
-    - les **companions** déjà déclarés que cette personne a le droit de relayer ;
-    - ses **nœuds personnels** qui ne sont pas encore companions. Ceux-là n'ont rien à déclarer
-      d'avance : au démarrage du relais, `compagnon_pour_noeud` les promeut en companion série.
-
-    Un nœud personnel déjà promu n'apparaît que dans la première liste — sa clé publique est
-    celle du companion, et on ne propose pas deux fois la même radio.
-    """
-    from .models import CompagnonMeshCore, ContactInstitution, NoeudMeshUtilisateur, UserRole
-
-    candidats = CompagnonMeshCore.objects.filter(actif=True).select_related("institution")
-    if getattr(utilisateur, "type", None) != UserRole.ADMINISTRATOR:
-        # Un non-administrateur ne voit que ce qu'il peut relayer. On restreint en base plutôt
-        # que d'appeler `peut_relayer` sur toute la table : à l'échelle d'un département la
-        # liste des companions reste petite, mais la règle doit rester la même aux deux
-        # endroits — d'où le filtre final ci-dessous, qui est l'autorité.
-        miennes = list(ContactInstitution.objects.filter(
-            utilisateur=utilisateur, actif=True,
-        ).values_list("institution_id", flat=True))
-        mes_cles = list(NoeudMeshUtilisateur.objects.filter(
-            utilisateur=utilisateur, actif=True,
-        ).values_list("pubkey_hex", flat=True))
-        from django.db.models import Q
-        candidats = candidats.filter(
-            Q(institution_id__in=miennes) | Q(pubkey_hex__in=mes_cles),
-        )
-
-    compagnons = [c for c in candidats.order_by("nom") if peut_relayer(utilisateur, c)]
-    deja = {c.pubkey_hex for c in compagnons if c.pubkey_hex}
-
-    noeuds = [
-        n for n in NoeudMeshUtilisateur.objects.filter(utilisateur=utilisateur, actif=True)
-        if n.pubkey_hex not in deja
-    ]
-    return compagnons, noeuds
+    if compagnon.connexion_type == MeshCoreConnexionType.NAVIGATEUR:
+        return False
+    if (compagnon.dernier_etat or "") != "CONNECTE" or not compagnon.derniere_connexion:
+        return False
+    limite = timezone.now() - timezone.timedelta(seconds=SECONDES_PONT_VIVANT)
+    return compagnon.derniere_connexion >= limite
 
 
-def compagnon_pour_noeud(utilisateur, noeud, environnement):
-    """Rend le companion correspondant à ce nœud personnel, en le créant au besoin.
+# ══ Sessions ══════════════════════════════════════════════════════════════════
 
-    **Idempotent par clé publique** : rebrancher la radio demain ne crée pas un second
-    companion. C'est ce qui rend l'écran utilisable sans rien préparer — on branche, on démarre.
-
-    Aucun secret n'est lu ni écrit ici : ni clé de canal, ni clé privée, ni mot de passe MQTT.
-    La frontière de `EstComptePont` reste entière — on déclare l'existence d'une radio, pas de
-    quoi la déchiffrer.
-    """
-    from .models import CompagnonMeshCore, MeshCoreConnexionType
-
-    if noeud.utilisateur_id != utilisateur.id:
-        return None, "Ce nœud n'est pas le vôtre."
-
-    existant = CompagnonMeshCore.objects.filter(pubkey_hex=noeud.pubkey_hex).first()
-    if existant is not None:
-        if not existant.actif:
-            existant.actif = True
-            existant.save(update_fields=["actif"])
-        return existant, None
-
-    from .institution_courante import institution_courante
-
-    nom = (noeud.nom_noeud or "").strip() or f"Radio de {utilisateur.get_full_name() or utilisateur.email}"
-    compagnon = CompagnonMeshCore.objects.create(
-        environment=environnement,
-        institution=institution_courante(utilisateur),
-        nom=nom[:100],
-        connexion_type=MeshCoreConnexionType.SERIE,
-        # La radio n'est pas branchée sur le serveur mais sur le poste de la personne. Le dire
-        # explicitement évite qu'un pont Python essaie un jour d'ouvrir ce périphérique.
-        serie_device="navigateur",
-        pubkey_hex=noeud.pubkey_hex,
-    )
-    return compagnon, None
+def _limite_vivante():
+    return timezone.now() - timezone.timedelta(seconds=SECONDES_AVANT_SESSION_MORTE)
 
 
-def session_active(utilisateur, compagnon_id):
-    """La session de relais ouverte par CETTE personne pour CE companion, ou None."""
+def session_active(utilisateur, compagnon):
+    """La session de relais ouverte par CETTE personne pour CE companion, ou None.
+
+    Accepte le companion lui-même ou son identifiant (les deux protocoles sont essayés)."""
     from .models import SessionRelaisNavigateur
 
-    if not compagnon_id or not getattr(utilisateur, "is_authenticated", False):
+    if not getattr(utilisateur, "is_authenticated", False):
         return None
-    limite = timezone.now() - timezone.timedelta(seconds=SECONDES_AVANT_SESSION_MORTE)
+    if not hasattr(compagnon, "pk"):
+        compagnon = compagnon_par_id(compagnon)
+    if compagnon is None:
+        return None
     return SessionRelaisNavigateur.objects.filter(
-        utilisateur=utilisateur, compagnon_id=compagnon_id, fermee_le__isnull=True,
-        dernier_contact__gte=limite,
+        utilisateur=utilisateur, fermee_le__isnull=True, dernier_contact__gte=_limite_vivante(),
+        **{_champ_session(compagnon): compagnon},
     ).first()
 
 
-def sessions_vivantes(compagnon_id):
+def sessions_vivantes(compagnon):
     from .models import SessionRelaisNavigateur
 
-    limite = timezone.now() - timezone.timedelta(seconds=SECONDES_AVANT_SESSION_MORTE)
     return SessionRelaisNavigateur.objects.filter(
-        compagnon_id=compagnon_id, fermee_le__isnull=True, dernier_contact__gte=limite,
+        fermee_le__isnull=True, dernier_contact__gte=_limite_vivante(),
+        **{_champ_session(compagnon): compagnon},
     )
 
 
-def ouvrir(utilisateur, compagnon, environnement, user_agent=""):
+def mes_sessions(utilisateur):
+    """Les relais vivants de cette personne, tous protocoles confondus."""
+    from .models import SessionRelaisNavigateur
+
+    return SessionRelaisNavigateur.objects.filter(
+        utilisateur=utilisateur, fermee_le__isnull=True, dernier_contact__gte=_limite_vivante(),
+    ).select_related("compagnon", "compagnon_meshtastic")
+
+
+def ouvrir(utilisateur, compagnon, environnement, user_agent="", transport="USB"):
     """Ouvre une session de relais. Renvoie `(session, erreur)`.
 
     Reprend une session déjà ouverte par la même personne plutôt que d'en empiler : recharger
     la page ne doit pas consommer le plafond, ni laisser une session fantôme derrière soi."""
-    from .models import SessionRelaisNavigateur
+    from .models import SessionRelaisNavigateur, TransportRelais
 
     if not peut_relayer(utilisateur, compagnon):
         return None, ("Vous n'avez pas la main sur cette radio : elle n'est ni la vôtre, ni "
                       "celle d'une institution dont vous êtes membre.")
 
-    existante = session_active(utilisateur, compagnon.id)
+    existante = session_active(utilisateur, compagnon)
     if existante is not None:
         existante.dernier_contact = timezone.now()
         existante.save(update_fields=["dernier_contact"])
         return existante, None
 
+    if tenu_par_un_pont(compagnon):
+        return None, ("Cette radio est déjà tenue par un pont (dernier état : connecté). La "
+                      "relayer aussi depuis ce poste enverrait chaque message en double.")
+
     # Les sessions mortes sont fermées AVANT de compter : sinon un navigateur fermé brutalement
     # bloquerait la radio jusqu'au passage d'une purge.
-    fermer_sessions_mortes(compagnon.id)
-    if sessions_vivantes(compagnon.id).count() >= SESSIONS_MAX_PAR_COMPAGNON:
+    fermer_sessions_mortes(compagnon)
+    if sessions_vivantes(compagnon).count() >= SESSIONS_MAX_PAR_COMPAGNON:
         return None, ("Cette radio est déjà relayée depuis un autre poste. Deux relais "
                       "enverraient chaque message en double.")
 
+    if transport not in TransportRelais.values:
+        transport = TransportRelais.USB
     session = SessionRelaisNavigateur.objects.create(
-        utilisateur=utilisateur, compagnon=compagnon, environment=environnement,
-        user_agent=(user_agent or "")[:255],
+        utilisateur=utilisateur, environment=environnement, transport=transport,
+        user_agent=(user_agent or "")[:255], **{_champ_session(compagnon): compagnon},
     )
     return session, None
 
@@ -257,17 +298,236 @@ def fermer(session, motif=""):
     session.save(update_fields=["fermee_le", "motif_fermeture"])
 
 
-def fermer_sessions_mortes(compagnon_id=None):
+def fermer_sessions_mortes(compagnon=None):
     """Ferme les sessions silencieuses depuis trop longtemps. Renvoie le nombre fermé.
 
     Une page web n'annonce pas sa fermeture de façon fiable — onglet tué, portable en veille,
     Wi-Fi coupé. Sans ce ménage, une radio resterait marquée relayée indéfiniment."""
     from .models import SessionRelaisNavigateur
 
-    limite = timezone.now() - timezone.timedelta(seconds=SECONDES_AVANT_SESSION_MORTE)
     qs = SessionRelaisNavigateur.objects.filter(
-        fermee_le__isnull=True, dernier_contact__lt=limite,
+        fermee_le__isnull=True, dernier_contact__lt=_limite_vivante(),
     )
-    if compagnon_id:
-        qs = qs.filter(compagnon_id=compagnon_id)
+    if compagnon is not None:
+        if not hasattr(compagnon, "pk"):
+            compagnon = compagnon_par_id(compagnon)
+        if compagnon is None:
+            return 0
+        qs = qs.filter(**{_champ_session(compagnon): compagnon})
     return qs.update(fermee_le=timezone.now(), motif_fermeture="Silence prolongé")
+
+
+# ══ Ce qu'on propose à l'écran ════════════════════════════════════════════════
+
+def radios_relayables(utilisateur):
+    """Les radios proposées à l'écran : `(companions, noeuds_personnels)`, deux protocoles.
+
+    Deux listes parce qu'il y a deux situations :
+
+    - les **companions** déjà déclarés que cette personne a le droit de relayer ;
+    - ses **nœuds personnels** pas encore companions. Ils n'ont rien à déclarer d'avance : au
+      branchement, `identifier` les promeut en companion.
+
+    Un nœud déjà promu n'apparaît que dans la première liste — même identité radio, même radio.
+    """
+    from django.db.models import Q
+
+    from .models import (
+        CompagnonMeshCore, CompagnonMeshtastic, ContactInstitution, NoeudMeshUtilisateur,
+        NoeudUtilisateurMeshtastic, UserRole,
+    )
+
+    est_admin = getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR
+    miennes = list(ContactInstitution.objects.filter(
+        utilisateur=utilisateur, actif=True,
+    ).values_list("institution_id", flat=True))
+    mes_cles = list(NoeudMeshUtilisateur.objects.filter(
+        utilisateur=utilisateur, actif=True,
+    ).values_list("pubkey_hex", flat=True))
+    mes_nums = list(NoeudUtilisateurMeshtastic.objects.filter(
+        utilisateur=utilisateur, actif=True,
+    ).values_list("node_num", flat=True))
+
+    meshcore = CompagnonMeshCore.objects.filter(actif=True).select_related("institution")
+    meshtastic = CompagnonMeshtastic.objects.filter(actif=True).select_related("institution")
+    if not est_admin:
+        # Restreint en base plutôt que d'appeler `peut_relayer` sur toute la table ; le filtre
+        # final reste l'autorité, pour que la règle soit la même aux deux endroits.
+        meshcore = meshcore.filter(Q(institution_id__in=miennes) | Q(pubkey_hex__in=mes_cles))
+        meshtastic = meshtastic.filter(Q(institution_id__in=miennes) | Q(node_num__in=mes_nums))
+    # Un companion MQTT Meshtastic n'est pas un appareil : il n'y a rien à brancher.
+    meshtastic = meshtastic.exclude(connexion_type="MQTT")
+
+    compagnons = [c for c in list(meshcore.order_by("nom")) + list(meshtastic.order_by("nom"))
+                  if peut_relayer(utilisateur, c)]
+    cles_prises = {c.pubkey_hex for c in compagnons
+                   if protocole_de(c) == MESHCORE and c.pubkey_hex}
+    nums_pris = {c.node_num for c in compagnons if protocole_de(c) == MESHTASTIC}
+
+    noeuds = [n for n in NoeudMeshUtilisateur.objects.filter(utilisateur=utilisateur, actif=True)
+              if n.pubkey_hex not in cles_prises]
+    noeuds += [n for n in NoeudUtilisateurMeshtastic.objects.filter(
+        utilisateur=utilisateur, actif=True) if n.node_num not in nums_pris]
+    return compagnons, noeuds
+
+
+def protocole_du_noeud(noeud):
+    from .models import NoeudUtilisateurMeshtastic
+
+    return MESHTASTIC if isinstance(noeud, NoeudUtilisateurMeshtastic) else MESHCORE
+
+
+# ══ Identification par la radio elle-même ═════════════════════════════════════
+
+def _normaliser_identite(protocole, identite):
+    """Valide l'identité rapportée par le navigateur. Lève `RelaisRefuse`."""
+    identite = identite or {}
+    nom = str(identite.get("nom") or "").strip()[:100]
+    if protocole == MESHCORE:
+        cle = str(identite.get("pubkey_hex") or "").strip().lower()
+        if len(cle) != 64 or any(c not in "0123456789abcdef" for c in cle):
+            raise RelaisRefuse("Identité MeshCore illisible : clé publique de 32 octets attendue.")
+        return {"pubkey_hex": cle, "nom": nom}
+    try:
+        num = int(identite.get("node_num"))
+    except (TypeError, ValueError):
+        raise RelaisRefuse("Identité Meshtastic illisible : numéro de nœud attendu.") from None
+    # 0 et 0xFFFFFFFF ne désignent pas un nœud : « aucun » et « tout le monde ».
+    if not 0 < num < 0xFFFFFFFF:
+        raise RelaisRefuse("Numéro de nœud Meshtastic invalide.")
+    cle = str(identite.get("cle_publique_hex") or "").strip().lower()
+    return {"node_num": num, "nom": nom, "cle_publique_hex": cle if len(cle) == 64 else ""}
+
+
+def _compagnon_existant(protocole, identite):
+    modele = modele_compagnon(protocole)
+    if protocole == MESHCORE:
+        return modele.objects.filter(pubkey_hex=identite["pubkey_hex"]).order_by(
+            "date_creation").first()
+    return modele.objects.filter(node_num=identite["node_num"]).first()
+
+
+def _mon_noeud(utilisateur, protocole, identite):
+    from .models import NoeudMeshUtilisateur, NoeudUtilisateurMeshtastic
+
+    if protocole == MESHCORE:
+        return NoeudMeshUtilisateur.objects.filter(
+            utilisateur=utilisateur, pubkey_hex=identite["pubkey_hex"], actif=True).first()
+    return NoeudUtilisateurMeshtastic.objects.filter(
+        utilisateur=utilisateur, node_num=identite["node_num"], actif=True).first()
+
+
+def _institution_pour_nouvelle_passerelle(utilisateur):
+    """L'institution à laquelle rattacher une radio inconnue, ou None si on ne peut pas.
+
+    Déclarer une passerelle pour une institution, c'est ajouter de l'infrastructure radio en
+    son nom : réservé à l'administrateur (rôle RÉEL) et aux acteurs institutionnels membres
+    actifs de leur institution courante. Un bénévole déclare d'abord SA radio comme son nœud —
+    sinon n'importe quel compte inscrit pourrait enregistrer des passerelles."""
+    from .institution_courante import est_membre, institution_courante
+    from .models import UserRole
+    from .permissions import INSTITUTIONAL_TYPES
+
+    type_reel = getattr(utilisateur, "type", None)
+    if type_reel not in INSTITUTIONAL_TYPES:
+        return None, False
+    institution = institution_courante(utilisateur)
+    if type_reel == UserRole.ADMINISTRATOR:
+        return institution, True
+    if institution is None or not est_membre(utilisateur, institution.id):
+        return None, False
+    return institution, True
+
+
+def _creer_compagnon(protocole, identite, institution, environnement, nom_par_defaut):
+    from .models import MeshCoreConnexionType
+
+    modele = modele_compagnon(protocole)
+    nom = identite["nom"] or nom_par_defaut
+    champs = dict(
+        environment=environnement, institution=institution, nom=nom[:100],
+        # Aucun pont ne doit essayer de l'ouvrir : elle est sur le poste de quelqu'un.
+        connexion_type=MeshCoreConnexionType.NAVIGATEUR,
+    )
+    if protocole == MESHCORE:
+        champs["pubkey_hex"] = identite["pubkey_hex"]
+    else:
+        champs["node_num"] = identite["node_num"]
+        champs["long_name"] = (identite["nom"] or "")[:40]
+        if identite.get("cle_publique_hex"):
+            champs["cle_publique_appareil_hex"] = identite["cle_publique_hex"]
+    return modele.objects.create(**champs)
+
+
+def identifier(utilisateur, protocole, identite, environnement):
+    """Le companion correspondant à la radio branchée, créé au besoin. Lève `RelaisRefuse`.
+
+    Renvoie `(compagnon, cree)`. Trois cas, dans cet ordre :
+
+    1. **la radio est déjà connue** (même clé / même numéro) → ce companion, si l'on a la main ;
+    2. **c'est mon nœud déclaré** → promu en passerelle, rattaché à mon institution courante ;
+    3. **radio inconnue** → créée pour l'institution courante, mais seulement par un acteur qui
+       peut déclarer de l'infrastructure en son nom (voir `_institution_pour_nouvelle_passerelle`).
+
+    Aucun secret n'est lu ni écrit : ni clé de canal, ni clé privée, ni mot de passe MQTT. La
+    frontière de `EstComptePont` reste entière — on déclare l'existence d'une radio, pas de quoi
+    la déchiffrer.
+    """
+    from .institution_courante import institution_courante
+
+    identite = _normaliser_identite(protocole, identite)
+
+    existant = _compagnon_existant(protocole, identite)
+    if existant is not None:
+        if not peut_relayer(utilisateur, existant):
+            raise RelaisRefuse(
+                f"Cette radio est déclarée comme « {existant.nom} », et vous n'avez pas la main "
+                "dessus : elle n'est ni la vôtre, ni celle d'une institution dont vous êtes membre.")
+        if not existant.actif:
+            existant.actif = True
+            existant.save(update_fields=["actif"])
+        return existant, False
+
+    noeud = _mon_noeud(utilisateur, protocole, identite)
+    if noeud is not None:
+        nom_noeud = (getattr(noeud, "nom_noeud", "") or "").strip()
+        identite = {**identite, "nom": identite["nom"] or nom_noeud}
+        nom = f"Radio de {utilisateur.get_full_name() or utilisateur.email}"
+        return _creer_compagnon(protocole, identite, institution_courante(utilisateur),
+                                environnement, nom), True
+
+    institution, autorise = _institution_pour_nouvelle_passerelle(utilisateur)
+    if not autorise:
+        raise RelaisRefuse(
+            "Radio inconnue. Déclarez-la d'abord comme votre nœud dans Mon espace › Mon compte, "
+            "ou demandez à un responsable de votre institution de la connecter.")
+    return _creer_compagnon(protocole, identite, institution, environnement,
+                            "Passerelle navigateur"), True
+
+
+def verifier_identite(compagnon, identite):
+    """La radio branchée est-elle bien CE companion ? Lève `RelaisRefuse` sinon.
+
+    Ne compare que ce qui est fiable : la clé publique MeshCore quand on la connaît (et on
+    l'enregistre sinon, comme le pont à sa première connexion) ; le numéro Meshtastic seulement
+    pour un companion créé par un navigateur — celui des companions plus anciens a pu être
+    choisi à la main, pas lu sur l'appareil."""
+    from .models import MeshCoreConnexionType
+
+    protocole = protocole_de(compagnon)
+    identite = _normaliser_identite(protocole, identite)
+    if protocole == MESHCORE:
+        if not compagnon.pubkey_hex:
+            compagnon.pubkey_hex = identite["pubkey_hex"]
+            compagnon.save(update_fields=["pubkey_hex"])
+            return
+        if compagnon.pubkey_hex.lower() != identite["pubkey_hex"]:
+            raise RelaisRefuse(
+                f"La radio branchée n'est pas « {compagnon.nom} » : sa clé publique est "
+                f"{identite['pubkey_hex'][:12]}…, celle attendue {compagnon.pubkey_hex[:12]}….")
+        return
+    if (compagnon.connexion_type == MeshCoreConnexionType.NAVIGATEUR
+            and compagnon.node_num != identite["node_num"]):
+        raise RelaisRefuse(
+            f"La radio branchée n'est pas « {compagnon.nom} » : elle annonce le nœud "
+            f"!{identite['node_num']:08x}, celui attendu est !{compagnon.node_num:08x}.")

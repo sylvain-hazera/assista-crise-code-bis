@@ -275,8 +275,7 @@ class PeutAgirPourCompagnon(BasePermission):
                "liaison, ou avec un compte de service de passerelle.")
 
     def has_permission(self, request, view):
-        from .models import CompagnonMeshCore
-        from .relais_navigateur import session_active
+        from .relais_navigateur import compagnon_par_id, protocole_de, session_active
 
         utilisateur = request.user
         if not getattr(utilisateur, "is_authenticated", False):
@@ -295,14 +294,43 @@ class PeutAgirPourCompagnon(BasePermission):
                 statut_enrolement=StatutEnrolementSatellite.APPROUVE).exists():
             return True
 
-        # 2. Relais navigateur : le companion doit être nommé, et la session vivante.
-        compagnon_id = (request.data.get("compagnon") if hasattr(request, "data") else None) \
-            or request.query_params.get("compagnon")
+        # 2. Relais navigateur : le companion doit être identifié, et la session vivante.
+        compagnon_id = self._compagnon_designe(request, view)
         if not compagnon_id:
             return False
-        if not CompagnonMeshCore.objects.filter(pk=compagnon_id).exists():
+        compagnon = compagnon_par_id(compagnon_id)
+        if compagnon is None:
             return False
-        return session_active(utilisateur, compagnon_id) is not None
+        # Le companion doit être du protocole de CET endpoint : une session MeshCore ne donne
+        # pas la main sur la file Meshtastic, même si un identifiant traînait d'une table à
+        # l'autre.
+        attendu = getattr(view, "protocole_relais", "MESHCORE")
+        if protocole_de(compagnon) != attendu:
+            return False
+        return session_active(utilisateur, compagnon) is not None
+
+    @staticmethod
+    def _compagnon_designe(request, view):
+        """Le companion visé par la requête.
+
+        Nommé dans le corps ou dans l'URL — ou, pour un `PATCH /<id>/`, **lu sur le message
+        lui-même**. Correction du 14/11/2026 : un relais marque un envoi par
+        `PATCH /messages-meshcore/<id>/ {statut}`, sans répéter son companion. La permission le
+        refusait donc toujours, et en situation le navigateur aurait renvoyé le même message à
+        chaque cycle, indéfiniment, faute de pouvoir le marquer envoyé."""
+        compagnon_id = (request.data.get("compagnon") if hasattr(request, "data") else None) \
+            or request.query_params.get("compagnon")
+        if compagnon_id:
+            return compagnon_id
+        pk = getattr(view, "kwargs", {}).get("pk")
+        queryset = getattr(view, "queryset", None)
+        if pk and queryset is not None:
+            try:
+                return queryset.model.objects.filter(pk=pk).values_list(
+                    "compagnon_id", flat=True).first()
+            except Exception:  # identifiant mal formé : rien à résoudre
+                return None
+        return None
 
 
 class PeutEcrireMessageMesh(BasePermission):
@@ -331,6 +359,26 @@ class PeutEcrireMessageMesh(BasePermission):
         if direction == DirectionMessageMesh.ENTRANT:
             return PeutAgirPourCompagnon().has_permission(request, view)
         return IsInstitutionalActor().has_permission(request, view)
+
+
+class PeutEcrireMessageCanal(BasePermission):
+    """Créer un message de CANAL : même séparation par direction que `PeutEcrireMessageMesh`,
+    mais le sortant garde la règle historique des canaux (tout compte connecté).
+
+    Durcir le sortant de canal n'était pas l'objet du 14/11/2026 et casserait peut-être un usage
+    du chat d'équipe qu'on n'a pas inventorié. L'entrant, lui, ne se discute pas : déposer « ce
+    que la radio a entendu » est un geste de passerelle, sinon n'importe qui fabrique un faux
+    message attribué à un intervenant de terrain."""
+
+    message = PeutAgirPourCompagnon.message
+
+    def has_permission(self, request, view):
+        from .models import DirectionMessageMesh
+
+        direction = (request.data.get("direction") if hasattr(request, "data") else None) or ""
+        if direction == DirectionMessageMesh.ENTRANT:
+            return PeutAgirPourCompagnon().has_permission(request, view)
+        return bool(request.user and request.user.is_authenticated)
 
 
 class EstComptePont(BasePermission):

@@ -2,8 +2,9 @@
   <header class="entete">
     <h1>Devenir passerelle</h1>
     <p>
-      Branchez une radio en USB sur ce poste et il relaiera le réseau radio vers Assista-Crise,
-      sans rien installer. Utile sur un ordinateur verrouillé, le temps d'une intervention.
+      Connectez une radio MeshCore ou Meshtastic à ce poste — en USB, en Bluetooth ou, pour
+      Meshtastic, par le réseau local — et il relaiera le réseau radio vers Assista-Crise, sans
+      rien installer.
     </p>
   </header>
 
@@ -12,87 +13,67 @@
     <div class="alerte erreur">
       <span class="material-icons">block</span>
       <div>
-        <strong>Ce navigateur ne peut pas accéder au port USB.</strong>
-        L'accès série n'existe que sur <strong>Chrome et Edge</strong>, sur ordinateur ou
-        Android. Ni Firefox, ni Safari, ni iPhone. Ouvrez cette page dans Chrome pour relayer
-        une radio.
+        <strong>Ce navigateur ne peut accéder ni à l'USB, ni au Bluetooth.</strong>
+        Ces accès n'existent que sur <strong>Chrome et Edge</strong>, sur ordinateur ou Android.
+        Ni Firefox, ni Safari, ni iPhone. Une radio Meshtastic sur le réseau local reste
+        joignable ci-dessous.
       </div>
     </div>
-  } @else {
-
-    <!-- Les deux limites qu'il vaut mieux lire ici qu'en situation. -->
-    <div class="alerte avertissement">
-      <span class="material-icons">info</span>
-      <div>
-        <strong>USB uniquement, et cet onglet doit rester ouvert.</strong>
-        Une radio sur votre réseau local n'est pas joignable depuis un navigateur : il ne peut
-        pas ouvrir de connexion TCP brute. Le relais s'arrête aussi si vous fermez la page ou
-        si l'ordinateur se met en veille — mais vous pouvez changer de page dans l'application
-        sans l'interrompre. Et il ne remplace pas un satellite : il étend la portée radio, il
-        ne fonctionne pas sans internet.
-      </div>
-    </div>
-
-    <!-- Dit avant qu'on ne branche le mauvais appareil : le relais ne parle que MeshCore. -->
-    <div class="alerte info">
-      <span class="material-icons">radio</span>
-      <div>
-        <strong>MeshCore uniquement pour l'instant.</strong>
-        Un nœud Meshtastic branché ici ne sera pas reconnu : son protocole série est différent
-        et n'est pas encore implémenté. Pour Meshtastic, il faut une machine où l'on peut
-        installer le profil passerelle.
-      </div>
-    </div>
-
-    @if (erreur) {
-      <div class="alerte erreur"><span class="material-icons">warning</span><div>{{ erreur }}</div></div>
-    }
-    @if (avertissement) {
-      <div class="alerte avertissement">
-        <span class="material-icons">report_problem</span><div>{{ avertissement }}</div>
-      </div>
-    }
-
-    <section class="bloc">
-      <h2>Les radios que vous pouvez relayer</h2>
-
-      @if (chargement) {
-        <p class="aide">Chargement…</p>
-      } @else if (!radios.length) {
-        <p class="vide">
-          Aucune radio à relayer pour l'instant. Déclarez d'abord la clé publique de votre
-          nœud dans <a routerLink="/settings">Mon espace &rsaquo; Mon compte</a> : elle sert à
-          vous reconnaître comme son propriétaire. Vous pourrez ensuite la relayer depuis cette
-          page, sans que personne n'ait à la déclarer pour vous.
-        </p>
-      } @else {
-        <ul class="radios">
-          @for (c of radios; track c.id) {
-            <li>
-              <span class="nom">{{ libelle(c) }}</span>
-              @if (estBranchee(c)) {
-                <button type="button" class="secondaire" (click)="debrancher(c)">
-                  <span class="material-icons">stop</span> Débrancher
-                </button>
-              } @else {
-                <button type="button" class="primaire" [disabled]="enCours === c.id"
-                        (click)="brancher(c)">
-                  <span class="material-icons">usb</span>
-                  {{ enCours === c.id ? 'Connexion…' : 'Connecter' }}
-                </button>
-              }
-            </li>
-          }
-        </ul>
-        <p class="aide">
-          Au clic, votre navigateur vous demandera de choisir le port de la radio. C'est une
-          exigence de sécurité : aucune page ne peut accéder à un port sans votre geste. Vous
-          pouvez en brancher plusieurs à la suite, chacune sur son port.
-        </p>
-      }
-    </section>
-
-    <!-- Les radios que ce poste relaie. Même composant que sur la page des companions. -->
-    <app-relais-locaux></app-relais-locaux>
   }
+
+  <div class="alerte avertissement">
+    <span class="material-icons">info</span>
+    <div>
+      <strong>Cet onglet doit rester ouvert.</strong>
+      Le relais s'arrête si vous fermez la page ou si l'ordinateur se met en veille — vous pouvez
+      en revanche changer de page dans l'application sans l'interrompre. Et il ne remplace pas un
+      satellite : il étend la portée radio, il ne fonctionne pas sans internet.
+    </div>
+  </div>
+
+  @if (erreur) {
+    <div class="alerte erreur"><span class="material-icons">warning</span><div>{{ erreur }}</div></div>
+  }
+
+  <!-- Le geste principal : la radio dit elle-même qui elle est. -->
+  <app-connecter-radio (branche)="charger()"></app-connecter-radio>
+
+  <app-relais-locaux></app-relais-locaux>
+
+  <section class="bloc">
+    <h2>Vos radios</h2>
+    @if (chargement) {
+      <p class="aide">Chargement…</p>
+    } @else if (!radios.length) {
+      <p class="vide">
+        Aucune radio connue pour l'instant. Déclarez votre nœud dans
+        <a routerLink="/settings">Mon espace &rsaquo; Mon compte</a> — sa clé publique
+        (MeshCore) ou son numéro (Meshtastic) sert à vous reconnaître comme son propriétaire —
+        puis connectez-le ci-dessus. Un responsable de votre institution peut aussi connecter
+        directement une radio inconnue : elle devient alors passerelle de l'institution.
+      </p>
+    } @else {
+      <ul class="radios">
+        @for (c of radios; track c.id) {
+          <li>
+            <span class="nom">{{ libelle(c) }}</span>
+            @if (actifs.has(c.id)) {
+              <button type="button" class="secondaire" (click)="debrancher(c)">
+                <span class="material-icons">stop</span> Débrancher
+              </button>
+            } @else {
+              <app-connecter-radio [compact]="true" [protocoles]="[c.protocole]"
+                                   [radio]="radioDe(c)" (branche)="charger()">
+              </app-connecter-radio>
+            }
+          </li>
+        }
+      </ul>
+      <p class="aide">
+        Au clic, le navigateur demande de choisir le port ou la radio Bluetooth : aucune page ne
+        peut accéder à un appareil sans votre geste. Vous pouvez en connecter plusieurs, chacune
+        sur sa liaison.
+      </p>
+    }
+  </section>
 </div>

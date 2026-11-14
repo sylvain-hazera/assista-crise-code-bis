@@ -1,4 +1,5 @@
-export type MeshtasticConnexionType = 'MQTT' | 'TCP' | 'SERIE';
+/** `NAVIGATEUR` : radio relayée par un navigateur (core/relais_navigateur.py). */
+export type MeshtasticConnexionType = 'MQTT' | 'TCP' | 'SERIE' | 'NAVIGATEUR';
 
 export interface CompagnonMeshtastic {
   id: string;

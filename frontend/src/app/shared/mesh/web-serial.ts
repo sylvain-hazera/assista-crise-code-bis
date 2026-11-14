@@ -12,8 +12,10 @@
  */
 
 export interface PortSerie {
-  open(options: { baudRate: number }): Promise<void>;
+  open(options: { baudRate: number; bufferSize?: number }): Promise<void>;
   close(): Promise<void>;
+  /** Lignes de contrôle. Certains adaptateurs refusent : à tenter, jamais à exiger. */
+  setSignals?(signaux: { dataTerminalReady?: boolean; requestToSend?: boolean }): Promise<void>;
   readonly readable: ReadableStream<Uint8Array> | null;
   readonly writable: WritableStream<Uint8Array> | null;
 }
