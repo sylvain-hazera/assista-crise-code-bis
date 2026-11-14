@@ -663,6 +663,102 @@ Versions d'outils : Kotlin 2.1.0, AGP 8.7.3, Gradle 8.11.1, MapLibre 11.5.2 — 
 que connues pour aller ensemble, pas parce qu'elles sont les dernières. À monter avant la
 mise en magasin.
 
+## 16. Mobiliser par l'application, et savoir ce que le message est devenu (14/11/2026)
+
+Demande : que la messagerie de l'application serve aux campagnes de mobilisation, « avec un
+feedback de qui a eu la notif, vu, lu, répondu (une réponse négative est une réponse) », que
+l'application ait des notifications, et que le chemin du bénévole y soit possible comme sur le
+site. Version **0.4.0**.
+
+### Un cinquième canal de campagne : « Application mobile »
+
+Il s'ajoute à l'email, aux deux SMS et à Matrix dans `core/canaux_campagne.py`, avec la même
+honnêteté sur sa portée : il n'atteint que les personnes dont un téléphone a parlé au serveur
+dans les 45 derniers jours (`AppareilMobile`). Les autres sont rendues « injoignables » par ce
+canal, pas « envoyées » — c'est à elles qu'il faut un SMS.
+
+Ce qu'il apporte et que les autres n'ont pas, ce sont quatre étapes datées par personne
+(`NotificationApplication`, titre et corps chiffrés) :
+
+| Étape | Ce qu'elle atteste | Qui l'écrit |
+|---|---|---|
+| reçu | le téléphone a reçu le message **et le système a accepté de l'afficher** | l'application, après affichage |
+| vu | la personne a ouvert la liste des notifications | l'application |
+| lu | elle a ouvert le message | l'application |
+| répondu | elle a répondu, oui ou non — par l'application **ou par le site** | le serveur |
+
+Deux choix à connaître :
+
+- **Lire la liste n'accuse rien.** C'est le téléphone qui dit ensuite ce qu'il a fait. Déduire
+  « reçu » d'un appel réseau compterait comme prévenue une personne dont l'application a planté
+  avant d'afficher quoi que ce soit.
+- **Notifications coupées = jamais « reçu ».** Le message attend dans l'application ; le suivi
+  affiche « notifications coupées sur son téléphone » à côté de la personne.
+
+### « Non » est une réponse
+
+Jusqu'ici, répondre non voulait dire ne rien cocher, donc être relancé. Il y a maintenant un
+geste, sur le site comme dans l'application : « Je ne suis pas disponible sur cette période »
+(`POST mes-disponibilites/indisponible/`). Il retire les créneaux déjà posés sur la période —
+le moteur n'a qu'une règle, « pas de ligne = indisponible » — et sort la personne des relances.
+
+### Défaut trouvé au passage, et corrigé
+
+La page « Ma fiche de bénévole » du site **ne lisait pas** le paramètre `?campagne=` que porte le
+lien des emails et des SMS. On arrivait sur l'onglet d'identité, la grille montrait les quinze
+prochains jours au lieu de la période demandée, et aucun créneau coché n'était rattaché à la
+campagne : le suivi restait à « sans réponse » pour des gens qui avaient répondu. Le serveur,
+lui, savait faire depuis l'origine ; c'est l'écran qui ne lui passait rien.
+
+### Les notifications de l'application
+
+Trois sources, un seul relevé (`Veille`, code partagé, le même application ouverte ou fermée) :
+les notifications du serveur, les messages d'équipe, les missions nouvelles. Une chose ne sonne
+qu'une fois ; ce que la personne a déjà sous les yeux ne sonne pas ; le premier relevé après
+connexion prend acte de l'existant sans rien faire sonner.
+
+**Le téléphone vient chercher, il n'est pas réveillé.** Application ouverte, le relevé a lieu
+chaque minute. Application fermée, c'est une tâche de fond (WorkManager) : **un quart d'heure
+au mieux**, davantage si Android économise la batterie. C'est le prix de l'absence de service de
+réveil d'un fabricant (Firebase chez Google), qui demanderait un compte chez lui au nom de
+Réserve Résilience et ferait transiter un signal par ses serveurs. Conséquence pratique : une
+mobilisation réellement urgente se double d'un SMS — et le suivi dit justement à qui.
+Brancher un service de réveil plus tard ne change rien au reste : il n'aura qu'à dire « viens
+lire ».
+
+### Le chemin du bénévole dans l'application
+
+| Sur le site | Dans l'application 0.4.0 |
+|---|---|
+| Créer un compte, se connecter, mot de passe oublié | fait (0.1) |
+| Répondre à une campagne | fait — notification, lecture, grille sur la période, « non » |
+| Mes disponibilités (15 jours × 4 créneaux) | fait — en ligne seulement, voir ci-dessous |
+| Ma fiche (adresse, situation, engagement) | fait |
+| Mes justificatifs : état, motif d'un refus | fait en lecture ; **le dépôt d'une pièce reste sur le site** |
+| Mes équipes, parler à mon équipe | fait (0.2), y compris sans réseau par la radio |
+| Mes interventions : dossiers, statut, itinéraire, appel | fait — statut réservé au chef et au régulateur, comme sur le site |
+| Missions, carte, suivi de position | fait (0.2) |
+| Demander de l'aide, signaler, se déclarer en sécurité | fait (0.3) |
+| Proposer une ressource (hébergement, matériel) | **pas fait** |
+| Choisir ou changer son mot de passe depuis sa fiche | **pas fait** (le « mot de passe oublié » existe) |
+| Hébergement d'une équipe, priorité et ordre des dossiers | **pas fait** |
+
+**Disponibilités, fiche et statut de dossier exigent le serveur**, contrairement aux messages
+et aux statuts de mission. Une disponibilité cochée sans réseau et envoyée trois heures plus
+tard arriverait peut-être après que la garde a été constituée, et la personne croirait avoir
+répondu. L'écran dit quand le réseau manque, et la case ne change pas.
+
+### Vérifié, et pas vérifié
+
+Vérifié : 19 tests serveur du canal (225 sur le dossier bénévoles), 80 tests du code partagé,
+551 tests du site ; et sur téléphone virtuel, contre un serveur de test : campagne envoyée →
+le téléphone sonne → le serveur voit « reçu » → ouverture → « vu » et « lu » → créneaux cochés →
+« a répondu, 4 créneaux » ; seconde campagne → « non » → « 1 répondu, dont 1 non » ;
+fiche ; interventions avec changement de statut ; tâche de fond inscrite auprès du système.
+
+Pas vérifié : le délai réel de la tâche de fond sur un vrai téléphone, écran éteint et en
+économie d'énergie — c'est le point à observer en premier.
+
 ---
 
 # Annexe A — Relais série par le navigateur

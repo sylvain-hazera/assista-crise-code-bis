@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -103,7 +105,7 @@ fun PastilleLien(etat: EtatLien, modifier: Modifier = Modifier) {
 
 /** La barre du bas. Un citoyen n'y voit que ce qui le concerne : l'aide et son compte. */
 @Composable
-fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
+fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, nonVues: Int, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
     val lieux = buildList {
         if (intervenant) {
             add(Triple(fr.assistacrise.mobile.Ecran.MISSIONS, "Missions", Icons.AutoMirrored.Filled.List))
@@ -118,7 +120,12 @@ fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, aller:
             NavigationBarItem(
                 selected = ecran == lieu,
                 onClick = { aller(lieu) },
-                icon = { Icon(icone, contentDescription = null) },
+                icon = {
+                    // La pastille est sur « Compte » : c'est là que s'ouvrent les notifications.
+                    if (lieu == fr.assistacrise.mobile.Ecran.COMPTE && nonVues > 0) {
+                        BadgedBox(badge = { Badge { Text("$nonVues") } }) { Icon(icone, contentDescription = "$nonVues notification(s) non vue(s)") }
+                    } else Icon(icone, contentDescription = null)
+                },
                 label = { Text(nom) },
             )
         }

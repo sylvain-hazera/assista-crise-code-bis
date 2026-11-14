@@ -1,6 +1,10 @@
 package fr.assistacrise.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,7 +40,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun EcranCompte(modele: ModeleApplication, compte: Compte) {
+fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean) {
     val file by modele.file.collectAsStateWithLifecycle()
     val lien by modele.lien.collectAsStateWithLifecycle()
     var confirmer by rememberSaveable { mutableStateOf(false) }
@@ -56,6 +60,19 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte) {
                 compte.institutionNom ?: if (compte.reserveAVerifier) "Candidature en cours d'examen" else "Aucun rattachement",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(20.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                Entree("Notifications", if (modele.nonVues > 0) "${modele.nonVues} à voir" else "Demandes de votre association", modele.nonVues > 0, modele::ouvrirNotifications)
+                HorizontalDivider()
+                Entree("Mes disponibilités", "Les créneaux où l'on peut compter sur vous") { modele.ouvrirDisponibilites() }
+                HorizontalDivider()
+                Entree("Ma fiche", "Adresse, situation, justificatifs", surClic = modele::ouvrirFiche)
+                if (intervenant) {
+                    HorizontalDivider()
+                    Entree("Mes interventions", "Les dossiers confiés à mes équipes", surClic = modele::ouvrirInterventions)
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
             Text("En attente d'envoi", style = MaterialTheme.typography.titleMedium)
@@ -101,6 +118,18 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte) {
             confirmButton = { TextButton(onClick = { confirmer = false; modele.deconnecter() }) { Text("Se déconnecter") } },
             dismissButton = { TextButton(onClick = { confirmer = false }) { Text("Annuler") } },
         )
+    }
+}
+
+/** Une porte vers un écran du bénévole. `attention` : quelque chose y attend la personne. */
+@Composable
+private fun Entree(titre: String, detail: String, attention: Boolean = false, surClic: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = surClic).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(titre, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = if (attention) Attente else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -2,6 +2,13 @@ package fr.assistacrise.mobile.donnees
 
 import fr.assistacrise.mobile.domaine.Champs
 import fr.assistacrise.mobile.domaine.Compte
+import fr.assistacrise.mobile.domaine.Creneau
+import fr.assistacrise.mobile.domaine.Dossier
+import fr.assistacrise.mobile.domaine.Etape
+import fr.assistacrise.mobile.domaine.Fiche
+import fr.assistacrise.mobile.domaine.Grille
+import fr.assistacrise.mobile.domaine.Notification
+import fr.assistacrise.mobile.domaine.Titre
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.domaine.MessageEquipe
 import fr.assistacrise.mobile.domaine.PositionMembre
@@ -28,7 +35,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -161,6 +170,77 @@ class ClientApi(
             ?: return Reponse.Refus(400, "Dépôt illisible.")
         return authentifie(HttpMethod.Post, chemin, objet).sansValeur()
     }
+
+    // --- Notifications ------------------------------------------------------------------
+
+    /** Le téléphone se présente : c'est ce qui le rend joignable par une campagne. */
+    suspend fun presenterAppareil(installation: String, plateforme: String, version: String, notificationsAutorisees: Boolean): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mon-appareil/", buildJsonObject {
+            put("installation", installation)
+            put("plateforme", plateforme)
+            put("version", version)
+            put("notifications_autorisees", notificationsAutorisees)
+        }).sansValeur()
+
+    /** À la déconnexion : ce téléphone ne joint plus ce compte. */
+    suspend fun oublierAppareil(installation: String): Reponse<Unit> =
+        authentifie(HttpMethod.Delete, "mon-appareil/?installation=$installation").sansValeur()
+
+    suspend fun notifications(): Reponse<List<Notification>> = liste("mes-notifications/", Notification.serializer())
+
+    /** Dit au serveur où en sont ces notifications. Lire la liste, seul, n'accuse rien. */
+    suspend fun accuser(etape: Etape, ids: Collection<String>): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mes-notifications/accuser/", buildJsonObject {
+            put("etape", etape.name)
+            put("ids", buildJsonArray { ids.forEach { add(it) } })
+        }).sansValeur()
+
+    // --- Le bénévole : disponibilités, fiche, titres, dossiers --------------------------------
+
+    /** Ma grille. Avec une campagne, elle porte SA période : c'est la question posée. */
+    suspend fun grille(campagne: String? = null): Reponse<Grille> =
+        authentifie(HttpMethod.Get, "mes-disponibilites/" + (campagne?.let { "?campagne=$it" } ?: "")).transformer {
+            json.decodeFromJsonElement(Grille.serializer(), it)
+        }
+
+    /** `creneau == null` : toute la journée. Rattaché à une campagne, le geste lui vaut réponse. */
+    suspend fun declarerCreneau(date: String, creneau: Creneau?, disponible: Boolean, campagne: String? = null): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mes-disponibilites/", buildJsonObject {
+            put("date", date)
+            put("disponible", disponible)
+            if (creneau != null) put("creneau", creneau.name)
+            if (campagne != null) put("campagne", campagne)
+        }).sansValeur()
+
+    /** « Je ne suis pas disponible sur cette période » : une réponse, elle aussi. */
+    suspend fun repondreIndisponible(campagne: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mes-disponibilites/indisponible/", buildJsonObject { put("campagne", campagne) }).sansValeur()
+
+    suspend fun maFiche(): Reponse<Fiche> = authentifie(HttpMethod.Get, "ma-fiche-benevole/").transformer {
+        json.decodeFromJsonElement(Fiche.serializer(), it)
+    }
+
+    /** Le secteur n'est pas envoyé : le serveur le déduit de l'adresse, et lui seul. */
+    suspend fun enregistrerFiche(f: Fiche): Reponse<Fiche> =
+        authentifie(HttpMethod.Patch, "ma-fiche-benevole/", buildJsonObject {
+            put("adresse", f.adresse.trim())
+            put("code_postal", f.codePostal.trim())
+            put("ville", f.ville.trim())
+            // Une date ou rien : le serveur refuse une chaîne vide.
+            put("date_naissance", f.dateNaissance?.takeIf { it.isNotBlank() })
+            put("metier", f.metier.trim())
+            put("situation", f.situation)
+            put("frequence_engagement", f.frequence)
+            put("message", f.message.trim())
+            put("diplome_premier_secours", f.premiersSecours)
+        }).transformer { json.decodeFromJsonElement(Fiche.serializer(), it) }
+
+    suspend fun mesTitres(idCompte: String): Reponse<List<Titre>> = liste("qualifications-membres/?utilisateur=$idCompte", Titre.serializer())
+
+    suspend fun dossiers(): Reponse<List<Dossier>> = liste("dossiers/", Dossier.serializer())
+
+    suspend fun definirStatutDossier(id: String, statut: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "dossiers/$id/definir-statut/", buildJsonObject { put("statut", statut) }).sansValeur()
 
     private fun lireMessages(e: JsonElement): List<MessageEquipe> =
         json.decodeFromJsonElement(ListSerializer(MessageEquipe.serializer()), e.jsonObject.getValue("messages"))

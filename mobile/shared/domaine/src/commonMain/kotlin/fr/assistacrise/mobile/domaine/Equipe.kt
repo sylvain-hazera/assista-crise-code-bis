@@ -16,8 +16,13 @@ data class Equipe(
     /** Le canal radio de l'équipe, par protocole : c'est par lui qu'on se parle sans réseau. */
     @SerialName("canal_meshcore_nom") val canalMeshCore: String? = null,
     @SerialName("canal_meshtastic_nom") val canalMeshtastic: String? = null,
+    @SerialName("leader") val chef: String? = null,
+    val regulateur: String? = null,
 ) {
     val engagee: Boolean get() = engagementDebut != null
+
+    /** Le chef et le régulateur font avancer les dossiers de l'équipe ; les autres les lisent. */
+    fun estDirigeePar(idCompte: String?): Boolean = idCompte != null && (idCompte == chef || idCompte == regulateur)
 }
 
 /**

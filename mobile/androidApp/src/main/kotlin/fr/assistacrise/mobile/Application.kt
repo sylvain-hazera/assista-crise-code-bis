@@ -1,7 +1,10 @@
 package fr.assistacrise.mobile
 
 import fr.assistacrise.mobile.donnees.ClientApi
+import fr.assistacrise.mobile.donnees.DepotBenevole
 import fr.assistacrise.mobile.donnees.DepotCitoyen
+import fr.assistacrise.mobile.donnees.DepotNotifications
+import fr.assistacrise.mobile.donnees.Veille
 import fr.assistacrise.mobile.donnees.DepotEquipes
 import fr.assistacrise.mobile.donnees.DepotMissions
 import fr.assistacrise.mobile.donnees.DepotSuivi
@@ -12,7 +15,10 @@ import fr.assistacrise.mobile.lien.IndicateurLien
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.UUID
 
 /**
  * Les pièces de l'application, assemblées une fois. Pas de bibliothèque d'injection : il y
@@ -40,4 +46,29 @@ class Application : android.app.Application() {
     val synchro by lazy { Synchronisation(api, file, depot, equipes, radio) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
+    val notifications by lazy { DepotNotifications(api, magasin) { UUID.randomUUID().toString() } }
+    val benevole by lazy { DepotBenevole(api, magasin) }
+    val veille by lazy { Veille(magasin, notifications, equipes, depot) }
+    val alertes by lazy { Alertes(this) }
+
+    private val verrouRestauration = Mutex()
+    private var restaure = false
+
+    /**
+     * Relit du disque ce que le lancement précédent a laissé. Une seule fois par processus,
+     * qui que ce soit qui le demande en premier — l'écran, ou la tâche de fond réveillée
+     * alors que l'application est fermée. Relire deux fois écraserait l'état en mémoire.
+     */
+    suspend fun restaurer() = verrouRestauration.withLock {
+        if (restaure) return@withLock
+        session.restaurer()
+        file.restaurer()
+        depot.restaurer()
+        equipes.restaurer()
+        suivi.restaurer()
+        citoyen.restaurer()
+        notifications.restaurer()
+        benevole.restaurer()
+        restaure = true
+    }
 }

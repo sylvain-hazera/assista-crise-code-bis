@@ -8,7 +8,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import fr.assistacrise.mobile.domaine.Alerte
+import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Crise
+import fr.assistacrise.mobile.domaine.Dossier
+import fr.assistacrise.mobile.domaine.Etape
+import fr.assistacrise.mobile.domaine.Fiche
+import fr.assistacrise.mobile.domaine.Notification
 import fr.assistacrise.mobile.domaine.Depot
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.domaine.GenreDepot
@@ -41,7 +47,10 @@ data class EtatFormulaire(
     val champs: Map<String, String> = emptyMap(),
 )
 
-enum class Ecran { CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE }
+enum class Ecran {
+    CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
+    NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS,
+}
 
 class ModeleApplication(private val app: Application) : ViewModel() {
 
@@ -57,6 +66,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val informations = app.citoyen.informations
     val typesDemande = app.citoyen.typesDemande
     val typesInformation = app.citoyen.typesInformation
+    val notifications = app.notifications.notifications
+    val grille = app.benevole.grille
+    val fiche = app.benevole.fiche
+    val titres = app.benevole.titres
+    val dossiers = app.benevole.dossiers
     val missions: StateFlow<List<MissionAffichee>> =
         combine(app.depot.missions, app.file.actions, ::superposerLaFile)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -76,6 +90,21 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     var depotOuvert by mutableStateOf<Pair<GenreDepot, Crise>?>(null); private set
     var depot by mutableStateOf(EtatFormulaire()); private set
 
+    /** Combien de notifications je n'ai pas encore eues sous les yeux : la pastille. */
+    var nonVues by mutableStateOf(0); private set
+    var notificationOuverte by mutableStateOf<String?>(null); private set
+
+    /** Un écran du bénévole attend le serveur (grille, fiche, dossiers). */
+    var chargement by mutableStateOf(false); private set
+    /** Le serveur n'a pas répondu à cet écran : ce qu'il montre date, ou manque. */
+    var horsLigne by mutableStateOf(false); private set
+    /** La case de la grille en cours d'envoi (`date|créneau`) : elle seule est désactivée. */
+    var caseEnCours by mutableStateOf<String?>(null); private set
+    var formulaireFiche by mutableStateOf(EtatFormulaire()); private set
+
+    /** L'application est-elle à l'écran ? Ce qu'on a sous les yeux ne fait pas sonner. */
+    private var visible = false
+
     /** Message passager, affiché une fois puis effacé par l'écran. */
     var message by mutableStateOf<String?>(null); private set
 
@@ -83,12 +112,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            app.session.restaurer()
-            app.file.restaurer()
-            app.depot.restaurer()
-            app.equipes.restaurer()
-            app.suivi.restaurer()
-            app.citoyen.restaurer()
+            app.restaurer()
+            nonVues = app.notifications.nonVues()
+            if (compte.value != null) Alertes.planifierLaVeille(app)
             // Le suivi était actif quand l'application a été fermée : il reprend.
             if (compte.value != null && suivi.value.actif) ServiceSuivi.demarrer(app)
             if (compte.value != null) app.radio.reprendre()
@@ -133,8 +159,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      * affiche date, et ses connexions sont peut-être mortes. On relit tout de suite.
      */
     fun auPremierPlan() {
+        visible = true
         if (pret && compte.value != null) viewModelScope.launch { synchroniser(force = true, bavard = false) }
     }
+
+    fun enArrierePlan() { visible = false }
 
     // --- Compte --------------------------------------------------------------------------
 
@@ -200,6 +229,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     fun deconnecter() {
         viewModelScope.launch {
+            // Tant que la session vit : dire au serveur que ce téléphone ne joint plus ce compte.
+            Alertes.arreterLaVeille(app)
+            app.notifications.toutEffacer()
             app.api.deconnecter()
             ServiceSuivi.arreter(app)
             app.radio.deconnecter()
@@ -207,6 +239,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
             app.citoyen.toutEffacer()
+            app.alertes.toutRetirer()
+            app.veille.toutEffacer()
+            app.benevole.toutEffacer()
+            nonVues = 0
             app.file.toutEffacer()
             positions = emptyList()
             aller(Ecran.CONNEXION)
@@ -214,6 +250,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     private suspend fun ouvrir() {
+        Alertes.planifierLaVeille(app)
         ecran = Ecran.MISSIONS
         synchroniser(force = true, bavard = false)
     }
@@ -252,6 +289,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     val e = app.equipes.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
                     app.citoyen.rafraichir()
+                    veiller()
                 }
                 is Reponse.Refus -> if (r.code == 401) {
                     // La session a été fermée par le client : retour à la connexion, en le disant.
@@ -265,6 +303,148 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             }
         } finally {
             synchronisation = false
+        }
+    }
+
+    // --- Notifications --------------------------------------------------------------------
+
+    /**
+     * Se présente au serveur, puis relève ce qui est nouveau. Ce que la personne a déjà sous
+     * les yeux ne sonne pas : faire vibrer le téléphone pour le message qu'elle est en train
+     * de lire, c'est lui apprendre à couper les notifications.
+     */
+    private suspend fun veiller() {
+        app.notifications.presenter("ANDROID", BuildConfig.VERSION_NAME, app.alertes.autorisees)
+        app.veille.relever(relire = false) { alerte ->
+            val sousLesYeux = visible && when (alerte.genre) {
+                Alerte.Genre.MESSAGE -> ecran == Ecran.MESSAGERIE && equipeOuverte == alerte.cible
+                Alerte.Genre.NOTIFICATION -> ecran == Ecran.NOTIFICATIONS
+                Alerte.Genre.MISSION -> ecran == Ecran.MISSIONS
+            }
+            if (sousLesYeux) {
+                if (alerte.genre == Alerte.Genre.NOTIFICATION) app.notifications.noter(Etape.VUE, listOf(alerte.cible))
+                true
+            } else app.alertes.afficher(alerte)
+        }
+        nonVues = app.notifications.nonVues()
+    }
+
+    /** La personne ouvre la liste : tout ce qui y figure est désormais « vu ». */
+    fun ouvrirNotifications() {
+        ecran = Ecran.NOTIFICATIONS
+        viewModelScope.launch {
+            app.notifications.rafraichir()
+            val aVoir = notifications.value.filter { it.dateVue == null }
+            aVoir.forEach { app.alertes.retirer("n:${it.id}") }
+            app.notifications.noter(Etape.VUE, aVoir.map { it.id })
+            nonVues = app.notifications.nonVues()
+        }
+    }
+
+    /** Elle en ouvre une : « lue ». */
+    fun ouvrirNotification(id: String) {
+        notificationOuverte = id
+        ecran = Ecran.NOTIFICATION
+        app.alertes.retirer("n:$id")
+        viewModelScope.launch {
+            app.notifications.noter(Etape.LUE, listOf(id))
+            nonVues = app.notifications.nonVues()
+        }
+    }
+
+    /** On a touché une notification du système : aller là où elle mène. */
+    fun ouvrirDepuisAlerte(genre: String?, cible: String?) {
+        if (compte.value == null || cible == null) return
+        when (genre) {
+            Alerte.Genre.NOTIFICATION.name -> ouvrirNotification(cible)
+            Alerte.Genre.MESSAGE.name -> { equipeOuverte = cible; ecran = Ecran.MESSAGERIE }
+            Alerte.Genre.MISSION.name -> ecran = Ecran.MISSIONS
+        }
+    }
+
+    /** « Je ne suis pas disponible sur cette période » : une réponse, et elle exige le serveur. */
+    fun repondreNon(notification: Notification) {
+        val campagne = notification.campagne ?: return
+        chargement = true
+        viewModelScope.launch {
+            when (val r = app.benevole.repondreIndisponible(campagne.id)) {
+                is Reponse.Ok -> { app.notifications.rafraichir(); message = "C'est noté : vous ne serez pas relancé." }
+                is Reponse.Refus -> message = r.message
+                is Reponse.Injoignable -> message = "Pas de réseau : votre réponse n'est pas partie. Réessayez dès que vous captez."
+            }
+            chargement = false
+        }
+    }
+
+    // --- Le bénévole : disponibilités, fiche, dossiers ------------------------------------------
+
+    /** `campagne` : la grille s'ouvre sur SA période, et chaque case cochée lui vaut réponse. */
+    fun ouvrirDisponibilites(campagne: String? = null) {
+        ecran = Ecran.DISPONIBILITES
+        chargerEcran { app.benevole.chargerLaGrille(campagne) }
+    }
+
+    fun basculerCreneau(date: String, creneau: Creneau?, disponible: Boolean) {
+        if (caseEnCours != null) return
+        caseEnCours = "$date|${creneau?.name ?: ""}"
+        viewModelScope.launch {
+            when (val r = app.benevole.declarer(date, creneau, disponible)) {
+                is Reponse.Ok -> if (grille.value?.campagne != null) app.notifications.rafraichir()
+                is Reponse.Refus -> message = r.message
+                // La case n'a pas bougé, et on dit pourquoi : pas de disponibilité imaginaire.
+                is Reponse.Injoignable -> message = "Pas de réseau : ce créneau n'est pas enregistré."
+            }
+            caseEnCours = null
+        }
+    }
+
+    fun ouvrirFiche() {
+        ecran = Ecran.FICHE
+        formulaireFiche = EtatFormulaire()
+        val id = compte.value?.id ?: return
+        chargerEcran { app.benevole.chargerLaFiche(id) }
+    }
+
+    fun enregistrerFiche(saisie: Fiche) {
+        formulaireFiche = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            formulaireFiche = when (val r = app.benevole.enregistrerLaFiche(saisie)) {
+                is Reponse.Ok -> { message = "Fiche enregistrée."; EtatFormulaire() }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message, champs = r.champs)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = "Pas de réseau : votre fiche n'est pas enregistrée.")
+            }
+        }
+    }
+
+    fun ouvrirInterventions() {
+        ecran = Ecran.INTERVENTIONS
+        chargerEcran {
+            // Mes équipes d'abord : affecté il y a une minute, je dois voir les dossiers tout de suite.
+            app.equipes.rafraichir()
+            app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
+        }
+    }
+
+    fun definirStatutDossier(dossier: Dossier, statut: String) {
+        viewModelScope.launch {
+            when (val r = app.benevole.definirStatut(dossier, statut)) {
+                is Reponse.Ok -> Unit
+                is Reponse.Refus -> message = r.message
+                is Reponse.Injoignable -> message = "Pas de réseau : le statut n'a pas changé."
+            }
+        }
+    }
+
+    private fun chargerEcran(charger: suspend () -> Reponse<Unit>) {
+        chargement = true
+        horsLigne = false
+        viewModelScope.launch {
+            when (val r = charger()) {
+                is Reponse.Ok -> Unit
+                is Reponse.Refus -> message = r.message
+                is Reponse.Injoignable -> horsLigne = true
+            }
+            chargement = false
         }
     }
 
