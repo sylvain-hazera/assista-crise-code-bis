@@ -1,6 +1,6 @@
 # Application mobile des intervenants — dossier de conception
 
-État : **lot 0 écrit le 14/11/2026** (voir § 15), le reste en projet. Document de travail du 13/11/2026, **révisé le
+État : **lots 0 à 4 écrits en grande partie le 14/11/2026, protocoles radio portés** (voir § 15). Document de travail du 13/11/2026, **révisé le
 14/11/2026** sur trois arbitrages de Sylvain : pas d'ordre de priorité entre les deux radios,
 chat natif dès que possible, grand public dans la v1 (§ 1, § 9, § 10, § 13). Le titre garde
 « intervenants » par continuité ; l'application sert désormais aussi les citoyens.
@@ -549,46 +549,90 @@ lot 0, non décidée.
 
 ---
 
-## 15. Lot 0 — ce qui est écrit (14/11/2026)
+## 15. État des lots (14/11/2026)
 
 Code sous `mobile/`, construit par `scripts/tester-mobile.sh`. Première marque : Réserve
 Résilience (`org.reserve_resilience.app`, serveur `app.reserve-resilience.org`).
 
-| Pièce | État |
-|---|---|
-| Connexion, session gardée d'un lancement à l'autre, rafraîchissement du jeton | fait |
-| **Création de compte** (particulier, case « rejoindre la réserve », conditions d'utilisation) | fait |
-| Mot de passe oublié | fait (demande d'e-mail ; le nouveau mot de passe se choisit sur le site) |
-| Missions lisibles hors ligne | fait |
-| File d'attente persistée, ordonnée, visible, purgée sur accusé | fait |
-| Indicateur de lien permanent | fait (Internet ou rien ; la radio viendra aux lots 5 et 6) |
-| Stockage chiffré par le Keystore | fait |
+| Lot | État | Ce qui manque |
+|---|---|---|
+| **0** Socle | **fait** | — |
+| **1** Chat | **messagerie d'équipe faite, par le serveur** | le client Matrix natif (voir ci-dessous) |
+| **2** Carte | **fond IGN, ma position, positions des équipes** | points déclarés par un intervenant, photos, région hors ligne à la demande |
+| **3** Grand public | **fait pour trois gestes** : en sécurité, demander de l'aide, signaler | offre d'aide, photo, suivi de mes dépôts, SOS |
+| **4** Géoloc en mission | **fait** | mesure de batterie sur 8 h, envoi de la file application fermée |
+| **5** MeshCore | **protocole porté et testé** | la liaison Bluetooth, à écrire avec une radio en main |
+| **6** Meshtastic | **protocole porté et testé** | idem |
 
-Vérifié : 25 tests de la logique partagée, et un parcours complet dans un émulateur contre un
-serveur de test (création de compte, connexion, changement de statut serveur coupé, arrêt
-forcé, relance, envoi automatique au retour du serveur). **Pas encore essayé sur un vrai
-téléphone ni contre le serveur de production.**
+Vérifié : 54 tests de la logique partagée, et des parcours complets dans un émulateur contre
+un serveur de test — création de compte, connexion, changement de statut serveur coupé puis
+envoi automatique, messagerie d'équipe, carte, démarrage du suivi sur engagement et arrêt à la
+mise au repos, reprise du suivi après arrêt forcé de l'application, les trois dépôts citoyens.
+**Rien n'a encore tourné sur un vrai téléphone ni contre le serveur de production.**
 
-Quatre écarts avec ce que le dossier prévoyait, à connaître :
+### Lot 1 : pourquoi la messagerie passe par le serveur, et pas encore par Matrix
 
-1. **Le critère du lot 0 ne vaut que pour les rôles institutionnels.** Le serveur réserve
-   l'écriture d'une mission à ces rôles (`MissionViewSet.get_permissions`). Un bénévole membre
-   d'une équipe voit ses missions mais n'a aucun geste à déclarer : l'application ne lui
-   propose donc pas de bouton. Lui en donner un demande une action côté serveur, à concevoir
-   (« j'y suis », « terminé pour moi ») — ce n'est pas le statut de la mission.
+L'application affiche le **fil unique de l'équipe** (`messagerie-unifiee`) : salon Matrix et
+canaux radio, fusionnés par le serveur, qui écrit dans le salon au nom de la personne. C'est
+ce que fait déjà la vue équipe du site. Un message y est lisible hors ligne, s'écrit hors
+ligne, et part par la file.
+
+Ce n'est pas le « chat natif » décidé au § 9, et il faut le dire :
+
+- **pas de chiffrement de bout en bout sur le téléphone** — le serveur lit les messages pour
+  les relayer, comme sur le site ;
+- **seulement les salons d'équipe**, pas ceux d'institution ni les messages directs.
+
+Le client natif (`matrix-rust-sdk`) bute sur un point qui ne se règle pas dans le code de
+l'application : Synapse délègue sa connexion au service d'authentification Matrix, qui la
+délègue à Django. Il faut y **déclarer l'application comme client**, puis essayer la
+connexion sur un vrai téléphone contre le vrai serveur. À faire avec Sylvain, pas à l'aveugle.
+
+### Lots 5 et 6 : ce qui est porté, ce qui ne l'est pas
+
+Dans `mobile/shared/lien` : les trames MeshCore (présentation, heure, message direct, fiche
+de la radio), les messages Meshtastic (poignée de main en deux temps, battement, texte direct
+et de canal, port privé) avec un encodage protobuf écrit ici, et la **trame de position de
+seize octets** (§ 14). Les tests reprennent les vecteurs produits par les bibliothèques de
+référence.
+
+Reste la liaison Bluetooth elle-même, l'appairage avec code, et la bascule à trois états :
+rien de cela ne se vérifie sans une radio. Et côté serveur, **les deux ponts ne savent pas
+encore lire la trame de position** — tant qu'ils ne le savent pas, elle n'a pas de
+destinataire.
+
+### Écarts et constats
+
+1. **Un bénévole ne peut pas déclarer de statut.** Le serveur réserve l'écriture d'une mission
+   aux rôles institutionnels (`MissionViewSet.get_permissions`). Un simple membre d'équipe voit
+   ses missions sans bouton. Lui donner un geste (« j'y suis », « terminé pour moi ») demande
+   une action côté serveur, à concevoir.
 2. **Seul le compte de particulier se crée dans l'application.** Mairies et secours doivent
    prouver une institution : ce parcours reste sur le site.
-3. **La base locale est un jeu de fichiers chiffrés**, pas encore SQLite. Suffisant pour des
-   missions et une file ; à remplacer quand la carte et les points arriveront (lot 2).
-4. **La file ne part que tant que l'application tourne.** L'envoi en arrière-plan
-   (WorkManager) viendra avec le service de premier plan du lot 4.
+3. **Le serveur ne garde que la dernière position** (`ma-position/`), sans horodatage ni
+   historique. Le trajet d'un intervenant resté hors réseau n'est donc pas reconstitué au
+   retour : seule sa dernière position remonte. Le garder demanderait un point d'entrée qui
+   accepte des relevés datés, comme celui du pont Matrix.
+4. **Un message réessayé peut arriver deux fois.** Si la réponse du serveur se perd après
+   qu'il a enregistré le message, la file le renvoie. Il faudrait que le serveur reconnaisse
+   un identifiant de message déjà vu.
+5. **Un signalement apparaît aussitôt dans les informations publiées de la crise**, avant
+   toute relecture. C'est le comportement du serveur, pas un choix de l'application.
+6. **La file ne part que tant que l'application ou le suivi tourne.** L'envoi application
+   fermée (WorkManager) reste à faire.
+7. **Le mode se déduit du compte et des équipes** : rattaché à une institution, porteur d'un
+   rôle institutionnel ou membre d'une équipe, on est intervenant ; sinon citoyen, et l'on ne
+   voit que les crises et son compte.
+8. **La base locale est un jeu de fichiers chiffrés**, pas encore SQLite. Suffisant à ce
+   volume.
 
 Constat utile à la bascule vers le satellite (§ 14) : sur le Wi-Fi d'un satellite coupé
 d'Internet, Android juge le réseau « sans connexion ». L'indicateur de lien se fie donc
 d'abord à l'échange réel avec le serveur, et seulement à défaut à l'avis du système.
 
-Versions d'outils : Kotlin 2.1.0, AGP 8.7.3, Gradle 8.11.1 — choisies parce que connues pour
-aller ensemble, pas parce qu'elles sont les dernières. À monter avant la mise en magasin.
+Versions d'outils : Kotlin 2.1.0, AGP 8.7.3, Gradle 8.11.1, MapLibre 11.5.2 — choisies parce
+que connues pour aller ensemble, pas parce qu'elles sont les dernières. À monter avant la
+mise en magasin.
 
 ---
 

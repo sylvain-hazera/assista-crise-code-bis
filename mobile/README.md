@@ -6,10 +6,10 @@ Conception et raisons : `DOSSIER-APPLICATION-INTERVENANTS.md`, à la racine du d
 
 | Dossier | Contenu |
 |---|---|
-| `shared/domaine` | Modèles et règles : compte, mission, inscription, file d'attente. Aucune dépendance à Android |
-| `shared/donnees` | Appels à l'API, session, file d'attente sortante, copie locale des missions |
-| `shared/lien` | État du lien de terrain (Internet, radio, aucun) |
-| `androidApp` | Écrans, stockage chiffré par le Keystore, observation du réseau |
+| `shared/domaine` | Modèles et règles : compte, mission, équipe, suivi en mission, dépôts citoyens, file d'attente. Aucune dépendance à Android |
+| `shared/donnees` | Appels à l'API, session, file d'attente sortante, copies locales (missions, équipes, crises) |
+| `shared/lien` | État du lien de terrain, trames MeshCore et Meshtastic, trame de position de seize octets |
+| `androidApp` | Écrans, carte, service de suivi en mission, stockage chiffré par le Keystore |
 
 Les modules `shared` sont en Kotlin Multiplatform, avec la JVM pour seule cible aujourd'hui :
 leurs tests tournent sans téléphone ni émulateur.
