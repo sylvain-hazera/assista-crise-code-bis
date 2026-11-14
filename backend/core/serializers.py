@@ -2238,7 +2238,19 @@ class DocumentSerializer(serializers.ModelSerializer):
             return False
         if user.id == obj.auteur_id or effective_role_or_none(request) in INSTITUTIONAL_TYPES:
             return True
-        return bool(obj.dossier_id and obj.dossier.participants.filter(utilisateur=user).exists())
+        if not obj.dossier_id:
+            return False
+        dossier = obj.dossier
+        if dossier.participants.filter(utilisateur=user).exists():
+            return True
+        # Les membres actuels de l'équipe chargée du dossier : ce sont eux qui se rendent sur
+        # place, et la position d'une photo leur dit où (même périmètre que
+        # `views._contribue_au_dossier`).
+        equipe = dossier.equipe
+        return bool(equipe and (
+            user.id in (equipe.leader_id, equipe.regulateur_id)
+            or equipe.members.filter(id=user.id).exists()
+        ))
 
     def get_metadata_privees(self, obj):
         return obj.metadata_privees if self._metadata_privees_visible(obj) else {}

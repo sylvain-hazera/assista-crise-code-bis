@@ -12502,6 +12502,36 @@ class PositionsEquipesView(generics.ListAPIView):
         return qs.filter(utilisateur__teams__members=self.request.user)
 
 
+def _contribue_au_dossier(user, dossier) -> bool:
+    """Qui peut commenter un dossier et y verser une photo : ses participants, et les membres
+    ACTUELS de l'équipe qui en a la charge.
+
+    Jusqu'au 14/11/2026 seuls les participants le pouvaient, et la liste des participants est
+    figée à l'affectation du dossier (`populate_dossier_participants_and_notify`). Un
+    intervenant entré dans l'équipe le lendemain pouvait donc LIRE les photos du dossier
+    (`check_document_access` regarde l'équipe) mais ni en ajouter ni commenter : sur le
+    terrain, c'est celui qui est devant la maison qui doit pouvoir photographier."""
+    if dossier is None or not user.is_authenticated:
+        return False
+    equipe = dossier.equipe
+    if equipe is not None and (
+        user.id in (equipe.leader_id, equipe.regulateur_id)
+        or equipe.members.filter(id=user.id).exists()
+    ):
+        return True
+    return dossier.participants.filter(utilisateur=user).exists()
+
+
+def _q_dossiers_ou_je_contribue(user, prefixe="dossier__"):
+    """Le même périmètre que `_contribue_au_dossier`, en filtre de requête."""
+    return (
+        Q(**{f"{prefixe}participants__utilisateur": user})
+        | Q(**{f"{prefixe}equipe__members": user})
+        | Q(**{f"{prefixe}equipe__leader": user})
+        | Q(**{f"{prefixe}equipe__regulateur": user})
+    )
+
+
 class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     queryset = Document.objects.all()
@@ -12528,7 +12558,7 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         return Document.objects.filter(
             Q(auteur=user)
-            | Q(dossier__participants__utilisateur=user)
+            | _q_dossiers_ou_je_contribue(user)
             | Q(habitation_id__in=habitations_rattachees),
             environment=environment,
         ).distinct()
@@ -12538,7 +12568,7 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         user = self.request.user
         dossier = serializer.validated_data.get('dossier')
         if dossier and get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
-            if not dossier.participants.filter(utilisateur=user).exists():
+            if not _contribue_au_dossier(user, dossier):
                 raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
 
         habitation = serializer.validated_data.get('habitation')
@@ -12738,6 +12768,8 @@ class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
 
     queryset = DossierCommentaire.objects.all()
     serializer_class = DossierCommentaireSerializer
+    # Sans ce filtre, lire le fil d'UN dossier rapatriait les commentaires de tous.
+    filterset_fields = ['dossier']
 
     def get_queryset(self):
         user = self.request.user
@@ -12747,7 +12779,7 @@ class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
             return DossierCommentaire.objects.filter(environment=environment)
         return DossierCommentaire.objects.filter(
-            dossier__participants__utilisateur=user, environment=environment
+            _q_dossiers_ou_je_contribue(user), environment=environment
         ).distinct()
 
     def perform_create(self, serializer):
@@ -12755,7 +12787,7 @@ class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         user = self.request.user
         dossier = serializer.validated_data.get('dossier')
         if dossier and get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
-            if not dossier.participants.filter(utilisateur=user).exists():
+            if not _contribue_au_dossier(user, dossier):
                 raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
 
         commentaire = serializer.save(auteur=user, environment=get_active_environment(self.request))
