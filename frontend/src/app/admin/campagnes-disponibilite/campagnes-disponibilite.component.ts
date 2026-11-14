@@ -347,6 +347,20 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     return choisis.length ? choisis : ['BREVO_EMAIL'];
   }
 
+/** Où en est le message sur le téléphone de cette personne, en toutes lettres : c'est ce
+   * que lit un lecteur d'écran à la place des quatre pastilles. */
+  etapeApplication(c: CibleCampagne): string {
+    const a = c.application;
+    if (!a) { return "Pas joint par l'application"; }
+    if (c.etat === 'A_REPONDU') {
+      return c.creneaux_declares === 0 ? 'A répondu non' : 'A répondu';
+    }
+    if (a.lue) { return 'Lu, sans réponse'; }
+    if (a.vue) { return 'Vu, pas ouvert'; }
+    if (a.remise) { return 'Reçu sur le téléphone, pas encore vu'; }
+    return 'Envoyé, pas encore reçu par le téléphone';
+  }
+
   canalCoche(code: string): boolean {
     return this.canauxChoisis.includes(code);
   }

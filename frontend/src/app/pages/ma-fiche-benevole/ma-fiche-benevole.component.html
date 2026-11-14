@@ -160,7 +160,7 @@
       <!-- ══ Mes disponibilités ════════════════════════════════════════════ -->
       @if (onglet === 'disponibilites') {
         <section class="bloc">
-          <h2>Quinze jours, quatre créneaux</h2>
+          <h2>{{ disponibilites?.campagne ? 'Vos disponibilités sur la période demandée' : 'Quinze jours, quatre créneaux' }}</h2>
           <p class="aide">
             C'est <strong>cette</strong> grille que votre encadrement consulte pour constituer
             une équipe. Cochez les créneaux où vous êtes joignable et mobilisable.
@@ -179,6 +179,31 @@
           } @else if (!disponibilites) {
             <p class="attente">Chargement de vos disponibilités…</p>
           } @else {
+            @if (disponibilites.campagne; as demande) {
+              <div class="demande" role="region" aria-label="Demande de disponibilités">
+                <p class="demande-qui">{{ demande.institution_nom }} vous demande vos disponibilités</p>
+                <p class="demande-quand">
+                  du {{ jourLisible(demande.periode_debut) }} au {{ jourLisible(demande.periode_fin) }}
+                </p>
+                @if (demande.texte) { <p class="demande-pourquoi">{{ demande.texte }}</p> }
+                @if (reponseNonEnvoyee) {
+                  <p class="demande-recu" role="status">
+                    <span class="material-icons">check_circle</span>
+                    C'est noté : vous n'êtes pas disponible sur cette période. Vous ne serez
+                    pas relancé. Si cela change, cochez simplement vos créneaux ci-dessous.
+                  </p>
+                } @else {
+                  <p class="aide">
+                    Cochez les créneaux où vous pouvez venir : chaque case cochée vaut réponse.
+                    Si vous ne pouvez pas du tout, dites-le — c'est une réponse aussi, et elle
+                    évite qu'on vous relance.
+                  </p>
+                  <button type="button" class="secondaire" (click)="repondreIndisponible()">
+                    Je ne suis pas disponible sur cette période
+                  </button>
+                }
+              </div>
+            }
             @if (disponibilites.ressources.length > 1) {
               <p class="aide">
                 Vos créneaux valent pour vos
@@ -190,7 +215,7 @@
             <div class="raccourcis">
               <button type="button" class="primaire"
                       (click)="basculerToutesLesJournees(true)">
-                Tout cocher (15 jours)
+                Tout cocher ({{ disponibilites.jours.length }} jours)
               </button>
               <button type="button" class="secondaire"
                       (click)="basculerToutesLesJournees(false)">

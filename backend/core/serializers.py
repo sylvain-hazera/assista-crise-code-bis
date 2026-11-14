@@ -21,8 +21,11 @@ from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commu
 from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
 from .crypto_fields import blind_index
+from .notifications_application import bilan as bilan_application
 from .models import (
     AffectationRotation,
+    NotificationApplication,
+    StatutCampagne,
     CampagneDisponibilite,
     CreneauEquipe,
     DossierRelogement,
@@ -5482,6 +5485,8 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
             "injoignables": sum(1 for c in cibles if c.etat == EtatCible.INJOIGNABLE),
             "disponibles": sum(1 for c in cibles
                                if c.etat == EtatCible.A_REPONDU and c.creneaux_declares > 0),
+            # Ce que seule l'application sait dire : reçu, vu, lu, répondu.
+            "application": bilan_application(obj),
         }
 
     def validate(self, attrs):
@@ -5533,12 +5538,20 @@ class CibleCampagneSerializer(serializers.ModelSerializer):
 
     nom = serializers.SerializerMethodField()
     etat_libelle = serializers.CharField(source='get_etat_display', read_only=True)
+    application = serializers.SerializerMethodField()
 
     class Meta:
         model = CibleCampagne
         fields = ['id', 'campagne', 'utilisateur', 'nom', 'etat', 'etat_libelle',
-                  'date_envoi', 'date_reponse', 'creneaux_declares', 'erreur']
+                  'date_envoi', 'date_reponse', 'creneaux_declares', 'erreur', 'application']
         read_only_fields = fields
+
+    def get_application(self, obj):
+        """Ce que l'application sait du message : envoyé, remis, vu, lu. `None` si la
+        personne n'a pas été jointe par ce canal. Le suivi est calculé UNE fois par la vue et
+        passé en contexte : une requête par cible ferait quatre cents requêtes par écran."""
+        suivi = self.context.get('suivi_application') or {}
+        return suivi.get(obj.utilisateur_id)
 
     def get_nom(self, obj):
         return nom_affichable(obj.utilisateur, self.context.get('request')) \
@@ -5657,3 +5670,40 @@ class CreneauEquipeSerializer(serializers.ModelSerializer):
     def get_nom(self, obj):
         return nom_affichable(obj.utilisateur, self.context.get('request')) \
             or obj.utilisateur.email
+
+
+class NotificationApplicationSerializer(serializers.ModelSerializer):
+    """Une notification telle que l'application la lit.
+
+    La campagne est rendue AVEC la réponse déjà donnée : l'écran doit pouvoir dire « vous avez
+    répondu » sans second appel, et surtout ne pas reproposer de répondre à qui l'a fait."""
+
+    genre_libelle = serializers.CharField(source='get_genre_display', read_only=True)
+    institution_nom = serializers.SerializerMethodField()
+    campagne = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NotificationApplication
+        fields = ['id', 'genre', 'genre_libelle', 'titre', 'corps', 'urgent',
+                  'institution_nom', 'campagne', 'date_creation', 'date_remise', 'date_vue',
+                  'date_lue', 'date_reponse']
+        read_only_fields = fields
+
+    def get_institution_nom(self, obj):
+        institution = obj.institution
+        return (institution.nom_affichage or institution.nom) if institution else None
+
+    def get_campagne(self, obj):
+        campagne = obj.campagne
+        if campagne is None:
+            return None
+        cibles = self.context.get('cibles') or {}
+        cible = cibles.get(campagne.id)
+        return {
+            'id': campagne.id,
+            'periode_debut': campagne.periode_debut,
+            'periode_fin': campagne.periode_fin,
+            'cloturee': campagne.statut == StatutCampagne.CLOTUREE,
+            'repondu': bool(cible and cible.etat == EtatCible.A_REPONDU),
+            'creneaux_declares': cible.creneaux_declares if cible else 0,
+        }

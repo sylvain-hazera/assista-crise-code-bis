@@ -140,7 +140,11 @@ def envoyer_campagne(campagne, request):
     accroche = ACCROCHES.get(campagne.motif, "")
     rotation = _phrase_rotation(campagne)
 
-    from .canaux_campagne import CANAL_EMAIL, CANAL_MATRIX, CANAL_MOBIMEL, CANAL_SMS
+    from .canaux_campagne import (
+        CANAL_APPLICATION, CANAL_EMAIL, CANAL_MATRIX, CANAL_MOBIMEL, CANAL_SMS,
+    )
+    from .models import GenreNotification
+    from .notifications_application import notifier
 
     canaux = campagne.canaux_effectifs
     envoyes, echecs = 0, 0
@@ -162,6 +166,20 @@ def envoyer_campagne(campagne, request):
                 next_url=f"/ma-fiche-benevole?campagne={campagne.id}",
             )
             atteint = False
+            # L'application d'abord : elle ne coûte rien, et c'est elle qui dira si le
+            # message a été reçu. Pas de lien dans le texte — l'application ouvre elle-même
+            # la grille sur la période demandée.
+            if CANAL_APPLICATION in canaux:
+                notification = notifier(
+                    cible.utilisateur, GenreNotification.CAMPAGNE,
+                    _titre_application(campagne, periode),
+                    "\n\n".join(p for p in (accroche, campagne.texte or "", rotation) if p),
+                    urgent=campagne.motif == "CRISE_EN_COURS",
+                    institution=campagne.institution, campagne=campagne,
+                )
+                if notification is not None:
+                    par_canal[CANAL_APPLICATION] += 1
+                    atteint = True
             if CANAL_EMAIL in canaux and cible.utilisateur.email:
                 send_modele_mail(
                     request, campagne.institution, "CAMPAGNE_DISPONIBILITE",
@@ -208,7 +226,8 @@ def envoyer_campagne(campagne, request):
             if not atteint and CANAL_MATRIX not in canaux:
                 raise RuntimeError(
                     "Aucun canal retenu ne permet de joindre cette personne "
-                    "(ni adresse email, ni numéro de téléphone selon les canaux choisis)."
+                    "(ni application, ni adresse email, ni numéro de téléphone selon les "
+                    "canaux choisis)."
                 )
             cible.etat = EtatCible.CONTACTE
             cible.date_envoi = timezone.now()
@@ -230,6 +249,15 @@ def envoyer_campagne(campagne, request):
         campagne.save(update_fields=["statut", "date_envoi"])
 
     return {"envoyes": envoyes, "echecs": echecs, "par_canal": par_canal}
+
+
+def _titre_application(campagne, periode):
+    """Ce qui s'affiche sur l'écran verrouillé : qui demande, et pour quand.
+
+    Rien du motif ni du texte : une notification se lit par-dessus l'épaule, et le « pourquoi »
+    d'une campagne décrit parfois une situation qui n'est pas encore publique."""
+    nom = campagne.institution.nom_affichage or campagne.institution.nom
+    return f"{nom} : êtes-vous disponible du {periode} ?"
 
 
 def _texte_sms(campagne, periode, lien):
@@ -268,7 +296,30 @@ def enregistrer_la_reponse(campagne, utilisateur):
     cible.date_reponse = timezone.now()
     cible.creneaux_declares = combien
     cible.save(update_fields=["etat", "date_reponse", "creneaux_declares"])
+
+    from .notifications_application import noter_la_reponse
+
+    noter_la_reponse(campagne, utilisateur)
     return cible
+
+
+def repondre_indisponible(campagne, utilisateur):
+    """« Je ne suis pas disponible sur cette période » : une réponse, dite en un geste.
+
+    Jusqu'ici, répondre non voulait dire ne rien cocher — c'est-à-dire, pour le suivi, ne pas
+    répondre : la personne était relancée pour avoir dit non en silence. Demande de Sylvain du
+    14/11/2026 : « une réponse négative est une réponse ».
+
+    Les créneaux déjà posés sur la période sont RETIRÉS, pour l'institution qui demande : le
+    moteur n'a qu'une règle, « pas de ligne = indisponible », et laisser des créneaux cochés à
+    quelqu'un qui vient de dire non ferait partir une garde sur lui."""
+    from .models import DisponibiliteOffre
+
+    DisponibiliteOffre.objects.filter(
+        offer__author=utilisateur, offer__institution=campagne.institution,
+        date__gte=campagne.periode_debut, date__lte=campagne.periode_fin,
+    ).delete()
+    return enregistrer_la_reponse(campagne, utilisateur)
 
 
 def couverture(campagne):

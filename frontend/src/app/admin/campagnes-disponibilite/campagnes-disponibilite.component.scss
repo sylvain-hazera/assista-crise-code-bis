@@ -499,3 +499,36 @@ label {
   font-size: .95rem;
   font-variant-numeric: tabular-nums;
 }
+
+// ── Suivi par l'application mobile : reçu, vu, lu, répondu ─────────────────────────────────
+.sous-titre { margin: 1rem 0 .4rem; font-size: .95rem; }
+
+.entonnoir {
+  display: flex; flex-wrap: wrap; gap: .4rem 1.2rem;
+  margin: 0; padding: 0; list-style: none;
+  font-size: .9rem; color: var(--ac-text, #374151);
+  li + li::before { content: '›'; margin-right: 1.2rem; color: var(--ac-text-muted, #6b7280); }
+  strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .dispo strong { color: var(--ac-green-text, #166534); }
+  span { color: var(--ac-text-muted, #6b7280); font-size: .82rem; }
+}
+
+.etapes { display: inline-flex; gap: .25rem; flex-wrap: wrap; }
+.etape {
+  padding: .1rem .45rem; border-radius: 999px; font-size: .72rem;
+  border: 1px dashed var(--ac-border-strong, #d1d5db);
+  color: var(--ac-text-muted, #6b7280);
+  &.faite {
+    border-style: solid;
+    border-color: var(--ac-green-border, #bbf7d0);
+    background: var(--ac-green-bg, #f0fdf4);
+    color: var(--ac-green-text, #166534);
+  }
+  // Un « non » est une réponse : même trait plein, mais pas la couleur d'un oui.
+  &.non {
+    border-color: var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface, white);
+    color: var(--ac-text, #374151);
+  }
+}
+.sans-appli { color: var(--ac-text-muted, #6b7280); }

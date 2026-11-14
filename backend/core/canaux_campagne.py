@@ -29,9 +29,19 @@ CANAL_EMAIL = "BREVO_EMAIL"
 CANAL_SMS = "BREVO_SMS"
 CANAL_MOBIMEL = "MOBIMEL"
 CANAL_MATRIX = "MATRIX"
+CANAL_APPLICATION = "APPLICATION"
 
 #: Ce que chaque canal sait faire, dans l'ordre où on le propose : du plus large au plus cher.
 CANAUX = [
+    {
+        "code": CANAL_APPLICATION,
+        "libelle": "Application mobile",
+        "detail": "Gratuit, et le seul canal qui dit ce que le message est devenu : reçu, vu, "
+                  "lu, répondu. Ne touche que les personnes qui ont l'application — "
+                  "complétez par un autre canal pour les autres. Application fermée, la "
+                  "notification peut mettre jusqu'à un quart d'heure à sonner.",
+        "unite": None,
+    },
     {
         "code": CANAL_EMAIL,
         "libelle": "Email",
@@ -91,7 +101,11 @@ def _joignables(campagne, cibles):
     # destinataires. À l'envoi, `matrix.envoyer_dm` ignore silencieusement qui n'a pas de
     # compte, et le bilan rend le nombre réellement atteint.
     matrix = sum(1 for c in cibles if c.utilisateur_id in joignables_matrix)
-    return {"email": email, "sms": sms, "matrix": matrix}
+    from .notifications_application import joignables_par_application
+
+    # Un téléphone qui a parlé au serveur récemment : un fait, pas une estimation.
+    application = len(joignables_par_application(c.utilisateur_id for c in cibles))
+    return {"email": email, "sms": sms, "matrix": matrix, "application": application}
 
 
 def apercu_des_canaux(campagne, cibles):
@@ -110,12 +124,14 @@ def apercu_des_canaux(campagne, cibles):
         CANAL_SMS: getattr(config, "brevo_credits_sms", None) if config else None,
         CANAL_MOBIMEL: None,   # Pas d'API de solde tant que l'adaptateur n'est pas écrit.
         CANAL_MATRIX: None,
+        CANAL_APPLICATION: None,
     }
     tarifs = {
         CANAL_EMAIL: getattr(config, "cout_unitaire_email", 0) if config else 0,
         CANAL_SMS: getattr(config, "cout_unitaire_sms", 0) if config else 0,
         CANAL_MOBIMEL: getattr(config, "cout_unitaire_sms_mobimel", 0) if config else 0,
         CANAL_MATRIX: 0,
+        CANAL_APPLICATION: 0,
     }
     disponible = {
         CANAL_EMAIL: bool(config and config.email_configure),
@@ -123,6 +139,7 @@ def apercu_des_canaux(campagne, cibles):
         CANAL_MOBIMEL: bool(config and config.fournisseur_sms == "MOBIMEL"
                             and config.sms_configure),
         CANAL_MATRIX: portee["matrix"] > 0,
+        CANAL_APPLICATION: portee["application"] > 0,
     }
 
     apercu = []
@@ -131,6 +148,7 @@ def apercu_des_canaux(campagne, cibles):
         destinataires = {
             CANAL_EMAIL: portee["email"], CANAL_SMS: portee["sms"],
             CANAL_MOBIMEL: portee["sms"], CANAL_MATRIX: portee["matrix"],
+            CANAL_APPLICATION: portee["application"],
         }[code]
         restant = restants[code]
         tarif = tarifs[code] or 0

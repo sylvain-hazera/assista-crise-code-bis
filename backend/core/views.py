@@ -17848,9 +17848,13 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
     @action(detail=True, methods=["get"])
     def cibles(self, request, pk=None):
         campagne = self.get_object()
+        from .notifications_application import suivi_par_personne
+
         cibles = CibleCampagne.objects.filter(campagne=campagne).select_related("utilisateur")
         return Response(CibleCampagneSerializer(
-            cibles, many=True, context={"request": request}).data)
+            cibles, many=True,
+            context={"request": request, "suivi_application": suivi_par_personne(campagne)},
+        ).data)
 
     @action(detail=True, methods=["get"])
     def couverture(self, request, pk=None):

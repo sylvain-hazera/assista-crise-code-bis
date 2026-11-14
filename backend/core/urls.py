@@ -2,6 +2,9 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
+from .views_application import (
+    AccuserNotificationsView, MesNotificationsView, MonAppareilView, RepondreIndisponibleView,
+)
 from .views import (
     BrouillonEnvoiViewSet,
     DefinirMonMotDePasseView,
@@ -314,6 +317,15 @@ urlpatterns = [
     # le seul moteur du projet : ce n'est pas une seconde source, c'est un acces simplifie
     # (voir MesDisponibilitesView).
     path('mes-disponibilites/', MesDisponibilitesView.as_view(), name='mes_disponibilites'),
+    # « Je ne suis pas disponible » : la reponse negative a une campagne, dite en un geste.
+    path('mes-disponibilites/indisponible/', RepondreIndisponibleView.as_view(),
+         name='repondre_indisponible'),
+    # Application mobile : le telephone se presente, lit ses notifications, dit ce qu'il en a
+    # fait (voir core/views_application.py).
+    path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
+    path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
+    path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),
+         name='accuser_notifications'),
     # Politique de conservation des pièces justificatives : régime, durée, base légale et
     # « pourquoi ». Affichée sur la page de dépôt comme sur la page de validation.
     path('conservation-pieces/', ConservationPiecesView.as_view(), name='conservation_pieces'),

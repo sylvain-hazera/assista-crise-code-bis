@@ -39,19 +39,32 @@ export class FicheBenevoleService {
    * que lit `/admin/teams` pour constituer une équipe et que remplit déjà le formulaire
    * public « proposer mon aide ». Ce guichet n'est pas une seconde source : il évite au membre
    * de devoir connaître l'identifiant de sa ressource pour cocher une case. */
-  mesDisponibilites(jours = 15): Observable<MesDisponibilites> {
-    return this.http.get<MesDisponibilites>(this.urlDisponibilites,
-                                            { params: { jours: String(jours) } });
+  mesDisponibilites(jours = 15, campagne?: string | null): Observable<MesDisponibilites> {
+    const params: Record<string, string> = { jours: String(jours) };
+    // Une campagne impose SA période : sans ce paramètre, on répondrait sur ses quinze
+    // prochains jours — à une autre question que celle posée.
+    if (campagne) { params['campagne'] = campagne; }
+    return this.http.get<MesDisponibilites>(this.urlDisponibilites, { params });
+  }
+
+  /** « Je ne suis pas disponible sur cette période » : une réponse, dite en un geste. Sans
+   * elle, répondre non voulait dire ne rien cocher — donc être relancé. */
+  repondreIndisponible(campagne: string): Observable<{ etat: string }> {
+    return this.http.post<{ etat: string }>(`${this.urlDisponibilites}indisponible/`,
+                                            { campagne });
   }
 
   /** Coche ou décoche un créneau. `creneau` omis = **toute la journée**, soit quatre lignes.
    *
    * Décocher SUPPRIME la ligne : « pas de ligne = indisponible » est la règle de ce moteur
    * depuis l'origine, il n'y a pas de ligne « indisponible » à écrire. */
-  declarerCreneau(date: string, disponible: boolean, creneau?: Creneau)
+  declarerCreneau(date: string, disponible: boolean, creneau?: Creneau,
+                  campagne?: string | null)
       : Observable<{ date: string; creneaux: Creneau[]; disponible: boolean }> {
     const corps: Record<string, unknown> = { date, disponible };
     if (creneau) { corps['creneau'] = creneau; }
+    // C'est ce rattachement qui fait d'un créneau coché une RÉPONSE à la campagne.
+    if (campagne) { corps['campagne'] = campagne; }
     return this.http.post<{ date: string; creneaux: Creneau[]; disponible: boolean }>(
       this.urlDisponibilites, corps);
   }

@@ -50,6 +50,7 @@ export interface SuiviCampagne {
   injoignables: number;
   /** Ceux qui ont répondu ET déclaré au moins un créneau. */
   disponibles: number;
+  application?: BilanApplication;
 }
 
 /** Un canal d'envoi, tel que le serveur le décrit à l'écran de composition.
@@ -136,6 +137,30 @@ export interface CibleCampagne {
   /** Zéro EST une réponse : « je ne suis pas disponible ». */
   creneaux_declares: number;
   erreur?: string;
+  /** Ce que l'application mobile sait du message. `null` : pas joint par ce canal. */
+  application?: SuiviApplicationPersonne | null;
+}
+
+/** Les étapes franchies sur le téléphone d'une personne. Une date absente = pas encore. */
+export interface SuiviApplicationPersonne {
+  envoyee: string;
+  remise: string | null;
+  vue: string | null;
+  lue: string | null;
+  /** Faux : la personne a coupé les notifications. « Remise » ne veut alors pas dire
+   * « prévenue » — le message l'attend dans l'application. */
+  notifications_autorisees: boolean;
+}
+
+/** Les mêmes étapes, comptées sur les personnes (jamais sur les messages). */
+export interface BilanApplication {
+  notifiees: number;
+  remises: number;
+  vues: number;
+  lues: number;
+  repondu: number;
+  /** Un « non » est une réponse. */
+  repondu_non: number;
 }
 
 export interface ApercuCiblage {

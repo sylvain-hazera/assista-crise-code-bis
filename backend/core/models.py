@@ -9447,3 +9447,117 @@ class AffectationRotation(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.utilisateur.email} — {self.rotation} ({self.creneau})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# APPLICATION MOBILE : APPAREILS ET NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+#
+# Demande de Sylvain du 14/11/2026 : que la messagerie de l'application devienne un moyen de
+# mobiliser, « avec un feedback de qui a eu la notif, vu, lu, répondu (une réponse négative est
+# une réponse) ».
+#
+# Ce que les autres canaux ne savent pas dire : un email parti n'est pas un email lu, un SMS
+# remis n'est pas un SMS compris. L'application, elle, sait à chaque étape où en est la
+# personne — et c'est ce qui permet de relancer par SMS, payant, les seuls que l'application
+# n'a pas atteints.
+
+
+class PlateformeMobile(models.TextChoices):
+    ANDROID = "ANDROID", "Android"
+    IOS = "IOS", "iPhone"
+
+
+class AppareilMobile(models.Model):
+    """Un téléphone sur lequel une personne a ouvert l'application.
+
+    Sert à une seule question : « l'application peut-elle joindre cette personne ? ». Sans
+    cette table, le canal « Application » d'une campagne annoncerait une portée inventée —
+    exactement le piège que `canaux_campagne` refuse pour Matrix.
+
+    Aucun identifiant matériel : `installation` est tiré au hasard par l'application à son
+    premier lancement, et disparaît avec elle. Pas scopé par environnement : c'est le compte
+    qui est joignable, pas ses données.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="appareils_mobiles",
+    )
+    installation = models.CharField(max_length=64, unique=True)
+    plateforme = models.CharField(
+        max_length=10, choices=PlateformeMobile.choices, default=PlateformeMobile.ANDROID,
+    )
+    version = models.CharField(max_length=20, blank=True)
+    #: La personne a-t-elle laissé le système afficher nos notifications ? Refusé, le message
+    #: attend dans l'application qu'elle l'ouvre : « reçu » ne voudra pas dire « prévenu ».
+    notifications_autorisees = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    dernier_contact = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-dernier_contact"]
+
+    def __str__(self):
+        return f"{self.utilisateur_id} — {self.plateforme} {self.version}"
+
+
+class GenreNotification(models.TextChoices):
+    CAMPAGNE = "CAMPAGNE", "Demande de disponibilités"
+    AFFECTATION = "AFFECTATION", "Tour de garde"
+    JUSTIFICATIF = "JUSTIFICATIF", "Justificatif"
+    INFORMATION = "INFORMATION", "Information"
+
+
+class NotificationApplication(EnvironmentScopedModel):
+    """Un message adressé à UNE personne dans l'application, et ce qu'il est devenu.
+
+    Quatre étapes datées, dans l'ordre où elles arrivent :
+
+    | Étape | Ce qu'elle atteste |
+    |---|---|
+    | `date_remise` | le téléphone l'a reçu et a affiché la notification du système |
+    | `date_vue` | la personne a ouvert l'application et l'a eu sous les yeux, dans la liste |
+    | `date_lue` | elle l'a ouvert |
+    | `date_reponse` | elle a répondu — oui OU non (`CibleCampagne` porte le contenu) |
+
+    Chacune n'est écrite qu'une fois : la première remise est la vraie, et réécrire la date
+    à chaque relecture ferait croire qu'un message vieux de trois jours vient d'arriver.
+
+    Titre et corps sont chiffrés : ils reprennent le texte d'une campagne, qui décrit une
+    situation opérationnelle parfois avant qu'elle soit publique.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="notifications_application",
+    )
+    genre = models.CharField(max_length=15, choices=GenreNotification.choices)
+    titre = EncryptedTextField()
+    corps = EncryptedTextField(blank=True)
+    urgent = models.BooleanField(default=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="notifications_application",
+    )
+    campagne = models.ForeignKey(
+        CampagneDisponibilite, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="notifications_application",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_remise = models.DateTimeField(null=True, blank=True)
+    date_vue = models.DateTimeField(null=True, blank=True)
+    date_lue = models.DateTimeField(null=True, blank=True)
+    date_reponse = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+        indexes = [
+            models.Index(fields=["utilisateur", "-date_creation"],
+                         name="ix_notif_app_utilisateur"),
+        ]
+
+    def __str__(self):
+        return f"{self.genre} → {self.utilisateur_id} ({self.date_creation:%d/%m %H:%M})"

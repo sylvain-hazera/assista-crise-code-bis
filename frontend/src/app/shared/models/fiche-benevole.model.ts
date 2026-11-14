@@ -110,4 +110,17 @@ export interface MesDisponibilites {
   ressources: { offre: string; institution: string | null; institution_nom: string | null }[];
   creneaux: Creneau[];
   jours: JourCreneaux[];
+  /** La demande à laquelle cette grille répond, quand on arrive depuis une campagne : la
+   * grille porte alors SA période, pas les quinze prochains jours. */
+  campagne?: CampagneDemandee | null;
+}
+
+export interface CampagneDemandee {
+  id: string;
+  intitule: string;
+  motif_libelle: string;
+  texte: string;
+  institution_nom: string;
+  periode_debut: string;
+  periode_fin: string;
 }

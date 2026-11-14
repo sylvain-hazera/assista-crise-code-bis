@@ -68,6 +68,13 @@ export class MaFicheBenevoleComponent implements OnInit {
    * plutôt que toute la grille. */
   enregistrementEnCours = '';
 
+  /** La campagne dont on arrive (`?campagne=` posé par le lien du message). Tant qu'elle est
+   * là, la grille porte sa période et chaque créneau coché lui vaut réponse. */
+  campagneId: string | null = null;
+  /** La personne vient de dire « je ne suis pas disponible » : on le lui confirme, pour
+   * qu'elle ne se demande pas si son non a été entendu. */
+  reponseNonEnvoyee = false;
+
   // ── Mot de passe ──────────────────────────────────────────────────────────
   motDePasse = '';
   motDePasseConfirme = '';
@@ -92,6 +99,16 @@ export class MaFicheBenevoleComponent implements OnInit {
     // espace ». Sans cela, le lien déposait les gens sur le formulaire d'identité, à charge
     // pour eux de retrouver l'onglet — c'est exactement ce qu'un lien doit éviter.
     this.route.queryParamMap.subscribe(params => {
+      // Le lien d'une campagne emmène sur la grille de SA période. Jusqu'au 14/11/2026 ce
+      // paramètre n'était pas lu : on arrivait sur l'onglet d'identité, la grille montrait
+      // les quinze prochains jours, et aucune réponse n'était rattachée à la campagne.
+      const campagne = params.get('campagne');
+      if (campagne && campagne !== this.campagneId) {
+        this.campagneId = campagne;
+        this.disponibilites = null;
+        this.ouvrirOnglet('disponibilites');
+        return;
+      }
       const demande = params.get('onglet');
       if (demande && (['fiche', 'disponibilites', 'justificatifs', 'acces'] as string[])
           .includes(demande)) {
@@ -195,7 +212,7 @@ export class MaFicheBenevoleComponent implements OnInit {
   }
 
   chargerDisponibilites(): void {
-    this.ficheService.mesDisponibilites().subscribe({
+    this.ficheService.mesDisponibilites(15, this.campagneId).subscribe({
       next: (grille) => this.disponibilites = grille,
       error: () => this.erreur = 'Impossible de charger vos disponibilités.',
     });
@@ -220,7 +237,7 @@ export class MaFicheBenevoleComponent implements OnInit {
   basculerCreneau(jour: JourCreneaux, creneau: Creneau): void {
     const vise = !jour.creneaux[creneau];
     this.enregistrementEnCours = `${jour.date}|${creneau}`;
-    this.ficheService.declarerCreneau(jour.date, vise, creneau).subscribe({
+    this.ficheService.declarerCreneau(jour.date, vise, creneau, this.campagneId).subscribe({
       next: () => {
         jour.creneaux[creneau] = vise;
         this.enregistrementEnCours = '';
@@ -237,7 +254,7 @@ export class MaFicheBenevoleComponent implements OnInit {
     // « toute la journée » sur une journée à moitié remplie.
     const vise = !this.journeeComplete(jour);
     this.enregistrementEnCours = `${jour.date}|`;
-    this.ficheService.declarerCreneau(jour.date, vise).subscribe({
+    this.ficheService.declarerCreneau(jour.date, vise, undefined, this.campagneId).subscribe({
       next: () => {
         for (const { creneau } of this.CRENEAUX) { jour.creneaux[creneau] = vise; }
         this.enregistrementEnCours = '';
@@ -268,7 +285,7 @@ export class MaFicheBenevoleComponent implements OnInit {
       }
       const jour = grille.jours[index];
       this.enregistrementEnCours = `${jour.date}|`;
-      this.ficheService.declarerCreneau(jour.date, vise).subscribe({
+      this.ficheService.declarerCreneau(jour.date, vise, undefined, this.campagneId).subscribe({
         next: () => {
           for (const { creneau } of this.CRENEAUX) { jour.creneaux[creneau] = vise; }
           suivant(index + 1);
@@ -277,6 +294,26 @@ export class MaFicheBenevoleComponent implements OnInit {
       });
     };
     suivant(0);
+  }
+
+  /** « Je ne suis pas disponible sur cette période ». Le serveur retire les créneaux de la
+   * période : la grille est donc relue, pour montrer ce qui est réellement enregistré. */
+  repondreIndisponible(): void {
+    if (!this.campagneId) { return; }
+    this.erreur = '';
+    this.ficheService.repondreIndisponible(this.campagneId).subscribe({
+      next: () => {
+        this.reponseNonEnvoyee = true;
+        this.chargerDisponibilites();
+      },
+      error: (err) => this.erreur = this.premierMessage(err)
+        || "Impossible d'enregistrer votre réponse.",
+    });
+  }
+
+  /** « 12 novembre » : la période d'une campagne se lit, elle ne se déchiffre pas. */
+  jourLisible(iso: string): string {
+    return new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
   }
 
   /** La case n'est PAS modifiée : une case qui change d'apparence sans que le serveur l'ait

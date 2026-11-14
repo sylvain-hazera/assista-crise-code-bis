@@ -488,6 +488,24 @@
             « Sans réponse » ne compte pas les personnes ayant indiqué n'avoir aucune
             disponibilité : elles vous ont répondu, il est inutile de les relancer.
           </p>
+          @if (campagne.suivi.application; as appli) {
+            @if (appli.notifiees) {
+              <h3 class="sous-titre">Par l'application mobile</h3>
+              <ol class="entonnoir">
+                <li><strong>{{ appli.notifiees }}</strong> notifié(s)</li>
+                <li><strong>{{ appli.remises }}</strong> reçu sur le téléphone</li>
+                <li><strong>{{ appli.vues }}</strong> vu</li>
+                <li><strong>{{ appli.lues }}</strong> lu</li>
+                <li class="dispo"><strong>{{ appli.repondu }}</strong> ont répondu
+                  @if (appli.repondu_non) { <span>dont {{ appli.repondu_non }} « non »</span> }
+                </li>
+              </ol>
+              <p class="page-hint">
+                Compté sur les personnes, pas sur les messages. Un message « reçu » mais ni vu
+                ni lu après quelques heures est le bon candidat à une relance par SMS.
+              </p>
+            }
+          }
         }
       </section>
 
@@ -603,6 +621,7 @@
           <thead>
             <tr>
               <th>Bénévole</th><th>État</th><th>Créneaux déclarés</th><th>Contacté le</th>
+              <th>Application</th>
             </tr>
           </thead>
           <tbody>
@@ -616,9 +635,27 @@
                 </td>
                 <td>{{ c.creneaux_declares }}</td>
                 <td>{{ c.date_envoi ? (c.date_envoi | date:'dd/MM HH:mm') : '—' }}</td>
+                <td>
+                  @if (c.application; as a) {
+                    <span class="etapes" [attr.aria-label]="etapeApplication(c)">
+                      <span class="etape" [class.faite]="a.remise" title="Reçu sur le téléphone{{ a.remise ? ' le ' + (a.remise | date:'dd/MM HH:mm') : ' : pas encore' }}">Reçu</span>
+                      <span class="etape" [class.faite]="a.vue" title="Vu{{ a.vue ? ' le ' + (a.vue | date:'dd/MM HH:mm') : ' : pas encore' }}">Vu</span>
+                      <span class="etape" [class.faite]="a.lue" title="Lu{{ a.lue ? ' le ' + (a.lue | date:'dd/MM HH:mm') : ' : pas encore' }}">Lu</span>
+                      <span class="etape" [class.faite]="c.etat === 'A_REPONDU'"
+                            [class.non]="c.etat === 'A_REPONDU' && c.creneaux_declares === 0">
+                        {{ c.etat === 'A_REPONDU' && c.creneaux_declares === 0 ? 'Non' : 'Répondu' }}
+                      </span>
+                    </span>
+                    @if (!a.notifications_autorisees) {
+                      <span class="motif">Notifications coupées sur son téléphone</span>
+                    }
+                  } @else {
+                    <span class="sans-appli">—</span>
+                  }
+                </td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="empty">Aucune cible.</td></tr>
+              <tr><td colspan="5" class="empty">Aucune cible.</td></tr>
             }
           </tbody>
         </table>
