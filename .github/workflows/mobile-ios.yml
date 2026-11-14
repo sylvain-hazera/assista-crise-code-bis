@@ -1,0 +1,30 @@
+# Verifie que le code partage de l'application mobile compile et passe ses tests pour iOS.
+#
+# Il n'y a pas de Mac dans le projet : c'est cette machine de GitHub qui en tient lieu.
+# Lancement a la main seulement (onglet Actions > Mobile iOS > Run workflow) : sur un depot
+# prive, une minute de macOS en coute dix.
+name: Mobile iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  code-partage:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests du code partage sur simulateur iOS
+        working-directory: mobile
+        # L'application Android n'a rien a faire ici : on ne configure que le code partage.
+        run: >
+          ./gradlew
+          :shared:domaine:iosSimulatorArm64Test
+          :shared:donnees:iosSimulatorArm64Test
+          :shared:lien:iosSimulatorArm64Test
+          --stacktrace

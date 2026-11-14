@@ -133,7 +133,7 @@ class ClientApiTest {
     }
 
     @Test fun uneCoupureReseauNEstPasUnRefus() = runTest {
-        val banc = Banc { throw java.io.IOException("pas de réseau") }
+        val banc = Banc { throw IllegalStateException("pas de réseau") }
         assertIs<Reponse.Injoignable>(banc.api.connecter("c@exemple.fr", "secret"))
     }
 
