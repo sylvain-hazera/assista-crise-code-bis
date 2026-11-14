@@ -43,7 +43,9 @@ android {
         // telephones d'aujourd'hui sont en arm64 ; armeabi-v7a couvre les plus anciens.
         // x86_64 n'existe que pour l'emulateur, donc en developpement seulement.
         debug {
-            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+            // -Pabis=arm64-v8a pour un APK leger destine a un seul telephone recent.
+            val abis = (project.findProperty("abis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            ndk { abiFilters += abis }
         }
         release {
             isMinifyEnabled = false
