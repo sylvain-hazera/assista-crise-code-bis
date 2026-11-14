@@ -227,6 +227,27 @@ class FileAttenteTest {
         assertEquals(listOf("m2", "m3"), banc.file.actions.value.map { it.cible })
         assertEquals(listOf(1, 0), banc.file.actions.value.map { it.tentatives })
     }
+
+    @Test fun uneActionQuiEchoueSansFinNeBloquePasLesSuivantesIndefiniment() = runTest {
+        // m1 fait planter le serveur à chaque fois ; m2 passerait très bien.
+        val banc = Banc { demande ->
+            when {
+                demande.url.encodedPath.endsWith("token/") -> json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
+                demande.url.encodedPath.contains("m1") -> respond("", HttpStatusCode.InternalServerError)
+                demande.method == HttpMethod.Patch -> json("""{"id":"m2"}""")
+                else -> json("[]")
+            }
+        }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.depot.declarerStatut(mission.copy(id = "m1"), StatutMission.EN_COURS)
+        banc.depot.declarerStatut(mission.copy(id = "m2"), StatutMission.EN_COURS)
+        // Les premiers échecs bloquent la suite : l'ordre compte, et c'est peut-être le réseau.
+        repeat(FileAttente.ESSAIS_BLOQUANTS) { assertEquals(0, banc.synchro.envoyerLaFile(force = true)) }
+        assertEquals(2, banc.file.actions.value.size)
+        // Au-delà, on la laisse de côté sans l'abandonner : m2 part, m1 reste et sera retentée.
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        assertEquals(listOf("m1"), banc.file.actions.value.map { it.cible })
+    }
 }
 
 class MessagerieTest {
@@ -345,5 +366,58 @@ class SuiviTest {
         assertEquals(1, banc.synchro.envoyerLaFile(force = true))
         val corps = banc.demandes.last().corps()
         assertEquals("45.751", corps.getValue("latitude").jsonPrimitive.content)
+    }
+}
+
+class CitoyenTest {
+    private val crise = fr.assistacrise.mobile.domaine.Crise(id = "c1", nom = "Crue de la Saône", suivie = true)
+    private val moi = fr.assistacrise.mobile.domaine.Deposant("Camille", "Durand", "c@exemple.fr", "0612345678")
+    private val ici = fr.assistacrise.mobile.domaine.Releve(45.75, 4.85, 0)
+    private fun depot(genre: fr.assistacrise.mobile.domaine.GenreDepot) = fr.assistacrise.mobile.domaine.Depot(
+        genre, crise, moi, titre = "Route coupée", type = fr.assistacrise.mobile.domaine.TypeDepot("t1", "Danger imminent"), position = ici,
+    )
+
+    @Test fun unSignalementSansPositionEstRefuseAvantDePartir() {
+        val sans = depot(fr.assistacrise.mobile.domaine.GenreDepot.SIGNALEMENT).copy(position = null)
+        assertTrue(fr.assistacrise.mobile.domaine.ChampsDepot.POSITION in fr.assistacrise.mobile.domaine.validerDepot(sans))
+        // Une demande, elle, peut se passer de lieu.
+        val demande = depot(fr.assistacrise.mobile.domaine.GenreDepot.DEMANDE).copy(position = null)
+        assertTrue(fr.assistacrise.mobile.domaine.validerDepot(demande).isEmpty())
+    }
+
+    @Test fun laPositionPartEnTexteLongitudeDAbord() {
+        val corps = DepotCitoyen.corps(depot(fr.assistacrise.mobile.domaine.GenreDepot.SIGNALEMENT))
+        assertEquals("SRID=4326;POINT(4.85 45.75)", corps.getValue("location").jsonPrimitive.content)
+        assertEquals("t1", corps.getValue("information_type").jsonPrimitive.content)
+        assertEquals("Camille", corps.getValue("first_name_information").jsonPrimitive.content)
+    }
+
+    @Test fun uneCriseSansResponsableNAcceptePasDeDepot() {
+        assertTrue(crise.accepteLesDepots)
+        assertTrue(!crise.copy(suivie = false).accepteLesDepots)
+        assertTrue(!crise.copy(ouverte = false).accepteLesDepots)
+    }
+
+    @Test fun unDepotFaitHorsLigneArriveTelQuelAuRetourDuReseau() = runTest {
+        var code = HttpStatusCode.ServiceUnavailable
+        val banc = Banc { demande ->
+            when {
+                demande.url.encodedPath.endsWith("token/") -> json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
+                code == HttpStatusCode.OK -> json("""{"id":"d1"}""", HttpStatusCode.Created)
+                else -> respond("", code)
+            }
+        }
+        val citoyen = DepotCitoyen(banc.api, banc.magasin, banc.file)
+        banc.api.connecter("c@exemple.fr", "secret")
+        citoyen.deposer(depot(fr.assistacrise.mobile.domaine.GenreDepot.SECURITE).copy(adultes = 2, enfants = 1))
+        assertEquals(0, banc.synchro.envoyerLaFile())
+        assertEquals("Déclaration « en sécurité » — Crue de la Saône", banc.file.actions.value.single().libelle)
+
+        code = HttpStatusCode.OK
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        val envoi = banc.demandes.last()
+        assertEquals("/api/declarations-securite/", envoi.url.encodedPath)
+        assertEquals("2", envoi.corps().getValue("nombre_adultes").jsonPrimitive.content)
+        assertEquals("c1", envoi.corps().getValue("crise").jsonPrimitive.content)
     }
 }

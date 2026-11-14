@@ -39,6 +39,7 @@ class Synchronisation(
                     if (coordonnees.size != 2) Reponse.Refus(400, "Position illisible.")
                     else api.declarerMaPosition(coordonnees[0], coordonnees[1])
                 }
+                ActionEnAttente.GENRE_DEPOT -> api.deposer(action.cible, action.charge)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }
         }

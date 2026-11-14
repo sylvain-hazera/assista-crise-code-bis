@@ -8,7 +8,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import fr.assistacrise.mobile.domaine.Crise
+import fr.assistacrise.mobile.domaine.Depot
 import fr.assistacrise.mobile.domaine.Equipe
+import fr.assistacrise.mobile.domaine.GenreDepot
+import fr.assistacrise.mobile.domaine.validerDepot
 import fr.assistacrise.mobile.domaine.EtatAction
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
@@ -37,7 +41,7 @@ data class EtatFormulaire(
     val champs: Map<String, String> = emptyMap(),
 )
 
-enum class Ecran { CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, COMPTE }
+enum class Ecran { CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
 
@@ -47,6 +51,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val equipes = app.equipes.equipes
     val fils = app.equipes.fils
     val suivi = app.suivi.etat
+    val crises = app.citoyen.crises
+    val informations = app.citoyen.informations
+    val typesDemande = app.citoyen.typesDemande
+    val typesInformation = app.citoyen.typesInformation
     val missions: StateFlow<List<MissionAffichee>> =
         combine(app.depot.missions, app.file.actions, ::superposerLaFile)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -62,6 +70,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     var equipeOuverte by mutableStateOf<String?>(null); private set
     var positions by mutableStateOf<List<PositionMembre>>(emptyList()); private set
 
+    /** Le dépôt en cours de saisie : quel geste, sur quelle crise. */
+    var depotOuvert by mutableStateOf<Pair<GenreDepot, Crise>?>(null); private set
+    var depot by mutableStateOf(EtatFormulaire()); private set
+
     /** Message passager, affiché une fois puis effacé par l'écran. */
     var message by mutableStateOf<String?>(null); private set
 
@@ -74,6 +86,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.depot.restaurer()
             app.equipes.restaurer()
             app.suivi.restaurer()
+            app.citoyen.restaurer()
             // Le suivi était actif quand l'application a été fermée : il reprend.
             if (compte.value != null && suivi.value.actif) ServiceSuivi.demarrer(app)
             pret = true
@@ -105,6 +118,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         ecran = vers
         connexion = EtatFormulaire()
         inscription = EtatFormulaire()
+        depot = EtatFormulaire()
     }
 
     fun messageLu() { message = null }
@@ -178,6 +192,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.depot.toutEffacer()
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
+            app.citoyen.toutEffacer()
             app.file.toutEffacer()
             positions = emptyList()
             aller(Ecran.CONNEXION)
@@ -222,6 +237,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     app.api.moi()
                     val e = app.equipes.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
+                    app.citoyen.rafraichir()
                 }
                 is Reponse.Refus -> if (r.code == 401) {
                     // La session a été fermée par le client : retour à la connexion, en le disant.
@@ -257,6 +273,31 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             app.equipes.ecrire(equipe, texte)          // sur disque avant tout envoi
             verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+        }
+    }
+
+    // --- Mode citoyen ---------------------------------------------------------------------
+
+    fun ouvrirDepot(genre: GenreDepot, crise: Crise) {
+        depotOuvert = genre to crise
+        aller(Ecran.DEPOT)
+    }
+
+    fun deposer(saisie: Depot) {
+        val erreurs = validerDepot(saisie)
+        if (erreurs.isNotEmpty()) {
+            depot = EtatFormulaire(erreur = "Corrigez les champs signalés.", champs = erreurs)
+            return
+        }
+        depot = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            app.citoyen.deposer(saisie)                 // sur disque avant tout envoi
+            val avant = file.value.size
+            verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+            val parti = file.value.size < avant
+            // On dit la vérité sur ce qui s'est passé : « envoyé » n'est pas « enregistré ».
+            message = if (parti) "Envoyé. Merci." else "Enregistré sur ce téléphone : cela partira dès que le réseau reviendra."
+            aller(Ecran.AIDE)
         }
     }
 

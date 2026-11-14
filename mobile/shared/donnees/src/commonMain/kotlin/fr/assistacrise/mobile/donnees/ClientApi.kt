@@ -143,6 +143,20 @@ class ClientApi(
         authentifie(HttpMethod.Post, "ma-position/", buildJsonObject { put("latitude", latitude); put("longitude", longitude) })
             .sansValeur()
 
+    /** Une liste du serveur, nue ou paginée, dans la forme demandée. */
+    suspend fun <T> liste(chemin: String, forme: kotlinx.serialization.KSerializer<T>): Reponse<List<T>> =
+        authentifie(HttpMethod.Get, chemin).transformer {
+            val elements = if (it is JsonObject) it.getValue("results") else it
+            json.decodeFromJsonElement(ListSerializer(forme), elements)
+        }
+
+    /** Dépose un corps JSON déjà formé (un dépôt citoyen sorti de la file). */
+    suspend fun deposer(chemin: String, corps: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(corps).jsonObject }.getOrNull()
+            ?: return Reponse.Refus(400, "Dépôt illisible.")
+        return authentifie(HttpMethod.Post, chemin, objet).sansValeur()
+    }
+
     private fun lireMessages(e: JsonElement): List<MessageEquipe> =
         json.decodeFromJsonElement(ListSerializer(MessageEquipe.serializer()), e.jsonObject.getValue("messages"))
 

@@ -1,6 +1,7 @@
 package fr.assistacrise.mobile
 
 import fr.assistacrise.mobile.donnees.ClientApi
+import fr.assistacrise.mobile.donnees.DepotCitoyen
 import fr.assistacrise.mobile.donnees.DepotEquipes
 import fr.assistacrise.mobile.donnees.DepotMissions
 import fr.assistacrise.mobile.donnees.DepotSuivi
@@ -34,6 +35,7 @@ class Application : android.app.Application() {
     val depot by lazy { DepotMissions(api, magasin, file) }
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
+    val citoyen by lazy { DepotCitoyen(api, magasin, file) }
     val synchro by lazy { Synchronisation(api, file, depot, equipes) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }

@@ -36,6 +36,9 @@ data class ActionEnAttente(
         const val GENRE_STATUT_MISSION = "STATUT_MISSION"
         const val GENRE_MESSAGE_EQUIPE = "MESSAGE_EQUIPE"
         const val GENRE_POSITION = "POSITION"
+
+        /** Un dépôt citoyen : `cible` est le chemin de l'API, `charge` le corps JSON. */
+        const val GENRE_DEPOT = "DEPOT"
     }
 }
 

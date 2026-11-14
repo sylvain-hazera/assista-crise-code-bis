@@ -18,6 +18,7 @@ data class Compte(
     @SerialName("institution_nom") val institutionNom: String? = null,
     @SerialName("institution_id") val institutionId: String? = null,
     @SerialName("reserve_a_verifier") val reserveAVerifier: Boolean = false,
+    @SerialName("phone_number") val telephone: String? = null,
 ) {
     val nomComplet: String
         get() = listOf(prenom, nom).filter { it.isNotBlank() }.joinToString(" ").ifBlank { email }

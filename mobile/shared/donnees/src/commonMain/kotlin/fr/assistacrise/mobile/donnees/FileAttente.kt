@@ -70,8 +70,9 @@ class FileAttente(
      * l'utilisateur, retour du réseau).
      *
      * S'arrête au premier « injoignable » : si le serveur ne répond pas pour une action, il
-     * ne répondra pas pour la suivante, et l'ordre doit être préservé. Un refus, lui, ne
-     * bloque pas la suite — il est noté et reste affiché.
+     * ne répondra pas pour la suivante, et l'ordre doit être préservé — sauf pour une action
+     * qui a déjà échoué `ESSAIS_BLOQUANTS` fois. Un refus, lui, ne bloque pas la suite : il
+     * est noté et reste affiché.
      *
      * @return le nombre d'actions accusées.
      */
@@ -93,7 +94,10 @@ class FileAttente(
                         prochainEssai = horloge() + recul(tentatives),
                         erreur = r.message,
                     ))
-                    break
+                    // Les premiers échecs arrêtent tout : c'est sans doute le réseau, et
+                    // l'ordre compte. Mais une action qui échoue encore et encore (le serveur
+                    // plante sur elle) ne doit pas retenir toutes les autres derrière elle.
+                    if (tentatives <= ESSAIS_BLOQUANTS) break
                 }
             }
         }
@@ -112,6 +116,9 @@ class FileAttente(
     companion object {
         private const val FICHIER = "file-attente"
         const val RECUL_INITIAL_MS = 5_000L
+
+        /** Nombre d'échecs pendant lesquels une action retient encore celles qui la suivent. */
+        const val ESSAIS_BLOQUANTS = 3
         const val RECUL_MAX_MS = 5 * 60_000L
 
         /** 5 s, 10 s, 20 s… plafonné à 5 min. */

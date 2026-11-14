@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -100,15 +101,18 @@ fun PastilleLien(etat: EtatLien, modifier: Modifier = Modifier) {
     }
 }
 
-/** La barre du bas : les quatre lieux de l'application, toujours à un geste. */
+/** La barre du bas. Un citoyen n'y voit que ce qui le concerne : l'aide et son compte. */
 @Composable
-fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
-    val lieux = listOf(
-        Triple(fr.assistacrise.mobile.Ecran.MISSIONS, "Missions", Icons.AutoMirrored.Filled.List),
-        Triple(fr.assistacrise.mobile.Ecran.EQUIPES, "Équipes", Icons.Filled.Email),
-        Triple(fr.assistacrise.mobile.Ecran.CARTE, "Carte", Icons.Filled.Place),
-        Triple(fr.assistacrise.mobile.Ecran.COMPTE, "Compte", Icons.Filled.AccountCircle),
-    )
+fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
+    val lieux = buildList {
+        if (intervenant) {
+            add(Triple(fr.assistacrise.mobile.Ecran.MISSIONS, "Missions", Icons.AutoMirrored.Filled.List))
+            add(Triple(fr.assistacrise.mobile.Ecran.EQUIPES, "Équipes", Icons.Filled.Email))
+            add(Triple(fr.assistacrise.mobile.Ecran.CARTE, "Carte", Icons.Filled.Place))
+        }
+        add(Triple(fr.assistacrise.mobile.Ecran.AIDE, "Aide", Icons.Filled.Info))
+        add(Triple(fr.assistacrise.mobile.Ecran.COMPTE, "Compte", Icons.Filled.AccountCircle))
+    }
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         lieux.forEach { (lieu, nom, icone) ->
             NavigationBarItem(

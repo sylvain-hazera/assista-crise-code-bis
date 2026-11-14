@@ -20,7 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import fr.assistacrise.mobile.ui.BarreDuBas
+import fr.assistacrise.mobile.domaine.Mode
+import fr.assistacrise.mobile.ui.EcranAide
 import fr.assistacrise.mobile.ui.EcranCarte
+import fr.assistacrise.mobile.ui.EcranDepot
 import fr.assistacrise.mobile.ui.EcranCompte
 import fr.assistacrise.mobile.ui.EcranEquipes
 import fr.assistacrise.mobile.ui.EcranMessagerie
@@ -45,19 +48,26 @@ class MainActivity : ComponentActivity() {
 
                 // L'écran affiché découle du compte, pas l'inverse : une session qui expire
                 // ramène à la connexion sans que personne n'ait à y penser.
+                val mesEquipes by modele.equipes.collectAsStateWithLifecycle()
+                val intervenant = compte?.mode == Mode.INTERVENANT || mesEquipes.isNotEmpty()
                 val ecran = when {
                     compte == null && modele.ecran == Ecran.INSCRIPTION -> Ecran.INSCRIPTION
                     compte == null -> Ecran.CONNEXION
+                    // Mode citoyen : rien de l'intervenant n'est visible (dossier § 13).
+                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE) -> Ecran.AIDE
                     modele.ecran == Ecran.CONNEXION || modele.ecran == Ecran.INSCRIPTION -> Ecran.MISSIONS
                     else -> modele.ecran
                 }
                 BackHandler(enabled = ecran == Ecran.INSCRIPTION) { modele.aller(Ecran.CONNEXION) }
                 BackHandler(enabled = ecran == Ecran.MESSAGERIE) { modele.aller(Ecran.EQUIPES) }
-                BackHandler(enabled = ecran in setOf(Ecran.EQUIPES, Ecran.CARTE, Ecran.COMPTE)) { modele.aller(Ecran.MISSIONS) }
+                BackHandler(enabled = ecran == Ecran.DEPOT) { modele.aller(Ecran.AIDE) }
+                BackHandler(enabled = ecran in setOf(Ecran.EQUIPES, Ecran.CARTE, Ecran.COMPTE) || (ecran == Ecran.AIDE && intervenant)) {
+                    modele.aller(if (intervenant) Ecran.MISSIONS else Ecran.AIDE)
+                }
 
                 Scaffold(
                     snackbarHost = { SnackbarHost(bandeau) },
-                    bottomBar = { if (compte != null && modele.pret && ecran != Ecran.MESSAGERIE) BarreDuBas(ecran, modele::aller) },
+                    bottomBar = { if (compte != null && modele.pret && ecran != Ecran.MESSAGERIE && ecran != Ecran.DEPOT) BarreDuBas(ecran, intervenant, modele::aller) },
                 ) { marges ->
                     Box(Modifier.fillMaxSize().padding(marges)) {
                         when {
@@ -68,6 +78,8 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.EQUIPES -> EcranEquipes(modele)
                             ecran == Ecran.MESSAGERIE -> EcranMessagerie(modele)
                             ecran == Ecran.CARTE -> EcranCarte(modele)
+                            ecran == Ecran.AIDE -> EcranAide(modele)
+                            ecran == Ecran.DEPOT -> EcranDepot(modele, compte!!)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
