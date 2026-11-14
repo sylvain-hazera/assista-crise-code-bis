@@ -87,6 +87,8 @@ data class Depot(
     val enfants: Int = 0,
     /** Lue au moment du geste, ou choisie du doigt sur la carte — jamais suivie. */
     val position: Releve? = null,
+    /** Les précisions propres au type (`Precisions.aEnvoyer`) : clé de l'API → valeur. */
+    val precisions: Map<String, String> = emptyMap(),
 )
 
 object ChampsDepot {

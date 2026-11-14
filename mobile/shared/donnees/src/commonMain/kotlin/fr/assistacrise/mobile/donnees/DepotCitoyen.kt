@@ -67,12 +67,16 @@ class DepotCitoyen(
         return Reponse.Ok(Unit)
     }
 
-    /** Dépose : en file d'abord. Le corps est figé ici, tel qu'il partira. */
-    suspend fun deposer(depot: Depot) {
+    /**
+     * Dépose : en file d'abord. Le corps est figé ici, tel qu'il partira. `clePhoto` désigne
+     * les octets d'une photo jointe, déjà gardés chiffrés (`DepotDossiers.garderOctets`).
+     */
+    suspend fun deposer(depot: Depot, clePhoto: String? = null) {
+        val corps = corps(depot)
         file.ajouter(
             genre = ActionEnAttente.GENRE_DEPOT,
             cible = depot.genre.chemin,
-            charge = corps(depot).toString(),
+            charge = (if (clePhoto == null) corps else JsonObject(corps + (CLE_PHOTO to kotlinx.serialization.json.JsonPrimitive(clePhoto)))).toString(),
             libelle = when (depot.genre) {
                 GenreDepot.SECURITE -> "Déclaration « en sécurité » — ${depot.crise.nom}"
                 GenreDepot.DEMANDE -> "Demande « ${depot.titre.trim()} »"
@@ -104,8 +108,13 @@ class DepotCitoyen(
     }
 
     companion object {
+        /** Dans le corps mis en file : où attendent les octets de la photo jointe. Ne part jamais au serveur. */
+        const val CLE_PHOTO = "_photo"
+
         /** Le corps attendu par le serveur pour chaque geste. Public pour être testé seul. */
         fun corps(d: Depot): JsonObject = buildJsonObject {
+            // Les précisions du type d'abord : un champ du formulaire, s'il porte le même nom, l'emporte.
+            d.precisions.forEach { (cle, valeur) -> put(cle, valeur) }
             // Le serveur attend une géométrie en texte (EWKT), pas un objet : il la passe telle
             // quelle à PostGIS. Longitude d'abord, comme toujours en WKT.
             fun position(cle: String) = d.position?.let { p ->

@@ -835,6 +835,51 @@ position dans les métadonnées publiques ; carte ; offre d'aide créée par app
 Pas vérifié : un vrai appareil photo (orientation, taille des fichiers), et la prise sans réseau
 sur un vrai téléphone.
 
+## 18. Mêmes fonctions des deux côtés : où l'on en est (14/11/2026, version 0.5.1)
+
+Demande de Sylvain : « il faut que j'aie les mêmes fonctions des deux côtés ». Cette section est
+l'état de l'écart, tenue à jour à chaque version : ce qui manque y est écrit, pas sous-entendu.
+
+### Ce que la 0.5.1 a mis au niveau du site
+
+- **Demande d'aide, signalement, offre d'aide** : une photo peut être jointe aux trois, depuis
+  l'onglet Aide comme depuis la carte.
+- **Précisions par type**, comme sur le site (`Precisions`, décrites en données) : hébergement
+  offert ou cherché (durée, loyer, logement, niveau et accès, pièces, capacité, animaux, jardin,
+  fauteuil roulant, accueil de sinistrés ou d'intervenants, rayon de recherche), transport,
+  matériel, soins, soutien psychologique, bénévolat.
+
+Une différence voulue avec les photos de dossier : **la position n'est pas inscrite dans la
+photo** d'une demande, d'un signalement ou d'une offre. Ces dépôts sont visibles au-delà d'une
+équipe ; le lieu voyage dans le formulaire, où le serveur le protège, et une position cachée
+dans l'image y échapperait.
+
+### Ce qui manque encore à l'application
+
+| Fonction du site | État |
+|---|---|
+| Offre d'engins par catalogue (plusieurs lignes), choix de compétences | pas fait |
+| Demande d'hébergement : liste de communes de recherche | pas fait (le rayon l'est) |
+| Signalement : direction de prise de vue (boussole) | pas fait |
+| Adresse saisie au clavier avec suggestions | pas fait : position du téléphone ou point touché |
+| « Je suis en sécurité » : centre d'accueil, régime alimentaire | pas fait |
+| Déclarer une crise | pas fait |
+| Dépôt d'un justificatif ; choisir son mot de passe depuis sa fiche | pas fait |
+| Hébergement d'une équipe ; priorité et ordre des dossiers | pas fait |
+| Recherche de personnes, recensement des dégâts, suivi d'une habitation | pas fait |
+| Modifier ou retirer une demande, un signalement, une offre déjà déposés | pas fait |
+
+### Ce que l'application fait et que le site ne fait pas
+
+Fonctionner sans réseau (file d'attente, radio), suivre la position en mission, faire sonner le
+téléphone, sceller une photo par son empreinte dès la prise.
+
+### Vérifié
+
+93 tests du code partagé. Sur téléphone virtuel, **depuis la carte** : signalement avec photo
+(reçu avec la photo, sans position dans l'image, lieu = point touché) ; demande d'hébergement
+avec précisions (durée, étage, capacité reçues) ; offre d'aide (0.5.0).
+
 ---
 
 # Annexe A — Relais série par le navigateur

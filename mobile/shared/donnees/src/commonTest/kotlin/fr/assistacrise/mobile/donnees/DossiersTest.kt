@@ -155,3 +155,59 @@ class RangementTest {
         assertEquals("offres/", GenreDepot.OFFRE.chemin)
     }
 }
+
+class PrecisionsTest {
+    private val hebergement = fr.assistacrise.mobile.domaine.Precisions.pour(GenreDepot.OFFRE, "Hébergement")
+
+    @Test fun unHebergementSeDecritCommeSurLeSite() {
+        val cles = hebergement.map { it.cle }
+        assertTrue(cles.containsAll(listOf("hebergement_duree", "type_loyer", "capacite_adultes", "pmr_compatible", "accueil_sinistres", "renouvelable")))
+        assertTrue(fr.assistacrise.mobile.domaine.Precisions.pour(GenreDepot.SIGNALEMENT, "Hébergement").isEmpty())
+        assertTrue("zone_recherche_rayon_km" in fr.assistacrise.mobile.domaine.Precisions.pour(GenreDepot.DEMANDE, "hébergement").map { it.cle })
+    }
+
+    @Test fun unChampConditionnelNeSeMontreNiNePartSansSaCondition() {
+        val p = fr.assistacrise.mobile.domaine.Precisions
+        assertTrue("acces_etage" !in p.visibles(hebergement, mapOf("niveau_logement" to "PLAIN_PIED")).map { it.cle })
+        assertTrue("acces_etage" in p.visibles(hebergement, mapOf("niveau_logement" to "ETAGE")).map { it.cle })
+        // Saisi puis rendu sans objet : il ne part pas.
+        val envoi = p.aEnvoyer(hebergement, mapOf("niveau_logement" to "PLAIN_PIED", "acces_etage" to "ESCALIER", "capacite_adultes" to "3", "nombre_pieces" to "abc"))
+        assertTrue("acces_etage" !in envoi)
+        assertEquals("3", envoi["capacite_adultes"])
+        assertTrue("nombre_pieces" !in envoi)
+        // Un oui/non part toujours, avec sa valeur par défaut s'il n'a pas été touché.
+        assertEquals("true", envoi["accueil_sinistres"])
+        assertEquals("false", envoi["jardin"])
+    }
+
+    @Test fun lesPrecisionsPartentDansLeCorps() {
+        val corps = DepotCitoyen.corps(Depot(
+            GenreDepot.OFFRE, Crise("c1"), Deposant("Camille", "Durand", "c@exemple.fr", "0600000000"),
+            titre = "Chambre libre", type = TypeDepot("t1", "Hébergement"), precisions = mapOf("capacite_adultes" to "2"),
+        ))
+        assertEquals("2", corps.getValue("capacite_adultes").jsonPrimitive.content)
+    }
+}
+
+class PhotoDeDepotTest {
+    @Test fun unDepotAvecPhotoPartEnFormulaireSansLaNoteDeFile() = runTest {
+        val banc = BancDossiers().connecte()
+        val citoyen = DepotCitoyen(banc.api, banc.magasin, banc.file)
+        val cle = banc.dossiers.garderOctets(OCTETS)
+        citoyen.deposer(Depot(GenreDepot.SIGNALEMENT, Crise("c1"), Deposant("C", "D", "c@exemple.fr", "06"), titre = "Route coupée", type = TypeDepot("t1", "Danger"), position = Releve(44.8, -0.5, 0, 0f)), cle)
+
+        banc.synchro.envoyerLaFile(force = true)
+
+        assertTrue(banc.file.actions.value.isEmpty())
+        val envoi = banc.demandes.last { it.url.encodedPath.endsWith("informations/") }
+        assertIs<MultiPartFormDataContent>(envoi.body)
+        assertNull(banc.magasin.contenu[cle])
+    }
+
+    @Test fun sansPhotoLeDepotResteEnJson() = runTest {
+        val banc = BancDossiers().connecte()
+        DepotCitoyen(banc.api, banc.magasin, banc.file).deposer(Depot(GenreDepot.DEMANDE, Crise("c1"), Deposant("C", "D", "c@exemple.fr", "06"), titre = "Eau potable", type = TypeDepot("t1", "Eau")))
+        banc.synchro.envoyerLaFile(force = true)
+        assertIs<io.ktor.http.content.TextContent>(banc.demandes.last { it.url.encodedPath.endsWith("demandes/") }.body)
+    }
+}

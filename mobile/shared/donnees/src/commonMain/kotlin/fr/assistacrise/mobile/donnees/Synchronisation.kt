@@ -57,7 +57,12 @@ class Synchronisation(
                     if (coordonnees.size != 2) Reponse.Refus(400, "Position illisible.")
                     else api.declarerMaPosition(coordonnees[0], coordonnees[1])
                 }
-                ActionEnAttente.GENRE_DEPOT -> api.deposer(action.cible, action.charge)
+                ActionEnAttente.GENRE_DEPOT -> {
+                    val cle = dossiers?.clePhotoDuDepot(action)
+                    val octets = cle?.let { dossiers?.lireOctets(it) }
+                    if (cle != null && octets == null) Reponse.Refus(400, "La photo jointe n'est plus sur ce téléphone.")
+                    else api.deposer(action.cible, action.charge, octets).also { if (it is Reponse.Ok) dossiers?.oublierLesOctets(action) }
+                }
                 ActionEnAttente.GENRE_COMMENTAIRE -> api.commenter(action.cible, action.charge)
                 ActionEnAttente.GENRE_PHOTO -> envoyerPhoto(action)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")

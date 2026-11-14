@@ -172,10 +172,20 @@ class ClientApi(
         }
 
     /** Dépose un corps JSON déjà formé (un dépôt citoyen sorti de la file). */
-    suspend fun deposer(chemin: String, corps: String): Reponse<Unit> {
+    suspend fun deposer(chemin: String, corps: String, photo: ByteArray? = null): Reponse<Unit> {
         val objet = runCatching { json.parseToJsonElement(corps).jsonObject }.getOrNull()
             ?: return Reponse.Refus(400, "Dépôt illisible.")
-        return authentifie(HttpMethod.Post, chemin, objet).sansValeur()
+        // Les clés en « _ » sont des notes de la file (où attend la photo) : elles ne partent pas.
+        val champs = JsonObject(objet.filterKeys { !it.startsWith("_") })
+        if (photo == null) return authentifie(HttpMethod.Post, chemin, champs).sansValeur()
+        // Avec une photo, le serveur attend un formulaire : les mêmes champs, en texte, et le fichier.
+        return authentifie(HttpMethod.Post, chemin, formulaire = formData {
+            champs.forEach { (cle, valeur) -> (valeur as? JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.let { append(cle, it.content) } }
+            append("photo", photo, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"photo.jpg\"")
+            })
+        }).sansValeur()
     }
 
     // --- Notifications ------------------------------------------------------------------

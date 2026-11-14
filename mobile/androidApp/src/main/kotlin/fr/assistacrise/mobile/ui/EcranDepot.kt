@@ -1,5 +1,16 @@
 package fr.assistacrise.mobile.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import fr.assistacrise.mobile.Photographe
+import fr.assistacrise.mobile.domaine.Precision
+import fr.assistacrise.mobile.domaine.Precisions
 import android.Manifest
 import android.annotation.SuppressLint
 import android.location.Location
@@ -86,6 +97,17 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
     var declarant by rememberSaveable { mutableStateOf(Declarant.PERSONNE_SEULE) }
     var adultes by rememberSaveable { mutableStateOf("1") }
     var enfants by rememberSaveable { mutableStateOf("0") }
+    val contexte = LocalContext.current
+    var precisions by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
+    var prise by remember { mutableStateOf<java.io.File?>(null) }
+    val appareil = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { reussie ->
+        val fichier = prise
+        prise = null
+        if (reussie && fichier != null) modele.joindrePhotoAuDepot(fichier) else fichier?.delete()
+    }
+    // Les précisions que ce type appelle, comme sur le site : la famille choisie décide.
+    val famille = types.firstOrNull { it.id == idType }?.let { c -> types.firstOrNull { it.id == c.parent } ?: c }
+    val champsPrecis = Precisions.pour(genre, famille?.libelle)
     val (positionLue, autorise, demanderPosition) = positionDuMoment()
     // Un lieu touché sur la carte l'emporte : c'est là que ça se passe, pas là où je me tiens.
     val lieu = modele.lieuChoisi
@@ -156,6 +178,35 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
                 )
             }
 
+            if (champsPrecis.isNotEmpty()) {
+                Titre("Précisions")
+                Precisions.visibles(champsPrecis, precisions).forEach { champ ->
+                    ChampPrecis(champ, precisions[champ.cle]) { valeur -> precisions = precisions + (champ.cle to valeur) }
+                }
+            }
+
+            if (genre != GenreDepot.SECURITE) {
+                Titre("Photo (facultatif)")
+                val jointe = modele.photoDuDepot
+                if (jointe != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(jointe.second, contentDescription = "Photo jointe", contentScale = ContentScale.Crop, modifier = Modifier.size(96.dp, 72.dp).clip(RoundedCornerShape(8.dp)))
+                        Spacer(Modifier.width(12.dp))
+                        TextButton(onClick = modele::retirerPhotoDuDepot) { Text("Retirer") }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            val (fichier, adresse) = Photographe.nouvellePrise(contexte)
+                            prise = fichier
+                            runCatching { appareil.launch(adresse) }.onFailure { prise = null; fichier.delete() }
+                        },
+                        enabled = !modele.photoEnCours,
+                    ) { Text(if (modele.photoEnCours) "Préparation…" else "Prendre une photo") }
+                }
+                Text("La photo ne contient pas votre position : le lieu est celui indiqué ci-dessous.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
+
             Titre("Où")
             when {
                 lieu != null -> Text("Le lieu que vous avez touché sur la carte sera joint.", style = MaterialTheme.typography.bodyMedium)
@@ -195,6 +246,7 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
                         titre = titre, description = description, type = types.firstOrNull { it.id == idType },
                         situation = situation, declarant = declarant,
                         adultes = adultes.toIntOrNull() ?: 0, enfants = enfants.toIntOrNull() ?: 0, position = position,
+                        precisions = Precisions.aEnvoyer(champsPrecis, precisions),
                     ))
                 },
                 enabled = !etat.enCours, modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -206,6 +258,30 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
                 "Sans réseau, votre envoi est gardé sur ce téléphone et part dès que possible.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
             )
+        }
+    }
+}
+
+/** Un champ de précision, rendu selon sa nature : nombre, texte, oui/non, ou choix. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChampPrecis(champ: Precision, valeur: String?, surChangement: (String) -> Unit) {
+    when (champ) {
+        is Precision.Nombre -> Champ(valeur ?: "", { surChangement(it.filter(Char::isDigit).take(6)) }, champ.libelle, Modifier.fillMaxWidth(), clavier = KeyboardOptions(keyboardType = KeyboardType.Number))
+        is Precision.Texte -> Champ(valeur ?: "", { surChangement(it.take(120)) }, champ.libelle, Modifier.fillMaxWidth())
+        is Precision.OuiNon -> {
+            val coche = (valeur ?: champ.defaut.toString()) == "true"
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { surChangement((!coche).toString()) }) {
+                Checkbox(coche, onCheckedChange = { surChangement(it.toString()) })
+                Text(champ.libelle, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        is Precision.Choix -> Column(Modifier.padding(vertical = 4.dp)) {
+            Text(champ.libelle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Retoucher le choix fait le retire : aucune précision n'est obligatoire.
+                champ.options.forEach { (code, nom) -> FilterChip(selected = valeur == code, onClick = { surChangement(if (valeur == code) "" else code) }, label = { Text(nom) }) }
+            }
         }
     }
 }

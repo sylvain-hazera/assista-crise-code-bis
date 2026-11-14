@@ -579,9 +579,32 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         depotOuvert = genre to crise
         aller(Ecran.DEPOT)
         lieuChoisi = lieu
+        photoDuDepot = null
     }
 
     fun fermerDepot() { aller(retourDuDepot) }
+
+    /** La photo jointe au dépôt en cours : préparée, pas encore gardée. En mémoire seulement. */
+    var photoDuDepot by mutableStateOf<Pair<ByteArray, ImageBitmap>?>(null); private set
+
+    /**
+     * Photo d'une demande, d'un signalement ou d'une offre. Contrairement à une photo de
+     * dossier, **la position n'y est pas inscrite** : ces dépôts sont visibles bien au-delà
+     * d'une équipe, et le lieu voyage déjà dans le formulaire, où le serveur le protège. Une
+     * position cachée dans l'image y échapperait.
+     */
+    fun joindrePhotoAuDepot(prise: java.io.File) {
+        photoEnCours = true
+        viewModelScope.launch {
+            val prete = Photographe.preparer(prise, null, "", BuildConfig.VERSION_NAME)
+            val image = prete?.let { Photographe.vignette(it.first) }
+            if (prete == null || image == null) message = "Cette photo n'a pas pu être lue. Reprenez-la."
+            else photoDuDepot = prete.first to image.asImageBitmap()
+            photoEnCours = false
+        }
+    }
+
+    fun retirerPhotoDuDepot() { photoDuDepot = null }
 
     fun deposer(saisie: Depot) {
         val erreurs = validerDepot(saisie)
@@ -591,7 +614,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
         depot = EtatFormulaire(enCours = true)
         viewModelScope.launch {
-            app.citoyen.deposer(saisie)                 // sur disque avant tout envoi
+            val clePhoto = photoDuDepot?.let { app.dossiers.garderOctets(it.first) }   // chiffrée, avant la file
+            app.citoyen.deposer(saisie, clePhoto)       // sur disque avant tout envoi
+            photoDuDepot = null
             val avant = file.value.size
             verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
             val parti = file.value.size < avant

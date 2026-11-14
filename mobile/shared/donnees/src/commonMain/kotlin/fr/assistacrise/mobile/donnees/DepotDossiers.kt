@@ -79,6 +79,18 @@ class DepotDossiers(
         )
     }
 
+    /** Garde chiffrés les octets d'une photo jointe à un dépôt, et rend la clé pour les retrouver. */
+    suspend fun garderOctets(octets: ByteArray): String =
+        "photo-${nouvelleCle()}".also { magasin.ecrire(it, Base64.encode(octets)) }
+
+    suspend fun lireOctets(cle: String): ByteArray? = magasin.lire(cle)?.let { runCatching { Base64.decode(it) }.getOrNull() }
+
+    /** La clé de la photo jointe à ce dépôt en file, s'il en a une. */
+    fun clePhotoDuDepot(action: ActionEnAttente): String? =
+        if (action.genre != ActionEnAttente.GENRE_DEPOT) null
+        else runCatching { (json.parseToJsonElement(action.charge) as kotlinx.serialization.json.JsonObject)[DepotCitoyen.CLE_PHOTO] }
+            .getOrNull()?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+
     fun lirePhotoEnAttente(action: ActionEnAttente): PhotoEnAttente? =
         runCatching { json.decodeFromString(PhotoEnAttente.serializer(), action.charge) }.getOrNull()
 
@@ -88,6 +100,7 @@ class DepotDossiers(
     /** L'action a quitté la file (envoyée, ou écartée par la personne) : les octets n'ont plus à attendre. */
     suspend fun oublierLesOctets(action: ActionEnAttente) {
         if (action.genre == ActionEnAttente.GENRE_PHOTO) lirePhotoEnAttente(action)?.let { magasin.effacer(it.cle) }
+        clePhotoDuDepot(action)?.let { magasin.effacer(it) }
     }
 
     suspend fun toutEffacer(actionsRestantes: List<ActionEnAttente>) {
