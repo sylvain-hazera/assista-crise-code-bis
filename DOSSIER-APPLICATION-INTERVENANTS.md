@@ -1,6 +1,9 @@
 # Application mobile des intervenants — dossier de conception
 
-État : **projet, aucune ligne de code écrite.** Document de travail du 13/11/2026.
+État : **projet, aucune ligne de code écrite.** Document de travail du 13/11/2026, **révisé le
+14/11/2026** sur trois arbitrages de Sylvain : pas d'ordre de priorité entre les deux radios,
+chat natif dès que possible, grand public dans la v1 (§ 1, § 9, § 10, § 13). Le titre garde
+« intervenants » par continuité ; l'application sert désormais aussi les citoyens.
 
 Ce dossier décrit ce qu'il faut construire et pourquoi, pas comment le coder. Chaque décision
 structurante porte sa raison : un plan dont on a oublié les raisons se refait entièrement au
@@ -61,9 +64,9 @@ Android Studio sera de toute façon nécessaire côté Sylvain pour le débogage
 | Équipe | Sylvain + assistant | **Base de code unique obligatoire.** Deux applications natives, c'est deux compétences à tenir |
 | Distribution | Play Store **public** en v1, App Store ensuite | Aucun code sous licence contaminante embarquable (contrainte Apple, anticipée dès maintenant) |
 | Radios | **MeshCore et Meshtastic**, les deux en v1 | Couche d'abstraction indispensable dès le premier jour |
-| Ordre | **MeshCore d'abord** | Parc dominant, licence MIT, transport le plus simple |
-| Public | Intervenants d'abord, citoyens greffables plus tard | Application authentifiée ; le mode citoyen reste conçu, pas construit |
-| Chat | **Délégué à Element X en v1** | Supprime la pièce la plus coûteuse et tout le risque juridique |
+| Priorité entre radios | **Aucune** (14/11/2026) : l'application utilise celle qui est connectée | Un intervenant a rarement les deux. Ni réglage ni choix à l'écran ; l'ordre de *construction* (MeshCore puis Meshtastic) n'est qu'un ordre de travail |
+| Public | **Intervenants et grand public dès la v1** (14/11/2026) | Une seule application, deux modes (§ 13). Le mode citoyen n'est plus « conçu, pas construit » |
+| Chat | **Natif sur le Synapse existant, dès que possible** (14/11/2026) | `matrix-rust-sdk` entre dès le lot 1 (§ 9). Element X n'est plus requis sur le téléphone |
 | Licence | AGPL-3.0 + exception App Store, **portée étroite** | Ne couvre que ce qui descend dans le binaire |
 | Travail de `sauveteur71` | **Hors périmètre** | Aucun accord à demander, rien à faire descendre |
 
@@ -98,7 +101,7 @@ La pièce irremplaçable y est officiellement supportée.
 
 | Besoin | Solution | Pourquoi elle décide |
 |---|---|---|
-| Matrix (v2) | `matrix-rust-sdk`, **bindings Kotlin officiels**, Apache-2.0 | Le moteur exact d'Element X, sans son interface ni sa licence. Le chiffrement de bout en bout est ce qu'on ne peut pas écrire à moitié |
+| Matrix (lot 1) | `matrix-rust-sdk`, **bindings Kotlin officiels**, Apache-2.0 | Le moteur exact d'Element X, sans son interface ni sa licence. Le chiffrement de bout en bout est ce qu'on ne peut pas écrire à moitié |
 | Bluetooth | `Kable`, BLE multiplateforme | **C'est déjà celle de Meshtastic-Android**, passé à KMP. Le chemin est balisé par ceux qui font la radio |
 | Carte | MapLibre, SDK natifs Android et iOS | Lit le **même PMTiles** que les satellites produisent déjà |
 | Géoloc arrière-plan | Code natif par plateforme | Travail connu, aucune inconnue |
@@ -170,6 +173,12 @@ radio Meshtastic. Donc :
   parc mixte, et c'est tout ce que « les deux en v1 » achète ;
 - elle ne fait **pas** communiquer un intervenant MeshCore avec un intervenant Meshtastic.
 
+**Règle de choix (14/11/2026) : il n'y en a pas.** L'application se sert de la radio
+appairée et connectée, sans préférence pour un protocole. Le cas où les deux sont connectées
+en même temps est rare ; il se règle par « la première connectée garde la main », sans écran
+de réglage. `LienTerrain` n'expose d'ailleurs qu'un état `MESH` : rien au-dessus ne sait
+laquelle des deux radios porte le message.
+
 Cette interopérabilité-là existe déjà, **côté serveur**, par les deux ponts d'Assista-Crise.
 Deux intervenants sur des réseaux différents se parlent *via le central*, jamais via leurs
 téléphones. Rien à construire sur mobile pour ça.
@@ -190,7 +199,7 @@ Trois usages pour nous :
    références sont sans licence (`meshcore-sar`) ou GPL (applications Meshtastic) ;
 2. **il confirme l'architecture du § 4** : *separate protocol adapters*, aucun modèle de
    message unifié, abstraction au niveau du domaine ;
-3. **il répond à la question GPL du lot 4** — vérifié le 13/11/2026 en lisant leur code.
+3. **il répond à la question GPL du lot 6** — vérifié le 13/11/2026 en lisant leur code.
 
 **Vérification faite : ils ont écrit leur propre encodage protobuf.**
 `meshcrossway_meshtastic_protocol.h`, 767 lignes, un seul fichier : lecteur et écrivain varint
@@ -201,7 +210,7 @@ aucun `*.pb.h`, aucun nanopb, aucun `pb_encode`/`pb_decode`. L'en-tête déclare
 interoperability »*. Aucune licence GPL déclarée, `LICENSES/` n'en contient aucune.
 
 - **Ce que ça règle** : un client PhoneAPI tient dans un fichier, avec une poignée de numéros
-  de champs. La voie du lot 4 est démontrée faisable.
+  de champs. La voie du lot 6 est démontrée faisable.
 - **Ce que ça ne règle pas** : c'est leur déclaration, pas une validation juridique, et
   « consultées pour comprendre l'interopérabilité » est la zone grise d'une réécriture *clean
   room*. Preuve d'ingénierie solide, preuve juridique à faire confirmer.
@@ -409,35 +418,54 @@ de terrain, c'est un point de défaillance unique sans engagement de service.
 
 ---
 
-## 9. Chat : délégué en v1
+## 9. Chat : natif, dès que possible
 
-L'application ouvre le bon salon dans **Element X**, installé à côté (gratuit sur les deux
-stores, et c'est déjà votre Synapse derrière). Un lien profond depuis une mission.
+Décision du 14/11/2026, qui remplace la délégation à Element X : **le chat est dans
+l'application**, sur le Synapse existant, et il arrive juste après le socle (lot 1).
 
-Ce que ça supprime : la pièce la plus coûteuse, tout le risque juridique, et la gestion du
-chiffrement. Ce que ça coûte : deux applications sur le téléphone, et une couture visible.
+- **Moteur** : `matrix-rust-sdk` par ses liaisons Kotlin officielles (Apache-2.0). C'est le
+  moteur d'Element X sans son interface ni sa licence ; le § 2 reste vrai, on ne forke rien.
+- **Une seule identification.** Synapse délègue déjà sa connexion à Django par OIDC
+  (`core/oidc.py`, `/o/authorize/`). L'application ouvre donc sa session Matrix par ce même
+  SSO : aucun second mot de passe, aucun compte à créer à la main.
+- **Les salons existent déjà.** Salons d'équipe et d'institution sont provisionnés par le
+  backend (`provisionner_salons_equipe`, `SalonMatrixEquipeViewSet`,
+  `SalonMatrixInstitutionViewSet`). L'application affiche ceux du compte, elle n'en invente pas.
+- **Chiffrement de bout en bout** : géré par le SDK. Ce qui reste à notre charge est la
+  vérification d'appareil et la sauvegarde des clés — sans elles, un téléphone remplacé perd
+  l'historique chiffré. À traiter dans le lot 1, pas après.
+- **Hors réseau** : le fil de discussion Matrix ne passe pas sur le mesh (`InternetSeulement`,
+  § 4). Les messages courts par radio restent ceux d'Assista-Crise, relayés par les ponts ; ils
+  s'affichent dans le même écran, marqués « radio ».
 
-À deux, pour avoir quelque chose d'utilisable sur le terrain en quelques mois plutôt qu'en un
-an, c'est le bon arbitrage. L'intégration native reste en lot 5, décidée à l'usage.
+Ce que ça coûte : la pièce la plus lourde du projet entre tôt, et la taille du binaire grossit
+(bibliothèque Rust embarquée). Ce que ça achète : une seule application sur le téléphone, et un
+lien direct entre une mission et son salon.
 
 ---
 
 ## 10. Découpage en lots
 
 Chaque lot se termine sur quelque chose de **vérifiable**. Sans critère, on ne sait jamais si
-un lot est fini.
+un lot est fini. Découpage révisé le 14/11/2026.
 
 | Lot | Contenu | Fini quand |
 |---|---|---|
 | **0** | Socle KMP **cible Android seule**, authentification, missions, file d'attente, indicateur de lien | Un intervenant voit ses missions, déclare un changement de statut en mode avion, et le voit partir au retour du réseau |
-| **1** | Carte, ma position, position des équipes, points déclarés + photos en 4G | Un point déclaré sans réseau apparaît sur le central au retour du réseau, photo comprise |
-| **2** | Géoloc en mission uniquement, consentement, arrêt automatique | Le suivi démarre à l'engagement, s'arrête à la fin, et l'indicateur est visible en permanence. Consommation batterie mesurée sur 8 h |
-| **3** | **MeshCore** derrière l'abstraction | Une position et un point traversent le mesh, téléphone en mode avion, appairage PIN exigé |
-| **4** | **Meshtastic** derrière la même abstraction | Idem, **sans une ligne modifiée** dans les lots 0 à 2 — c'est le test de l'abstraction |
-| **5** | Chat natif Matrix, ou maintien d'Element X | Décidé à l'usage |
+| **1** | **Chat natif Matrix** : session par le SSO Django, salons d'équipe et d'institution, chiffrement, sauvegarde des clés | Un message chiffré est échangé avec Element Web dans un salon d'équipe, sans seconde saisie de mot de passe, et l'historique survit à une réinstallation |
+| **2** | Carte, ma position, position des équipes, points déclarés + photos en 4G | Un point déclaré sans réseau apparaît sur le central au retour du réseau, photo comprise |
+| **3** | **Mode grand public** (§ 13) : informations de la commune, demande, offre, signalement, « je vais bien / j'ai besoin d'aide » | Un citoyen dépose une demande en mode avion, elle arrive au central au retour du réseau, et il en suit l'état |
+| **4** | Géoloc en mission uniquement, consentement, arrêt automatique, service de premier plan | Le suivi démarre à l'engagement, s'arrête à la fin, et l'indicateur est visible en permanence. Consommation batterie mesurée sur 8 h |
+| **5** | **Première radio** (MeshCore) derrière l'abstraction, bascule à trois états, SOS sur toutes les voies | Une position et un point traversent le mesh, téléphone en mode avion, appairage PIN exigé |
+| **6** | **Seconde radio** (Meshtastic) derrière la même abstraction | Idem, **sans une ligne modifiée** dans les lots 0 à 4 — c'est le test de l'abstraction |
 
-Le critère du lot 4 est le seul qui juge la conception : si brancher la seconde radio oblige à
+Le critère du lot 6 est le seul qui juge la conception : si brancher la seconde radio oblige à
 toucher au domaine, c'est que l'abstraction a épousé la forme de la première.
+
+Les lots 5 et 6 partent moins de zéro qu'au 13/11 : les deux protocoles ont depuis été écrits
+par nous en TypeScript pour le relais navigateur (`frontend/src/app/shared/mesh/` — cadrage,
+poignée de main, encodage protobuf minimal), et vérifiés contre les bibliothèques de
+référence. Les porter en Kotlin est une traduction, plus une découverte.
 
 ---
 
@@ -449,8 +477,10 @@ toucher au domaine, c'est que l'abstraction a épousé la forme de la première.
 | **Spécification MeshCore « en développement »**, V2 en discussion | Moyen | L'abstraction isole le choc. Épingler une version de firmware de référence |
 | **Compose Multiplatform sur iOS** | Moyen | Repli : socle KMP partagé + interface SwiftUI native. À trancher au lot 0, pas après |
 | **Revue App Store sur la géoloc d'arrière-plan** | Élevé | Justification honnête, indicateur visible, arrêt automatique. Prévoir une vidéo de démonstration |
-| **Batterie** | Élevé | Mesuré au lot 2, pas en fin de projet |
-| **Carte muette sans réseau** | Moyen | Cache MapLibre + région hors ligne à la demande. Contrainte par les conditions du fournisseur, à trancher avant le lot 1 |
+| **Batterie** | Élevé | Mesuré au lot 4, pas en fin de projet |
+| **Chat natif tôt dans le projet** (14/11/2026) | Élevé | Le lot 1 est le plus lourd et arrive en deuxième. S'il dérape, il retarde tout : lui fixer un périmètre strict (texte, salons existants, chiffrement), sans appels, sans fils, sans réactions |
+| **Grand public sur le Play Store** (14/11/2026) | Moyen | Une application ouverte à tous attire la revue sur les données personnelles et la position : le mode citoyen ne suit jamais en arrière-plan (§ 13) |
+| **Carte muette sans réseau** | Moyen | Cache MapLibre + région hors ligne à la demande. Contrainte par les conditions du fournisseur, à trancher avant le lot 2 |
 
 ---
 
@@ -469,9 +499,58 @@ toucher au domaine, c'est que l'abstraction a épousé la forme de la première.
 
 ---
 
+## 13. Grand public (décidé le 14/11/2026)
+
+**Une seule application, deux modes**, choisis par le compte et non par un réglage : un compte
+rattaché à une institution ouvre le mode intervenant, tout autre compte le mode citoyen. Deux
+applications, ce serait deux fiches de store et deux revues pour une équipe de deux.
+
+Ce que fait le mode citoyen, et qui existe déjà côté serveur :
+
+- lire les informations et alertes de sa commune ;
+- déposer une demande, une offre, un signalement, et en suivre l'état ;
+- se déclarer « je vais bien » ou « j'ai besoin d'aide » (`DeclarationSecurite`) ;
+- déclencher un SOS, par Internet ou par sa radio s'il en a une (`AlerteMeshSOS`).
+
+Trois règles qui le séparent du mode intervenant :
+
+1. **Aucun suivi de position.** La position n'est lue qu'au moment d'un geste (une demande,
+   un SOS), jamais en arrière-plan. Le § 6 ne s'applique qu'aux intervenants en mission.
+2. **Rien de l'intervenant n'est visible** : ni missions, ni position des équipes, ni salons.
+3. **Tout passe par la même file d'attente** (§ 5) : une demande déposée sans réseau part au
+   retour du réseau, et l'écran le dit.
+
+Proposé, non tranché : **pas de chat pour les citoyens en v1.** Leur ouvrir Synapse pose des
+questions de modération qu'une application de crise ne doit pas découvrir en production.
+
+## 14. Repris du document du 22/10/2026
+
+Le document « Assista-Crise Mobile — Architecture » avait été écrit sans connaître le
+backend ; il faisait de Matrix la colonne vertébrale, ce qui n'est pas retenu. Six de ses
+idées manquaient ici et sont reprises :
+
+| Idée | Où elle va |
+|---|---|
+| **Bascule à trois états** : Internet perdu après 60 s sans échange réussi, retour après 2 min sans échec, les deux voies actives pendant la stabilisation | `:shared:lien`, lot 5. Les seuils sont des paramètres, à régler aux essais |
+| **SOS sur toutes les voies à la fois**, quel que soit l'état | Règle de comportement du § 4 |
+| **Trame de position de 16 octets**, cycle de 15 min en radio, envoi immédiat sur SOS ou changement de statut | Précise l'encodage compact du § 4. Les deux ponts doivent apprendre à la décoder |
+| **Dédoublonnage** par intervenant et horodatage GPS, quand une position arrive par deux voies | Côté serveur, à l'ingestion |
+| **Service de premier plan**, exemption d'optimisation batterie demandée au premier lancement, guide de réglage par marque (Xiaomi, Samsung, Huawei) | `:androidApp`, lot 4 |
+| **Alerte côté cellule** quand une position vieillit au-delà de 20 min | Côté web, hors application |
+
+Non repris : les positions dans un salon Matrix (MSC3489), la passerelle LoRa → Matrix, la
+table nœud ↔ compte dans un salon d'administration, le tableau de bord à écrire. Le backend
+fait déjà chacune de ces choses.
+
+Reste ouvert : **la bascule vers le satellite de la collectivité** quand le central est
+injoignable (le satellite s'annonce déjà en mDNS, `_ac-local._tcp.local.`). Proposée pour le
+lot 0, non décidée.
+
+---
+
 # Annexe A — Relais série par le navigateur
 
-**Chantier distinct, indépendant des lots 0 à 5.** Autre public, autre calendrier, bien plus
+**Chantier distinct, indépendant des lots 0 à 6.** Autre public, autre calendrier, bien plus
 court. Il ne dépend d'aucun jalon de l'application mobile et peut être mené en parallèle.
 
 ## Le besoin, et il est réel
@@ -642,7 +721,7 @@ Trois titres, un seul nécessaire : administrateur au rôle **réel** (jamais un
 prêté), **propriétaire** du nœud, ou membre actif de l'institution propriétaire. La possession
 physique reste exigée de fait par l'USB dans tous les cas.
 
-**La leçon pour les lots 0 à 5** : la règle d'autorisation et la liste servie à l'écran doivent
+**La leçon pour les lots 0 à 6** : la règle d'autorisation et la liste servie à l'écran doivent
 être calculées par le même code. Deux endroits qui décident « qui a le droit » finissent par
 diverger, et c'est l'écran qui a tort — il refuse ce que la règle autorise, sans rien dire.
 
