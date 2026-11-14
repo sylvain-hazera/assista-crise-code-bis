@@ -36,6 +36,7 @@ import fr.assistacrise.mobile.ui.EcranDepot
 import fr.assistacrise.mobile.ui.EcranDisponibilites
 import fr.assistacrise.mobile.ui.EcranDossier
 import fr.assistacrise.mobile.ui.EcranMobilisations
+import fr.assistacrise.mobile.ui.EcranMonCompte
 import fr.assistacrise.mobile.ui.EcranScanner
 import fr.assistacrise.mobile.ui.EcranVerdict
 import fr.assistacrise.mobile.ui.EcranFiche
@@ -117,7 +118,7 @@ class MainActivity : ComponentActivity() {
                     compte == null && modele.ecran in setOf(Ecran.INSCRIPTION, Ecran.SCANNER, Ecran.VERDICT) -> modele.ecran
                     compte == null -> Ecran.CONNEXION
                     // Mode citoyen : rien de l'intervenant n'est visible (dossier § 13).
-                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS) -> Ecran.AIDE
+                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE) -> Ecran.AIDE
                     modele.ecran == Ecran.CONNEXION || modele.ecran == Ecran.INSCRIPTION -> Ecran.MISSIONS
                     else -> modele.ecran
                 }
@@ -126,7 +127,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.DEPOT) { modele.fermerDepot() }
                 BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
                 BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
-                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS)) { modele.aller(Ecran.COMPTE) }
+                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
                     val ouverte = modele.notificationOuverte
@@ -162,6 +163,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.SCANNER -> EcranScanner(modele)
                             ecran == Ecran.VERDICT -> EcranVerdict(modele)
                             ecran == Ecran.MOBILISATIONS -> EcranMobilisations(modele)
+                            ecran == Ecran.MON_COMPTE -> EcranMonCompte(modele, compte!!)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
@@ -174,5 +176,5 @@ class MainActivity : ComponentActivity() {
 /** Les écrans qu'on ouvre depuis un autre : ils ont leur flèche de retour, pas la barre. */
 private val ECRANS_SANS_BARRE = setOf(
     Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
-    Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS,
+    Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE,
 )

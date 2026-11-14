@@ -19,6 +19,8 @@ data class Compte(
     @SerialName("institution_id") val institutionId: String? = null,
     @SerialName("reserve_a_verifier") val reserveAVerifier: Boolean = false,
     @SerialName("phone_number") val telephone: String? = null,
+    /** L'identifiant de connexion, quand il diffère de l'adresse e-mail. */
+    @SerialName("username") val identifiant: String = "",
 ) {
     val nomComplet: String
         get() = listOf(prenom, nom).filter { it.isNotBlank() }.joinToString(" ").ifBlank { email }

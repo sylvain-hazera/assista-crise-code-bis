@@ -301,3 +301,46 @@ class MobilisationTest {
         assertEquals(2, relance.mobilisations.value.size)
     }
 }
+
+class MonCompteTest {
+    @Test fun leProfilModifieEstCeluiQueLaSessionGarde() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("me/", """{"id":"u1","first_name":"Camille","last_name":"Martin","phone_number":"0611111111"}""")
+        val r = banc.api.modifierProfil(fr.assistacrise.mobile.domaine.Profil(" Camille ", "Martin", "0611111111"))
+        assertIs<Reponse.Ok<Compte>>(r)
+        assertEquals("Camille Martin", banc.session.compte.value?.nomComplet)
+        assertEquals(HttpMethod.Patch, banc.demandes.single().method)
+    }
+
+    @Test fun changerDeMotDePasseDemandeLAncienSaufPourUnCompteQuiNEnAPas() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.api.changerMotDePasse("ancien", "nouveau-secret")
+        banc.api.changerMotDePasse(null, "nouveau-secret")
+        assertEquals(listOf("change-password/", "definir-mon-mot-de-passe/"), banc.demandes.map { it.url.encodedPath.removePrefix("/api/") })
+        assertEquals("nouveau-secret", banc.envois("definir-mon-mot-de-passe/").single().getValue("nouveau_mot_de_passe").jsonPrimitive.content)
+    }
+
+    @Test fun lesReglesDuMotDePasseSontDitesAvantLEnvoi() {
+        val v = { a: String?, n: String, c: String -> fr.assistacrise.mobile.domaine.validerMotDePasse(a, n, c) }
+        assertTrue("new_password" in v("a", "court", "court"))
+        assertTrue("confirmation" in v("a", "assez-long", "autre-chose"))
+        assertTrue("old_password" in v("", "assez-long", "assez-long"))
+        assertTrue(v(null, "assez-long", "assez-long").isEmpty())
+    }
+
+    @Test fun redeposerUnePieceRefuseeLaRemplaceAuLieuDeDeclarerDeuxFois() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("qualifications-membres/", """[{"id":"q1","qualification":"cat1","statut":"REFUSEE","motif_refus":"Illisible"}]""")
+        banc.repond("qualifications/", """[{"id":"cat1","nom":"Permis B","conservation":{"regime":"VERIFIER_DETRUIRE"}},{"id":"cat2","nom":"PSE1","actif":false}]""")
+        banc.benevole.chargerMesDocuments("u1")
+        assertEquals(listOf("Permis B"), banc.benevole.catalogue.value.map { it.nom })
+        assertTrue(banc.benevole.catalogue.value.single().conservation!!.phrase.contains("détruit"))
+
+        banc.benevole.deposerJustificatif("u1", "cat1", byteArrayOf(1, 2), "permis.jpg", "image/jpeg", null)
+        val envoi = banc.demandes.first { it.method == HttpMethod.Patch }
+        assertTrue(envoi.url.encodedPath.endsWith("qualifications-membres/q1/"))
+
+        banc.benevole.deposerJustificatif("u1", "cat9", byteArrayOf(1, 2), "pse.pdf", "application/pdf", "2024-05-01")
+        assertTrue(banc.demandes.any { it.method == HttpMethod.Post && it.url.encodedPath.endsWith("qualifications-membres/") })
+    }
+}

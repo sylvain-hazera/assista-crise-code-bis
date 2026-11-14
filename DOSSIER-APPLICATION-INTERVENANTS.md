@@ -864,7 +864,7 @@ dans l'image y échapperait.
 | Adresse saisie au clavier avec suggestions | pas fait : position du téléphone ou point touché |
 | « Je suis en sécurité » : centre d'accueil, régime alimentaire | pas fait |
 | Déclarer une crise | pas fait |
-| Dépôt d'un justificatif ; choisir son mot de passe depuis sa fiche | pas fait |
+| Dépôt d'un justificatif ; profil ; mot de passe | **fait en 0.7.0** (section 20) |
 | Hébergement d'une équipe ; priorité et ordre des dossiers | pas fait |
 | Recherche de personnes, recensement des dégâts, suivi d'une habitation | pas fait |
 | Modifier ou retirer une demande, un signalement, une offre déjà déposés | pas fait |
@@ -915,6 +915,61 @@ valide, révoquée, inconnue ; sans compte, verdict sans nom ni lieu ; ouverture
 **Pas vérifié : la lecture d'un vrai QR code par la caméra** (le téléphone virtuel n'en a pas
 devant lui) — les verdicts ont été obtenus en passant l'adresse à l'application. Les deux
 boutons du site n'ont pas été essayés dans un navigateur.
+
+## 20. Dossiers dans les missions d'équipe, et « Mon compte » (14/11/2026, version 0.7.0)
+
+Deux retours de Sylvain après essai de la 0.6.0.
+
+### « Les dossiers sont censés être dans des missions d'équipes »
+
+La 0.5.0 rangeait à part, sous « autres dossiers de mes équipes », tout dossier dont le serveur
+n'avait pas écrit la mission. C'était lire la base au lieu de lire l'organisation : un dossier
+confié à une équipe fait partie de la mission de cette équipe. L'onglet Missions suit
+maintenant l'organisation — **équipe → mission → dossiers** (`rangerParEquipe`) :
+
+- la mission écrite sur le dossier, quand il y en a une ;
+- sinon la mission en cours de l'équipe (`Team.mission_active`) ;
+- sinon, si l'équipe n'a qu'une mission non terminée, celle-là.
+
+Il ne reste à part que les dossiers d'une équipe sans aucune mission, ou qui en a plusieurs
+sans qu'aucune soit « en cours » : l'écran les montre comme une anomalie à signaler, plutôt
+que de deviner. Une mission partagée par deux de mes équipes apparaît sous chacune, avec les
+seuls dossiers de cette équipe. Aucun changement côté serveur : le site affiche encore missions
+et dossiers en deux listes séparées (page « Mon équipe ») — à aligner si cette lecture est la
+bonne là aussi.
+
+### « Mon compte »
+
+Écran distinct de « Ma fiche de bénévole », ouvert depuis l'onglet Compte, avec les rubriques
+du site :
+
+| Rubrique | Ce qu'on y fait | Appel |
+|---|---|---|
+| Mon identité | prénom, nom, téléphone | `PATCH me/` |
+| Ma connexion | voir son identifiant ; changer de mot de passe, ou en choisir un si le compte n'en a pas | `change-password/`, `definir-mon-mot-de-passe/` |
+| Mes documents | état de chaque pièce et motif d'un refus ; déposer ou redéposer, par photo ou par fichier (image, PDF) | `qualifications-membres/` |
+
+Trois choix :
+
+- **Une pièce ne passe pas par la file d'attente.** Elle part tout de suite ou pas du tout : une
+  pièce d'identité n'attend pas sur un téléphone qu'un réseau revienne. La photo du document
+  est réduite, sans position, et le fichier du cache est effacé aussitôt.
+- **Ce que deviendra la pièce est dit avant le dépôt** (« sera détruit dès qu'il aura été
+  vérifié », ou la durée de conservation), comme sur le site.
+- **Redéposer une pièce refusée la remplace** au lieu de déclarer le titre une seconde fois.
+
+Pas fait dans cette rubrique : changer d'adresse e-mail ou d'identifiant (il faut la
+revérifier ; l'écran renvoie au site), la photo de profil, télécharger une pièce déjà déposée,
+la liste de mes demandes, offres et signalements avec leur retrait, les pièces d'identité de la
+candidature à la réserve.
+
+### Vérifié
+
+107 tests du code partagé. Sur téléphone virtuel : les deux dossiers d'essai rangés sous la
+mission de leur équipe ; téléphone modifié et enregistré ; document déposé par photo (reçu par
+le serveur avec sa pièce, statut « déclarée ») ; mot de passe changé (l'ancien refusé, le
+nouveau accepté). Pas essayé : le dépôt par « Choisir un fichier », et le cas d'un compte sans
+mot de passe.
 
 ---
 

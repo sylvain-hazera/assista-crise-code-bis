@@ -18,6 +18,8 @@ import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Etape
 import fr.assistacrise.mobile.domaine.Fiche
 import fr.assistacrise.mobile.domaine.Notification
+import fr.assistacrise.mobile.domaine.Profil
+import fr.assistacrise.mobile.domaine.validerMotDePasse
 import fr.assistacrise.mobile.domaine.Depot
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.domaine.GenreDepot
@@ -55,7 +57,7 @@ data class EtatFormulaire(
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
-    SCANNER, VERDICT, MOBILISATIONS,
+    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -79,6 +81,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val dossiers = app.benevole.dossiers
     val typesOffre = app.citoyen.typesOffre
     val mobilisations = app.benevole.mobilisations
+    val catalogue = app.benevole.catalogue
     val commentaires = app.dossiers.commentaires
     val photos = app.dossiers.photos
     val missions: StateFlow<List<MissionAffichee>> =
@@ -467,6 +470,69 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Ok -> Unit
                 is Reponse.Refus -> message = r.message
                 is Reponse.Injoignable -> message = "Pas de réseau : le statut n'a pas changé."
+            }
+        }
+    }
+
+    // --- Mon compte : profil, mot de passe, documents -----------------------------------------
+
+    var formulaireProfil by mutableStateOf(EtatFormulaire()); private set
+    var formulaireMotDePasse by mutableStateOf(EtatFormulaire()); private set
+    var depotDocument by mutableStateOf(EtatFormulaire()); private set
+
+    fun ouvrirMonCompte() {
+        ecran = Ecran.MON_COMPTE
+        formulaireProfil = EtatFormulaire(); formulaireMotDePasse = EtatFormulaire(); depotDocument = EtatFormulaire()
+        val id = compte.value?.id ?: return
+        chargerEcran {
+            app.benevole.chargerLaFiche(id)          // dit si le compte a déjà un mot de passe
+            app.benevole.chargerMesDocuments(id)
+        }
+    }
+
+    fun enregistrerProfil(profil: Profil) {
+        if (profil.nom.trim().length < 2) { formulaireProfil = EtatFormulaire(champs = mapOf("last_name" to "Indiquez votre nom.")); return }
+        formulaireProfil = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            formulaireProfil = when (val r = app.api.modifierProfil(profil)) {
+                is Reponse.Ok -> { message = "Profil enregistré."; EtatFormulaire() }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message, champs = r.champs)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = "Pas de réseau : votre profil n'est pas enregistré.")
+            }
+        }
+    }
+
+    /** `ancien == null` : compte sans mot de passe (créé par import), qui en choisit un. */
+    fun changerMotDePasse(ancien: String?, nouveau: String, confirmation: String, reussi: () -> Unit) {
+        val erreurs = validerMotDePasse(ancien, nouveau, confirmation)
+        if (erreurs.isNotEmpty()) { formulaireMotDePasse = EtatFormulaire(champs = erreurs); return }
+        formulaireMotDePasse = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            formulaireMotDePasse = when (val r = app.api.changerMotDePasse(ancien, nouveau)) {
+                is Reponse.Ok -> {
+                    message = "Mot de passe enregistré."
+                    compte.value?.id?.let { app.benevole.chargerLaFiche(it) }
+                    reussi(); EtatFormulaire()
+                }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message, champs = r.champs)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = "Pas de réseau : votre mot de passe n'a pas changé.")
+            }
+        }
+    }
+
+    /**
+     * Dépose une pièce. Elle part tout de suite ou pas du tout : une pièce d'identité n'attend
+     * pas sur un téléphone, même chiffrée, qu'un réseau revienne.
+     */
+    fun deposerDocument(idCatalogue: String, octets: ByteArray, nomFichier: String, typeMime: String, dateObtention: String?, reussi: () -> Unit) {
+        val id = compte.value?.id ?: return
+        if (octets.size > 10 * 1024 * 1024) { depotDocument = EtatFormulaire(erreur = "Ce fichier dépasse 10 Mo. Photographiez le document, ou réduisez le fichier."); return }
+        depotDocument = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            depotDocument = when (val r = app.benevole.deposerJustificatif(id, idCatalogue, octets, nomFichier, typeMime, dateObtention)) {
+                is Reponse.Ok -> { message = "Document déposé. Votre encadrement va le vérifier."; reussi(); EtatFormulaire() }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message, champs = r.champs)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = "Pas de réseau : le document n'est pas parti, et rien n'en est gardé sur ce téléphone. Réessayez dès que vous captez.")
             }
         }
     }

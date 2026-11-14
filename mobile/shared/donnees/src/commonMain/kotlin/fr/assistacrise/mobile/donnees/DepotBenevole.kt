@@ -6,6 +6,7 @@ import fr.assistacrise.mobile.domaine.Fiche
 import fr.assistacrise.mobile.domaine.Grille
 import fr.assistacrise.mobile.domaine.Mobilisation
 import fr.assistacrise.mobile.domaine.Titre
+import fr.assistacrise.mobile.domaine.TitreDuCatalogue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.KSerializer
@@ -83,6 +84,28 @@ class DepotBenevole(
     suspend fun repondreIndisponible(campagne: String): Reponse<Unit> {
         val r = api.repondreIndisponible(campagne)
         if (r is Reponse.Ok && _grille.value?.campagne?.id == campagne) chargerLaGrille(campagne)
+        return r
+    }
+
+    private val _catalogue = MutableStateFlow<List<TitreDuCatalogue>>(emptyList())
+    val catalogue: StateFlow<List<TitreDuCatalogue>> = _catalogue
+
+    /** Mes documents : ce que j'ai déclaré, et ce que je peux déclarer. */
+    suspend fun chargerMesDocuments(idCompte: String): Reponse<Unit> {
+        (api.catalogueDesTitres() as? Reponse.Ok)?.let { _catalogue.value = it.valeur.filter { t -> t.actif } }
+        return when (val r = api.mesTitres(idCompte)) {
+            is Reponse.Ok -> { garder("titres", ListSerializer(Titre.serializer()), r.valeur); _titres.value = r.valeur; Reponse.Ok(Unit) }
+            is Reponse.Refus -> r
+            is Reponse.Injoignable -> r
+        }
+    }
+
+    /** Une pièce ne passe PAS par la file : elle n'attend pas, en clair ou non, sur le téléphone. */
+    suspend fun deposerJustificatif(idCompte: String, idCatalogue: String, octets: ByteArray, nomFichier: String, typeMime: String, dateObtention: String?): Reponse<Unit> {
+        // Déjà déclaré (refusé, ou saisi par l'encadrement) : on remplace la pièce au lieu de déclarer deux fois.
+        val existant = _titres.value.firstOrNull { it.qualification == idCatalogue }?.id
+        val r = api.deposerJustificatif(idCatalogue, existant, octets, nomFichier, typeMime, dateObtention)
+        if (r is Reponse.Ok) chargerMesDocuments(idCompte)
         return r
     }
 

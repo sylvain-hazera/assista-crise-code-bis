@@ -4,6 +4,8 @@ import fr.assistacrise.mobile.domaine.Champs
 import fr.assistacrise.mobile.domaine.Commentaire
 import fr.assistacrise.mobile.domaine.Compte
 import fr.assistacrise.mobile.domaine.Photo
+import fr.assistacrise.mobile.domaine.Profil
+import fr.assistacrise.mobile.domaine.TitreDuCatalogue
 import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Etape
@@ -265,6 +267,39 @@ class ClientApi(
             put("message", f.message.trim())
             put("diplome_premier_secours", f.premiersSecours)
         }).transformer { json.decodeFromJsonElement(Fiche.serializer(), it) }
+
+    // --- Mon compte ----------------------------------------------------------------------------
+
+    suspend fun modifierProfil(p: Profil): Reponse<Compte> =
+        authentifie(HttpMethod.Patch, "me/", buildJsonObject {
+            put("first_name", p.prenom.trim()); put("last_name", p.nom.trim()); put("phone_number", p.telephone.trim())
+        }).transformer { json.decodeFromJsonElement(Compte.serializer(), it).also { compte -> session.mettreAJourLeCompte(compte) } }
+
+    /** `ancien == null` : le compte n'a pas encore de mot de passe (créé par import), il en choisit un. */
+    suspend fun changerMotDePasse(ancien: String?, nouveau: String): Reponse<Unit> =
+        if (ancien == null) authentifie(HttpMethod.Post, "definir-mon-mot-de-passe/", buildJsonObject { put("nouveau_mot_de_passe", nouveau) }).sansValeur()
+        else authentifie(HttpMethod.Post, "change-password/", buildJsonObject { put("old_password", ancien); put("new_password", nouveau) }).sansValeur()
+
+    suspend fun catalogueDesTitres(): Reponse<List<TitreDuCatalogue>> = liste("qualifications/", TitreDuCatalogue.serializer())
+
+    /**
+     * Dépose la pièce d'un titre. `idTitreDeclare` : la déclaration existe déjà (pièce refusée,
+     * ou titre saisi par l'encadrement) et l'on remplace sa pièce ; sinon on déclare le titre.
+     */
+    suspend fun deposerJustificatif(
+        idCatalogue: String, idTitreDeclare: String?, octets: ByteArray, nomFichier: String, typeMime: String, dateObtention: String?,
+    ): Reponse<Unit> = authentifie(
+        if (idTitreDeclare == null) HttpMethod.Post else HttpMethod.Patch,
+        if (idTitreDeclare == null) "qualifications-membres/" else "qualifications-membres/$idTitreDeclare/",
+        formulaire = formData {
+            if (idTitreDeclare == null) append("qualification", idCatalogue)
+            if (idTitreDeclare == null && !dateObtention.isNullOrBlank()) append("date_obtention", dateObtention)
+            append("justificatif", octets, Headers.build {
+                append(HttpHeaders.ContentType, typeMime)
+                append(HttpHeaders.ContentDisposition, "filename=\"${nomFichier.replace('"', '_')}\"")
+            })
+        },
+    ).sansValeur()
 
     suspend fun mesTitres(idCompte: String): Reponse<List<Titre>> = liste("qualifications-membres/?utilisateur=$idCompte", Titre.serializer())
 

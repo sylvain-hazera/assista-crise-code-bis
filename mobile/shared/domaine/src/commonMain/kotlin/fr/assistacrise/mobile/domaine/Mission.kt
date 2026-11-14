@@ -25,6 +25,7 @@ data class Mission(
     val description: String = "",
     @SerialName("crise_nom") val criseNom: String? = null,
     @SerialName("equipes_noms") val equipesNoms: List<String> = emptyList(),
+    @SerialName("equipe_ids") val equipes: List<String> = emptyList(),
     val statut: StatutMission = StatutMission.EN_PREPARATION,
     @SerialName("date_creation") val dateCreation: String? = null,
 )

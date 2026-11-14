@@ -17,6 +17,8 @@ data class Equipe(
     @SerialName("canal_meshcore_nom") val canalMeshCore: String? = null,
     @SerialName("canal_meshtastic_nom") val canalMeshtastic: String? = null,
     @SerialName("leader") val chef: String? = null,
+    /** La mission en cours de l'équipe : un dossier qu'on lui confie en fait partie. */
+    @SerialName("mission_active") val missionActive: String? = null,
     val regulateur: String? = null,
 ) {
     val engagee: Boolean get() = engagementDebut != null

@@ -34,13 +34,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
 import fr.assistacrise.mobile.domaine.Fiche
-import fr.assistacrise.mobile.domaine.Titre
 
 /** « Ma fiche de bénévole » : ce que la personne relit et corrige d'elle-même, et ses titres. */
 @Composable
 fun EcranFiche(modele: ModeleApplication) {
     val fiche by modele.fiche.collectAsStateWithLifecycle()
-    val titres by modele.titres.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().imePadding()) {
         EnTeteRetour("Ma fiche", modele) { modele.aller(Ecran.COMPTE) }
         val f = fiche
@@ -51,13 +49,13 @@ fun EcranFiche(modele: ModeleApplication) {
                 modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // `key` sur la fiche servie : après un enregistrement, la saisie repart de ce que le serveur a gardé.
-            else -> androidx.compose.runtime.key(f) { Formulaire(f, titres, modele) }
+            else -> androidx.compose.runtime.key(f) { Formulaire(f, modele) }
         }
     }
 }
 
 @Composable
-private fun Formulaire(fiche: Fiche, titres: List<Titre>, modele: ModeleApplication) {
+private fun Formulaire(fiche: Fiche, modele: ModeleApplication) {
     var saisie by remember { mutableStateOf(fiche) }
     val etat = modele.formulaireFiche
     val adresseChangee = saisie.adresse != fiche.adresse || saisie.codePostal != fiche.codePostal || saisie.ville != fiche.ville
@@ -103,26 +101,8 @@ private fun Formulaire(fiche: Fiche, titres: List<Titre>, modele: ModeleApplicat
             Text(if (etat.enCours) "Enregistrement…" else "Enregistrer")
         }
 
-        TitreDeSection("Mes justificatifs")
-        if (titres.isEmpty()) {
-            Text("Aucun titre déclaré (permis, diplôme, brevet).", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else titres.forEach { t ->
-            Column(Modifier.padding(vertical = 6.dp)) {
-                Text(t.nom ?: "Titre", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    listOfNotNull(
-                        t.statutLibelle ?: t.statut,
-                        // Un refus sans son motif ferait redéposer la même pièce.
-                        t.motifRefus?.takeIf { t.refuse && it.isNotBlank() },
-                        if (t.expiree) "périmé" else t.expiration?.let { "valable jusqu'au ${jourLisible(it)}" },
-                    ).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when { t.refuse || t.expiree -> Refus; t.verifie -> EnLigne; else -> Attente },
-                )
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text("Le dépôt d'une pièce (photo ou PDF) se fait pour l'instant sur le site, dans « Ma fiche de bénévole ».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Text("Vos justificatifs (permis, diplômes) sont dans « Mon compte », rubrique Mes documents.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

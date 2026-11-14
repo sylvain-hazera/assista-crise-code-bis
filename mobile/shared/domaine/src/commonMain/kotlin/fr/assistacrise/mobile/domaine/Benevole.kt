@@ -67,6 +67,8 @@ data class Fiche(
     val message: String = "",
     @SerialName("diplome_premier_secours") val premiersSecours: Boolean = false,
     val avertissement: String? = null,
+    /** Faux pour un compte créé par import : il n'a pas encore de mot de passe, seulement son lien. */
+    @SerialName("mot_de_passe_defini") val motDePasseDefini: Boolean = true,
 ) {
     companion object {
         /** Miroir de `SituationProfessionnelle` et `FrequenceEngagement` (backend/core/models.py). */
@@ -90,6 +92,7 @@ data class Titre(
     val statut: String = "DECLAREE",
     @SerialName("statut_libelle") val statutLibelle: String? = null,
     @SerialName("motif_refus") val motifRefus: String? = null,
+    val qualification: String? = null,
     @SerialName("date_expiration") val expiration: String? = null,
     val expiree: Boolean = false,
 ) {
@@ -194,10 +197,74 @@ fun filDuDossier(recus: List<Commentaire>, file: List<ActionEnAttente>, idDossie
             )
         }
 
-/** Les dossiers rangés sous chaque mission, et ceux de mes équipes qui n'en ont pas. */
-data class DossiersParMission(val parMission: Map<String, List<Dossier>>, val sansMission: List<Dossier>)
+/** Une mission d'une équipe, avec les dossiers que CETTE équipe y traite. */
+data class MissionDEquipe(val mission: MissionAffichee, val dossiers: List<Dossier>)
 
-fun rangerParMission(dossiers: List<Dossier>, missions: Collection<String>): DossiersParMission {
-    val (ranges, autres) = dossiers.partition { it.mission != null && it.mission in missions }
-    return DossiersParMission(ranges.groupBy { it.mission!! }, autres)
+/**
+ * Ce qu'une équipe a à faire. `equipe == null` : les missions que je vois sans appartenir à
+ * aucune de leurs équipes (un cadre voit celles de toute son institution).
+ */
+data class TravailDEquipe(val equipe: Equipe?, val missions: List<MissionDEquipe>, val sansMission: List<Dossier>)
+
+/**
+ * Range les dossiers là où ils se font : dans une mission, dans une équipe.
+ *
+ * **Un dossier confié à une équipe fait partie de la mission en cours de cette équipe**, même
+ * quand le serveur ne l'a pas écrit sur le dossier lui-même — c'est le cas de tous ceux
+ * affectés sans préciser de mission. La 0.5.0 les rangeait à part, sous « autres dossiers » :
+ * c'était lire la base au lieu de lire l'organisation (retour de Sylvain du 14/11/2026).
+ *
+ * `sansMission` ne reçoit donc que les dossiers d'une équipe qui n'a AUCUNE mission en cours :
+ * une anomalie d'organisation, que l'écran montre comme telle plutôt que de la cacher.
+ */
+fun rangerParEquipe(equipes: List<Equipe>, missions: List<MissionAffichee>, dossiers: List<Dossier>): List<TravailDEquipe> {
+    val connues = missions.associateBy { it.mission.id }
+    val parEquipe = equipes.map { equipe ->
+        val siens = dossiers.filter { it.equipe == equipe.id }
+        // La mission écrite sur le dossier, sinon celle de l'équipe : sa mission en cours, ou à
+        // défaut la seule mission non terminée qu'elle ait — il n'y a alors pas d'ambiguïté.
+        val parDefaut = equipe.missionActive?.takeIf { it in connues }
+            ?: missions.filter { equipe.id in it.mission.equipes && it.mission.statut != StatutMission.TERMINEE }.singleOrNull()?.mission?.id
+        val parMission = siens.groupBy { d -> (d.mission?.takeIf { it in connues } ?: parDefaut) }
+        val idsDeLEquipe = (missions.filter { equipe.id in it.mission.equipes }.map { it.mission.id } +
+            listOfNotNull(equipe.missionActive?.takeIf { it in connues }) + parMission.keys.filterNotNull()).distinct()
+        TravailDEquipe(
+            equipe,
+            // La mission en cours de l'équipe d'abord : c'est celle sur laquelle on est.
+            idsDeLEquipe.sortedByDescending { it == equipe.missionActive }.map { id -> MissionDEquipe(connues.getValue(id), parMission[id].orEmpty()) },
+            parMission[null].orEmpty(),
+        )
+    }
+    val rangees = parEquipe.flatMap { t -> t.missions.map { it.mission.mission.id } }.toSet()
+    val autres = missions.filter { it.mission.id !in rangees }.map { MissionDEquipe(it, emptyList()) }
+    return parEquipe.filter { it.missions.isNotEmpty() || it.sansMission.isNotEmpty() } +
+        if (autres.isEmpty()) emptyList() else listOf(TravailDEquipe(null, autres, emptyList()))
+}
+
+/** Un titre du catalogue (permis, diplôme, pièce) pour lequel on peut déposer un justificatif. */
+@Serializable
+data class TitreDuCatalogue(
+    val id: String,
+    val nom: String = "",
+    val actif: Boolean = true,
+    val conservation: Conservation? = null,
+)
+
+/** Ce que deviendra la pièce déposée : dit AVANT le dépôt, c'est ce qui en fait un choix. */
+@Serializable
+data class Conservation(val regime: String = "", val duree: String = "") {
+    val detruiteApresVerification: Boolean get() = regime == "VERIFIER_DETRUIRE"
+    val phrase: String
+        get() = if (detruiteApresVerification) "Ce document sera détruit dès qu'il aura été vérifié."
+        else if (duree.isNotBlank()) "Ce document sera conservé : ${duree.lowercase()}." else "Ce document sera conservé par votre association."
+}
+
+/** Le profil que la personne corrige elle-même. */
+data class Profil(val prenom: String, val nom: String, val telephone: String)
+
+/** Les erreurs d'un changement de mot de passe, par champ. Le serveur revérifie la robustesse. */
+fun validerMotDePasse(ancien: String?, nouveau: String, confirmation: String): Map<String, String> = buildMap {
+    if (ancien != null && ancien.isEmpty()) put("old_password", "Indiquez votre mot de passe actuel.")
+    if (nouveau.length < 8) put("new_password", "Au moins 8 caractères.")
+    else if (nouveau != confirmation) put("confirmation", "Les deux saisies ne sont pas identiques.")
 }

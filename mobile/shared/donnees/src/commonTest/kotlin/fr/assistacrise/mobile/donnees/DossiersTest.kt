@@ -13,7 +13,6 @@ import fr.assistacrise.mobile.domaine.PhotoEnAttente
 import fr.assistacrise.mobile.domaine.Releve
 import fr.assistacrise.mobile.domaine.TypeDepot
 import fr.assistacrise.mobile.domaine.filDuDossier
-import fr.assistacrise.mobile.domaine.rangerParMission
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -137,12 +136,53 @@ class CommentairesDeTerrainTest {
 }
 
 class RangementTest {
-    @Test fun lesDossiersSontRangesSousLeurMission() {
-        val a = Dossier(id = "a", mission = "m1"); val b = Dossier(id = "b", mission = null); val c = Dossier(id = "c", mission = "m-inconnue")
-        val r = rangerParMission(listOf(a, b, c), setOf("m1"))
-        assertEquals(listOf("a"), r.parMission.getValue("m1").map(Dossier::id))
-        // Une mission que je ne vois pas : le dossier n'est pas perdu, il est avec les autres.
-        assertEquals(listOf("b", "c"), r.sansMission.map(Dossier::id))
+    private fun mission(id: String, vararg equipes: String) = fr.assistacrise.mobile.domaine.MissionAffichee(fr.assistacrise.mobile.domaine.Mission(id = id, titre = id, equipes = equipes.toList()), false)
+    private fun equipe(id: String, active: String? = null) = fr.assistacrise.mobile.domaine.Equipe(id = id, nom = id, missionActive = active)
+
+    @Test fun unDossierSansMissionEcriteEstDansLaMissionEnCoursDeSonEquipe() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(
+            listOf(equipe("t1", active = "m1")), listOf(mission("m1", "t1")),
+            listOf(Dossier(id = "a", equipe = "t1", mission = null), Dossier(id = "b", equipe = "t1", mission = "m1")),
+        ).single()
+        assertEquals(listOf("a", "b"), r.missions.single().dossiers.map(Dossier::id))
+        assertTrue(r.sansMission.isEmpty())
+    }
+
+    @Test fun laMissionEcriteSurLeDossierLEmporteEtLaMissionEnCoursVientEnTete() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(
+            listOf(equipe("t1", active = "m2")), listOf(mission("m1", "t1"), mission("m2", "t1")),
+            listOf(Dossier(id = "a", equipe = "t1", mission = "m1"), Dossier(id = "b", equipe = "t1")),
+        ).single()
+        assertEquals(listOf("m2", "m1"), r.missions.map { it.mission.mission.id })
+        assertEquals(listOf("b"), r.missions.first().dossiers.map(Dossier::id))
+    }
+
+    @Test fun sansMissionMarqueeEnCoursLaSeuleMissionDeLEquipeSert() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(listOf(equipe("t1")), listOf(mission("m1", "t1")), listOf(Dossier(id = "a", equipe = "t1"))).single()
+        assertEquals(listOf("a"), r.missions.single().dossiers.map(Dossier::id))
+        // Deux missions possibles : on ne devine pas, le dossier est montré à part.
+        val ambigu = fr.assistacrise.mobile.domaine.rangerParEquipe(listOf(equipe("t1")), listOf(mission("m1", "t1"), mission("m2", "t1")), listOf(Dossier(id = "a", equipe = "t1"))).single()
+        assertEquals(listOf("a"), ambigu.sansMission.map(Dossier::id))
+    }
+
+    @Test fun uneEquipeSansMissionMontreSesDossiersCommeUneAnomalie() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(listOf(equipe("t1")), emptyList(), listOf(Dossier(id = "a", equipe = "t1"))).single()
+        assertTrue(r.missions.isEmpty())
+        assertEquals(listOf("a"), r.sansMission.map(Dossier::id))
+    }
+
+    @Test fun uneMissionPartageeMontreAChaqueEquipeSesSeulsDossiers() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(
+            listOf(equipe("t1", "m1"), equipe("t2", "m1")), listOf(mission("m1", "t1", "t2")),
+            listOf(Dossier(id = "a", equipe = "t1"), Dossier(id = "b", equipe = "t2")),
+        )
+        assertEquals(listOf(listOf("a"), listOf("b")), r.map { it.missions.single().dossiers.map(Dossier::id) })
+    }
+
+    @Test fun lesMissionsHorsDeMesEquipesRestentVisibles() {
+        val r = fr.assistacrise.mobile.domaine.rangerParEquipe(listOf(equipe("t1", "m1")), listOf(mission("m1", "t1"), mission("m9", "t9")), emptyList())
+        assertNull(r.last().equipe)
+        assertEquals(listOf("m9"), r.last().missions.map { it.mission.mission.id })
     }
 
     @Test fun uneOffreDAideChoisieSurLaCartePartAvecSonLieu() {

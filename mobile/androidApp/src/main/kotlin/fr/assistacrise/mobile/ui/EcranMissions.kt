@@ -44,7 +44,7 @@ import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
 import fr.assistacrise.mobile.domaine.Compte
 import fr.assistacrise.mobile.domaine.Dossier
-import fr.assistacrise.mobile.domaine.rangerParMission
+import fr.assistacrise.mobile.domaine.rangerParEquipe
 import androidx.compose.material3.HorizontalDivider
 import fr.assistacrise.mobile.domaine.EtatAction
 import fr.assistacrise.mobile.domaine.MissionAffichee
@@ -58,7 +58,8 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
     val lien by modele.lien.collectAsStateWithLifecycle()
     val dossiers by modele.dossiers.collectAsStateWithLifecycle()
     var ouverte by rememberSaveable { mutableStateOf<String?>(null) }
-    val ranges = rangerParMission(dossiers, missions.map { it.mission.id })
+    val mesEquipes by modele.equipes.collectAsStateWithLifecycle()
+    val travail = rangerParEquipe(mesEquipes, missions, dossiers)
 
     val enAttente = file.count { it.etat == EtatAction.EN_ATTENTE }
     val refusees = file.count { it.etat == EtatAction.REFUSEE }
@@ -97,7 +98,7 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             BandeauFile(enAttente, refusees) { modele.aller(Ecran.COMPTE) }
         }
 
-        if (missions.isEmpty() && ranges.sansMission.isEmpty()) {
+        if (travail.isEmpty()) {
             EtatVide(compte)
         } else {
             LazyColumn(
@@ -105,16 +106,22 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             ) {
-                items(missions, key = { it.mission.id }) { m ->
-                    CarteMission(m, ranges.parMission[m.mission.id].orEmpty(), modele::ouvrirDossier) { ouverte = m.mission.id }
-                }
-                // Un dossier confié à l'équipe sans être rangé sous une mission reste du travail à faire.
-                if (ranges.sansMission.isNotEmpty()) {
-                    item(key = "sans-mission") {
+                // L'organisation telle qu'elle est : une équipe, ses missions, et dans chaque mission ses dossiers.
+                travail.forEach { t ->
+                    val cle = t.equipe?.id ?: "autres"
+                    if (travail.size > 1 || t.equipe == null) item(key = "equipe-$cle") {
+                        Text(t.equipe?.nom ?: "Autres missions", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+                    }
+                    items(t.missions, key = { "$cle-${it.mission.mission.id}" }) { m ->
+                        CarteMission(m.mission, m.dossiers, modele::ouvrirDossier) { ouverte = m.mission.mission.id }
+                    }
+                    // Des dossiers confiés à une équipe qui n'a aucune mission en cours : on le dit, on ne le cache pas.
+                    if (t.sansMission.isNotEmpty()) item(key = "sans-mission-$cle") {
                         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(vertical = 12.dp)) {
-                                Text(if (missions.isEmpty()) "Dossiers de mes équipes" else "Autres dossiers de mes équipes", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
-                                ranges.sansMission.forEach { d -> LigneDossier(d, Modifier.fillMaxWidth().clickable { modele.ouvrirDossier(d.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                                Text("${t.equipe?.nom ?: "Équipe"} : aucune mission en cours", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+                                Text("Ces dossiers lui sont confiés sans mission. Signalez-le à votre encadrement.", style = MaterialTheme.typography.bodySmall, color = Attente, modifier = Modifier.padding(horizontal = 16.dp))
+                                t.sansMission.forEach { d -> LigneDossier(d, Modifier.fillMaxWidth().clickable { modele.ouvrirDossier(d.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) }
                             }
                         }
                     }

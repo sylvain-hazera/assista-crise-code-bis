@@ -43,6 +43,7 @@ import java.util.Locale
 fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean) {
     val file by modele.file.collectAsStateWithLifecycle()
     val lien by modele.lien.collectAsStateWithLifecycle()
+    val titres by modele.titres.collectAsStateWithLifecycle()
     var confirmer by rememberSaveable { mutableStateOf(false) }
     val enAttente = file.count { it.etat == EtatAction.EN_ATTENTE }
 
@@ -63,11 +64,13 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
 
             Spacer(Modifier.height(20.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                Entree("Mon compte", "Identité, mot de passe, mes documents", titres.any { it.refuse }, modele::ouvrirMonCompte)
+                HorizontalDivider()
                 Entree("Notifications", if (modele.nonVues > 0) "${modele.nonVues} à voir" else "Demandes de votre association", modele.nonVues > 0, modele::ouvrirNotifications)
                 HorizontalDivider()
                 Entree("Mes disponibilités", "Les créneaux où l'on peut compter sur vous") { modele.ouvrirDisponibilites() }
                 HorizontalDivider()
-                Entree("Ma fiche", "Adresse, situation, justificatifs", surClic = modele::ouvrirFiche)
+                Entree("Ma fiche de bénévole", "Adresse, situation, engagement", surClic = modele::ouvrirFiche)
                 if (intervenant) {
                     HorizontalDivider()
                     Entree("Mes interventions", "Les dossiers confiés à mes équipes", surClic = modele::ouvrirInterventions)
