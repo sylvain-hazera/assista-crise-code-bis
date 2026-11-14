@@ -2,6 +2,9 @@ package fr.assistacrise.mobile.donnees
 
 import fr.assistacrise.mobile.domaine.Champs
 import fr.assistacrise.mobile.domaine.Compte
+import fr.assistacrise.mobile.domaine.Equipe
+import fr.assistacrise.mobile.domaine.MessageEquipe
+import fr.assistacrise.mobile.domaine.PositionMembre
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
 import fr.assistacrise.mobile.domaine.StatutMission
@@ -115,6 +118,33 @@ class ClientApi(
 
     suspend fun changerStatutMission(id: String, statut: StatutMission): Reponse<Unit> =
         authentifie(HttpMethod.Patch, "missions/$id/", buildJsonObject { put("statut", statut.name) }).sansValeur()
+
+    suspend fun mesEquipes(): Reponse<List<Equipe>> = authentifie(HttpMethod.Get, "teams/mes-equipes/").transformer {
+        val liste = if (it is JsonObject) it.getValue("results") else it
+        json.decodeFromJsonElement(ListSerializer(Equipe.serializer()), liste)
+    }
+
+    /** Le fil unique de l'équipe : salon Matrix et canaux radio, déjà fusionnés par le serveur. */
+    suspend fun messagerie(idEquipe: String): Reponse<List<MessageEquipe>> =
+        authentifie(HttpMethod.Get, "teams/$idEquipe/messagerie-unifiee/").transformer(::lireMessages)
+
+    /** Le serveur diffuse sur toutes les voies de l'équipe à la fois, et rend le fil à jour. */
+    suspend fun ecrireAEquipe(idEquipe: String, texte: String): Reponse<List<MessageEquipe>> =
+        authentifie(HttpMethod.Post, "teams/$idEquipe/messagerie-unifiee/", buildJsonObject { put("texte", texte) })
+            .transformer(::lireMessages)
+
+    suspend fun positionsEquipes(): Reponse<List<PositionMembre>> = authentifie(HttpMethod.Get, "positions-equipes/").transformer {
+        val liste = if (it is JsonObject) it.getValue("results") else it
+        json.decodeFromJsonElement(ListSerializer(PositionMembre.serializer()), liste)
+    }
+
+    /** Le serveur ne garde que ma dernière position, visible de mes équipes pendant trois heures. */
+    suspend fun declarerMaPosition(latitude: Double, longitude: Double): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "ma-position/", buildJsonObject { put("latitude", latitude); put("longitude", longitude) })
+            .sansValeur()
+
+    private fun lireMessages(e: JsonElement): List<MessageEquipe> =
+        json.decodeFromJsonElement(ListSerializer(MessageEquipe.serializer()), e.jsonObject.getValue("messages"))
 
     /** Révoque le jeton côté serveur si on peut, et oublie la session dans tous les cas. */
     suspend fun deconnecter() {

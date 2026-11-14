@@ -1,6 +1,7 @@
 package fr.assistacrise.mobile.donnees
 
 import fr.assistacrise.mobile.domaine.EtatAction
+import fr.assistacrise.mobile.domaine.filDeMessages
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
 import fr.assistacrise.mobile.domaine.StatutMission
@@ -38,6 +39,8 @@ private class Banc(repondre: suspend MockRequestHandleScope.(HttpRequestData) ->
     val file = FileAttente(magasin) { maintenant }
     val api = ClientApi(HttpClient(MockEngine { demande -> demandes += demande; repondre(demande) }), URL, session)
     val depot = DepotMissions(api, magasin, file)
+    val equipes = DepotEquipes(api, magasin, file)
+    val synchro = Synchronisation(api, file, depot, equipes)
 
     fun chemins() = demandes.map { "${it.method.value} ${it.url.encodedPath.removePrefix("/api/")}" }
 }
@@ -163,7 +166,7 @@ class FileAttenteTest {
         banc.depot.declarerStatut(mission, StatutMission.EN_COURS)
 
         // Hors ligne : rien ne part, rien ne se perd, et l'écran le sait.
-        assertEquals(0, banc.depot.envoyerLaFile())
+        assertEquals(0, banc.synchro.envoyerLaFile())
         val enAttente = banc.file.actions.value.single()
         assertEquals(1, enAttente.tentatives)
         assertTrue(superposerLaFile(listOf(mission), banc.file.actions.value).single().nonConfirme)
@@ -174,7 +177,7 @@ class FileAttenteTest {
 
         // Le réseau revient.
         code = HttpStatusCode.OK
-        assertEquals(1, banc.depot.envoyerLaFile(force = true))
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
         assertTrue(banc.file.actions.value.isEmpty())
         assertEquals(StatutMission.EN_COURS, banc.depot.missions.value.single().statut)
     }
@@ -183,12 +186,12 @@ class FileAttenteTest {
         val banc = bancConnecte { HttpStatusCode.ServiceUnavailable }
         banc.api.connecter("c@exemple.fr", "secret")
         banc.depot.declarerStatut(mission, StatutMission.EN_COURS)
-        banc.depot.envoyerLaFile()
+        banc.synchro.envoyerLaFile()
         val appels = banc.demandes.size
-        banc.depot.envoyerLaFile()                       // trop tôt : aucun appel
+        banc.synchro.envoyerLaFile()                       // trop tôt : aucun appel
         assertEquals(appels, banc.demandes.size)
         banc.maintenant += FileAttente.RECUL_INITIAL_MS  // le délai est passé
-        banc.depot.envoyerLaFile()
+        banc.synchro.envoyerLaFile()
         assertEquals(appels + 1, banc.demandes.size)
         assertEquals(5_000L, FileAttente.recul(1))
         assertEquals(10_000L, FileAttente.recul(2))
@@ -202,14 +205,14 @@ class FileAttenteTest {
         banc.depot.declarerStatut(mission, StatutMission.EN_COURS)
         banc.depot.declarerStatut(mission.copy(id = "m2", titre = "Ravitaillement"), StatutMission.EN_COURS)
 
-        assertEquals(1, banc.depot.envoyerLaFile())
+        assertEquals(1, banc.synchro.envoyerLaFile())
         val restante = banc.file.actions.value.single()
         assertEquals(EtatAction.REFUSEE, restante.etat)
         assertEquals("Interdit.", restante.erreur)
 
         // Un refus n'est jamais retenté : il faut l'écarter à la main.
         val appels = banc.demandes.size
-        banc.depot.envoyerLaFile(force = true)
+        banc.synchro.envoyerLaFile(force = true)
         assertEquals(appels, banc.demandes.size)
         banc.file.retirer(restante.id)
         assertTrue(banc.file.actions.value.isEmpty())
@@ -220,8 +223,127 @@ class FileAttenteTest {
         val banc = bancConnecte { codes.removeFirstOrNull() ?: HttpStatusCode.ServiceUnavailable }
         banc.api.connecter("c@exemple.fr", "secret")
         for (n in 1..3) banc.depot.declarerStatut(mission.copy(id = "m$n"), StatutMission.EN_COURS)
-        banc.depot.envoyerLaFile()
+        banc.synchro.envoyerLaFile()
         assertEquals(listOf("m2", "m3"), banc.file.actions.value.map { it.cible })
         assertEquals(listOf(1, 0), banc.file.actions.value.map { it.tentatives })
+    }
+}
+
+class MessagerieTest {
+    private val fil = """{"messages":[{"event_id":"e1","source":"matrix","texte":"Bien reçu","horodatage":1000,"expediteur_nom":"Alex","moi":false,"urgent":false},{"event_id":"e2","source":"meshcore","texte":"En route","horodatage":2000,"expediteur_nom":"Camille","moi":true}]}"""
+
+    private fun banc(ecriture: () -> HttpStatusCode) = Banc { demande ->
+        val chemin = demande.url.encodedPath
+        when {
+            chemin.endsWith("token/") -> json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
+            chemin.endsWith("mes-equipes/") -> json("""[{"id":"t1","name":"Alpha","engagement_debut":"2026-11-14T10:00:00Z","mission_active_titre":"Reconnaissance"},{"id":"t2","name":"Bravo","engagement_debut":null}]""")
+            demande.method == HttpMethod.Post -> if (ecriture() == HttpStatusCode.OK) json(fil) else respond("", ecriture())
+            else -> json(fil)
+        }
+    }
+
+    @Test fun lesEquipesEtLeurFilSontLisiblesApresRedemarrage() = runTest {
+        val banc = banc { HttpStatusCode.OK }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.rafraichir()
+        banc.equipes.rafraichirFil("t1")
+        assertEquals(listOf(true, false), banc.equipes.equipes.value.map { it.engagee })
+
+        val relance = DepotEquipes(banc.api, banc.magasin, banc.file).also { it.restaurer() }
+        assertEquals("Alpha", relance.equipes.value.first().nom)
+        val messages = filDeMessages(relance.fils.value.getValue("t1"), emptyList(), "t1")
+        assertEquals(listOf(false, true), messages.map { it.parRadio })
+    }
+
+    @Test fun unMessageEcritHorsLigneAttendDansLeFilPuisPart() = runTest {
+        var code = HttpStatusCode.ServiceUnavailable
+        val banc = banc { code }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.rafraichir()
+        val alpha = banc.equipes.equipes.value.first()
+        banc.equipes.ecrire(alpha, "  Nous sommes sur place  ")
+        banc.synchro.envoyerLaFile()
+
+        val attente = filDeMessages(emptyList(), banc.file.actions.value, "t1").single()
+        assertEquals("Nous sommes sur place", attente.texte)
+        assertTrue(attente.enAttente && attente.moi)
+        // Il n'apparaît pas dans le fil d'une autre équipe.
+        assertTrue(filDeMessages(emptyList(), banc.file.actions.value, "t2").isEmpty())
+
+        code = HttpStatusCode.OK
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        assertTrue(banc.file.actions.value.isEmpty())
+        assertEquals(2, banc.equipes.fils.value.getValue("t1").size)
+        assertEquals("Nous sommes sur place", banc.demandes.last().corps().getValue("texte").jsonPrimitive.content)
+    }
+}
+
+class SuiviTest {
+    private val engagee = fr.assistacrise.mobile.domaine.Equipe(id = "t1", nom = "Alpha", engagementDebut = "2026-11-14T10:00:00Z")
+    private val auRepos = engagee.copy(engagementDebut = null)
+    private fun releve(lat: Double, instant: Long) = fr.assistacrise.mobile.domaine.Releve(lat, 4.83, instant)
+
+    private fun banc() = Banc { demande ->
+        if (demande.url.encodedPath.endsWith("token/")) json("""{"access":"A1","refresh":"R1","user":$COMPTE}""")
+        else json("""{"id":"p"}""")
+    }
+    private fun suivi(banc: Banc) = DepotSuivi(banc.magasin, banc.file) { banc.maintenant }
+
+    @Test fun rienNeDemarreSansConsentementNiSansEngagementConfirme() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        assertTrue(!suivi.demarrerSiBesoin(listOf(engagee)))            // pas de consentement
+        suivi.consentir(true)
+        assertTrue(!suivi.demarrerSiBesoin(listOf(auRepos)))            // équipe au repos
+        assertTrue(suivi.demarrerSiBesoin(listOf(engagee)))
+        assertTrue(!suivi.demarrerSiBesoin(listOf(engagee)))            // déjà actif
+    }
+
+    @Test fun lArretNeDependJamaisDuServeur() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        suivi.consentir(true); suivi.demarrerSiBesoin(listOf(engagee))
+        // Pas de nouvelles du serveur : le suivi continue…
+        assertNull(suivi.arreterSiBesoin(null))
+        // …jusqu'au plafond, qui joue sans réseau.
+        banc.maintenant += fr.assistacrise.mobile.domaine.ReglesSuivi.PLAFOND_MS
+        assertEquals(fr.assistacrise.mobile.domaine.MotifArret.PLAFOND, suivi.arreterSiBesoin(null))
+        assertTrue(!suivi.etat.value.actif)
+    }
+
+    @Test fun laFinDEngagementArreteEtLeSuivantRelance() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        suivi.consentir(true); suivi.demarrerSiBesoin(listOf(engagee))
+        assertEquals(fr.assistacrise.mobile.domaine.MotifArret.FIN_D_ENGAGEMENT, suivi.arreterSiBesoin(listOf(auRepos)))
+        assertTrue(suivi.demarrerSiBesoin(listOf(engagee.copy(engagementDebut = "2026-11-15T08:00:00Z"))))
+    }
+
+    @Test fun unArretALaMainTientPourCetEngagementSeulement() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        suivi.consentir(true); suivi.demarrerSiBesoin(listOf(engagee))
+        suivi.arreterALaMain(listOf(engagee))
+        assertTrue(!suivi.demarrerSiBesoin(listOf(engagee)))            // on ne piège personne
+        assertTrue(suivi.demarrerSiBesoin(listOf(engagee.copy(engagementDebut = "2026-11-15T08:00:00Z"))))
+    }
+
+    @Test fun lEtatSurvitAuRedemarrageDuService() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        suivi.consentir(true); suivi.demarrerSiBesoin(listOf(engagee))
+        val relance = suivi(banc).also { it.restaurer() }
+        assertEquals(banc.maintenant, relance.etat.value.depuis)
+    }
+
+    @Test fun laCadenceSuitLeDeplacementEtSeuleLaDernierePositionAttend() = runTest {
+        val banc = banc(); val suivi = suivi(banc)
+        banc.api.connecter("c@exemple.fr", "secret")
+        suivi.consentir(true); suivi.demarrerSiBesoin(listOf(engagee))
+        assertTrue(suivi.relever(releve(45.7500, 0)))                  // premier relevé
+        assertTrue(!suivi.relever(releve(45.7600, 10_000)))            // trop tôt, même loin
+        assertTrue(!suivi.relever(releve(45.7501, 60_000)))            // 11 m : immobile
+        assertTrue(suivi.relever(releve(45.7510, 60_000)))             // 111 m : en mouvement
+        assertTrue(suivi.relever(releve(45.7510, 60_000 + 5 * 60_000)))// immobile, mais 5 min
+        // Trois relevés retenus, une seule action en file : la dernière.
+        assertEquals(1, banc.file.actions.value.size)
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        val corps = banc.demandes.last().corps()
+        assertEquals("45.751", corps.getValue("latitude").jsonPrimitive.content)
     }
 }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -73,9 +72,6 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             IconButton(onClick = modele::actualiser, enabled = !modele.synchronisation) {
                 if (modele.synchronisation) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Filled.Refresh, contentDescription = "Actualiser")
-            }
-            IconButton(onClick = { modele.aller(Ecran.COMPTE) }) {
-                Icon(Icons.Filled.AccountCircle, contentDescription = "Mon compte")
             }
         }
 

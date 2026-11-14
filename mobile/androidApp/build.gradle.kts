@@ -39,8 +39,15 @@ android {
     }
 
     buildTypes {
+        // La carte embarque du code natif, une copie par architecture de processeur. Les
+        // telephones d'aujourd'hui sont en arm64 ; armeabi-v7a couvre les plus anciens.
+        // x86_64 n'existe que pour l'emulateur, donc en developpement seulement.
+        debug {
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        }
         release {
             isMinifyEnabled = false
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
     }
 
@@ -73,4 +80,5 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.maplibre)
 }

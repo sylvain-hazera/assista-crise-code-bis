@@ -34,6 +34,8 @@ data class ActionEnAttente(
 ) {
     companion object {
         const val GENRE_STATUT_MISSION = "STATUT_MISSION"
+        const val GENRE_MESSAGE_EQUIPE = "MESSAGE_EQUIPE"
+        const val GENRE_POSITION = "POSITION"
     }
 }
 

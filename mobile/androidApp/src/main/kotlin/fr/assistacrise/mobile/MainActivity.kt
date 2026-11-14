@@ -19,7 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import fr.assistacrise.mobile.ui.BarreDuBas
+import fr.assistacrise.mobile.ui.EcranCarte
 import fr.assistacrise.mobile.ui.EcranCompte
+import fr.assistacrise.mobile.ui.EcranEquipes
+import fr.assistacrise.mobile.ui.EcranMessagerie
 import fr.assistacrise.mobile.ui.EcranConnexion
 import fr.assistacrise.mobile.ui.EcranInscription
 import fr.assistacrise.mobile.ui.EcranMissions
@@ -44,19 +48,26 @@ class MainActivity : ComponentActivity() {
                 val ecran = when {
                     compte == null && modele.ecran == Ecran.INSCRIPTION -> Ecran.INSCRIPTION
                     compte == null -> Ecran.CONNEXION
-                    modele.ecran == Ecran.COMPTE -> Ecran.COMPTE
-                    else -> Ecran.MISSIONS
+                    modele.ecran == Ecran.CONNEXION || modele.ecran == Ecran.INSCRIPTION -> Ecran.MISSIONS
+                    else -> modele.ecran
                 }
                 BackHandler(enabled = ecran == Ecran.INSCRIPTION) { modele.aller(Ecran.CONNEXION) }
-                BackHandler(enabled = ecran == Ecran.COMPTE) { modele.aller(Ecran.MISSIONS) }
+                BackHandler(enabled = ecran == Ecran.MESSAGERIE) { modele.aller(Ecran.EQUIPES) }
+                BackHandler(enabled = ecran in setOf(Ecran.EQUIPES, Ecran.CARTE, Ecran.COMPTE)) { modele.aller(Ecran.MISSIONS) }
 
-                Scaffold(snackbarHost = { SnackbarHost(bandeau) }) { marges ->
+                Scaffold(
+                    snackbarHost = { SnackbarHost(bandeau) },
+                    bottomBar = { if (compte != null && modele.pret && ecran != Ecran.MESSAGERIE) BarreDuBas(ecran, modele::aller) },
+                ) { marges ->
                     Box(Modifier.fillMaxSize().padding(marges)) {
                         when {
                             !modele.pret -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                             ecran == Ecran.CONNEXION -> EcranConnexion(modele)
                             ecran == Ecran.INSCRIPTION -> EcranInscription(modele)
                             ecran == Ecran.COMPTE -> EcranCompte(modele, compte!!)
+                            ecran == Ecran.EQUIPES -> EcranEquipes(modele)
+                            ecran == Ecran.MESSAGERIE -> EcranMessagerie(modele)
+                            ecran == Ecran.CARTE -> EcranCarte(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }

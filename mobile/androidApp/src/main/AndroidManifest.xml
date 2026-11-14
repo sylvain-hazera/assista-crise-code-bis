@@ -4,6 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Position : lue quand la carte est ouverte, et suivie en mission seulement, par un
+         service de premier plan visible. Aucune permission d'arriere-plan n'est demandee :
+         le suivi ne demarre que depuis l'application ouverte. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- allowBackup="false" : la session et le cache sont chiffres par une cle du Keystore,
          qui ne quitte pas le telephone. Une sauvegarde restauree ailleurs serait illisible,
          et l'en exclure evite surtout de faire voyager des donnees de mission. -->
@@ -23,5 +32,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".ServiceSuivi"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 </manifest>

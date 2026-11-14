@@ -7,6 +7,7 @@ ktor = "3.0.3"
 compose-bom = "2024.12.01"
 activity = "1.9.3"
 lifecycle = "2.8.7"
+maplibre = "11.5.2"
 
 [libraries]
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -24,6 +25,7 @@ compose-icons = { module = "androidx.compose.material:material-icons-core" }
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+maplibre = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

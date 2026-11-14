@@ -45,6 +45,20 @@ class FileAttente(
         action
     }
 
+    /**
+     * Comme `ajouter`, mais en remplaçant ce qui attendait déjà pour ce genre. Pour ce dont
+     * seule la dernière valeur compte — une position : inutile d'envoyer dix positions
+     * périmées au retour du réseau.
+     */
+    suspend fun remplacer(genre: String, cible: String, charge: String, libelle: String): ActionEnAttente = verrou.withLock {
+        val action = ActionEnAttente(
+            id = "${horloge()}-${Random.nextLong().toULong().toString(16)}",
+            genre = genre, cible = cible, charge = charge, libelle = libelle, creeLe = horloge(),
+        )
+        enregistrer(_actions.value.filterNot { it.genre == genre && it.cible == cible } + action)
+        action
+    }
+
     suspend fun retirer(id: String) = verrou.withLock {
         enregistrer(_actions.value.filterNot { it.id == id })
     }

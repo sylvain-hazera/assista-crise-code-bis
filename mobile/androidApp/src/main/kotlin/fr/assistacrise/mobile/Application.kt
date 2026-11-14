@@ -1,9 +1,12 @@
 package fr.assistacrise.mobile
 
 import fr.assistacrise.mobile.donnees.ClientApi
+import fr.assistacrise.mobile.donnees.DepotEquipes
 import fr.assistacrise.mobile.donnees.DepotMissions
+import fr.assistacrise.mobile.donnees.DepotSuivi
 import fr.assistacrise.mobile.donnees.FileAttente
 import fr.assistacrise.mobile.donnees.Session
+import fr.assistacrise.mobile.donnees.Synchronisation
 import fr.assistacrise.mobile.lien.IndicateurLien
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -12,7 +15,7 @@ import java.io.File
 
 /**
  * Les pièces de l'application, assemblées une fois. Pas de bibliothèque d'injection : il y
- * a six objets, et les voir câblés à la main sur une page vaut mieux qu'une magie de plus.
+ * a une dizaine d'objets, et les voir câblés à la main sur une page vaut mieux qu'une magie de plus.
  */
 class Application : android.app.Application() {
     val magasin by lazy { MagasinChiffre(File(filesDir, "magasin")) }
@@ -29,6 +32,9 @@ class Application : android.app.Application() {
         ClientApi(http, BuildConfig.URL_API, session)
     }
     val depot by lazy { DepotMissions(api, magasin, file) }
+    val equipes by lazy { DepotEquipes(api, magasin, file) }
+    val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
+    val synchro by lazy { Synchronisation(api, file, depot, equipes) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
 }

@@ -50,25 +50,6 @@ class DepotMissions(
         )
     }
 
-    /**
-     * Envoie ce qui attend, puis relit les missions si quelque chose est parti — pour que
-     * l'affichage repose sur ce que le serveur a réellement enregistré.
-     */
-    suspend fun envoyerLaFile(force: Boolean = false): Int {
-        val accusees = file.vider(force) { action ->
-            when (action.genre) {
-                ActionEnAttente.GENRE_STATUT_MISSION -> {
-                    val statut = StatutMission.entries.firstOrNull { it.name == action.charge }
-                    if (statut == null) Reponse.Refus(400, "Statut inconnu de cette version de l'application.")
-                    else api.changerStatutMission(action.cible, statut)
-                }
-                else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
-            }
-        }
-        if (accusees > 0) rafraichir()
-        return accusees
-    }
-
     suspend fun toutEffacer() {
         magasin.effacer(FICHIER)
         _missions.value = emptyList()

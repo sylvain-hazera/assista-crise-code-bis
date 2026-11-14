@@ -11,7 +11,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,5 +97,51 @@ fun PastilleLien(etat: EtatLien, modifier: Modifier = Modifier) {
         Box(Modifier.size(9.dp).clip(CircleShape).background(couleur))
         Spacer(Modifier.width(6.dp))
         Text(mot, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** La barre du bas : les quatre lieux de l'application, toujours à un geste. */
+@Composable
+fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
+    val lieux = listOf(
+        Triple(fr.assistacrise.mobile.Ecran.MISSIONS, "Missions", Icons.AutoMirrored.Filled.List),
+        Triple(fr.assistacrise.mobile.Ecran.EQUIPES, "Équipes", Icons.Filled.Email),
+        Triple(fr.assistacrise.mobile.Ecran.CARTE, "Carte", Icons.Filled.Place),
+        Triple(fr.assistacrise.mobile.Ecran.COMPTE, "Compte", Icons.Filled.AccountCircle),
+    )
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        lieux.forEach { (lieu, nom, icone) ->
+            NavigationBarItem(
+                selected = ecran == lieu,
+                onClick = { aller(lieu) },
+                icon = { Icon(icone, contentDescription = null) },
+                label = { Text(nom) },
+            )
+        }
+    }
+}
+
+/** « il y a 12 min », à partir d'un instant en millisecondes. */
+fun ilYA(instant: Long, maintenant: Long = System.currentTimeMillis()): String {
+    val minutes = ((maintenant - instant) / 60_000).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "à l'instant"
+        minutes < 60 -> "il y a $minutes min"
+        minutes < 24 * 60 -> "il y a ${minutes / 60} h"
+        else -> "il y a ${minutes / (24 * 60)} j"
+    }
+}
+
+/** Instant d'une date ISO du serveur, ou `null` si elle est illisible. */
+fun instantDe(iso: String?): Long? =
+    iso?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+
+/** « 12 min », « 2 h » : une durée écoulée depuis un instant, pour une phrase en « depuis ». */
+fun duree(instant: Long, maintenant: Long = System.currentTimeMillis()): String {
+    val minutes = ((maintenant - instant) / 60_000).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "moins d'une minute"
+        minutes < 60 -> "$minutes min"
+        else -> "${minutes / 60} h ${minutes % 60} min"
     }
 }
