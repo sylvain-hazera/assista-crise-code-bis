@@ -1,5 +1,5 @@
 /** `NAVIGATEUR` : radio relayée par un navigateur (core/relais_navigateur.py). */
-export type MeshtasticConnexionType = 'MQTT' | 'TCP' | 'SERIE' | 'NAVIGATEUR';
+export type MeshtasticConnexionType = 'MQTT' | 'TCP' | 'SERIE' | 'BLE' | 'NAVIGATEUR';
 
 export interface CompagnonMeshtastic {
   id: string;
@@ -9,6 +9,8 @@ export interface CompagnonMeshtastic {
   connexion_type: MeshtasticConnexionType;
   /** IP/hostname du vrai appareil (mode TCP local uniquement, port par défaut 4403). */
   tcp_host?: string | null;
+  serie_device?: string | null;
+  ble_adresse?: string | null;
   tcp_port?: number | null;
   /** Identifiant 32 bits — en mode MQTT, choisi par nous (identité logicielle) ; en mode TCP,
    * le vrai numéro de l'appareil connecté, lu automatiquement à la détection. */

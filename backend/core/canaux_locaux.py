@@ -67,7 +67,10 @@ def est_local(compagnon):
     navigateur). Les companions MQTT et TCP sont des passerelles de réseau, non concernées."""
     from .models import MeshtasticConnexionType
 
+    # BLE : radio tenue en Bluetooth par la machine du pont (passerelle Windows) — aussi locale
+    # qu'une radio en USB.
     return compagnon.connexion_type in (MeshtasticConnexionType.SERIE,
+                                        MeshtasticConnexionType.BLE,
                                         MeshtasticConnexionType.NAVIGATEUR)
 
 

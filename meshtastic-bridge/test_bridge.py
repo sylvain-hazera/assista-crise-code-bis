@@ -222,3 +222,107 @@ class TestCompteursReception(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FauxCanalLocal:
+    def __init__(self, index, nom):
+        self.index = index
+        self.settings = type("S", (), {"name": nom})()
+
+
+class FauxNoeudLocal:
+    def __init__(self, canaux):
+        self._canaux = canaux
+
+    def getChannelByName(self, nom):
+        return next((c for c in self._canaux if c.settings.name == nom), None)
+
+    def getChannelByChannelIndex(self, index):
+        return next((c for c in self._canaux if c.index == index), None)
+
+
+class FauxAppareil:
+    """Un appareil Meshtastic local, sans radio : ce que la lib officielle expose au pont."""
+    myInfo = type("I", (), {"my_node_num": 0x1001})()
+
+    def __init__(self):
+        self.localNode = FauxNoeudLocal([FauxCanalLocal(0, ""), FauxCanalLocal(1, "Fr_EMCOM")])
+
+    def getPublicKey(self):
+        return None
+
+    def sendText(self, *a, **k):
+        pass
+
+    def close(self):
+        pass
+
+
+class FauxDjangoLocal:
+    """Enregistre ce que le pont remonte ; tout le reste répond « rien à faire »."""
+
+    def __init__(self):
+        self.canal_entrants = []
+        self.dm_entrants = []
+
+    async def canaux_avec_cle(self, compagnon_id):
+        return [{"id": "canal-emcom", "nom": "Fr_EMCOM"}]
+
+    async def logger_canal_entrant(self, canal_id, node_num, contenu):
+        self.canal_entrants.append((canal_id, node_num, contenu))
+
+    async def logger_dm_entrant(self, compagnon_id, canal_id, node_num, contenu):
+        self.dm_entrants.append((node_num, contenu))
+
+    def __getattr__(self, nom):
+        async def rien(*a, **k):
+            return []
+        return rien
+
+
+class CanalEntrantAppareilLocalTest(unittest.IsolatedAsyncioTestCase):
+    """Régression du 15/11/2026 : un message de canal reçu par un appareil TCP, série ou
+    Bluetooth partait avec `canal: None`, que le serveur refuse — perdu en silence. Le pont
+    retrouve désormais le canal par son NOM local, et n'envoie rien pour un canal inconnu."""
+
+    async def _jouer(self, paquets):
+        import asyncio
+        from pubsub import pub
+
+        django = FauxDjangoLocal()
+        appareil = FauxAppareil()
+        compagnon = {"id": "c1", "nom": "Test", "node_num": 0x1001}
+        ancien = bridge.POLL_INTERVAL_SECONDS
+        bridge.POLL_INTERVAL_SECONDS = 0.01
+        tache = asyncio.create_task(bridge._executer_compagnon_interface_locale(
+            django, compagnon, construire_interface=lambda: appareil, libelle_connexion="test"))
+        try:
+            await asyncio.sleep(0.15)        # laisse la boucle des canaux remplir la table
+            for paquet in paquets:
+                pub.sendMessage("meshtastic.receive", packet=paquet, interface=appareil)
+            await asyncio.sleep(0.15)
+        finally:
+            tache.cancel()
+            bridge.POLL_INTERVAL_SECONDS = ancien
+            try:
+                await tache
+            except BaseException:
+                pass
+            pub.unsubAll("meshtastic.receive")
+        return django
+
+    def _texte(self, vers, canal, texte):
+        return {"from": 0xBEEF, "to": vers, "channel": canal,
+                "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": texte}}
+
+    async def test_un_message_de_canal_connu_est_rattache_par_son_nom(self):
+        django = await self._jouer([self._texte(bridge.BROADCAST_NUM, 1, "Route coupée")])
+        self.assertEqual(django.canal_entrants, [("canal-emcom", 0xBEEF, "Route coupée")])
+
+    async def test_un_canal_inconnu_du_central_n_envoie_rien(self):
+        django = await self._jouer([self._texte(bridge.BROADCAST_NUM, 0, "sur le primaire")])
+        self.assertEqual(django.canal_entrants, [])
+
+    async def test_un_message_direct_passe_toujours(self):
+        django = await self._jouer([self._texte(0x1001, 0, "pour moi")])
+        self.assertEqual(django.dm_entrants, [(0xBEEF, "pour moi")])

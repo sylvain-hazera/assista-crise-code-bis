@@ -64,13 +64,44 @@
         <input type="radio" name="profilJeton" value="FULL" [(ngModel)]="profilJeton">
         <strong>Complet</strong> — passerelle + site Assista-Crise local, utilisable sans Internet, avec cartes hors ligne
       </label>
+      <label>
+        <input type="radio" name="profilJeton" value="WINDOWS" [(ngModel)]="profilJeton">
+        <strong>Passerelle radio sur PC Windows</strong> — une application à lancer, qui relaie tant
+        qu'elle est ouverte. Sans Docker ni droits d'administrateur.
+      </label>
     </div>
 
     <button type="button" class="btn-primary" [disabled]="genererJetonEnCours" (click)="genererJeton()">
       {{ genererJetonEnCours ? 'Génération…' : "Générer le jeton et les commandes" }}
     </button>
 
-    @if (dernierJeton) {
+    @if (dernierJeton && jetonPourWindows) {
+      <div class="commandes-installation">
+        <div class="commandes-entete">
+          <span>Passerelle sur PC Windows</span>
+          <button type="button" class="btn-primary sm" (click)="telechargerInstalleurWindows()">
+            Télécharger l'installeur
+          </button>
+        </div>
+        <ol class="etapes">
+          <li>Téléchargez l'installeur et copiez-le sur le PC (clé USB, courriel…). Il contient le
+            code d'installation : ne le diffusez pas plus largement.</li>
+          <li>Sur le PC, double-cliquez dessus. Si Windows affiche « Windows a protégé votre
+            ordinateur », cliquez sur <strong>Informations complémentaires</strong> puis
+            <strong>Exécuter quand même</strong>. L'installation prend quelques minutes.</li>
+          <li>La passerelle apparaît ci-dessous « En attente de validation » : cliquez
+            <strong>Valider</strong>. Sa fenêtre passe alors seule à l'écran des radios.</li>
+          <li>Ensuite, elle se lance par le raccourci <strong>Assista-Crise Passerelle</strong> du
+            bureau, et s'arrête quand on ferme sa fenêtre.</li>
+        </ol>
+        <p class="page-hint">
+          Code valable jusqu'au {{ dernierJeton.expiration | date:'dd/MM/yyyy HH:mm' }}, pour une
+          seule installation. Windows 10 ou 11, connecté à Internet.
+        </p>
+      </div>
+    }
+
+    @if (dernierJeton && !jetonPourWindows) {
       <div class="commandes-installation">
         <div class="commandes-entete">
           <span>Commandes à coller sur le satellite ({{ dernierJeton.profil === 'FULL' ? 'complet' : 'passerelle radio' }})</span>

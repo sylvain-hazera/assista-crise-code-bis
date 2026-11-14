@@ -7456,6 +7456,8 @@ class MeshtasticConnexionType(models.TextChoices):
     TCP = "TCP", "Connexion locale directe (réseau, sans internet)"
     # Appareil branché en USB sur l'hôte du pont (satellite).
     SERIE = "SERIE", "Connexion série (USB, sans internet)"
+    # Appareil joint en Bluetooth par l'hôte du pont — la passerelle Windows (15/11/2026).
+    BLE = "BLE", "Bluetooth (depuis la machine du pont)"
     # Radio tenue par un NAVIGATEUR (core/relais_navigateur.py). À exclure IMPÉRATIVEMENT de
     # `actifs-avec-identifiants` : le pont Meshtastic traite tout type inconnu comme du MQTT, il
     # ouvrirait donc une connexion au broker avec l'identité de cette radio.
@@ -7486,6 +7488,7 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     tcp_host = models.CharField(max_length=255, null=True, blank=True, help_text="IP/hostname du vrai appareil (mode TCP local uniquement).")
     tcp_port = models.PositiveIntegerField(null=True, blank=True, default=4403)
     serie_device = models.CharField(max_length=255, null=True, blank=True, help_text="ex: /dev/ttyUSB0 (mode SERIE uniquement).")
+    ble_adresse = models.CharField(max_length=64, null=True, blank=True, help_text="Adresse Bluetooth de l'appareil (mode BLE uniquement).")
 
     node_num = models.PositiveBigIntegerField(
         unique=True,

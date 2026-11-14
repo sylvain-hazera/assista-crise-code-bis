@@ -1,0 +1,11 @@
+# Versions figées sur celles des ponts en service (images du central, 15/11/2026) : ce sont
+# elles qui ont été éprouvées avec les radios.
+meshtastic==2.7.11
+meshcore==2.3.15
+bleak==3.0.2
+pyserial==3.5
+pyserial-asyncio-fast==0.16
+httpx==0.28.1
+paho-mqtt==2.1.0
+cryptography>=44
+zeroconf>=0.140

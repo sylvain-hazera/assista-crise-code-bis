@@ -1037,7 +1037,8 @@ async def demarrer_pour_compagnon(django, compagnon):
     Gaulix, chiffrement fait maison), TCP ou SERIE (connexion locale directe à un vrai
     appareil, lib officielle `meshtastic`, pensé pour l'usage offline sans internet — SERIE
     pour un satellite avec le nœud branché en USB)."""
-    executeurs_locaux = {"TCP": _executer_compagnon_tcp, "SERIE": _executer_compagnon_serie}
+    executeurs_locaux = {"TCP": _executer_compagnon_tcp, "SERIE": _executer_compagnon_serie,
+                         "BLE": _executer_compagnon_ble}
     executer = executeurs_locaux.get(compagnon.get("connexion_type"), _executer_compagnon_mqtt)
     while True:
         try:
@@ -1094,6 +1095,19 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
     node_num = {"valeur": compagnon["node_num"]}
+    # Nom (minuscules) -> identifiant des canaux Django que cet appareil sert, tenu à jour par
+    # boucle_envoi_canaux_locale. Sert à rattacher un message de canal REÇU : jusqu'au
+    # 15/11/2026 il était envoyé avec `canal: None`, que le serveur refuse (400) — tous les
+    # messages de canal entendus par un appareil TCP ou série étaient perdus en silence.
+    canaux_par_nom = {}
+
+    def _canal_django_du_paquet(packet, interface):
+        try:
+            canal_local = interface.localNode.getChannelByChannelIndex(packet.get("channel", 0) or 0)
+            nom = (canal_local.settings.name or "") if canal_local is not None else ""
+        except Exception:
+            nom = ""
+        return canaux_par_nom.get(nom.lower()) if nom else None
 
     def on_receive(packet, interface):
         try:
@@ -1108,7 +1122,13 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
             if destinataire == node_num["valeur"]:
                 coro = django.logger_dm_entrant(compagnon["id"], None, expediteur, texte)
             elif destinataire == BROADCAST_NUM:
-                coro = django.logger_canal_entrant(None, expediteur, texte)
+                canal_id = _canal_django_du_paquet(packet, interface)
+                if canal_id is None:
+                    # Canal inconnu d'Assista-Crise (ou canal primaire sans nom) : rien à
+                    # enregistrer, et surtout pas un POST voué au refus.
+                    logger.debug("Message de canal ignoré : canal local inconnu du central.")
+                    return
+                coro = django.logger_canal_entrant(canal_id, expediteur, texte)
             else:
                 return
             boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
@@ -1156,6 +1176,8 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
         while True:
             try:
                 canaux_distants = await django.canaux_avec_cle(compagnon["id"])
+                canaux_par_nom.clear()
+                canaux_par_nom.update({c["nom"].lower(): c["id"] for c in canaux_distants})
                 for canal in canaux_distants:
                     canal_local = iface.localNode.getChannelByName(canal["nom"])
                     if canal_local is None:
@@ -1250,6 +1272,20 @@ async def _executer_compagnon_serie(django, compagnon):
         django, compagnon,
         construire_interface=lambda: SerialInterface(devPath=compagnon["serie_device"]),
         libelle_connexion="série",
+    )
+
+
+async def _executer_compagnon_ble(django, compagnon):
+    """Appareil joint en Bluetooth par la machine du pont — cas de la passerelle Windows
+    (15/11/2026). Même principe que TCP et série : la lib officielle parle à un vrai appareil,
+    qui chiffre lui-même."""
+    from meshtastic.ble_interface import BLEInterface
+
+    logger.info("Companion Meshtastic '%s' — connexion Bluetooth à %s...", compagnon["nom"], compagnon.get("ble_adresse"))
+    await _executer_compagnon_interface_locale(
+        django, compagnon,
+        construire_interface=lambda: BLEInterface(address=compagnon.get("ble_adresse")),
+        libelle_connexion="Bluetooth",
     )
 
 

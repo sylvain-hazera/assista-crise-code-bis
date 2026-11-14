@@ -18337,6 +18337,9 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             "serie_device": request.data.get('serie_device'),
             "tcp_host": request.data.get('tcp_host'),
             "tcp_port": request.data.get('tcp_port'),
+            "ble_adresse": request.data.get('ble_adresse'),
+            # Une radio retirée puis rebranchée redevient active (voir retirer_du_satellite).
+            "actif": True,
         }
         compagnon, cree = CompagnonMeshCore.objects.update_or_create(
             institution=satellite.institution, pubkey_hex=pubkey_hex, defaults=defaults,
@@ -18350,6 +18353,28 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             {"id": str(compagnon.id), "cree": cree},
             status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=['post'], url_path='retirer-du-satellite')
+    def retirer_du_satellite(self, request, pk=None):
+        """La passerelle ne tient plus cette radio (15/11/2026, passerelle Windows : bouton
+        « Retirer »). Désactivée plutôt que supprimée : son historique de messages reste, et
+        `enregistrer-depuis-satellite` la réactive si on la rebranche. Sans cela, une radio
+        retirée restait « active » sans personne pour l'ouvrir, et se voyait confier des
+        messages qui ne partaient jamais."""
+        satellite = _satellite_appelant_ou_403(request)
+        compagnon = CompagnonMeshCore.objects.filter(pk=pk, institution=satellite.institution).first()
+        if compagnon is None:
+            return Response({"error": "Cette radio n'est pas tenue par cette passerelle."},
+                            status=status.HTTP_404_NOT_FOUND)
+        compagnon.actif = False
+        compagnon.dernier_etat = "DECONNECTE"
+        compagnon.save(update_fields=['actif', 'dernier_etat'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="CompagnonMeshCore",
+            objet_id=compagnon.id,
+            commentaire=f"Radio « {compagnon.nom} » retirée de la passerelle {satellite.nom}.",
+        )
+        return Response({"actif": False})
 
     @action(detail=False, methods=['get'])
     def envoyables(self, request):
@@ -19769,6 +19794,9 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             "serie_device": request.data.get('serie_device'),
             "tcp_host": request.data.get('tcp_host'),
             "tcp_port": request.data.get('tcp_port'),
+            "ble_adresse": request.data.get('ble_adresse'),
+            # Une radio retirée puis rebranchée redevient active (voir retirer_du_satellite).
+            "actif": True,
         }
         compagnon, cree = CompagnonMeshtastic.objects.update_or_create(node_num=node_num, defaults=defaults)
         audit_log(
@@ -19780,6 +19808,28 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             {"id": str(compagnon.id), "cree": cree},
             status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=['post'], url_path='retirer-du-satellite')
+    def retirer_du_satellite(self, request, pk=None):
+        """La passerelle ne tient plus cette radio (15/11/2026, passerelle Windows : bouton
+        « Retirer »). Désactivée plutôt que supprimée : son historique de messages reste, et
+        `enregistrer-depuis-satellite` la réactive si on la rebranche. Sans cela, une radio
+        retirée restait « active » sans personne pour l'ouvrir, et se voyait confier des
+        messages qui ne partaient jamais."""
+        satellite = _satellite_appelant_ou_403(request)
+        compagnon = CompagnonMeshtastic.objects.filter(pk=pk, satellite=satellite).first()
+        if compagnon is None:
+            return Response({"error": "Cette radio n'est pas tenue par cette passerelle."},
+                            status=status.HTTP_404_NOT_FOUND)
+        compagnon.actif = False
+        compagnon.dernier_etat = "DECONNECTE"
+        compagnon.save(update_fields=['actif', 'dernier_etat'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="CompagnonMeshtastic",
+            objet_id=compagnon.id,
+            commentaire=f"Radio « {compagnon.nom} » retirée de la passerelle {satellite.nom}.",
+        )
+        return Response({"actif": False})
 
     @action(detail=False, methods=['get'], url_path='envoyables')
     def envoyables(self, request):
@@ -19903,7 +19953,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 'mqtt_username': c.mqtt_username, 'mqtt_password': c.mqtt_password,
                 'mqtt_use_tls': c.mqtt_use_tls,
                 'tcp_host': c.tcp_host, 'tcp_port': c.tcp_port,
-                'serie_device': c.serie_device,
+                'serie_device': c.serie_device, 'ble_adresse': c.ble_adresse,
                 'chiffrement_supporte': c.chiffrement_supporte,
                 'x25519_private_key_hex': c.x25519_private_key_hex,
                 'x25519_public_key_hex': c.x25519_public_key_hex,

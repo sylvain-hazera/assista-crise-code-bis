@@ -190,6 +190,12 @@
               <td class="mono">
                 @if (c.connexion_type === 'TCP') {
                   <span title="Connexion locale directe">📡</span> {{ c.tcp_host }}:{{ c.tcp_port }}
+                } @else if (c.connexion_type === 'SERIE') {
+                  USB {{ c.serie_device }}
+                } @else if (c.connexion_type === 'BLE') {
+                  Bluetooth {{ c.ble_adresse }}
+                } @else if (c.connexion_type === 'NAVIGATEUR') {
+                  navigateur
                 } @else {
                   {{ c.broker_host }}:{{ c.broker_port }}
                   @if (c.mqtt_use_tls) { <span title="SSL/TLS">🔒</span> }

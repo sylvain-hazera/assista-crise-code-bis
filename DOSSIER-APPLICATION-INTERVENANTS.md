@@ -823,6 +823,45 @@ construction (clé par défaut, clés de convention) : aucun secret ne transite.
   automatiquement ce qu'une passerelle a entendu. Cocher `relais_reseau` n'ouvre que le sens
   descendant. Une vraie passerelle inter-réseaux demanderait anti-écho, anti-boucle et quotas.
 
+## Passerelle Windows (15/11/2026)
+
+Troisième façon de tenir une radio, entre le relais navigateur (rien à installer, mais limité)
+et le satellite Docker (complet, mais demande Docker) : **une application Windows**, dans
+`passerelle-windows/`. Cahier des charges de Sylvain : simple pour un non-averti, s'arrête à la
+fermeture, raccourci sur le bureau, pas de démarrage automatique, pas de recherche automatique
+en Bluetooth ni sur le réseau — c'est la personne qui désigne la radio.
+
+| | Relais navigateur | **Application Windows** | Satellite Docker |
+|---|---|---|---|
+| Installation | aucune | un double-clic, sans droits d'administrateur | Docker |
+| Tourne | onglet ouvert | fenêtre ouverte | en permanence |
+| MeshCore en Wi-Fi (TCP) | impossible | **oui** | oui |
+| Canaux d'équipe, clés, administration | non | **oui** (ce sont les ponts) | oui |
+
+**Elle ne réinvente rien** : elle lance comme sous-processus les ponts du satellite, inchangés,
+et s'enrôle par le jeton des satellites. Ce qui est propre à Windows tient en peu de choses :
+
+- **l'arrêt** : chaque pont garde un tuyau ouvert vers l'application et s'arrête quand il se
+  ferme — donc aussi quand l'application est tuée sans pouvoir faire le ménage ;
+- **le secret** : mot de passe du compte de service protégé par DPAPI, jamais en clair ;
+- **le port COM qui change** : la radio est reconnue par son identité, pas par son port ;
+- **l'installeur** : un `.bat` généré par la page Satellites (adresse du site + code), qui
+  télécharge `installer.ps1` et l'archive depuis le site. Python est installé dans le profil.
+
+Trois défauts corrigés au passage, hors de Windows :
+
+1. **messages de canal Meshtastic perdus** par tout appareil TCP ou série (envoyés avec
+   `canal: None`, refusés par le serveur) : le pont retrouve désormais le canal par son nom ;
+2. **Meshtastic en Bluetooth** n'existait pas dans le pont (seulement TCP et série) ;
+3. **une radio retirée d'une passerelle restait « active »** et pouvait se voir confier des
+   messages : `retirer-du-satellite` la désactive, la rebrancher la réactive.
+
+**Vérifié ici** : 43 tests de l'application (enrôlement, radios, arrêt, fenêtre sur écran
+virtuel, archive distribuée), syntaxe de l'installeur par un vrai PowerShell, démarrage et arrêt
+des deux vrais ponts depuis l'archive. **À valider sur un vrai PC** : l'installeur lui-même
+(Python, raccourci), les ports COM, le Bluetooth Windows, et l'accueil de l'antivirus —
+l'application n'est pas signée.
+
 ## Ce que ce chantier n'est pas
 
 **Ce n'est pas un satellite.** Il ajoute de la portée radio au central ; il n'ajoute **aucune

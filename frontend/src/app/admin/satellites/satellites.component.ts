@@ -30,7 +30,11 @@ export class SatellitesComponent implements OnInit {
 
   genererJetonEnCours = false;
   dernierJeton: JetonEnrolementSatellite | null = null;
-  profilJeton: 'GW' | 'FULL' = 'GW';
+  /** `WINDOWS` : passerelle radio sur un PC Windows (application à lancer, 15/11/2026). Côté
+   * serveur c'est un satellite de profil GW comme un autre ; seule l'installation diffère. */
+  profilJeton: 'GW' | 'FULL' | 'WINDOWS' = 'GW';
+  /** La cible choisie au moment où le jeton affiché a été généré. */
+  jetonPourWindows = false;
   messageSucces = '';
   /** Dépôt public cloné sur le satellite (voir satellite/README.md). */
   readonly depot = 'https://github.com/sylvain-hazera/assista-crise-code-bis.git';
@@ -44,6 +48,42 @@ export class SatellitesComponent implements OnInit {
       'cd assista-crise-code-bis/satellite',
       `./installer.sh installer ${this.dernierJeton.jeton}`,
     ].join('\n');
+  }
+
+  /**
+   * Le petit fichier à double-cliquer sur le PC Windows. Il ne contient que l'adresse de ce
+   * site et le code d'installation : il télécharge le véritable installeur
+   * (`/passerelle/installer.ps1`, servi par ce site) et le lance. Rien à saisir sur le poste.
+   *
+   * Le code est à usage unique et expire en 24 h : ce fichier ne vaut plus rien ensuite.
+   * Jeton en `token_urlsafe` (lettres, chiffres, `-`, `_`) : aucun caractère à échapper.
+   */
+  get installeurWindows(): string {
+    if (!this.dernierJeton) return '';
+    const site = window.location.origin;
+    const commande = [
+      "$ProgressPreference='SilentlyContinue'",
+      "[Net.ServicePointManager]::SecurityProtocol='Tls12'",
+      "$s=Join-Path $env:TEMP 'assista-crise-passerelle.ps1'",
+      `Invoke-WebRequest -UseBasicParsing '${site}/passerelle/installer.ps1' -OutFile $s`,
+      `& $s -Central '${site}' -Jeton '${this.dernierJeton.jeton}'`,
+    ].join('; ');
+    return [
+      '@echo off',
+      'title Installation de la passerelle Assista-Crise',
+      'echo Installation de la passerelle Assista-Crise. Merci de patienter, cela prend quelques minutes...',
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "${commande}"`,
+      'if errorlevel 1 pause',
+      '',
+    ].join('\r\n');
+  }
+
+  telechargerInstalleurWindows(): void {
+    const lien = document.createElement('a');
+    lien.href = URL.createObjectURL(new Blob([this.installeurWindows], { type: 'application/octet-stream' }));
+    lien.download = 'Installer la passerelle Assista-Crise.bat';
+    lien.click();
+    URL.revokeObjectURL(lien.href);
   }
 
   // Identifiants d'un compte de service, affichés une seule fois juste après validation — voir
@@ -74,8 +114,13 @@ export class SatellitesComponent implements OnInit {
   genererJeton(): void {
     this.genererJetonEnCours = true;
     this.errorMessage = '';
-    this.service.genererJeton(this.profilJeton).subscribe({
-      next: (jeton) => { this.dernierJeton = jeton; this.genererJetonEnCours = false; },
+    const pourWindows = this.profilJeton === 'WINDOWS';
+    this.service.genererJeton(pourWindows ? 'GW' : this.profilJeton as 'GW' | 'FULL').subscribe({
+      next: (jeton) => {
+        this.dernierJeton = jeton;
+        this.jetonPourWindows = pourWindows;
+        this.genererJetonEnCours = false;
+      },
       error: (err) => {
         this.errorMessage = err.error?.error || "Impossible de générer un jeton d'enrôlement.";
         this.genererJetonEnCours = false;
