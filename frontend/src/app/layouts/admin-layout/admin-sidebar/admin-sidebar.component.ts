@@ -127,6 +127,8 @@ export class AdminSidebarComponent {
         return !!this.authService.getCurrentUser()?.acces_registre_vulnerables;
       case 'membres-association':
         return !!this.authService.getCurrentUser()?.acces_membres_association;
+      case 'campagnes':
+        return !!this.authService.getCurrentUser()?.acces_campagnes;
       case 'radio':
         // Champ serveur : il dépend du matériel enregistré et des droits accordés, aucun des
         // deux n'étant connu du navigateur (backend/core/acces_radio.py).

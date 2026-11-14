@@ -3,7 +3,6 @@ import { HttpTestingController } from '@angular/common/http/testing';
 
 import { CampagnesDisponibiliteComponent } from './campagnes-disponibilite.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
-import { AuthService } from '../../auth/services/auth.service';
 import { environment } from '../../../environments/environment';
 import {
   CampagneDisponibilite, CanalEnvoi,
@@ -47,7 +46,6 @@ describe('CampagnesDisponibiliteComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         ...fournisseursDeTest(),
-        { provide: AuthService, useValue: { getCurrentUser: () => ({ id: 'u1', type: 'ADMIN' }) } },
       ],
       imports: [CampagnesDisponibiliteComponent],
     });
@@ -60,6 +58,68 @@ describe('CampagnesDisponibiliteComponent', () => {
     // on vérifie seulement qu'aucun autre n'a fui.
     http.match(() => true);
     http.verify();
+  });
+
+  describe("le choix de l'institution", () => {
+    const repondre = (administrateur: boolean, ids: string[]) => {
+      composant.ngOnInit();
+      http.expectOne(`${api}/campagnes-disponibilite/institutions/`).flush({
+        administrateur, total: ids.length,
+        institutions: ids.map(id => ({ id, nom: `Institution ${id}`, type: '', portee: 'toute' })),
+      });
+      http.match(r => r.url.includes('competences'))[0]?.flush([]);
+      http.match(r => r.url.includes('qualifications'))[0]?.flush([]);
+    };
+
+    it("ne place JAMAIS un administrateur d'office, même s'il n'y en a qu'une", () => {
+      // Il composait sinon une campagne pour une institution qu'il n'avait pas désignée.
+      repondre(true, ['i1']);
+      expect(composant.institutionChoisie).toBeNull();
+      expect(composant.institution).toBeNull();
+    });
+
+    it('ne choisit pas à la place de quelqu\'un qui en pilote plusieurs', () => {
+      repondre(false, ['i1', 'i2']);
+      expect(composant.institutionChoisie).toBeNull();
+    });
+
+    it('place d\'office celui qui n\'en a qu\'une, et demande SES campagnes au serveur', () => {
+      repondre(false, ['i1']);
+      expect(composant.institutionChoisie).toBe('i1');
+      const requete = http.expectOne(
+        r => r.url === `${api}/campagnes-disponibilite/` && r.params.get('institution') === 'i1');
+      // Une campagne d'ailleurs qui reviendrait quand même n'est pas affichée.
+      requete.flush([CAMPAGNE, { ...CAMPAGNE, id: 'c2', institution: 'i9' }]);
+      expect(composant.campagnes.map(c => c.id)).toEqual(['c1']);
+    });
+
+    it('garde l\'institution désignée quand une recherche change la liste', () => {
+      repondre(true, ['i1', 'i2']);
+      composant.changerInstitution('i2');
+      composant.rechercheInstitution = 'autre';
+      composant.chercherInstitution();
+      http.expectOne(r => r.params.get('q') === 'autre').flush({
+        administrateur: true, total: 1,
+        institutions: [{ id: 'i7', nom: 'Autre', type: '', portee: 'toute' }],
+      });
+      expect(composant.institution?.id).toBe('i2');
+      expect(composant.placeeHorsListe).toBeTrue();
+    });
+  });
+
+  describe('taper large', () => {
+    it('coche toutes les compétences en un geste, et les décoche de même', () => {
+      composant.competences = [{ id: 'a', nom: 'A' }, { id: 'b', nom: 'B' }] as never;
+      composant.toutCocher('competences', true);
+      expect(composant.saisie.competences).toEqual(['a', 'b']);
+      composant.toutCocher('competences', false);
+      expect(composant.saisie.competences).toEqual([]);
+    });
+
+    it('est désactivé par défaut : élargir une cible reste un geste délibéré', () => {
+      composant.nouvelle();
+      expect(composant.saisie.ciblage_large).toBeFalse();
+    });
   });
 
   describe('les critères conditionnels', () => {
@@ -222,7 +282,7 @@ describe('CampagnesDisponibiliteComponent', () => {
 
     it('signale les échecs partiels plutôt que de les taire', () => {
       composant.campagne = CAMPAGNE;
-      composant.apercu = { total: 3, noms: [], tronque: false };
+      composant.apercu = { total: 3, aCompleter: 0, noms: [], tronque: false };
 
       composant.envoyer();
       http.expectOne(`${api}/campagnes-disponibilite/c1/envoyer/`).flush({
@@ -301,7 +361,7 @@ describe('CampagnesDisponibiliteComponent', () => {
     });
 
     it('nomme les bénévoles qu\'aucun canal coché ne joint', () => {
-      composant.apercu = { total: 10, noms: [], tronque: false };
+      composant.apercu = { total: 10, aCompleter: 0, noms: [], tronque: false };
       composant.saisie = { ...CAMPAGNE, canaux: ['BREVO_SMS'] };
       composant.canaux = [canal({
         code: 'BREVO_SMS', destinataires: 6, non_joignables: 4,

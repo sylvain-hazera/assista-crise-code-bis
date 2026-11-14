@@ -220,3 +220,145 @@ def cibler_pour_campagne(campagne):
         titres_a_jour=campagne.titres_a_jour,
         equipe=campagne.equipe,
     )
+
+
+# ── Ciblage large ──────────────────────────────────────────────────────────────────────────
+
+
+def membres_mobilisables(institution, equipe=None):
+    """Les personnes que l'institution peut solliciter, fiche ou pas. Renvoie des identifiants.
+
+    Deux sources, parce que les deux existent sur le terrain : le **rattachement**
+    (`ContactInstitution`, c'est l'adhérent d'une association) et l'**équipe** (`Team.members`,
+    c'est le réserviste d'une réserve communale, que la mairie a mis dans une équipe sans
+    forcément lui créer de rattachement). Le ciblage strict ne connaît que la première.
+
+    Un membre en congé, sorti, ou dont le rattachement est désactivé reste écarté même s'il
+    figure encore dans une équipe : « taper large » élargit aux dossiers incomplets, pas aux
+    gens qui ont demandé à ne plus être sollicités."""
+    from django.contrib.auth import get_user_model
+
+    from .models import ContactInstitution, Team
+    from .visibilite_membres import _equipes_descendantes
+
+    rattachements = ContactInstitution.objects.filter(institution=institution)
+    ecartes = set(rattachements.filter(
+        Q(actif=False) | ~Q(statut=ContactInstitution.StatutMembre.ACTIF),
+    ).values_list("utilisateur_id", flat=True))
+
+    if equipe is not None:
+        equipes = _equipes_descendantes([equipe.id])
+        membres = set()
+    else:
+        equipes = set(Team.objects.filter(institution=institution, actif=True)
+                      .values_list("id", flat=True))
+        membres = set(rattachements.filter(
+            actif=True, statut=ContactInstitution.StatutMembre.ACTIF,
+        ).values_list("utilisateur_id", flat=True))
+
+    membres |= {m for m in Team.objects.filter(id__in=equipes, institution=institution)
+                .values_list("members__id", flat=True) if m}
+    membres -= ecartes
+    return set(get_user_model().objects.filter(id__in=membres, is_active=True)
+               .values_list("id", flat=True))
+
+
+def _ressources_pour(institution, environnement, utilisateurs):
+    """`{utilisateur_id: offre_id}`, en CRÉANT la ressource de ceux qui n'en ont pas.
+
+    C'est ce qui rend le ciblage large utilisable et pas seulement comptable : la grille de
+    réponse, la couverture et les tours de garde sont tous clés sur la ressource. Solliciter
+    quelqu'un sans lui en donner une, ce serait lui écrire sans qu'il puisse répondre.
+
+    La ressource créée est vide — ni adresse ni compétence : on n'invente rien sur la personne.
+    Elle est `INTERNE`, comme toutes les ressources de bénévoles.
+
+    Une ressource que la personne (ou son encadrement) a désactivée n'est pas réactivée, et la
+    personne n'est pas retenue."""
+    from django.contrib.auth import get_user_model
+
+    from .fiches_benevoles import TYPE_OFFRE_BENEVOLE, ressource_du_benevole
+    from .models import FicheBenevole, Offer
+
+    existantes = {}
+    inactives = set()
+    for offre_id, auteur_id, actif in Offer.objects.filter(
+        author_id__in=utilisateurs, institution=institution,
+        offer_type__type=TYPE_OFFRE_BENEVOLE, environment=environnement,
+    ).values_list("id", "author_id", "actif"):
+        if actif:
+            existantes[auteur_id] = offre_id
+        else:
+            inactives.add(auteur_id)
+
+    manquants = set(utilisateurs) - set(existantes) - inactives
+    for utilisateur in get_user_model().objects.filter(id__in=manquants):
+        fiche, _ = FicheBenevole.objects.get_or_create(
+            utilisateur=utilisateur, defaults={"environment": environnement},
+        )
+        offre, _creee = ressource_du_benevole(fiche, institution)
+        existantes[utilisateur.id] = offre.id
+    return existantes
+
+
+def cibler_large(campagne):
+    """« Taper large » : les critères n'écartent que ceux dont on SAIT qu'ils n'y répondent pas.
+
+    Demande de Sylvain du 14/11/2026 : des dossiers en règle sur le papier ne sont pas encore
+    à jour dans l'outil, et une campagne doit pouvoir partir quand même — « on adapte ensuite ».
+    Le ciblage strict fait l'inverse : il n'accepte que ce qui est prouvé en base, donc un
+    membre sans fiche, sans compétence saisie ou sans titre enregistré est invisible.
+
+    Règle, critère par critère :
+
+    | Critère | Qui reste |
+    |---|---|
+    | territoire | ceux qui y sont, **et ceux dont l'adresse n'est pas renseignée** |
+    | compétences | ceux qui en ont une, **et ceux qui n'en ont déclaré aucune** |
+    | titres, « à jour », aptitude | **tout le monde** : l'absence d'un titre dans l'outil ne dit pas qu'il manque sur le papier |
+    | équipe | inchangé : l'appartenance à une équipe ne dépend pas du dossier |
+
+    Quelqu'un qui a une adresse HORS du territoire, ou des compétences déclarées dont aucune
+    ne correspond, reste écarté : là, l'outil sait.
+
+    Un critère inapplicable reste une ERREUR (`CritereInapplicable`) : élargir aux dossiers
+    incomplets n'est pas accepter un rayon sans crise.
+
+    Renvoie une liste de couples `(offre_id, utilisateur_id)`."""
+    from .models import EchelonCiblage, Offer
+
+    institution, environnement = campagne.institution, campagne.environment
+    membres = membres_mobilisables(institution, campagne.equipe)
+    ressources = _ressources_pour(institution, environnement, membres)
+    queryset = Offer.objects.filter(id__in=list(ressources.values()))
+
+    # Le filtre strict d'abord : c'est lui qui lève si le critère est inapplicable.
+    dans_le_territoire = set(_filtre_territoire(
+        queryset, campagne.echelon, campagne.territoire_code, campagne.crise,
+        campagne.rayon_km,
+    ).values_list("id", flat=True))
+    champ_inconnu = {
+        EchelonCiblage.RAYON_CRISE: "location",
+        EchelonCiblage.COMMUNE: "commune_code",
+        EchelonCiblage.DEPARTEMENT: "departement_code",
+        EchelonCiblage.ZONE_DEFENSE: "departement_code",
+        EchelonCiblage.REGION: "region_code",
+    }.get(campagne.echelon)
+    if champ_inconnu:
+        sans_adresse = Q(**{f"{champ_inconnu}__isnull": True})
+        if champ_inconnu != "location":
+            sans_adresse |= Q(**{champ_inconnu: ""})
+        dans_le_territoire |= set(queryset.filter(sans_adresse).values_list("id", flat=True))
+
+    competences = list(campagne.competences.all())
+    if competences:
+        competents = set(queryset.filter(competences__in=competences)
+                         .values_list("id", flat=True))
+        competents |= set(queryset.filter(competences__isnull=True)
+                          .values_list("id", flat=True))
+    else:
+        competents = set(ressources.values())
+
+    gardees = dans_le_territoire & competents
+    return [(offre_id, utilisateur_id) for utilisateur_id, offre_id in ressources.items()
+            if offre_id in gardees]

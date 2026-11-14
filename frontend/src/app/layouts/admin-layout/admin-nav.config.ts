@@ -13,12 +13,13 @@ export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation
  * - `autorite-locale` : collectivités territoriales (isAutoriteLocaleCommunale) ;
  * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables` ;
  * - `membres-association` : champ serveur `acces_membres_association` ;
+ * - `campagnes` : champ serveur `acces_campagnes` (qui peut mener une campagne) ;
  * - `radio` : champ serveur `acces_radio` (nœud personnel, passerelle de l'institution, ou
  *   droit accordé — voir backend/core/acces_radio.py). L'entrée « Accueil radio » reste en
  *   `tous` : c'est elle qui explique ce qu'il faut et permet de le demander. */
 export type VisibiliteNav =
   'institutionnel' | 'tous' | 'sysadmin' | 'validation-comptes' | 'autorite-locale'
-  | 'registre-vulnerables' | 'membres-association' | 'radio';
+  | 'registre-vulnerables' | 'membres-association' | 'campagnes' | 'radio';
 
 /** Second niveau de replis, à l'intérieur d'un cadre. N'existe que là où un même cadre
  * contient deux familles d'écrans qui ne se mélangent jamais : MeshCore et Meshtastic sont
@@ -132,6 +133,9 @@ export const NAV_ITEMS: NavItem[] = [
   // national, puis validés un à un par la commune — voir core/opendata/ côté serveur.
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
+  // Sortie du cadre « Mon association » le 14/11/2026 : « ces campagnes peuvent être utilisées
+  // aussi par des municipalités », et ce cadre-là disparaît en entier pour une mairie.
+  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'preparation', visibilite: 'campagnes' },
   // Associations agréées de sécurité civile : annuaire des membres, circuit de recrutement,
   // qualifications avec échéances, disponibilités à quinze jours. Champ serveur
   // `acces_membres_association` : « être au bureau » est un attribut du rattachement et non un
@@ -187,7 +191,6 @@ export const NAV_ITEMS: NavItem[] = [
   // ── Administration ──────────────────────────────────────────────────
   // ── Mon association ───────────────────────────────────────────────
   { icon: 'badge', label: 'Membres', route: '/admin/membres-association', groupe: 'association', visibilite: 'membres-association' },
-  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'association', visibilite: 'membres-association' },
 
   // Reste ouvert à tout compte institutionnel, volontairement : c'est par cette page que le
   // bureau d'une association configure ses envois (onglet « Envois »), et la liste est déjà

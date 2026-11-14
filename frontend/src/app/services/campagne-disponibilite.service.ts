@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AffectationRotation, ApercuCiblage, BilanRotations, CampagneDisponibilite, CibleCampagne,
-  CouvertureCampagne, RotationCampagne,
+  CouvertureCampagne, InstitutionsProposees, RotationCampagne,
 } from '../shared/models/campagne-disponibilite.model';
 
 /** Campagnes de disponibilité d'une association.
@@ -21,8 +21,17 @@ export class CampagneDisponibiliteService {
 
   constructor(private http: HttpClient) {}
 
-  getAll(): Observable<CampagneDisponibilite[]> {
-    return this.http.get<CampagneDisponibilite[]>(`${this.url}/`);
+  /** Les campagnes d'UNE institution. Le filtre est appliqué par le serveur, qui ne rend de
+   * toute façon que celles que l'appelant peut mener. */
+  getAll(institution: string): Observable<CampagneDisponibilite[]> {
+    return this.http.get<CampagneDisponibilite[]>(`${this.url}/`, { params: { institution } });
+  }
+
+  /** Où l'appelant peut se placer. Pour un administrateur : toutes, par recherche. */
+  institutions(recherche = ''): Observable<InstitutionsProposees> {
+    const q = recherche.trim();
+    return this.http.get<InstitutionsProposees>(
+      `${this.url}/institutions/`, q ? { params: { q } } : {});
   }
 
   getById(id: string): Observable<CampagneDisponibilite> {

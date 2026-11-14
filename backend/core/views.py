@@ -17740,26 +17740,49 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """Les campagnes des institutions dont l'appelant est membre actif.
+        """Les campagnes que l'appelant peut MENER, et elles seules.
 
         Pas `IsInstitutionalActor` : un encadrant d'association est `UTIL_SIMPLE` ou `SECOURS`
         selon qu'on l'a déjà promu, et le filtrer sur le type de compte fermerait la page à
-        ceux-là même qui lancent les campagnes."""
+        ceux-là même qui lancent les campagnes.
+
+        Jusqu'au 14/11/2026 le critère était « membre actif de l'institution » : n'importe quel
+        adhérent lisait donc le texte des campagnes et la liste nominative des réponses. Le
+        périmètre de lecture est désormais celui de l'écriture (voir
+        `campagnes_disponibilite.perimetre_de_pilotage`).
+
+        `?institution=` restreint à une institution. L'écran le passe toujours ; pour
+        l'administrateur c'est ce qui rend son choix d'institution effectif côté serveur."""
+        from .campagnes_disponibilite import perimetre_de_pilotage
+
         qs = super().get_queryset()
+        demandee = self.request.query_params.get("institution")
+        if demandee:
+            try:
+                qs = qs.filter(institution_id=uuid.UUID(str(demandee)))
+            except (TypeError, ValueError):
+                return qs.none()
         if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             return qs
-        institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True,
-        ).values_list("institution_id", flat=True)
-        return qs.filter(institution_id__in=list(institutions))
+        institutions, equipes = perimetre_de_pilotage(self.request.user)
+        return qs.filter(Q(institution_id__in=institutions) | Q(equipe_id__in=equipes))
+
+    @action(detail=False, methods=["get"])
+    def institutions(self, request):
+        """Où l'appelant peut se placer pour mener une campagne (`?q=` pour l'administrateur)."""
+        from .campagnes_disponibilite import institutions_proposees
+
+        return Response(institutions_proposees(
+            request.user, recherche=request.query_params.get("q", "")))
 
     def _verifier_le_droit(self, institution, equipe):
         from .campagnes_disponibilite import peut_lancer_campagne
 
         if not peut_lancer_campagne(self.request.user, institution, equipe):
             raise PermissionDenied(
-                "Lancer une campagne demande d'être au bureau de l'association, ou "
-                "d'encadrer l'équipe visée."
+                "Lancer une campagne demande d'être responsable de l'institution (bureau "
+                "d'une association, agent ou élu d'une collectivité), ou d'encadrer l'équipe "
+                "visée."
             )
 
     def perform_create(self, serializer):

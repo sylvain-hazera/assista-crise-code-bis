@@ -4,19 +4,36 @@
     <div>
       <h1><span class="material-icons">campaign</span> Campagnes de disponibilité</h1>
       <p class="subtitle">
-        Demander à ses bénévoles de confirmer leurs disponibilités sur une période à venir.
+        Demander à ses bénévoles ou réservistes de confirmer leurs disponibilités sur une
+        période à venir.
       </p>
     </div>
-    @if (mesInstitutions.length > 1) {
-      <label class="choix-institution">
-        Association
-        <select [ngModel]="institutionChoisie"
-                (ngModelChange)="changerInstitution($event)" name="institution">
-          @for (i of mesInstitutions; track i.id) {
-            <option [ngValue]="i.id">{{ i.nom }}</option>
-          }
-        </select>
-      </label>
+    @if (estAdministrateur || mesInstitutions.length > 1) {
+      <div class="choix-institution">
+        @if (estAdministrateur) {
+          <label>
+            Chercher une institution
+            <input type="search" name="rechercheInstitution" placeholder="Nom de l'institution"
+                   [(ngModel)]="rechercheInstitution" (ngModelChange)="chercherInstitution()">
+          </label>
+        }
+        <label>
+          Institution
+          <select [ngModel]="institutionChoisie"
+                  (ngModelChange)="changerInstitution($event)" name="institution">
+            <option [ngValue]="null">— Choisir —</option>
+            @if (placeeHorsListe) {
+              <option [ngValue]="institution?.id">{{ institution?.nom }}</option>
+            }
+            @for (i of mesInstitutions; track i.id) {
+              <option [ngValue]="i.id">{{ i.nom }}@if (i.type) { ({{ i.type }}) }</option>
+            }
+          </select>
+        </label>
+        @if (estAdministrateur && totalInstitutions > mesInstitutions.length) {
+          <small>{{ mesInstitutions.length }} affichées sur {{ totalInstitutions }} : précisez la recherche.</small>
+        }
+      </div>
     }
   </header>
 
@@ -29,16 +46,34 @@
 
   @if (chargement) {
     <div class="loading">Chargement…</div>
-  } @else if (!mesInstitutions.length) {
+  } @else if (!mesInstitutions.length && !estAdministrateur) {
     <p class="help-text">
       <span class="material-icons">info</span>
       <span>
-        Cette page est réservée aux associations. Lancer une campagne demande d'être
-        <strong>au bureau</strong>, ou d'<strong>encadrer l'équipe visée</strong> — un
-        coordinateur départemental peut solliciter son département sans passer par le national.
+        Lancer une campagne demande d'être <strong>responsable de son institution</strong>
+        (bureau d'une association, agent ou élu d'une collectivité), ou
+        d'<strong>encadrer l'équipe visée</strong> — un coordinateur départemental peut
+        solliciter son département sans passer par le national.
+      </span>
+    </p>
+  } @else if (!institutionChoisie) {
+    <p class="help-text">
+      <span class="material-icons">apartment</span>
+      <span>
+        <strong>Choisissez l'institution</strong> pour laquelle vous menez la campagne. Rien
+        n'est choisi à votre place : les messages partent au nom de cette institution, à ses
+        membres.
       </span>
     </p>
   } @else {
+
+    <p class="institution-placee">
+      <span class="material-icons">apartment</span>
+      <span>
+        Campagnes de <strong>{{ institution?.nom }}</strong>@if (institution?.type) { — {{ institution?.type }} }
+        @if (limiteAuxEquipes) { <em>(vos équipes seulement)</em> }
+      </span>
+    </p>
 
     <nav class="onglets">
       <button type="button" [class.actif]="onglet === 'liste'" (click)="onglet = 'liste'">
@@ -211,7 +246,11 @@
           <label>
             <span>Limiter à une équipe</span>
             <select name="equipe" [(ngModel)]="saisie.equipe">
-              <option [ngValue]="null">Toute l'association</option>
+              @if (!limiteAuxEquipes) {
+                <option [ngValue]="null">Toute l'institution</option>
+              } @else {
+                <option [ngValue]="null" disabled>— Choisir une équipe —</option>
+              }
               @for (e of equipes; track e.id) {
                 <option [ngValue]="e.id">{{ e.name }}</option>
               }
@@ -222,7 +261,11 @@
 
         <div class="selections">
           <div class="selection">
-            <span class="etiquette">Compétences — au moins une</span>
+            <span class="etiquette">
+              Compétences — au moins une
+              <button type="button" class="lien-action" (click)="toutCocher('competences', true)">Toutes</button>
+              <button type="button" class="lien-action" (click)="toutCocher('competences', false)">Aucune</button>
+            </span>
             <div class="pastilles">
               @for (c of competences; track c.id) {
                 <button type="button" class="pastille-choix"
@@ -259,8 +302,23 @@
           </div>
         </div>
 
-        <label class="case">
-          <input type="checkbox" name="ajour" [(ngModel)]="saisie.titres_a_jour">
+        <label class="case case-large">
+          <input type="checkbox" name="large" [(ngModel)]="saisie.ciblage_large">
+          <span>
+            <strong>Taper large</strong> : inclure les dossiers pas encore à jour dans l'outil
+            <em>
+              Membres sans fiche, sans adresse, sans compétence saisie ou sans titre
+              enregistré : ils sont sollicités quand même. Seuls restent écartés ceux dont
+              l'outil sait qu'ils ne correspondent pas (adresse hors du territoire, compétences
+              déclarées sans rapport), et les membres en congé ou sortis. Les titres exigés ne
+              filtrent plus.
+            </em>
+          </span>
+        </label>
+
+        <label class="case" [class.inactif]="saisie.ciblage_large">
+          <input type="checkbox" name="ajour" [(ngModel)]="saisie.titres_a_jour"
+                 [disabled]="!!saisie.ciblage_large">
           <span>
             Exiger des titres <strong>à jour</strong>
             <em>
@@ -353,11 +411,18 @@
           @if (apercu) {
             <div class="apercu">
               <p class="total">
-                <strong>{{ apercu.total }}</strong> bénévole(s) retenu(s)
+                <strong>{{ apercu.total }}</strong> personne(s) retenue(s)
               </p>
+              @if (apercu.aCompleter > 0) {
+                <p class="page-hint">
+                  Dont <strong>{{ apercu.aCompleter }}</strong> retenue(s) parce que leur
+                  dossier ne permet pas de vérifier les critères : à compléter ensuite.
+                </p>
+              }
               @if (apercu.total === 0) {
                 <p class="page-hint alerte-texte">
-                  Personne ne correspond. Élargissez l'étendue, ou retirez un titre exigé.
+                  Personne ne correspond. Élargissez l'étendue, retirez un titre exigé, ou
+                  cochez « Taper large ».
                 </p>
               } @else {
                 <p class="noms">
@@ -369,7 +434,7 @@
                   <h3>Par quel canal ?</h3>
                   <p class="page-hint">
                     Les coûts dépendent de votre contrat : renseignez-les dans
-                    <em>Envois</em>, sur la fiche de votre association. Tant qu'ils ne le sont
+                    <em>Envois</em>, sur la fiche de votre institution. Tant qu'ils ne le sont
                     pas, nous préférons afficher « coût inconnu » plutôt qu'un zéro qui
                     laisserait croire à la gratuité.
                   </p>
@@ -392,7 +457,7 @@
                         <span class="canal-detail">{{ canal.detail }}</span>
                         @if (!canal.disponible) {
                           <span class="canal-alerte">
-                            Ce canal n'est pas configuré pour votre association. Renseignez-le
+                            Ce canal n'est pas configuré pour votre institution. Renseignez-le
                             dans l'onglet <em>Envois</em> de votre fiche.
                           </span>
                         } @else {
@@ -438,7 +503,7 @@
                 <button type="button" class="btn-primary" [disabled]="enCours"
                         (click)="envoyer()">
                   <span class="material-icons">send</span>
-                  Envoyer à {{ apercu.total }} bénévole(s)
+                  Envoyer à {{ apercu.total }} personne(s)
                 </button>
                 <p class="page-hint">
                   Le texte vous sera présenté <strong>une seule fois</strong> pour relecture,

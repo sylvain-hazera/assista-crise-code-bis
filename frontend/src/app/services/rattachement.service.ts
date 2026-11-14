@@ -30,7 +30,7 @@ export interface InstitutionActive {
 @Injectable({ providedIn: 'root' })
 export class RattachementService {
 
-  private url = `${environment.apiUrl}/contacts-institution`;
+  private url = `${environment.apiUrl}/contacts-institutions`;
   private moi = `${environment.apiUrl}/me/institution-active/`;
 
   constructor(private http: HttpClient) {}

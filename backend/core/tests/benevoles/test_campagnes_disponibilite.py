@@ -391,7 +391,8 @@ class TestQuiPeutLancer:
         simple, _ = _benevole(create_user, "cc", asso)
         campagne = _campagne(asso)
 
-        assert _client(simple).post(f"{URL}{campagne.id}/apercu/").status_code == 403
+        # 404 et non 403 depuis le 14/11/2026 : la campagne ne lui est plus même visible.
+        assert _client(simple).post(f"{URL}{campagne.id}/apercu/").status_code == 404
 
     def test_un_encadrant_peut_sur_SA_branche(self, create_user, asso):
         """Sinon la coordination nationale est le seul goulot pour une crise locale."""
@@ -413,7 +414,8 @@ class TestQuiPeutLancer:
         gironde.membres_encadrement.add(encadrant)
         campagne = _campagne(asso)  # sans équipe = toute l'association
 
-        assert _client(encadrant).post(f"{URL}{campagne.id}/apercu/").status_code == 403
+        # Hors de sa branche, donc hors de sa vue : 404 (voir perimetre_de_pilotage).
+        assert _client(encadrant).post(f"{URL}{campagne.id}/apercu/").status_code == 404
 
     def test_une_campagne_envoyee_ne_se_modifie_plus(self, create_user, asso):
         """Changer la période ferait répondre à une question que personne n'a posée."""

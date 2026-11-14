@@ -9125,6 +9125,16 @@ class CampagneDisponibilite(EnvironmentScopedModel):
     #: l'aptitude du membre soit valide. C'est le « à jour » demandé : un PSE1 déclaré mais
     #: jamais contrôlé, ou expiré, ne vaut pas un PSE1.
     titres_a_jour = models.BooleanField(default=True)
+    #: « Taper large » (demande de Sylvain du 14/11/2026) : inclure les membres dont le dossier
+    #: informatique ne permet pas de vérifier les critères — pas de fiche, pas d'adresse, pas
+    #: de compétence saisie, titres non enregistrés. Leur dossier peut être en règle sur le
+    #: papier ; l'outil, lui, ne le sait pas encore. Voir `ciblage_benevoles.cibler_large`.
+    ciblage_large = models.BooleanField(
+        default=False,
+        help_text="Inclut aussi les membres dont le dossier n'est pas à jour dans l'outil : "
+                  "les critères n'écartent alors que ceux dont on sait qu'ils n'y répondent "
+                  "pas.",
+    )
 
     equipe = models.ForeignKey(
         "Team", on_delete=models.SET_NULL, null=True, blank=True,

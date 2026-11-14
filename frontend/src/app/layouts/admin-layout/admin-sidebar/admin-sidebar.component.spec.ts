@@ -8,7 +8,7 @@ import { GROUPES_NAV, NAV_ITEMS, SOUS_GROUPES_NAV } from '../admin-nav.config';
 import { ADMIN_ROUTES } from '../../../admin/admin.routes';
 import {
   accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
-  membresAssociationGuard, radioGuard,
+  membresAssociationGuard, campagnesGuard, radioGuard,
 } from '../../../core/guards/admin.guard';
 
 describe('AdminSidebarComponent', () => {
@@ -155,6 +155,7 @@ describe('AdminSidebarComponent', () => {
       'autorite-locale': autoriteLocaleGuard,
       'registre-vulnerables': vulnerabilitesGuard,
       'membres-association': membresAssociationGuard,
+      campagnes: campagnesGuard,
       radio: radioGuard,
     };
     const routeDe = (navRoute: string) =>

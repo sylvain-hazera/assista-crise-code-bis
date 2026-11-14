@@ -3,29 +3,22 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
-import { AuthService } from '../../auth/services/auth.service';
 import { AssociationService } from '../../services/association.service';
 import { CampagneDisponibiliteService } from '../../services/campagne-disponibilite.service';
-import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { CompetenceService } from '../../services/competence.service';
 import { CrisisService } from '../../services/crisis.service';
-import { InstitutionService } from '../../services/institution.service';
 import { TeamService } from '../../services/team.service';
 import {
   BilanRotations, CampagneDisponibilite, CanalEnvoi, CibleCampagne, CouvertureCampagne,
-  ECHELONS, MOTIFS, RotationCampagne,
+  ECHELONS, InstitutionProposee, MOTIFS, RotationCampagne,
 } from '../../shared/models/campagne-disponibilite.model';
 import { Competence } from '../../shared/models/competence.model';
 import { Crisis } from '../../shared/models/crisis.model';
-import { Institution } from '../../shared/models/institution.model';
 import { Qualification } from '../../shared/models/association.model';
 import { Team } from '../../shared/models/team.model';
 import { CRENEAUX } from '../../shared/models/fiche-benevole.model';
 
 type Onglet = 'liste' | 'composer' | 'suivi';
-
-/** Code de l'InstitutionType des AASC — comparé sans casse, comme côté serveur. */
-const CODE_TYPE_AASC = 'aasc';
 
 /**
  * Campagnes de disponibilité : solliciter en masse ses bénévoles pour une période à venir.
@@ -56,8 +49,19 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   erreur = '';
   message = '';
 
-  mesInstitutions: Institution[] = [];
+  /** Les institutions où l'on peut se placer. Vient du serveur, qui seul sait qui pilote quoi :
+   * la page ne déduit plus rien des rattachements. */
+  mesInstitutions: InstitutionProposee[] = [];
+  /** JAMAIS choisie à la place de quelqu'un qui a le choix (demande du 14/11/2026 : « ce doit
+   * être choisi et précis »). Seul un périmètre d'une seule institution la pose d'office. */
   institutionChoisie: string | null = null;
+  /** L'administrateur peut se placer partout : il cherche, et il désigne. */
+  estAdministrateur = false;
+  rechercheInstitution = '';
+  totalInstitutions = 0;
+  /** L'institution désignée, gardée à part : une nouvelle recherche change la liste, pas le
+   * choix déjà fait. */
+  private placee: InstitutionProposee | null = null;
 
   campagnes: CampagneDisponibilite[] = [];
   campagne: CampagneDisponibilite | null = null;
@@ -81,19 +85,16 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   couverture: CouvertureCampagne | null = null;
   rotations: RotationCampagne[] = [];
   bilanRotations: BilanRotations | null = null;
-  apercu: { total: number; noms: string[]; tronque: boolean } | null = null;
+  apercu: { total: number; aCompleter: number; noms: string[]; tronque: boolean } | null = null;
   /** Les canaux chiffrés pour la cible qu'on vient de compter. */
   canaux: CanalEnvoi[] = [];
 
   constructor(
     private service: CampagneDisponibiliteService,
     private associationService: AssociationService,
-    private contactService: ContactInstitutionService,
-    private institutionService: InstitutionService,
     private competenceService: CompetenceService,
     private teamService: TeamService,
     private crisisService: CrisisService,
-    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
@@ -112,7 +113,8 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       // peu de temps pour répondre, et personne ne prépare un dispositif à six mois.
       periode_debut: dans(2), periode_fin: dans(9),
       creneaux: [], echelon: 'NATIONAL', territoire_code: '', rayon_km: null,
-      competences: [], qualifications: [], titres_a_jour: true, equipe: null,
+      competences: [], qualifications: [], titres_a_jour: true, ciblage_large: false,
+      equipe: null,
       // Désactivés par défaut : le défaut va vers le moins d'effet, ce qui est le bon sens
       // pour une option qui propose d'affecter des gens.
       // Email seul : le canal le moins cher est le défaut, et cocher un SMS reste un geste
@@ -124,45 +126,65 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   }
 
   private charger(): void {
-    const moi = this.authService.getCurrentUser();
     forkJoin({
-      contacts: this.contactService.getAll(),
-      institutions: this.institutionService.getAll(),
+      proposees: this.service.institutions(),
       competences: this.competenceService.getAll(),
       qualifications: this.associationService.getCatalogueQualifications(),
     }).subscribe({
-      next: ({ contacts, institutions, competences, qualifications }) => {
-        const liste = Array.isArray(institutions) ? institutions
-          : (institutions as { results?: Institution[] }).results ?? [];
-        const associations = liste.filter(
-          i => i.id && i.actif !== false
-            && (i.type_code || '').toLowerCase() === CODE_TYPE_AASC);
-        if (moi?.type === 'ADMIN') {
-          this.mesInstitutions = associations;
-        } else {
-          // Toutes celles dont on est membre actif : le serveur tranchera qui peut LANCER
-          // (bureau, ou encadrement sur sa branche). La page ne fait que ne pas proposer ce
-          // qui serait refusé de toute façon.
-          const ids = new Set(contacts.filter(c => c.utilisateur === moi?.id && c.actif)
-            .map(c => c.institution));
-          this.mesInstitutions = associations.filter(i => ids.has(i.id!));
-        }
+      next: ({ proposees, competences, qualifications }) => {
+        this.estAdministrateur = proposees.administrateur;
+        this.mesInstitutions = proposees.institutions;
+        this.totalInstitutions = proposees.total;
         this.competences = competences.filter(c => c.active !== false);
         this.qualifications = qualifications.filter(q => q.actif);
-        this.institutionChoisie = this.mesInstitutions[0]?.id ?? null;
         this.chargement = false;
-        if (this.institutionChoisie) { this.chargerInstitution(); }
+        // Une seule institution possible : il n'y a rien à choisir. Dès qu'il y en a
+        // plusieurs — et toujours pour un administrateur — on attend que la personne désigne.
+        if (!this.estAdministrateur && this.mesInstitutions.length === 1) {
+          this.changerInstitution(this.mesInstitutions[0].id);
+        }
       },
       error: () => {
-        this.erreur = 'Impossible de charger vos associations.';
+        this.erreur = 'Impossible de charger vos institutions.';
         this.chargement = false;
       },
     });
   }
 
-  changerInstitution(id: string): void {
+  /** Recherche d'institution, pour l'administrateur : la liste complète ne tient pas dans un
+   * menu déroulant, et y faire défiler mille communes n'est pas « choisir ». */
+  chercherInstitution(): void {
+    this.service.institutions(this.rechercheInstitution).subscribe({
+      next: (proposees) => {
+        this.mesInstitutions = proposees.institutions;
+        this.totalInstitutions = proposees.total;
+      },
+      error: () => this.erreur = 'Recherche impossible.',
+    });
+  }
+
+  get institution(): InstitutionProposee | null {
+    return this.placee;
+  }
+
+  /** Vrai quand l'institution désignée n'est plus dans la liste affichée (après une recherche) :
+   * le menu doit continuer de la montrer. */
+  get placeeHorsListe(): boolean {
+    return !!this.placee && !this.mesInstitutions.some(i => i.id === this.placee!.id);
+  }
+
+  /** Vrai quand on n'encadre que des équipes ici : la campagne doit alors en viser une. */
+  get limiteAuxEquipes(): boolean {
+    return this.placee?.portee === 'equipes';
+  }
+
+  changerInstitution(id: string | null): void {
     this.institutionChoisie = id || null;
+    this.placee = this.mesInstitutions.find(i => i.id === this.institutionChoisie)
+      ?? (this.placee?.id === this.institutionChoisie ? this.placee : null);
     this.campagne = null;
+    this.campagnes = [];
+    this.equipes = [];
     this.onglet = 'liste';
     if (this.institutionChoisie) { this.chargerInstitution(); }
   }
@@ -170,8 +192,14 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   chargerInstitution(): void {
     const id = this.institutionChoisie;
     if (!id) { return; }
-    this.service.getAll().subscribe({
-      next: (liste) => this.campagnes = liste.filter(c => c.institution === id),
+    this.service.getAll(id).subscribe({
+      // Refiltré ici aussi : une réponse arrivée après un changement d'institution ne doit
+      // pas afficher les campagnes de la précédente.
+      next: (liste) => {
+        if (this.institutionChoisie === id) {
+          this.campagnes = liste.filter(c => c.institution === id);
+        }
+      },
       error: () => this.erreur = 'Impossible de charger les campagnes.',
     });
     this.teamService.getAll().subscribe({
@@ -267,6 +295,13 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     return ((this.saisie[champ] as string[] | undefined) ?? []).includes(id);
   }
 
+  /** Toutes les compétences, ou aucune, en un geste (demande du 14/11/2026). */
+  toutCocher(champ: 'competences' | 'qualifications', tout: boolean): void {
+    const catalogue: { id?: string }[] = champ === 'competences'
+      ? this.competences : this.qualifications;
+    this.saisie[champ] = tout ? catalogue.map(c => c.id!).filter(Boolean) : [];
+  }
+
   get peutEnregistrer(): boolean {
     return !!this.saisie.intitule?.trim()
       && !!this.saisie.periode_debut && !!this.saisie.periode_fin
@@ -276,7 +311,9 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       // Tours de garde activés sans effectif : refusé ici comme côté serveur. On ne peut pas
       // armer une garde avec zéro personne par créneau, et laisser passer promettrait dans le
       // message une organisation qui ne serait jamais produite.
-      && (!this.saisie.tours_de_garde || !!this.saisie.effectif_cible);
+      && (!this.saisie.tours_de_garde || !!this.saisie.effectif_cible)
+      // Qui n'encadre que des équipes doit en viser une : le serveur refuserait le reste.
+      && (!this.limiteAuxEquipes || !!this.saisie.equipe);
   }
 
   /** Activer les tours propose un effectif plutôt que de laisser un zéro bloquant : on vient
@@ -321,6 +358,7 @@ export class CampagnesDisponibiliteComponent implements OnInit {
         this.enCours = false;
         this.apercu = {
           total: res.total,
+          aCompleter: res.a_completer ?? 0,
           noms: res.cibles.map(c => c.nom),
           tronque: res.tronque,
         };

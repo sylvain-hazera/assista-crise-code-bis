@@ -310,6 +310,7 @@ class UserSerializer(serializers.ModelSerializer):
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
     acces_membres_association = serializers.SerializerMethodField()
+    acces_campagnes = serializers.SerializerMethodField()
     est_benevole_association = serializers.SerializerMethodField()
     acces_radio = serializers.SerializerMethodField()
     niveau_acces_radio = serializers.SerializerMethodField()
@@ -416,6 +417,20 @@ class UserSerializer(serializers.ModelSerializer):
             institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
         ).exists()
 
+    def get_acces_campagnes(self, obj):
+        """Qui voit « Campagnes de disponibilité » : ceux qui peuvent en mener une.
+
+        Distinct de `acces_membres_association` depuis le 14/11/2026 : les campagnes servent
+        aussi aux mairies, qui n'ont ni bureau ni page « Membres ». Le critère est donc le
+        périmètre de pilotage lui-même (voir `campagnes_disponibilite.perimetre_de_pilotage`),
+        pas le type de l'institution."""
+        from .campagnes_disponibilite import perimetre_de_pilotage
+
+        if obj.type == UserRole.ADMINISTRATOR:
+            return True
+        institutions, equipes = perimetre_de_pilotage(obj)
+        return bool(institutions or equipes)
+
     def get_est_benevole_association(self, obj):
         """Ce compte est-il membre d'une association agréée de sécurité civile ?
 
@@ -501,7 +516,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables', 'acces_membres_association',
+                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_campagnes',
                   'est_benevole_association',
                   'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {
@@ -5452,8 +5467,8 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
         fields = ['id', 'institution', 'intitule', 'motif', 'motif_libelle', 'texte',
                   'crise', 'crise_nom', 'periode_debut', 'periode_fin', 'nombre_de_jours',
                   'creneaux', 'echelon', 'echelon_libelle', 'territoire_code', 'rayon_km',
-                  'competences', 'qualifications', 'titres_a_jour', 'equipe', 'equipe_nom',
-                  'tours_de_garde', 'duree_rotation_jours', 'repos_min_jours',
+                  'competences', 'qualifications', 'titres_a_jour', 'ciblage_large',
+                  'equipe', 'equipe_nom', 'tours_de_garde', 'duree_rotation_jours', 'repos_min_jours',
                   'effectif_cible', 'canaux',
                   'statut', 'statut_libelle', 'cree_par', 'cree_par_nom',
                   'date_creation', 'date_envoi', 'date_cloture', 'suivi']
@@ -5508,6 +5523,20 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
         if debut and fin and fin < debut:
             raise serializers.ValidationError(
                 {"periode_fin": "La fin de période ne peut pas précéder son début."})
+
+        # L'institution ne change plus une fois la campagne créée. Le droit de la modifier se
+        # juge sur l'institution d'ORIGINE : sans ce refus, un responsable de A déplaçait sa
+        # campagne chez B et écrivait aux membres de B sans y avoir aucun droit.
+        if self.instance is not None and 'institution' in attrs \
+                and attrs['institution'].pk != self.instance.institution_id:
+            raise serializers.ValidationError(
+                {"institution": "Une campagne ne change pas d'institution."})
+        institution = attrs.get('institution', getattr(self.instance, 'institution', None))
+        equipe = attrs.get('equipe', getattr(self.instance, 'equipe', None))
+        if equipe is not None and institution is not None \
+                and equipe.institution_id != institution.pk:
+            raise serializers.ValidationError(
+                {"equipe": "Cette équipe n'appartient pas à l'institution de la campagne."})
 
         echelon = attrs.get('echelon', getattr(self.instance, 'echelon', None))
         crise = attrs.get('crise', getattr(self.instance, 'crise', None))

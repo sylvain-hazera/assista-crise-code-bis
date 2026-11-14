@@ -101,6 +101,9 @@ export interface CampagneDisponibilite {
   qualifications: string[];
   /** Exige des titres vérifiés, non périmés, et une aptitude valide. */
   titres_a_jour: boolean;
+  /** « Taper large » : inclure les membres dont le dossier n'est pas à jour dans l'outil. Les
+   * critères n'écartent alors que ceux dont on SAIT qu'ils n'y répondent pas. */
+  ciblage_large?: boolean;
   equipe: string | null;
   equipe_nom?: string | null;
   /** Par quels canaux la campagne part. Vide = email seul : une campagne créée avant le choix
@@ -163,10 +166,27 @@ export interface BilanApplication {
   repondu_non: number;
 }
 
+/** Une institution où l'on peut se placer pour mener une campagne. `portee` dit jusqu'où :
+ * `toute` l'institution, ou seulement les `equipes` que l'on encadre. */
+export interface InstitutionProposee {
+  id: string;
+  nom: string;
+  type: string;
+  portee: 'toute' | 'equipes';
+}
+
+export interface InstitutionsProposees {
+  administrateur: boolean;
+  total: number;
+  institutions: InstitutionProposee[];
+}
+
 export interface ApercuCiblage {
   creees: number;
   retirees: number;
   total: number;
+  /** Parmi le total, ceux que seul le ciblage large retient : dossier à compléter. */
+  a_completer?: number;
   cibles: CibleCampagne[];
   tronque: boolean;
   /** Les quatre canaux chiffrés pour CETTE cible : l'aperçu sert autant à compter les gens

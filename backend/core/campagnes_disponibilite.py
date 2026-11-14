@@ -27,30 +27,69 @@ ACCROCHES = {
 }
 
 
+def _est_association(institution):
+    from .institution_attachment import CODE_TYPE_AASC
+
+    type_ = getattr(institution, "type", None)
+    return bool(type_ and (type_.code or "").lower() == CODE_TYPE_AASC)
+
+
+def _pilote_toute_l_institution(utilisateur, institution):
+    """Peut solliciter TOUTE l'institution, sans se limiter à une équipe.
+
+    - **Le bureau**, quelle que soit l'institution : c'est le drapeau de gouvernance du
+      rattachement.
+    - **Dans une institution qui n'est pas une association** (mairie, intercommunalité…), le
+      compte institutionnel qui y est rattaché. Demande de Sylvain du 14/11/2026 : « ces
+      campagnes peuvent être utilisées aussi par des municipalités ». Une mairie n'a pas de
+      bureau ; ceux qui y décident sont ses agents et élus, c'est-à-dire ses comptes
+      « autorité locale » ou « secours ». Dans une association ce critère ne suffit PAS : un
+      simple adhérent promu « secours » n'administre pas l'association.
+
+    L'appartenance se lit dans `ContactInstitution`, jamais dans `User.institution`, qui est
+    un contexte et non une appartenance (voir `core/institution_courante.py`)."""
+    from .models import ContactInstitution, UserRole
+
+    rattachement = ContactInstitution.objects.filter(
+        institution=institution, utilisateur=utilisateur, actif=True,
+    ).first()
+    if rattachement is None:
+        return False
+    if rattachement.membre_bureau:
+        return True
+    if _est_association(institution):
+        return False
+    return getattr(utilisateur, "type", None) in (
+        UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE,
+    )
+
+
 def peut_lancer_campagne(utilisateur, institution, equipe=None):
-    """Le bureau pour toute l'association, l'encadrement pour SA branche.
+    """Les responsables pour toute l'institution, l'encadrement pour SA branche.
 
     Décision de Sylvain du 11/11/2026. Le motif de laisser l'encadrement lancer : sinon la
     coordination nationale est le seul goulot pour une crise départementale, et une sollicitation
     qui doit partir dans l'heure attend une validation à Paris.
 
     L'encadrement est tenu à une `equipe` : un coordinateur de Gironde qui lancerait une
-    campagne nationale écrirait à des gens dont il n'a pas la charge."""
-    from .models import ContactInstitution, Team, UserRole
+    campagne nationale écrirait à des gens dont il n'a pas la charge.
+
+    Une équipe d'une AUTRE institution est refusée à tout le monde, administrateur compris :
+    ce n'est pas un droit qui manque, c'est une campagne incohérente — elle écrirait au nom de
+    l'une aux membres de l'autre."""
+    from .models import Team, UserRole
+
+    if equipe is not None and equipe.institution_id != institution.id:
+        return False
 
     if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
         return True
 
-    if ContactInstitution.objects.filter(
-        institution=institution, utilisateur=utilisateur, actif=True, membre_bureau=True,
-    ).exists():
+    if _pilote_toute_l_institution(utilisateur, institution):
         return True
 
     if equipe is None:
-        # Pas au bureau et aucune équipe nommée : la campagne viserait toute l'association.
-        return False
-
-    if equipe.institution_id != institution.id:
+        # Ni responsable ni équipe nommée : la campagne viserait toute l'institution.
         return False
 
     # Encadrant de cette équipe, ou d'une équipe AU-DESSUS : un coordinateur régional peut
@@ -61,6 +100,74 @@ def peut_lancer_campagne(utilisateur, institution, equipe=None):
         institution=institution, membres_encadrement=utilisateur,
     ).values_list("id", flat=True)
     return equipe.id in _equipes_descendantes(list(encadrees))
+
+
+def perimetre_de_pilotage(utilisateur):
+    """Où cette personne peut mener des campagnes : `(institutions, equipes)`.
+
+    `institutions` : celles qu'elle peut solliciter en entier. `equipes` : les branches qu'elle
+    encadre ailleurs (l'équipe et tout ce qui est dessous). C'est le périmètre de LECTURE comme
+    d'écriture : avant le 14/11/2026 tout membre actif lisait les campagnes de son institution
+    — donc leur texte, parfois antérieur à l'annonce publique, et la liste nominative de qui
+    avait répondu quoi. Un adhérent n'a à connaître que la campagne qui lui est adressée, et
+    elle lui arrive par son message.
+
+    Ne sert pas à l'administrateur, qui n'a pas de périmètre : il choisit son institution."""
+    from .models import ContactInstitution, Team
+    from .visibilite_membres import _equipes_descendantes
+
+    institutions = set()
+    for rattachement in ContactInstitution.objects.filter(
+        utilisateur=utilisateur, actif=True, institution__actif=True,
+    ).select_related("institution__type"):
+        if _pilote_toute_l_institution(utilisateur, rattachement.institution):
+            institutions.add(rattachement.institution_id)
+
+    encadrees = list(Team.objects.filter(
+        membres_encadrement=utilisateur, institution__actif=True,
+    ).exclude(institution_id__in=institutions).values_list("id", flat=True))
+    return institutions, _equipes_descendantes(encadrees)
+
+
+def institutions_proposees(utilisateur, recherche="", limite=50):
+    """Les institutions où cette personne peut se placer pour mener une campagne.
+
+    Chaque ligne dit sa PORTÉE : `toute` l'institution, ou seulement les `equipes` encadrées.
+
+    **L'administrateur** les a toutes, mais par recherche et sans qu'aucune ne soit choisie à
+    sa place (demande du 14/11/2026 : « ce doit être choisi et précis »). La page prenait la
+    première association de la liste : un administrateur composait donc une campagne pour une
+    institution qu'il n'avait pas désignée, et pouvait écrire à ses membres en croyant
+    s'adresser à d'autres."""
+    from .models import Institution, Team, UserRole
+
+    def ligne(institution, portee):
+        return {
+            "id": str(institution.id),
+            "nom": institution.nom_affichage or institution.nom,
+            "type": institution.type.libelle if institution.type_id else "",
+            "portee": portee,
+        }
+
+    if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
+        qs = Institution.objects.filter(actif=True).select_related("type").order_by("nom")
+        recherche = (recherche or "").strip()
+        if recherche:
+            qs = qs.filter(nom__icontains=recherche)
+        total = qs.count()
+        return {
+            "administrateur": True, "total": total,
+            "institutions": [ligne(i, "toute") for i in qs[:limite]],
+        }
+
+    institutions, equipes = perimetre_de_pilotage(utilisateur)
+    par_equipe = set(Team.objects.filter(id__in=equipes).values_list(
+        "institution_id", flat=True)) - institutions
+    lignes = [ligne(i, "toute") for i in Institution.objects.filter(
+        id__in=institutions).select_related("type").order_by("nom")]
+    lignes += [ligne(i, "equipes") for i in Institution.objects.filter(
+        id__in=par_equipe, actif=True).select_related("type").order_by("nom")]
+    return {"administrateur": False, "total": len(lignes), "institutions": lignes}
 
 
 def _periode_lisible(campagne):
@@ -93,11 +200,23 @@ def constituer_les_cibles(campagne):
     """Fige la liste des destinataires d'après les critères. Idempotent.
 
     Les cibles déjà contactées ne sont jamais retirées : on ne peut pas « dé-écrire » à
-    quelqu'un, et le suivi doit rester celui des gens à qui on a réellement écrit."""
-    from .ciblage_benevoles import cibler_pour_campagne
+    quelqu'un, et le suivi doit rester celui des gens à qui on a réellement écrit.
+
+    Avec `ciblage_large`, s'y ajoutent les membres dont le dossier ne permet pas de vérifier
+    les critères (voir `ciblage_benevoles.cibler_large`) ; `a_completer` dit combien."""
+    from .ciblage_benevoles import cibler_large, cibler_pour_campagne
     from .models import CibleCampagne, EtatCible
 
-    retenues = list(cibler_pour_campagne(campagne).values_list("id", "author_id"))
+    stricts = list(cibler_pour_campagne(campagne).values_list("id", "author_id"))
+    if campagne.ciblage_large:
+        retenues = cibler_large(campagne)
+        connus = {utilisateur_id for _o, utilisateur_id in stricts}
+        # Ceux que seul le ciblage large retient : leur dossier ne permet pas de vérifier les
+        # critères. Compté pour être DIT avant l'envoi, pas pour être caché dans le total.
+        a_completer = sum(1 for _o, utilisateur_id in retenues if utilisateur_id not in connus)
+    else:
+        retenues = stricts
+        a_completer = 0
     existantes = dict(
         CibleCampagne.objects.filter(campagne=campagne).values_list("utilisateur_id", "id")
     )
@@ -120,7 +239,8 @@ def constituer_les_cibles(campagne):
     ).exclude(utilisateur_id__in=retenus_ids).delete()[0]
 
     return {"creees": creees, "retirees": retirees,
-            "total": CibleCampagne.objects.filter(campagne=campagne).count()}
+            "total": CibleCampagne.objects.filter(campagne=campagne).count(),
+            "a_completer": a_completer}
 
 
 def envoyer_campagne(campagne, request):

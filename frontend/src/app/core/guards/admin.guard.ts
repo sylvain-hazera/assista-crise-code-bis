@@ -104,6 +104,23 @@ export const membresAssociationGuard: CanActivateFn = (route, state) => {
   );
 };
 
+/** Campagnes de disponibilité : champ serveur `acces_campagnes`, vrai pour qui peut en mener
+ * une — bureau d'une association, agent ou élu d'une collectivité, encadrant d'une équipe.
+ * Distinct de `membresAssociationGuard` depuis le 14/11/2026 : les campagnes servent aussi
+ * aux mairies. */
+export const campagnesGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_campagnes ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
 /** Registre des personnes vulnérables : champ serveur `acces_registre_vulnerables`, qui reflète
  * depuis le 28/10/2026 la DÉSIGNATION nominative (HabilitationRegistreVulnerables) et non plus
  * l'appartenance à la RCSC. Volontairement vrai avant que l'engagement au secret ne soit signé,
