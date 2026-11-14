@@ -1,7 +1,7 @@
 import { PiloteMeshCore, PiloteMeshtastic, MessageRadio } from './pilotes';
 import { REP, DEBUT_TRAME_RECUE } from './meshcore-trames';
 import { encadrerMeshtastic, toRadioTexte } from './meshtastic-trames';
-import { champ, lireChamps } from './protobuf-mini';
+import { EcrivainProtobuf, champ, lireChamps } from './protobuf-mini';
 import { Transport } from './transports';
 
 /** Un transport qui note ce qu'on lui écrit, sans radio ni réseau. */
@@ -202,6 +202,105 @@ describe('Pilote Meshtastic', () => {
     const paquet = lireChamps(champ(lireChamps(t.ecrits[0]), 1)!.octets!);
     const id = champ(paquet, 6)!.nombre!;
     expect(hex(t.ecrits[0])).toBe(hex(toRadioTexte(0x0BADCAFE, 'Reçu, on arrive', id)));
+  });
+
+  // ── Écriture de canaux sur la radio locale ──────────────────────────────────
+
+  /** Le paquet ToRadio d'administration le plus récent : son identifiant et son AdminMessage. */
+  function derniereCommande(t: FauxTransport): { id: number; admin: ReturnType<typeof lireChamps> } {
+    for (let i = t.ecrits.length - 1; i >= 0; i--) {
+      const paquet = champ(lireChamps(t.ecrits[i]), 1)?.octets;
+      if (!paquet) { continue; }
+      const p = lireChamps(paquet);
+      const d = lireChamps(champ(p, 4)!.octets!);
+      if (champ(d, 1)?.nombre !== 6) { continue; }
+      return { id: champ(p, 6)!.nombre!, admin: lireChamps(champ(d, 2)!.octets!) };
+    }
+    throw new Error('aucune commande d\'administration');
+  }
+
+  /** Réponse de la radio à une requête : administration (avec clé) ou accusé de routage. */
+  function reponse(requete: number, port: 5 | 6, charge: Uint8Array): Uint8Array {
+    const data = new EcrivainProtobuf().varint(1, port).octetsBruts(2, charge).fixed32(6, requete);
+    const paquet = new EcrivainProtobuf().fixed32(1, 0x1234ABCD).fixed32(2, 0x1234ABCD)
+      .message(4, data).fixed32(6, 99);
+    return new EcrivainProtobuf().message(2, paquet).fin();
+  }
+  const cleSession = (octet: number) =>
+    new EcrivainProtobuf().octetsBruts(101, new Uint8Array(8).fill(octet)).fin();
+  const routage = (erreur: number) => {
+    // error_reason est dans un oneof : la bibliothèque l'écrit même à 0.
+    return Uint8Array.from([0x18, erreur]);
+  };
+  const prochaineCommande = async (t: FauxTransport, avant: number) => {
+    for (let n = 0; n < 100 && t.ecrits.length <= avant; n++) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    return derniereCommande(t);
+  };
+
+  it('écrit un canal : demande la clé de session, puis la recopie dans la commande', async () => {
+    const t = new FauxTransport(false);
+    const p = new PiloteMeshtastic(t);
+    await configurer(p, t);
+
+    let n = t.ecrits.length;
+    const ecriture = p.ecrireCanal(3, 'Moissac', '01');
+    const demande = await prochaineCommande(t, n);
+    expect(champ(demande.admin, 3)?.nombre).toBe(1);          // get_owner_request
+    n = t.ecrits.length;
+    p.recevoir(reponse(demande.id, 6, cleSession(7)));
+
+    const commande = await prochaineCommande(t, n);
+    expect(champ(commande.admin, 33)).toBeDefined();           // set_channel
+    expect(hex(champ(commande.admin, 101)!.octets!)).toBe('07'.repeat(8));
+    p.recevoir(reponse(commande.id, 5, routage(0)));
+
+    await expectAsync(ecriture).toBeResolved();
+    expect(p.emplacements.get(3)).toEqual({ index: 3, nom: 'Moissac', role: 2, pskHex: '01' });
+    expect(p.canaux.get(3)).toBe('Moissac');
+  });
+
+  it('reprend une fois avec une nouvelle clé si la radio refuse l\'ancienne', async () => {
+    const t = new FauxTransport(false);
+    const p = new PiloteMeshtastic(t);
+    await configurer(p, t);
+
+    let n = t.ecrits.length;
+    const ecriture = p.ecrireCanal(4, 'CriseInonda', '01');
+    let c = await prochaineCommande(t, n); n = t.ecrits.length;
+    p.recevoir(reponse(c.id, 6, cleSession(1)));
+    c = await prochaineCommande(t, n); n = t.ecrits.length;
+    p.recevoir(reponse(c.id, 5, routage(36)));                 // ADMIN_BAD_SESSION_KEY
+    c = await prochaineCommande(t, n); n = t.ecrits.length;
+    expect(champ(c.admin, 3)?.nombre).toBe(1);                 // redemande la clé
+    p.recevoir(reponse(c.id, 6, cleSession(2)));
+    c = await prochaineCommande(t, n);
+    expect(hex(champ(c.admin, 101)!.octets!)).toBe('02'.repeat(8));
+    p.recevoir(reponse(c.id, 5, routage(0)));
+
+    await expectAsync(ecriture).toBeResolved();
+  });
+
+  it('un refus de la radio fait échouer l\'écriture sans toucher aux emplacements', async () => {
+    const t = new FauxTransport(false);
+    const p = new PiloteMeshtastic(t);
+    await configurer(p, t);
+
+    let n = t.ecrits.length;
+    const ecriture = p.ecrireCanal(5, 'Moissac', '01');
+    let c = await prochaineCommande(t, n); n = t.ecrits.length;
+    p.recevoir(reponse(c.id, 6, cleSession(1)));
+    c = await prochaineCommande(t, n);
+    p.recevoir(reponse(c.id, 5, routage(33)));                 // NOT_AUTHORIZED
+
+    await expectAsync(ecriture).toBeRejectedWithError(/refusé/);
+    expect(p.canaux.has(5)).toBeFalse();
+  });
+
+  it('ne supprime jamais le canal primaire', async () => {
+    const p = new PiloteMeshtastic(new FauxTransport(false));
+    await expectAsync(p.supprimerCanal(0)).toBeRejected();
   });
 
   it('refuse le numéro de diffusion comme destinataire d\'un message direct', async () => {

@@ -1,0 +1,156 @@
+/* Variables de thème réelles uniquement, avec leur repli clair. */
+
+.canaux {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  padding: .75rem .9rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--ac-surface, #ffffff);
+  color: var(--ac-text, #0f172a);
+  font-size: .875rem;
+}
+
+.titre {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+
+  .material-icons { font-size: 1.1rem; color: var(--brand-primary-lisible, #1d4ed8); }
+}
+
+.etat-isolement {
+  margin-left: auto;
+  padding: .05rem .5rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  background: var(--ac-teal-bg, #f0fdfa);
+  color: var(--ac-teal-text, #0f766e);
+  border: 1px solid var(--ac-teal-border, #99f6e4);
+
+  &.ouverte {
+    background: var(--ac-amber-bg, #fffbeb);
+    color: var(--ac-amber-text, #92400e);
+    border-color: var(--ac-amber-border, #fcd34d);
+  }
+}
+
+.emplacements {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .4rem;
+    border: 1px solid var(--ac-border, #e2e8f0);
+    border-radius: 5px;
+    background: var(--ac-surface-2, #f8fafc);
+    min-width: 0;
+
+    &.libre .nom { color: var(--ac-text-subtle, #94a3b8); font-style: italic; }
+    &.a-supprimer { border-color: var(--ac-red-border, #fecaca); background: var(--ac-red-bg, #fef2f2); }
+  }
+
+  .nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
+}
+
+.index {
+  flex: 0 0 auto;
+  min-width: 1.2rem;
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ac-text-subtle, #64748b);
+}
+
+.propositions {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  margin: 0;
+  padding: .5rem .6rem;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  border-radius: 6px;
+
+  legend { padding: 0 .3rem; font-size: .78rem; color: var(--ac-text-muted, #475569); }
+
+  label { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; cursor: pointer; }
+  input:focus-visible { outline: 2px solid var(--brand-primary-lisible, #1d4ed8); outline-offset: 2px; }
+
+  &.suppression { border-color: var(--ac-red-border, #fecaca); }
+}
+
+.nom-canal { font-family: ui-monospace, monospace; font-weight: 600; }
+.libelle { color: var(--ac-text-muted, #475569); }
+
+.role {
+  padding: 0 .4rem;
+  border-radius: 999px;
+  font-size: .7rem;
+  background: var(--ac-surface-3, #e2e8f0);
+  color: var(--ac-text-muted, #475569);
+
+  &[data-role='crise'] { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+  &[data-role='commune'] { background: var(--ac-blue-bg, #eff6ff); color: var(--ac-blue-text, #1d4ed8); }
+}
+
+.clair {
+  padding: 0 .4rem;
+  border-radius: 999px;
+  font-size: .7rem;
+  background: var(--ac-amber-bg, #fffbeb);
+  color: var(--ac-amber-text, #92400e);
+}
+
+.avertissement {
+  display: flex;
+  gap: .5rem;
+  align-items: flex-start;
+  padding: .55rem .7rem;
+  border-radius: 6px;
+  background: var(--ac-amber-bg, #fffbeb);
+  color: var(--ac-amber-text, #92400e);
+  border: 1px solid var(--ac-amber-border, #fcd34d);
+
+  .material-icons { font-size: 1.1rem; }
+}
+
+.actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+
+.appliquer {
+  padding: .4rem .9rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--brand-primary-lisible, #1d4ed8);
+  color: #fff;
+  font-size: .85rem;
+  cursor: pointer;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+  &:focus-visible { outline: 2px solid var(--brand-primary-lisible, #1d4ed8); outline-offset: 2px; }
+}
+
+.aide, .note { margin: 0; font-size: .78rem; color: var(--ac-text-subtle, #64748b); }
+
+.ok {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin: 0;
+  color: var(--ac-green-text, #15803d);
+
+  .material-icons { font-size: 1.05rem; }
+}
+
+.resultat { margin: 0; color: var(--ac-green-text, #15803d); }
+.erreur { margin: 0; color: var(--ac-red-text, #b91c1c); }
+
+@media (max-width: 560px) {
+  .emplacements { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

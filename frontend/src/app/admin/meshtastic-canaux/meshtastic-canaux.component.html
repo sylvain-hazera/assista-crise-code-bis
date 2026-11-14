@@ -100,6 +100,16 @@
         </div>
       }
 
+      @if (conversationSelectionnee.type === 'canal' && conversationSelectionnee.canal.cle_publique) {
+        <!-- Règle du 14/11/2026 : canaux de crise et de commune en clé publique, « tant pis »,
+             mais on le dit à celui qui écrit. -->
+        <p class="avertissement-clair" role="note">
+          <span class="material-icons" aria-hidden="true">lock_open</span>
+          Canal non chiffré : tout le monde peut lire ce qui y passe. N'y écrivez aucune donnée
+          personnelle (nom, adresse, état de santé).
+        </p>
+      }
+
       <div class="saisie">
         <input type="text" class="form-input" placeholder="Écrire un message..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
         <button type="button" class="btn-primary" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">

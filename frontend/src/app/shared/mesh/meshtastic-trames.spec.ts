@@ -1,5 +1,7 @@
 import {
-  DecoupeurMeshtastic, MT_DIFFUSION, NONCE_CONFIG, NONCE_NOEUDS, PREMIER_NONCE_BATTEMENT,
+  DecoupeurMeshtastic, ERREUR_ROUTAGE, MT_DIFFUSION, NONCE_CONFIG, NONCE_NOEUDS,
+  PREMIER_NONCE_BATTEMENT, ROLE_CANAL, adminDemandeProprietaire, adminEcrireCanal,
+  adminSupprimerCanal, toRadioAdmin,
   decouperTexte, encadrerMeshtastic, lireFromRadio, nonceSuivant, octetsDeReveil,
   toRadioBattement, toRadioTexte, toRadioVeutConfig,
 } from './meshtastic-trames';
@@ -83,9 +85,9 @@ describe('Protocole Meshtastic', () => {
       expect(e.clePubliqueHex).toBe(hex(Uint8Array.from({ length: 32 }, (_, i) => i)));
     });
 
-    it('lit un canal configuré, sans toucher à sa clé', () => {
+    it('lit un canal configuré', () => {
       expect(lireFromRadio(octets(VECTEURS.from_channel)))
-        .toEqual({ genre: 'canal', index: 1, nom: 'Fr_EMCOM', actif: true });
+        .toEqual({ genre: 'canal', index: 1, nom: 'Fr_EMCOM', actif: true, role: 2, pskHex: '01' });
     });
 
     it('reconnaît la fin de la configuration', () => {
@@ -127,6 +129,55 @@ describe('Protocole Meshtastic', () => {
 
     it('refuse une trame tronquée plutôt que d\'en tirer un numéro faux', () => {
       expect(() => lireFromRadio(octets(VECTEURS.from_texte_dm).slice(0, 20))).toThrow();
+    });
+  });
+
+  /** Vecteurs `admin_pb2` / `mesh_pb2` : écrire un canal sur la radio locale. */
+  describe('administration de la radio locale', () => {
+    const cle = '09'.repeat(8);
+
+    it('écrit un canal comme admin_pb2', () => {
+      expect(hex(adminEcrireCanal(2, 'Fr_EMCOM', '01', ROLE_CANAL.SECONDAIRE, cle)))
+        .toBe('8a02130802120d1201011a0846725f454d434f4d1802aa06080909090909090909');
+    });
+
+    it('supprime un canal en écrivant son emplacement désactivé', () => {
+      expect(hex(adminSupprimerCanal(3, cle))).toBe('8a02020803aa06080909090909090909');
+    });
+
+    it('demande le propriétaire pour obtenir la clé de session', () => {
+      expect(hex(adminDemandeProprietaire())).toBe('1801');
+    });
+
+    it('enveloppe la commande dans un paquet pour soi-même, réponse demandée', () => {
+      const admin = adminEcrireCanal(2, 'Fr_EMCOM', '01', ROLE_CANAL.SECONDAIRE, cle);
+      expect(hex(toRadioAdmin(0x1234ABCD, admin, 0x0A0B0C0D))).toBe(
+        '0a3515cdab34122227080612218a02130802120d1201011a0846725f454d434f4d1802aa0608090909090909'
+        + '09091801350d0c0b0a5001');
+    });
+
+    it('refuse un nom de canal de plus de 11 octets', () => {
+      expect(() => adminEcrireCanal(2, 'CriseInondation', '01', 2, cle)).toThrow();
+    });
+
+    it('lit la clé de session dans la réponse du propriétaire', () => {
+      expect(lireFromRadio(octets('12340dcdab341215cdab341222230806121a220d120b52616b2064652046726564aa'
+        + '060801020304050607083504030201354d000000')))
+        .toEqual({ genre: 'admin', requete: 0x01020304, cleSession: '0102030405060708' });
+    });
+
+    it('lit un accusé de routage, réussi ou refusé pour mauvaise clé', () => {
+      expect(lireFromRadio(octets('121c0dcdab341215cdab3412220b080512021800350d0c0b0a354e000000')))
+        .toEqual({ genre: 'routage', requete: 0x0A0B0C0D, erreur: 0 });
+      expect(lireFromRadio(octets('121c0dcdab341215cdab3412220b080512021824350d0c0b0a354e000000')))
+        .toEqual({ genre: 'routage', requete: 0x0A0B0C0D, erreur: ERREUR_ROUTAGE.MAUVAISE_CLE_SESSION });
+    });
+
+    it('lit la clé et le rôle d\'un emplacement, y compris le primaire sans nom', () => {
+      expect(lireFromRadio(octets('520712031201011801'))).toEqual(
+        { genre: 'canal', index: 0, nom: '', actif: true, role: 1, pskHex: '01' });
+      expect(lireFromRadio(octets('52020805'))).toEqual(
+        { genre: 'canal', index: 5, nom: '', actif: false, role: 0, pskHex: '' });
     });
   });
 

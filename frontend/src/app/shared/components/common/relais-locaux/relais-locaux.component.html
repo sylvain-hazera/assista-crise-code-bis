@@ -72,6 +72,12 @@
               </button>
             </td>
           </tr>
+          @if (r.protocole === 'MESHTASTIC' && r.plan) {
+            <!-- Plan de canaux proposé au branchement (règle du 14/11/2026). -->
+            <tr class="ligne-canaux">
+              <td colspan="8"><app-canaux-radio [relais]="r"></app-canaux-radio></td>
+            </tr>
+          }
         }
       </tbody>
     </table>

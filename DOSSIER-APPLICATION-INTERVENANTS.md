@@ -782,6 +782,47 @@ et contre de faux transports. Ordre suggéré : MeshCore USB (le plus simple), M
 Meshtastic réseau local, puis les deux en Bluetooth. Sous Linux, Web Bluetooth exige le drapeau
 `chrome://flags/#enable-experimental-web-platform-features`.
 
+## Règle des passerelles locales Meshtastic (fixée le 14/11/2026)
+
+Décidée par Sylvain, implémentée dans `backend/core/canaux_locaux.py` :
+
+| | Règle |
+|---|---|
+| **Isolement** | Une passerelle locale (radio en USB : navigateur ou satellite) est **isolée par défaut**. Ce qu'elle entend est enregistré dans Assista-Crise — la cellule de crise le voit — mais **n'est réémis par aucune autre passerelle**. Elle **ne réémet que ce qui concerne sa crise et sa commune** (canaux de son institution, de ses équipes, des crises en cours où elle est impliquée). Réglage `relais_reseau` pour l'ouvrir. |
+| **Canaux communautaires** | `Fr_Balise` et `Fr_EMCOM` d'office. Leurs clés sont lues dans les canaux **déclarés** dans Assista-Crise, jamais inventées : non déclaré, non proposé. |
+| **Canaux locaux** | Un canal **par crise** et un **par commune**, créés au premier besoin. Noms de 11 octets au plus (limite du firmware) : `Moissac`, `CriseInonda`. |
+| **Clé** | **Publique par défaut** — « tant pis » — avec un avertissement partout où l'on écrit dessus : au branchement, et dans le chat des canaux. |
+| **Annonce** | Les noms des canaux de crise et de commune sont annoncés sur `Fr_EMCOM` **par la seule passerelle locale** (message ciblé, aucune autre ne le reçoit), au plus une fois par demi-heure. |
+| **Mutualisation** | Le canal de crise est celui de la **crise**, pas de la commune : toutes les communes impliquées dans la même crise le partagent. |
+| **Branchement** | On lit les 8 emplacements de la radio, on propose d'ajouter `Fr_Balise` puis `Fr_EMCOM` s'ils manquent, puis la crise et la commune selon la place, en proposant d'en supprimer d'autres si besoin. **Rien n'est écrit sans le clic de la personne.** Le primaire n'est jamais touché. |
+
+### Deux conséquences de conception
+
+**Le statut unique d'un message de canal ne suffisait plus.** La première passerelle qui émettait
+un message de canal le marquait envoyé, et les autres ne le recevaient plus. Pour un canal de
+crise partagé entre deux communes, une seule l'aurait émis. Chaque passerelle isolée suit
+désormais **sa propre diffusion** (`DiffusionCanalMeshtastic`), notée quand elle prend le message
+— pas quand elle le confirme : le pont Python d'un satellite marque l'envoi sans dire quelle
+passerelle l'a fait, et attendre sa confirmation ferait renvoyer le message à chaque relève. Une
+passerelle isolée ne rattrape que les 15 dernières minutes : se brancher ne vide pas l'historique
+sur le réseau.
+
+**Écrire un canal sur la radio exige une clé de session**, même en local : on la demande à la
+radio (`get_owner_request`), elle revient dans la réponse, et on la recopie dans chaque commande
+— comme le client web officiel et Android. Les clés passant par le navigateur sont publiques par
+construction (clé par défaut, clés de convention) : aucun secret ne transite.
+
+### Ce qui reste à faire
+
+- **Satellites existants** : la migration les a laissés ouverts au réseau (`relais_reseau` à
+  vrai) pour ne pas changer leur comportement sans décision. Les passer en isolé est un réglage
+  par companion.
+- **MeshCore** : 40 emplacements, la contrainte de place y est moindre ; la même règle reste à
+  porter (commandes `GET_CHANNEL` / `SET_CHANNEL` du protocole companion).
+- **Le sens montant « ouvert »** n'existe pas : rien, dans Assista-Crise, ne réémet
+  automatiquement ce qu'une passerelle a entendu. Cocher `relais_reseau` n'ouvre que le sens
+  descendant. Une vraie passerelle inter-réseaux demanderait anti-écho, anti-boucle et quotas.
+
 ## Ce que ce chantier n'est pas
 
 **Ce n'est pas un satellite.** Il ajoute de la portée radio au central ; il n'ajoute **aucune

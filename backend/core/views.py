@@ -11855,6 +11855,77 @@ class RelaisSerieView(APIView):
         return Response(reponse)
 
 
+def _compagnon_relaye_par(request, compagnon_id):
+    """Le companion Meshtastic que CETTE personne relaie en ce moment, ou None.
+
+    Le plan de canaux et l'annonce ne se demandent que pour une radio qu'on tient : c'est la
+    personne qui a la radio en main qui décide de ce qu'on y écrit."""
+    from .relais_navigateur import compagnon_par_id, session_active
+
+    compagnon = compagnon_par_id(compagnon_id, "MESHTASTIC")
+    if compagnon is None:
+        return None
+    if getattr(request.user, "type", None) == UserRole.ADMINISTRATOR:
+        return compagnon
+    return compagnon if session_active(request.user, compagnon) is not None else None
+
+
+class RelaisPlanCanauxView(APIView):
+    """Le plan de canaux proposé au branchement d'une radio Meshtastic (core/canaux_locaux.py).
+
+    `GET ?compagnon=<id>` : `Fr_Balise`, `Fr_EMCOM`, puis le canal de chaque crise en cours de la
+    commune et le canal de la commune — créés au premier besoin, clé publique par défaut. Le
+    navigateur compare avec les emplacements de la radio et propose ; rien n'est écrit sans
+    l'accord de la personne.
+
+    Les clés renvoyées sont publiques par construction (voir `plan_canaux`) : aucun secret ne
+    passe par ici, et la frontière de `EstComptePont` reste entière."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .canaux_locaux import (
+            AVERTISSEMENT_NON_CHIFFRE, EMPLACEMENTS_MESHTASTIC, est_isolee, plan_canaux,
+        )
+
+        compagnon = _compagnon_relaye_par(request, request.query_params.get("compagnon"))
+        if compagnon is None:
+            return Response({"error": "Vous ne relayez pas cette radio."},
+                            status=status.HTTP_403_FORBIDDEN)
+        return Response({
+            "canaux": plan_canaux(compagnon, get_active_environment(request)),
+            "emplacements": EMPLACEMENTS_MESHTASTIC,
+            "isolee": est_isolee(compagnon),
+            "avertissement": AVERTISSEMENT_NON_CHIFFRE,
+        })
+
+
+class RelaisAnnonceView(APIView):
+    """Annonce sur `Fr_EMCOM` les noms des canaux de crise et de commune, par CETTE passerelle
+    seulement (`POST {compagnon}`). Voir `canaux_locaux.annoncer` : le message est ciblé sur la
+    passerelle, aucune autre ne le reçoit dans sa file ; et pas plus d'une annonce par
+    demi-heure, EMCOM étant un canal d'urgence partagé."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .canaux_locaux import annoncer
+
+        compagnon = _compagnon_relaye_par(request, request.data.get("compagnon"))
+        if compagnon is None:
+            return Response({"error": "Vous ne relayez pas cette radio."},
+                            status=status.HTTP_403_FORBIDDEN)
+        message, raison = annoncer(compagnon, request.user, get_active_environment(request))
+        if message is None:
+            return Response({"annonce": None, "raison": raison})
+        audit_log(
+            request=request, action_code="CREATION", objet_type="MessageCanalMeshtastic",
+            objet_id=message.id,
+            commentaire=f"Canaux annoncés sur Fr_EMCOM par « {compagnon.nom} » : {message.contenu}",
+        )
+        return Response({"annonce": message.contenu})
+
+
 class ConservationPiecesView(APIView):
     """La politique de conservation des pièces justificatives, servie à l'interface.
 
@@ -20406,13 +20477,29 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         inchangé."""
         canal_id = request.query_params.get('canal')
         compagnon_id = request.query_params.get('compagnon')
-        qs = self.get_queryset().filter(
-            direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE,
-        ).select_related('canal__institution')
-        if canal_id:
-            qs = qs.filter(canal_id=canal_id)
+        # Passerelle locale isolée (règle du 14/11/2026, core/canaux_locaux.py) : elle ne reçoit
+        # que sa crise et sa commune, et suit SA propre diffusion au lieu du statut global — sans
+        # quoi la première passerelle d'un canal de crise partagé privait les autres de l'émettre.
+        from .canaux_locaux import est_isolee, messages_a_diffuser, noter_diffusion
+        compagnon_local = None
         if compagnon_id:
-            qs = qs.filter(Q(compagnon__isnull=True) | Q(compagnon_id=compagnon_id))
+            try:
+                compagnon_local = CompagnonMeshtastic.objects.filter(pk=compagnon_id).first()
+            except (ValueError, DjangoValidationError):
+                compagnon_local = None
+        if compagnon_local is not None and est_isolee(compagnon_local):
+            qs = list(messages_a_diffuser(compagnon_local, canal_id))
+            # Notée à la prise, pas à la confirmation : voir DiffusionCanalMeshtastic.
+            for m in qs:
+                noter_diffusion(m, compagnon_local, get_active_environment(request))
+        else:
+            qs = self.get_queryset().filter(
+                direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE,
+            ).select_related('canal__institution')
+            if canal_id:
+                qs = qs.filter(canal_id=canal_id)
+            if compagnon_id:
+                qs = qs.filter(Q(compagnon__isnull=True) | Q(compagnon_id=compagnon_id))
 
         resultat = []
         for m in qs:

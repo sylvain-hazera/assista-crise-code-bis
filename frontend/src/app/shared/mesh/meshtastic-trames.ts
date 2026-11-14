@@ -30,8 +30,20 @@ export const MT_TAILLE_MAX = 512;
 /** Destinataire « tout le monde » (`BROADCAST_NUM`). */
 export const MT_DIFFUSION = 0xffffffff;
 
-/** `PortNum.TEXT_MESSAGE_APP`. */
+/** `PortNum.TEXT_MESSAGE_APP`, `ROUTING_APP`, `ADMIN_APP`. */
 export const PORT_TEXTE = 1;
+export const PORT_ROUTAGE = 5;
+export const PORT_ADMIN = 6;
+
+/** `Channel.Role`. */
+export const ROLE_CANAL = { DESACTIVE: 0, PRIMAIRE: 1, SECONDAIRE: 2 } as const;
+
+/** Nombre d'emplacements de canaux d'une radio Meshtastic, primaire compris. */
+export const EMPLACEMENTS = 8;
+
+/** `Routing.Error` : seules les valeurs qu'un relais doit savoir lire. */
+export const ERREUR_ROUTAGE = { AUCUNE: 0, PAS_DE_REPONSE: 8, NON_AUTORISE: 33,
+                                MAUVAISE_CLE_SESSION: 36, CLE_PUBLIQUE_NON_AUTORISEE: 37 } as const;
 
 /**
  * Charge utile maximale d'un paquet. Le firmware refuse au-delà (`Constants.h`,
@@ -200,9 +212,13 @@ export type EvenementMeshtastic =
    * que la radio progresse, et réarme le délai d'inactivité. */
   | { genre: 'progression' }
   | { genre: 'noeud'; numero: number; nomLong: string; clePubliqueHex: string }
-  | { genre: 'canal'; index: number; nom: string; actif: boolean }
+  | { genre: 'canal'; index: number; nom: string; actif: boolean; role: number; pskHex: string }
   | { genre: 'config_terminee'; identifiant: number }
   | { genre: 'texte'; de: number; vers: number; canal: number; texte: string; id: number }
+  /** Réponse d'administration : porte la clé de session à reprendre dans les commandes. */
+  | { genre: 'admin'; requete: number; cleSession: string }
+  /** Accusé de routage d'un paquet que nous avons envoyé : 0 = reçu, sinon le motif du refus. */
+  | { genre: 'routage'; requete: number; erreur: number }
   | { genre: 'autre' };
 
 function hex(octets: Uint8Array | undefined): string {
@@ -240,11 +256,15 @@ export function lireFromRadio(octets: Uint8Array): EvenementMeshtastic {
     const c = lireChamps(canal);
     const reglages = champ(c, 2)?.octets;
     // Rôle 0 = DISABLED, 1 = PRIMARY, 2 = SECONDARY (channel_pb2.Channel.Role).
+    const r = reglages ? lireChamps(reglages) : [];
+    const role = champ(c, 3)?.nombre ?? 0;
     return {
       genre: 'canal',
       index: champ(c, 1)?.nombre ?? 0,
-      nom: texte(reglages ? champ(lireChamps(reglages), 3)?.octets : undefined),
-      actif: (champ(c, 3)?.nombre ?? 0) !== 0,
+      nom: texte(champ(r, 3)?.octets),
+      actif: role !== 0,
+      role,
+      pskHex: hex(champ(r, 2)?.octets),
     };
   }
 
@@ -265,7 +285,19 @@ export function lireFromRadio(octets: Uint8Array): EvenementMeshtastic {
     const decode = champ(p, 4)?.octets;
     if (!decode) { return { genre: 'autre' }; }   // chiffré pour quelqu'un d'autre
     const d = lireChamps(decode);
-    if ((champ(d, 1)?.nombre ?? 0) !== PORT_TEXTE) { return { genre: 'autre' }; }
+    const port = champ(d, 1)?.nombre ?? 0;
+    const requete = champ(d, 6)?.nombre ?? 0;
+    if (port === PORT_ADMIN) {
+      const admin = lireChamps(champ(d, 2)?.octets ?? new Uint8Array(0));
+      return { genre: 'admin', requete, cleSession: hex(champ(admin, 101)?.octets) };
+    }
+    if (port === PORT_ROUTAGE) {
+      const routage = lireChamps(champ(d, 2)?.octets ?? new Uint8Array(0));
+      const erreur = champ(routage, 3);
+      if (erreur === undefined) { return { genre: 'autre' }; }   // découverte de route
+      return { genre: 'routage', requete, erreur: erreur.nombre ?? 0 };
+    }
+    if (port !== PORT_TEXTE) { return { genre: 'autre' }; }
     return {
       genre: 'texte',
       de: champ(p, 1)?.nombre ?? 0,
@@ -277,4 +309,81 @@ export function lireFromRadio(octets: Uint8Array): EvenementMeshtastic {
   }
 
   return { genre: 'autre' };
+}
+
+// ══ Administration de la radio locale ══════════════════════════════════════════
+//
+// Écrire un canal passe par un `AdminMessage` adressé à notre propre numéro de nœud, sur le port
+// ADMIN_APP — comme la bibliothèque Python (`node.py::writeChannel`) et le client web officiel
+// (`ChannelUseCases.setChannel`). **Même en local, la radio exige une clé de session** : on la
+// demande d'abord (`get_owner_request`), elle revient dans `session_passkey` de la réponse, et
+// on la recopie dans chaque commande. Champs relevés dans `admin_pb2` : `get_owner_request` = 3,
+// `set_channel` = 33, `session_passkey` = 101.
+
+function versOctets(h: string): Uint8Array {
+  const propre = (h || '').replace(/[^0-9a-f]/gi, '');
+  return Uint8Array.from((propre.match(/../g) || []).map(x => parseInt(x, 16)));
+}
+
+/** Enveloppe un AdminMessage dans un paquet pour notre propre radio, avec demande de réponse. */
+function paquetAdmin(monNumero: number, admin: Uint8Array, identifiant: number): Uint8Array {
+  const data = new EcrivainProtobuf()
+    .varint(1, PORT_ADMIN)
+    .octetsBruts(2, admin)
+    .varint(3, true);
+  const paquet = new EcrivainProtobuf()
+    .fixed32(2, monNumero)
+    .message(4, data)
+    .fixed32(6, identifiant)
+    .varint(10, true);
+  return new EcrivainProtobuf().message(1, paquet).fin();
+}
+
+/** `AdminMessage{get_owner_request: true}` : la réponse porte la clé de session. */
+export function adminDemandeProprietaire(): Uint8Array {
+  return new EcrivainProtobuf().varint(3, true).fin();
+}
+
+/**
+ * `AdminMessage{set_channel: Channel{index, settings{psk, name}, role}, session_passkey}`.
+ *
+ * Un nom de canal fait **11 octets au plus** (`max_size: 12` avec le zéro final, relevé dans les
+ * options nanopb de `channel.proto`) : au-delà, le firmware le tronque — on refuse plutôt.
+ */
+export function adminEcrireCanal(index: number, nom: string, pskHex: string, role: number,
+                                 cleSessionHex: string): Uint8Array {
+  if (new TextEncoder().encode(nom).length > 11) {
+    throw new Error(`Nom de canal trop long pour la radio (11 octets au plus) : ${nom}`);
+  }
+  const reglages = new EcrivainProtobuf()
+    .octetsBruts(2, versOctets(pskHex))
+    .octetsBruts(3, new TextEncoder().encode(nom));
+  const canal = new EcrivainProtobuf()
+    .varint(1, index)
+    .message(2, reglages)
+    .varint(3, role);
+  return new EcrivainProtobuf()
+    .message(33, canal)
+    .octetsBruts(101, versOctets(cleSessionHex))
+    .fin();
+}
+
+/** Supprimer un canal, c'est écrire son emplacement avec le rôle DÉSACTIVÉ et rien d'autre —
+ * exactement ce que fait le client officiel (`clearChannel`). */
+export function adminSupprimerCanal(index: number, cleSessionHex: string): Uint8Array {
+  const canal = new EcrivainProtobuf().varint(1, index).varint(3, ROLE_CANAL.DESACTIVE);
+  return new EcrivainProtobuf()
+    .message(33, canal)
+    .octetsBruts(101, versOctets(cleSessionHex))
+    .fin();
+}
+
+export function toRadioAdmin(monNumero: number, admin: Uint8Array, identifiant: number): Uint8Array {
+  return paquetAdmin(monNumero, admin, identifiant);
+}
+
+/** Message texte sur un canal : adressé à tous, sans accusé (un accusé sur une diffusion n'a
+ * pas de sens et coûte du temps d'antenne). */
+export function toRadioTexteCanal(index: number, contenu: string, identifiant: number): Uint8Array {
+  return toRadioTexte(MT_DIFFUSION, contenu, identifiant, index, false);
 }

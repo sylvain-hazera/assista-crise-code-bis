@@ -5,6 +5,14 @@ import { Observable, map } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { IdentiteRadio, Protocole } from '../shared/mesh/pilotes';
 import { NomTransport } from '../shared/mesh/transports';
+import { EntreePlan } from '../shared/mesh/plan-canaux';
+
+export interface PlanCanaux {
+  canaux: EntreePlan[];
+  emplacements: number;
+  isolee: boolean;
+  avertissement: string;
+}
 
 export interface CompagnonRelayable {
   id: string;
@@ -127,6 +135,33 @@ export class RelaisSerieService {
     return this.http.post(`${this.api}/messages-canal-meshtastic/`,
                           { direction: 'ENTRANT', canal, contact_node_num: expediteur, contenu },
                           { params: { compagnon } });
+  }
+
+  // ══ Plan de canaux d'une passerelle locale (règle du 14/11/2026) ══════════════
+
+  planCanaux(compagnon: string): Observable<PlanCanaux> {
+    return this.http.get<PlanCanaux>(`${this.relais}plan-canaux/`, { params: { compagnon } });
+  }
+
+  /** Annonce les canaux de crise et de commune sur Fr_EMCOM, par cette passerelle seulement. */
+  annoncer(compagnon: string): Observable<{ annonce: string | null; raison?: string }> {
+    return this.http.post<{ annonce: string | null; raison?: string }>(
+      `${this.relais}annoncer/`, { compagnon });
+  }
+
+  /** La file d'un canal pour cette passerelle. Pour une passerelle isolée, le serveur note la
+   * diffusion à la prise : rien à confirmer ensuite. */
+  aEnvoyerCanalMeshtastic(compagnon: string, canal: string)
+      : Observable<{ id: string; contenu: string }[]> {
+    return this.http.get<{ id: string; contenu: string }[]>(
+      `${this.api}/messages-canal-meshtastic/a-envoyer/`, { params: { compagnon, canal } });
+  }
+
+  /** Statut global « envoyé » — utile pour une passerelle ouverte au réseau ; le companion est
+   * nommé dans l'URL, c'est ce qui permet au relais de marquer un message non ciblé. */
+  marquerCanalMeshtastic(compagnon: string, id: string): Observable<unknown> {
+    return this.http.patch(`${this.api}/messages-canal-meshtastic/${id}/`, { statut: 'ENVOYE' },
+                           { params: { compagnon } });
   }
 
   /** Nom → identifiant des canaux Meshtastic déclarés. Sans PSK : l'API ne la renvoie jamais. */

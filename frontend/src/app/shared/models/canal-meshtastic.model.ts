@@ -20,6 +20,9 @@ export interface CanalMeshtastic {
    * 1 octet (index de PSK "par défaut" du protocole, 01-0A), ou 32/64 caractères hex (clé
    * complète 16/32 octets). */
   psk_hex?: string;
+  /** Lecture seule : la clé est connue de tous (vide ou clé par défaut sur un octet). Les canaux
+   * de crise et de commune le sont par règle (14/11/2026) : on avertit avant d'y écrire. */
+  cle_publique?: boolean;
   /** Canal utilisé par défaut pour le nommage du topic MQTT d'un DM chiffré par clé publique
    * (PKI) — le canal n'a alors aucun rôle dans le chiffrement ni la conversation, juste une
    * contrainte technique du protocole (voir meshtastic-bridge/bridge.py). */

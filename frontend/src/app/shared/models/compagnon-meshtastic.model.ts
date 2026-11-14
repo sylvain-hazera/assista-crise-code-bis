@@ -45,6 +45,9 @@ export interface CompagnonMeshtastic {
 
   principal: boolean;
   actif: boolean;
+  /** Passerelle locale (série, navigateur) : réémettre aussi ce qui ne concerne ni sa crise ni
+   * sa commune. Faux par défaut : passerelle isolée (règle du 14/11/2026). */
+  relais_reseau?: boolean;
   /** Décoché par défaut (cas Gaulix, jamais confirmé relayer un paquet chiffré) : le pont force
    * alors l'envoi en clair pour ce broker, quel que soit le canal/la clé configurés — purement
    * informatif ici, l'application réelle est faite côté meshtastic-bridge/bridge.py. */

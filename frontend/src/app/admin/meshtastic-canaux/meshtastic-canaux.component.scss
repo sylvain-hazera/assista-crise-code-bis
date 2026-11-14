@@ -172,3 +172,18 @@
 
 .empty { color: var(--ac-text-subtle, #9ca3af); font-size: .85rem; }
 .error-message { color: var(--ac-red-text, #dc3545); margin-bottom: 1rem; }
+
+.avertissement-clair {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  margin: 0 0 .5rem;
+  padding: .45rem .65rem;
+  border-radius: 6px;
+  font-size: .82rem;
+  background: var(--ac-amber-bg, #fffbeb);
+  color: var(--ac-amber-text, #92400e);
+  border: 1px solid var(--ac-amber-border, #fcd34d);
+
+  .material-icons { font-size: 1rem; }
+}

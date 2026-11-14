@@ -13,7 +13,9 @@ import {
 import {
   DecoupeurMeshtastic, MT_DIFFUSION, NONCE_CONFIG, NONCE_NOEUDS, PREMIER_NONCE_BATTEMENT,
   decouperTexte, encadrerMeshtastic, lireFromRadio, nonceSuivant, nouvelIdentifiant,
-  octetsDeReveil, toRadioBattement, toRadioTexte, toRadioVeutConfig,
+  octetsDeReveil, toRadioBattement, toRadioTexte, toRadioVeutConfig, adminDemandeProprietaire,
+  adminEcrireCanal, adminSupprimerCanal, toRadioAdmin, toRadioTexteCanal, ERREUR_ROUTAGE,
+  ROLE_CANAL,
 } from './meshtastic-trames';
 import { Transport } from './transports';
 
@@ -180,6 +182,14 @@ export class PiloteMeshtastic implements Pilote {
   /** Index → nom des canaux configurés sur la radio, lus pendant la configuration. */
   readonly canaux = new Map<number, string>();
 
+  /** Les 8 emplacements tels que la radio les a décrits, désactivés compris. C'est sur eux que
+   * se fonde la proposition de plan de canaux au branchement. */
+  readonly emplacements = new Map<number, EmplacementCanal>();
+
+  /** Commandes d'administration en attente de leur réponse, par identifiant de paquet. */
+  private attentes = new Map<number, (e: { erreur: number; cleSession?: string }) => void>();
+  private cleSession = '';
+
   private decoupeur = new DecoupeurMeshtastic();
   private monNumero = 0;
   private noms = new Map<number, { nom: string; cle: string }>();
@@ -209,6 +219,8 @@ export class PiloteMeshtastic implements Pilote {
     this.decoupeur.reinitialiser();
     this.monNumero = 0;
     this.canaux.clear();
+    this.emplacements.clear();
+    this.cleSession = '';
     if (this.transport.flux) {
       await this.transport.ecrire(octetsDeReveil());
       await attendre(POIGNEE_PAUSE_MS);
@@ -298,8 +310,18 @@ export class PiloteMeshtastic implements Pilote {
           this.rearmer();
           break;
         case 'canal':
-          if (e.actif) { this.canaux.set(e.index, e.nom); }
+          this.emplacements.set(e.index, { index: e.index, nom: e.nom, role: e.role, pskHex: e.pskHex });
+          if (e.actif) { this.canaux.set(e.index, e.nom); } else { this.canaux.delete(e.index); }
           this.rearmer();
+          break;
+        case 'admin':
+          if (e.cleSession) { this.cleSession = e.cleSession; }
+          this.attentes.get(e.requete)?.({ erreur: 0, cleSession: e.cleSession });
+          this.attentes.delete(e.requete);
+          break;
+        case 'routage':
+          this.attentes.get(e.requete)?.({ erreur: e.erreur });
+          this.attentes.delete(e.requete);
           break;
         case 'progression':
           this.rearmer();
@@ -334,6 +356,72 @@ export class PiloteMeshtastic implements Pilote {
     }
   }
 
+  /** Message sur un canal de la radio, par son emplacement. */
+  async envoyerCanal(index: number, texte: string): Promise<void> {
+    if (!this.canaux.has(index)) { throw new Error(`Aucun canal actif à l'emplacement ${index}.`); }
+    for (const morceau of decouperTexte(texte)) {
+      await this.ecrire(toRadioTexteCanal(index, morceau, nouvelIdentifiant()));
+    }
+  }
+
+  // ══ Administration de la radio locale ══════════════════════════════════════
+
+  /** Envoie une commande d'administration et attend sa réponse (accusé de routage ou réponse
+   * d'administration portant le même identifiant de requête). */
+  private async commandeAdmin(admin: Uint8Array): Promise<{ erreur: number; cleSession?: string }> {
+    if (!this.monNumero) { throw new Error('Radio non identifiée.'); }
+    const id = nouvelIdentifiant();
+    const reponse = new Promise<{ erreur: number; cleSession?: string }>(
+      r => this.attentes.set(id, r));
+    await this.ecrire(toRadioAdmin(this.monNumero, admin, id));
+    try {
+      return await delai(reponse, 10000, 'La radio ne répond pas à la commande.');
+    } finally {
+      this.attentes.delete(id);
+    }
+  }
+
+  /** La clé de session, demandée à la radio si on ne l'a pas : sa réponse au « qui es-tu » la
+   * porte. Même méthode que le client officiel et qu'Android. */
+  private async assurerCleSession(forcer = false): Promise<string> {
+    if (this.cleSession && !forcer) { return this.cleSession; }
+    const r = await this.commandeAdmin(adminDemandeProprietaire());
+    if (!r.cleSession && !this.cleSession) {
+      throw new Error("La radio n'a pas fourni de clé de session : firmware trop ancien ?");
+    }
+    return this.cleSession;
+  }
+
+  /** Une commande qui porte la clé de session, retentée une fois si la radio la refuse
+   * (`ADMIN_BAD_SESSION_KEY`) — les clés expirent au bout de quelques minutes. */
+  private async commandeAvecSession(fabriquer: (cle: string) => Uint8Array): Promise<void> {
+    let r = await this.commandeAdmin(fabriquer(await this.assurerCleSession()));
+    if (r.erreur === ERREUR_ROUTAGE.MAUVAISE_CLE_SESSION) {
+      r = await this.commandeAdmin(fabriquer(await this.assurerCleSession(true)));
+    }
+    if (r.erreur !== ERREUR_ROUTAGE.AUCUNE) {
+      throw new Error(`La radio a refusé la modification (code ${r.erreur}).`);
+    }
+  }
+
+  /** Écrit un canal dans un emplacement. Jamais l'emplacement 0 en secondaire : c'est le
+   * primaire, il ne peut pas être autre chose. */
+  async ecrireCanal(index: number, nom: string, pskHex: string): Promise<void> {
+    const role = index === 0 ? ROLE_CANAL.PRIMAIRE : ROLE_CANAL.SECONDAIRE;
+    await this.commandeAvecSession(cle => adminEcrireCanal(index, nom, pskHex, role, cle));
+    this.emplacements.set(index, { index, nom, role, pskHex });
+    this.canaux.set(index, nom);
+  }
+
+  /** Libère un emplacement. Le primaire ne se supprime pas : la radio n'aurait plus de canal
+   * par défaut. */
+  async supprimerCanal(index: number): Promise<void> {
+    if (index === 0) { throw new Error('Le canal primaire ne se supprime pas.'); }
+    await this.commandeAvecSession(cle => adminSupprimerCanal(index, cle));
+    this.emplacements.set(index, { index, nom: '', role: ROLE_CANAL.DESACTIVE, pskHex: '' });
+    this.canaux.delete(index);
+  }
+
   async cycle(): Promise<void> {
     if (Date.now() - this.dernierBattement >= BATTEMENT_MESHTASTIC_MS) {
       await this.battre();
@@ -342,6 +430,15 @@ export class PiloteMeshtastic implements Pilote {
     // perdue. En série, sans effet.
     await this.transport.tirer();
   }
+}
+
+/** Un emplacement de canal tel que la radio le décrit. */
+export interface EmplacementCanal {
+  index: number;
+  nom: string;
+  /** 0 désactivé, 1 primaire, 2 secondaire. */
+  role: number;
+  pskHex: string;
 }
 
 export function creerPilote(protocole: Protocole, transport: Transport): Pilote {

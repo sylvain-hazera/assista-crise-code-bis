@@ -159,6 +159,14 @@
                   <input type="checkbox" [(ngModel)]="editActif">
                   Actif
                 </label>
+                @if (c.connexion_type === 'SERIE' || c.connexion_type === 'NAVIGATEUR') {
+                  <!-- Règle du 14/11/2026 : une passerelle locale est isolée par défaut. -->
+                  <label class="checkbox-row"
+                         title="Décoché : la passerelle ne réémet que sa crise et sa commune, et ce qu'elle entend n'est réémis par aucune autre passerelle.">
+                    <input type="checkbox" [(ngModel)]="editRelaisReseau">
+                    Ouverte au réseau
+                  </label>
+                }
                 <label class="checkbox-row">
                   <input type="checkbox" [(ngModel)]="editMqttUseTls">
                   SSL/TLS

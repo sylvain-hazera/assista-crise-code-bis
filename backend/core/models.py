@@ -7252,6 +7252,33 @@ class TransportRelais(models.TextChoices):
     WIFI = "WIFI", "Réseau local (HTTP du nœud)"
 
 
+class DiffusionCanalMeshtastic(EnvironmentScopedModel):
+    """« CETTE passerelle a émis CE message de canal » (core/canaux_locaux.py).
+
+    Le statut d'un message de canal est global : la première passerelle qui l'émettait le
+    marquait envoyé, et les autres ne le recevaient plus. Pour un canal de crise partagé entre
+    deux communes, une seule des deux passerelles locales l'aurait émis — l'autre commune ne
+    l'entendait pas. Une ligne par couple (message, passerelle) rend chaque diffusion locale
+    indépendante.
+
+    Notée quand la passerelle PREND le message, pas quand elle confirme l'avoir émis : le pont
+    Python d'un satellite marque l'envoi sans dire quelle passerelle l'a fait, et attendre sa
+    confirmation ferait renvoyer le même message à chaque relève."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey("MessageCanalMeshtastic", on_delete=models.CASCADE,
+                                related_name="diffusions")
+    compagnon = models.ForeignKey("CompagnonMeshtastic", on_delete=models.CASCADE,
+                                  related_name="diffusions_canal")
+    date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["message", "compagnon"],
+                                    name="diffusion_canal_unique_par_passerelle"),
+        ]
+
+
 class SessionRelaisNavigateur(EnvironmentScopedModel):
     """Un poste qui relaie une radio depuis son navigateur (voir core/relais_navigateur.py).
 
@@ -7489,6 +7516,18 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
 
     principal = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
+
+    # Règle du 14/11/2026 (core/canaux_locaux.py) : une passerelle LOCALE (série ou navigateur)
+    # est isolée par défaut — elle ne réémet que ce qui concerne sa crise et sa commune, et ce
+    # qu'elle entend n'est réémis par aucune autre passerelle. Cocher lui rend le comportement de
+    # réseau. Sans effet sur une passerelle MQTT ou TCP, qui est par nature une passerelle de
+    # réseau. Les companions SÉRIE existants avant la règle ont été laissés à True : leur
+    # comportement ne change pas sans qu'on le décide.
+    relais_reseau = models.BooleanField(
+        default=False,
+        help_text="Passerelle locale seulement : réémettre aussi ce qui ne concerne ni sa crise ni "
+                  "sa commune. Décoché par défaut (passerelle isolée).",
+    )
 
     # Paire X25519 générée à la création ; la clé privée n'est jamais exposée par l'API.
     x25519_private_key_hex = EncryptedTextField(max_length=64, blank=True, editable=False)

@@ -98,7 +98,7 @@ from .views import (
     RattachementHabitationViewSet,
     ModuleDegatsCriseViewSet,
     ConservationPiecesView,
-    RelaisSerieView,
+    RelaisSerieView, RelaisPlanCanauxView, RelaisAnnonceView,
     InstitutionActiveView,
     PieceIdentiteReserveViewSet,
     BrandingView,
@@ -321,6 +321,10 @@ urlpatterns = [
     # dont l'USB fonctionne (voir core/relais_navigateur.py). Hors du routeur : la session est
     # toujours celle de l'appelant.
     path('relais-serie/', RelaisSerieView.as_view(), name='relais_serie'),
+    # Règle du 14/11/2026 (core/canaux_locaux.py) : plan de canaux proposé au branchement d'une
+    # radio Meshtastic, et annonce des canaux de crise et de commune sur Fr_EMCOM en local.
+    path('relais-serie/plan-canaux/', RelaisPlanCanauxView.as_view(), name='relais_plan_canaux'),
+    path('relais-serie/annoncer/', RelaisAnnonceView.as_view(), name='relais_annoncer'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),

@@ -1,0 +1,93 @@
+@if (plan; as p) {
+  <div class="canaux">
+    <div class="titre">
+      <span class="material-icons" aria-hidden="true">tune</span>
+      <strong>Canaux de la radio</strong>
+      <span class="etat-isolement" [class.ouverte]="!p.isolee" [title]="titreIsolement">
+        {{ p.isolee ? 'isolée' : 'ouverte au réseau' }}
+      </span>
+    </div>
+
+    <!-- Les 8 emplacements tels que la radio les a décrits. -->
+    <ol class="emplacements" start="0">
+      @for (i of [0, 1, 2, 3, 4, 5, 6, 7]; track i) {
+        <li [class.libre]="nomDe(i) === '— libre —'"
+            [class.a-supprimer]="aSupprimer.has(i)">
+          <span class="index">{{ i }}</span>
+          <span class="nom">{{ nomDe(i) }}</span>
+        </li>
+      }
+    </ol>
+
+    @if (p.proposition.ajouts.length) {
+      <fieldset class="propositions">
+        <legend>À ajouter</legend>
+        @for (a of p.proposition.ajouts; track a.entree.nom) {
+          <label>
+            <input type="checkbox" [checked]="retenus.has(a.entree.nom)"
+                   (change)="basculerAjout(a.entree.nom)">
+            <span class="nom-canal">{{ a.entree.nom }}</span>
+            <span class="role" [attr.data-role]="a.entree.role">{{ libelleRole(a.entree) }}</span>
+            <span class="libelle">{{ a.entree.libelle }}</span>
+            @if (a.entree.public && a.entree.role !== 'communautaire') {
+              <span class="clair" title="Clé publique par défaut : non chiffré">en clair</span>
+            }
+          </label>
+        }
+      </fieldset>
+    } @else {
+      <p class="ok">
+        <span class="material-icons" aria-hidden="true">check_circle</span>
+        La radio porte déjà tous les canaux du plan.
+      </p>
+    }
+
+    @if (p.proposition.indisponibles.length) {
+      <p class="note">
+        Non proposé, clé inconnue d'Assista-Crise :
+        {{ nomsIndisponibles }}. Déclarez ce canal communautaire
+        avec sa clé dans les canaux Meshtastic pour pouvoir le pousser.
+      </p>
+    }
+
+    @if (p.proposition.manque > 0 && p.proposition.supprimables.length) {
+      <fieldset class="propositions suppression">
+        <legend>
+          Place insuffisante : libérer {{ manqueEncore }} emplacement(s)
+          @if (manqueEncore === 0) { — c'est bon }
+        </legend>
+        @for (s of p.proposition.supprimables; track s.index) {
+          <label>
+            <input type="checkbox" [checked]="aSupprimer.has(s.index)"
+                   (change)="basculerSuppression(s.index)">
+            <span class="index">{{ s.index }}</span>
+            <span class="nom-canal">{{ s.nom || 'sans nom' }}</span>
+            <span class="libelle">sera supprimé de la radio</span>
+          </label>
+        }
+      </fieldset>
+    }
+
+    @if (publicsRetenus) {
+      <!-- Exigé par la règle : public par défaut, « tant pis », mais on le dit. -->
+      <div class="avertissement" role="note">
+        <span class="material-icons" aria-hidden="true">lock_open</span>
+        <span>{{ p.avertissement }}</span>
+      </div>
+    }
+
+    @if (p.proposition.ajouts.length) {
+      <div class="actions">
+        <button type="button" class="appliquer" [disabled]="enCours || !retenus.size"
+                (click)="appliquer()">
+          @if (enCours) { Écriture sur la radio… } @else { Écrire sur la radio }
+        </button>
+        <span class="aide">La radio n'est modifiée qu'à ce clic.</span>
+      </div>
+    }
+
+    @if (resultat) { <p class="resultat">{{ resultat }}</p> }
+    @if (relais.annonce) { <p class="resultat">{{ relais.annonce }}</p> }
+    @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+  </div>
+}

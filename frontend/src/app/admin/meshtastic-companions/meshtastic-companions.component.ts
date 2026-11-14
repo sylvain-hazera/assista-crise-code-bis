@@ -80,6 +80,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
   editTopicRacine = '';
   editChiffrementSupporte = false;
   editActif = true;
+  editRelaisReseau = false;
   editMqttUsername = '';
   editMqttPassword = '';
   editMqttUseTls = false;
@@ -462,6 +463,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
     this.editTopicRacine = c.topic_racine;
     this.editChiffrementSupporte = c.chiffrement_supporte;
     this.editActif = c.actif;
+    this.editRelaisReseau = !!c.relais_reseau;
     this.editMqttUsername = c.mqtt_username || '';
     // Le mot de passe n'est jamais renvoyé par l'API (write_only) — laissé vide, non modifié
     // à l'enregistrement sauf saisie explicite (voir enregistrerEdition).
@@ -482,6 +484,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
       topic_racine: this.editTopicRacine.trim(),
       chiffrement_supporte: this.editChiffrementSupporte,
       actif: this.editActif,
+      relais_reseau: this.editRelaisReseau,
       mqtt_username: this.editMqttUsername.trim(),
       mqtt_use_tls: this.editMqttUseTls,
     };

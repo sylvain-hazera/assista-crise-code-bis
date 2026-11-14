@@ -2,7 +2,10 @@ import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 
 import { DesignationRadio, RelaisSerieService } from './relais-serie.service';
-import { IdentiteRadio, MessageRadio, Pilote, Protocole, creerPilote } from '../shared/mesh/pilotes';
+import {
+  EmplacementCanal, IdentiteRadio, MessageRadio, Pilote, PiloteMeshtastic, Protocole, creerPilote,
+} from '../shared/mesh/pilotes';
+import { EntreePlan, PropositionPlan, operationsPlan, proposerPlan } from '../shared/mesh/plan-canaux';
 import { MESHCORE_BLE } from '../shared/mesh/meshcore-trames';
 import { MESHTASTIC_BLE } from '../shared/mesh/meshtastic-trames';
 import {
@@ -46,6 +49,18 @@ export interface RelaisVisible {
   canauxIgnores: string[];
   derniereActivite: Date | null;
   erreur: string;
+  /** Meshtastic : plan de canaux proposé au branchement (règle du 14/11/2026). */
+  plan: PlanVisible | null;
+  /** Dernière annonce faite sur Fr_EMCOM, ou la raison de ne pas l'avoir faite. */
+  annonce: string;
+}
+
+export interface PlanVisible {
+  entrees: EntreePlan[];
+  emplacements: EmplacementCanal[];
+  proposition: PropositionPlan;
+  avertissement: string;
+  isolee: boolean;
 }
 
 interface Relais extends RelaisVisible {
@@ -59,6 +74,7 @@ interface Relais extends RelaisVisible {
   /** Identifiants des messages en cours d'émission : un cycle ne doit pas réémettre celui que
    * le précédent n'a pas fini d'envoyer. */
   enCours: Set<string>;
+  cycles: number;
 }
 
 /** Ce qu'il faut pour brancher une radio. `radio` désigne une ligne précise ; sans elle, la radio
@@ -173,9 +189,9 @@ export class RelaisLocalService implements OnDestroy {
       compagnonId, protocole: b.protocole, transport: b.transport, liaison: transport.libelle,
       nom: ouverture.nom || identite.nom || 'Radio', etat: 'relais',
       tramesRecues: 0, tramesEnvoyees: 0, messagesRelayes: 0, canauxIgnores: [],
-      derniereActivite: null, erreur: '',
+      derniereActivite: null, erreur: '', plan: null, annonce: '',
       transportObj: transport, pilote, identite, minuterie: null, essais: 0, arrete: false,
-      canaux: null, enCours: new Set(),
+      canaux: null, enCours: new Set(), cycles: 0,
     };
     this.relais.set(compagnonId, r);
     pilote.surMessage = m => this.relayerEntrant(r, m);
@@ -184,8 +200,70 @@ export class RelaisLocalService implements OnDestroy {
     await this.prendreLeVerrou();
     r.minuterie = setInterval(() => void this.unCycle(r), CYCLE_MS);
     void this.unCycle(r);
+    if (b.protocole === 'MESHTASTIC') { void this.chargerPlan(r); }
     this.publier();
     return compagnonId;
+  }
+
+  // ══ Plan de canaux (Meshtastic, règle du 14/11/2026) ══════════════════════
+  //
+  // Au branchement : on compare les emplacements que la radio a décrits pendant la poignée de
+  // main au plan du serveur (Fr_Balise, Fr_EMCOM, crise, commune), et on PROPOSE. Rien n'est
+  // écrit sur la radio sans que la personne valide (`appliquerPlan`).
+
+  async chargerPlan(r: Relais | string): Promise<void> {
+    const relais = typeof r === 'string' ? this.relais.get(r) : r;
+    if (!relais || !(relais.pilote instanceof PiloteMeshtastic)) { return; }
+    try {
+      const plan = await firstValueFrom(this.service.planCanaux(relais.compagnonId));
+      const emplacements = [...relais.pilote.emplacements.values()].sort((a, b) => a.index - b.index);
+      relais.plan = {
+        entrees: plan.canaux, emplacements, avertissement: plan.avertissement, isolee: plan.isolee,
+        proposition: proposerPlan(emplacements, plan.canaux, plan.emplacements),
+      };
+      relais.canaux = null;   // de nouveaux canaux ont peut-être été créés côté serveur
+    } catch (e) {
+      relais.erreur = 'Plan de canaux indisponible : ' + this.lisible(e);
+    }
+    this.publier();
+  }
+
+  /**
+   * Applique ce que la personne a validé : suppressions d'abord, puis écritures, une commande
+   * d'administration à la fois. Puis annonce les canaux de crise et de commune sur Fr_EMCOM,
+   * par cette passerelle seulement. Renvoie les entrées restées sans place.
+   */
+  async appliquerPlan(compagnonId: string, retenus: EntreePlan[], aSupprimer: number[])
+      : Promise<EntreePlan[]> {
+    const r = this.relais.get(compagnonId);
+    if (!r?.plan || !(r.pilote instanceof PiloteMeshtastic)) {
+      throw new Error('Aucun plan de canaux pour cette radio.');
+    }
+    const ops = operationsPlan(r.plan.proposition, retenus, aSupprimer);
+    for (const index of ops.supprimer) {
+      await r.pilote.supprimerCanal(index);
+    }
+    for (const { index, entree } of ops.ecrire) {
+      await r.pilote.ecrireCanal(index, entree.nom, entree.psk_hex);
+    }
+    await this.chargerPlan(r);
+    await this.annoncer(r);
+    return ops.sansPlace;
+  }
+
+  /** Annonce sur Fr_EMCOM si la radio porte un canal de crise ou de commune. */
+  private async annoncer(r: Relais): Promise<void> {
+    const locaux = r.plan?.proposition.presents.filter(
+      p => p.entree.role === 'crise' || p.entree.role === 'commune') ?? [];
+    const emcomPresent = r.plan?.proposition.presents.some(p => p.entree.nom.toLowerCase() === 'fr_emcom');
+    if (!locaux.length || !emcomPresent) { return; }
+    try {
+      const reponse = await firstValueFrom(this.service.annoncer(r.compagnonId));
+      r.annonce = reponse.annonce ? `Annoncé sur Fr_EMCOM : ${reponse.annonce}` : (reponse.raison || '');
+    } catch (e) {
+      r.annonce = 'Annonce impossible : ' + this.lisible(e);
+    }
+    this.publier();
   }
 
   private async choisirTransport(b: Branchement): Promise<Transport> {
@@ -278,7 +356,43 @@ export class RelaisLocalService implements OnDestroy {
       next: messages => { for (const m of messages) { void this.transmettre(r, m); } },
       error: () => undefined,
     });
+    // Canaux : un cycle sur trois suffit (~9 s) — huit emplacements interrogés toutes les trois
+    // secondes, ce serait beaucoup de requêtes pour des diffusions qui ne sont pas à la seconde.
+    r.cycles++;
+    if (r.pilote instanceof PiloteMeshtastic && r.cycles % 3 === 1) {
+      void this.diffuserCanaux(r, r.pilote);
+    }
     this.publier();
+  }
+
+  /**
+   * Émet sur chaque canal de la radio ce que le serveur lui confie pour ce canal. Pour une
+   * passerelle isolée, le serveur ne sert que sa crise et sa commune, et note lui-même la
+   * diffusion ; pour une passerelle ouverte au réseau, on marque l'envoi ensuite.
+   */
+  private async diffuserCanaux(r: Relais, pilote: PiloteMeshtastic): Promise<void> {
+    for (const [index, nom] of pilote.canaux) {
+      const canalId = await this.canalPourNom(r, nom);
+      if (!canalId) { continue; }
+      let messages: { id: string; contenu: string }[];
+      try {
+        messages = await firstValueFrom(this.service.aEnvoyerCanalMeshtastic(r.compagnonId, canalId));
+      } catch {
+        continue;
+      }
+      for (const m of messages) {
+        try {
+          await pilote.envoyerCanal(index, m.contenu);
+          r.messagesRelayes++;
+          r.derniereActivite = new Date();
+          if (r.plan && !r.plan.isolee) {
+            this.service.marquerCanalMeshtastic(r.compagnonId, m.id).subscribe({ error: () => undefined });
+          }
+        } catch (e) {
+          r.erreur = this.lisible(e);
+        }
+      }
+    }
   }
 
   private async transmettre(r: Relais,
@@ -344,6 +458,7 @@ export class RelaisLocalService implements OnDestroy {
       r.essais = 0;
       r.etat = 'relais';
       r.erreur = '';
+      if (r.protocole === 'MESHTASTIC') { void this.chargerPlan(r); }
       this.publier();
     } catch (e) {
       r.etat = 'relais';   // pour que reconnecter() reparte
@@ -370,7 +485,7 @@ export class RelaisLocalService implements OnDestroy {
       liaison: r.liaison, nom: r.nom, etat: r.etat,
       tramesRecues: r.pilote.tramesRecues, tramesEnvoyees: r.pilote.tramesEnvoyees,
       messagesRelayes: r.messagesRelayes, canauxIgnores: [...r.canauxIgnores],
-      derniereActivite: r.derniereActivite, erreur: r.erreur,
+      derniereActivite: r.derniereActivite, erreur: r.erreur, plan: r.plan, annonce: r.annonce,
     })));
   }
 

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 
 import { RelaisLocalService, RelaisVisible } from '../../../../services/relais-local.service';
+import { CanauxRadioComponent } from '../canaux-radio/canaux-radio.component';
 
 /**
  * « Les radios que CE poste relaie » — la liste, les compteurs, et le bouton pour débrancher.
@@ -18,7 +19,7 @@ import { RelaisLocalService, RelaisVisible } from '../../../../services/relais-l
 @Component({
   selector: 'app-relais-locaux',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, CanauxRadioComponent],
   templateUrl: './relais-locaux.component.html',
   styleUrl: './relais-locaux.component.scss',
 })

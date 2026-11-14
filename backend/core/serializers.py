@@ -4237,11 +4237,19 @@ class CanalMeshtasticSerializer(serializers.ModelSerializer):
     crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
     equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
     compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True, default=None)
+    # Vrai quand la clé est connue de tous : vide (aucun chiffrement) ou sur UN octet — la forme
+    # courte des clés par défaut de Meshtastic (`01` à `0a`). Sert à afficher l'avertissement
+    # « non chiffré » partout où l'on écrit sur ce canal (règle du 14/11/2026). Dit seulement SI
+    # la clé est publique, jamais laquelle : psk_hex reste en écriture seule.
+    cle_publique = serializers.SerializerMethodField()
 
     class Meta:
         model = CanalMeshtastic
         fields = "__all__"
         extra_kwargs = {'psk_hex': {'write_only': True}}
+
+    def get_cle_publique(self, canal):
+        return len((canal.psk_hex or '').strip()) <= 2
 
     def validate_nom(self, nom):
         # Limite du firmware Meshtastic, voir views.MESHTASTIC_NOM_CANAL_MAX_OCTETS.
