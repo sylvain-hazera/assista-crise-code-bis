@@ -16,6 +16,8 @@ import fr.assistacrise.mobile.domaine.MessageEquipe
 import fr.assistacrise.mobile.domaine.PositionMembre
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
+import fr.assistacrise.mobile.domaine.Mobilisation
+import fr.assistacrise.mobile.domaine.Verdict
 import fr.assistacrise.mobile.domaine.StatutMission
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
@@ -119,6 +121,18 @@ class ClientApi(
     suspend fun demanderNouveauMotDePasse(email: String): Reponse<Unit> =
         appeler(HttpMethod.Post, "reset-password/request/", buildJsonObject { put("email", email.trim()) }, jeton = null)
             .sansValeur()
+
+    /**
+     * Soumet au serveur le jeton lu sur un QR code. **Fonctionne sans compte** : on vérifie
+     * alors l'authenticité, sans apprendre ni le nom ni le lieu. Connecté, le verdict est complet.
+     */
+    suspend fun verifierMobilisation(jeton: String): Reponse<Verdict> {
+        val chemin = "verifier-mobilisation/$jeton/donnees/"
+        val r = if (session.jetonAcces != null) authentifie(HttpMethod.Get, chemin) else appeler(HttpMethod.Get, chemin, null, jeton = null)
+        return r.transformer { json.decodeFromJsonElement(Verdict.serializer(), it) }
+    }
+
+    suspend fun mesMobilisations(): Reponse<List<Mobilisation>> = liste("mes-mobilisations/", Mobilisation.serializer())
 
     // --- Avec compte ---------------------------------------------------------------------
 

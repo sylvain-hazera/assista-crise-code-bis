@@ -23,6 +23,13 @@ export interface GroupeSituation {
   centres: CentreAccueilPublic[];
 }
 
+import {
+  ScannerMobilisationComponent,
+} from '../../shared/components/common/scanner-mobilisation/scanner-mobilisation.component';
+import {
+  MaMobilisation, VerificationMobilisationService,
+} from '../../services/verification-mobilisation.service';
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -31,6 +38,7 @@ export interface GroupeSituation {
   imports: [
     CommonModule,
     MapComponent,
+    ScannerMobilisationComponent,
   ],
   providers: [
   ]
@@ -45,6 +53,17 @@ export class HomeComponent implements OnInit {
   readonly branding$: Observable<Branding>;
 
   canDeclareCrisis = false;
+
+  // ══ QR codes de mobilisation, dès l'accueil ════════════════════════════════
+  // Demande de Sylvain du 14/11/2026 : lire un QR code dès la page d'accueil, même sans
+  // compte, et pour l'intervenant montrer le sien en un geste. Les mêmes deux boutons que
+  // sur l'écran d'ouverture de l'application mobile.
+  scannerOuvert = false;
+  /** Les demandes adressées à la personne connectée. Vide pour un visiteur. */
+  mesMobilisations: MaMobilisation[] = [];
+  qrOuvert = false;
+  /** Celle dont le QR code est montré en grand. */
+  mobilisationMontree: MaMobilisation | null = null;
 
   // ══ Récapitulatif public, au-dessus de la carte ════════════════════════════
   // Lu par des habitants non connectés, souvent sur téléphone et parfois dans l'urgence : les
@@ -63,6 +82,7 @@ export class HomeComponent implements OnInit {
     private authService: AuthService,
     private crisisService: CrisisService,
     private pointService: PointOperationnelService,
+    private verificationMobilisation: VerificationMobilisationService,
   ) {
     this.branding$ = this.brandingService.branding$;
   }
@@ -78,7 +98,27 @@ export class HomeComponent implements OnInit {
       this.canDeclareCrisis = false;
     }
 
+    if (user) {
+      // Silencieux en cas d'échec : le bouton « Mon QR code » n'apparaît simplement pas, et
+      // l'accueil n'a pas à afficher une erreur pour une fonction que la plupart n'ont pas.
+      this.verificationMobilisation.mesMobilisations().subscribe({
+        next: (demandes) => this.mesMobilisations = demandes,
+        error: () => this.mesMobilisations = [],
+      });
+    }
+
     this.chargerRecap();
+  }
+
+  /** Ouvre le QR code : la demande active la plus récente d'abord, c'est celle qu'on contrôle. */
+  montrerMonQr(): void {
+    this.mobilisationMontree = this.mesMobilisations.find(m => m.statut === 'ACTIVE')
+      ?? this.mesMobilisations[0] ?? null;
+    this.qrOuvert = !!this.mobilisationMontree;
+  }
+
+  lieuDe(m: MaMobilisation): string {
+    return m.point_operationnel_nom || m.lieu_texte || '';
   }
 
   private chargerRecap(): void {

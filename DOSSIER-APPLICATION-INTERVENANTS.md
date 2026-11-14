@@ -880,6 +880,42 @@ téléphone, sceller une photo par son empreinte dès la prise.
 (reçu avec la photo, sans position dans l'image, lieu = point touché) ; demande d'hébergement
 avec précisions (durée, étage, capacité reçues) ; offre d'aide (0.5.0).
 
+## 19. QR codes de mobilisation, dès l'ouverture (14/11/2026, version 0.6.0)
+
+Demande : un bouton rapide, dès la page d'accueil et même sans compte, pour lire les QR codes
+de mobilisation ; et pour l'intervenant, présenter rapidement le sien. Fait des deux côtés.
+
+| | Application | Site |
+|---|---|---|
+| Lire un QR code, sans compte | bouton sur l'écran de connexion | bouton sur la page d'accueil |
+| Lire un QR code, connecté | bouton en tête de l'onglet Missions | même bouton |
+| Présenter mon QR code | « Mon QR code », en tête de l'onglet Missions | « Mon QR code », page d'accueil |
+
+**Lire.** L'adresse lue n'est jamais ouverte : on en tire le jeton, soumis à notre serveur. Un
+QR code collé par-dessus un autre n'obtient au pire que « aucune attestation ne correspond ».
+Sans compte, le verdict dit valide, révoquée ou inconnue, la référence, l'institution et la
+crise — ni le nom ni le lieu, comme le serveur le décide déjà (`verdict_mobilisation`). Sans
+réponse du serveur, l'écran ne dit ni valide ni invalide : il dit qu'il ne sait pas.
+
+Dans l'application, la caméra est analysée image par image sur le téléphone (CameraX et ZXing,
+sans service d'un fabricant) ; rien n'est enregistré. C'est la seule raison de la permission
+caméra, demandée au premier usage. L'application se propose aussi quand l'appareil photo du
+téléphone lit lui-même un QR code d'attestation.
+
+**Présenter.** Le serveur réservait la liste des demandes de mobilisation aux acteurs
+institutionnels : le bénévole mobilisé ne pouvait pas lire la sienne. Nouvel accès
+`mes-mobilisations/`, limité aux demandes adressées à l'appelant, qui rend l'adresse et l'image
+du QR code **telles que sur l'attestation PDF**. L'application garde ces demandes chiffrées :
+le QR code s'affiche sans réseau (c'est celui qui le lit qui a besoin du serveur), noir sur
+blanc et écran à pleine luminosité.
+
+Vérifié : 4 tests serveur, 98 tests du code partagé, 551 tests du site. Sur téléphone virtuel :
+QR code affiché relu par la bibliothèque de référence (bonne adresse, bon jeton) ; verdicts
+valide, révoquée, inconnue ; sans compte, verdict sans nom ni lieu ; ouverture du lecteur.
+**Pas vérifié : la lecture d'un vrai QR code par la caméra** (le téléphone virtuel n'en a pas
+devant lui) — les verdicts ont été obtenus en passant l'adresse à l'application. Les deux
+boutons du site n'ont pas été essayés dans un navigateur.
+
 ---
 
 # Annexe A — Relais série par le navigateur

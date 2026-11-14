@@ -20,8 +20,57 @@
           Déclarer une crise
         </button>
       }
+      <!-- Lisible sans compte : celui qui contrôle une attestation n'est pas forcément des
+           nôtres. Le verdict ne donne alors ni le nom ni le lieu. -->
+      <button type="button" class="btn btn-qr" (click)="scannerOuvert = true">
+        <span class="material-icons" aria-hidden="true">qr_code_scanner</span>
+        Lire un QR code de mobilisation
+      </button>
+      @if (mesMobilisations.length) {
+        <button type="button" class="btn btn-qr" (click)="montrerMonQr()">
+          <span class="material-icons" aria-hidden="true">qr_code_2</span>
+          Mon QR code
+        </button>
+      }
     </div>
   </div>
+
+  @if (scannerOuvert) {
+    <app-scanner-mobilisation (ferme)="scannerOuvert = false"></app-scanner-mobilisation>
+  }
+
+  @if (qrOuvert && mobilisationMontree; as m) {
+    <div class="qr-fond" (click)="qrOuvert = false">
+      <div class="qr-carte" role="dialog" aria-modal="true" aria-label="Mon QR code de mobilisation"
+           (click)="$event.stopPropagation()">
+        <!-- Toujours noir sur blanc, quel que soit le thème : un QR code inversé ne se lit pas. -->
+        <img class="qr-image" [src]="'data:image/png;base64,' + m.qr_png"
+             alt="QR code de votre attestation de mobilisation">
+        <p class="qr-etat" [class.revoquee]="m.statut !== 'ACTIVE'">
+          {{ m.statut === 'ACTIVE' ? 'Attestation active' : 'Attestation révoquée' }}
+        </p>
+        <p class="qr-detail">
+          {{ m.institution_emettrice_nom }} · {{ m.crise_nom }} · {{ m.type_demande_libelle }}
+          @if (lieuDe(m)) { · {{ lieuDe(m) }} }
+        </p>
+        @if (mesMobilisations.length > 1) {
+          <ul class="qr-autres">
+            @for (autre of mesMobilisations; track autre.id) {
+              @if (autre.id !== m.id) {
+                <li>
+                  <button type="button" (click)="mobilisationMontree = autre">
+                    {{ autre.crise_nom }} · {{ autre.type_demande_libelle }}
+                    @if (autre.statut !== 'ACTIVE') { <span>(révoquée)</span> }
+                  </button>
+                </li>
+              }
+            }
+          </ul>
+        }
+        <button type="button" class="btn btn-primary" (click)="qrOuvert = false">Fermer</button>
+      </div>
+    </div>
+  }
 
   <!-- Récapitulatif de la situation, au-dessus de la carte : lisible sans compte, pensé pour
        un habitant qui cherche ce qui se passe près de lui et où il peut aller. Les centres sont

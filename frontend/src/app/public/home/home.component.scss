@@ -544,3 +544,36 @@
     .situation-groupes { grid-template-columns: 1fr; }
   }
 }
+
+// ── QR codes de mobilisation, dès l'accueil ────────────────────────────────────────────────
+.btn.btn-qr {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #1f2937);
+  border: 1px solid var(--ac-border-strong, #d1d5db);
+  .material-icons { font-size: 1.2rem; }
+}
+
+.qr-fond {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+  background: rgba(15, 23, 42, .72);
+}
+.qr-carte {
+  width: 100%; max-width: 24rem; max-height: 100%; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  padding: 1.2rem; border-radius: 12px; text-align: center;
+  background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937);
+  .qr-image {
+    width: 100%; max-width: 20rem; aspect-ratio: 1; padding: .5rem;
+    background: #fff; border-radius: 8px; image-rendering: pixelated;
+  }
+  .qr-etat { margin: .3rem 0 0; font-weight: 700; color: var(--ac-green-text, #166534);
+    &.revoquee { color: var(--ac-red-text, #991b1b); } }
+  .qr-detail { margin: 0; font-size: .9rem; color: var(--ac-text-muted, #6b7280); }
+  .qr-autres {
+    width: 100%; margin: .4rem 0; padding: 0; list-style: none;
+    button { width: 100%; padding: .5rem; border: 0; border-top: 1px solid var(--ac-border, #e5e7eb);
+      background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+  }
+}

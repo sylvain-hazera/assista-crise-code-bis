@@ -35,6 +35,9 @@ import fr.assistacrise.mobile.ui.EcranCarte
 import fr.assistacrise.mobile.ui.EcranDepot
 import fr.assistacrise.mobile.ui.EcranDisponibilites
 import fr.assistacrise.mobile.ui.EcranDossier
+import fr.assistacrise.mobile.ui.EcranMobilisations
+import fr.assistacrise.mobile.ui.EcranScanner
+import fr.assistacrise.mobile.ui.EcranVerdict
 import fr.assistacrise.mobile.ui.EcranFiche
 import fr.assistacrise.mobile.ui.EcranInterventions
 import fr.assistacrise.mobile.ui.EcranNotification
@@ -56,7 +59,11 @@ class MainActivity : ComponentActivity() {
         lireAlerte(intent)
     }
 
+    /** L'adresse d'un QR code de mobilisation, passée par l'appareil photo du téléphone. */
+    private var adresseRecue by mutableStateOf<String?>(null)
+
     private fun lireAlerte(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW) { intent.dataString?.let { adresseRecue = it }; intent.data = null; return }
         val cible = intent?.getStringExtra(Alertes.EXTRA_CIBLE) ?: return
         alerteTouchee = intent.getStringExtra(Alertes.EXTRA_GENRE) to cible
         // Lue une fois : une rotation d'écran ne doit pas rouvrir la même chose.
@@ -83,6 +90,11 @@ class MainActivity : ComponentActivity() {
                     if (alerte != null && modele.pret) { modele.ouvrirDepuisAlerte(alerte.first, alerte.second); alerteTouchee = null }
                 }
 
+                LaunchedEffect(adresseRecue, modele.pret) {
+                    val adresse = adresseRecue
+                    if (adresse != null && modele.pret) { modele.qrLu(adresse); adresseRecue = null }
+                }
+
                 // Android 13 et suivants : sans cet accord, rien ne sonne. On le demande une fois,
                 // à la première ouverture connectée — pas avant que la personne sache pourquoi.
                 val demandeNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { modele.auPremierPlan() }
@@ -101,10 +113,11 @@ class MainActivity : ComponentActivity() {
                 val mesEquipes by modele.equipes.collectAsStateWithLifecycle()
                 val intervenant = compte?.mode == Mode.INTERVENANT || mesEquipes.isNotEmpty()
                 val ecran = when {
-                    compte == null && modele.ecran == Ecran.INSCRIPTION -> Ecran.INSCRIPTION
+                    // Lire un QR code de mobilisation ne demande pas de compte.
+                    compte == null && modele.ecran in setOf(Ecran.INSCRIPTION, Ecran.SCANNER, Ecran.VERDICT) -> modele.ecran
                     compte == null -> Ecran.CONNEXION
                     // Mode citoyen : rien de l'intervenant n'est visible (dossier § 13).
-                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE) -> Ecran.AIDE
+                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS) -> Ecran.AIDE
                     modele.ecran == Ecran.CONNEXION || modele.ecran == Ecran.INSCRIPTION -> Ecran.MISSIONS
                     else -> modele.ecran
                 }
@@ -112,6 +125,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.MESSAGERIE) { modele.aller(Ecran.EQUIPES) }
                 BackHandler(enabled = ecran == Ecran.DEPOT) { modele.fermerDepot() }
                 BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
+                BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
                 BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
@@ -145,6 +159,9 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.FICHE -> EcranFiche(modele)
                             ecran == Ecran.INTERVENTIONS -> EcranInterventions(modele)
                             ecran == Ecran.DOSSIER -> EcranDossier(modele)
+                            ecran == Ecran.SCANNER -> EcranScanner(modele)
+                            ecran == Ecran.VERDICT -> EcranVerdict(modele)
+                            ecran == Ecran.MOBILISATIONS -> EcranMobilisations(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
@@ -157,4 +174,5 @@ class MainActivity : ComponentActivity() {
 /** Les écrans qu'on ouvre depuis un autre : ils ont leur flèche de retour, pas la barre. */
 private val ECRANS_SANS_BARRE = setOf(
     Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
+    Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS,
 )

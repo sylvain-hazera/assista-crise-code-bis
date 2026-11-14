@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,6 +79,17 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
                 if (modele.synchronisation) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Filled.Refresh, contentDescription = "Actualiser")
             }
+        }
+
+        // Les deux gestes du contrôle, à portée de pouce : montrer mon attestation, lire celle d'un autre.
+        val mobilisations by modele.mobilisations.collectAsStateWithLifecycle()
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (mobilisations.any { it.active }) {
+                Button(onClick = modele::ouvrirMobilisations, modifier = Modifier.weight(1f)) { Text("Mon QR code") }
+            } else {
+                OutlinedButton(onClick = modele::ouvrirMobilisations, modifier = Modifier.weight(1f)) { Text("Mon QR code") }
+            }
+            OutlinedButton(onClick = modele::ouvrirScanner, modifier = Modifier.weight(1f)) { Text("Lire un QR code") }
         }
 
         // Ce qui attend d'être envoyé est toujours sous les yeux, pas dans un sous-menu.

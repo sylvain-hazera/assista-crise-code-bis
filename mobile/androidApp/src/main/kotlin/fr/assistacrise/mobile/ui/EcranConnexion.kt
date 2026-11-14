@@ -93,6 +93,11 @@ fun EcranConnexion(modele: ModeleApplication) {
             TextButton(onClick = { oubli = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Mot de passe oublié ?")
             }
+            Spacer(Modifier.height(20.dp))
+            // Sans compte : celui qui contrôle une attestation n'est pas forcément des nôtres.
+            OutlinedButton(onClick = modele::ouvrirScanner, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                Text("Lire un QR code de mobilisation")
+            }
         }
     }
 

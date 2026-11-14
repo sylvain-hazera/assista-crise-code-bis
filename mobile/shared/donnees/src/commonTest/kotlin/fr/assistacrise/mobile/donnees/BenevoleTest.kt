@@ -252,3 +252,52 @@ class BenevoleTest {
         assertEquals("Bordeaux", corps.getValue("ville").jsonPrimitive.content)
     }
 }
+
+class MobilisationTest {
+    private val jeton = "aB3-xY_9aB3-xY_9aB3-xY_9aB3-xY_9aB3-xY_9abc"
+
+    @Test fun leJetonSeLitDansToutesLesFormesDAttestation() {
+        assertEquals(jeton, fr.assistacrise.mobile.domaine.jetonDeMobilisation("https://app.reserve-resilience.org/verifier-mobilisation/$jeton"))
+        assertEquals(jeton, fr.assistacrise.mobile.domaine.jetonDeMobilisation(" https://autre-domaine.fr/api/verifier-mobilisation/$jeton/ "))
+        assertEquals(jeton, fr.assistacrise.mobile.domaine.jetonDeMobilisation("https://x.fr/verifier-mobilisation/$jeton/donnees/?a=1"))
+    }
+
+    @Test fun unQrCodeQuelconqueNEstPasUneAttestation() {
+        assertNull(fr.assistacrise.mobile.domaine.jetonDeMobilisation("https://exemple.fr/promo"))
+        assertNull(fr.assistacrise.mobile.domaine.jetonDeMobilisation("https://x.fr/verifier-mobilisation/"))
+        assertNull(fr.assistacrise.mobile.domaine.jetonDeMobilisation("https://x.fr/verifier-mobilisation/<script>alert(1)</script>aaaaaaaaaaaa"))
+    }
+
+    @Test fun sansCompteLaVerificationPartSansJeton() = runTest {
+        val banc = BancBenevole()
+        banc.repond("verifier-mobilisation/$jeton/donnees/", """{"valide":true,"connue":true,"motif":"Attestation valide.","complet":false,"reference":"AB12CD34","crise":"Crue"}""")
+        val r = banc.api.verifierMobilisation(jeton)
+        assertIs<Reponse.Ok<fr.assistacrise.mobile.domaine.Verdict>>(r)
+        assertTrue(r.valeur.valide)
+        assertNull(r.valeur.destinataire)
+        assertNull(banc.demandes.single().headers[HttpHeaders.Authorization])
+    }
+
+    @Test fun connecteLaVerificationPorteLeCompteEtRendLeNom() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("verifier-mobilisation/$jeton/donnees/", """{"valide":false,"connue":true,"motif":"Cette attestation a été révoquée.","complet":true,"destinataire":"Camille Durand","lieu":"PC de crise"}""")
+        val r = banc.api.verifierMobilisation(jeton) as Reponse.Ok
+        assertFalse(r.valeur.valide)
+        assertEquals("Camille Durand", r.valeur.destinataire)
+        assertEquals("Bearer A", banc.demandes.single().headers[HttpHeaders.Authorization])
+    }
+
+    @Test fun seulesMesMobilisationsSePresententEtRestentLisiblesSansReseau() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("mes-mobilisations/", """[
+            {"id":"11111111-aaaa","cible_utilisateur":"u1","statut":"REVOQUEE","jeton_verification":"$jeton"},
+            {"id":"22222222-bbbb","cible_utilisateur":"u1","statut":"ACTIVE","jeton_verification":"$jeton","crise_nom":"Crue"},
+            {"id":"33333333-cccc","cible_utilisateur":"u9","statut":"ACTIVE","jeton_verification":"$jeton"}]""")
+        banc.benevole.chargerLesMobilisations("u1")
+        assertEquals(listOf("22222222", "11111111"), banc.benevole.mobilisations.value.map { it.reference })
+        assertEquals("https://x.fr/verifier-mobilisation/$jeton", banc.benevole.mobilisations.value.first().adresseDeVerification("https://x.fr/"))
+
+        val relance = DepotBenevole(banc.api, banc.magasin).also { it.restaurer() }
+        assertEquals(2, relance.mobilisations.value.size)
+    }
+}

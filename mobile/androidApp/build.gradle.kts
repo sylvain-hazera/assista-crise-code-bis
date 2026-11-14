@@ -11,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.5.1"
+        versionCode = 8
+        versionName = "0.6.0"
     }
 
     buildFeatures {
@@ -35,6 +35,8 @@ android {
             val site = (project.findProperty("urlSite") as String?) ?: "https://app.reserve-resilience.org"
             buildConfigField("String", "URL_SITE", "\"$site\"")
             buildConfigField("String", "URL_API", "\"$site/api\"")
+            // L'hote des QR codes de mobilisation : l'application propose de les ouvrir elle-meme.
+            manifestPlaceholders["hoteSite"] = site.substringAfter("://").substringBefore("/").substringBefore(":")
         }
     }
 
@@ -85,4 +87,10 @@ dependencies {
     implementation(libs.maplibre)
     implementation(libs.work.runtime)
     implementation(libs.exifinterface)
+    // Lire et dessiner les QR codes sur le telephone meme, sans service d'un fabricant.
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.zxing)
 }

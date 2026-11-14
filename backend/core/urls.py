@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views_application import (
-    AccuserNotificationsView, MesNotificationsView, MonAppareilView, RepondreIndisponibleView,
+    AccuserNotificationsView, MesMobilisationsView, MesNotificationsView, MonAppareilView,
+    RepondreIndisponibleView,
 )
 from .views import (
     BrouillonEnvoiViewSet,
@@ -322,6 +323,8 @@ urlpatterns = [
          name='repondre_indisponible'),
     # Application mobile : le telephone se presente, lit ses notifications, dit ce qu'il en a
     # fait (voir core/views_application.py).
+    # Les demandes de mobilisation adressees a l'appelant : il en presente le QR code.
+    path('mes-mobilisations/', MesMobilisationsView.as_view(), name='mes_mobilisations'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

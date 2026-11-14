@@ -17,8 +17,10 @@ from rest_framework.views import APIView
 
 from . import notifications_application as moteur
 from .models import (
-    CampagneDisponibilite, CibleCampagne, NotificationApplication, StatutCampagne,
+    CampagneDisponibilite, CibleCampagne, DemandeMobilisation, NotificationApplication,
+    StatutCampagne,
 )
+from .permissions import get_active_environment
 from .serializers import NotificationApplicationSerializer
 
 
@@ -129,3 +131,53 @@ class RepondreIndisponibleView(APIView):
         cible = repondre_indisponible(campagne, request.user)
         return Response({"etat": cible.etat, "creneaux_declares": cible.creneaux_declares,
                          "date_reponse": cible.date_reponse})
+
+
+class MesMobilisationsView(APIView):
+    """Les demandes de mobilisation adressées à l'appelant, pour qu'il présente son QR code.
+
+    `DemandeMobilisationViewSet` est réservé aux acteurs institutionnels : un bénévole mobilisé
+    n'y lit pas la demande qui le concerne, alors que c'est lui qui doit la montrer au bord de
+    la route. Ici, rien que les siennes (`cible_utilisateur`), et rien que ce qu'il sait déjà :
+    c'est le contenu de l'attestation qu'il a reçue.
+
+    Le jeton est rendu : c'est ce que porte le QR code de son attestation. Le rendre à son
+    titulaire ne donne rien de plus que le PDF — et le verdict d'un jeton ne révèle le nom et le
+    lieu qu'à un compte connecté (`verdict_mobilisation`)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        demandes = DemandeMobilisation.objects.filter(
+            cible_utilisateur=request.user, environment=get_active_environment(request),
+            jeton_verification__isnull=False,
+        ).select_related("crise", "institution_emettrice", "point_operationnel").order_by(
+            "-date_creation")[:50]
+        import base64
+
+        from django.conf import settings
+
+        from .attestation_mobilisation import generer_qr_image, url_verification
+
+        def qr(demande):
+            # La MÊME adresse et le MÊME dessin que sur l'attestation PDF : un QR code affiché
+            # à l'écran doit se lire exactement comme celui du papier.
+            adresse = url_verification(demande, settings.SERVER_URL)
+            return adresse, base64.b64encode(generer_qr_image(adresse).getvalue()).decode("ascii")
+
+        return Response([
+            {
+                **dict(zip(("adresse_verification", "qr_png"), qr(d))),
+                "id": d.id,
+                "crise_nom": d.crise.name,
+                "institution_emettrice_nom": d.institution_emettrice.nom,
+                "type_demande_libelle": d.get_type_demande_display(),
+                "point_operationnel_nom": d.point_operationnel.nom if d.point_operationnel_id else None,
+                "lieu_texte": d.lieu_texte,
+                "statut": d.statut,
+                "cible_utilisateur": request.user.id,
+                "date_creation": d.date_creation,
+                "jeton_verification": d.jeton_verification,
+            }
+            for d in demandes
+        ])

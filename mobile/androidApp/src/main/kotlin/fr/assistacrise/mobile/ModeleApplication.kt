@@ -25,6 +25,8 @@ import fr.assistacrise.mobile.domaine.validerDepot
 import fr.assistacrise.mobile.domaine.EtatAction
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
+import fr.assistacrise.mobile.domaine.Verdict
+import fr.assistacrise.mobile.domaine.jetonDeMobilisation
 import fr.assistacrise.mobile.domaine.MissionAffichee
 import fr.assistacrise.mobile.domaine.MotifArret
 import fr.assistacrise.mobile.domaine.PositionMembre
@@ -53,6 +55,7 @@ data class EtatFormulaire(
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
+    SCANNER, VERDICT, MOBILISATIONS,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -75,6 +78,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val titres = app.benevole.titres
     val dossiers = app.benevole.dossiers
     val typesOffre = app.citoyen.typesOffre
+    val mobilisations = app.benevole.mobilisations
     val commentaires = app.dossiers.commentaires
     val photos = app.dossiers.photos
     val missions: StateFlow<List<MissionAffichee>> =
@@ -118,6 +122,12 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     /** Le lieu touché sur la carte, pour le dépôt en cours. `null` : la position du moment. */
     var lieuChoisi by mutableStateOf<Releve?>(null); private set
     var retourDuDepot by mutableStateOf(Ecran.AIDE); private set
+
+    /** Le verdict du dernier QR code lu. `null` : pas de réponse du serveur — on ne sait pas. */
+    var verdict by mutableStateOf<Verdict?>(null); private set
+    var verificationEnCours by mutableStateOf(false); private set
+    var erreurScanner by mutableStateOf<String?>(null); private set
+    private var retourDuScanner = Ecran.CONNEXION
 
     /** L'application est-elle à l'écran ? Ce qu'on a sous les yeux ne fait pas sonner. */
     private var visible = false
@@ -314,6 +324,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     app.citoyen.rafraichir()
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
                     if (equipes.value.isNotEmpty()) app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
+                    compte.value?.id?.let { app.benevole.chargerLesMobilisations(it) }
                     veiller()
                 }
                 is Reponse.Refus -> if (r.code == 401) {
@@ -457,6 +468,51 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Refus -> message = r.message
                 is Reponse.Injoignable -> message = "Pas de réseau : le statut n'a pas changé."
             }
+        }
+    }
+
+    // --- QR codes de mobilisation ------------------------------------------------------------
+
+    /** Ouvert depuis l'écran de connexion aussi : lire un QR code ne demande pas de compte. */
+    fun ouvrirScanner() {
+        if (ecran !in setOf(Ecran.SCANNER, Ecran.VERDICT)) retourDuScanner = ecran
+        erreurScanner = null
+        ecran = Ecran.SCANNER
+    }
+
+    fun ouvrirMobilisations() {
+        retourDuScanner = ecran
+        ecran = Ecran.MOBILISATIONS
+        // Ce qui est gardé s'affiche tout de suite ; le serveur dit ensuite si rien n'a été révoqué.
+        viewModelScope.launch { compte.value?.id?.let { app.benevole.chargerLesMobilisations(it) } }
+    }
+
+    fun fermerScanner() { ecran = retourDuScanner }
+
+    /**
+     * Un QR code vient d'être lu — par la caméra de l'application, ou par celle du téléphone
+     * qui nous a passé l'adresse. On n'ouvre jamais ce qu'il contient : on en tire le jeton.
+     */
+    fun qrLu(texte: String) {
+        if (verificationEnCours) return
+        val jeton = jetonDeMobilisation(texte)
+        if (jeton == null) {
+            // Dit sur l'écran du scanner, qui continue de lire : un autre QR code traînait dans le champ.
+            erreurScanner = "Ce QR code n'est pas une attestation de mobilisation."
+            return
+        }
+        if (ecran !in setOf(Ecran.SCANNER, Ecran.VERDICT)) retourDuScanner = ecran
+        verdict = null
+        erreurScanner = null
+        verificationEnCours = true
+        ecran = Ecran.VERDICT
+        viewModelScope.launch {
+            when (val r = app.api.verifierMobilisation(jeton)) {
+                is Reponse.Ok -> verdict = r.valeur
+                is Reponse.Refus -> erreurScanner = r.message
+                is Reponse.Injoignable -> erreurScanner = "Pas de réseau : la vérification demande le serveur. Ce QR code n'est donc ni confirmé ni infirmé."
+            }
+            verificationEnCours = false
         }
     }
 

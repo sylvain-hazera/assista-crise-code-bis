@@ -34,6 +34,20 @@ export interface VerdictMobilisation {
  * **Endpoint public** (`AllowAny` côté serveur) : le jeton EST l'autorisation, comme pour la
  * page que le QR ouvre dans le navigateur d'un gendarme sans compte. Le service n'ajoute donc
  * aucune authentification — et le serveur n'expose rien de plus que cette page publique. */
+/** Une demande de mobilisation adressée à la personne connectée, avec son QR code prêt à montrer. */
+export interface MaMobilisation {
+  id: string;
+  crise_nom: string;
+  institution_emettrice_nom: string;
+  type_demande_libelle: string;
+  point_operationnel_nom: string | null;
+  lieu_texte: string;
+  statut: 'ACTIVE' | 'REVOQUEE';
+  date_creation: string;
+  /** L'image du QR code, en PNG encodé : la même que sur l'attestation PDF. */
+  qr_png: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class VerificationMobilisationService {
 
@@ -52,6 +66,11 @@ export class VerificationMobilisationService {
    *
    * Renvoie null quand le texte scanné n'a rien à voir — un QR de carte de visite, par
    * exemple. L'écran le dit alors, plutôt que d'interroger le serveur avec n'importe quoi. */
+  /** Les demandes qui me sont adressées, pour présenter mon QR code sans rouvrir le PDF. */
+  mesMobilisations(): Observable<MaMobilisation[]> {
+    return this.http.get<MaMobilisation[]>(`${environment.apiUrl}/mes-mobilisations/`);
+  }
+
   jetonDepuisTexte(texte: string): string | null {
     const brut = (texte || '').trim();
     if (!brut) { return null; }

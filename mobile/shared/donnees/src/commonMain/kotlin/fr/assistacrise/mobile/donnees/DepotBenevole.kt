@@ -4,6 +4,7 @@ import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Fiche
 import fr.assistacrise.mobile.domaine.Grille
+import fr.assistacrise.mobile.domaine.Mobilisation
 import fr.assistacrise.mobile.domaine.Titre
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +38,25 @@ class DepotBenevole(
     private val _dossiers = MutableStateFlow<List<Dossier>>(emptyList())
     val dossiers: StateFlow<List<Dossier>> = _dossiers
 
+    private val _mobilisations = MutableStateFlow<List<Mobilisation>>(emptyList())
+    /** Les demandes de mobilisation qui me sont adressées, actives d'abord. Gardées sur le
+     * téléphone : un QR code doit pouvoir se présenter là où il n'y a pas de réseau. */
+    val mobilisations: StateFlow<List<Mobilisation>> = _mobilisations
+
+    suspend fun chargerLesMobilisations(idCompte: String): Reponse<Unit> = when (val r = api.mesMobilisations()) {
+        is Reponse.Ok -> {
+            // Le serveur rend aussi celles que mon institution a émises : seules les miennes se présentent.
+            val miennes = r.valeur.filter { it.cibleUtilisateur == idCompte && it.jeton != null }.sortedByDescending { it.active }
+            garder("mobilisations", ListSerializer(Mobilisation.serializer()), miennes)
+            _mobilisations.value = miennes
+            Reponse.Ok(Unit)
+        }
+        is Reponse.Refus -> r
+        is Reponse.Injoignable -> r
+    }
+
     suspend fun restaurer() {
+        _mobilisations.value = lire("mobilisations", ListSerializer(Mobilisation.serializer())) ?: emptyList()
         _fiche.value = lire("fiche", Fiche.serializer())
         _titres.value = lire("titres", ListSerializer(Titre.serializer())) ?: emptyList()
         _dossiers.value = lire("dossiers", ListSerializer(Dossier.serializer())) ?: emptyList()
@@ -101,7 +120,8 @@ class DepotBenevole(
     }
 
     suspend fun toutEffacer() {
-        listOf("fiche", "titres", "dossiers").forEach { magasin.effacer(it) }
+        listOf("fiche", "titres", "dossiers", "mobilisations").forEach { magasin.effacer(it) }
+        _mobilisations.value = emptyList()
         _grille.value = null; _fiche.value = null
         _titres.value = emptyList(); _dossiers.value = emptyList()
     }
