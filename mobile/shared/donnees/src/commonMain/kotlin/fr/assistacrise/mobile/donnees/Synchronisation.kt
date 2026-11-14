@@ -19,6 +19,7 @@ class Synchronisation(
     private val file: FileAttente,
     private val missions: DepotMissions,
     private val equipes: DepotEquipes,
+    private val dossiers: DepotDossiers? = null,
     private val radio: EmetteurRadio? = null,
 ) {
     /**
@@ -57,10 +58,34 @@ class Synchronisation(
                     else api.declarerMaPosition(coordonnees[0], coordonnees[1])
                 }
                 ActionEnAttente.GENRE_DEPOT -> api.deposer(action.cible, action.charge)
+                ActionEnAttente.GENRE_COMMENTAIRE -> api.commenter(action.cible, action.charge)
+                ActionEnAttente.GENRE_PHOTO -> envoyerPhoto(action)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }
         }
         if (missionsTouchees) missions.rafraichir()
         return accusees
+    }
+
+    private suspend fun envoyerPhoto(action: ActionEnAttente): Reponse<Unit> {
+        val depot = dossiers ?: return Reponse.Refus(400, "Action inconnue de cette version de l'application.")
+        val photo = depot.lirePhotoEnAttente(action) ?: return Reponse.Refus(400, "Photo illisible.")
+        val octets = depot.octetsEnAttente(photo) ?: return Reponse.Refus(400, "Les données de cette photo ne sont plus sur ce téléphone.")
+        return when (val r = api.deposerPhoto(action.cible, octets, photo.commentaire)) {
+            is Reponse.Ok -> {
+                val recue = r.valeur.empreinte
+                if (recue != null && !recue.equals(photo.empreinte, ignoreCase = true)) {
+                    // Le serveur n'a pas reçu les octets qui sont partis d'ici. On ne l'efface pas
+                    // en silence : la photo reste visible comme refusée, avec la raison.
+                    Reponse.Refus(409, "L'empreinte de la photo reçue par le serveur ne correspond pas à celle prise ici. Signalez-le à votre encadrement.")
+                } else {
+                    depot.oublierLesOctets(action)
+                    depot.rafraichir(action.cible)
+                    Reponse.Ok(Unit)
+                }
+            }
+            is Reponse.Refus -> r
+            is Reponse.Injoignable -> r
+        }
     }
 }

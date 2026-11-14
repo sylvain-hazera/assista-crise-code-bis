@@ -58,7 +58,7 @@ fun EcranInterventions(modele: ModeleApplication) {
                 }
                 items(dossiers, key = { it.id }) { d ->
                     val jeDirige = equipes.firstOrNull { it.id == d.equipe }?.estDirigeePar(compte?.id) == true
-                    CarteDossier(d, jeDirige) { modele.definirStatutDossier(d, it) }
+                    CarteDossier(d, jeDirige, { modele.ouvrirDossier(d.id) }) { modele.definirStatutDossier(d, it) }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
@@ -67,9 +67,9 @@ fun EcranInterventions(modele: ModeleApplication) {
 }
 
 @Composable
-private fun CarteDossier(d: Dossier, jeDirige: Boolean, surStatut: (String) -> Unit) {
+private fun CarteDossier(d: Dossier, jeDirige: Boolean, ouvrir: () -> Unit, surStatut: (String) -> Unit) {
     val contexte = LocalContext.current
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Card(onClick = ouvrir, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(d.titre.ifBlank { "Dossier ${d.numero}" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

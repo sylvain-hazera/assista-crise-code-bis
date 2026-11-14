@@ -102,6 +102,9 @@ private fun CarteCrise(crise: Crise, informations: List<Information>, deposer: (
                     OutlinedButton(onClick = { deposer(GenreDepot.DEMANDE) }, modifier = Modifier.weight(1f)) { Text("Demander de l'aide") }
                     OutlinedButton(onClick = { deposer(GenreDepot.SIGNALEMENT) }, modifier = Modifier.weight(1f)) { Text("Signaler") }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { deposer(GenreDepot.OFFRE) }, modifier = Modifier.weight(1f)) { Text("Proposer mon aide") }
+                }
             } else {
                 Text(
                     "Les dépôts ne sont pas encore ouverts pour cette crise : aucun responsable n'a été désigné.",

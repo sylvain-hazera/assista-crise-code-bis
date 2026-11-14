@@ -11,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
     }
 
     buildFeatures {
@@ -84,4 +84,5 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.maplibre)
     implementation(libs.work.runtime)
+    implementation(libs.exifinterface)
 }

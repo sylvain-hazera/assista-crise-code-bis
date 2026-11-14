@@ -759,6 +759,82 @@ fiche ; interventions avec changement de statut ; tâche de fond inscrite auprè
 Pas vérifié : le délai réel de la tâche de fond sur un vrai téléphone, écran éteint et en
 économie d'énergie — c'est le point à observer en premier.
 
+## 17. Le terrain : dossiers, commentaires, photos tracées, carte (14/11/2026)
+
+Retour de Sylvain sur la 0.4.0 : l'onglet principal montrait les missions sans leurs dossiers ;
+l'intervenant doit pouvoir commenter et photographier, dans le circuit de traçabilité existant ;
+et la carte doit situer les interventions et permettre de créer du doigt. Version **0.5.0**.
+
+### Les dossiers sous leur mission
+
+L'onglet Missions range chaque dossier sous sa mission (`Dossier.mission`), et montre à part ceux
+confiés à l'équipe sans mission — un dossier qu'on ne voit pas est un dossier qu'on ne traite
+pas. Toucher une ligne ouvre la fiche du dossier : lieu, contact, appel, itinéraire, statut
+(chef et régulateur), photos, commentaires.
+
+### Photos : le circuit existant, appliqué à l'identique
+
+Le serveur avait déjà tout (`DocumentViewSet`) : empreinte SHA-256 du fichier reçu, position lue
+dans les métadonnées de la photo et rangée parmi les données réservées à l'équipe, ligne
+d'historique au dépôt, journal de chaque consultation. L'application fait l'autre moitié :
+
+| Étape | Où | Ce qui est garanti |
+|---|---|---|
+| Prise | appareil photo du téléphone, vers un fichier du cache privé | jamais dans la galerie |
+| Préparation | `Photographe` | réduite à 2048 px, heure et position **inscrites dans la photo** par l'application |
+| Scellé | `Photographe.empreinte` | SHA-256 des octets définitifs, calculé sur le téléphone |
+| Attente | magasin chiffré (Keystore) | le fichier en clair est effacé aussitôt ; rien ne reste lisible |
+| Envoi | file d'attente | part seule au retour du réseau |
+| Contrôle | `Synchronisation.envoyerPhoto` | l'empreinte rendue par le serveur est comparée à celle du téléphone |
+
+Pourquoi l'application écrit elle-même la position : l'appareil photo ne le fait que si la
+personne a activé un réglage, et la réduction de l'image l'effacerait. L'écran dit **avant** la
+prise ce que la photo emportera (« à 5 m près »), ou qu'elle partira sans lieu. Une empreinte
+qui ne correspond pas n'est pas effacée en silence : la photo reste affichée « refusée », avec
+la raison.
+
+L'application ne demande pas la permission d'utiliser la caméra : elle confie la prise à
+l'appareil photo du téléphone et ne photographie jamais elle-même.
+
+### Qui peut commenter et photographier : corrigé côté serveur
+
+Seuls les « participants » d'un dossier le pouvaient, et cette liste est figée à l'affectation.
+Un intervenant entré dans l'équipe le lendemain pouvait donc **voir** les photos mais ni en
+ajouter ni commenter. Désormais : les participants, et les membres actuels de l'équipe chargée
+du dossier (`_contribue_au_dossier`). La position d'une photo leur est visible aux mêmes
+conditions. Le fil de commentaires se filtre enfin par dossier (`?dossier=`).
+
+### La carte
+
+- les **dossiers situés** de mes équipes (orange, rouge si urgent), nommés dans la liste sous la
+  carte ; toucher le point ou « Ouvrir » mène à la fiche ;
+- les **périmètres des crises** ouvertes ;
+- **maintenir le doigt** sur un point propose d'y créer une demande d'aide, un signalement ou
+  une offre d'aide, sur la crise choisie. Le lieu touché l'emporte sur la position du téléphone :
+  c'est là que ça se passe, pas là où l'on se tient.
+
+L'offre d'aide est nouvelle dans l'application (aussi depuis l'onglet Aide). Elle couvre l'offre
+simple — type, quelques mots, lieu, contact ; les précisions propres à l'hébergement ou au
+transport restent sur le site.
+
+### Limites connues
+
+- Une mission n'a pas de zone à elle en base : elle est située par ses dossiers. Un dossier n'a
+  de position que si la demande ou le signalement d'origine en avait une.
+- Les photos se prennent, elles ne se choisissent pas dans la galerie : une photo ancienne
+  n'aurait ni l'heure ni le lieu du constat.
+- Le serveur garde les fichiers de `Document` sans chiffrement au repos (préexistant, hors de ce
+  chantier) — à traiter avec le reste des pièces si la règle « rien en clair » doit s'y étendre.
+
+### Vérifié
+
+8 tests serveur nouveaux (165 sur le dossier « dossiers »), 88 tests du code partagé. Sur
+téléphone virtuel : dossier ouvert depuis la mission, commentaire, photo prise → reçue par le
+serveur avec la même empreinte, la position du téléphone, la précision et l'heure, et rien de la
+position dans les métadonnées publiques ; carte ; offre d'aide créée par appui long et acceptée.
+Pas vérifié : un vrai appareil photo (orientation, taille des fichiers), et la prise sans réseau
+sur un vrai téléphone.
+
 ---
 
 # Annexe A — Relais série par le navigateur

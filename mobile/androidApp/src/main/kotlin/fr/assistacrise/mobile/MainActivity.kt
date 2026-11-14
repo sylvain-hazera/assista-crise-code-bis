@@ -34,6 +34,7 @@ import fr.assistacrise.mobile.ui.EcranAide
 import fr.assistacrise.mobile.ui.EcranCarte
 import fr.assistacrise.mobile.ui.EcranDepot
 import fr.assistacrise.mobile.ui.EcranDisponibilites
+import fr.assistacrise.mobile.ui.EcranDossier
 import fr.assistacrise.mobile.ui.EcranFiche
 import fr.assistacrise.mobile.ui.EcranInterventions
 import fr.assistacrise.mobile.ui.EcranNotification
@@ -109,7 +110,8 @@ class MainActivity : ComponentActivity() {
                 }
                 BackHandler(enabled = ecran == Ecran.INSCRIPTION) { modele.aller(Ecran.CONNEXION) }
                 BackHandler(enabled = ecran == Ecran.MESSAGERIE) { modele.aller(Ecran.EQUIPES) }
-                BackHandler(enabled = ecran == Ecran.DEPOT) { modele.aller(Ecran.AIDE) }
+                BackHandler(enabled = ecran == Ecran.DEPOT) { modele.fermerDepot() }
+                BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
                 BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
@@ -142,6 +144,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.DISPONIBILITES -> EcranDisponibilites(modele)
                             ecran == Ecran.FICHE -> EcranFiche(modele)
                             ecran == Ecran.INTERVENTIONS -> EcranInterventions(modele)
+                            ecran == Ecran.DOSSIER -> EcranDossier(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
@@ -153,5 +156,5 @@ class MainActivity : ComponentActivity() {
 
 /** Les écrans qu'on ouvre depuis un autre : ils ont leur flèche de retour, pas la barre. */
 private val ECRANS_SANS_BARRE = setOf(
-    Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS,
+    Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
 )

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Le seul dossier que l'appareil photo du telephone peut ecrire : la prise y passe quelques
+     secondes, le temps d'etre reduite, datee, situee et chiffree, puis elle est effacee. -->
+<paths>
+    <cache-path name="prises" path="prises/" />
+</paths>

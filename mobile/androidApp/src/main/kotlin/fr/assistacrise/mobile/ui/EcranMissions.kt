@@ -42,6 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
 import fr.assistacrise.mobile.domaine.Compte
+import fr.assistacrise.mobile.domaine.Dossier
+import fr.assistacrise.mobile.domaine.rangerParMission
+import androidx.compose.material3.HorizontalDivider
 import fr.assistacrise.mobile.domaine.EtatAction
 import fr.assistacrise.mobile.domaine.MissionAffichee
 import fr.assistacrise.mobile.domaine.Mode
@@ -52,7 +55,9 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
     val missions by modele.missions.collectAsStateWithLifecycle()
     val file by modele.file.collectAsStateWithLifecycle()
     val lien by modele.lien.collectAsStateWithLifecycle()
+    val dossiers by modele.dossiers.collectAsStateWithLifecycle()
     var ouverte by rememberSaveable { mutableStateOf<String?>(null) }
+    val ranges = rangerParMission(dossiers, missions.map { it.mission.id })
 
     val enAttente = file.count { it.etat == EtatAction.EN_ATTENTE }
     val refusees = file.count { it.etat == EtatAction.REFUSEE }
@@ -80,7 +85,7 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             BandeauFile(enAttente, refusees) { modele.aller(Ecran.COMPTE) }
         }
 
-        if (missions.isEmpty()) {
+        if (missions.isEmpty() && ranges.sansMission.isEmpty()) {
             EtatVide(compte)
         } else {
             LazyColumn(
@@ -89,7 +94,18 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             ) {
                 items(missions, key = { it.mission.id }) { m ->
-                    CarteMission(m) { ouverte = m.mission.id }
+                    CarteMission(m, ranges.parMission[m.mission.id].orEmpty(), modele::ouvrirDossier) { ouverte = m.mission.id }
+                }
+                // Un dossier confié à l'équipe sans être rangé sous une mission reste du travail à faire.
+                if (ranges.sansMission.isNotEmpty()) {
+                    item(key = "sans-mission") {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(vertical = 12.dp)) {
+                                Text(if (missions.isEmpty()) "Dossiers de mes équipes" else "Autres dossiers de mes équipes", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+                                ranges.sansMission.forEach { d -> LigneDossier(d, Modifier.fillMaxWidth().clickable { modele.ouvrirDossier(d.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -149,7 +165,7 @@ private fun EtatVide(compte: Compte) {
 }
 
 @Composable
-private fun CarteMission(m: MissionAffichee, surClic: () -> Unit) {
+private fun CarteMission(m: MissionAffichee, dossiers: List<Dossier>, ouvrirDossier: (String) -> Unit, surClic: () -> Unit) {
     Card(
         onClick = surClic,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -172,6 +188,12 @@ private fun CarteMission(m: MissionAffichee, surClic: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 Text("Non confirmé : en attente d'envoi", style = MaterialTheme.typography.labelMedium, color = Attente)
             }
+        }
+        // Ce qu'il y a à faire dans cette mission : chaque ligne ouvre son dossier.
+        if (dossiers.isNotEmpty()) {
+            HorizontalDivider()
+            dossiers.forEach { d -> LigneDossier(d, Modifier.fillMaxWidth().clickable { ouvrirDossier(d.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) }
+            Spacer(Modifier.height(6.dp))
         }
     }
 }

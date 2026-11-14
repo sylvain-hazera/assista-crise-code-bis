@@ -33,6 +33,8 @@ class DepotCitoyen(
     val typesDemande: StateFlow<List<TypeDepot>> = _typesDemande
     private val _typesInformation = MutableStateFlow<List<TypeDepot>>(emptyList())
     val typesInformation: StateFlow<List<TypeDepot>> = _typesInformation
+    private val _typesOffre = MutableStateFlow<List<TypeDepot>>(emptyList())
+    val typesOffre: StateFlow<List<TypeDepot>> = _typesOffre
     private val _informations = MutableStateFlow<List<Information>>(emptyList())
     val informations: StateFlow<List<Information>> = _informations
 
@@ -40,6 +42,7 @@ class DepotCitoyen(
         _crises.value = lire("crises", Crise.serializer())
         _typesDemande.value = lire("types-demande", TypeDepot.serializer())
         _typesInformation.value = lire("types-information", TypeDepot.serializer())
+        _typesOffre.value = lire("types-offre", TypeDepot.serializer())
         _informations.value = lire("informations", Information.serializer())
     }
 
@@ -53,6 +56,9 @@ class DepotCitoyen(
         }
         (api.liste("types-information/", TypeDepot.serializer()) as? Reponse.Ok)?.let {
             garder("types-information", TypeDepot.serializer(), it.valeur.filter { t -> !t.libelle.isNullOrBlank() }, _typesInformation)
+        }
+        (api.liste("types-offre/", TypeDepot.serializer()) as? Reponse.Ok)?.let {
+            garder("types-offre", TypeDepot.serializer(), it.valeur.filter { t -> !t.libelle.isNullOrBlank() }, _typesOffre)
         }
         (api.liste("informations/", Information.serializer()) as? Reponse.Ok)?.let {
             val ouvertes = _crises.value.map { c -> c.id }.toSet()
@@ -71,12 +77,14 @@ class DepotCitoyen(
                 GenreDepot.SECURITE -> "Déclaration « en sécurité » — ${depot.crise.nom}"
                 GenreDepot.DEMANDE -> "Demande « ${depot.titre.trim()} »"
                 GenreDepot.SIGNALEMENT -> "Signalement « ${depot.titre.trim()} »"
+                GenreDepot.OFFRE -> "Offre d'aide « ${depot.titre.trim()} »"
             },
         )
     }
 
     suspend fun toutEffacer() {
-        listOf("crises", "types-demande", "types-information", "informations").forEach { magasin.effacer(it) }
+        listOf("crises", "types-demande", "types-information", "types-offre", "informations").forEach { magasin.effacer(it) }
+        _typesOffre.value = emptyList()
         _crises.value = emptyList(); _informations.value = emptyList()
         _typesDemande.value = emptyList(); _typesInformation.value = emptyList()
     }
@@ -125,6 +133,17 @@ class DepotCitoyen(
                     put("last_name_request", d.deposant.nom.trim())
                     put("email_request", d.deposant.email.trim())
                     put("phone_request", d.deposant.telephone.trim())
+                    position("location")
+                }
+                GenreDepot.OFFRE -> {
+                    put("crisis", d.crise.id)
+                    put("offer_type", d.type?.id)
+                    put("title", d.titre.trim())
+                    if (d.description.isNotBlank()) put("description", d.description.trim())
+                    put("first_name_offer", d.deposant.prenom.trim())
+                    put("last_name_offer", d.deposant.nom.trim())
+                    put("email_offer", d.deposant.email.trim())
+                    put("phone_offer", d.deposant.telephone.trim())
                     position("location")
                 }
                 GenreDepot.SIGNALEMENT -> {

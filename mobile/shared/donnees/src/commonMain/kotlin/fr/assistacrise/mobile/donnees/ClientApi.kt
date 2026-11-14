@@ -1,7 +1,9 @@
 package fr.assistacrise.mobile.donnees
 
 import fr.assistacrise.mobile.domaine.Champs
+import fr.assistacrise.mobile.domaine.Commentaire
 import fr.assistacrise.mobile.domaine.Compte
+import fr.assistacrise.mobile.domaine.Photo
 import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Etape
@@ -17,6 +19,11 @@ import fr.assistacrise.mobile.domaine.Mission
 import fr.assistacrise.mobile.domaine.StatutMission
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
+import io.ktor.client.statement.readRawBytes
+import io.ktor.http.Headers
+import io.ktor.http.content.PartData
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -242,6 +249,55 @@ class ClientApi(
     suspend fun definirStatutDossier(id: String, statut: String): Reponse<Unit> =
         authentifie(HttpMethod.Post, "dossiers/$id/definir-statut/", buildJsonObject { put("statut", statut) }).sansValeur()
 
+    // --- Dossiers : commentaires et photos ----------------------------------------------------
+
+    suspend fun commentaires(idDossier: String): Reponse<List<Commentaire>> =
+        liste("dossier-commentaires/?dossier=$idDossier", Commentaire.serializer())
+
+    suspend fun commenter(idDossier: String, texte: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "dossier-commentaires/", buildJsonObject { put("dossier", idDossier); put("commentaire", texte) }).sansValeur()
+
+    suspend fun photos(idDossier: String): Reponse<List<Photo>> = liste("documents/?dossier=$idDossier", Photo.serializer())
+
+    /**
+     * Verse une photo au dossier. Le serveur calcule l'empreinte des octets reçus, lit la
+     * position inscrite dans la photo, et journalise le dépôt : la réponse porte les deux.
+     */
+    suspend fun deposerPhoto(idDossier: String, octets: ByteArray, commentaire: String): Reponse<Photo> =
+        authentifie(HttpMethod.Post, "documents/", formulaire = formData {
+            append("dossier", idDossier)
+            append("commentaire", commentaire)
+            append("fichier", octets, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"photo.jpg\"")
+            })
+        }).transformer { json.decodeFromJsonElement(Photo.serializer(), it) }
+
+    /** Les octets d'une photo du dossier. Chaque lecture est journalisée par le serveur. */
+    suspend fun octetsDePhoto(idPhoto: String): Reponse<ByteArray> {
+        suspend fun lire(jeton: String): Reponse<ByteArray> = try {
+            val reponse = http.request("$urlApi/documents/$idPhoto/preview/") { header(HttpHeaders.Authorization, "Bearer $jeton") }
+            val code = reponse.status.value
+            when {
+                code in 200..299 -> Reponse.Ok(reponse.readRawBytes())
+                code >= 500 || code == 408 || code == 429 -> Reponse.Injoignable("Le serveur ne répond pas correctement pour le moment (erreur $code).")
+                else -> Reponse.Refus(code, "Cette photo n'est pas accessible.")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Reponse.Injoignable("Le serveur est injoignable. Vérifiez votre connexion.")
+        }
+        val jeton = session.jetonAcces ?: return Reponse.Refus(401, SESSION_EXPIREE)
+        val premiere = lire(jeton)
+        if (premiere !is Reponse.Refus || premiere.code != 401) return premiere
+        return when (val r = rafraichir(jeton)) {
+            is Reponse.Ok -> lire(r.valeur)
+            is Reponse.Refus -> r
+            is Reponse.Injoignable -> r
+        }
+    }
+
     private fun lireMessages(e: JsonElement): List<MessageEquipe> =
         json.decodeFromJsonElement(ListSerializer(MessageEquipe.serializer()), e.jsonObject.getValue("messages"))
 
@@ -255,13 +311,15 @@ class ClientApi(
 
     // --- Mécanique -----------------------------------------------------------------------
 
-    private suspend fun authentifie(methode: HttpMethod, chemin: String, corps: JsonObject? = null): Reponse<JsonElement> {
+    private suspend fun authentifie(
+        methode: HttpMethod, chemin: String, corps: JsonObject? = null, formulaire: List<PartData>? = null,
+    ): Reponse<JsonElement> {
         val jeton = session.jetonAcces ?: return Reponse.Refus(401, SESSION_EXPIREE)
-        val premiere = appeler(methode, chemin, corps, jeton)
+        val premiere = appeler(methode, chemin, corps, jeton, formulaire)
         if (premiere !is Reponse.Refus || premiere.code != 401) return premiere
         // Jeton d'accès périmé (il vit une heure) : un rafraîchissement, puis un seul nouvel essai.
         return when (val r = rafraichir(jeton)) {
-            is Reponse.Ok -> appeler(methode, chemin, corps, r.valeur)
+            is Reponse.Ok -> appeler(methode, chemin, corps, r.valeur, formulaire)
             is Reponse.Refus -> r
             is Reponse.Injoignable -> r
         }
@@ -291,7 +349,9 @@ class ClientApi(
         }
     }
 
-    private suspend fun appeler(methode: HttpMethod, chemin: String, corps: JsonObject?, jeton: String?): Reponse<JsonElement> {
+    private suspend fun appeler(
+        methode: HttpMethod, chemin: String, corps: JsonObject?, jeton: String?, formulaire: List<PartData>? = null,
+    ): Reponse<JsonElement> {
         val reponse: HttpResponse
         val texte: String
         try {
@@ -300,6 +360,7 @@ class ClientApi(
                 header(HttpHeaders.Accept, "application/json")
                 jeton?.let { header(HttpHeaders.Authorization, "Bearer $it") }
                 corps?.let { poserCorps(it) }
+                formulaire?.let { setBody(MultiPartFormDataContent(it)) }
             }
             texte = reponse.bodyAsText()
         } catch (e: CancellationException) {

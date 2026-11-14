@@ -25,6 +25,12 @@
     <!-- allowBackup="false" : la session et le cache sont chiffres par une cle du Keystore,
          qui ne quitte pas le telephone. Une sauvegarde restauree ailleurs serait illisible,
          et l'en exclure evite surtout de faire voyager des donnees de mission. -->
+    <!-- Pour demander une photo a l'appareil photo du telephone. L'application ne declare pas
+         la permission CAMERA : elle ne filme ni ne photographie jamais elle-meme. -->
+    <queries>
+        <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
+    </queries>
+
     <application
         android:name=".Application"
         android:allowBackup="false"
@@ -41,6 +47,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Prete a l'appareil photo, le temps d'une prise, l'adresse d'un fichier du cache. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.prises"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/chemins_prises" />
+        </provider>
         <service
             android:name=".ServiceSuivi"
             android:exported="false"

@@ -67,12 +67,13 @@ import fr.assistacrise.mobile.domaine.Situation
 @Composable
 fun EcranDepot(modele: ModeleApplication, compte: Compte) {
     val ouvert = modele.depotOuvert
-    if (ouvert == null) { LaunchedEffect(Unit) { modele.aller(Ecran.AIDE) }; return }
+    if (ouvert == null) { LaunchedEffect(Unit) { modele.fermerDepot() }; return }
     val (genre, crise) = ouvert
     val etat = modele.depot
     val typesDemande by modele.typesDemande.collectAsStateWithLifecycle()
     val typesInformation by modele.typesInformation.collectAsStateWithLifecycle()
-    val types = if (genre == GenreDepot.DEMANDE) typesDemande else typesInformation
+    val typesOffre by modele.typesOffre.collectAsStateWithLifecycle()
+    val types = when (genre) { GenreDepot.DEMANDE -> typesDemande; GenreDepot.OFFRE -> typesOffre; else -> typesInformation }
 
     var prenom by rememberSaveable { mutableStateOf(compte.prenom) }
     var nom by rememberSaveable { mutableStateOf(compte.nom) }
@@ -85,11 +86,14 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
     var declarant by rememberSaveable { mutableStateOf(Declarant.PERSONNE_SEULE) }
     var adultes by rememberSaveable { mutableStateOf("1") }
     var enfants by rememberSaveable { mutableStateOf("0") }
-    val (position, autorise, demanderPosition) = positionDuMoment()
+    val (positionLue, autorise, demanderPosition) = positionDuMoment()
+    // Un lieu touché sur la carte l'emporte : c'est là que ça se passe, pas là où je me tiens.
+    val lieu = modele.lieuChoisi
+    val position = lieu ?: positionLue
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) {
-            IconButton(onClick = { modele.aller(Ecran.AIDE) }) {
+            IconButton(onClick = { modele.fermerDepot() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
             }
             Column {
@@ -117,8 +121,8 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
                             clavier = KeyboardOptions(keyboardType = KeyboardType.Number))
                     }
                 }
-                GenreDepot.DEMANDE, GenreDepot.SIGNALEMENT -> {
-                    Titre(if (genre == GenreDepot.DEMANDE) "De quoi avez-vous besoin ?" else "Que signalez-vous ?")
+                GenreDepot.DEMANDE, GenreDepot.SIGNALEMENT, GenreDepot.OFFRE -> {
+                    Titre(when (genre) { GenreDepot.DEMANDE -> "De quoi avez-vous besoin ?"; GenreDepot.OFFRE -> "Que proposez-vous ?"; else -> "Que signalez-vous ?" })
                     if (types.isEmpty()) {
                         Text("La liste des types n'a pas encore pu être chargée. Elle le sera au prochain passage en ligne.", style = MaterialTheme.typography.bodySmall, color = Attente)
                     } else {
@@ -154,6 +158,7 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
 
             Titre("Où")
             when {
+                lieu != null -> Text("Le lieu que vous avez touché sur la carte sera joint.", style = MaterialTheme.typography.bodyMedium)
                 position != null -> Text("Votre position actuelle sera jointe (précision : ${position.precisionM.toInt()} m).", style = MaterialTheme.typography.bodyMedium)
                 !autorise -> {
                     Text(
@@ -216,7 +221,7 @@ private fun Titre(texte: String) {
  */
 @SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceSuivi.autorise
 @Composable
-private fun positionDuMoment(): Triple<Releve?, Boolean, () -> Unit> {
+fun positionDuMoment(): Triple<Releve?, Boolean, () -> Unit> {
     val contexte = LocalContext.current
     var autorise by remember { mutableStateOf(ServiceSuivi.autorise(contexte)) }
     var position by remember { mutableStateOf<Releve?>(null) }

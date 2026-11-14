@@ -1,7 +1,10 @@
 package fr.assistacrise.mobile
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -49,7 +52,7 @@ data class EtatFormulaire(
 
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
-    NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS,
+    NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -71,6 +74,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val fiche = app.benevole.fiche
     val titres = app.benevole.titres
     val dossiers = app.benevole.dossiers
+    val typesOffre = app.citoyen.typesOffre
+    val commentaires = app.dossiers.commentaires
+    val photos = app.dossiers.photos
     val missions: StateFlow<List<MissionAffichee>> =
         combine(app.depot.missions, app.file.actions, ::superposerLaFile)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -101,6 +107,17 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     /** La case de la grille en cours d'envoi (`date|créneau`) : elle seule est désactivée. */
     var caseEnCours by mutableStateOf<String?>(null); private set
     var formulaireFiche by mutableStateOf(EtatFormulaire()); private set
+
+    /** Le dossier ouvert, et l'écran d'où on y est venu (pour y revenir). */
+    var dossierOuvert by mutableStateOf<String?>(null); private set
+    var retourDuDossier by mutableStateOf(Ecran.MISSIONS); private set
+    /** Une photo est en cours de préparation (réduction, position, empreinte). */
+    var photoEnCours by mutableStateOf(false); private set
+    /** Vignettes déjà chargées, par identifiant de photo ou clé de photo en attente. En mémoire seulement. */
+    val vignettes = mutableStateMapOf<String, ImageBitmap>()
+    /** Le lieu touché sur la carte, pour le dépôt en cours. `null` : la position du moment. */
+    var lieuChoisi by mutableStateOf<Releve?>(null); private set
+    var retourDuDepot by mutableStateOf(Ecran.AIDE); private set
 
     /** L'application est-elle à l'écran ? Ce qu'on a sous les yeux ne fait pas sonner. */
     private var visible = false
@@ -241,6 +258,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.citoyen.toutEffacer()
             app.alertes.toutRetirer()
             app.veille.toutEffacer()
+            app.dossiers.toutEffacer(file.value)
+            vignettes.clear()
             app.benevole.toutEffacer()
             nonVues = 0
             app.file.toutEffacer()
@@ -269,7 +288,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     fun ecarter(idAction: String) {
-        viewModelScope.launch { app.file.retirer(idAction) }
+        viewModelScope.launch {
+            // Une photo écartée ne laisse pas ses octets derrière elle.
+            file.value.firstOrNull { it.id == idAction }?.let { app.dossiers.oublierLesOctets(it) }
+            app.file.retirer(idAction)
+        }
     }
 
     /**
@@ -289,6 +312,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     val e = app.equipes.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
                     app.citoyen.rafraichir()
+                    // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
+                    if (equipes.value.isNotEmpty()) app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
                     veiller()
                 }
                 is Reponse.Refus -> if (r.code == 401) {
@@ -435,6 +460,72 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    // --- Un dossier : commentaires et photos -----------------------------------------------------
+
+    fun ouvrirDossier(id: String) {
+        if (ecran != Ecran.DOSSIER) retourDuDossier = ecran
+        dossierOuvert = id
+        ecran = Ecran.DOSSIER
+        viewModelScope.launch {
+            app.dossiers.restaurer(id)                  // ce qu'on en savait, tout de suite
+            app.lien.echange(app.dossiers.rafraichir(id) !is Reponse.Injoignable)
+        }
+    }
+
+    fun fermerDossier() { ecran = retourDuDossier }
+
+    fun commenter(dossier: Dossier, texte: String) {
+        if (texte.isBlank()) return
+        viewModelScope.launch {
+            app.dossiers.commenter(dossier, texte)       // sur disque avant tout envoi
+            verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+            app.dossiers.rafraichir(dossier.id)
+        }
+    }
+
+    /**
+     * L'appareil photo vient de rendre la main. La photo est réduite, datée, située, scellée
+     * par son empreinte, chiffrée — puis seulement mise en file. Sans position, elle part
+     * quand même : une photo sans lieu vaut mieux que pas de photo, et l'écran dit qu'il manque.
+     */
+    fun ajouterPhoto(dossier: Dossier, prise: java.io.File, position: Releve?, commentaire: String) {
+        photoEnCours = true
+        viewModelScope.launch {
+            val prete = Photographe.preparer(prise, position, commentaire, BuildConfig.VERSION_NAME)
+            if (prete == null) message = "Cette photo n'a pas pu être lue. Reprenez-la."
+            else {
+                app.dossiers.ajouterPhoto(dossier, prete.first, prete.second)
+                photoEnCours = false
+                verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+                if (file.value.any { it.genre == ActionEnAttente.GENRE_PHOTO && it.cible == dossier.id && it.etat == EtatAction.EN_ATTENTE }) {
+                    message = "Photo gardée sur ce téléphone : elle partira dès que le réseau reviendra."
+                }
+            }
+            photoEnCours = false
+        }
+    }
+
+    /** Charge la vignette d'une photo du serveur, une fois. Chaque lecture est journalisée là-bas. */
+    fun chargerVignette(idPhoto: String) {
+        if (idPhoto in vignettes) return
+        viewModelScope.launch {
+            (app.api.octetsDePhoto(idPhoto) as? Reponse.Ok)?.let { r ->
+                Photographe.vignette(r.valeur)?.let { vignettes[idPhoto] = it.asImageBitmap() }
+            }
+        }
+    }
+
+    /** La vignette d'une photo qui attend encore sur ce téléphone. */
+    fun chargerVignetteEnAttente(action: ActionEnAttente) {
+        if (action.id in vignettes) return
+        viewModelScope.launch {
+            val photo = app.dossiers.lirePhotoEnAttente(action) ?: return@launch
+            app.dossiers.octetsEnAttente(photo)?.let { octets -> Photographe.vignette(octets)?.let { vignettes[action.id] = it.asImageBitmap() } }
+        }
+    }
+
+    fun photoEnAttente(action: ActionEnAttente) = app.dossiers.lirePhotoEnAttente(action)
+
     private fun chargerEcran(charger: suspend () -> Reponse<Unit>) {
         chargement = true
         horsLigne = false
@@ -482,10 +573,15 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     // --- Mode citoyen ---------------------------------------------------------------------
 
-    fun ouvrirDepot(genre: GenreDepot, crise: Crise) {
+    /** `lieu` : l'endroit touché sur la carte. Sans lui, le dépôt porte la position du moment. */
+    fun ouvrirDepot(genre: GenreDepot, crise: Crise, lieu: Releve? = null) {
+        retourDuDepot = if (ecran == Ecran.DEPOT) retourDuDepot else ecran
         depotOuvert = genre to crise
         aller(Ecran.DEPOT)
+        lieuChoisi = lieu
     }
+
+    fun fermerDepot() { aller(retourDuDepot) }
 
     fun deposer(saisie: Depot) {
         val erreurs = validerDepot(saisie)
@@ -501,7 +597,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             val parti = file.value.size < avant
             // On dit la vérité sur ce qui s'est passé : « envoyé » n'est pas « enregistré ».
             message = if (parti) "Envoyé. Merci." else "Enregistré sur ce téléphone : cela partira dès que le réseau reviendra."
-            aller(Ecran.AIDE)
+            aller(retourDuDepot)
         }
     }
 

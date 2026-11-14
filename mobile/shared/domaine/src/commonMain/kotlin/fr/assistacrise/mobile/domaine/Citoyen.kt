@@ -12,6 +12,10 @@ data class Crise(
     val description: String? = null,
     @SerialName("is_open") val ouverte: Boolean = true,
     @SerialName("has_responsable_actif") val suivie: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    /** Le périmètre de la crise, en GeoJSON, tel que le serveur le dessine sur sa carte. */
+    @SerialName("zone_geojson") val zone: kotlinx.serialization.json.JsonElement? = null,
 ) {
     /** Le serveur refuse tout dépôt sur une crise close ou sans responsable désigné. */
     val accepteLesDepots: Boolean get() = ouverte && suivie
@@ -67,6 +71,7 @@ enum class GenreDepot(val titre: String, val chemin: String) {
     SECURITE("Je suis en sécurité", "declarations-securite/"),
     DEMANDE("Demander de l'aide", "demandes/"),
     SIGNALEMENT("Signaler", "informations/"),
+    OFFRE("Proposer mon aide", "offres/"),
 }
 
 data class Depot(
@@ -80,7 +85,7 @@ data class Depot(
     val declarant: Declarant = Declarant.PERSONNE_SEULE,
     val adultes: Int = 1,
     val enfants: Int = 0,
-    /** Lue au moment du geste, jamais avant ni après (dossier § 13). */
+    /** Lue au moment du geste, ou choisie du doigt sur la carte — jamais suivie. */
     val position: Releve? = null,
 )
 
@@ -106,7 +111,7 @@ fun validerDepot(d: Depot): Map<String, String> = buildMap {
         GenreDepot.SECURITE -> {
             if (d.adultes + d.enfants < 1) put(ChampsDepot.PERSONNES, "Indiquez au moins une personne.")
         }
-        GenreDepot.DEMANDE, GenreDepot.SIGNALEMENT -> {
+        GenreDepot.DEMANDE, GenreDepot.SIGNALEMENT, GenreDepot.OFFRE -> {
             if (!EMAIL_DEPOT.matches(d.deposant.email.trim())) put(ChampsDepot.EMAIL, "Cette adresse e-mail n'est pas valide.")
             if (d.titre.trim().length < 3) put(ChampsDepot.TITRE, "Dites en quelques mots de quoi il s'agit.")
             if (d.type == null) put(ChampsDepot.TYPE, "Choisissez un type.")

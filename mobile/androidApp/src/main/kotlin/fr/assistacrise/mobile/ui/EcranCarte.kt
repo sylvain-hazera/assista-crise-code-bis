@@ -1,5 +1,21 @@
 package fr.assistacrise.mobile.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import fr.assistacrise.mobile.domaine.Crise
+import fr.assistacrise.mobile.domaine.GenreDepot
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.PropertyFactory.fillColor
+import org.maplibre.android.style.layers.PropertyFactory.fillOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import android.Manifest
 import android.annotation.SuppressLint
 import android.location.Location
@@ -82,6 +98,11 @@ fun EcranCarte(modele: ModeleApplication) {
     val cycle = LocalLifecycleOwner.current.lifecycle
     val lien by modele.lien.collectAsStateWithLifecycle()
     val membres = modele.positions
+    val dossiers by modele.dossiers.collectAsStateWithLifecycle()
+    val crises by modele.crises.collectAsStateWithLifecycle()
+    val situes = dossiers.filter { it.situe && !it.clos }
+    /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
+    var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
 
     var autorise by remember { mutableStateOf(ServiceSuivi.autorise(contexte)) }
     var moi by remember { mutableStateOf<Releve?>(null) }
@@ -114,14 +135,33 @@ fun EcranCarte(modele: ModeleApplication) {
             m.uiSettings.isTiltGesturesEnabled = false
             m.cameraPosition = CameraPosition.Builder().target(FRANCE).zoom(4.5).build()
             m.setStyle(Style.Builder().fromJson(STYLE)) { style ->
+                style.addSource(GeoJsonSource("zones"))
+                style.addSource(GeoJsonSource("dossiers"))
+                style.addSource(GeoJsonSource("lieu"))
                 style.addSource(GeoJsonSource("membres"))
                 style.addSource(GeoJsonSource("moi"))
+                // Dessous d'abord : les périmètres de crise, puis les dossiers, puis les personnes.
+                style.addLayer(FillLayer("zones-fond", "zones").withProperties(fillColor("#b91c1c"), fillOpacity(0.10f)))
+                style.addLayer(LineLayer("zones-bord", "zones").withProperties(lineColor("#b91c1c"), lineWidth(2f)))
+                // Forme ET couleur : un dossier est un point orange cerclé de sombre, plus gros
+                // qu'une personne ; l'urgent est rouge. La liste sous la carte les nomme.
+                style.addLayer(CircleLayer("dossiers-points", "dossiers").withProperties(
+                    circleRadius(11f), circleStrokeColor("#1a1d29"), circleStrokeWidth(2.5f),
+                    circleColor(Expression.match(Expression.get("urgent"), Expression.literal("oui"), Expression.color(android.graphics.Color.parseColor("#dc2626")), Expression.color(android.graphics.Color.parseColor("#f59e0b"))))))
+                style.addLayer(CircleLayer("lieu-point", "lieu").withProperties(
+                    circleRadius(10f), circleColor("#ffffff"), circleStrokeColor("#3c4d81"), circleStrokeWidth(4f)))
                 style.addLayer(CircleLayer("membres-points", "membres").withProperties(
                     circleRadius(8f), circleColor("#3c4d81"), circleStrokeColor("#ffffff"), circleStrokeWidth(2.5f)))
                 style.addLayer(CircleLayer("moi-point", "moi").withProperties(
                     circleRadius(9f), circleColor("#2ea3f2"), circleStrokeColor("#ffffff"), circleStrokeWidth(3f)))
                 carte = m
             }
+            // Toucher un dossier l'ouvre ; maintenir le doigt ailleurs propose d'y créer quelque chose.
+            m.addOnMapClickListener { point ->
+                val touche = m.queryRenderedFeatures(m.projection.toScreenLocation(point), "dossiers-points").firstOrNull()?.getStringProperty("id")
+                if (touche != null) { modele.ouvrirDossier(touche); true } else { lieuTouche = null; false }
+            }
+            m.addOnMapLongClickListener { point -> lieuTouche = point; true }
         }
         onDispose {
             cycle.removeObserver(observateur)
@@ -160,16 +200,29 @@ fun EcranCarte(modele: ModeleApplication) {
 
     // Les points suivent les données ; la carte ne se recadre qu'une fois, pour ne pas
     // arracher la vue des mains de quelqu'un qui est en train de la déplacer.
-    LaunchedEffect(carte, membres, moi) {
+    LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche) {
         val m = carte ?: return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
+        (style.getSource("dossiers") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(situes.map { d ->
+            Feature.fromGeometry(Point.fromLngLat(d.longitude!!, d.latitude!!)).apply {
+                addStringProperty("id", d.id); addStringProperty("urgent", if (d.priorite == "URGENTE") "oui" else "non")
+            }
+        }))
+        (style.getSource("zones") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(crises.mapNotNull { c ->
+            // Un périmètre illisible ne doit pas empêcher la carte de s'afficher.
+            c.zone?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.let { z -> runCatching { Feature.fromJson("""{"type":"Feature","properties":{},"geometry":$z}""") }.getOrNull() }
+        }))
+        (style.getSource("lieu") as? GeoJsonSource)?.setGeoJson(
+            FeatureCollection.fromFeatures(listOfNotNull(lieuTouche?.let { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) })),
+        )
         (style.getSource("membres") as? GeoJsonSource)?.setGeoJson(
             FeatureCollection.fromFeatures(membres.map { Feature.fromGeometry(Point.fromLngLat(it.longitude!!, it.latitude!!)) }),
         )
         (style.getSource("moi") as? GeoJsonSource)?.setGeoJson(
             FeatureCollection.fromFeatures(listOfNotNull(moi?.let { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) })),
         )
-        val points = membres.map { LatLng(it.latitude!!, it.longitude!!) } + listOfNotNull(moi?.let { LatLng(it.latitude, it.longitude) })
+        val points = membres.map { LatLng(it.latitude!!, it.longitude!!) } + listOfNotNull(moi?.let { LatLng(it.latitude, it.longitude) }) +
+            situes.map { LatLng(it.latitude!!, it.longitude!!) }
         if (!cadree && points.isNotEmpty()) {
             cadree = true
             if (points.size == 1) m.moveCamera(CameraUpdateFactory.newLatLngZoom(points[0], 14.0))
@@ -195,14 +248,40 @@ fun EcranCarte(modele: ModeleApplication) {
                     }
                 }
             }
+            lieuTouche?.let { lieu ->
+                CreerIci(
+                    crises.filter { it.accepteLesDepots },
+                    surChoix = { genre, crise -> lieuTouche = null; modele.ouvrirDepot(genre, crise, Releve(lieu.latitude, lieu.longitude, System.currentTimeMillis(), 0f)) },
+                    surAbandon = { lieuTouche = null },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                )
+            }
             Text(
                 "© IGN", style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)).padding(horizontal = 4.dp),
             )
         }
+        Text(
+            "Maintenez le doigt sur la carte pour y créer une demande, un signalement ou une offre d'aide.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+        )
         // Les noms sont dans la liste, pas sur la carte : toucher une ligne y conduit.
-        if (membres.isNotEmpty()) {
+        if (membres.isNotEmpty() || situes.isNotEmpty()) {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 190.dp)) {
+                items(situes, key = { "d-${it.id}" }) { d ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.latitude!!, d.longitude!!), 16.0)) }
+                            .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(14.dp).clip(CircleShape).background(if (d.priorite == "URGENTE") Refus else Attente))
+                        Spacer(Modifier.width(12.dp))
+                        LigneDossier(d, Modifier.weight(1f))
+                        TextButton(onClick = { modele.ouvrirDossier(d.id) }) { Text("Ouvrir") }
+                    }
+                    HorizontalDivider()
+                }
                 items(membres, key = { it.utilisateur }) { membre ->
                     LigneMembre(membre) {
                         carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(membre.latitude!!, membre.longitude!!), 15.0))
@@ -212,10 +291,41 @@ fun EcranCarte(modele: ModeleApplication) {
             }
         } else {
             Text(
-                "Aucun membre de vos équipes n'a partagé sa position ces trois dernières heures.",
+                "Aucun dossier situé, et aucun membre de vos équipes n'a partagé sa position ces trois dernières heures.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
+        }
+    }
+}
+
+/** Ce qu'on peut créer à l'endroit touché, et sur quelle crise. */
+@Composable
+private fun CreerIci(crises: List<Crise>, surChoix: (GenreDepot, Crise) -> Unit, surAbandon: () -> Unit, modifier: Modifier = Modifier) {
+    var choisie by remember(crises) { mutableStateOf(crises.singleOrNull()) }
+    Surface(shape = MaterialTheme.shapes.large, shadowElevation = 6.dp, modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Créer à cet endroit", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = surAbandon) { Text("Annuler") }
+            }
+            if (crises.isEmpty()) {
+                // Le serveur refuse tout dépôt hors d'une crise ouverte et suivie : on le dit ici plutôt qu'après la saisie.
+                Text("Aucune crise ouverte n'accepte de dépôt pour l'instant.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                return@Column
+            }
+            if (crises.size > 1) {
+                Text("Pour quelle crise ?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    crises.forEach { c -> FilterChip(selected = choisie?.id == c.id, onClick = { choisie = c }, label = { Text(c.nom) }) }
+                }
+            } else {
+                Text(crises.single().nom, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(8.dp))
+            listOf(GenreDepot.DEMANDE to "Une demande d'aide", GenreDepot.SIGNALEMENT to "Un signalement", GenreDepot.OFFRE to "Une offre d'aide").forEach { (genre, nom) ->
+                OutlinedButton(onClick = { choisie?.let { surChoix(genre, it) } }, enabled = choisie != null, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) { Text(nom) }
+            }
         }
     }
 }

@@ -108,6 +108,8 @@ data class Dossier(
     @SerialName("crise_nom") val criseNom: String? = null,
     val equipe: String? = null,
     @SerialName("equipe_nom") val equipeNom: String? = null,
+    /** La mission sous laquelle le dossier est rangé, s'il y en a une. */
+    val mission: String? = null,
     val commune: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -119,6 +121,7 @@ data class Dossier(
     val important: Boolean = false,
 ) {
     val clos: Boolean get() = statut == "CLOTURE" || statut == "RESOLU"
+    val situe: Boolean get() = latitude != null && longitude != null
     val statutLibelle: String get() = STATUTS[statut] ?: statut
 
     companion object {
@@ -137,4 +140,64 @@ data class Dossier(
         fun trier(dossiers: List<Dossier>): List<Dossier> =
             dossiers.sortedWith(compareBy({ it.clos }, { RANG[it.priorite] ?: 1 }, { it.ordre }))
     }
+}
+
+/** Un commentaire laissé sur un dossier (`DossierCommentaireSerializer`). */
+@Serializable
+data class Commentaire(
+    val id: String,
+    val commentaire: String = "",
+    @SerialName("auteur_nom") val auteur: String = "",
+    @SerialName("date_creation") val date: String? = null,
+)
+
+/**
+ * Une photo versée à un dossier (`DocumentSerializer`). `empreinte` est le SHA-256 que le
+ * serveur a calculé sur les octets reçus ; la position est celle inscrite dans la photo.
+ */
+@Serializable
+data class Photo(
+    val id: String,
+    val commentaire: String? = null,
+    @SerialName("auteur_nom") val auteur: String = "",
+    @SerialName("date_upload") val date: String? = null,
+    @SerialName("sha256") val empreinte: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+/**
+ * Ce qui accompagne une photo prise ici jusqu'à son arrivée au serveur. `cle` désigne les
+ * octets, gardés chiffrés ; `empreinte` est calculée sur le téléphone, au moment de la prise,
+ * pour être comparée à celle que le serveur rendra.
+ */
+@Serializable
+data class PhotoEnAttente(
+    val cle: String,
+    val empreinte: String,
+    val commentaire: String = "",
+    val priseLe: Long = 0,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val precisionM: Float? = null,
+)
+
+/** Une ligne du fil d'un dossier : un commentaire reçu, ou écrit ici et pas encore parti. */
+data class CommentaireAffiche(val cle: String, val texte: String, val auteur: String, val instant: Long?, val enAttente: Boolean = false, val refus: String? = null)
+
+fun filDuDossier(recus: List<Commentaire>, file: List<ActionEnAttente>, idDossier: String, instantDe: (String?) -> Long?): List<CommentaireAffiche> =
+    recus.map { CommentaireAffiche(it.id, it.commentaire, it.auteur, instantDe(it.date)) }.sortedBy { it.instant ?: 0 } +
+        file.filter { it.genre == ActionEnAttente.GENRE_COMMENTAIRE && it.cible == idDossier }.map {
+            CommentaireAffiche(
+                it.id, it.charge, "Vous", it.creeLe, enAttente = it.etat == EtatAction.EN_ATTENTE,
+                refus = if (it.etat == EtatAction.REFUSEE) (it.erreur ?: "Refusé par le serveur") else null,
+            )
+        }
+
+/** Les dossiers rangés sous chaque mission, et ceux de mes équipes qui n'en ont pas. */
+data class DossiersParMission(val parMission: Map<String, List<Dossier>>, val sansMission: List<Dossier>)
+
+fun rangerParMission(dossiers: List<Dossier>, missions: Collection<String>): DossiersParMission {
+    val (ranges, autres) = dossiers.partition { it.mission != null && it.mission in missions }
+    return DossiersParMission(ranges.groupBy { it.mission!! }, autres)
 }

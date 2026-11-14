@@ -45,6 +45,12 @@ data class ActionEnAttente(
 
         /** Un dépôt citoyen : `cible` est le chemin de l'API, `charge` le corps JSON. */
         const val GENRE_DEPOT = "DEPOT"
+
+        /** Un commentaire de dossier : `cible` est le dossier, `charge` le texte. */
+        const val GENRE_COMMENTAIRE = "COMMENTAIRE"
+
+        /** Une photo de dossier : `cible` est le dossier, `charge` un `PhotoEnAttente` en JSON. */
+        const val GENRE_PHOTO = "PHOTO"
     }
 }
 
