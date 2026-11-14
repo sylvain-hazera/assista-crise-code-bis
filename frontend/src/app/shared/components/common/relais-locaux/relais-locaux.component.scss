@@ -1,0 +1,126 @@
+/* Variables de thème : seules celles qui existent réellement, avec leur repli clair.
+   Les `--ac-*` ne sont définies que sous `html[data-theme='sombre']` — un nom inventé
+   résoudrait toujours sur le repli et donnerait un bloc illisible en thème sombre. */
+
+.relais-locaux {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--ac-teal-border, #99f6e4);
+  border-radius: 8px;
+  background: var(--ac-teal-bg, #f0fdfa);
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0 0 .5rem;
+    font-size: 1rem;
+    color: var(--ac-teal-text, #0f766e);
+
+    .material-icons { font-size: 1.25rem; }
+  }
+
+  .avertissement {
+    margin: 0 0 1rem;
+    font-size: .85rem;
+    color: var(--ac-text-muted, #475569);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .9rem;
+  }
+
+  th, td {
+    padding: .5rem .6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--ac-border, #e2e8f0);
+    color: var(--ac-text, #0f172a);
+  }
+
+  th {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--ac-text-subtle, #64748b);
+  }
+
+  /* Les chiffres s'alignent, sinon on ne compare rien d'une ligne à l'autre. */
+  .nombre {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .nom { font-weight: 600; }
+  .muet { color: var(--ac-text-subtle, #94a3b8); }
+
+  .etat {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    white-space: nowrap;
+
+    .pastille {
+      width: .55rem;
+      height: .55rem;
+      border-radius: 50%;
+      background: var(--ac-text-subtle, #94a3b8);
+      flex: 0 0 auto;
+    }
+
+    &.vivant {
+      color: var(--ac-green-text, #15803d);
+      .pastille { background: currentColor; }
+    }
+
+    &.attente { color: var(--ac-amber-text, #b45309); }
+    &.casse { color: var(--ac-red-text, #b91c1c); }
+  }
+
+  .detail-erreur {
+    display: block;
+    margin-top: .2rem;
+    font-size: .78rem;
+    color: var(--ac-red-text, #b91c1c);
+  }
+
+  .debrancher {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .35rem .7rem;
+    border: 1px solid var(--ac-border-strong, #cbd5e1);
+    border-radius: 6px;
+    background: var(--ac-surface, #ffffff);
+    color: var(--ac-text, #0f172a);
+    font-size: .85rem;
+    cursor: pointer;
+
+    .material-icons { font-size: 1rem; }
+
+    &:hover { background: var(--ac-surface-2, #f1f5f9); }
+    &:focus-visible { outline: 2px solid var(--brand-primary-lisible, #1d4ed8); outline-offset: 2px; }
+  }
+}
+
+/* La pastille d'un relais vivant respire — mais pas si la personne a demandé moins
+   d'animation. */
+@media (prefers-reduced-motion: no-preference) {
+  .relais-locaux .etat.vivant .pastille { animation: battement 2s ease-in-out infinite; }
+}
+
+@keyframes battement {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+/* Sur téléphone le tableau déborderait : il défile dans son propre conteneur, la page non. */
+@media (max-width: 768px) {
+  .relais-locaux {
+    padding: .75rem;
+    overflow-x: auto;
+
+    table { min-width: 34rem; }
+  }
+}

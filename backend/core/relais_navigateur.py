@@ -54,23 +54,54 @@ SECONDES_AVANT_SESSION_MORTE = 120
 SESSIONS_MAX_PAR_COMPAGNON = 1
 
 
+def _est_mon_noeud(utilisateur, compagnon):
+    """Ce companion est-il la radio personnelle de cette personne ?
+
+    Le rattachement se fait par la **clé publique**, parce que c'est la seule chose que les
+    deux modèles ont en commun : `NoeudMeshUtilisateur` dit « cette clé est à moi »,
+    `CompagnonMeshCore` dit « cette clé est une passerelle ». Un même appareil peut être les
+    deux à la fois, et c'est précisément le cas du relais navigateur.
+    """
+    from .models import NoeudMeshUtilisateur
+
+    if compagnon is None or not compagnon.pubkey_hex:
+        return False
+    return NoeudMeshUtilisateur.objects.filter(
+        utilisateur=utilisateur, pubkey_hex=compagnon.pubkey_hex, actif=True,
+    ).exists()
+
+
 def peut_relayer(utilisateur, compagnon):
     """Cette personne peut-elle relayer ce companion ?
 
-    Deux conditions, et le cumul des deux est le garde-fou : **l'appartenance** à l'institution
-    propriétaire du companion, et la **possession physique** de la radio, que l'USB impose de
-    fait. Ni l'une ni l'autre ne suffit seule — un membre sans la radio ne peut rien relayer, et
-    quelqu'un qui a la radio sans être membre n'est pas autorisé.
+    **Correction du 14/11/2026.** La première version exigeait l'appartenance à l'institution
+    propriétaire d'un companion déjà déclaré, et rien d'autre ne passait. C'était un contresens
+    sur le besoin : le cas visé est « quelqu'un **sans** satellite branche **son** nœud en USB ».
+    Par construction cette personne n'a pas de companion institutionnel — on lui demandait donc
+    d'avoir déjà ce que le relais est censé fournir. Pire, la liste servie à l'écran
+    pré-filtrait sur `ContactInstitution`, ce qui contredisait cette fonction : un
+    administrateur acceptable ici voyait quand même une liste vide.
 
-    L'administrateur au sens du rôle RÉEL est accepté pour le diagnostic — jamais le rôle
-    effectif : un `demo_role=ADMIN` prêté le temps d'une démonstration ne donne pas la main sur
-    une radio réelle. Même raisonnement que `EstComptePont`.
+    Trois titres, et un seul suffit :
+
+    1. **l'administrateur au sens du rôle RÉEL** — jamais le rôle effectif : un `demo_role`
+       prêté le temps d'une démonstration ne donne pas la main sur une radio réelle, même
+       raisonnement que `EstComptePont` ;
+    2. **le propriétaire du nœud** : la clé publique du companion est déclarée comme sienne
+       dans `NoeudMeshUtilisateur`. C'est le cas central du relais navigateur ;
+    3. **un membre actif de l'institution** propriétaire du companion, pour les passerelles
+       institutionnelles déjà déclarées.
+
+    Dans tous les cas la **possession physique** de la radio reste exigée de fait par l'USB :
+    aucun de ces titres ne permet de relayer une radio qu'on n'a pas en main.
     """
     from .models import ContactInstitution, UserRole
 
     if not getattr(utilisateur, "is_authenticated", False):
         return False
     if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
+        return True
+    if _est_mon_noeud(utilisateur, compagnon):
         return True
     if compagnon is None or compagnon.institution_id is None:
         # Un companion sans institution n'appartient à personne : on ne devine pas à qui le
@@ -79,6 +110,86 @@ def peut_relayer(utilisateur, compagnon):
     return ContactInstitution.objects.filter(
         utilisateur=utilisateur, institution_id=compagnon.institution_id, actif=True,
     ).exists()
+
+
+def radios_relayables(utilisateur):
+    """Les radios proposées à l'écran : `(companions, noeuds_personnels)`.
+
+    Deux listes parce qu'il y a deux situations, et que les confondre était l'erreur de la
+    première version :
+
+    - les **companions** déjà déclarés que cette personne a le droit de relayer ;
+    - ses **nœuds personnels** qui ne sont pas encore companions. Ceux-là n'ont rien à déclarer
+      d'avance : au démarrage du relais, `compagnon_pour_noeud` les promeut en companion série.
+
+    Un nœud personnel déjà promu n'apparaît que dans la première liste — sa clé publique est
+    celle du companion, et on ne propose pas deux fois la même radio.
+    """
+    from .models import CompagnonMeshCore, ContactInstitution, NoeudMeshUtilisateur, UserRole
+
+    candidats = CompagnonMeshCore.objects.filter(actif=True).select_related("institution")
+    if getattr(utilisateur, "type", None) != UserRole.ADMINISTRATOR:
+        # Un non-administrateur ne voit que ce qu'il peut relayer. On restreint en base plutôt
+        # que d'appeler `peut_relayer` sur toute la table : à l'échelle d'un département la
+        # liste des companions reste petite, mais la règle doit rester la même aux deux
+        # endroits — d'où le filtre final ci-dessous, qui est l'autorité.
+        miennes = list(ContactInstitution.objects.filter(
+            utilisateur=utilisateur, actif=True,
+        ).values_list("institution_id", flat=True))
+        mes_cles = list(NoeudMeshUtilisateur.objects.filter(
+            utilisateur=utilisateur, actif=True,
+        ).values_list("pubkey_hex", flat=True))
+        from django.db.models import Q
+        candidats = candidats.filter(
+            Q(institution_id__in=miennes) | Q(pubkey_hex__in=mes_cles),
+        )
+
+    compagnons = [c for c in candidats.order_by("nom") if peut_relayer(utilisateur, c)]
+    deja = {c.pubkey_hex for c in compagnons if c.pubkey_hex}
+
+    noeuds = [
+        n for n in NoeudMeshUtilisateur.objects.filter(utilisateur=utilisateur, actif=True)
+        if n.pubkey_hex not in deja
+    ]
+    return compagnons, noeuds
+
+
+def compagnon_pour_noeud(utilisateur, noeud, environnement):
+    """Rend le companion correspondant à ce nœud personnel, en le créant au besoin.
+
+    **Idempotent par clé publique** : rebrancher la radio demain ne crée pas un second
+    companion. C'est ce qui rend l'écran utilisable sans rien préparer — on branche, on démarre.
+
+    Aucun secret n'est lu ni écrit ici : ni clé de canal, ni clé privée, ni mot de passe MQTT.
+    La frontière de `EstComptePont` reste entière — on déclare l'existence d'une radio, pas de
+    quoi la déchiffrer.
+    """
+    from .models import CompagnonMeshCore, MeshCoreConnexionType
+
+    if noeud.utilisateur_id != utilisateur.id:
+        return None, "Ce nœud n'est pas le vôtre."
+
+    existant = CompagnonMeshCore.objects.filter(pubkey_hex=noeud.pubkey_hex).first()
+    if existant is not None:
+        if not existant.actif:
+            existant.actif = True
+            existant.save(update_fields=["actif"])
+        return existant, None
+
+    from .institution_courante import institution_courante
+
+    nom = (noeud.nom_noeud or "").strip() or f"Radio de {utilisateur.get_full_name() or utilisateur.email}"
+    compagnon = CompagnonMeshCore.objects.create(
+        environment=environnement,
+        institution=institution_courante(utilisateur),
+        nom=nom[:100],
+        connexion_type=MeshCoreConnexionType.SERIE,
+        # La radio n'est pas branchée sur le serveur mais sur le poste de la personne. Le dire
+        # explicitement évite qu'un pont Python essaie un jour d'ouvrir ce périphérique.
+        serie_device="navigateur",
+        pubkey_hex=noeud.pubkey_hex,
+    )
+    return compagnon, None
 
 
 def session_active(utilisateur, compagnon_id):
@@ -111,8 +222,8 @@ def ouvrir(utilisateur, compagnon, environnement, user_agent=""):
     from .models import SessionRelaisNavigateur
 
     if not peut_relayer(utilisateur, compagnon):
-        return None, ("Vous n'êtes pas membre de l'institution propriétaire de cette radio. "
-                      "Seuls ses membres peuvent la relayer.")
+        return None, ("Vous n'avez pas la main sur cette radio : elle n'est ni la vôtre, ni "
+                      "celle d'une institution dont vous êtes membre.")
 
     existante = session_active(utilisateur, compagnon.id)
     if existante is not None:

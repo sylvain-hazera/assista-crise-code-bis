@@ -6,6 +6,9 @@ import { environment } from '../../environments/environment';
 
 export interface CompagnonRelayable {
   id: string;
+  /** `compagnon` = passerelle déjà déclarée ; `noeud` = ma radio personnelle, promue en
+   * companion au démarrage du relais. Voir core/relais_navigateur.py. */
+  genre: 'compagnon' | 'noeud';
   nom: string;
   institution_nom: string;
   relaye_par_moi: boolean;
@@ -46,16 +49,27 @@ export class RelaisSerieService {
     return this.http.get<EtatRelais>(this.relais);
   }
 
-  /** Ouvre la session, ou bat la mesure si elle est déjà ouverte — c'est la même opération. */
-  ouvrirOuBattre(compagnon: string, tramesRecues = 0, tramesEnvoyees = 0)
-      : Observable<{ session: string | null }> {
-    return this.http.post<{ session: string | null }>(this.relais, {
-      compagnon, trames_recues: tramesRecues, trames_envoyees: tramesEnvoyees,
-    });
+  /** Ouvre la session, ou bat la mesure si elle est déjà ouverte — c'est la même opération.
+   *
+   * La radio est désignée soit par un companion, soit par un nœud personnel ; dans le second
+   * cas le serveur rend l'identifiant du companion à utiliser ensuite, qu'il vient peut-être
+   * de créer. C'est ce retour qui permet d'appeler les endpoints de messages, lesquels ne
+   * connaissent que les companions. */
+  ouvrirOuBattre(radio: { genre: 'compagnon' | 'noeud'; id: string },
+                 tramesRecues = 0, tramesEnvoyees = 0)
+      : Observable<{ session: string | null; compagnon?: string; nom?: string;
+                     avertissement?: string }> {
+    return this.http.post<{ session: string | null; compagnon?: string; nom?: string;
+                            avertissement?: string }>(
+      this.relais, {
+        [radio.genre]: radio.id,
+        trames_recues: tramesRecues, trames_envoyees: tramesEnvoyees,
+      });
   }
 
-  fermer(compagnon: string): Observable<{ session: null }> {
-    return this.http.post<{ session: null }>(this.relais, { compagnon, fermer: true });
+  fermer(radio: { genre: 'compagnon' | 'noeud'; id: string }): Observable<{ session: null }> {
+    return this.http.post<{ session: null }>(this.relais,
+                                             { [radio.genre]: radio.id, fermer: true });
   }
 
   /** La file sortante de CETTE radio. Le paramètre est obligatoire côté serveur. */

@@ -54,53 +54,7 @@
   }
 }
 
-.champ {
-  display: flex;
-  flex-direction: column;
-  gap: .3rem;
-  font-size: .85rem;
-  font-weight: 600;
 
-  select {
-    min-height: 44px;
-    padding: .45rem .6rem;
-    border: 1px solid var(--ac-border, #cbd5e1);
-    border-radius: 8px;
-    background: var(--ac-surface, #fff);
-    color: inherit;
-    font: inherit;
-    font-weight: 400;
-  }
-}
-
-.actions { display: flex; gap: .6rem; }
-
-.primaire,
-.secondaire {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  min-height: 48px;
-  padding: .6rem 1.1rem;
-  border-radius: 8px;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.primaire {
-  border: 0;
-  background: var(--brand-primary-lisible, #2563eb);
-  color: #fff;
-
-  &:disabled { opacity: .5; cursor: not-allowed; }
-}
-
-.secondaire {
-  border: 1px solid var(--ac-red-text, #dc2626);
-  background: none;
-  color: var(--ac-red-text, #dc2626);
-}
 
 .aide,
 .vide {
@@ -111,42 +65,72 @@
 
 /* L'état du relais : visible de loin, parce qu'on y jette un œil en passant pour vérifier
    que ça tourne toujours. */
-.etat-relais {
-  border-left: 3px solid var(--ac-green-text, #16a34a);
 
-  &.en-attente { border-left-color: var(--ac-amber-text, #d97706); }
-}
-
-.pastille {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--ac-amber-text, #d97706);
-
-  &.vivante { background: var(--ac-green-text, #16a34a); }
-}
-
-.compteurs {
-  display: grid;
+/* La liste des radios proposées : un nom, un bouton. Pas un tableau — il n'y a rien à
+   comparer d'une ligne à l'autre, seulement une action à déclencher. */
+.radios {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
   gap: .5rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 
-  div {
+  li {
     display: flex;
-    flex-direction: column;
-    padding: .6rem .7rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .7rem .9rem;
+    border: 1px solid var(--ac-border, #e2e8f0);
     border-radius: 8px;
     background: var(--ac-surface-2, #f8fafc);
   }
 
-  strong {
-    font-size: 1.5rem;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
+  .nom {
+    font-weight: 600;
+    color: var(--ac-text, #0f172a);
+  }
+}
+
+.primaire,
+.secondaire {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .9rem;
+  border-radius: 6px;
+  font-size: .9rem;
+  cursor: pointer;
+  white-space: nowrap;
+
+  .material-icons { font-size: 1.1rem; }
+
+  &:focus-visible { outline: 2px solid var(--brand-primary-lisible, #1d4ed8); outline-offset: 2px; }
+}
+
+.primaire {
+  border: 1px solid transparent;
+  background: var(--brand-primary-lisible, #1d4ed8);
+  color: #fff;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
+.secondaire {
+  border: 1px solid var(--ac-border-strong, #cbd5e1);
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #0f172a);
+}
+
+/* Sur téléphone, le nom et le bouton ne tiennent pas côte à côte. */
+@media (max-width: 560px) {
+  .radios li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .6rem;
   }
 
-  span {
-    font-size: .75rem;
-    color: var(--ac-text-muted, #64748b);
-  }
+  .primaire,
+  .secondaire { justify-content: center; }
 }

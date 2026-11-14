@@ -20,10 +20,11 @@ from rest_framework.test import APIClient
 
 from core.models import (
     CompagnonMeshCore, ContactInstitution, Institution, InstitutionType,
-    MeshCoreConnexionType, SessionRelaisNavigateur, UserRole,
+    MeshCoreConnexionType, NoeudMeshUtilisateur, SessionRelaisNavigateur, UserRole,
 )
 from core.relais_navigateur import (
-    SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, ouvrir, peut_relayer, session_active,
+    SECONDES_AVANT_SESSION_MORTE, compagnon_pour_noeud, fermer_sessions_mortes, ouvrir,
+    peut_relayer, radios_relayables, session_active,
 )
 
 
@@ -64,6 +65,26 @@ def etranger(create_user, autre_mairie):
     return user
 
 
+@pytest.fixture
+def administrateur(create_user):
+    return create_user(username="admin-relais@test.fr", email="admin-relais@test.fr",
+                       type=UserRole.ADMINISTRATOR)
+
+
+@pytest.fixture
+def porteur_de_noeud(create_user):
+    """Le cas CENTRAL du relais : quelqu'un qui a déclaré SA radio, et rien d'autre.
+
+    Pas de companion institutionnel, pas de satellite — c'est précisément la personne que la
+    première version excluait, alors qu'elle est la seule visée par le besoin."""
+    user = create_user(username="porteur-relais@test.fr", email="porteur-relais@test.fr",
+                       type=UserRole.SIMPLE_USER)
+    NoeudMeshUtilisateur.objects.create(
+        utilisateur=user, pubkey_hex="aa" * 32, nom_noeud="T-Deck de Sylvain",
+        environment="PROD")
+    return user
+
+
 def _client(user):
     c = APIClient()
     c.force_authenticate(user=user)
@@ -90,6 +111,140 @@ class TestQuiPeutRelayer:
         compagnon.save()
 
         assert peut_relayer(membre, compagnon) is False
+
+    def test_un_administrateur_peut(self, administrateur, compagnon):
+        """Régression du 14/11/2026. La règle l'acceptait déjà, mais la liste servie à l'écran
+        pré-filtrait sur l'appartenance : un administrateur lisait « aucune radio accessible ».
+        Le droit et la liste doivent se décider au même endroit."""
+        assert peut_relayer(administrateur, compagnon) is True
+
+        compagnons, _ = radios_relayables(administrateur)
+        assert compagnon in compagnons
+
+    def test_un_role_prete_en_demonstration_ne_donne_pas_la_main(self, membre, compagnon,
+                                                                 mairie):
+        """Même raisonnement que EstComptePont : un rôle effectif ne vaut pas un rôle réel."""
+        ContactInstitution.objects.filter(utilisateur=membre, institution=mairie).update(
+            actif=False)
+        membre.demo_role = UserRole.ADMINISTRATOR
+        membre.save(update_fields=["demo_role"])
+
+        assert peut_relayer(membre, compagnon) is False
+
+    def test_le_proprietaire_de_la_radio_peut_la_relayer(self, porteur_de_noeud):
+        """Sans appartenance, sans companion déclaré : la clé publique suffit à le reconnaître."""
+        compagnon = CompagnonMeshCore.objects.create(
+            nom="T-Deck", environment="PROD", connexion_type=MeshCoreConnexionType.SERIE,
+            pubkey_hex="aa" * 32)
+
+        assert peut_relayer(porteur_de_noeud, compagnon) is True
+
+    def test_la_radio_d_un_autre_reste_interdite(self, porteur_de_noeud, create_user):
+        """Déclarer SA radio ne donne pas la main sur celle du voisin."""
+        autre = CompagnonMeshCore.objects.create(
+            nom="T-Deck du voisin", environment="PROD",
+            connexion_type=MeshCoreConnexionType.SERIE, pubkey_hex="bb" * 32)
+
+        assert peut_relayer(porteur_de_noeud, autre) is False
+
+
+class TestLeNoeudPersonnelDevientPasserelle:
+    """La correction de cadrage du 14/11/2026.
+
+    La première version exigeait un companion institutionnel **déjà déclaré**. Le besoin est
+    l'inverse : « quelqu'un sans satellite branche son nœud en USB ». On lui demandait donc
+    d'avoir déjà ce que le relais est censé fournir."""
+
+    def test_son_noeud_apparait_sans_rien_avoir_declare(self, porteur_de_noeud):
+        compagnons, noeuds = radios_relayables(porteur_de_noeud)
+
+        assert compagnons == []
+        assert len(noeuds) == 1
+        assert noeuds[0].pubkey_hex == "aa" * 32
+
+    def test_le_demarrage_le_promeut_en_companion(self, porteur_de_noeud):
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+
+        compagnon, erreur = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+
+        assert erreur is None
+        assert compagnon.pubkey_hex == "aa" * 32
+        assert compagnon.connexion_type == MeshCoreConnexionType.SERIE
+        # La radio est sur le poste de la personne, pas sur le serveur : aucun pont Python ne
+        # doit essayer d'ouvrir ce périphérique.
+        assert compagnon.serie_device == "navigateur"
+        assert compagnon.nom == "T-Deck de Sylvain"
+
+    def test_la_promotion_est_idempotente(self, porteur_de_noeud):
+        """Rebrancher la radio demain ne doit pas créer un second companion."""
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+
+        premier, _ = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+        second, _ = compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+
+        assert premier.id == second.id
+        assert CompagnonMeshCore.objects.filter(pubkey_hex="aa" * 32).count() == 1
+
+    def test_une_fois_promu_il_n_apparait_qu_une_fois(self, porteur_de_noeud):
+        """Sinon la même radio serait proposée deux fois dans la liste."""
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+        compagnon_pour_noeud(porteur_de_noeud, noeud, "PROD")
+
+        compagnons, noeuds = radios_relayables(porteur_de_noeud)
+
+        assert len(compagnons) == 1
+        assert noeuds == []
+
+    def test_on_ne_promeut_pas_le_noeud_d_un_autre(self, porteur_de_noeud, membre):
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+
+        compagnon, erreur = compagnon_pour_noeud(membre, noeud, "PROD")
+
+        assert compagnon is None
+        assert erreur
+
+    def test_l_api_ouvre_le_relais_sur_un_noeud_personnel(self, porteur_de_noeud):
+        """Le bout en bout : on branche, on démarre, le serveur rend le companion à utiliser."""
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+        url = reverse("relais_serie")
+
+        reponse = _client(porteur_de_noeud).post(url, {"noeud": str(noeud.id)}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert reponse.data["compagnon"]
+        assert SessionRelaisNavigateur.objects.filter(utilisateur=porteur_de_noeud).count() == 1
+
+    def test_une_radio_sans_institution_le_dit(self, porteur_de_noeud):
+        """« Passerelle DE L'INSTITUTION » suppose qu'on sache laquelle.
+
+        Sans institution déterminable, le relais fonctionne quand même — le propriétaire est
+        reconnu par la clé publique — mais aucun collègue ne pourra reprendre la radio. On le
+        dit plutôt que de laisser croire au contraire."""
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+
+        reponse = _client(porteur_de_noeud).post(
+            reverse("relais_serie"), {"noeud": str(noeud.id)}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert "institution" in reponse.data["avertissement"]
+
+    def test_une_radio_rattachee_ne_previent_de_rien(self, membre, compagnon):
+        reponse = _client(membre).post(
+            reverse("relais_serie"), {"compagnon": str(compagnon.id)}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert "avertissement" not in reponse.data
+
+    def test_fermer_un_noeud_jamais_demarre_ne_cree_rien(self, porteur_de_noeud):
+        """Fermer n'est pas une écriture : sinon un `ngOnDestroy` suffirait à créer la radio."""
+        noeud = NoeudMeshUtilisateur.objects.get(utilisateur=porteur_de_noeud)
+        url = reverse("relais_serie")
+
+        reponse = _client(porteur_de_noeud).post(
+            url, {"noeud": str(noeud.id), "fermer": True}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert CompagnonMeshCore.objects.filter(pubkey_hex="aa" * 32).count() == 0
 
 
 class TestLaSession:

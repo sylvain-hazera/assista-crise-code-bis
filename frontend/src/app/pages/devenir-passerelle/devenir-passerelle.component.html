@@ -20,88 +20,79 @@
     </div>
   } @else {
 
-    <!-- Ce que cette page n'est pas. Mieux vaut le lire ici qu'en situation. -->
+    <!-- Les deux limites qu'il vaut mieux lire ici qu'en situation. -->
     <div class="alerte avertissement">
       <span class="material-icons">info</span>
       <div>
-        <strong>Cet onglet doit rester ouvert.</strong>
-        Le relais s'arrête si vous fermez la page ou si l'ordinateur se met en veille. Et il ne
-        remplace pas un satellite : il étend la portée radio, il ne fonctionne pas sans
-        internet.
+        <strong>USB uniquement, et cet onglet doit rester ouvert.</strong>
+        Une radio sur votre réseau local n'est pas joignable depuis un navigateur : il ne peut
+        pas ouvrir de connexion TCP brute. Le relais s'arrête aussi si vous fermez la page ou
+        si l'ordinateur se met en veille — mais vous pouvez changer de page dans l'application
+        sans l'interrompre. Et il ne remplace pas un satellite : il étend la portée radio, il
+        ne fonctionne pas sans internet.
+      </div>
+    </div>
+
+    <!-- Dit avant qu'on ne branche le mauvais appareil : le relais ne parle que MeshCore. -->
+    <div class="alerte info">
+      <span class="material-icons">radio</span>
+      <div>
+        <strong>MeshCore uniquement pour l'instant.</strong>
+        Un nœud Meshtastic branché ici ne sera pas reconnu : son protocole série est différent
+        et n'est pas encore implémenté. Pour Meshtastic, il faut une machine où l'on peut
+        installer le profil passerelle.
       </div>
     </div>
 
     @if (erreur) {
       <div class="alerte erreur"><span class="material-icons">warning</span><div>{{ erreur }}</div></div>
     }
-    @if (message) {
-      <div class="alerte info"><span class="material-icons">schedule</span><div>{{ message }}</div></div>
+    @if (avertissement) {
+      <div class="alerte avertissement">
+        <span class="material-icons">report_problem</span><div>{{ avertissement }}</div>
+      </div>
     }
 
     <section class="bloc">
-      <h2>La radio à relayer</h2>
-      @if (!compagnons.length) {
+      <h2>Les radios que vous pouvez relayer</h2>
+
+      @if (chargement) {
+        <p class="aide">Chargement…</p>
+      } @else if (!radios.length) {
         <p class="vide">
-          Aucune radio ne vous est accessible. Seuls les membres de l'institution propriétaire
-          d'une radio peuvent la relayer — demandez à votre encadrement de vous rattacher, ou
-          de déclarer cette radio.
+          Aucune radio à relayer pour l'instant. Déclarez d'abord la clé publique de votre
+          nœud dans <a routerLink="/settings">Mon espace &rsaquo; Mon compte</a> : elle sert à
+          vous reconnaître comme son propriétaire. Vous pourrez ensuite la relayer depuis cette
+          page, sans que personne n'ait à la déclarer pour vous.
         </p>
       } @else {
-        <label class="champ">
-          <span>Radio</span>
-          <select [(ngModel)]="compagnonChoisi" [disabled]="etat !== 'inactif'">
-            @for (c of compagnons; track c.id) {
-              <option [value]="c.id">{{ c.nom }} — {{ c.institution_nom }}</option>
-            }
-          </select>
-        </label>
-
-        <div class="actions">
-          @if (etat === 'inactif' || etat === 'erreur') {
-            <button type="button" class="primaire" [disabled]="!compagnonChoisi"
-                    (click)="demarrer()">
-              <span class="material-icons">usb</span> Démarrer le relais
-            </button>
-          } @else {
-            <button type="button" class="secondaire" (click)="arreter()">
-              <span class="material-icons">stop</span> Arrêter
-            </button>
+        <ul class="radios">
+          @for (c of radios; track c.id) {
+            <li>
+              <span class="nom">{{ libelle(c) }}</span>
+              @if (estBranchee(c)) {
+                <button type="button" class="secondaire" (click)="debrancher(c)">
+                  <span class="material-icons">stop</span> Débrancher
+                </button>
+              } @else {
+                <button type="button" class="primaire" [disabled]="enCours === c.id"
+                        (click)="brancher(c)">
+                  <span class="material-icons">usb</span>
+                  {{ enCours === c.id ? 'Connexion…' : 'Connecter' }}
+                </button>
+              }
+            </li>
           }
-        </div>
-
-        @if (etat === 'inactif') {
-          <p class="aide">
-            Au clic, votre navigateur vous demandera de choisir le port de la radio. C'est une
-            exigence de sécurité : aucune page ne peut accéder à un port sans votre geste.
-          </p>
-        }
+        </ul>
+        <p class="aide">
+          Au clic, votre navigateur vous demandera de choisir le port de la radio. C'est une
+          exigence de sécurité : aucune page ne peut accéder à un port sans votre geste. Vous
+          pouvez en brancher plusieurs à la suite, chacune sur son port.
+        </p>
       }
     </section>
 
-    @if (etat === 'relais' || etat === 'connexion') {
-      <section class="bloc etat-relais" [class.en-attente]="etat === 'connexion'">
-        <h2>
-          <span class="pastille" [class.vivante]="etat === 'relais'"></span>
-          @if (etat === 'relais') {
-            Relais actif — {{ nomCompagnonChoisi }}
-          } @else {
-            Reconnexion en cours…
-          }
-        </h2>
-        <div class="compteurs">
-          <div><strong>{{ messagesRelayes }}</strong><span>message(s) relayé(s)</span></div>
-          <div><strong>{{ tramesRecues }}</strong><span>trame(s) reçue(s)</span></div>
-          <div><strong>{{ tramesEnvoyees }}</strong><span>trame(s) envoyée(s)</span></div>
-        </div>
-        @if (derniereActivite) {
-          <p class="aide">Dernière activité radio : {{ derniereActivite | date:'HH:mm:ss' }}</p>
-        } @else {
-          <p class="aide">
-            Aucune trame reçue pour l'instant. C'est normal si le réseau est calme — la radio
-            ne parle que lorsqu'elle entend quelque chose.
-          </p>
-        }
-      </section>
-    }
+    <!-- Les radios que ce poste relaie. Même composant que sur la page des companions. -->
+    <app-relais-locaux></app-relais-locaux>
   }
 </div>

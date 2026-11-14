@@ -581,7 +581,7 @@ reconnexion laisse du bruit sur le fil, et c'est à cela que sert `0x3e`.
 | Lot | Contenu | Fini quand |
 |---|---|---|
 | **R0** | Session liée à un compte et à un companion, droit recalculé à chaque appel, plafond d'un relais par radio, ménage des sessions mortes. **Et fermeture d'une faille préexistante** | ✅ **Fait** — 16 tests, dont quatre qui auraient échoué la veille |
-| **R1** | Cadrage et commandes MeshCore, page « Devenir passerelle », Web Serial, cycle de relais | ✅ **Codé** — 14 tests sur les trames. **Reste à valider sur une vraie radio** |
+| **R1** | Cadrage et commandes MeshCore, page « Devenir passerelle », Web Serial, cycle de relais | ✅ **Codé** — 14 tests sur les trames, cadrage corrigé le 14/11 (voir plus bas). **Reste à valider sur une vraie radio** |
 | **R2** | Reconnexion avec recul progressif, reprise sans geste de l'utilisateur, verrou d'écran, battement, compteurs | ✅ **Codé**, même réserve matérielle |
 
 R0 et le cadrage de R1 sont vérifiables **sans matériel ni navigateur** — c'est précisément
@@ -610,6 +610,80 @@ Deux règles de sécurité posées au passage :
   l'apporte ;
 - **le droit est recalculé à chaque appel**, jamais porté par la session : un membre sorti de
   l'institution perd la main immédiatement, sans attendre l'expiration.
+
+## Correction de cadrage du 14/11/2026
+
+**R1 était construit à l'envers**, et l'essai sur l'écran l'a montré immédiatement : un
+administrateur ayant déclaré ses deux nœuds lisait « aucune radio accessible ».
+
+La page exigeait une **passerelle institutionnelle déjà déclarée** (`CompagnonMeshCore`) et
+l'appartenance à l'institution propriétaire. Or le cas visé est « quelqu'un **sans** satellite
+branche **son** nœud en USB » : cette personne n'a par construction aucune passerelle déclarée.
+On lui demandait d'avoir déjà ce que le relais est censé fournir.
+
+Trois défauts distincts, tous réels :
+
+1. **la liste contredisait la règle.** `peut_relayer()` acceptait l'administrateur, mais la vue
+   pré-filtrait d'abord sur `ContactInstitution` — autorisé par la règle, exclu par la liste.
+   Les deux se décident désormais au même endroit (`radios_relayables`) ;
+2. **un nœud personnel déclaré ne comptait pas.** `NoeudMeshUtilisateur` (« cette clé publique
+   est à moi ») et `CompagnonMeshCore` (« cette clé est une passerelle ») n'étaient reliés par
+   rien. Ils le sont maintenant par la **clé publique**, seule chose qu'ils ont en commun : au
+   démarrage du relais, le nœud est promu en passerelle série, une fois, de façon idempotente
+   par clé. Aucun secret n'est lu ni écrit — la frontière de `EstComptePont` reste entière ;
+3. **l'absence de Meshtastic n'était pas dite à l'écran.** Un nœud Meshtastic branché là ne
+   serait pas reconnu, et rien ne l'annonçait. La page le dit maintenant.
+
+Trois titres, un seul nécessaire : administrateur au rôle **réel** (jamais un `demo_role`
+prêté), **propriétaire** du nœud, ou membre actif de l'institution propriétaire. La possession
+physique reste exigée de fait par l'USB dans tous les cas.
+
+**La leçon pour les lots 0 à 5** : la règle d'autorisation et la liste servie à l'écran doivent
+être calculées par le même code. Deux endroits qui décident « qui a le droit » finissent par
+diverger, et c'est l'écran qui a tort — il refuse ce que la règle autorise, sans rien dire.
+
+## Second cadrage corrigé le 14/11/2026 : le relais va là où sont les radios
+
+**Une page dédiée était le mauvais endroit.** Les écrans qui listent les companions existent
+déjà (`/admin/meshcore-companions`, `/admin/meshtastic-companions`) : c'est là qu'on regarde
+son parc, donc là qu'on veut un bouton « Connecter ». Demande du 14/11 : « un simple bouton
+connecter, et hop », **plusieurs nœuds depuis le même écran, sans changer d'onglet**, et la
+liste de ceux qu'on relaie.
+
+Trois conséquences de conception, dont deux n'étaient pas des détails :
+
+1. **le moteur sort du composant.** Port série, lecteur, découpeur de trames, minuterie et
+   verrou d'écran vivent désormais dans `RelaisLocalService` (`providedIn: 'root'`). Un moteur
+   dans un composant s'arrête à `ngOnDestroy`, c'est-à-dire **au premier clic ailleurs** — on
+   branchait une radio et on la perdait en allant voir la carte ;
+2. **N relais simultanés**, chacun avec son port, son découpeur et sa minuterie. Le découpeur
+   doit être par relais : c'est lui qui garde le reliquat d'une trame coupée, et deux radios
+   qui le partageraient mélangeraient leurs octets ;
+3. **la reconnexion garde la référence de son port.** La première version reprenait
+   `getPorts()[0]` après un débranchement — correct avec une seule radio, faux avec plusieurs :
+   on aurait parlé à la mauvaise. L'objet `SerialPort` reste valide au rebranchement, c'est lui
+   qu'on rouvre.
+
+Un composant partagé (`<app-relais-locaux>`) affiche la liste, les compteurs et le bouton
+« Débrancher ». Même implémentation aux trois points d'entrée : page des companions MeshCore,
+page publique « Devenir passerelle » (qui reste, parce qu'un bénévole n'est pas administrateur
+et ne peut pas ouvrir `/admin/…`), et plus tard Meshtastic.
+
+### « Ou de mon réseau local » : non, et il faut le dire
+
+La demande incluait « connecter un nœud USB **ou de mon réseau local** ». Ce second cas est
+**hors d'atteinte d'un navigateur**, et ce n'est pas un manque de travail :
+
+| Chemin | Verdict |
+|---|---|
+| MeshCore en Wi-Fi (TCP 5000) | **Impossible.** Aucune API navigateur n'ouvre une connexion TCP brute. Il faudrait un pont WebSocket côté serveur — écarté, le projet est en WSGI pur |
+| Meshtastic en Wi-Fi (HTTP) | **Bloqué en pratique.** Une page en HTTPS ne peut pas appeler `http://192.168.x.x` (contenu mixte), et le certificat auto-signé du nœud en HTTPS est refusé |
+| Companion déclaré en TCP, atteint par le serveur | **Déjà couvert** par `meshcore-bridge` — mais seulement si **le serveur** joint le nœud. Un nœud sur le réseau de la personne, non |
+
+Donc pour un nœud sur son propre réseau local, deux réponses honnêtes : **le brancher en USB**,
+ou **installer le profil `gw`** du satellite sur une machine de ce réseau. Le bouton est
+désactivé sur les companions TCP et BLE, avec la raison en infobulle — désactivé plutôt que
+caché, sinon on cherche pourquoi il manque.
 
 ## Ce que ce chantier n'est pas
 

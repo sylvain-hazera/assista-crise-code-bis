@@ -11661,27 +11661,25 @@ class RelaisSerieView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        from .models import CompagnonMeshCore, ContactInstitution
         from .relais_navigateur import (
-            SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, peut_relayer, session_active,
+            SECONDES_AVANT_SESSION_MORTE, fermer_sessions_mortes, radios_relayables,
+            session_active,
         )
 
         fermer_sessions_mortes()
-        institutions = ContactInstitution.objects.filter(
-            utilisateur=request.user, actif=True,
-        ).values_list("institution_id", flat=True)
-        compagnons = CompagnonMeshCore.objects.filter(
-            institution_id__in=list(institutions), actif=True,
-        ).select_related("institution").order_by("nom")
+        # Correction du 14/11/2026 : la liste était pré-filtrée sur ContactInstitution, ce qui
+        # contredisait `peut_relayer` — un administrateur, accepté par la règle, voyait quand
+        # même « aucune radio accessible ». C'est désormais `radios_relayables` qui décide, au
+        # même endroit que l'autorisation.
+        compagnons, noeuds = radios_relayables(request.user)
 
         mienne = None
         relayables = []
         for compagnon in compagnons:
-            if not peut_relayer(request.user, compagnon):
-                continue
             session = session_active(request.user, compagnon.id)
             relayables.append({
                 "id": str(compagnon.id),
+                "genre": "compagnon",
                 "nom": compagnon.nom,
                 "institution_nom": compagnon.institution.nom if compagnon.institution_id else "",
                 "relaye_par_moi": session is not None,
@@ -11695,6 +11693,17 @@ class RelaisSerieView(APIView):
                     "trames_envoyees": session.trames_envoyees,
                 }
 
+        # Les nœuds personnels pas encore promus en companion. Ils n'ont rien à déclarer
+        # d'avance : la promotion se fait au démarrage du relais.
+        for noeud in noeuds:
+            relayables.append({
+                "id": str(noeud.id),
+                "genre": "noeud",
+                "nom": (noeud.nom_noeud or "").strip() or f"Mon nœud {noeud.pubkey_hex[:8]}…",
+                "institution_nom": "",
+                "relaye_par_moi": False,
+            })
+
         return Response({
             "compagnons": relayables,
             "session": mienne,
@@ -11704,11 +11713,45 @@ class RelaisSerieView(APIView):
         })
 
     def post(self, request):
-        from .models import CompagnonMeshCore
-        from .relais_navigateur import battre, fermer, ouvrir, session_active
+        from .models import CompagnonMeshCore, NoeudMeshUtilisateur
+        from .relais_navigateur import (
+            battre, compagnon_pour_noeud, fermer, ouvrir, session_active,
+        )
 
+        # Deux façons de désigner la radio, parce qu'il y a deux situations : un companion
+        # institutionnel déjà déclaré, ou le nœud personnel qu'on vient de brancher. Le second
+        # est le cas central du relais navigateur — il est promu en companion ici, une fois.
         compagnon_id = request.data.get("compagnon")
-        compagnon = CompagnonMeshCore.objects.filter(pk=compagnon_id, actif=True).first()
+        noeud_id = request.data.get("noeud")
+        compagnon = None
+        if compagnon_id:
+            compagnon = CompagnonMeshCore.objects.filter(pk=compagnon_id, actif=True).first()
+        elif noeud_id:
+            noeud = NoeudMeshUtilisateur.objects.filter(
+                pk=noeud_id, utilisateur=request.user, actif=True,
+            ).first()
+            if noeud is None:
+                return Response({"error": "Nœud inconnu."}, status=status.HTTP_404_NOT_FOUND)
+            if request.data.get("fermer"):
+                # Fermer ne doit jamais rien créer. Un nœud jamais démarré n'a pas de session
+                # à fermer, et c'est un succès, pas une erreur.
+                from .models import CompagnonMeshCore as _C
+                deja = _C.objects.filter(pubkey_hex=noeud.pubkey_hex).first()
+                if deja is None:
+                    return Response({"session": None})
+                compagnon = deja
+            else:
+                compagnon, erreur_promo = compagnon_pour_noeud(
+                    request.user, noeud, get_active_environment(request),
+                )
+                if erreur_promo:
+                    return Response({"error": erreur_promo}, status=status.HTTP_403_FORBIDDEN)
+                audit_log(
+                    request=request, action_code="CREATION",
+                    objet_type="CompagnonMeshCore", objet_id=compagnon.id,
+                    commentaire=(f"Nœud personnel « {compagnon.nom} » utilisé comme passerelle "
+                                 f"depuis un navigateur."),
+                )
         if compagnon is None:
             return Response({"error": "Radio inconnue."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -11748,11 +11791,21 @@ class RelaisSerieView(APIView):
                 objet_type="SessionRelaisNavigateur", objet_id=session.id,
                 commentaire=f"Relais de « {compagnon.nom} » ouvert depuis un navigateur.",
             )
-        return Response({
+        reponse = {
             "session": str(session.id),
             "compagnon": str(compagnon.id),
             "nom": compagnon.nom,
-        })
+        }
+        if compagnon.institution_id is None:
+            # Le relais fonctionne quand même — son propriétaire est reconnu par la clé
+            # publique de son nœud — mais la radio n'est rattachée à personne, donc aucun
+            # collègue ne pourra la reprendre. On le dit plutôt que de le laisser découvrir.
+            reponse["avertissement"] = (
+                "Cette radio n'est rattachée à aucune institution : vous êtes seul à pouvoir "
+                "la relayer. Choisissez votre institution active pour qu'elle devienne une "
+                "passerelle de l'institution."
+            )
+        return Response(reponse)
 
 
 class ConservationPiecesView(APIView):

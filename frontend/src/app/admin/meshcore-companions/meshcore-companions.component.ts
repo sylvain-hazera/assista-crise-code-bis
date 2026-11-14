@@ -1,8 +1,11 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { CompagnonMeshCoreService } from '../../services/compagnon-meshcore.service';
+import { RelaisLocalService } from '../../services/relais-local.service';
+import { RelaisLocauxComponent } from '../../shared/components/common/relais-locaux/relais-locaux.component';
 import { MeshLocalDetecterService } from '../../services/mesh-local-detecter.service';
 import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
@@ -41,7 +44,7 @@ interface LigneInfrastructure {
 @Component({
   selector: 'app-meshcore-companions',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RelaisLocauxComponent],
   templateUrl: './meshcore-companions.component.html',
   styleUrl: './meshcore-companions.component.scss',
 })
@@ -50,6 +53,15 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
   companions: CompagnonMeshCore[] = [];
   loading = true;
   errorMessage = '';
+
+  /** Relais navigateur : branchement d'une radio en USB sur CE poste. Le moteur vit dans un
+   * service, donc le relais survit au changement de page — voir RelaisLocalService. */
+  readonly relaisSupporte: boolean;
+  relaisEnCours = '';
+  relaisErreur = '';
+  relaisAvertissement = '';
+  relaisActifs = new Set<string>();
+  private abonnementRelais: Subscription | null = null;
 
   nouveauNom = '';
   nouveauType: MeshCoreConnexionType = 'TCP';
@@ -115,7 +127,10 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     private alerteSOSService: AlerteMeshSOSService,
     private userService: UserService,
     private authService: AuthService,
-  ) {}
+    private moteurRelais: RelaisLocalService,
+  ) {
+    this.relaisSupporte = this.moteurRelais.supporte;
+  }
 
   ngOnInit(): void {
     this.isDemo = this.authService.getEnvironment() === 'DEMO';
@@ -130,6 +145,53 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     this.loadAnalyseSecurite();
     if (this.authService.isAdmin()) this.loadAlertesSOS();
     this.userService.getAll().subscribe(data => { this.utilisateurs = data; });
+    this.abonnementRelais = this.moteurRelais.liste().subscribe(
+      liste => { this.relaisActifs = new Set(liste.map(r => r.compagnonId)); });
+  }
+
+  // ══ Relais navigateur ═══════════════════════════════════════════════════════
+  //
+  // Demande du 14/11/2026 : « un simple bouton connecter, et hop » — sur CETTE page, qui a déjà
+  // la liste des companions, et plusieurs radios à la fois sans changer d'onglet.
+  //
+  // Seules les radios en SÉRIE sont branchables : un navigateur ne peut pas ouvrir de TCP brut,
+  // donc un companion déclaré en TCP ou en BLE n'est pas relayable depuis ici. Le bouton est
+  // désactivé avec la raison en infobulle plutôt que caché — sinon on cherche pourquoi.
+
+  relayable(c: CompagnonMeshCore): boolean {
+    return this.relaisSupporte && c.connexion_type === 'SERIE';
+  }
+
+  raisonNonRelayable(c: CompagnonMeshCore): string {
+    if (!this.relaisSupporte) {
+      return "Ce navigateur n'expose pas l'accès au port USB. Chrome ou Edge sont nécessaires.";
+    }
+    if (c.connexion_type === 'TCP') {
+      return 'Radio déclarée en TCP : un navigateur ne peut pas ouvrir de connexion TCP brute. '
+        + 'Seul l\'USB est possible depuis ici.';
+    }
+    if (c.connexion_type === 'BLE') {
+      return 'Radio déclarée en Bluetooth : non implémenté depuis le navigateur.';
+    }
+    return '';
+  }
+
+  async brancher(c: CompagnonMeshCore): Promise<void> {
+    this.relaisErreur = '';
+    this.relaisAvertissement = '';
+    this.relaisEnCours = c.id;
+    try {
+      await this.moteurRelais.brancher({ genre: 'compagnon', id: c.id, nom: c.nom });
+      this.relaisAvertissement = this.moteurRelais.dernierAvertissement;
+    } catch (e) {
+      this.relaisErreur = `« ${c.nom} » : ${this.moteurRelais.lisible(e)}`;
+    } finally {
+      this.relaisEnCours = '';
+    }
+  }
+
+  debrancher(c: CompagnonMeshCore): void {
+    void this.moteurRelais.debrancher(c.id);
   }
 
   private loadAlertesSOS(): void {
@@ -141,6 +203,9 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.tracerouteSondage) clearInterval(this.tracerouteSondage);
+    // On se désabonne, on n'arrête PAS les relais : ils vivent dans un service, et c'est tout
+    // l'intérêt — quitter cette page ne doit pas couper une radio branchée.
+    this.abonnementRelais?.unsubscribe();
   }
 
   loadContacts(): void {

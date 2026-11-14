@@ -1,0 +1,64 @@
+@if (relais.length) {
+  <section class="relais-locaux">
+    <h3>
+      <span class="material-icons">usb</span>
+      {{ relais.length }} radio(s) relayée(s) depuis ce poste
+    </h3>
+
+    <!-- Dit ici parce que c'est ici qu'on le lit en situation, et pas une page plus loin. -->
+    <p class="avertissement">
+      <strong>Cet onglet doit rester ouvert.</strong> Le relais s'arrête si vous fermez la page
+      ou si l'ordinateur se met en veille. Vous pouvez changer de page dans l'application sans
+      l'interrompre.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Radio</th>
+          <th>État</th>
+          <th class="nombre">Messages</th>
+          <th class="nombre">Trames reçues</th>
+          <th class="nombre">Trames envoyées</th>
+          <th>Dernière activité</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of relais; track r.compagnonId) {
+          <tr>
+            <td class="nom">{{ r.nom }}</td>
+            <td>
+              <span class="etat" [class.vivant]="r.etat === 'relais'"
+                    [class.attente]="r.etat === 'connexion'"
+                    [class.casse]="r.etat === 'erreur'">
+                <span class="pastille"></span>
+                @switch (r.etat) {
+                  @case ('relais') { Relais actif }
+                  @case ('connexion') { Reconnexion… }
+                  @default { Erreur }
+                }
+              </span>
+              @if (r.erreur) { <span class="detail-erreur">{{ r.erreur }}</span> }
+            </td>
+            <td class="nombre">{{ r.messagesRelayes }}</td>
+            <td class="nombre">{{ r.tramesRecues }}</td>
+            <td class="nombre">{{ r.tramesEnvoyees }}</td>
+            <td>
+              @if (r.derniereActivite) {
+                {{ r.derniereActivite | date:'HH:mm:ss' }}
+              } @else {
+                <span class="muet">rien entendu</span>
+              }
+            </td>
+            <td>
+              <button type="button" class="debrancher" (click)="debrancher(r)">
+                <span class="material-icons">stop</span> Débrancher
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+}

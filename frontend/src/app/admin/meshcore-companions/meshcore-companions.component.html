@@ -119,6 +119,7 @@
           <th class="sortable" (click)="trierCompagnons('derniere_connexion')">Dernière connexion {{ indicateurTri(companionTri, 'derniere_connexion', companionDirection) }}</th>
           <th title="Valeur brute remontée par le companion -- unité non confirmée, probablement mV">Batterie</th>
           <th>ID (pour COMPAGNON_ID)</th>
+          <th title="Brancher cette radio en USB sur ce poste et la relayer">Relais USB</th>
           <th>Advert</th>
           <th>Traceroute</th>
           <th></th>
@@ -151,6 +152,21 @@
             </td>
             <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
             <td>
+              @if (relaisActifs.has(c.id)) {
+                <button type="button" class="btn-danger-sm" (click)="debrancher(c)"
+                        title="Arrêter le relais de cette radio depuis ce poste">
+                  Débrancher
+                </button>
+              } @else {
+                <button type="button" class="btn-secondary-sm"
+                        [disabled]="!relayable(c) || relaisEnCours === c.id"
+                        [title]="relayable(c) ? 'Choisir le port USB de cette radio et la relayer depuis ce poste' : raisonNonRelayable(c)"
+                        (click)="brancher(c)">
+                  {{ relaisEnCours === c.id ? 'Connexion…' : 'Connecter' }}
+                </button>
+              }
+            </td>
+            <td>
               <button type="button" class="btn-secondary-sm" [disabled]="advertEnCours === c.id" (click)="envoyerAdvert(c, false)" title="Annonce de présence zero-hop">
                 Advert
               </button>
@@ -166,11 +182,22 @@
             <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
           </tr>
         } @empty {
-          <tr><td colspan="12" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="13" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>
   </div>
+
+  @if (relaisErreur) {
+    <p class="error-message">{{ relaisErreur }}</p>
+  }
+  @if (relaisAvertissement) {
+    <p class="page-hint">{{ relaisAvertissement }}</p>
+  }
+
+  <!-- Les radios que CE poste relaie. Composant partagé : même liste et mêmes compteurs ici,
+       sur la page Meshtastic et sur la page publique « Devenir passerelle ». -->
+  <app-relais-locaux></app-relais-locaux>
 }
 
 @if (tracerouteCompagnonId) {
