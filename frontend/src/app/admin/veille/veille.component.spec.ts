@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
+  ArretesCirculation, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -154,6 +154,38 @@ const SANTE: SanteUrgences = {
   ],
 };
 
+const RADIO: Radioactivite = {
+  ...ENTETE,
+  resultats: [
+    { station: 1039, nom: 'ST-ETIENNE', latitude: 45.443, longitude: 4.387, distance_km: 0.4,
+      proche_installation: false, debit_nsv_h: 99, bruit_de_fond_nsv_h: 105.2, ecart_nsv_h: -6.2,
+      valide: true, mesure_le: '2026-11-15T15:40:12Z' },
+    { station: 2001, nom: 'ST-ALBAN', latitude: 45.40, longitude: 4.75, distance_km: 28.3,
+      proche_installation: true, debit_nsv_h: 131, bruit_de_fond_nsv_h: null, ecart_nsv_h: null,
+      valide: false, mesure_le: '2026-11-15T15:40:12Z' },
+  ],
+};
+
+const SEISMES: Seismes = {
+  ...ENTETE,
+  resultats: [
+    { reference: 's1', date: '2026-11-13T08:39:02Z', magnitude: 3.2, profondeur_km: 5.2, lieu: 'Montbrison',
+      zone: 'France hexagonale', nature: 'earthquake', nature_libelle: 'Séisme', latitude: 45.53, longitude: 4.10, distance_km: 25 },
+    { reference: 't1', date: '2026-11-12T10:00:00Z', magnitude: 1.9, profondeur_km: 0, lieu: 'Saint-Just',
+      zone: 'France hexagonale', nature: 'quarry blast', nature_libelle: 'Tir de carrière', latitude: 45.5, longitude: 4.2, distance_km: 18 },
+  ],
+};
+
+const fournaise = (aPortee: boolean) => ({
+  code: 'FOURNAISE', nom: 'Piton de la Fournaise', territoire: 'La Réunion', latitude: -21.244, longitude: 55.708,
+  observatoire: 'OVPF-IPGP', url: 'https://www.ipgp.fr/observation/ovs/ovpf/',
+  seismes_7_jours: 12, seismes_7_jours_precedents: 4, magnitude_max: 2.3,
+  dernier_seisme: '2026-11-15T08:00:00Z', distance_km: aPortee ? 24 : 9300, a_portee: aPortee,
+});
+const VOLCANS = (aPortee: boolean): Volcans => ({
+  source: 'BCSF-Rénass', releve_le: '2026-11-15T09:10:00Z', perime: false, rayon_km: 15, volcans: [fournaise(aPortee)],
+});
+
 const EN_PLAINE: RisqueAvalanche = {
   ...ENTETE, libelles: { '1': 'faible', '2': 'limité', '3': 'marqué', '4': 'fort', '5': 'très fort' }, resultats: [],
 };
@@ -174,14 +206,18 @@ describe('VeilleComponent', () => {
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
-                                arretes?: ArretesCirculation; sante?: SanteUrgences } = {}) {
+                                arretes?: ArretesCirculation; sante?: SanteUrgences;
+                                radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
     http.expectOne(`${api}/restrictions-eau/`).flush(reponses.eau ?? EAU);
+    http.expectOne(`${api}/volcans/`).flush(reponses.volcans ?? VOLCANS(false));
     http.expectOne(`${api}/sante-urgences/`).flush(reponses.sante ?? SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
+    http.expectOne(r => r.url === `${api}/radioactivite/`).flush(reponses.radio ?? RADIO);
+    http.expectOne(r => r.url === `${api}/seismes/`).flush(reponses.seismes ?? SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(reponses.avalanche ?? EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
@@ -199,7 +235,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(11);
+    expect(demandes.length).toBe(14);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -394,6 +430,52 @@ describe('VeilleComponent', () => {
     expect(fixture.nativeElement.querySelector('section[aria-labelledby="titre-sante"]')).toBeNull();
   });
 
+  it('liste les séismes sans les mêler aux tirs de carrière', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-seismes"]');
+    const lignes = bloc.querySelectorAll('tbody tr');
+
+    expect(lignes.length).toBe(1);
+    expect(lignes[0].textContent).toContain('Montbrison');
+    expect(lignes[0].classList.contains('remarquable')).toBeTrue();          // magnitude 3 ou plus
+    expect(bloc.textContent).toContain('1 tir(s) de carrière');
+    expect(fixture.componentInstance.autresSecousses.length).toBe(1);
+  });
+
+  it('affiche la radioactivité sans jamais en faire une alerte', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-radioactivite"]');
+    const lignes = bloc.querySelectorAll('tbody tr');
+
+    expect(lignes[0].textContent).toContain('ST-ETIENNE');
+    expect(lignes[0].textContent).toContain('99 nSv/h');
+    expect(lignes[0].textContent).toContain('105 nSv/h');
+    // Aucune ligne n'est mise en avant, quelle que soit la valeur.
+    expect(bloc.querySelector('.remarquable')).toBeNull();
+    // Sans niveau habituel connu, pas d'écart inventé ; une mesure non validée est dite telle.
+    expect(lignes[1].textContent).toContain('non validée');
+    expect(bloc.textContent).toContain('ne sont pas une alerte');
+  });
+
+  it('ne parle de volcans qu’aux territoires qui en ont un à portée', () => {
+    expect(demarrer().nativeElement.querySelector('section[aria-labelledby="titre-volcans"]')).toBeNull();
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [VeilleComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = demarrer({ volcans: VOLCANS(true) });
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-volcans"]');
+
+    expect(bloc.textContent).toContain('Piton de la Fournaise');
+    expect(bloc.textContent).toContain('12 séisme(s)');
+    expect(bloc.textContent).toContain('sismicité en hausse');
+    expect(bloc.textContent).toContain('Ceci n\'est pas un état du volcan');
+    expect(bloc.querySelector('a[href="https://www.ipgp.fr/observation/ovs/ovpf/"]')).not.toBeNull();
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
     // Les deux listes (réseau national, routes locales) partagent leur mise en forme : on ne
@@ -434,6 +516,8 @@ describe('VeilleComponent', () => {
     fixture.componentInstance.changerRayon(60);
 
     http.expectOne(r => r.url === `${api}/vigilance-crues/` && r.params.get('rayon_km') === '60').flush(CRUES);
+    http.expectOne(r => r.url === `${api}/radioactivite/` && r.params.get('rayon_km') === '60').flush(RADIO);
+    http.expectOne(r => r.url === `${api}/seismes/` && r.params.get('rayon_km') === '60').flush(SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/` && r.params.get('rayon_km') === '60').flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
@@ -447,6 +531,8 @@ describe('VeilleComponent', () => {
     const sansEmprise = { ...ENTETE, emprise_connue: false, centre: null, rayon_km: null };
     const fixture = demarrer({
       crues: { ...sansEmprise, resultats: [] },
+      radio: { ...sansEmprise, resultats: [] },
+      seismes: { ...sansEmprise, resultats: [] },
       feux: { ...sansEmprise, resultats: [] },
       observations: { ...sansEmprise, resultats: [] },
       arretes: { ...sansEmprise, bilan: { FERMETURE: 0, POIDS_LOURDS: 0, ALTERNAT: 0 }, resultats: [] },
@@ -462,9 +548,12 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(VIGILANCE);
     http.expectOne(`${api}/restrictions-eau/`).flush(EAU);
+    http.expectOne(`${api}/volcans/`).flush(VOLCANS(false));
     http.expectOne(`${api}/sante-urgences/`).flush(SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
+    http.expectOne(r => r.url === `${api}/radioactivite/`).flush(RADIO);
+    http.expectOne(r => r.url === `${api}/seismes/`).flush(SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);

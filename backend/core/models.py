@@ -2576,6 +2576,68 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class MesureRadioactivite(models.Model):
+    """Dernière mesure d'une balise du réseau Téléray (ASNR) : débit de dose gamma ambiant et
+    bruit de fond habituel de la balise, en nanosieverts par heure -- voir
+    core/radioactivite.py. Donnée publique partagée PROD/DEMO. Un affichage, jamais une alerte."""
+
+    station = models.PositiveIntegerField(primary_key=True)
+    nom = models.CharField(max_length=120, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    # Balise posée autour d'une installation nucléaire (les deux tiers du réseau).
+    proche_installation = models.BooleanField(default=False)
+    debit_nsv_h = models.FloatField()
+    bruit_de_fond_nsv_h = models.FloatField(null=True, blank=True)
+    # Validation de la mesure par l'ASNR ; une mesure « non valide » est gardée et signalée.
+    valide = models.BooleanField(default=True)
+    mesure_le = models.DateTimeField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Balise {self.nom} : {self.debit_nsv_h} nSv/h"
+
+
+class Seisme(models.Model):
+    """Événement sismique des trente derniers jours en France, hexagone et outre-mer (catalogue
+    du BCSF-Rénass) -- voir core/seismes.py. `nature` distingue les séismes des tirs de
+    carrière, explosions et glissements de terrain que le réseau enregistre aussi."""
+
+    reference = models.CharField(max_length=40, primary_key=True)
+    date = models.DateTimeField(db_index=True)
+    location = gis_models.PointField(srid=4326)
+    magnitude = models.FloatField()
+    profondeur_km = models.FloatField(null=True, blank=True)
+    lieu = models.CharField(max_length=160, blank=True, default="")
+    zone = models.CharField(max_length=60, blank=True, default="")
+    nature = models.CharField(max_length=40, default="earthquake")
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"M{self.magnitude} {self.lieu}"
+
+
+class Defibrillateur(models.Model):
+    """Défibrillateur déclaré en service dans la base nationale Géo'DAE -- voir
+    core/defibrillateurs.py. La carte de tous les appareils du pays, tels que leurs exploitants
+    les déclarent ; à ne pas confondre avec les fiches de Sites sensibles, qu'une collectivité
+    a vérifiées une à une."""
+
+    reference = models.CharField(max_length=20, primary_key=True)
+    nom = models.CharField(max_length=255, blank=True, default="")
+    adresse = models.CharField(max_length=255, blank=True, default="")
+    commune_code = models.CharField(max_length=10, blank=True, default="", db_index=True)
+    # « Intérieur » ou « Extérieur », et si l'accès est libre.
+    acces = models.CharField(max_length=40, blank=True, default="")
+    acces_libre = models.BooleanField(default=False)
+    emplacement = models.CharField(max_length=255, blank=True, default="")
+    disponibilite = models.CharField(max_length=120, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    releve_le = models.DateTimeField(db_index=True)
+
+    def __str__(self):
+        return f"Défibrillateur {self.reference} {self.adresse}"
+
+
 class IndicateurSante(models.Model):
     """Part des passages aux urgences attribués à une pathologie dans un département, pour la
     dernière semaine publiée par Santé publique France -- voir core/sante_urgences.py. Un taux

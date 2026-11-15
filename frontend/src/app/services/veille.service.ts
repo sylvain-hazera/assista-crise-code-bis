@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, ConfigurationAlerteVigilance, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
+  ArretesCirculation, ConfigurationAlerteVigilance, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -101,6 +101,27 @@ export class VeilleService {
   santeUrgences(departement?: string): Observable<SanteUrgences> {
     const params: Record<string, string> = departement ? { departement } : {};
     return this.http.get<SanteUrgences>(`${this.api}/sante-urgences/`, { params });
+  }
+
+  /** Dernière mesure des balises Téléray (ASNR) de l'emprise. */
+  radioactivite(emprise: EmpriseVeille = {}): Observable<Radioactivite> {
+    return this.http.get<Radioactivite>(`${this.api}/radioactivite/`, { params: this.params(emprise) });
+  }
+
+  /** Séismes des trente derniers jours. `magnitudeMin` écarte les plus petits. */
+  seismes(emprise: EmpriseVeille = {}, magnitudeMin?: number): Observable<Seismes> {
+    const params = this.params(emprise);
+    if (magnitudeMin != null) params['magnitude_min'] = String(magnitudeMin);
+    return this.http.get<Seismes>(`${this.api}/seismes/`, { params });
+  }
+
+  /** Sismicité autour des volcans français ; `a_portee` dit lesquels concernent l'appelant. */
+  volcans(): Observable<Volcans> {
+    return this.http.get<Volcans>(`${this.api}/volcans/`);
+  }
+
+  defibrillateurs(emprise: EmpriseVeille = {}): Observable<Defibrillateurs> {
+    return this.http.get<Defibrillateurs>(`${this.api}/defibrillateurs/`, { params: this.params(emprise) });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

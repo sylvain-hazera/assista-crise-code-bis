@@ -6,7 +6,7 @@ import { VeilleService } from '../../services/veille.service';
 import {
   ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
-  SanteUrgences,
+  Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
@@ -38,6 +38,11 @@ export class VeilleComponent implements OnInit {
   eau: RestrictionsEau | null = null;
   forets: MeteoForets | null = null;
   sante: SanteUrgences | null = null;
+  radioactivite: Radioactivite | null = null;
+  seismes: Seismes | null = null;
+  /** Les seuls volcans à portée du territoire : vide en métropole, et le bloc ne s'affiche pas. */
+  volcans: Volcan[] = [];
+  rayonVolcanKm = 15;
   feux: ZonesBrulees | null = null;
   /** Reste null en plaine comme en cas d'erreur : le bloc n'apparaît que s'il y a un massif. */
   avalanche: RisqueAvalanche | null = null;
@@ -83,6 +88,10 @@ export class VeilleComponent implements OnInit {
       next: (eau) => { this.eau = eau; },
       error: () => { this.erreurEau = true; },
     });
+    this.service.volcans().subscribe({
+      next: (reponse) => { this.volcans = reponse.volcans.filter(v => v.a_portee); this.rayonVolcanKm = reponse.rayon_km; },
+      error: () => { this.volcans = []; },
+    });
     this.service.santeUrgences().subscribe({
       next: (sante) => { this.sante = sante; },
       error: () => { this.sante = null; },
@@ -107,6 +116,15 @@ export class VeilleComponent implements OnInit {
     this.service.vigilanceCrues({ rayon_km: this.rayonKm }).subscribe({
       next: (crues) => { this.crues = crues; },
       error: () => { this.erreurCrues = true; },
+    });
+    this.service.radioactivite({ rayon_km: this.rayonKm }).subscribe({
+      next: (radioactivite) => { this.radioactivite = radioactivite; },
+      error: () => { this.radioactivite = null; },
+    });
+    // Sous 1,5, un séisme n'est pas ressenti et la liste se noie dans les tirs de carrière.
+    this.service.seismes({ rayon_km: this.rayonKm }, 1.5).subscribe({
+      next: (seismes) => { this.seismes = seismes; },
+      error: () => { this.seismes = null; },
     });
     this.service.risqueAvalanche({ rayon_km: this.rayonKm }).subscribe({
       next: (avalanche) => { this.avalanche = avalanche; },
@@ -207,6 +225,23 @@ export class VeilleComponent implements OnInit {
   direction(degres: number | null): string {
     if (degres == null) return '';
     return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(degres / 45) % 8];
+  }
+
+  // ── Séismes et radioactivité ──
+
+  /** Les vrais séismes d'abord ; tirs de carrière et explosions sont listés à part. */
+  get seismesNaturels(): Seisme[] {
+    return (this.seismes?.resultats ?? []).filter(s => s.nature === 'earthquake');
+  }
+
+  get autresSecousses(): Seisme[] {
+    return (this.seismes?.resultats ?? []).filter(s => s.nature !== 'earthquake');
+  }
+
+  /** « en hausse » seulement quand le nombre a au moins doublé et qu'il y en a au moins cinq :
+   * sous un volcan, passer de un à trois séismes ne veut rien dire. */
+  sismiciteEnHausse(volcan: Volcan): boolean {
+    return volcan.seismes_7_jours >= 5 && volcan.seismes_7_jours >= 2 * Math.max(1, volcan.seismes_7_jours_precedents);
   }
 
   // ── Eau et feux ──

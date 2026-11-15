@@ -22,11 +22,12 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, meteo_forets, sante_urgences, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, meteo_forets, sante_urgences, seismes, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
-    ArreteCirculation, Commune, ConfigurationAlerteVigilance, ContactInstitution, DangerFeuForet, EvenementRoutier,
+    ArreteCirculation, Commune, ConfigurationAlerteVigilance, Defibrillateur, MesureRadioactivite,
+    Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
     ImagePluie, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
@@ -470,6 +471,131 @@ class MeteoForetsView(APIView):
             "mon_departement": self._ligne(mien) if mien else None,
             "departements": [self._ligne(d) for d in eleves],
         })
+
+
+class RadioactiviteView(APIView):
+    """GET /api/radioactivite/ : la dernière mesure des balises Téléray d'une emprise (voir
+    `_emprise`), de la plus proche à la plus lointaine. Un affichage : aucune alerte n'est
+    tirée de ces valeurs (voir core/radioactivite.py)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("RADIOACTIVITE", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "resultats": []})
+        balises = list(MesureRadioactivite.objects.filter(location__within=emprise)
+                       .order_by("nom", "station")[:RESULTATS_MAX + 1])
+        resultats = []
+        for balise in balises[:RESULTATS_MAX]:
+            latitude, longitude = _point(balise.location)
+            fond = balise.bruit_de_fond_nsv_h
+            resultats.append({
+                "station": balise.station, "nom": balise.nom,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 1) if centre else None),
+                "proche_installation": balise.proche_installation,
+                "debit_nsv_h": balise.debit_nsv_h,
+                "bruit_de_fond_nsv_h": fond,
+                "ecart_nsv_h": None if fond is None else round(balise.debit_nsv_h - fond, 1),
+                "valide": balise.valide,
+                "mesure_le": balise.mesure_le,
+            })
+        if centre:
+            resultats.sort(key=lambda r: r["distance_km"])
+        return Response({**entete, "emprise_connue": True,
+                         "tronque": len(balises) > RESULTATS_MAX, "resultats": resultats})
+
+
+class SeismesView(APIView):
+    """GET /api/seismes/ : les événements sismiques des trente derniers jours dans une emprise
+    (voir `_emprise`), les plus récents d'abord. `?magnitude_min=2` écarte les plus petits ;
+    `?jours=7` raccourcit la période."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("SEISMES", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "resultats": []})
+        evenements = Seisme.objects.filter(location__within=emprise)
+        magnitude_min = _nombre(request.query_params.get("magnitude_min"))
+        if magnitude_min is not None:
+            evenements = evenements.filter(magnitude__gte=magnitude_min)
+        jours = _nombre(request.query_params.get("jours"))
+        if jours is not None and 0 < jours <= 30:
+            evenements = evenements.filter(date__gte=timezone.now() - timezone.timedelta(days=jours))
+        evenements = list(evenements.order_by("-date")[:RESULTATS_MAX + 1])
+        resultats = []
+        for evenement in evenements[:RESULTATS_MAX]:
+            latitude, longitude = _point(evenement.location)
+            resultats.append({
+                "reference": evenement.reference, "date": evenement.date,
+                "magnitude": evenement.magnitude, "profondeur_km": evenement.profondeur_km,
+                "lieu": evenement.lieu, "zone": evenement.zone,
+                "nature": evenement.nature,
+                "nature_libelle": seismes.NATURES.get(evenement.nature, "Autre événement"),
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 1) if centre else None),
+            })
+        return Response({**entete, "emprise_connue": True,
+                         "tronque": len(evenements) > RESULTATS_MAX, "resultats": resultats})
+
+
+class VolcansView(APIView):
+    """GET /api/volcans/ : la sismicité autour des volcans français, cette semaine et la
+    précédente. `a_portee` désigne ceux qui concernent le territoire regardé (voir `_emprise`) :
+    l'écran n'affiche ce bloc que pour eux. Aucune donnée ouverte ne dit l'état d'un volcan ni
+    son niveau d'alerte : ceci n'est qu'un compte de séismes."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        _emprise_inutile, centre, _rayon = _emprise(request)
+        volcans = seismes.activite_volcans()
+        for volcan in volcans:
+            volcan["distance_km"] = (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                        volcan["latitude"], volcan["longitude"]))
+                                     if centre else None)
+            volcan["a_portee"] = (volcan["distance_km"] is not None
+                                  and volcan["distance_km"] <= seismes.PORTEE_VOLCAN_KM)
+        return Response({
+            **sources_ouvertes.resume("SEISMES"),
+            "rayon_km": seismes.RAYON_VOLCAN_KM,
+            "volcans": volcans,
+        })
+
+
+class DefibrillateursView(APIView):
+    """GET /api/defibrillateurs/ : les défibrillateurs d'une emprise (voir `_emprise`), du plus
+    proche au plus lointain quand un centre est connu. Ce sont les appareils que leurs
+    exploitants déclarent en service, pas des appareils vérifiés."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("DEFIBRILLATEURS", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "total": 0, "resultats": []})
+        dans_l_emprise = Defibrillateur.objects.filter(location__within=emprise)
+        total = dans_l_emprise.count()
+        appareils = list(dans_l_emprise.order_by("reference")[:RESULTATS_MAX])
+        resultats = []
+        for appareil in appareils:
+            latitude, longitude = _point(appareil.location)
+            resultats.append({
+                "reference": appareil.reference, "nom": appareil.nom, "adresse": appareil.adresse,
+                "acces": appareil.acces, "acces_libre": appareil.acces_libre,
+                "emplacement": appareil.emplacement, "disponibilite": appareil.disponibilite,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 2) if centre else None),
+            })
+        if centre:
+            resultats.sort(key=lambda r: r["distance_km"])
+        return Response({**entete, "emprise_connue": True, "tronque": total > RESULTATS_MAX,
+                         "total": total, "resultats": resultats})
 
 
 class SanteUrgencesView(APIView):

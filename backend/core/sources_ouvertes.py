@@ -1,9 +1,10 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Douze sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
+Quinze sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
 risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau),
 surfaces brûlées (EFFIS), événements routiers (Bison Futé), arrêtés de circulation (DiaLog),
-recours aux urgences (Santé publique France), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
+recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
+(BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
 1. Seul le serveur appelle, depuis la tâche planifiée, et toujours pour la France ENTIÈRE.
    Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne déclenche d'appel
@@ -25,8 +26,8 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    arretes_circulation, avalanche, carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
-    restrictions_eau, sante_urgences, trafic_routier, vigilance_crues,
+    arretes_circulation, avalanche, carburants, defibrillateurs, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
+    radioactivite, restrictions_eau, sante_urgences, seismes, trafic_routier, vigilance_crues,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,16 @@ SOURCES = {
         # Un bulletin par jour et par massif, publié vers 16 h : quatre relevés par jour.
         Source("AVALANCHE", "Risque d'avalanche par massif", avalanche.relever,
                datetime.timedelta(hours=6), datetime.timedelta(hours=36), "Météo-France"),
+        # Le service ne reçoit les mesures que par paquets, avec du retard : un relevé toutes les
+        # vingt minutes n'en perd aucune, et ménage un service qui n'est pas une API publiée.
+        Source("RADIOACTIVITE", "Radioactivité ambiante (balises Téléray)", radioactivite.relever,
+               datetime.timedelta(minutes=19), datetime.timedelta(hours=3),
+               "ASNR - réseau Téléray"),
+        # Affichage des trente derniers jours. L'ALERTE sismique, elle, a sa propre commande
+        # toutes les deux minutes (verifier_alertes_sismiques) : rien à accélérer ici.
+        Source("SEISMES", "Séismes des trente derniers jours", seismes.relever,
+               datetime.timedelta(minutes=29), datetime.timedelta(hours=6),
+               "BCSF-Rénass (EOST) et observatoires de l'IPGP"),
         Source("TRAFIC_ROUTIER", "Événements routiers", trafic_routier.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1),
                "Bison Futé - ministère chargé des transports"),
@@ -81,6 +92,10 @@ SOURCES = {
         Source("SANTE_URGENCES", "Recours aux urgences par pathologie", sante_urgences.relever,
                datetime.timedelta(hours=23), datetime.timedelta(hours=72),
                "Santé publique France (réseaux OSCOUR et SOS Médecins)"),
+        # 80 Mo à lire en flot, pour une base qui bouge peu : une fois par jour.
+        Source("DEFIBRILLATEURS", "Défibrillateurs (base nationale Géo'DAE)", defibrillateurs.relever,
+               datetime.timedelta(hours=23), datetime.timedelta(hours=96),
+               "Géo'DAE - ministère de la Santé"),
         Source("CARBURANTS", "Stations de carburant", carburants.relever,
                datetime.timedelta(minutes=29), datetime.timedelta(hours=3),
                "Prix des carburants - ministère de l'Économie"),

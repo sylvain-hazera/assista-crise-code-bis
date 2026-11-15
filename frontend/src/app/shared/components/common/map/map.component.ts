@@ -57,6 +57,12 @@ interface LayerVisibility {
   avalanche: boolean;
   /** Arrêtés de circulation des collectivités (DiaLog) : fermetures, poids lourds, alternats. */
   arretesCirculation: boolean;
+  /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
+  defibrillateurs: boolean;
+  /** Séismes des trente derniers jours (BCSF-Rénass), tirs de carrière compris. */
+  seismes: boolean;
+  /** Balises de radioactivité ambiante du réseau Téléray (ASNR). */
+  radioactivite: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -115,6 +121,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     zonesBrulees: false,
     avalanche: false,
     arretesCirculation: false,
+    defibrillateurs: false,
+    seismes: false,
+    radioactivite: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -199,6 +208,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
     this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
+    this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
+    this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
+    this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
     this.basculerPluie();
     this.rafraichirVeille();
   }
@@ -207,7 +219,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
-  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false };
+  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
@@ -215,9 +227,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private rafraichirVeille(): void {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
-            arretesCirculation } = this.layerVisibility;
+            arretesCirculation, defibrillateurs, seismes, radioactivite } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
-        && !avalanche && !arretesCirculation) return;
+        && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -258,6 +270,73 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
           'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
         }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (defibrillateurs) {
+      this.veilleService.defibrillateurs({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.defibrillateurs = reponse.tronque;
+          this.afficherCoucheVeille('defibrillateurs', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(d => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [d.longitude, d.latitude] },
+              properties: {
+                etat: d.acces_libre ? 'ok' : 'attention',
+                infobulle: `<strong>${this.echapper(d.nom || 'Défibrillateur')}</strong><br>${this.echapper(d.adresse)}`
+                  + (d.emplacement ? `<br>Emplacement : ${this.echapper(d.emplacement)}` : '')
+                  + `<br>${this.echapper(d.acces || 'Accès non précisé')}${d.acces_libre ? ', accès libre' : ', accès non libre'}`
+                  + (d.disponibilite ? `<br>Disponibilité déclarée : ${this.echapper(d.disponibilite)}` : '')
+                  + '<br><small>Déclaré par l\'exploitant (Géo\'DAE), non vérifié. Arrêt cardiaque : appelez le 15.</small>',
+              },
+            })),
+          // Vert : accès libre. Gris-vert : il faut qu'on vous ouvre.
+          }, ['match', ['get', 'etat'], 'ok', '#16a34a', '#84a98c'], this.layerVisibility.defibrillateurs);
+        },
+        error: () => {},
+      });
+    }
+    if (seismes) {
+      this.veilleService.seismes({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.seismes = reponse.tronque;
+          this.afficherCoucheVeille('seismes', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(s => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+              properties: {
+                etat: s.nature !== 'earthquake' ? 'autre' : s.magnitude >= 3 ? 'grave' : 'attention',
+                infobulle: `<strong>${this.echapper(s.nature_libelle)} — magnitude ${s.magnitude}</strong>`
+                  + (s.lieu ? `<br>près de ${this.echapper(s.lieu)}` : '')
+                  + `<br>${new Date(s.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`
+                  + (s.profondeur_km != null ? `, à ${Math.round(s.profondeur_km)} km de profondeur` : '')
+                  + '<br><small>Source : BCSF-Rénass et observatoires de l\'IPGP</small>',
+              },
+            })),
+          // Rouge : séisme de magnitude 3 ou plus. Orange : séisme plus petit. Gris : tir de carrière, explosion.
+          }, ['match', ['get', 'etat'], 'grave', '#c81e1e', 'attention', '#f97316', '#9ca3af'], this.layerVisibility.seismes);
+        },
+        error: () => {},
+      });
+    }
+    if (radioactivite) {
+      this.veilleService.radioactivite({ bbox }).subscribe({
+        next: (reponse) => this.afficherCoucheVeille('radioactivite', {
+          type: 'FeatureCollection',
+          features: reponse.resultats.map(b => ({
+            type: 'Feature', geometry: { type: 'Point', coordinates: [b.longitude, b.latitude] },
+            properties: {
+              etat: 'neutre',
+              infobulle: `<strong>Balise ${this.echapper(b.nom)}</strong>`
+                + `<br>${Math.round(b.debit_nsv_h)} nSv/h`
+                + (b.bruit_de_fond_nsv_h != null ? ` (niveau habituel : ${Math.round(b.bruit_de_fond_nsv_h)} nSv/h)` : '')
+                + `<br>Mesuré à ${new Date(b.mesure_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+                + (b.valide ? '' : ' — mesure non validée')
+                + '<br><small>Réseau Téléray (ASNR). Pas une alerte : la pluie fait monter la mesure.</small>',
+            },
+          })),
+        // Une seule couleur, voulue : colorer par valeur ferait lire comme une alerte ce qui n'en est pas une.
+        }, '#7c3aed', this.layerVisibility.radioactivite),
         error: () => {},
       });
     }

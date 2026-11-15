@@ -2795,7 +2795,7 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Douze sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+Quinze sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
 les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie prévue, stations
 météo, vigilance crues, risque d'avalanche, surfaces brûlées, routes, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
@@ -2812,6 +2812,9 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
 | DiaLog (DATEX II v3) | arrêtés de circulation des collectivités : voies interdites, interdites aux poids lourds, alternats | aucune clé | 24 h | `core/arretes_circulation.py` |
 | Santé publique France (Odissé) | part des passages aux urgences pour grippe, Covid-19, gastro-entérite, bronchiolite, par département et par semaine | aucune clé | 24 h | `core/sante_urgences.py` |
+| ASNR, réseau Téléray | radioactivité ambiante : débit de dose gamma de ~470 balises et leur niveau habituel | aucune clé — **service non publié**, voir plus bas | 20 min | `core/radioactivite.py` |
+| BCSF-Rénass (FDSN) | séismes des 30 derniers jours, hexagone et outre-mer, tirs de carrière distingués ; sismicité autour des volcans | aucune clé | 30 min | `core/seismes.py` |
+| Géo'DAE | carte nationale des défibrillateurs déclarés en service (~93 000) | aucune clé | 24 h | `core/defibrillateurs.py` |
 | Bison Futé (DATEX II) | fermetures, accidents, obstacles, travaux du réseau routier **national** | aucune clé | 10 min | `core/trafic_routier.py` |
 | Prix des carburants, flux instantané | stations, carburants disponibles, **ruptures** | aucune clé | 30 min | `core/carburants.py` |
 
@@ -2823,8 +2826,8 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
    une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
 2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `ObservationMeteo`,
    `ImagePluie`, `RisqueAvalanche`, `DangerFeuForet`, `TronconVigilanceCrues`, `RestrictionEau`,
-   `ZoneBrulee`, `ArreteCirculation`, `IndicateurSante`, `EvenementRoutier`,
-   `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
+   `ZoneBrulee`, `ArreteCirculation`, `IndicateurSante`, `MesureRadioactivite`, `Seisme`,
+   `Defibrillateur`, `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
    personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
    table. Un flux vide ou tronqué ne remplace pas la copie précédente.
 3. **Une copie ancienne se dit ancienne.** `ReleveSourceOuverte` garde l'heure du dernier
@@ -2880,6 +2883,22 @@ l'image est posée sous les noms de lieux, pour ne rien masquer.
 - *Recours aux urgences* : un taux pour 100 000 **passages aux urgences**, ni un nombre de
   malades ni un taux dans la population ; il sert à voir une tendance. Données hebdomadaires,
   publiées avec une dizaine de jours de recul.
+- *Radioactivité* : **un affichage, jamais une alerte.** Une forte pluie fait monter la mesure
+  une heure ou deux sans incident (elle rabat au sol des descendants naturels du radon), une
+  balise en étalonnage aussi. Aucune ligne n'est mise en avant, le calque n'a qu'une couleur,
+  et aucune annonce n'est tirée de ces valeurs. L'alerte radiologique est l'affaire de l'ASNR
+  et du préfet.
+- *Séismes* : un événement sur cinq est un tir de carrière. Ils sont gardés avec leur nature
+  et distingués à l'écran. L'ALERTE sismique reste celle de `verifier_alertes_sismiques`
+  (toutes les deux minutes, recoupée avec l'EMSC) ; cette source-ci ne fait que montrer.
+- *Volcans* : **aucune donnée ouverte ne dit l'état d'un volcan français** ni son niveau
+  d'alerte (bulletins PDF des observatoires, alerte fixée par le préfet). Ce qui est mesuré et
+  ouvert, c'est la sismicité sous l'édifice : `seismes.activite_volcans` la compte sur sept
+  jours pour le Piton de la Fournaise, la Soufrière, la Montagne Pelée et Fani Maoré, sans rien
+  en conclure. Le bloc n'apparaît que si un volcan est à moins de 250 km.
+- *Défibrillateurs* : la carte montre ce que les exploitants **déclarent**, pas ce qu'une
+  collectivité a vérifié (c'est le rôle de Sites sensibles, qui lit le même fichier commune par
+  commune). Un appareil volé, en panne ou mal placé sur la carte peut y figurer.
 - *Avalanche* : un indice pour tout le massif, pas pour une pente. Le bloc n'apparaît que s'il
   y a un massif dans le rayon regardé. Une lecture en panne garde l'indice précédent (le
   service est lent) ; un 404 (hors saison) l'efface.
@@ -2893,6 +2912,19 @@ de 1 à 4, quels que soient les noms des champs ; la réponse brute est **gardé
 échoue, la source est signalée par la supervision et l'écran dit que la carte n'a pas été
 comprise — jamais « rien à signaler ». **À vérifier à la première publication de juin** :
 si l'alerte se déclenche, ajuster `meteo_forets.analyser` d'après l'échantillon gardé.
+
+**Téléray n'est pas une API publiée.** C'est le service que le site teleray.asnr.fr interroge
+lui-même, lisible sans authentification, sans documentation ni conditions d'utilisation ;
+l'ASNR peut le changer sans prévenir. Décision du 15/11/2026 : l'intégrer, ces données étant
+celles d'une autorité publique déjà affichées à tous. Le module s'en tient à un appel national
+toutes les vingt minutes, n'utilise aucun jeton, et échoue proprement si la réponse change de
+forme. Particularité constatée : le service reçoit les mesures par paquets, avec jusqu'à trois
+quarts d'heure de retard — on demande donc 75 minutes, triées de la plus récente à la plus
+ancienne. **À faire** : un mot à l'ASNR pour le leur signaler.
+
+**Radioactivité, pistes écartées** : EURDEP (plateforme européenne) interdit toute
+réutilisation sans accord écrit de chaque fournisseur ; Safecast n'a presque aucune mesure
+récente en France ; OpenRadiation (mesures citoyennes) demande une clé et relève de l'ODbL.
 
 **Non intégrés, et pourquoi** : le radar de pluie observé et les modèles de vagues ne sont
 publiés qu'en BUFR, HDF5 ou GRIB, que le serveur ne lit pas ; le niveau des nappes (Hub'Eau)

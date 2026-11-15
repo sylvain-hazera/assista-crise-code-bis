@@ -265,6 +265,75 @@ export interface SanteUrgences {
   indicateurs: IndicateurSante[];
 }
 
+/** Dernière mesure d'une balise du réseau Téléray (ASNR). Un affichage, jamais une alerte :
+ * une forte pluie suffit à faire monter la mesure. */
+export interface BaliseRadioactivite {
+  station: number;
+  nom: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+  /** Balise posée autour d'une installation nucléaire. */
+  proche_installation: boolean;
+  debit_nsv_h: number;
+  /** Niveau habituel de cette balise ; null si l'ASNR ne le donne pas. */
+  bruit_de_fond_nsv_h: number | null;
+  ecart_nsv_h: number | null;
+  valide: boolean;
+  mesure_le: string;
+}
+export interface Radioactivite extends EnteteVeille { resultats: BaliseRadioactivite[]; }
+
+export interface Seisme {
+  reference: string;
+  date: string;
+  magnitude: number;
+  profondeur_km: number | null;
+  lieu: string;
+  zone: string;
+  /** 'earthquake', 'quarry blast', 'explosion', 'landslide'… */
+  nature: string;
+  nature_libelle: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface Seismes extends EnteteVeille { resultats: Seisme[]; }
+
+/** Sismicité autour d'un volcan français : un compte de séismes, pas un état du volcan. */
+export interface Volcan {
+  code: string;
+  nom: string;
+  territoire: string;
+  latitude: number;
+  longitude: number;
+  observatoire: string;
+  url: string;
+  seismes_7_jours: number;
+  seismes_7_jours_precedents: number;
+  magnitude_max: number | null;
+  dernier_seisme: string | null;
+  distance_km: number | null;
+  /** Vrai si ce volcan concerne le territoire regardé. */
+  a_portee: boolean;
+}
+export interface Volcans { source: string; releve_le: string | null; perime: boolean; rayon_km: number; volcans: Volcan[]; }
+
+/** Défibrillateur déclaré en service dans la base nationale. Déclaré, pas vérifié. */
+export interface Defibrillateur {
+  reference: string;
+  nom: string;
+  adresse: string;
+  acces: string;
+  acces_libre: boolean;
+  emplacement: string;
+  disponibilite: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface Defibrillateurs extends EnteteVeille { total: number; resultats: Defibrillateur[]; }
+
 /** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
  * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
  * les radars, pas l'image radar elle-même — l'écran doit le dire. */

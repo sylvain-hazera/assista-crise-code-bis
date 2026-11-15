@@ -120,6 +120,23 @@
         Stations météo : vent, pluie
         @if (layerVisibility.stationsMeteo && veilleTronquee.meteo) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      <label class="layer-toggle-item" title="Défibrillateurs déclarés en service dans la base nationale Géo'DAE. Vert vif : accès libre. Déclarés, non vérifiés.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.defibrillateurs" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot dae-dot"></span>
+        Défibrillateurs
+        @if (layerVisibility.defibrillateurs && veilleTronquee.defibrillateurs) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Séismes des trente derniers jours (BCSF-Rénass). Rouge : magnitude 3 ou plus. Gris : tir de carrière ou explosion.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.seismes" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot seismes-dot"></span>
+        Séismes (30 jours)
+        @if (layerVisibility.seismes && veilleTronquee.seismes) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Balises du réseau Téléray (ASNR) : débit de dose gamma ambiant. Un affichage, pas une alerte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.radioactivite" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot radio-dot"></span>
+        Radioactivité ambiante (balises)
+      </label>
       <label class="layer-toggle-item" title="Arrêtés des communes et départements publiés dans DiaLog. Rouge : interdite. Violet : poids lourds. Orange : alternat.">
         <input type="checkbox" [(ngModel)]="layerVisibility.arretesCirculation" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot arretes-dot"></span>

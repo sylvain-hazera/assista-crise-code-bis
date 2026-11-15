@@ -14,7 +14,8 @@ from .views_application import (
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
     ArretesCirculationView, ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
-    MeteoForetsView, ObservationsMeteoView, PluiePrevueView, RestrictionsEauView,
+    DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
+    RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
     StationsCarburantView, VigilanceCruesView, ZonesBruleesView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
@@ -373,6 +374,10 @@ urlpatterns = [
     path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
     path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),
     path('sante-urgences/', SanteUrgencesView.as_view(), name='sante_urgences'),
+    path('radioactivite/', RadioactiviteView.as_view(), name='radioactivite'),
+    path('seismes/', SeismesView.as_view(), name='seismes'),
+    path('volcans/', VolcansView.as_view(), name='volcans'),
+    path('defibrillateurs/', DefibrillateursView.as_view(), name='defibrillateurs'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

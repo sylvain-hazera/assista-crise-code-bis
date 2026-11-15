@@ -457,6 +457,125 @@
     }
   </section>
 
+  <!-- ════ Séismes ════ -->
+  @if (seismes?.emprise_connue) {
+    <section aria-labelledby="titre-seismes">
+      <h2 id="titre-seismes">
+        <span class="material-icons">vibration</span> Séismes des 30 derniers jours
+        <span class="compte">{{ seismesNaturels.length }}</span>
+      </h2>
+      @if (seismesNaturels.length) {
+        <div class="defilement">
+          <table class="mesures-sante">
+            <thead><tr><th>Date</th><th>Magnitude</th><th>Près de</th><th>Profondeur</th><th>Distance</th></tr></thead>
+            <tbody>
+              @for (seisme of seismesNaturels; track seisme.reference) {
+                <tr [class.remarquable]="seisme.magnitude >= 3">
+                  <td class="chiffre">{{ seisme.date | date:'dd/MM à HH:mm' }}</td>
+                  <td class="chiffre"><strong>{{ seisme.magnitude | number:'1.1-1' }}</strong></td>
+                  <td>{{ seisme.lieu || '—' }}</td>
+                  <td class="chiffre">@if (seisme.profondeur_km != null) { {{ seisme.profondeur_km | number:'1.0-0' }} km } @else { — }</td>
+                  <td class="chiffre">@if (seisme.distance_km != null) { {{ seisme.distance_km | number:'1.0-0' }} km }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="calme">Aucun séisme de magnitude 1,5 ou plus dans ce rayon depuis trente jours.</p>
+      }
+      <p class="note">
+        Source : {{ seismes!.source }}@if (seismes!.releve_le) {, relevé le {{ seismes!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Magnitude 1,5 et plus ; à partir de 3, un séisme est en général ressenti (ligne surlignée).
+        @if (autresSecousses.length) {
+          Le réseau a aussi enregistré {{ autresSecousses.length }} tir(s) de carrière ou explosion(s)
+          dans ce rayon : ils ne sont pas dans ce tableau, et se voient sur la carte.
+        }
+        L'alerte sismique, elle, se règle dans la fiche de l'institution.
+      </p>
+    </section>
+  }
+
+  <!-- ════ Volcans : seulement pour les territoires qui en ont un à portée ════ -->
+  @if (volcans.length) {
+    <section aria-labelledby="titre-volcans">
+      <h2 id="titre-volcans"><span class="material-icons">volcano</span> Volcans</h2>
+      <ul class="massifs">
+        @for (volcan of volcans; track volcan.code) {
+          <li>
+            <p class="massif-titre">
+              <strong>{{ volcan.nom }}</strong>
+              <span class="adresse">{{ volcan.territoire }}@if (volcan.distance_km != null) { · à {{ volcan.distance_km }} km }</span>
+              @if (sismiciteEnHausse(volcan)) { <span class="etiquette tendance hausse">sismicité en hausse</span> }
+            </p>
+            <p class="massif-suite">
+              {{ volcan.seismes_7_jours }} séisme(s) à moins de {{ rayonVolcanKm }} km ces sept derniers jours
+              ({{ volcan.seismes_7_jours_precedents }} les sept jours précédents)@if (volcan.magnitude_max != null) {, magnitude la plus forte : {{ volcan.magnitude_max | number:'1.1-1' }}}.
+            </p>
+            <p class="massif-suite">
+              État du volcan et niveau d'alerte :
+              <a [href]="volcan.url" target="_blank" rel="noopener noreferrer">{{ volcan.observatoire }}</a>
+            </p>
+          </li>
+        }
+      </ul>
+      <p class="note">
+        <strong>Ceci n'est pas un état du volcan.</strong> Aucune donnée ouverte ne dit si un volcan
+        français est en éruption ni quel est son niveau d'alerte : les observatoires publient des
+        bulletins, et c'est le préfet qui fixe l'alerte. Ce qui est mesuré et ouvert, c'est le
+        nombre de séismes sous l'édifice, compté ici sans rien en conclure.
+      </p>
+    </section>
+  }
+
+  <!-- ════ Radioactivité ambiante ════ -->
+  @if (radioactivite?.emprise_connue && radioactivite!.resultats.length) {
+    <section aria-labelledby="titre-radioactivite">
+      <h2 id="titre-radioactivite">
+        <span class="material-icons">sensors</span> Radioactivité ambiante
+        <span class="compte">{{ radioactivite!.resultats.length }}</span>
+      </h2>
+      @if (radioactivite!.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : consultez
+            <a href="https://teleray.asnr.fr" target="_blank" rel="noopener noreferrer">teleray.asnr.fr</a>.</span>
+        </p>
+      }
+      <div class="defilement">
+        <table class="mesures-sante">
+          <thead><tr><th>Balise</th><th>Mesuré à</th><th>Débit de dose</th><th>Niveau habituel</th><th>Écart</th></tr></thead>
+          <tbody>
+            @for (balise of radioactivite!.resultats; track balise.station) {
+              <tr>
+                <td>
+                  <strong>{{ balise.nom }}</strong>
+                  <br><span class="adresse">
+                    @if (balise.distance_km != null) { à {{ balise.distance_km | number:'1.0-0' }} km }
+                    @if (balise.proche_installation) { · autour d'une installation nucléaire }
+                    @if (!balise.valide) { · mesure non validée par l'ASNR }
+                  </span>
+                </td>
+                <td class="chiffre">{{ balise.mesure_le | date:'HH:mm' }}</td>
+                <td class="chiffre">{{ balise.debit_nsv_h | number:'1.0-0' }} nSv/h</td>
+                <td class="chiffre">@if (balise.bruit_de_fond_nsv_h != null) { {{ balise.bruit_de_fond_nsv_h | number:'1.0-0' }} nSv/h } @else { <span class="calme">—</span> }</td>
+                <td class="chiffre">@if (balise.ecart_nsv_h != null) { {{ balise.ecart_nsv_h > 0 ? '+' : '' }}{{ balise.ecart_nsv_h | number:'1.0-0' }} } @else { <span class="calme">—</span> }</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        Source : {{ radioactivite!.source }}@if (radioactivite!.releve_le) {, relevé le {{ radioactivite!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Débit de dose gamma ambiant, en nanosieverts par heure ; le niveau habituel dépend du
+        sous-sol et de l'altitude, d'où les écarts d'une balise à l'autre.
+        <strong>Ces valeurs ne sont pas une alerte</strong> : une forte pluie fait monter la mesure
+        pendant une heure ou deux sans qu'il y ait d'incident, une balise en étalonnage aussi.
+        En cas d'événement, l'information officielle vient de l'ASNR et du préfet.
+      </p>
+    </section>
+  }
+
   <!-- ════ Santé : seulement si le département a des indicateurs ════ -->
   @if (sante?.indicateurs?.length) {
     <section aria-labelledby="titre-sante">
