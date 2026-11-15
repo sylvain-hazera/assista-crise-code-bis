@@ -59,6 +59,14 @@ export class MagicLoginComponent implements OnInit {
     return interne ? demande! : '/accueil';
   }
 
+  /** Arrivé par un lien, sans son téléphone : le mot de passe fait le second facteur (un
+   *  code reçu par e-mail arriverait dans la même boîte que le lien). */
+  passerAuMotDePasse(): void {
+    this.errorMessage = '';
+    this.motDePasse = '';
+    this.state = 'mot_de_passe';
+  }
+
   connecter(): void {
     const avecCode = this.state === 'code';
     const avecMotDePasse = this.state === 'mot_de_passe';

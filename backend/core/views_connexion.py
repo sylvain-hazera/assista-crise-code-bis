@@ -39,16 +39,18 @@ class ConnexionDebutView(APIView):
 
 
 class ConnexionEnvoyerCodeView(APIView):
-    """« Renvoyer le code par e-mail ». Même réponse pour toute adresse : elle ne dit ni si le
-    compte existe, ni comment il est protégé, ni si un message est réellement parti."""
+    """« Recevoir un code par e-mail », pour tout compte protégé. Même réponse pour toute
+    adresse : elle ne dit ni si le compte existe, ni s'il est protégé, ni si un message est
+    réellement parti."""
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
     def post(self, request):
         connexion.renvoyer_code((request.data.get("email") or "").strip(), request,
                                 str(request.data.get("appareil") or ""))
-        return Response({"detail": "Si votre compte reçoit ses codes par e-mail, un nouveau code "
-                                   "vient de partir. Il est valable 5 minutes."})
+        return Response({"detail": "Si un compte protégé existe à cette adresse, un code vient "
+                                   "de lui être envoyé par e-mail. Il est valable 5 minutes. "
+                                   "Un seul envoi par minute."})
 
 
 class ConnexionCodeView(APIView):
@@ -164,15 +166,15 @@ class SecondFacteurConfirmerView(_VueSecondFacteur):
 
 
 class SecondFacteurEnvoyerCodeView(_VueSecondFacteur):
-    """Envoie un code par e-mail au titulaire, quand son compte fonctionne ainsi : pendant
-    l'activation (« je n'ai rien reçu »), ou avant de retirer ou de renouveler, qui demandent
-    un code."""
+    """Envoie un code par e-mail au titulaire : pendant l'activation du mode e-mail (« je n'ai
+    rien reçu »), ou avant de retirer ou de renouveler, qui demandent un code — y compris pour
+    un compte à application dont le téléphone n'est plus là."""
 
     def post(self, request):
         utilisateur, _ = self.titulaire(request)
         if utilisateur is None:
             return self.refus()
-        parti = second_facteur.envoyer_code_par_mail(request, utilisateur)
+        parti = second_facteur.envoyer_code_par_mail(request, utilisateur, a_la_demande=True)
         return Response({
             "envoye": parti,
             "detail": ("Un code vient de partir vers votre adresse. Il est valable 5 minutes."

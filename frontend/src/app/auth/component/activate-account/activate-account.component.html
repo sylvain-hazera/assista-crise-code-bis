@@ -25,6 +25,9 @@
         <button type="submit" class="btn-submit" [disabled]="envoiEnCours || code.trim().length < 6">
           {{ envoiEnCours ? 'Vérification…' : 'Continuer' }}
         </button>
+        <button type="button" class="autre-moyen" (click)="passerAuMotDePasse()">
+          Pas votre téléphone sous la main ? Utiliser votre mot de passe
+        </button>
       </form>
     }
 

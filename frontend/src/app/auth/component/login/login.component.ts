@@ -133,14 +133,15 @@ export class LoginComponent implements OnInit {
   messageEnvoi = '';
   envoiEnCours = false;
 
-  /** Pour un compte qui reçoit ses codes par e-mail : en demander un autre (un par minute). */
+  /** « Recevoir un code par e-mail » : pour tout compte protégé, avec ou sans application
+   *  d'authentification (un envoi par minute). */
   renvoyerCode(): void {
     if (this.envoiEnCours) return;
     this.envoiEnCours = true;
     this.messageEnvoi = '';
     this.authService.renvoyerCode(this.loginForm.value.email.trim()).subscribe({
       next: (detail) => { this.messageEnvoi = detail; this.envoiEnCours = false; },
-      error: () => { this.messageEnvoi = "Impossible de renvoyer le code pour l'instant."; this.envoiEnCours = false; },
+      error: () => { this.messageEnvoi = "Impossible d'envoyer le code pour l'instant."; this.envoiEnCours = false; },
     });
   }
 

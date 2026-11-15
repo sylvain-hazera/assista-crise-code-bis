@@ -809,6 +809,161 @@ class TestCodeParMail:
         assert second_facteur.masquer_adresse("a@b.fr") == "a•••@b.fr"
 
 
+# ── 5 bis. Le code par e-mail À LA DEMANDE, pour un compte à application ─────────────────────
+
+ENVOI = "/api/connexion/envoyer-code/"
+
+
+@pytest.mark.django_db
+class TestCodeParMailALaDemande:
+    """Demandé par Sylvain le 15/11/2026 : un compte protégé par une application doit AUSSI
+    pouvoir se faire envoyer un code, en plus de l'application et des dix codes de secours."""
+
+    def test_rien_ne_part_tant_qu_on_ne_le_demande_pas(self, client, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        assert client.post(DEBUT, {"email": maire.email}, format="json").data == {"etape": "code"}
+        assert mail.outbox == []     # sinon chaque connexion vaudrait un message
+
+    def test_parcours_complet_code_demande_puis_mot_de_passe(self, client, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        client.post(DEBUT, {"email": maire.email}, format="json")
+        assert client.post(ENVOI, {"email": maire.email}, format="json").status_code == 200
+        assert [m.to for m in mail.outbox] == [[maire.email]]
+        etape = client.post(CODE, {"email": maire.email, "code": " ".join(_code_recu())}, format="json")
+        assert etape.status_code == 200
+        # le code reçu ne dispense pas du mot de passe
+        assert client.post(JETON, {"email": maire.email, "password": "faux",
+                                   "jeton_etape": etape.data["jeton_etape"]}, format="json").status_code == 401
+        session = client.post(JETON, {"email": maire.email, "password": MDP,
+                                      "jeton_etape": etape.data["jeton_etape"]}, format="json")
+        assert session.status_code == 200
+        # le compte reste un compte à application : rien n'a changé de mode
+        assert session.data["user"]["second_facteur"]["mode"] == "application"
+
+    def test_l_application_et_les_codes_de_secours_marchent_toujours(self, client, maire):
+        codes = _proteger(maire)
+        client.post(ENVOI, {"email": maire.email}, format="json")
+        assert client.post(CODE, {"email": maire.email, "code": _code(maire)}, format="json").status_code == 200
+        assert client.post(CODE, {"email": maire.email, "code": codes[0]}, format="json").status_code == 200
+
+    def test_le_code_demande_ne_sert_qu_une_fois_et_expire(self, client, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        client.post(ENVOI, {"email": maire.email}, format="json")
+        code = "".join(_code_recu())
+        assert client.post(CODE, {"email": maire.email, "code": code}, format="json").status_code == 200
+        assert client.post(CODE, {"email": maire.email, "code": code}, format="json").status_code == 401
+
+        SecondFacteur.objects.filter(utilisateur=maire).update(code_mail_envoye_le=None)
+        frein.reussite(frein.cle(second_facteur.ETAPE_ENVOI, maire.email))
+        client.post(ENVOI, {"email": maire.email}, format="json")
+        code = "".join(_code_recu())
+        SecondFacteur.objects.filter(utilisateur=maire).update(
+            code_mail_expire_le=timezone.now() - datetime.timedelta(seconds=1))
+        assert client.post(CODE, {"email": maire.email, "code": code}, format="json").status_code == 401
+
+    def test_un_envoi_par_minute_au_plus(self, client, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        for _ in range(4):
+            client.post(ENVOI, {"email": maire.email}, format="json")
+        assert len(mail.outbox) == 1
+
+    def test_la_reponse_est_la_meme_pour_toute_adresse(self, client, maire, admin, citoyen):
+        """Compte à application, compte en mode e-mail, compte sans protection, adresse
+        inconnue : rien ne les distingue pour qui demande."""
+        _proteger(maire)
+        _proteger_par_mail(admin)
+        mail.outbox.clear()
+        reponses = [client.post(ENVOI, {"email": adresse}, format="json")
+                    for adresse in (maire.email, admin.email, citoyen.email, "personne@nulle-part.test")]
+        assert {r.status_code for r in reponses} == {200}
+        assert len({str(r.data) for r in reponses}) == 1
+        # seuls les comptes protégés reçoivent quelque chose
+        assert sorted(m.to[0] for m in mail.outbox) == sorted([maire.email, admin.email])
+
+    def test_une_application_pas_encore_activee_ne_recoit_rien(self, client, maire):
+        """L'activation prouve que l'application connaît le secret : un code reçu par e-mail
+        ne doit pas pouvoir la remplacer."""
+        second_facteur.preparer(maire)
+        mail.outbox.clear()
+        client.post(ENVOI, {"email": maire.email}, format="json")
+        assert mail.outbox == []
+        assert second_facteur.envoyer_code_par_mail(None, maire, a_la_demande=True) is False
+
+    def test_un_lien_recu_par_e_mail_n_accepte_pas_un_code_recu_par_e_mail(self, client, maire):
+        """Le lien et le code arriveraient dans la même boîte : lire les e-mails de quelqu'un
+        suffirait à entrer chez lui. Avec un lien, il faut l'application ou un code de secours."""
+        _proteger(maire)
+        mail.outbox.clear()
+        client.post(ENVOI, {"email": maire.email}, format="json")
+        code = "".join(_code_recu())
+        uid, jeton = _lien(maire)
+        refus = client.post(f"/api/magic-login/{uid}/{jeton}/", {"code": code}, format="json")
+        assert refus.status_code == 401 and refus.data["code"] == "CODE_REQUIS"
+        # et ce refus n'a pas brûlé le code : il sert encore par la porte ordinaire
+        assert client.post(CODE, {"email": maire.email, "code": code}, format="json").status_code == 200
+        bon = client.post(f"/api/magic-login/{uid}/{jeton}/", {"code": _code(maire)}, format="json")
+        assert bon.status_code == 200 and bon.data["token"]
+
+    def test_avec_un_lien_et_sans_telephone_le_mot_de_passe_fait_le_second_facteur(self, client, maire):
+        """Lien (boîte aux lettres) + mot de passe (ce que l'on sait) : deux facteurs, sans
+        téléphone. Un mot de passe faux est freiné comme ailleurs."""
+        _proteger(maire)
+        uid, jeton = _lien(maire)
+        seul = client.get(f"/api/magic-login/{uid}/{jeton}/")
+        assert seul.status_code == 401 and seul.data["code"] == "CODE_REQUIS"
+        faux = client.post(f"/api/magic-login/{uid}/{jeton}/", {"mot_de_passe": "faux"}, format="json")
+        assert faux.status_code == 401 and faux.data["code"] == "MOT_DE_PASSE_REQUIS"
+        bon = client.post(f"/api/magic-login/{uid}/{jeton}/", {"mot_de_passe": MDP}, format="json")
+        assert bon.status_code == 200 and bon.data["token"]
+
+    def test_avec_un_lien_un_compte_sans_mot_de_passe_garde_l_application(self, client, create_user):
+        importe = create_user(username="sans-mdp@frein.test", email="sans-mdp@frein.test")
+        importe.set_unusable_password()
+        importe.save()
+        _proteger(importe)
+        uid, jeton = _lien(importe)
+        for essai in ("", "n-importe-quoi"):
+            refus = client.post(f"/api/magic-login/{uid}/{jeton}/", {"mot_de_passe": essai}, format="json")
+            assert refus.status_code == 401
+        bon = client.post(f"/api/magic-login/{uid}/{jeton}/", {"code": _code(importe)}, format="json")
+        assert bon.status_code == 200 and bon.data["token"]
+
+    def test_depuis_son_compte_changer_de_telephone_sans_l_ancien(self, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        c = APIClient()
+        c.force_authenticate(user=maire)
+        envoi = c.post("/api/second-facteur/envoyer-code/", {}, format="json")
+        assert envoi.status_code == 200 and envoi.data["envoye"] is True
+        retrait = c.post("/api/second-facteur/retirer/", {"code": "".join(_code_recu())}, format="json")
+        assert retrait.status_code == 200
+        assert second_facteur.second_facteur_actif(maire) is None
+
+    def test_la_connexion_grafana_matrix_envoie_un_code_quand_le_champ_est_vide(self, maire):
+        _proteger(maire)
+        mail.outbox.clear()
+        navigateur = Client()
+        premier = navigateur.post("/accounts/login/", {"username": maire.email, "password": MDP})
+        assert premier.status_code == 200 and "_auth_user_id" not in navigateur.session
+        assert len(mail.outbox) == 1
+        second = navigateur.post("/accounts/login/", {"username": maire.email, "password": MDP,
+                                                      "code": "".join(_code_recu())})
+        assert second.status_code == 302 and navigateur.session["_auth_user_id"] == str(maire.pk)
+
+    def test_un_inconnu_ne_peut_pas_noyer_la_boite_du_titulaire(self, client, maire):
+        """Cinq envois libres pour les appareils inconnus, puis un délai qui s'allonge."""
+        _proteger(maire)
+        mail.outbox.clear()
+        for _ in range(frein.ECHECS_SANS_DELAI + 4):
+            SecondFacteur.objects.filter(utilisateur=maire).update(code_mail_envoye_le=None)
+            client.post(ENVOI, {"email": maire.email}, format="json")
+        assert len(mail.outbox) == frein.ECHECS_SANS_DELAI + 1
+
+
 # ── 6. Mots de passe ─────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.django_db

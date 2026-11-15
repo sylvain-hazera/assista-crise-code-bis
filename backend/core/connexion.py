@@ -116,7 +116,10 @@ def etape_apres_adresse(email: str, request=None, appareil: str = "") -> str:
 
     Si le compte reçoit ses codes par e-mail, le code part ici. La réponse ne le dit pas : le
     site annonce dans tous les cas « celui de votre application, ou celui que vous venez de
-    recevoir », pour ne pas apprendre à un inconnu comment un compte est protégé."""
+    recevoir », pour ne pas apprendre à un inconnu comment un compte est protégé.
+
+    Un compte protégé par une application ne reçoit rien ici : il demande son code par e-mail
+    s'il en veut un (`renvoyer_code`), sinon chaque connexion lui vaudrait un message."""
     utilisateur = trouver_utilisateur(email)
     if utilisateur is not None:
         facteur = second_facteur.second_facteur_actif(utilisateur)
@@ -133,11 +136,13 @@ def etape_apres_adresse(email: str, request=None, appareil: str = "") -> str:
 
 
 def renvoyer_code(email: str, request=None, appareil: str = "") -> None:
-    """« Renvoyer le code » : n'a d'effet que pour un compte en mode e-mail, au plus une fois
-    par minute. Ne dit rien de ce qui s'est passé — même réponse pour toute adresse."""
+    """« Recevoir un code par e-mail » : pour tout compte protégé, qu'il ait une application
+    d'authentification ou non, au plus une fois par minute. Ne dit rien de ce qui s'est
+    passé — même réponse pour toute adresse."""
     utilisateur = trouver_utilisateur(email)
     if utilisateur is not None:
-        second_facteur.envoyer_code_par_mail(request, utilisateur, appareil=appareil)
+        second_facteur.envoyer_code_par_mail(request, utilisateur, appareil=appareil,
+                                             a_la_demande=True)
 
 
 # ── Étape 2 : le code ────────────────────────────────────────────────────────────────────────
@@ -264,17 +269,26 @@ def ouvrir_session_par_lien(request, utilisateur, code: str = "", appareil: str 
     """Session ouverte par un lien reçu par e-mail (lien magique, lien d'activation).
 
     Le lien prouve l'accès à la boîte aux lettres : c'est UN facteur. Si le compte est protégé,
-    il en faut un second — sinon lire les e-mails de quelqu'un suffirait à entrer chez lui :
+    il en faut un second — sinon lire les e-mails de quelqu'un suffirait à entrer chez lui.
+    Ce second facteur ne peut donc pas être un code reçu par e-mail : il arriverait dans la
+    même boîte que le lien.
 
-    - compte protégé par une application : le code de l'application ;
-    - compte protégé par un code envoyé par e-mail : ce code arriverait dans la même boîte que
-      le lien et ne prouverait rien de plus. On demande donc le **mot de passe**."""
+    - compte protégé par une application : le code de l'application ou un code de secours ;
+      ou, pour qui n'a pas son téléphone, le **mot de passe** (15/11/2026) ;
+    - compte protégé par un code envoyé par e-mail : le **mot de passe**."""
     from .models import SecondFacteur
 
     facteur = second_facteur.second_facteur_actif(utilisateur)
-    if facteur is not None and facteur.mode == SecondFacteur.MODE_EMAIL:
-        if not mot_de_passe:
-            raise MotDePasseRequis()
+    if facteur is None:
+        return ouvrir_session(request, utilisateur, appareil)
+
+    par_mail = facteur.mode == SecondFacteur.MODE_EMAIL
+    if par_mail and not mot_de_passe:
+        raise MotDePasseRequis()
+    if not par_mail and not code and not mot_de_passe:
+        raise CodeRequis()
+
+    if par_mail or not code:
         compteur = frein.cle(frein.ETAPE_MOT_DE_PASSE, utilisateur.email, utilisateur, appareil,
                              voie="lien")
         exiger_libre(compteur)
@@ -285,12 +299,10 @@ def ouvrir_session_par_lien(request, utilisateur, code: str = "", appareil: str 
                 raise TropDEssais(reste)
             raise MotDePasseRequis("Mot de passe incorrect.")
         frein.reussite(compteur)
-    elif facteur is not None:
-        if not code:
-            raise CodeRequis()
+    else:
         compteur = frein.cle(frein.ETAPE_CODE, utilisateur.email, utilisateur, appareil)
         exiger_libre(compteur)
-        if not second_facteur.verifier_code(utilisateur, code):
+        if not second_facteur.verifier_code(utilisateur, code, accepter_mail=False):
             _compter_echec(frein.ETAPE_CODE)
             reste = frein.echec(compteur)
             if reste:

@@ -4316,7 +4316,7 @@ ni de savoir s'il est encore bon.
 ```
 POST /api/connexion/debut/  {email}                  → {etape: "code" | "mot_de_passe"}
 POST /api/connexion/code/   {email, code, appareil}  → {jeton_etape}        (5 minutes)
-POST /api/connexion/envoyer-code/ {email}            renvoie le code (mode e-mail), même réponse pour tous
+POST /api/connexion/envoyer-code/ {email}            envoie un code par e-mail à tout compte protégé, même réponse pour tous
 POST /api/token/            {email, password, jeton_etape, appareil}
 ```
 
@@ -4341,8 +4341,22 @@ Quatre choix qui ne se voient pas dans le code si on ne les cherche pas :
 
 | Mode | D'où vient le code | Résiste à un mot de passe fuité | Résiste à quelqu'un qui lit la boîte aux lettres |
 |---|---|---|---|
-| `APPLICATION` (proposé en premier) | application d'authentification du téléphone (TOTP) | oui | oui |
+| `APPLICATION` (proposé en premier) | application d'authentification du téléphone (TOTP) ; **ou un code par e-mail, à la demande** | oui | **non**, depuis le code à la demande |
 | `EMAIL` | e-mail envoyé par le central à chaque connexion, valable 5 minutes | oui | **non** |
+
+**Le code par e-mail à la demande** (décision de Sylvain, 15/11/2026) : un compte à application
+peut lui aussi se faire envoyer un code, par « Recevoir un code par e-mail » sur l'écran du
+code (ou en laissant le champ vide sur les pages Matrix/Grafana et l'administration Django).
+Rien ne part tant qu'il ne le demande pas. Trois moyens coexistent donc : l'application, le code
+par e-mail, les dix codes de secours — ceux-ci pour le jour où ni le téléphone ni la boîte aux
+lettres ne sont à portée. La contrepartie est assumée : **la protection de tout compte,
+administrateurs compris, vaut désormais celle de sa boîte aux lettres** (voir la limite du mode
+e-mail ci-dessous). Deux garde-fous tiennent : le code reçu ne dispense jamais du mot de passe,
+et il n'est **pas accepté pour compléter un lien reçu par e-mail** (`verifier_code(...,
+accepter_mail=False)`) : le lien et le code arriveraient dans la même boîte. Avec un lien, il
+faut l'application, un code de secours, ou — pour qui n'a pas son téléphone — **le mot de
+passe** (« Utiliser votre mot de passe » sur la page du lien) : lien et mot de passe font bien
+deux facteurs.
 
 Le mode e-mail répond à la demande d'origine — la force brute, le mot de passe deviné — et
 sert ceux qui n'ont pas de téléphone adapté. Sa limite est à connaître : qui lit la boîte aux
@@ -4381,7 +4395,7 @@ pas copié, aucun code n'y est demandé. Décision de Sylvain. Le frein, lui, y 
 | Chemin | Avant | Maintenant |
 |---|---|---|
 | Lien magique, lien d'activation (valables 7 jours, rejouables) | ouvraient une session | exigent le code si le compte est protégé (401 `CODE_REQUIS`, puis le même lien en POST) |
-| Connexion OIDC (`/accounts/login/` : Matrix, Grafana) | mot de passe seul | code avant mot de passe, frein (`core/formulaires_connexion.py`) ; champ du code laissé vide = envoi du code en mode e-mail |
+| Connexion OIDC (`/accounts/login/` : Matrix, Grafana) | mot de passe seul | code avant mot de passe, frein (`core/formulaires_connexion.py`) ; champ du code laissé vide = envoi d'un code par e-mail |
 | Administration Django | mot de passe seul | idem, gabarit `core/login_admin.html` |
 | Réinitialisation du mot de passe | — | ne retire pas le second facteur ; la demande est freinée par compte |
 | Renouvellement de session | toujours accepté | refusé après l'échéance sans activation |
@@ -4390,7 +4404,8 @@ pas copié, aucun code n'y est demandé. Décision de Sylvain. Le frein, lui, y 
 jetons d'appareil ne sont gardés qu'en empreinte ; la clé d'un compteur est une empreinte de
 l'adresse saisie. Un code n'est jamais accepté deux fois (`SecondFacteur.dernier_pas`).
 
-**Téléphone perdu** : dix codes de secours à usage unique, montrés une seule fois. À défaut, un
+**Téléphone perdu** : un code par e-mail à la demande, ou l'un des dix codes de secours à usage
+unique, montrés une seule fois. À défaut, un
 administrateur retire le second facteur depuis la page Utilisateurs (tracé, titulaire prévenu
 par e-mail) ; à défaut encore, sur le serveur : `manage.py reinitialiser_second_facteur <email>`.
 Dans les deux cas le compte ne redevient pas ouvert quinze jours : la connexion suivante doit

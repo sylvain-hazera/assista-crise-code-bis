@@ -151,13 +151,24 @@ def _consommer_code_secours(utilisateur, code: str) -> bool:
 
 # ── Le code envoyé par e-mail ────────────────────────────────────────────────────────────────
 #
-# Ce mode protège de ce que demandait Sylvain : la force brute et le mot de passe fuité. Il
-# ne protège PAS de quelqu'un qui lit la boîte aux lettres du titulaire — celui-là peut
-# réinitialiser le mot de passe par e-mail, puis recevoir le code. L'application
-# d'authentification, elle, résiste aussi à cela ; c'est pourquoi elle reste le choix proposé
-# en premier. Pour que le mode e-mail soit tout de même DEUX facteurs, il exige un mot de
-# passe (voir `preparer`), et un lien reçu par e-mail ne suffit pas à entrer (voir
-# `core/connexion.py`).
+# Deux usages :
+#
+# - **mode e-mail** : le compte n'a pas d'application d'authentification, son code part tout
+#   seul dès que l'adresse est saisie ;
+# - **à la demande** (15/11/2026) : un compte protégé par une application peut AUSSI se faire
+#   envoyer un code, en le demandant (« Recevoir un code par e-mail »). Téléphone oublié, perdu,
+#   déchargé : on n'est pas enfermé dehors, et les dix codes de secours restent pour le jour où
+#   la boîte aux lettres est elle aussi hors d'atteinte.
+#
+# Ce que cela protège : la force brute et le mot de passe fuité. Ce que cela ne protège PAS :
+# quelqu'un qui lit la boîte aux lettres du titulaire — celui-là peut réinitialiser le mot de
+# passe par e-mail, puis recevoir le code. Depuis que le code à la demande existe, c'est vrai
+# de TOUS les comptes, y compris ceux qui ont une application : la sécurité d'un compte est
+# celle de sa boîte aux lettres. C'est un choix (être dépanné sans administrateur), pas un oubli.
+#
+# Deux garde-fous restent : un code reçu par e-mail ne dispense jamais du mot de passe, et il
+# ne complète jamais un LIEN reçu par e-mail (voir `core/connexion.py`) — le lien et le code
+# arriveraient dans la même boîte et ne feraient qu'un seul facteur.
 
 def _empreinte_code_mail(utilisateur_id, code: str) -> str:
     chiffres = "".join(c for c in (code or "") if c.isdigit())
@@ -171,10 +182,14 @@ def masquer_adresse(email: str) -> str:
     return f"{nom[:1]}{'•' * max(3, len(nom) - 1)}@{domaine}" if domaine else "votre adresse"
 
 
-def envoyer_code_par_mail(request, utilisateur, facteur=None, appareil: str = "") -> bool:
+def envoyer_code_par_mail(request, utilisateur, facteur=None, appareil: str = "",
+                          a_la_demande: bool = False) -> bool:
     """Tire un code, valable cinq minutes, et l'envoie à l'adresse du compte. Rend vrai s'il
-    est parti. Ne fait rien (et rend faux) si le compte n'est pas en mode e-mail, ou si un
-    envoi vient d'avoir lieu.
+    est parti.
+
+    Sans `a_la_demande`, seul un compte en mode e-mail en reçoit un : c'est l'envoi automatique,
+    à la saisie de l'adresse. Avec, tout compte protégé en reçoit un : c'est la personne qui le
+    demande. Rien ne part si un envoi vient d'avoir lieu.
 
     Le code ne figure ni dans l'objet du message (qui est journalisé), ni en base (où seule
     son empreinte est gardée) : il n'existe en clair que dans le message lui-même."""
@@ -184,7 +199,11 @@ def envoyer_code_par_mail(request, utilisateur, facteur=None, appareil: str = ""
     from .models import SecondFacteur
 
     facteur = facteur or SecondFacteur.objects.filter(utilisateur=utilisateur).first()
-    if facteur is None or facteur.mode != SecondFacteur.MODE_EMAIL:
+    if facteur is None:
+        return False
+    if facteur.mode != SecondFacteur.MODE_EMAIL and (not a_la_demande or facteur.confirme_le is None):
+        # Application d'authentification : jamais d'envoi spontané, et rien tant qu'elle
+        # n'est pas activée (l'activation prouve que l'application connaît le secret).
         return False
     maintenant = timezone.now()
     if facteur.code_mail_envoye_le and maintenant - facteur.code_mail_envoye_le < DELAI_ENTRE_ENVOIS:
@@ -339,9 +358,13 @@ def etat(utilisateur) -> dict:
 
 # ── Vérifier, activer, retirer ───────────────────────────────────────────────────────────────
 
-def verifier_code(utilisateur, code: str) -> bool:
-    """Vrai si `code` est le code du moment (jamais deux fois le même) ou un code de secours
-    encore inutilisé. Ne compte aucun échec : c'est le rôle de `core/frein_connexion.py`."""
+def verifier_code(utilisateur, code: str, accepter_mail: bool = True) -> bool:
+    """Vrai si `code` est le code du moment de l'application (jamais deux fois le même), le
+    code envoyé par e-mail s'il y en a un en cours, ou un code de secours encore inutilisé.
+    Ne compte aucun échec : c'est le rôle de `core/frein_connexion.py`.
+
+    `accepter_mail=False` : là où un code reçu par e-mail ne prouverait rien de plus que ce
+    qui a déjà été prouvé (session ouverte par un lien reçu dans la même boîte)."""
     from .models import SecondFacteur
 
     facteur = second_facteur_actif(utilisateur)
@@ -354,6 +377,8 @@ def verifier_code(utilisateur, code: str) -> bool:
         # Conditionnelle : si deux requêtes présentent le même code, une seule passe.
         return SecondFacteur.objects.filter(
             pk=facteur.pk, dernier_pas__lt=pas).update(dernier_pas=pas) == 1
+    if accepter_mail and _verifier_code_mail(facteur, code):
+        return True
     return _consommer_code_secours(utilisateur, code)
 
 

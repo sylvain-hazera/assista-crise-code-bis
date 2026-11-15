@@ -135,6 +135,19 @@ describe('SecuriteCompteComponent', () => {
       http.expectNone(`${api}/second-facteur/envoyer-code/`);
     });
 
+    it("en mode application, « Recevoir un code par e-mail » en fait partir un à la demande", () => {
+      monter();
+      http.expectOne(`${api}/second-facteur/`).flush(
+        { ...ETAT, actif: true, mode: 'application', date_limite: null, codes_secours_restants: 10 });
+      composant.demander('retirer');
+      fixture.detectChanges();
+      const bouton: HTMLButtonElement = fixture.nativeElement.querySelector('button.lien');
+      expect(bouton.textContent).toContain('Recevoir un code par e-mail');
+      bouton.click();
+      http.expectOne(`${api}/second-facteur/envoyer-code/`).flush({ envoye: true, detail: 'Un code vient de partir.' });
+      expect(composant.message).toContain('vient de partir');
+    });
+
     it('retirer le code demande un code, et dit à un compte à pouvoir de réactiver', () => {
       monter();
       http.expectOne(`${api}/second-facteur/`).flush({ ...ETAT, actif: true, date_limite: null, codes_secours_restants: 9 });

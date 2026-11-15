@@ -126,7 +126,8 @@ export class SecuriteCompteComponent implements OnInit {
     this.ecran = this.obligatoire ? 'choix' : 'etat';
   }
 
-  /** Mode e-mail : « je n'ai rien reçu », ou un code pour confirmer un acte. */
+  /** « Je n'ai rien reçu » en mode e-mail, ou un code pour confirmer un acte — y compris
+   *  pour un compte à application dont le téléphone n'est plus là. */
   recevoirUnCode(): void {
     this.erreur = '';
     this.authService.envoyerCodeSecondFacteur().subscribe({

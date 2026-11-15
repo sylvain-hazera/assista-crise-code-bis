@@ -32,8 +32,8 @@ class _FreinEtCode(forms.Form):
 
     def _sans_code(self):
         return ValidationError(
-            "Identifiants incorrects. Si votre compte reçoit ses codes par e-mail, un code "
-            "vient de vous être envoyé : saisissez-le avec votre mot de passe.",
+            "Identifiants incorrects. Si votre compte est protégé par un code, nous venons "
+            "de vous en envoyer un par e-mail : saisissez-le avec votre mot de passe.",
             code="sans_code")
 
     def clean(self):
@@ -47,11 +47,13 @@ class _FreinEtCode(forms.Form):
 
         code = (self.cleaned_data.get("code") or "").strip()
         if not code:
-            # Champ du code laissé vide : si le compte reçoit ses codes par e-mail, on lui en
-            # envoie un. Le message qui suit est le même pour TOUT essai sans code, que le
-            # compte existe ou non : il ne dit rien de la façon dont un compte est protégé.
+            # Champ du code laissé vide : c'est la façon, sur cette page sans bouton, de
+            # demander un code par e-mail — pour tout compte protégé. Le message qui suit est
+            # le même pour TOUT essai sans code, que le compte existe ou non : il ne dit rien
+            # de la façon dont un compte est protégé.
             if utilisateur is not None:
-                second_facteur.envoyer_code_par_mail(getattr(self, "request", None), utilisateur)
+                second_facteur.envoyer_code_par_mail(
+                    getattr(self, "request", None), utilisateur, a_la_demande=True)
         if utilisateur is not None and second_facteur.second_facteur_actif(utilisateur):
             # Le code d'abord : sans lui, le mot de passe n'est pas examiné.
             if not second_facteur.verifier_code(utilisateur, code):

@@ -102,8 +102,9 @@ class ClientApi(
     }
 
     /**
-     * « Renvoyer le code par e-mail ». Le serveur répond la même phrase pour toute adresse :
-     * il ne dit ni si le compte existe, ni s'il reçoit ses codes ainsi, ni si un message part.
+     * « Recevoir un code par e-mail », pour tout compte protégé (application d'authentification
+     * ou non). Le serveur répond la même phrase pour toute adresse : il ne dit ni si le compte
+     * existe, ni s'il est protégé, ni si un message part.
      */
     suspend fun renvoyerCode(email: String): Reponse<String> {
         val corps = buildJsonObject { put("email", email.trim()); put("appareil", session.appareil()) }

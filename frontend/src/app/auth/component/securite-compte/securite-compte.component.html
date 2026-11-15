@@ -33,10 +33,14 @@
             À chaque connexion, le site vous demande les 6 chiffres de votre application
             d'authentification avant votre mot de passe.
           </p>
+          <p class="discret">
+            Téléphone oublié ou en panne ? Sur l'écran du code, « Recevoir un code par e-mail »
+            vous en envoie un, valable 5 minutes.
+          </p>
         }
         <p [class.alerte]="etat.codes_secours_restants <= 2">
           Codes de secours restants : <strong>{{ etat.codes_secours_restants }}</strong> sur 10.
-          Ils servent si votre téléphone est perdu ou en panne.
+          Ils servent si vous n'avez ni votre téléphone ni accès à vos e-mails.
         </p>
 
         @if (!action) {
@@ -60,6 +64,12 @@
                 Saisissez un code de votre application actuelle, ou un code de secours.
               }
             </p>
+            @if (etat.mode !== 'email') {
+              <p class="discret">
+                Vous n'avez plus ce téléphone ?
+                <button type="button" class="lien" (click)="recevoirUnCode()">Recevoir un code par e-mail</button>
+              </p>
+            }
             <input type="text" name="code" class="champ-code" inputmode="numeric" maxlength="20"
                    autocomplete="one-time-code" placeholder="123456" [(ngModel)]="code" autofocus>
             @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }

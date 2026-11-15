@@ -83,8 +83,8 @@ describe('LoginComponent', () => {
     component.renvoyerCode();
     const requete = http.expectOne(`${api}/connexion/envoyer-code/`);
     expect(requete.request.body.email).toBe('maire@exemple.test');
-    requete.flush({ detail: 'Si votre compte reçoit ses codes par e-mail, un nouveau code vient de partir.' });
-    expect(component.messageEnvoi).toContain('vient de partir');
+    requete.flush({ detail: 'Si un compte protégé existe à cette adresse, un code vient de lui être envoyé par e-mail.' });
+    expect(component.messageEnvoi).toContain('vient de lui être envoyé');
     component.recommencer();
     expect(component.messageEnvoi).toBe('');
   });
