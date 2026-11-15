@@ -4,7 +4,7 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { MapComponent } from './map.component';
 import { fournisseursDeTest } from '../../../../testing/test-providers';
 import { environment } from '../../../../../environments/environment';
-import { PluiePrevue, PrecipitationsHiver, RafalesPrevues } from '../../../models/veille.model';
+import { PluiePrevue, PrecipitationsHiver, RafalesPrevues, VentPrevu } from '../../../models/veille.model';
 
 describe('MapComponent', () => {
   let component: MapComponent;
@@ -252,6 +252,87 @@ describe('MapComponent', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.pluie-temps')).toBeNull();
+    });
+  });
+
+  /** Vent animé (15/11/2026) : le champ de vent vient de notre serveur, pour l'heure la plus
+   * proche de celle de la réglette, et une heure déjà chargée n'est pas redemandée. */
+  describe('vent animé', () => {
+    const api = environment.apiUrl;
+    const dans = (minutes: number) => new Date(Date.now() + minutes * 60000).toISOString();
+    const heures = { passee: dans(-50), proche: dans(10), suivante: dans(70), loin: dans(130) };
+    const liste = (): VentPrevu => ({
+      source: 'Météo-France', releve_le: dans(-5), perime: false, calcul: dans(-400),
+      echeances: [heures.passee, heures.proche, heures.suivante, heures.loin], champ: null,
+    });
+    const champ = (echeance: string): VentPrevu => ({
+      ...liste(), champ: { echeance, largeur: 2, hauteur: 2, ouest: -10, nord: 53, pas: 0.1, vitesse_max_ms: 40,
+                           donnees: btoa(String.fromCharCode(128, 160, 128, 160, 128, 128, 100, 100)) },
+    });
+    let http: HttpTestingController;
+
+    beforeEach(() => { http = TestBed.inject(HttpTestingController); });
+    afterEach(() => component.ngOnDestroy());
+
+    it('ne demande rien tant que le calque n’est pas coché', () => {
+      component.onLayerToggle();
+      expect(http.match(r => r.url.includes('vent-prevu')).length).toBe(0);
+    });
+
+    it('demande la liste, puis le champ de l’heure la plus proche de maintenant', () => {
+      component.layerVisibility.vent = true;
+      component.onLayerToggle();
+
+      http.expectOne(r => r.url === `${api}/vent-prevu/` && !r.params.has('echeance')).flush(liste());
+      const demande = http.expectOne(r => r.url === `${api}/vent-prevu/` && r.params.has('echeance'));
+      expect(demande.request.params.get('echeance')).toBe(heures.proche);
+      expect(demande.request.params.keys()).toEqual(['echeance']);        // rien sur le lieu regardé
+      demande.flush(champ(heures.proche));
+      expect(component.echeanceVent).toBe(heures.proche);
+    });
+
+    it('suit l’heure de la réglette, sans redemander une heure déjà chargée', () => {
+      component.layerVisibility.vent = true;
+      component.onLayerToggle();
+      http.expectOne(r => r.url === `${api}/vent-prevu/` && !r.params.has('echeance')).flush(liste());
+      http.expectOne(r => r.params.get('echeance') === heures.proche).flush(champ(heures.proche));
+
+      // La réglette de la pluie passe à + 2 h 05 : le vent prend l'heure la plus proche.
+      component.layerVisibility.pluie = true;
+      component.pluie = { source: 'Météo-France', releve_le: dans(-3), perime: false, calcul: dans(-40),
+                          coins: [[-5.5, 51.5], [10, 51.5], [10, 41], [-5.5, 41]], echeances: [dans(5), dans(125)] };
+      component.choisirEcheance(1);
+      http.expectOne(r => r.params.get('echeance') === heures.loin).flush(champ(heures.loin));
+      expect(component.echeanceVent).toBe(heures.loin);
+
+      component.choisirEcheance(0);                                        // retour à l'heure déjà chargée
+      expect(http.match(r => r.url.includes('vent-prevu')).length).toBe(0);
+      expect(component.echeanceVent).toBe(heures.proche);
+    });
+
+    it('dit l’heure et la nature du vent affiché, et montre la toile', () => {
+      component.layerVisibility.vent = true;
+      component.onLayerToggle();
+      http.expectOne(r => r.url === `${api}/vent-prevu/` && !r.params.has('echeance')).flush(liste());
+      http.expectOne(r => r.params.has('echeance')).flush(champ(heures.proche));
+      fixture.detectChanges();
+
+      const note: HTMLElement = fixture.nativeElement.querySelector('.vent-note');
+      expect(note.textContent).toContain('Vent prévu à');
+      expect(note.textContent).toContain('vent moyen');
+      expect(fixture.nativeElement.querySelector('.vent-toile').classList).toContain('visible');
+    });
+
+    it('cache la toile quand on décoche', () => {
+      component.layerVisibility.vent = true;
+      component.onLayerToggle();
+      http.match(() => true);
+      component.layerVisibility.vent = false;
+      component.onLayerToggle();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.vent-toile').classList).not.toContain('visible');
+      expect(fixture.nativeElement.querySelector('.vent-note')).toBeNull();
     });
   });
 });

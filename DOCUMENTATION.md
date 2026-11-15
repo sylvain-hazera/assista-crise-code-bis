@@ -2795,7 +2795,7 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Vingt-deux sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+Vingt-quatre sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
 les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie, rafales, neige et verglas prévus, niveau de la mer, stations
 météo, vigilance crues, hauteurs d'eau mesurées, risque d'avalanche, surfaces brûlées, routes, circulation, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
@@ -2813,6 +2813,8 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
 | Hub'Eau, hydrométrie | **hauteur d'eau et débit mesurés** de ~4 200 stations en rivière, outre-mer compris ; variation sur 1 h et 3 h | aucune clé | 20 min | `core/hauteurs_eau.py` |
 | Shom, marégraphes REFMAR | **niveau de la mer mesuré** par ~140 marégraphes, métropole et outre-mer ; marée attendue et **surcote estimées par le serveur** | aucune clé | 30 min | `core/niveaux_mer.py` |
+| Arcep, sites indisponibles | **antennes mobiles déclarées en panne ou en maintenance** par les opérateurs, par technologie ; état quotidien | aucune clé | 6 h (un fichier par jour) | `core/antennes_mobiles.py` |
+| Météo-France, ARPEGE (WCS) | **vent moyen à 10 m**, heure par heure sur 6 h, pour l'animation de la carte ; maille de 10 km | même clé | 20 min (300 Ko par heure nouvelle) | `core/vent.py` |
 | VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
 | NASA FIRMS | **foyers actifs** : points chauds vus par satellite depuis 48 h (4 capteurs, ~6 passages par jour, 3 h de délai) | aucune clé | 30 min | `core/foyers_actifs.py` |
 | EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
@@ -2928,6 +2930,32 @@ repère le plus haut niveau mesuré sur la période. Les ajustements sont étal�
 passage, refaits tous les trente jours) : il faut une douzaine d'heures après la mise en service
 pour que toutes les stations aient le leur. Ni prédiction officielle de marée, ni alerte ; un
 marégraphe mesure le niveau au port, pas les vagues sur le rivage. `GET /api/niveaux-mer/`.
+
+**Antennes mobiles en panne.** Le fichier quotidien de l'Arcep (« Sites indisponibles ») :
+les sites que les quatre opérateurs déclarent en panne ou en maintenance, avec l'état de la voix
+et des données par technologie. Trois limites dites à l'écran : c'est un état **quotidien**,
+publié vers 10 h (et pas tous les jours — le relevé remonte jusqu'à six jours pour trouver le
+dernier fichier) ; ce sont des **déclarations** ; et une antenne en panne n'est pas une zone
+sans réseau. **Filtre des six mois** (décision du 15/11/2026) : une panne déclarée depuis plus de
+six mois n'est plus montrée, seulement comptée — ce n'est plus une panne mais une déclaration
+oubliée. L'âge se compte depuis le début déclaré, ou à défaut depuis le jour où le serveur a vu
+le site en panne pour la première fois (`premiere_vue_le`). Conséquence constatée le jour même :
+**toutes les déclarations de Bouygues Telecom datent de 2021-2022** et sont donc écartées ; la
+page le dit opérateur par opérateur, pour ne pas laisser croire que son réseau fonctionne.
+`GET /api/antennes-indisponibles/` (`operateur=`).
+
+**Vent animé.** Des particules portées par le vent prévu, qui laissent une traîne blanche
+(`frontend/.../map/vent-anime.ts`, écrit pour ce projet). Le champ vient du modèle ARPEGE à
+10 km (deux composantes par heure, 300 Ko) et non de la prévision immédiate, dont la finesse ne
+sert à rien pour montrer un écoulement et coûterait 340 Mo par heure. Le serveur le garde sous
+forme compacte (un octet par composante et par point, de −40 à +40 m/s) et le sert en entier :
+`GET /api/vent-prevu/?echeance=…` est toujours national, rien ne dit où l'on regarde. Sur la
+carte, les particules vivent en longitude/latitude (elles restent en place quand la carte
+bouge), leur vitesse à l'écran ne dépend pas du zoom (10 m/s ≈ un pixel par image), et un voile
+sombre les accompagne — sans lui des traînes blanches ne se verraient pas sur le fond clair. Le
+vent suit l'heure de la réglette de prévision. Si le système demande de réduire les animations,
+rien ne bouge : de courts traits fixes montrent la direction. C'est le vent moyen : ni les
+rafales (calque à part), ni une mesure.
 
 **Circulation.** Trois fichiers du serveur « Bison Futé ouvert » : le référentiel des stations
 de comptage (relu une fois par jour), leurs vitesses et débits (toutes les six minutes), et

@@ -208,6 +208,12 @@ table.mesures, table.mesures-sante {
 // Violet : n'existe qu'outre-mer (cyclone).
 .etiquette[data-couleur="5"], .couleur[data-couleur="5"] { background: #6d28d9; color: #fff; }
 
+// ── Réseau mobile ──
+.operateurs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--ac-text, #111827); }
+.etiquette.antenne[data-gravite="TOTALE"] { background: #c81e1e; color: #fff; }
+.etiquette.antenne[data-gravite="PARTIELLE"] { background: #ffd08a; color: #3b2100; }
+.note.ecartees { margin-bottom: 4px; color: var(--ac-amber-text, #92400e); }
+
 // ── Niveau de la mer ──
 .etiquette.surcote[data-etat="MARQUEE"] { background: #ffd08a; color: #3b2100; }
 .etiquette.surcote[data-etat="FORTE"] { background: #c81e1e; color: #fff; }

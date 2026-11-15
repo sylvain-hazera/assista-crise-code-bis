@@ -122,14 +122,15 @@ _FORMATS = {1: "B", 3: "H", 4: "I", 12: "d"}
 _NOMBRE_A_VIRGULE = 3
 
 
-def lire_tiff(octets):
-    """Grille de vitesses (m/s) d'un fichier TIFF tel que le service le rend : des nombres à
-    virgule de 32 ou 64 bits, sans compression, rangés ligne par ligne du nord au sud.
+def lire_grille_tiff(octets):
+    """Grille d'un fichier TIFF tel que les services de valeurs de Météo-France le rendent :
+    (valeurs, ouest, nord, pas en degrés). Des nombres à virgule de 32 ou 64 bits, sans
+    compression, rangés ligne par ligne du nord au sud ; `ouest` et `nord` sont la position du
+    premier point.
 
     Lecteur volontairement étroit : la bibliothèque d'images du serveur ne lit pas les TIFF de
     nombres à virgule de 64 bits, et en installer une autre pour un seul format ne se justifie
-    pas. Tout ce qui sort de ce cas -- compression, grille d'une autre taille ou posée ailleurs
-    -- lève ValueError plutôt que de peindre une carte fausse."""
+    pas. Tout ce qui sort de ce cas lève ValueError plutôt que de rendre une grille fausse."""
     import numpy
 
     if octets[:4] == b"II*\x00":
@@ -161,12 +162,9 @@ def lire_tiff(octets):
             raise ValueError("TIFF compressé : format non prévu")
         if etiquettes.get(_NATURE, (0,))[0] != _NOMBRE_A_VIRGULE or bits not in (32, 64):
             raise ValueError("TIFF sans nombres à virgule : format non prévu")
-        if (largeur, hauteur) != (LARGEUR, HAUTEUR):
-            raise ValueError(f"grille de {largeur} x {hauteur} points, {LARGEUR} x {HAUTEUR} attendus")
         pas, ancrage = etiquettes[_PAS], etiquettes[_ANCRAGE]
-        if (abs(pas[0] - PAS_DEGRES) > 1e-6 or abs(pas[1] - PAS_DEGRES) > 1e-6
-                or abs(ancrage[3] - OUEST) > 1e-6 or abs(ancrage[4] - NORD) > 1e-6):
-            raise ValueError("grille posée ailleurs que sur l'emprise demandée")
+        if abs(pas[0] - pas[1]) > 1e-9 or pas[0] <= 0:
+            raise ValueError("grille à pas inégal : format non prévu")
         # Les bandes doivent se suivre sans trou pour être lues d'un seul tenant.
         if any(positions[i] + tailles[i] != positions[i + 1] for i in range(len(positions) - 1)):
             raise ValueError("TIFF en bandes dispersées : format non prévu")
@@ -174,7 +172,20 @@ def lire_tiff(octets):
                                    offset=positions[0])
     except (KeyError, IndexError, struct.error) as exc:
         raise ValueError(f"TIFF illisible ({type(exc).__name__})") from exc
-    return valeurs.reshape(hauteur, largeur)
+    return valeurs.reshape(hauteur, largeur), ancrage[3], ancrage[4], pas[0]
+
+
+def lire_tiff(octets):
+    """Grille de la prévision immédiate (rafales, types de précipitation), vérifiée : elle doit
+    avoir la taille attendue et être posée sur l'emprise demandée, sans quoi la carte serait
+    fausse sans que rien ne le montre."""
+    grille, ouest, nord, pas = lire_grille_tiff(octets)
+    hauteur, largeur = grille.shape
+    if (largeur, hauteur) != (LARGEUR, HAUTEUR):
+        raise ValueError(f"grille de {largeur} x {hauteur} points, {LARGEUR} x {HAUTEUR} attendus")
+    if abs(pas - PAS_DEGRES) > 1e-6 or abs(ouest - OUEST) > 1e-6 or abs(nord - NORD) > 1e-6:
+        raise ValueError("grille posée ailleurs que sur l'emprise demandée")
+    return grille
 
 
 def peindre_rangs(rangs, teintes, opacites):

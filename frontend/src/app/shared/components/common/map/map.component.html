@@ -1,5 +1,19 @@
 <div class="map-container">
     <div class="map-frame" #mapContainer style="width: 100%; height: 100%;"></div>
+    <!-- Vent animé : une toile posée sur la carte, qui ne capte aucun clic. Un voile sombre
+         l'accompagne, sans lequel des traînes blanches ne se verraient pas sur un fond clair. -->
+    <canvas #toileVent class="vent-toile" [class.visible]="layerVisibility.vent" aria-hidden="true"></canvas>
+    @if (layerVisibility.vent && vent) {
+      <div class="vent-note" [class.ancien]="vent.perime">
+        @if (vent.echeances.length) {
+          <span class="material-icons">air</span>
+          Vent prévu à {{ echeanceVent | date:'HH:mm' }} — vent moyen, calcul de {{ vent.calcul | date:'HH:mm' }}, {{ vent.source }}
+          @if (vent.perime) { · <strong>relevé ancien</strong> }
+        } @else {
+          Aucun champ de vent n'a encore été relevé.
+        }
+      </div>
+    }
 
     @if (carteIndisponible) {
       <!-- Le conteneur reste dans le DOM : MapLibre s'y accroche si la page est rechargée sur
@@ -129,6 +143,11 @@
         <span class="layer-dot rafales-dot"></span>
         Rafales prévues (3 h)
       </label>
+      <label class="layer-toggle-item" title="Vent moyen prévu par Météo-France (modèle ARPEGE, maille de 10 km), animé : les traînes vont où va le vent, plus vite là où il force. Ni les rafales, ni une mesure. Assombrit légèrement la carte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.vent" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot vent-dot"></span>
+        Vent animé
+      </label>
       <label class="layer-toggle-item" title="Type de précipitation prévu par Météo-France dans les trois heures : neige, pluie verglaçante, grésil, grêle. Le type de ce qui tombe, pas la quantité ni la tenue au sol. Une prévision, pas une alerte. Métropole.">
         <input type="checkbox" [(ngModel)]="layerVisibility.hiver" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot hiver-dot"></span>
@@ -193,6 +212,12 @@
         <span class="layer-dot circulation-dot"></span>
         Circulation (routes nationales)
         @if (layerVisibility.circulation && veilleTronquee.circulation) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Antennes mobiles que les opérateurs déclarent en panne ou en maintenance (fichier quotidien de l'Arcep). Rouge : voix et données coupées. Orange : service partiel. Les pannes déclarées depuis plus de six mois ne sont pas montrées.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.antennesMobiles" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot antennes-dot"></span>
+        Antennes mobiles en panne
+        @if (layerVisibility.antennesMobiles && veilleTronquee.antennes) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
       <label class="layer-toggle-item" title="Arrêtés des communes et départements publiés dans DiaLog. Rouge : interdite. Violet : poids lourds. Orange : alternat.">
         <input type="checkbox" [(ngModel)]="layerVisibility.arretesCirculation" (ngModelChange)="onLayerToggle()">

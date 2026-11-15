@@ -23,10 +23,12 @@ import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
 import {
-  EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues,
+  EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_GRAVITE_ANTENNE,
+  LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues,
   StationCarburant,
-  sensDeCirculation, variationEau,
+  VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
+import { AnimationVent, GrilleVent, decoderChampVent } from './vent-anime';
 
 interface LayerVisibility {
   crises: boolean;
@@ -73,6 +75,10 @@ interface LayerVisibility {
   hauteursEau: boolean;
   /** Niveau de la mer aux marégraphes (Shom), colorés par surcote estimée. */
   niveauxMer: boolean;
+  /** Antennes mobiles déclarées en panne ou en maintenance (Arcep). */
+  antennesMobiles: boolean;
+  /** Vent prévu, animé : des particules portées par le champ de vent. */
+  vent: boolean;
   /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
   defibrillateurs: boolean;
   /** Séismes des trente derniers jours (BCSF-Rénass), tirs de carrière compris. */
@@ -143,6 +149,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     circulation: false,
     hauteursEau: false,
     niveauxMer: false,
+    antennesMobiles: false,
+    vent: false,
     defibrillateurs: false,
     seismes: false,
     radioactivite: false,
@@ -234,10 +242,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('circulation-layer', this.layerVisibility.circulation);
     this.applyLayerVisibility('hauteurs-eau-layer', this.layerVisibility.hauteursEau);
     this.applyLayerVisibility('niveaux-mer-layer', this.layerVisibility.niveauxMer);
+    this.applyLayerVisibility('antennes-mobiles-layer', this.layerVisibility.antennesMobiles);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
     this.basculerPrevisions();
+    this.basculerVent();
     this.rafraichirVeille();
   }
 
@@ -245,7 +255,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
-  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false, circulation: false, hauteursEau: false };
+  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false, circulation: false, hauteursEau: false,
+                     antennes: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
@@ -254,10 +265,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
-        && !foyersActifs && !circulation && !hauteursEau && !niveauxMer) return;
+        && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -268,6 +279,38 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       borne(bornes.getWest(), 180), borne(bornes.getSouth(), 90),
       borne(bornes.getEast(), 180), borne(bornes.getNorth(), 90),
     ];
+    if (antennesMobiles) {
+      this.veilleService.antennesIndisponibles({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.antennes = reponse.tronque;
+          const jour = (instant: string) => new Date(instant).toLocaleDateString('fr-FR');
+          this.afficherCoucheVeille('antennes-mobiles', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(a => {
+              const coupees = technologiesCoupees(a.technologies);
+              return {
+                type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [a.longitude, a.latitude] },
+                properties: {
+                  etat: a.gravite,
+                  infobulle: `<strong>Antenne ${this.echapper(a.operateur)}</strong>`
+                    + (a.commune ? ` — ${this.echapper(a.commune)}` : '')
+                    + `<br>${LIBELLES_GRAVITE_ANTENNE[a.gravite]}`
+                    + (coupees ? `<br>Hors service : ${coupees}` : '')
+                    + `<br>${a.motif === 'MAINTENANCE' ? 'Maintenance' : 'Incident'} depuis le ${jour(a.depuis)}`
+                    + (a.debut_declare ? '' : ' (date de notre première observation)')
+                    + '<br><small>Source : Arcep, déclarations des opérateurs'
+                    + (reponse.jour_du_fichier ? `, état du ${jour(reponse.jour_du_fichier)}` : '')
+                    + '. Une antenne en panne n\'est pas une zone sans réseau : une voisine peut couvrir.</small>',
+                },
+              };
+            }),
+          // Rouge : voix et données coupées. Orange : service partiel. Gris : déclarée sans coupure.
+          }, ['match', ['get', 'etat'], 'TOTALE', '#c81e1e', 'PARTIELLE', '#f97316', '#9ca3af'],
+          this.layerVisibility.antennesMobiles);
+        },
+        error: () => {},
+      });
+    }
     if (niveauxMer) {
       this.veilleService.niveauxMer({ bbox }).subscribe({
         next: (reponse) => {
@@ -643,6 +686,76 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  // ── Vent animé : des particules portées par le champ de vent prévu ──────────────────────
+
+  @ViewChild('toileVent') toileVent?: ElementRef<HTMLCanvasElement>;
+  vent: VentPrevu | null = null;
+  /** Heure du champ de vent en cours d'animation. */
+  echeanceVent: string | null = null;
+  private animationVent: AnimationVent | null = null;
+  /** Champs déjà décodés, par calcul et par heure : changer d'heure ne redemande rien. */
+  private grillesVent = new Map<string, GrilleVent>();
+  private rafraichissementVent: ReturnType<typeof setInterval> | null = null;
+
+  /** Appelé à chaque changement de calque : charge le vent à la première activation, le relit
+   * toutes les dix minutes, et arrête l'animation quand le calque est décoché. */
+  private basculerVent(): void {
+    if (!this.layerVisibility.vent) {
+      this.animationVent?.arreter();
+      if (this.rafraichissementVent) { clearInterval(this.rafraichissementVent); this.rafraichissementVent = null; }
+      return;
+    }
+    if (this.rafraichissementVent) { this.afficherVent(); return; }
+    this.chargerVent();
+    this.rafraichissementVent = setInterval(() => this.chargerVent(), 10 * 60 * 1000);
+  }
+
+  private chargerVent(): void {
+    this.veilleService.ventPrevu().subscribe({
+      next: (vent) => { this.vent = vent; this.afficherVent(); },
+      error: () => {},
+    });
+  }
+
+  /** Anime l'heure de vent la plus proche de celle de la réglette de prévision, ou de l'heure
+   * qu'il est si aucune prévision n'est affichée. */
+  private afficherVent(): void {
+    const vent = this.vent;
+    if (!this.layerVisibility.vent || !vent?.echeances.length) return;
+    const instant = this.echeancePrevision ? new Date(this.echeancePrevision).getTime() : Date.now();
+    const echeance = vent.echeances[this.rangLePlusProche(vent.echeances, instant)];
+    const cle = `${vent.calcul}|${echeance}`;
+    const connue = this.grillesVent.get(cle);
+    if (connue) { this.animerVent(echeance, connue); return; }
+    this.veilleService.ventPrevu(echeance).subscribe({
+      next: (reponse) => {
+        if (!reponse.champ) return;
+        try {
+          const grille = decoderChampVent(reponse.champ);
+          this.grillesVent.set(cle, grille);
+          this.animerVent(echeance, grille);
+        } catch { /* champ illisible : on garde l'animation précédente */ }
+      },
+      error: () => {},
+    });
+  }
+
+  private animerVent(echeance: string, grille: GrilleVent): void {
+    this.echeanceVent = echeance;
+    this.runWhenMapReady(() => {
+      const toile = this.toileVent?.nativeElement;
+      if (!this.map || !toile || !this.layerVisibility.vent) return;
+      if (!this.animationVent) {
+        this.animationVent = new AnimationVent(this.map, toile);
+        // Les traînes sont dessinées à l'écran : dès que la carte bouge, elles sont fausses.
+        this.map.on('move', () => this.animationVent?.effacer());
+        this.map.on('resize', () => { if (this.layerVisibility.vent) this.animationVent?.redimensionner(); });
+      }
+      this.animationVent.definirGrille(grille);
+      this.animationVent.demarrer();
+    });
+  }
+
   // ── Pluie et rafales prévues : une image nationale par quart d'heure, une réglette de temps ──
 
   pluie: PluiePrevue | null = null;
@@ -760,6 +873,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Pose, pour chaque calque de prévision coché, l'image de l'échéance choisie. */
   private afficherPrevisions(): void {
     const echeance = this.echeancePrevision;
+    // Le vent suit l'heure de la réglette.
+    this.afficherVent();
     if (!echeance) return;
     if (this.layerVisibility.pluie && this.pluie) {
       this.poserImagePrevision('pluie', this.pluie, echeance, 0.7, e => this.veilleService.imagePluieUrl(e));
@@ -1072,6 +1187,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.resizeObserver) this.resizeObserver.disconnect();
     this.arreterAnimationPrevision();
     if (this.rafraichissementPrevision) clearInterval(this.rafraichissementPrevision);
+    this.animationVent?.arreter();
+    if (this.rafraichissementVent) clearInterval(this.rafraichissementVent);
     if (this.map) this.map.remove();
   }
 

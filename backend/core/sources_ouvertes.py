@@ -1,7 +1,7 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Vingt-deux sources aujourd'hui -- vigilance (métropole et outre-mer), mesures des stations, pluie, rafales, neige et verglas prévus, météo des forêts et
-risque d'avalanche (Météo-France), vigilance crues (Vigicrues), hauteurs d'eau en rivière (Hub'Eau), niveau de la mer (Shom), restrictions d'eau (VigiEau),
+Vingt-quatre sources aujourd'hui -- vigilance (métropole et outre-mer), mesures des stations, pluie, rafales, vent, neige et verglas prévus, météo des forêts et
+risque d'avalanche (Météo-France), vigilance crues (Vigicrues), hauteurs d'eau en rivière (Hub'Eau), niveau de la mer (Shom), antennes mobiles en panne (Arcep), restrictions d'eau (VigiEau),
 foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers et circulation (Bison Futé), arrêtés de circulation (DiaLog),
 recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
 (BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
@@ -26,9 +26,10 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
+    antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
     observations_meteo, pluie,
-    precipitations_hiver, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vigilance_crues,
+    precipitations_hiver, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
+    vigilance_crues,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,10 @@ SOURCES = {
         # entre-temps (les échéances déjà copiées ne sont pas redemandées).
         Source("PLUIE_PREVISION", "Pluie prévue (prévision immédiate)", pluie.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1), "Météo-France"),
+        # Vent moyen pour l'animation de la carte : un calcul toutes les six heures, une
+        # échéance nouvelle par heure, 300 Ko chacune.
+        Source("VENT", "Vent prévu (écoulement, modèle ARPEGE)", vent.relever,
+               datetime.timedelta(minutes=19), datetime.timedelta(hours=3), "Météo-France"),
         # Vigicrues publie deux fois par jour et à chaque aggravation : une demi-heure borne
         # le retard sans retélécharger 2 Mo à chaque passage.
         Source("VIGILANCE_CRUES", "Vigilance crues par tronçon", vigilance_crues.relever,
@@ -66,6 +71,10 @@ SOURCES = {
         Source("NIVEAUX_MER", "Niveau de la mer aux marégraphes", niveaux_mer.relever,
                datetime.timedelta(minutes=29), datetime.timedelta(hours=3),
                "Shom - réseaux de marégraphes REFMAR"),
+        # Un fichier par jour, vers 10 h, et pas tous les jours : quatre relevés quotidiens
+        # suffisent à le prendre dès sa parution, et « périmé » tolère un week-end sans fichier.
+        Source("ANTENNES_MOBILES", "Antennes mobiles en panne ou en maintenance", antennes_mobiles.relever,
+               datetime.timedelta(hours=6), datetime.timedelta(hours=96), "Arcep - déclarations des opérateurs"),
         # Les arrêtés de restriction changent au rythme des préfectures : quatre relevés par
         # jour suffisent, et les données du jour ne paraissent que dans la matinée.
         Source("RESTRICTIONS_EAU", "Restrictions d'usage de l'eau", restrictions_eau.relever,

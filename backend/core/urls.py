@@ -13,12 +13,12 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
-    ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
+    AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
     FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, PrecipitationsHiverView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
-    StationsCarburantView, VigilanceCruesView, ZonesBruleesView,
+    StationsCarburantView, VentPrevuView, VigilanceCruesView, ZonesBruleesView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
 )
 from .views import (
@@ -373,12 +373,14 @@ urlpatterns = [
     path('rafales-prevues/image/', ImageRafalesView.as_view(), name='rafales_prevues_image'),
     path('precipitations-hiver/', PrecipitationsHiverView.as_view(), name='precipitations_hiver'),
     path('precipitations-hiver/image/', ImagePrecipitationHiverView.as_view(), name='precipitations_hiver_image'),
+    path('vent-prevu/', VentPrevuView.as_view(), name='vent_prevu'),
     path('vigilance-crues/', VigilanceCruesView.as_view(), name='vigilance_crues'),
     path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
     path('foyers-actifs/', FoyersActifsView.as_view(), name='foyers_actifs'),
     path('meteo-forets/', MeteoForetsView.as_view(), name='meteo_forets'),
     path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
+    path('antennes-indisponibles/', AntennesIndisponiblesView.as_view(), name='antennes_indisponibles'),
     path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),
     path('circulation/', CirculationView.as_view(), name='circulation'),
     path('hauteurs-eau/', HauteursEauView.as_view(), name='hauteurs_eau'),

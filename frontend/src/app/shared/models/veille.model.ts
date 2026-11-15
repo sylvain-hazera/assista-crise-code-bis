@@ -243,6 +243,48 @@ export interface ArretesCirculation extends EnteteVeille {
   resultats: ArreteCirculation[];
 }
 
+export type GraviteAntenne = 'TOTALE' | 'PARTIELLE' | 'DECLAREE';
+
+/** Une antenne mobile déclarée en panne ou en maintenance par son opérateur (fichier quotidien
+ * de l'Arcep). `depuis` : le début déclaré, ou à défaut le jour où notre serveur a vu la panne
+ * pour la première fois (`debut_declare` faux). */
+export interface AntenneIndisponible {
+  cle: string;
+  operateur: string;
+  commune: string;
+  gravite: GraviteAntenne;
+  voix_hs: boolean | null;
+  donnees_hs: boolean | null;
+  technologies: Record<string, 'OK' | 'HS'>;
+  motif: 'INCIDENT' | 'MAINTENANCE' | '';
+  depuis: string;
+  debut_declare: boolean;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface AntennesIndisponibles extends EnteteVeille {
+  /** Date du fichier de l'Arcep : un état quotidien, publié vers 10 h. */
+  jour_du_fichier: string | null;
+  /** Pannes déclarées depuis plus de six mois : comptées, pas montrées. */
+  ecartees: number;
+  ecartees_par_operateur: Record<string, number>;
+  par_operateur: Record<string, number>;
+  resultats: AntenneIndisponible[];
+}
+
+export const LIBELLES_GRAVITE_ANTENNE: Record<GraviteAntenne, string> = {
+  TOTALE: 'Voix et données coupées', PARTIELLE: 'Service partiel', DECLAREE: 'Déclarée indisponible',
+};
+
+/** « 4G données, 5G données » : les technologies qu'un opérateur dit hors service sur un site. */
+export function technologiesCoupees(technologies: Record<string, 'OK' | 'HS'>): string {
+  const noms: Record<string, string> = {
+    voix2g: '2G voix', voix3g: '3G voix', voix4g: '4G voix', data3g: '3G données', data4g: '4G données', data5g: '5G données',
+  };
+  return Object.keys(noms).filter(cle => technologies[cle] === 'HS').map(cle => noms[cle]).join(', ');
+}
+
 export type EtatSurcote = 'FORTE' | 'MARQUEE' | 'NORMALE' | 'INCONNUE';
 
 /** Un marégraphe (Shom) : le niveau de la mer mesuré, et ce que notre serveur en déduit. La
@@ -483,6 +525,33 @@ export interface PluiePrevue {
   /** Haut-gauche, haut-droite, bas-droite, bas-gauche : [longitude, latitude]. */
   coins: [number, number][];
   echeances: string[];
+}
+
+/** Un champ de vent tel que notre serveur le rend, pour l'animation de la carte. */
+export interface ChampVent {
+  echeance: string;
+  largeur: number;
+  hauteur: number;
+  /** Position du premier point : le coin nord-ouest. */
+  ouest: number;
+  nord: number;
+  /** Pas de la grille, en degrés. */
+  pas: number;
+  vitesse_max_ms: number;
+  /** Base 64 : un octet par point pour la composante vers l'est, puis autant vers le nord. */
+  donnees: string;
+}
+
+/** Vent moyen prévu (modèle ARPEGE de Météo-France), heure par heure. `champ` n'est rempli que
+ * si l'on a demandé une heure précise. Le vent moyen à dix kilomètres de maille : ni les
+ * rafales, ni une mesure. */
+export interface VentPrevu {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  calcul: string | null;
+  echeances: string[];
+  champ: ChampVent | null;
 }
 
 export type FamillePrecipitationHiver = 'VERGLAS' | 'NEIGE' | 'NEIGE_HUMIDE' | 'GRESIL' | 'GRELE';

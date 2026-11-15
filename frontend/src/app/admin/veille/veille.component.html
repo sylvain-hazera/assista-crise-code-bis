@@ -944,6 +944,66 @@
     }
   </section>
 
+  <!-- ════ Réseau mobile : antennes déclarées en panne ════ -->
+  @if (antennes?.emprise_connue && (nombreAntennes || antennes!.ecartees)) {
+    <section aria-labelledby="titre-mobile">
+      <h2 id="titre-mobile">
+        <span class="material-icons">cell_tower</span> Réseau mobile
+        <span class="compte">{{ nombreAntennes }}</span>
+      </h2>
+
+      @if (antennes!.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : l'état ci-dessous n'est plus actuel.</span>
+        </p>
+      }
+      @if (nombreAntennes) {
+        <p class="operateurs">
+          Antennes déclarées en panne ou en maintenance dans ce rayon :
+          @for (ligne of antennesParOperateur; track ligne.operateur) {
+            <span class="etiquette">{{ ligne.operateur }} : {{ ligne.nombre }}</span>
+          }
+        </p>
+        <ul class="troncons mobile">
+          @for (antenne of antennes!.resultats.slice(0, ANTENNES_LISTEES); track antenne.cle) {
+            <li>
+              <span class="etiquette antenne" [attr.data-gravite]="antenne.gravite">{{ LIBELLES_GRAVITE_ANTENNE[antenne.gravite] }}</span>
+              <strong>{{ antenne.operateur }}</strong>
+              <span>{{ antenne.commune }}@if (technologiesCoupees(antenne.technologies); as coupees) { — {{ coupees }}}</span>
+              <span class="adresse">
+                {{ antenne.motif === 'MAINTENANCE' ? 'maintenance' : 'incident' }} depuis le {{ antenne.depuis | date:'dd/MM/yyyy' }}
+                @if (!antenne.debut_declare) { (notre première observation) }
+                @if (antenne.distance_km != null) { · à {{ antenne.distance_km | number:'1.0-1' }} km }
+              </span>
+            </li>
+          }
+        </ul>
+        @if (antennes!.resultats.length > ANTENNES_LISTEES) {
+          <p class="calme">… et {{ antennes!.resultats.length - ANTENNES_LISTEES }} autres, à voir sur la carte.</p>
+        }
+      } @else {
+        <p class="calme">Aucune panne récente déclarée dans ce rayon.</p>
+      }
+      @for (ecart of antennesEcartees; track ecart.operateur) {
+        <p class="note ecartees">
+          <strong>{{ ecart.operateur }}</strong> : {{ ecart.nombre }} déclaration(s) de plus de six mois, non affichée(s).
+          @if (ecart.toutes) {
+            Toutes ses déclarations dans ce rayon sont anciennes : cela ne dit pas que son réseau fonctionne.
+          }
+        </p>
+      }
+      <p class="note">
+        Source : {{ antennes!.source }}@if (antennes!.jour_du_fichier) {, état du {{ antennes!.jour_du_fichier | date:'dd/MM/yyyy' }}}.
+        <strong>Un état quotidien, publié vers 10 h</strong> : une panne survenue depuis n'y figure pas.
+        Ce sont les déclarations des opérateurs ; celles de plus de six mois sont écartées
+        (déclarations oubliées, sites abandonnés). Une antenne en panne n'est pas une zone sans
+        réseau : une antenne voisine peut couvrir. À voir sur la
+        <a routerLink="/admin/carte">carte</a>, calque « Antennes mobiles en panne ».
+      </p>
+    </section>
+  }
+
   <!-- ════ Carburant ════ -->
   <section aria-labelledby="titre-carburant">
     <h2 id="titre-carburant"><span class="material-icons">local_gas_station</span> Carburant</h2>

@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, NiveauMer, NiveauxMer, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver,
+  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, NiveauMer, NiveauxMer, AntenneIndisponible, AntennesIndisponibles, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -172,6 +172,25 @@ const FEUX: ZonesBrulees = {
   }],
 };
 
+const ANTENNE: AntenneIndisponible = {
+  cle: 'Orange|0692290587', operateur: 'Orange', commune: 'Lyon', gravite: 'TOTALE', voix_hs: true, donnees_hs: true,
+  technologies: { voix4g: 'HS', data4g: 'HS', data5g: 'HS', voix2g: 'OK' }, motif: 'INCIDENT',
+  depuis: '2026-11-14T07:50:00Z', debut_declare: true, latitude: 45.755, longitude: 4.842, distance_km: 0.8,
+};
+/** Autour de Lyon : deux pannes récentes, et les déclarations de 2022 d'un opérateur, écartées. */
+const ANTENNES: AntennesIndisponibles = {
+  ...ENTETE, source: 'Arcep - déclarations des opérateurs', jour_du_fichier: '2026-11-15',
+  ecartees: 26, ecartees_par_operateur: { 'Bouygues Telecom': 25, Orange: 1 }, par_operateur: { Orange: 1, SFR: 1 },
+  resultats: [
+    ANTENNE,
+    { ...ANTENNE, cle: 'SFR|0692290587', operateur: 'SFR', gravite: 'PARTIELLE', voix_hs: false, motif: 'MAINTENANCE',
+      technologies: { data4g: 'HS' }, depuis: '2026-11-10T22:00:00Z', debut_declare: false, distance_km: 3.2 },
+  ],
+};
+const ANTENNES_VIDES: AntennesIndisponibles = {
+  ...ANTENNES, ecartees: 0, ecartees_par_operateur: {}, par_operateur: {}, resultats: [],
+};
+
 const MAREGRAPHE: NiveauMer = {
   code: '5', nom: 'LE CONQUET', etat: 'FORTE', niveau_m: 6.41, niveau_le: '2026-11-15T19:30:00Z',
   maree_attendue_m: 5.83, surcote_cm: 58, incertitude_cm: 12.4, pleine_mer_le: '2026-11-15T22:30:00Z',
@@ -323,6 +342,7 @@ describe('VeilleComponent', () => {
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
                                 arretes?: ArretesCirculation; sante?: SanteUrgences; circulation?: Circulation; hauteurs?: HauteursEau; mer?: NiveauxMer;
+                                antennes?: AntennesIndisponibles;
                                 radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
                                 foyers?: FoyersActifs; rafales?: RafalesPrevues; hiver?: PrecipitationsHiver } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
@@ -341,6 +361,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(reponses.foyers ?? FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/antennes-indisponibles/`).flush(reponses.antennes ?? ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(reponses.mer ?? MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(reponses.hauteurs ?? HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/`).flush(reponses.circulation ?? CIRCULATION_VIDE);
@@ -358,7 +379,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(20);
+    expect(demandes.length).toBe(21);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -397,6 +418,69 @@ describe('VeilleComponent', () => {
 
     it('se tait quand rien de tel n’est prévu, ou hors de la métropole', () => {
       expect(bloc(demarrer({ hiver: HIVER_AU_SEC }))).toBeNull();
+    });
+  });
+
+  /** Réseau mobile (15/11/2026) : les antennes que les opérateurs déclarent en panne. La page
+   * doit dire que c'est un état quotidien, et ce que le filtre des six mois a écarté. */
+  describe('réseau mobile', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('[aria-labelledby="titre-mobile"]');
+
+    it('compte les pannes par opérateur et liste les antennes avec ce qui est coupé', () => {
+      const fixture = demarrer({ antennes: ANTENNES });
+      const lignes: HTMLElement[] = Array.from(bloc(fixture).querySelectorAll('.mobile li'));
+
+      expect(bloc(fixture).querySelector('.compte')!.textContent).toBe('2');
+      expect(bloc(fixture).querySelector('.operateurs')!.textContent).toContain('Orange : 1');
+      expect(bloc(fixture).querySelector('.operateurs')!.textContent).toContain('SFR : 1');
+      expect(lignes.length).toBe(2);
+      expect(lignes[0].textContent).toContain('Voix et données coupées');
+      expect(lignes[0].textContent).toContain('4G voix, 4G données, 5G données');
+      expect(lignes[0].textContent).toMatch(/incident depuis le 14\/11\/2026/);
+      expect(lignes[1].textContent).toContain('Service partiel');
+      expect(lignes[1].textContent).toContain('maintenance depuis le');
+      expect(lignes[1].textContent).toContain('notre première observation');
+    });
+
+    it('dit ce que le filtre des six mois a écarté, opérateur par opérateur', () => {
+      const fixture = demarrer({ antennes: ANTENNES });
+      const ecarts: HTMLElement[] = Array.from(bloc(fixture).querySelectorAll('.ecartees'));
+
+      expect(ecarts.length).toBe(2);
+      expect(ecarts[0].textContent).toContain('Bouygues Telecom');
+      expect(ecarts[0].textContent).toContain('25 déclaration(s) de plus de six mois');
+      // Aucune panne Bouygues affichée : la page ne doit pas laisser croire que son réseau va bien.
+      expect(ecarts[0].textContent).toContain('cela ne dit pas que son réseau fonctionne');
+      expect(ecarts[1].textContent).toContain('Orange');
+      expect(ecarts[1].textContent).not.toContain('cela ne dit pas');
+    });
+
+    it('rappelle que c’est un état quotidien et qu’une antenne n’est pas une zone', () => {
+      const fixture = demarrer({ antennes: ANTENNES });
+
+      expect(bloc(fixture).textContent).toMatch(/état du 15\/11\/2026/);
+      expect(bloc(fixture).textContent).toContain('Un état quotidien, publié vers 10 h');
+      expect(bloc(fixture).textContent).toContain('une antenne voisine peut couvrir');
+    });
+
+    it('garde le bloc quand il ne reste que des déclarations écartées', () => {
+      const fixture = demarrer({ antennes: { ...ANTENNES, par_operateur: {}, resultats: [],
+                                             ecartees: 25, ecartees_par_operateur: { 'Bouygues Telecom': 25 } } });
+
+      expect(bloc(fixture).textContent).toContain('Aucune panne récente déclarée');
+      expect(bloc(fixture).textContent).toContain('Bouygues Telecom');
+    });
+
+    it('n’affiche rien quand le fichier ne déclare aucune antenne dans le rayon', () => {
+      expect(bloc(demarrer({ antennes: ANTENNES_VIDES }))).toBeNull();
+    });
+
+    it('ne liste que les dix premières et renvoie à la carte pour le reste', () => {
+      const beaucoup = Array.from({ length: 13 }, (_, rang) => ({ ...ANTENNE, cle: `Orange|${rang}` }));
+      const fixture = demarrer({ antennes: { ...ANTENNES, par_operateur: { Orange: 13 }, resultats: beaucoup } });
+
+      expect(bloc(fixture).querySelectorAll('.mobile li').length).toBe(10);
+      expect(bloc(fixture).textContent).toContain('et 3 autres, à voir sur la carte');
     });
   });
 
@@ -899,6 +983,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/` && r.params.get('rayon_km') === '60').flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/antennes-indisponibles/` && r.params.get('rayon_km') === '60').flush(ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/` && r.params.get('rayon_km') === '60').flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/` && r.params.get('rayon_km') === '60').flush(HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/` && r.params.get('rayon_km') === '60').flush(CIRCULATION_VIDE);
@@ -942,6 +1027,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/antennes-indisponibles/`).flush(ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/`).flush(CIRCULATION_VIDE);

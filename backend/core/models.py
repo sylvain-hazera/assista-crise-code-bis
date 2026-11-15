@@ -2784,6 +2784,36 @@ class StationCirculation(models.Model):
         return f"{self.axe} {self.sens} ({self.code})".strip()
 
 
+class AntenneIndisponible(models.Model):
+    """Antenne de téléphonie mobile déclarée en panne ou en maintenance par son opérateur
+    (fichier quotidien de l'Arcep) -- voir core/antennes_mobiles.py.
+
+    `premiere_vue_le` n'est pas une donnée de la source : c'est le jour où ce serveur a vu le
+    site en panne pour la première fois, qui sert d'âge à la panne quand l'opérateur ne déclare
+    pas de date de début. Donnée publique partagée PROD/DEMO."""
+
+    # « opérateur|numéro de station ANFR » : deux opérateurs peuvent partager un pylône.
+    cle = models.CharField(max_length=80, primary_key=True)
+    operateur = models.CharField(max_length=40, db_index=True)
+    station = models.CharField(max_length=20, blank=True, default="")
+    commune = models.CharField(max_length=120, blank=True, default="")
+    code_insee = models.CharField(max_length=5, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    # Vrai : hors service. Faux : en service. Vide : l'opérateur ne le dit pas.
+    voix_hs = models.BooleanField(null=True, blank=True)
+    donnees_hs = models.BooleanField(null=True, blank=True)
+    # {"voix2g": "OK", "data4g": "HS", …} : le détail par technologie, quand il est donné.
+    technologies = models.JSONField(default=dict, blank=True)
+    motif = models.CharField(max_length=12, blank=True, default="")
+    debut = models.DateTimeField(null=True, blank=True)
+    premiere_vue_le = models.DateTimeField()
+    jour_du_fichier = models.DateField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.operateur} {self.commune}".strip()
+
+
 class Maregraphe(models.Model):
     """Marégraphe du réseau REFMAR (Shom et partenaires) : dernier niveau mesuré, et ce que ce
     serveur en déduit -- marée attendue, surcote estimée, prochaine pleine mer. Voir
@@ -2980,6 +3010,27 @@ class ImageRafales(models.Model):
 
     def __str__(self):
         return f"Rafales prévues pour {self.echeance:%d/%m %H:%M}"
+
+
+class ChampVent(models.Model):
+    """Champ de vent à dix mètres pour une heure donnée (modèle ARPEGE de Météo-France), gardé
+    sous forme compacte pour l'animation de la carte -- voir core/vent.py. `donnees` : un octet
+    par point pour la composante vers l'est, puis autant pour la composante vers le nord.
+
+    Donnée publique partagée PROD/DEMO. Une dizaine de lignes au plus."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    calcul = models.DateTimeField()
+    largeur = models.PositiveIntegerField()
+    hauteur = models.PositiveIntegerField()
+    # Position du premier point (coin nord-ouest) ; le pas est celui de vent.PAS_DEGRES.
+    ouest = models.FloatField()
+    nord = models.FloatField()
+    donnees = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Vent prévu pour {self.echeance:%d/%m %H:%M}"
 
 
 class ImagePrecipitationHiver(models.Model):

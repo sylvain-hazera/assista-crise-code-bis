@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, Circulation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
+  AntennesIndisponibles, ArretesCirculation, Circulation, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -108,6 +108,18 @@ export class VeilleService {
     const params = this.params(emprise);
     if (trace) params['trace'] = '1';
     return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
+  }
+
+  /** Antennes mobiles déclarées en panne ou en maintenance (Arcep), coupures complètes d'abord.
+   * Les pannes de plus de six mois ne sont pas rendues, seulement comptées. */
+  antennesIndisponibles(emprise: EmpriseVeille = {}): Observable<AntennesIndisponibles> {
+    return this.http.get<AntennesIndisponibles>(`${this.api}/antennes-indisponibles/`, { params: this.params(emprise) });
+  }
+
+  /** Heures pour lesquelles un champ de vent est disponible ; avec `echeance`, le champ de cette
+   * heure pour l'animation de la carte. Toujours national : rien ne dit où l'on regarde. */
+  ventPrevu(echeance?: string): Observable<VentPrevu> {
+    return this.http.get<VentPrevu>(`${this.api}/vent-prevu/`, echeance ? { params: { echeance } } : {});
   }
 
   /** Niveau de la mer aux marégraphes (Shom) et surcote estimée, les plus fortes d'abord. */

@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
+  AntennesIndisponibles, LIBELLES_GRAVITE_ANTENNE, technologiesCoupees,
   ArreteCirculation, ArretesCirculation, Circulation, LIBELLES_ETAT_CIRCULATION, TronconCirculation, sensDeCirculation,
   HauteursEau, LIBELLES_TENDANCE_EAU, LIBELLES_ETAT_SURCOTE, NiveauMer, NiveauxMer, StationHydrometrique, variationEau, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
@@ -55,6 +56,7 @@ export class VeilleComponent implements OnInit {
   circulation: Circulation | null = null;
   hauteursEau: HauteursEau | null = null;
   mer: NiveauxMer | null = null;
+  antennes: AntennesIndisponibles | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
@@ -158,6 +160,10 @@ export class VeilleComponent implements OnInit {
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
     });
+    this.service.antennesIndisponibles({ rayon_km: this.rayonKm }).subscribe({
+      next: (antennes) => { this.antennes = antennes; },
+      error: () => { this.antennes = null; },
+    });
     this.service.niveauxMer({ rayon_km: this.rayonKm }).subscribe({
       next: (mer) => { this.mer = mer; },
       error: () => { this.mer = null; },
@@ -240,6 +246,29 @@ export class VeilleComponent implements OnInit {
   readonly RAFALE_FORTE_KMH = 80;
   readonly PLUIE_FORTE_1H_MM = 20;
   readonly PLUIE_FORTE_24H_MM = 50;
+
+  // ── Réseau mobile ──
+
+  readonly LIBELLES_GRAVITE_ANTENNE = LIBELLES_GRAVITE_ANTENNE;
+  readonly technologiesCoupees = technologiesCoupees;
+  /** Nombre d'antennes listées : au-delà, la carte. */
+  readonly ANTENNES_LISTEES = 10;
+
+  /** « Orange 41, SFR 13 » : les pannes affichées, par opérateur. */
+  get antennesParOperateur(): { operateur: string; nombre: number }[] {
+    return Object.entries(this.antennes?.par_operateur ?? {}).map(([operateur, nombre]) => ({ operateur, nombre }));
+  }
+
+  /** Les opérateurs dont des déclarations ont été écartées parce qu'elles ont plus de six mois. */
+  get antennesEcartees(): { operateur: string; nombre: number; toutes: boolean }[] {
+    const affichees = this.antennes?.par_operateur ?? {};
+    return Object.entries(this.antennes?.ecartees_par_operateur ?? {})
+      .map(([operateur, nombre]) => ({ operateur, nombre, toutes: !affichees[operateur] }));
+  }
+
+  get nombreAntennes(): number {
+    return this.antennesParOperateur.reduce((total, ligne) => total + ligne.nombre, 0);
+  }
 
   // ── Niveau de la mer ──
 

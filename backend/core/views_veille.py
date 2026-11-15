@@ -22,11 +22,11 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, niveaux_mer, pluie, precipitations_hiver, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
+    antennes_mobiles, arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, niveaux_mer, pluie, precipitations_hiver, rafales, restrictions_eau, sources_ouvertes, trafic_routier, vent,
     vigilance_crues,
 )
 from .models import (
-    ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
+    AntenneIndisponible, ChampVent, ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
     ImagePluie, Maregraphe, ImagePrecipitationHiver, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
@@ -445,6 +445,36 @@ class ImagePrecipitationHiverView(APIView):
         return _image_d_une_echeance(ImagePrecipitationHiver, request)
 
 
+class VentPrevuView(APIView):
+    """GET /api/vent-prevu/ : les heures pour lesquelles un champ de vent est disponible.
+    `?echeance=…` rend en plus ce champ, pour l'animation de la carte : la grille (taille,
+    position, pas) et ses valeurs en base 64 -- un octet par point pour la composante vers
+    l'est, puis autant pour la composante vers le nord (0 : -40 m/s ; 255 : +40 m/s)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        import base64
+        from django.utils.dateparse import parse_datetime
+
+        champs = list(ChampVent.objects.order_by("echeance").defer("donnees"))
+        reponse = {
+            **sources_ouvertes.resume("VENT"),
+            "calcul": max((champ.calcul for champ in champs), default=None),
+            "echeances": [champ.echeance for champ in champs],
+            "champ": None,
+        }
+        demande = parse_datetime(request.query_params.get("echeance") or "")
+        champ = ChampVent.objects.filter(pk=demande).first() if demande else None
+        if champ is not None:
+            reponse["champ"] = {
+                "echeance": champ.echeance, "largeur": champ.largeur, "hauteur": champ.hauteur,
+                "ouest": champ.ouest, "nord": champ.nord, "pas": vent.PAS_DEGRES,
+                "vitesse_max_ms": vent.VITESSE_MAX_MS,
+                "donnees": base64.b64encode(bytes(champ.donnees)).decode("ascii"),
+            }
+        return Response(reponse)
+
+
 class VigilanceCruesView(APIView):
     """GET /api/vigilance-crues/ : les tronçons de cours d'eau surveillés par Vigicrues qui
     traversent une emprise (voir `_emprise`), les plus préoccupants d'abord. `?trace=1` joint
@@ -848,6 +878,58 @@ class SanteUrgencesView(APIView):
             "departement_nom": meteo_france.nom_departement(code) if code else None,
             "indicateurs": indicateurs,
         })
+
+
+class AntennesIndisponiblesView(APIView):
+    """GET /api/antennes-indisponibles/ : les antennes mobiles déclarées en panne ou en
+    maintenance dans une emprise (voir `_emprise`), les coupures complètes d'abord. Les pannes
+    déclarées depuis plus de six mois ne sont pas rendues (déclarations oubliées, sites
+    abandonnés) : elles sont seulement comptées, dans `ecartees`. `?operateur=Orange` restreint
+    la liste."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("ANTENNES_MOBILES", centre, rayon)
+        jour = AntenneIndisponible.objects.order_by("-jour_du_fichier").values_list("jour_du_fichier", flat=True).first()
+        entete["jour_du_fichier"] = jour
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "ecartees": 0,
+                             "ecartees_par_operateur": {}, "par_operateur": {}, "resultats": []})
+
+        maintenant = timezone.now()
+        antennes = AntenneIndisponible.objects.filter(location__within=emprise)
+        operateur = request.query_params.get("operateur")
+        rang = {palier: i for i, palier in enumerate(antennes_mobiles.ORDRE_GRAVITES)}
+        par_operateur, lignes, ecartees = {}, [], {}
+        for antenne in antennes:
+            if antennes_mobiles.trop_ancienne(antenne, maintenant):
+                ecartees[antenne.operateur] = ecartees.get(antenne.operateur, 0) + 1
+                continue
+            par_operateur[antenne.operateur] = par_operateur.get(antenne.operateur, 0) + 1
+            if operateur and antenne.operateur != operateur:
+                continue
+            latitude, longitude = _point(antenne.location)
+            lignes.append({
+                "cle": antenne.cle, "operateur": antenne.operateur, "commune": antenne.commune,
+                "gravite": antennes_mobiles.gravite(antenne),
+                "voix_hs": antenne.voix_hs, "donnees_hs": antenne.donnees_hs,
+                "technologies": antenne.technologies, "motif": antenne.motif,
+                # Début déclaré par l'opérateur ; à défaut, le jour où nous avons vu la panne.
+                "depuis": antennes_mobiles.depuis(antenne), "debut_declare": antenne.debut is not None,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                                if centre else None),
+            })
+        lignes.sort(key=lambda l: (rang[l["gravite"]], l["distance_km"] if l["distance_km"] is not None else 0,
+                                   l["operateur"], l["cle"]))
+        return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
+                         "ecartees": sum(ecartees.values()),
+                         # Par opérateur, pour pouvoir dire « toutes les déclarations de tel
+                         # opérateur sont anciennes » plutôt que « aucune panne chez lui ».
+                         "ecartees_par_operateur": dict(sorted(ecartees.items())),
+                         "par_operateur": dict(sorted(par_operateur.items())),
+                         "resultats": lignes[:RESULTATS_MAX]})
 
 
 class ArretesCirculationView(APIView):
