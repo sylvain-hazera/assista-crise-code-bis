@@ -106,6 +106,30 @@ page d'erreur parlante : il renvoie 421.
 journaliser à `ac_waf` — qui est devant — un « upstream prematurely closed connection » et
 renvoyer un 502. On remplacerait un bruit par un autre.
 
+### Porte fermée au WAF : connexions sans nom connu (2026-11-15)
+
+Le bloc 421 ci-dessus protège Django, mais il est **derrière** le WAF : un scanner qui se
+connectait à l'adresse IP recevait quand même le certificat d'`assista-crise.fr` (donc la liste
+de nos noms, ce que Shodan et Censys indexent), une réponse HTTP, et sur le port 80 une
+redirection. `waf-porte-fermee.conf` (monté dans `ac_waf`) coupe ces connexions à l'entrée :
+
+| Qui | Comment | Ce qu'il reçoit |
+|---|---|---|
+| Internet, par adresse IP ou nom inconnu | port 443 | certificat auto-signé anonyme, puis coupure (444) |
+| Internet, par adresse IP ou nom inconnu | port 80 | coupure (444) |
+| Réseau local, par `172.16.1.114` | 80 et 443 | le site, comme avant (certificat auto-signé) |
+| Tous, sous un de nos noms | 80 et 443 | inchangé |
+
+Le fichier déclare trois blocs : un bloc 8080 pour les noms qui ne sont pas les nôtres, le bloc
+**par défaut** de 8443, et un bloc 8443 pour `*.assista-crise.fr` — `auth.`, `chat.` et
+`matrix.` n'étaient servis que parce que le bloc de l'image était le bloc par défaut.
+
+**Tout nouveau domaine** doit avoir son bloc nommé sur 8443 et 8080, et son suffixe dans
+l'expression du bloc 8080 de ce fichier : sinon il est coupé sans message.
+
+Le statut 444 du journal d'accès est l'un des cinq signes que bannit la règle fail2ban
+`scanner` (voir DOCUMENTATION.md § 10.4).
+
 ## Certificat (Let's Encrypt, DNS-01 via IONOS)
 
 - **Renouvellement automatique** : `~/scripts/renew-certs.sh` (cron quotidien à 4h30, voir

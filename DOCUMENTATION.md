@@ -4412,6 +4412,54 @@ les clés d'accès (passkeys), liées à un nom de domaine alors que le site en 
 
 ---
 
+
+### 10.4 Scanners et moteurs de recensement (15/11/2026)
+
+**Constat**, sur le journal du WAF du 24/09 au 15/11/2026 : environ 1 300 adresses ont sondé le
+site (39 000 requêtes), fail2ban en a banni 8. Trois raisons : le site répond la page d'accueil
+(200) aux chemins sondés, alors que `nginx-botsearch` ne compte que les 404 ; le WAF ne bloque
+que les attaques caractérisées (82 requêtes), et la règle `modsecurity` en veut trois ; la
+plupart des scanners font moins de cinq requêtes.
+
+Deux mesures :
+
+| Mesure | Où | Effet |
+|---|---|---|
+| Porte fermée | `proxy/waf-porte-fermee.conf` | une connexion sans nom connu ne reçoit ni certificat nommé ni réponse (444) — voir `proxy/README.md` |
+| Jail `scanner` | fail2ban, sur le journal du WAF | bannit une heure dès la **première** requête qui trahit un scanner |
+
+La jail `scanner` reconnaît cinq signes, dont aucun ne vient d'un usage normal : un chemin qui
+n'existe pas chez nous (`.env`, `.git`, WordPress, phpMyAdmin, `cgi-bin`…), une requête qui
+n'est pas du HTTP, une méthode jamais employée (`CONNECT`, `PROPFIND`, `TRACE`), le statut 444
+de la porte fermée, un scanner qui se nomme (Censys, LeakIX, zgrab…). Rejouée sur les sept
+semaines : 833 adresses bannies, **aucune** ayant ouvert une session.
+
+Trois choses à ne pas faire, chacune mesurée :
+
+- **bannir tout ce qui finit en `.php`** : des visiteurs arrivent encore de Google et Qwant sur
+  `/rgpd.php`, `/add.php` et `/list-cards.php` (ancien site) — quatre utilisateurs réels auraient
+  été bannis ;
+- **piéger `/vendor/` ailleurs qu'à la racine** : `/static/admin/js/vendor/` est un vrai dossier
+  de l'administration Django ;
+- **allonger le bannissement** : une heure évite 35 700 requêtes, une semaine 36 600.
+
+Le réseau local (`172.16.0.0/12`) n'est jamais banni (`ignoreip`) et garde l'accès par adresse.
+
+La configuration de fail2ban n'est pas dans le dépôt : elle vit dans
+`~/.config/assista-crise/fail2ban/` (`filter.d/scanner.conf`, `jail.d/20-scanner.conf`).
+**Un filtre ajouté n'est pris en compte qu'au redémarrage du conteneur** (`docker restart
+ac_fail2ban`), pas au rechargement : l'image ne relie les filtres qu'à son démarrage.
+
+**Exceptions du WAF pour des appels légitimes** (`proxy/modsecurity-override.conf`) :
+
+- règle 900204 — les ponts radio envoient d'un coup la liste entière de leurs contacts ; au-delà
+  de mille valeurs JSON, ModSecurity refusait la requête en 400 (680 refus du 24/10 au 13/11 sur
+  `synchroniser-contacts` MeshCore). Le corps n'est plus lu sur les trois chemins de liste des
+  ponts ; adresse, en-têtes et paramètres restent contrôlés ;
+- règle 900202 étendue aux sous-domaines Matrix du partenaire (`matrix.`, `auth.`,
+  `chat.reserve-resilience.org`), qui n'étaient pas couverts ;
+- règle 900205 — l'accès par `172.16.1.114` ne reçoit plus les 3 points de la règle 920350.
+
 ## 11. Tests et qualité
 
 ```bash

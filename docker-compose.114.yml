@@ -62,6 +62,9 @@ services:
       # /etc/letsencrypt/live/reserve-resilience.org/ : ne jamais le laisser monté si ce
       # certificat venait à disparaître, nginx refuserait de démarrer et tout le site tomberait.
       - ./proxy/waf-partenaires-tls.conf:/etc/nginx/templates/conf.d/partenaires-tls.conf.template:ro
+      # Connexions sans nom connu (scanners, Shodan...) : coupées sans réponse. Le réseau local
+      # garde l'accès par adresse. Voir l'en-tête du fichier avant d'ajouter un domaine.
+      - ./proxy/waf-porte-fermee.conf:/etc/nginx/templates/conf.d/porte-fermee.conf.template:ro
       - waf_modsec_logs:/var/log/modsecurity
       - waf_nginx_logs:/var/log/nginx-real
     networks: [front]
