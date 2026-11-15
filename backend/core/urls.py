@@ -15,6 +15,7 @@ from .views_adresses import GeocodageInverseView, RechercheAdresseView
 from .views_veille import (
     ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
     MeteoForetsView, ObservationsMeteoView, PluiePrevueView, RestrictionsEauView,
+    RisqueAvalancheView,
     StationsCarburantView, VigilanceCruesView, ZonesBruleesView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
 )
@@ -368,6 +369,7 @@ urlpatterns = [
     path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
     path('meteo-forets/', MeteoForetsView.as_view(), name='meteo_forets'),
+    path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

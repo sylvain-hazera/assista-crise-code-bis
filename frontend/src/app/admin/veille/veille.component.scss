@@ -191,6 +191,22 @@ table.mesures {
 .etiquette.eau[data-rang="4"], .etiquette.feu[data-niveau="4"] { background: #c81e1e; color: #fff; }
 .danger-feu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--ac-text, #111827); }
 
+// ── Avalanche : couleurs de l'échelle européenne ──
+.massifs {
+  list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 12px;
+  p { margin: 0 0 3px; color: var(--ac-text, #111827); line-height: 1.45; }
+  .massif-titre { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+  .massif-suite { font-size: .88rem; color: var(--ac-text-muted, #4b5563); }
+  .massif-resume { font-size: .9rem; white-space: pre-line; }
+  .adresse { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+}
+.etiquette.avalanche { font-weight: 700; }
+.etiquette.avalanche[data-niveau="1"] { background: #ccff66; color: #1f3300; }
+.etiquette.avalanche[data-niveau="2"] { background: #ffff00; color: #3d3500; }
+.etiquette.avalanche[data-niveau="3"] { background: #ff9900; color: #3b2100; }
+.etiquette.avalanche[data-niveau="4"] { background: #ff0000; color: #fff; }
+.etiquette.avalanche[data-niveau="5"] { background: #1f1f1f; color: #ff4d4d; }
+
 // ── Rayon ──
 .rayon {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px;

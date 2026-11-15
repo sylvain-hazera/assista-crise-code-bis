@@ -53,6 +53,8 @@ interface LayerVisibility {
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
   zonesBrulees: boolean;
+  /** Massifs colorés par risque d'avalanche (bulletins de Météo-France). */
+  avalanche: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -109,6 +111,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     pluie: false,
     vigilanceCrues: false,
     zonesBrulees: false,
+    avalanche: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -191,6 +194,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
+    this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
     this.basculerPluie();
     this.rafraichirVeille();
   }
@@ -206,8 +210,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
    * chaque déplacement de la carte : ces couches sont nationales, on n'en lit que la fenêtre. */
   private rafraichirVeille(): void {
     if (!this.map) return;
-    const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees } = this.layerVisibility;
-    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees) return;
+    const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche } = this.layerVisibility;
+    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees && !avalanche) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -248,6 +252,31 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
           'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
         }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (avalanche) {
+      this.veilleService.risqueAvalanche({ bbox }, true).subscribe({
+        next: (reponse) => this.afficherTracesVeille('avalanche', 'fill', {
+          type: 'FeatureCollection',
+          features: reponse.resultats.filter(m => m.trace).map(m => ({
+            type: 'Feature', geometry: m.trace as Geometry,
+            properties: {
+              risque: m.risque ?? 0,
+              infobulle: `<strong>${this.echapper(m.nom)}</strong> (${this.echapper(m.chaine)})`
+                + (m.risque != null
+                  ? `<br>Risque d'avalanche : ${m.risque} — ${this.echapper(reponse.libelles[String(m.risque)] ?? '')}`
+                    + (m.risque_demain != null ? `<br>Demain : ${m.risque_demain}` : '')
+                    + (m.resume ? `<br>${this.echapper(m.resume).replace(/\n/g, '<br>')}` : '')
+                  : '<br>Pas de bulletin en ce moment')
+                + '<br><small>Source : Météo-France. Indice pour tout le massif, pas pour une pente.</small>',
+            },
+          })),
+        }, {
+          // Échelle européenne : 1 vert clair, 2 jaune, 3 orange, 4 rouge, 5 rouge sombre.
+          'fill-color': ['match', ['get', 'risque'], 5, '#7f1d1d', 4, '#ff0000', 3, '#ff9900', 2, '#ffff00', 1, '#ccff66', '#9ca3af'],
+          'fill-opacity': 0.4, 'fill-outline-color': '#374151',
+        }, this.layerVisibility.avalanche),
         error: () => {},
       });
     }

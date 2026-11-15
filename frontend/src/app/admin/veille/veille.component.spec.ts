@@ -7,7 +7,7 @@ import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
   EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
-  RestrictionsEau, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
+  RestrictionsEau, RisqueAvalanche, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
 
@@ -130,6 +130,10 @@ const FEUX: ZonesBrulees = {
   }],
 };
 
+const EN_PLAINE: RisqueAvalanche = {
+  ...ENTETE, libelles: { '1': 'faible', '2': 'limité', '3': 'marqué', '4': 'fort', '5': 'très fort' }, resultats: [],
+};
+
 describe('VeilleComponent', () => {
   let http: HttpTestingController;
 
@@ -145,13 +149,14 @@ describe('VeilleComponent', () => {
 
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
-                                forets?: MeteoForets; feux?: ZonesBrulees } = {}) {
+                                forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
     http.expectOne(`${api}/restrictions-eau/`).flush(reponses.eau ?? EAU);
     http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
+    http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(reponses.avalanche ?? EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush(reponses.routes ?? ROUTES);
@@ -167,7 +172,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(8);
+    expect(demandes.length).toBe(9);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -303,6 +308,30 @@ describe('VeilleComponent', () => {
     expect(texte(fixture)).toContain('le serveur n\'a pas su la lire');
   });
 
+  it('ne parle d’avalanche qu’aux territoires qui ont un massif à portée', () => {
+    expect(demarrer().nativeElement.querySelector('section[aria-labelledby="titre-avalanche"]')).toBeNull();
+  });
+
+  it('en montagne, donne l’indice du massif, celui du lendemain et le résumé du bulletin', () => {
+    const fixture = demarrer({ avalanche: { ...EN_PLAINE, resultats: [
+      { massif_code: 1, nom: 'Chablais', chaine: 'Alpes du Nord', departement_nom: 'Haute-Savoie',
+        risque: 4, risque_demain: 3, commentaire: 'Indice de risque fort.',
+        resume: 'Départs spontanés : nombreux', publie_le: '2026-11-14T15:00:00Z', valide_jusqu_a: '2026-11-15T17:00:00Z' },
+      { massif_code: 2, nom: 'Aravis', chaine: 'Alpes du Nord', departement_nom: 'Haute-Savoie',
+        risque: null, risque_demain: null, commentaire: '', resume: '', publie_le: null, valide_jusqu_a: null },
+    ] } });
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-avalanche"]');
+    const lignes = bloc.querySelectorAll('.massifs li');
+
+    expect(lignes[0].querySelector('.avalanche')!.getAttribute('data-niveau')).toBe('4');
+    expect(lignes[0].textContent).toContain('fort');
+    expect(lignes[0].textContent).toContain('Demain : marqué');
+    expect(lignes[0].textContent).toContain('Départs spontanés : nombreux');
+    // Un massif sans bulletin le dit, au lieu de passer pour un massif sans risque.
+    expect(lignes[1].textContent).toContain('pas de bulletin');
+    expect(bloc.textContent).toContain('ne dit rien d\'un couloir ou d\'une pente');
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
     const liste = () => Array.from(fixture.nativeElement.querySelectorAll('.evenements li')) as HTMLElement[];
@@ -340,6 +369,7 @@ describe('VeilleComponent', () => {
     fixture.componentInstance.changerRayon(60);
 
     http.expectOne(r => r.url === `${api}/vigilance-crues/` && r.params.get('rayon_km') === '60').flush(CRUES);
+    http.expectOne(r => r.url === `${api}/risque-avalanche/` && r.params.get('rayon_km') === '60').flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/` && r.params.get('rayon_km') === '60').flush(ROUTES);
@@ -367,6 +397,7 @@ describe('VeilleComponent', () => {
     http.expectOne(`${api}/restrictions-eau/`).flush(EAU);
     http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
+    http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush('', { status: 500, statusText: 'Erreur' });

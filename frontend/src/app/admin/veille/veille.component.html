@@ -311,6 +311,41 @@
     }
   </section>
 
+  <!-- ════ Avalanche : seulement s'il y a un massif dans le rayon ════ -->
+  @if (avalanche?.resultats?.length) {
+    <section aria-labelledby="titre-avalanche">
+      <h2 id="titre-avalanche">
+        <span class="material-icons">landslide</span> Risque d'avalanche
+        <span class="compte">{{ avalanche!.resultats.length }}</span>
+      </h2>
+      <ul class="massifs">
+        @for (massif of avalanche!.resultats; track massif.massif_code) {
+          <li>
+            <p class="massif-titre">
+              <span class="etiquette avalanche" [attr.data-niveau]="massif.risque">
+                @if (massif.risque != null) { {{ massif.risque }} — } {{ libelleAvalanche(massif.risque) }}
+              </span>
+              <strong>{{ massif.nom }}</strong>
+              <span class="adresse">{{ massif.chaine }}@if (massif.departement_nom) { · {{ massif.departement_nom }} }</span>
+            </p>
+            @if (massif.risque != null) {
+              <p class="massif-suite">
+                Demain : {{ libelleAvalanche(massif.risque_demain) }}@if (massif.valide_jusqu_a) { · bulletin valable jusqu'au {{ massif.valide_jusqu_a | date:'dd/MM à HH:mm' }} }
+              </p>
+              @if (massif.resume) { <p class="massif-resume">{{ massif.resume }}</p> }
+            }
+          </li>
+        }
+      </ul>
+      <p class="note">
+        Source : {{ avalanche!.source }}@if (avalanche!.releve_le) {, relevé le {{ avalanche!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Indice sur l'échelle européenne, de 1 (faible) à 5 (très fort), pour l'ensemble du massif :
+        il ne dit rien d'un couloir ou d'une pente en particulier. Le bulletin complet est sur
+        <a href="https://meteofrance.com/meteo-montagne" target="_blank" rel="noopener noreferrer">meteofrance.com/meteo-montagne</a>.
+      </p>
+    </section>
+  }
+
   <!-- ════ Eau : restrictions d'usage ════ -->
   <section aria-labelledby="titre-eau">
     <h2 id="titre-eau"><span class="material-icons">water_drop</span> Restrictions d'eau</h2>

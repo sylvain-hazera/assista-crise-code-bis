@@ -16,11 +16,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from core import (
-    feux_satellite, meteo_forets, meteo_france, restrictions_eau, sources_ouvertes,
+    avalanche, feux_satellite, meteo_forets, meteo_france, restrictions_eau, sources_ouvertes,
     vigilance_crues,
 )
 from core.models import (
-    DangerFeuForet, ReleveMeteoForets, ReleveSourceOuverte, RestrictionEau, TronconVigilanceCrues,
+    DangerFeuForet, ReleveMeteoForets, ReleveSourceOuverte, RestrictionEau, RisqueAvalanche,
+    TronconVigilanceCrues,
     ZoneBrulee,
 )
 
@@ -357,3 +358,132 @@ class TestMeteoDesForets:
             with pytest.raises(meteo_france.CleAbsente):
                 meteo_forets.telecharger()
         appel.assert_not_called()
+
+
+# ── Risque d'avalanche ──────────────────────────────────────────────────────────────────────
+
+def _massifs(*codes):
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature",
+         "properties": {"code": code, "mountain": "Alpes du Nord", "title": f"Massif {code}",
+                        "Departement": "Savoie", "Dep2": "Isère" if code == 2 else None},
+         "geometry": {"type": "MultiPolygon", "coordinates": [[[
+             [6.0 + code, 45.0], [6.5 + code, 45.0], [6.5 + code, 45.5], [6.0 + code, 45.5], [6.0 + code, 45.0]]]]}}
+        for code in codes]}
+
+
+def _bulletin(risque="3", demain="4"):
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<BULLETINS_NEIGE_AVALANCHE TYPEBULLETIN="BRA" ID="1" MASSIF="Chablais"
+    DATEBULLETIN="2026-11-14T16:00:00" DATEVALIDITE="2026-11-15T18:00:00">
+  <CARTOUCHERISQUE>
+    <RISQUE RISQUE1="{risque}" RISQUEMAXI="{risque}" COMMENTAIRE="Indice de risque marqué." RISQUEMAXIJ2="{demain}"/>
+    <RESUME>Départs spontanés : possibles
+
+Déclenchements skieurs : plaques à vent</RESUME>
+  </CARTOUCHERISQUE>
+</BULLETINS_NEIGE_AVALANCHE>""".encode()
+
+
+@pytest.fixture
+def massifs_de_test(monkeypatch, cle_meteo):
+    """Trois massifs suffisent, et l'attente entre deux bulletins est supprimée."""
+    monkeypatch.setattr(avalanche, "MINIMUM_MASSIFS", 2)
+    monkeypatch.setattr(avalanche.time, "sleep", lambda _secondes: None)
+
+
+def _service(bulletins):
+    """Faux service : `bulletins` donne, par code de massif, des octets XML, 404 ou une panne."""
+    def repondre(adresse, params=None, **_reste):
+        if adresse.endswith("liste-massifs"):
+            return mock.Mock(status_code=200, json=lambda: _massifs(*bulletins), raise_for_status=lambda: None)
+        reponse = bulletins[params["id-massif"]]
+        if isinstance(reponse, Exception):
+            raise reponse
+        if reponse == 404:
+            return mock.Mock(status_code=404)
+        return mock.Mock(status_code=200, content=reponse, raise_for_status=lambda: None)
+    return repondre
+
+
+class TestRisqueAvalanche:
+
+    def test_le_bulletin_donne_l_indice_du_jour_et_du_lendemain(self):
+        bulletin = avalanche.analyser_bulletin(_bulletin())
+
+        assert (bulletin["risque"], bulletin["risque_demain"]) == (3, 4)
+        assert bulletin["commentaire"] == "Indice de risque marqué."
+        assert bulletin["resume"] == "Départs spontanés : possibles\nDéclenchements skieurs : plaques à vent"
+        # Les bulletins datent en heure de Paris, sans le dire : 18 h, c'est 17 h TU en novembre.
+        assert bulletin["valide_jusqu_a"] == datetime.datetime(2026, 11, 15, 17, 0, tzinfo=UTC)
+
+    @pytest.mark.parametrize("xml", [b"pas du xml", b"<BULLETINS_NEIGE_AVALANCHE/>", _bulletin(risque="", demain="")])
+    def test_un_bulletin_sans_indice_lisible_vaut_pas_de_bulletin(self, xml):
+        assert avalanche.analyser_bulletin(xml) is None
+
+    def test_un_indice_hors_de_l_echelle_n_est_pas_pris(self):
+        assert avalanche.analyser_bulletin(_bulletin(risque="3", demain="9"))["risque_demain"] is None
+
+    def test_les_massifs_gardent_leur_contour_et_leurs_departements(self):
+        massifs = avalanche.analyser_massifs(_massifs(1, 2))
+
+        assert massifs[2]["nom"] == "Massif 2" and massifs[2]["departement_nom"] == "Savoie, Isère"
+        assert massifs[1]["geometrie"].geom_type == "MultiPolygon"
+
+    @pytest.mark.django_db
+    def test_le_releve_ecrit_les_indices_et_compte_les_bulletins(self, massifs_de_test):
+        service = _service({1: _bulletin("3", "4"), 2: _bulletin("1", "2"), 3: 404})
+
+        with mock.patch("core.avalanche.requests.get", side_effect=service):
+            assert avalanche.relever(MAINTENANT) == 2
+
+        assert dict(RisqueAvalanche.objects.values_list("massif_code", "risque")) == {1: 3, 2: 1, 3: None}
+
+    @pytest.mark.django_db
+    def test_une_lecture_en_panne_garde_l_indice_precedent(self, massifs_de_test):
+        """Constaté le 15/11/2026 : trois bulletins sur trente-cinq ont expiré. Un massif à
+        risque fort ne doit pas redevenir « sans indice » pour une requête perdue."""
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: _bulletin("4", "4"), 2: _bulletin("2", "2")})):
+            avalanche.relever(MAINTENANT)
+
+        panne = requests.ReadTimeout("délai dépassé")
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: panne, 2: _bulletin("3", "3")})):
+            assert avalanche.relever(MAINTENANT + datetime.timedelta(hours=6)) == 2
+
+        assert dict(RisqueAvalanche.objects.values_list("massif_code", "risque")) == {1: 4, 2: 3}
+
+    @pytest.mark.django_db
+    def test_hors_saison_les_indices_s_effacent_et_le_releve_reussit(self, massifs_de_test):
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: _bulletin(), 2: _bulletin()})):
+            avalanche.relever(MAINTENANT)
+
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: 404, 2: 404})):
+            assert sources_ouvertes.relever_source("AVALANCHE", forcer=True) == "réussi"
+
+        assert set(RisqueAvalanche.objects.values_list("risque", flat=True)) == {None}
+        assert RisqueAvalanche.objects.count() == 2          # les contours restent
+
+    @pytest.mark.django_db
+    def test_une_liste_de_massifs_tronquee_ne_remplace_pas_la_copie(self, massifs_de_test, monkeypatch):
+        monkeypatch.setattr(avalanche, "MINIMUM_MASSIFS", 20)
+
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: _bulletin()})):
+            with pytest.raises(ValueError):
+                avalanche.relever(MAINTENANT)
+
+        assert RisqueAvalanche.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_la_lecture_ne_rend_que_les_massifs_de_l_emprise_le_plus_risque_d_abord(self, api_client, massifs_de_test):
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({1: _bulletin("2", "2"), 2: _bulletin("4", "3"), 9: _bulletin("5", "5")})):
+            avalanche.relever(MAINTENANT)
+
+        montagne = api_client.get(reverse("risque_avalanche"), {"bbox": "6.9,44.9,8.6,45.6"}).json()
+        plaine = api_client.get(reverse("risque_avalanche"), {"lat": "48.85", "lon": "2.35"}).json()
+        carte = api_client.get(reverse("risque_avalanche"), {"bbox": "6.9,44.9,8.6,45.6", "trace": "1"}).json()
+
+        assert [(m["nom"], m["risque"]) for m in montagne["resultats"]] == [("Massif 2", 4), ("Massif 1", 2)]
+        assert montagne["libelles"]["4"] == "fort" and "trace" not in montagne["resultats"][0]
+        assert carte["resultats"][0]["trace"]["type"] == "MultiPolygon"
+        # En plaine, liste vide : c'est ce qui dit à l'écran de ne pas afficher ce bloc.
+        assert plaine["resultats"] == [] and plaine["emprise_connue"] is True

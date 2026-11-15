@@ -22,12 +22,12 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    meteo_forets, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
+    avalanche, meteo_forets, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
     Commune, ConfigurationAlerteVigilance, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau,
+    ImagePluie, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -470,6 +470,38 @@ class MeteoForetsView(APIView):
             "mon_departement": self._ligne(mien) if mien else None,
             "departements": [self._ligne(d) for d in eleves],
         })
+
+
+class RisqueAvalancheView(APIView):
+    """GET /api/risque-avalanche/ : les massifs qui touchent une emprise (voir `_emprise`), le
+    risque le plus élevé d'abord. `?trace=1` joint leur contour (pour la carte). Liste vide en
+    plaine : c'est ce qui dit à l'écran de ne pas afficher ce bloc."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("AVALANCHE", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "libelles": avalanche.NIVEAUX, "resultats": []})
+
+        avec_trace = request.query_params.get("trace") in ("1", "true")
+        massifs = sorted(RisqueAvalanche.objects.filter(geometrie__intersects=emprise),
+                         key=lambda m: (-(m.risque or 0), m.nom))
+        resultats = []
+        for massif in massifs:
+            ligne = {
+                "massif_code": massif.massif_code, "nom": massif.nom, "chaine": massif.chaine,
+                "departement_nom": massif.departement_nom,
+                "risque": massif.risque, "risque_demain": massif.risque_demain,
+                "commentaire": massif.commentaire, "resume": massif.resume,
+                "publie_le": massif.publie_le, "valide_jusqu_a": massif.valide_jusqu_a,
+            }
+            if avec_trace:
+                ligne["trace"] = json.loads(massif.geometrie.geojson)
+            resultats.append(ligne)
+        return Response({**entete, "emprise_connue": True, "tronque": False,
+                         "libelles": avalanche.NIVEAUX, "resultats": resultats})
 
 
 class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

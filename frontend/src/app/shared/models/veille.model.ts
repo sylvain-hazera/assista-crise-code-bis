@@ -200,6 +200,26 @@ export interface MeteoForets {
   departements: DangerFeuDepartement[];
 }
 
+/** Risque d'avalanche d'un massif (bulletin de Météo-France), de 1 faible à 5 très fort.
+ * `risque` est null quand il n'y a pas de bulletin (hors saison). */
+export interface MassifAvalanche {
+  massif_code: number;
+  nom: string;
+  chaine: string;
+  departement_nom: string;
+  risque: number | null;
+  risque_demain: number | null;
+  commentaire: string;
+  resume: string;
+  publie_le: string | null;
+  valide_jusqu_a: string | null;
+  trace?: { type: string; coordinates: unknown };
+}
+export interface RisqueAvalanche extends EnteteVeille {
+  libelles: Record<string, string>;
+  resultats: MassifAvalanche[];
+}
+
 /** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
  * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
  * les radars, pas l'image radar elle-même — l'écran doit le dire. */

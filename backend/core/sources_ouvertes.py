@@ -1,7 +1,7 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Neuf sources aujourd'hui -- vigilance, mesures des stations, pluie prévue et météo des forêts
-(Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau), surfaces brûlées
+Dix sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
+risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau), surfaces brûlées
 (EFFIS), événements routiers (Bison Futé), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
 1. Seul le serveur appelle, depuis la tâche planifiée, et toujours pour la France ENTIÈRE.
@@ -24,7 +24,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
+    avalanche, carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
     restrictions_eau, trafic_routier, vigilance_crues,
 )
 
@@ -63,6 +63,9 @@ SOURCES = {
         # « à vide » : la source n'est donc jamais signalée périmée l'hiver.
         Source("METEO_FORETS", "Météo des forêts (danger de feu)", meteo_forets.relever,
                datetime.timedelta(hours=3), datetime.timedelta(hours=30), "Météo-France"),
+        # Un bulletin par jour et par massif, publié vers 16 h : quatre relevés par jour.
+        Source("AVALANCHE", "Risque d'avalanche par massif", avalanche.relever,
+               datetime.timedelta(hours=6), datetime.timedelta(hours=36), "Météo-France"),
         Source("TRAFIC_ROUTIER", "Événements routiers", trafic_routier.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1),
                "Bison Futé - ministère chargé des transports"),

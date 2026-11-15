@@ -104,6 +104,11 @@
         <span class="layer-dot crues-dot"></span>
         Vigilance crues (cours d'eau)
       </label>
+      <label class="layer-toggle-item" title="Massifs des Alpes, des Pyrénées et de Corse, colorés par indice de risque d'avalanche (1 à 5).">
+        <input type="checkbox" [(ngModel)]="layerVisibility.avalanche" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot avalanche-dot"></span>
+        Risque d'avalanche (massifs)
+      </label>
       <label class="layer-toggle-item" title="Surfaces brûlées des trente derniers jours, vues par satellite (EFFIS). Pas une alerte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.zonesBrulees" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot brule-dot"></span>

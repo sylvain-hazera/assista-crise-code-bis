@@ -5,7 +5,8 @@ import { RouterLink } from '@angular/router';
 import { VeilleService } from '../../services/veille.service';
 import {
   CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
-  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
+  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
+  VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
 /** Veille du territoire : ce que les services de l'État publient en ce moment pour le
@@ -36,6 +37,8 @@ export class VeilleComponent implements OnInit {
   eau: RestrictionsEau | null = null;
   forets: MeteoForets | null = null;
   feux: ZonesBrulees | null = null;
+  /** Reste null en plaine comme en cas d'erreur : le bloc n'apparaît que s'il y a un massif. */
+  avalanche: RisqueAvalanche | null = null;
   routes: EvenementsRoutiers | null = null;
   stations: StationsCarburant | null = null;
 
@@ -97,6 +100,10 @@ export class VeilleComponent implements OnInit {
     this.service.vigilanceCrues({ rayon_km: this.rayonKm }).subscribe({
       next: (crues) => { this.crues = crues; },
       error: () => { this.erreurCrues = true; },
+    });
+    this.service.risqueAvalanche({ rayon_km: this.rayonKm }).subscribe({
+      next: (avalanche) => { this.avalanche = avalanche; },
+      error: () => { this.avalanche = null; },
     });
     this.service.zonesBrulees({ rayon_km: this.rayonKm }).subscribe({
       next: (feux) => { this.feux = feux; },
@@ -200,6 +207,10 @@ export class VeilleComponent implements OnInit {
 
   libelleEau(niveau: string): string {
     return niveau ? (this.eau?.libelles[niveau] ?? niveau) : 'Aucune restriction';
+  }
+
+  libelleAvalanche(niveau: number | null): string {
+    return niveau == null ? 'pas de bulletin' : (this.avalanche?.libelles[String(niveau)] ?? String(niveau));
   }
 
   libelleFeu(niveau: number | null): string {

@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   ConfigurationAlerteVigilance, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
-  RestrictionsEau, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
+  RestrictionsEau, RisqueAvalanche, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -81,6 +81,13 @@ export class VeilleService {
   meteoForets(departement?: string): Observable<MeteoForets> {
     const params: Record<string, string> = departement ? { departement } : {};
     return this.http.get<MeteoForets>(`${this.api}/meteo-forets/`, { params });
+  }
+
+  /** Massifs et leur risque d'avalanche. Liste vide en plaine. `trace` joint leur contour. */
+  risqueAvalanche(emprise: EmpriseVeille = {}, trace = false): Observable<RisqueAvalanche> {
+    const params = this.params(emprise);
+    if (trace) params['trace'] = '1';
+    return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

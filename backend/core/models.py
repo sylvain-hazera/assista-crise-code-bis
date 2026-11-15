@@ -2576,6 +2576,28 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class RisqueAvalanche(models.Model):
+    """Indice de risque d'avalanche d'un massif (bulletin de Météo-France), aujourd'hui et
+    demain, sur l'échelle européenne de 1 (faible) à 5 (très fort) -- voir core/avalanche.py.
+    Le contour du massif est gardé même sans bulletin (hors saison) : `risque` est alors vide."""
+
+    massif_code = models.PositiveSmallIntegerField(primary_key=True)
+    nom = models.CharField(max_length=120, blank=True, default="")
+    chaine = models.CharField(max_length=60, blank=True, default="")
+    departement_nom = models.CharField(max_length=160, blank=True, default="")
+    geometrie = gis_models.MultiPolygonField(srid=4326)
+    risque = models.PositiveSmallIntegerField(null=True, blank=True)
+    risque_demain = models.PositiveSmallIntegerField(null=True, blank=True)
+    commentaire = models.CharField(max_length=300, blank=True, default="")
+    resume = models.TextField(blank=True, default="")
+    publie_le = models.DateTimeField(null=True, blank=True)
+    valide_jusqu_a = models.DateTimeField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Avalanche {self.nom} : {self.risque}"
+
+
 class TronconVigilanceCrues(models.Model):
     """Tronçon de cours d'eau surveillé par Vigicrues et son niveau de vigilance (1 vert,
     2 jaune, 3 orange, 4 rouge) -- voir core/vigilance_crues.py. Donnée publique partagée
