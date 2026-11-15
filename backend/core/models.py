@@ -187,8 +187,26 @@ class User(AbstractUser):
         help_text="Compte de service d'un pont radio : autorisé à lire les secrets mesh "
                    "(mot de passe MQTT, clés). À poser avec manage.py marquer_compte_pont.",
     )
+    # Compte utilisé par un PROGRAMME et non par une personne (pont Matrix, script…), quand il
+    # n'est ni un pont radio (`compte_service_pont`) ni le compte de service d'un satellite.
+    # Une machine n'a pas de téléphone : elle n'est jamais tenue d'avoir un second facteur
+    # (voir core/second_facteur.py). Sans ce marquage, un compte de service doté d'un rôle
+    # serait pris pour un compte à pouvoir et cesserait de se connecter au bout de quinze jours.
+    # N'ouvre AUCUN droit. Se pose à la main, jamais depuis l'API :
+    #     manage.py marquer_compte_machine <email>
+    compte_machine = models.BooleanField(
+        default=False,
+        help_text="Compte utilisé par un programme : dispensé de second facteur. "
+                   "À poser avec manage.py marquer_compte_machine.",
+    )
     postal_code = EncryptedTextField(null=True, blank=True)
     enabled = models.BooleanField(default=True)
+
+    # Date limite pour activer le second facteur (code à usage unique). Posée la première fois
+    # que le compte est reconnu « à pouvoir » sans second facteur, à J+15 (décision de Sylvain du
+    # 15/11/2026) : jusque-là le site rappelle, après il n'ouvre plus de session sans
+    # activation. Voir `core/second_facteur.py`. Vide = jamais concerné jusqu'ici.
+    second_facteur_exige_le = models.DateTimeField(null=True, blank=True, editable=False)
 
     # Renseignements institutionnels de l'inscription, appliqués seulement après confirmation de
     # l'email.
@@ -9679,3 +9697,73 @@ class NotificationApplication(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.genre} → {self.utilisateur_id} ({self.date_creation:%d/%m %H:%M})"
+
+
+# ── Protection de la connexion (15/11/2026) ───────────────────────────────────────────────────
+#
+# Trois tables, toutes locales à la machine : aucune n'est synchronisée vers ou depuis un
+# satellite (décision de Sylvain : pas de code à usage unique sur un satellite coupé d'Internet,
+# donc aucun secret n'y est copié). Logique dans `core/second_facteur.py` et
+# `core/frein_connexion.py`.
+
+class SecondFacteur(models.Model):
+    """Le secret du code à usage unique (TOTP, RFC 6238) d'un compte.
+
+    `confirme_le` vide = préparé mais pas encore actif : le titulaire a vu le secret, il n'a pas
+    encore prouvé que son application d'authentification le connaît. Tant que c'est le cas, la
+    connexion ne demande aucun code."""
+    utilisateur = models.OneToOneField(User, on_delete=models.CASCADE, related_name="second_facteur")
+    # Chiffré au repos : qui lit la base ne doit pas pouvoir fabriquer des codes.
+    secret = EncryptedTextField()
+    cree_le = models.DateTimeField(auto_now_add=True)
+    confirme_le = models.DateTimeField(null=True, blank=True)
+    # Dernier pas de 30 s accepté : un code n'est jamais accepté deux fois, même dans sa
+    # fenêtre de validité (quelqu'un qui le lit par-dessus l'épaule ne peut pas le rejouer).
+    dernier_pas = models.BigIntegerField(default=0)
+
+    def __str__(self):
+        return f"Second facteur de {self.utilisateur_id} ({'actif' if self.confirme_le else 'en préparation'})"
+
+
+class CodeSecours(models.Model):
+    """Un code de secours à usage unique, pour qui a perdu son téléphone.
+
+    Seule son empreinte est gardée (HMAC avec la clé du serveur) : le code n'est montré qu'une
+    fois, à sa création."""
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="codes_secours")
+    empreinte = models.CharField(max_length=64, db_index=True)
+    cree_le = models.DateTimeField(auto_now_add=True)
+    utilise_le = models.DateTimeField(null=True, blank=True)
+
+
+class FreinConnexion(models.Model):
+    """Le compteur d'échecs d'une étape de connexion pour un compte.
+
+    `cle` est une empreinte (HMAC) de l'étape, de l'adresse saisie et, le cas échéant, de
+    l'appareil : ni l'adresse ni l'appareil ne sont lisibles ici, et une adresse qui ne
+    correspond à aucun compte a son compteur comme les autres — sans quoi le frein dirait qui
+    est inscrit."""
+    cle = models.CharField(max_length=64, unique=True)
+    echecs = models.PositiveIntegerField(default=0)
+    dernier_echec = models.DateTimeField(null=True, blank=True)
+    bloque_jusqua = models.DateTimeField(null=True, blank=True)
+
+
+class AppareilConnu(models.Model):
+    """Un appareil (navigateur, téléphone) depuis lequel ce compte s'est déjà connecté.
+
+    Sert à une chose : un appareil connu a son propre compteur d'échecs. Sans cela, quiconque
+    connaît l'adresse d'un maire pourrait, en ratant exprès des connexions, l'empêcher d'entrer
+    en pleine crise. Un appareil connu ne dispense de rien d'autre : ni du mot de passe, ni du
+    code."""
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="appareils_connus")
+    # Empreinte du jeton que garde l'appareil ; le jeton lui-même n'est jamais stocké.
+    empreinte = models.CharField(max_length=64)
+    libelle = EncryptedTextField(blank=True, default="")
+    cree_le = models.DateTimeField(auto_now_add=True)
+    dernier_usage = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["utilisateur", "empreinte"], name="uq_appareil_connu"),
+        ]

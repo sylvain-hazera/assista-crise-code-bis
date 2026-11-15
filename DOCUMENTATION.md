@@ -4235,7 +4235,7 @@ réintroduirait la fuite en silence — c'est exactement ce qui s'était produit
 - **Conteneurs** : backend non-root (uid 10001) ; images de monitoring non-root.
 - **Réseau** : WAF devant tout le trafic en production ; base isolée ; seuls 80/443 (et MQTT)
   publiés. Docker contourne UFW : un port publié sur `0.0.0.0` est joignable malgré le pare-feu.
-- **Application** : rate limiting des points d'authentification (Nginx), photos et documents
+- **Application** : protection de la connexion à trois couches (voir § 10.3), photos et documents
   servis uniquement via des actions d'API qui vérifient les droits, HSTS, cookies sécurisés,
   `DEBUG=False` par défaut, audit des accès (`AuditLog`).
 - **Monitoring** : Prometheus et Alertmanager n'ont pas d'authentification et ne sont jamais
@@ -4291,6 +4291,95 @@ réintroduirait la fuite en silence — c'est exactement ce qui s'était produit
   reste sur `IsAuthenticated` : **n'importe quel compte citoyen inscrit** pouvait lire le mot de
   passe MQTT du broker de l'institution, les clés privées de ses companions et les PSK de ses
   canaux — donc se faire passer pour une passerelle et déchiffrer son trafic radio.*
+
+### 10.3 Protection de la connexion (15/11/2026)
+
+**Ce qui existait avant** : la limite du proxy (dix tentatives par minute et par adresse IP), et
+rien d'autre. Fail2ban ne regardait pas les connexions, l'application ne comptait rien :
+soixante mots de passe faux d'affilée sur un compte donnaient soixante refus sans le moindre
+ralentissement, et une attaque venue de mille adresses n'était plafonnée par personne.
+
+Trois couches depuis, de la plus proche du compte à la plus éloignée :
+
+| Couche | Où | Ce qu'elle arrête |
+|---|---|---|
+| Frein **par compte** | `core/frein_connexion.py` | la force brute sur un compte, d'où qu'elle vienne |
+| Second facteur | `core/second_facteur.py`, `core/connexion.py` | un mot de passe deviné ou fuité |
+| Jail `connexion-ratee` | fail2ban, sur le journal du WAF | une adresse qui martèle (20 échecs en 10 min → 1 h) |
+
+**Le parcours** (`core/connexion.py`, seul endroit qui délivre une session à une personne) :
+l'adresse, puis — si le compte est protégé — **le code avant le mot de passe**. Tant que le code
+n'a pas été donné, le serveur ne regarde pas le mot de passe : un bon mot de passe sans code
+reçoit exactement la réponse d'un mauvais. Un mot de passe fuité seul ne permet donc ni d'entrer,
+ni de savoir s'il est encore bon.
+
+```
+POST /api/connexion/debut/  {email}                  → {etape: "code" | "mot_de_passe"}
+POST /api/connexion/code/   {email, code, appareil}  → {jeton_etape}        (5 minutes)
+POST /api/token/            {email, password, jeton_etape, appareil}
+```
+
+Un client qui n'envoie que l'adresse et le mot de passe (satellite, pont radio, ancienne
+application mobile) fonctionne comme avant tant que le compte n'a pas de second facteur.
+
+**Le frein** : cinq échecs sans délai, puis 30 s, 1, 2, 5, 10 et 15 minutes, plafonné là.
+Quatre choix qui ne se voient pas dans le code si on ne les cherche pas :
+
+- **jamais de verrouillage définitif**. Un compte de maire ne doit pas pouvoir être fermé de
+  l'extérieur en pleine crise ; au pire, un inconnu obtient un essai par quart d'heure ;
+- **un appareil déjà connu du compte a son propre compteur** (`AppareilConnu`, jeton gardé par
+  le navigateur ou le téléphone). Les échecs d'un attaquant ne ralentissent que les appareils
+  inconnus. Un appareil connu ne dispense de rien d'autre : ni du mot de passe, ni du code ;
+- **qui a donné le bon code a lui aussi son compteur** pour le mot de passe : sur un compte
+  protégé, marteler des mots de passe sans code ne gêne pas le titulaire, même sur un appareil
+  neuf ;
+- **une adresse inconnue est freinée comme les autres**, et une sur huit se voit demander un
+  code : ni le frein ni l'étape « code » ne disent qui est inscrit, ni qui a du pouvoir.
+
+**Qui doit avoir un second facteur** (`second_facteur.est_a_pouvoir`) : administrateur, autorité
+locale, secours, régulateur, membre de bureau, encadrant d'équipe. Jamais une machine (compte de
+pont radio, compte de service de satellite). Le compte a **quinze jours** à partir du moment où
+il est vu « à pouvoir » sans second facteur (`User.second_facteur_exige_le`) ; pendant ce délai
+le site rappelle sur chaque page, après il n'ouvre plus de session : la connexion répond 403
+`SECOND_FACTEUR_A_ACTIVER` avec un jeton qui ne sert qu'à activer, et le renouvellement de
+session est refusé (sans quoi une session ouverte avant l'échéance durerait indéfiniment).
+
+**Sur un satellite, rien de tout cela** (`settings.SATELLITE_ID` renseigné) : le secret n'y est
+pas copié, aucun code n'y est demandé. Décision de Sylvain. Le frein, lui, y fonctionne.
+
+**Les contournements fermés** — c'est là qu'un second facteur échoue d'habitude :
+
+| Chemin | Avant | Maintenant |
+|---|---|---|
+| Lien magique, lien d'activation (valables 7 jours, rejouables) | ouvraient une session | exigent le code si le compte est protégé (401 `CODE_REQUIS`, puis le même lien en POST) |
+| Connexion OIDC (`/accounts/login/` : Matrix, Grafana) | mot de passe seul | code avant mot de passe, frein (`core/formulaires_connexion.py`) |
+| Administration Django | mot de passe seul | idem, gabarit `core/login_admin.html` |
+| Réinitialisation du mot de passe | — | ne retire pas le second facteur ; la demande est freinée par compte |
+| Renouvellement de session | toujours accepté | refusé après l'échéance sans activation |
+
+**Rien en clair** : le secret TOTP est un `EncryptedTextField` ; les codes de secours et les
+jetons d'appareil ne sont gardés qu'en empreinte ; la clé d'un compteur est une empreinte de
+l'adresse saisie. Un code n'est jamais accepté deux fois (`SecondFacteur.dernier_pas`).
+
+**Téléphone perdu** : dix codes de secours à usage unique, montrés une seule fois. À défaut, un
+administrateur retire le second facteur depuis la page Utilisateurs (tracé, titulaire prévenu
+par e-mail) ; à défaut encore, sur le serveur : `manage.py reinitialiser_second_facteur <email>`.
+Dans les deux cas le compte ne redevient pas ouvert quinze jours : la connexion suivante doit
+activer un nouveau second facteur avant d'entrer.
+
+**Mots de passe** : les règles de Django s'appliquent désormais à tous les chemins (la
+réinitialisation par e-mail ne vérifiait que « huit caractères », le changement depuis le profil
+ne vérifiait rien), et un compte à pouvoir doit atteindre douze caractères.
+
+**Supervision** : `assista_connexions_echouees_total{etape}` et
+`assista_connexions_freinees_total`, sans étiquette par compte ni par adresse ; alerte
+`SignInBruteForce` au-delà de dix connexions freinées en quinze minutes.
+
+**Pas encore fait** : sur le téléphone, la clé liée à l'appareil et le déverrouillage par
+empreinte (l'application demande le code comme le site, et renvoie vers le site pour
+l'activer) ; le code redemandé pour les actes graves ; la liste de ses appareils avec « tout
+déconnecter » et l'e-mail à chaque nouvel appareil ; le refus des mots de passe déjà fuités ;
+les clés d'accès (passkeys), liées à un nom de domaine alors que le site en sert plusieurs.
 
 ---
 

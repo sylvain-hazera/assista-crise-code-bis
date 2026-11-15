@@ -1,0 +1,33 @@
+{% extends "admin/login.html" %}
+{% load i18n %}
+{# Formulaire de l'administration avec le champ du code de sécurité (voir
+   core/formulaires_connexion.py). Le gabarit d'origine n'affiche que l'adresse et le mot de
+   passe, et n'a pas de bloc où glisser un champ : le contenu est donc repris en entier. #}
+{% block content %}
+{% if form.non_field_errors %}
+{% for error in form.non_field_errors %}
+<p class="errornote">{{ error }}</p>
+{% endfor %}
+{% endif %}
+<div id="content-main">
+<form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+  <div class="form-row">
+    {{ form.username.errors }}
+    {{ form.username.label_tag }} {{ form.username }}
+  </div>
+  <div class="form-row">
+    {{ form.code.errors }}
+    {{ form.code.label_tag }} {{ form.code }}
+    <div class="help">Si votre compte est protégé par une application d'authentification.</div>
+  </div>
+  <div class="form-row">
+    {{ form.password.errors }}
+    {{ form.password.label_tag }} {{ form.password }}
+    <input type="hidden" name="next" value="{{ next }}">
+  </div>
+  <div class="submit-row">
+    <input type="submit" value="{% translate 'Log in' %}">
+  </div>
+</form>
+</div>
+{% endblock %}

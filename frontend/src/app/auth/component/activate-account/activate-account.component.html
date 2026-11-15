@@ -9,6 +9,25 @@
       </div>
     }
 
+    @if (state === 'code') {
+      <form class="state-block" (ngSubmit)="activer()">
+        <span class="material-icons state-icon">lock</span>
+        <h1 class="activate-title">Code de sécurité</h1>
+        <p class="activate-text">
+          Ce compte est protégé. Saisissez les 6 chiffres de votre application
+          d'authentification, ou l'un de vos codes de secours.
+        </p>
+        <input type="text" name="code" class="code-input" inputmode="numeric" maxlength="20"
+               autocomplete="one-time-code" placeholder="123456" [(ngModel)]="code" autofocus>
+        @if (errorMessage) {
+          <p class="activate-text error-icon">{{ errorMessage }}</p>
+        }
+        <button type="submit" class="btn-submit" [disabled]="envoiEnCours || code.trim().length < 6">
+          {{ envoiEnCours ? 'Vérification…' : 'Continuer' }}
+        </button>
+      </form>
+    }
+
     @if (state === 'success') {
       <div class="state-block">
         <span class="material-icons state-icon success-icon">check_circle</span>

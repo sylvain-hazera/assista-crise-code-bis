@@ -96,3 +96,27 @@
     font-size: 1.4rem;
   }
 }
+
+// Code de sécurité d'un compte protégé (15/11/2026)
+.code-input {
+  width: 100%;
+  max-width: 16rem;
+  margin: .5rem auto;
+  padding: .7rem;
+  text-align: center;
+  font-size: 1.4rem;
+  letter-spacing: .25em;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--ac-border, #d1d5db);
+  border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #111827);
+}
+
+button.btn-link {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+
+  &:disabled { opacity: .5; cursor: default; }
+}

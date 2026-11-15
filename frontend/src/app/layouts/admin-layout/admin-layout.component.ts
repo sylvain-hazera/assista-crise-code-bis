@@ -4,6 +4,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import { User } from '../../shared/models/user.model';
 import { AdminHeaderComponent } from './admin-header/admin-header.component';
 import { AdminSidebarComponent } from './admin-sidebar/admin-sidebar.component';
+import { RappelSecondFacteurComponent } from '../../shared/components/common/rappel-second-facteur/rappel-second-facteur.component';
 
 /** Menu latéral sur grand écran : largeur libre, icônes seules, ou masqué. */
 export type EtatSidebar = 'etendue' | 'reduite' | 'fermee';
@@ -22,7 +23,7 @@ const CLE_STOCKAGE_SIDEBAR = 'admin-sidebar-affichage';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent],
+  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent, RappelSecondFacteurComponent],
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })

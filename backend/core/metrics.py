@@ -37,6 +37,13 @@ EMAILS_FAILED = Counter("assista_emails_failed_total",
 INSTITUTIONS = Counter("assista_institutions_created_total",
                        "Institutions created, automatically or by hand", ["environment"])
 
+# Connexions (15/11/2026). Aucune étiquette par compte ni par adresse : ce sont des données de
+# connexion, elles n'ont rien à faire dans une base de métriques.
+CONNEXIONS_ECHOUEES = Counter("assista_connexions_echouees_total",
+                              "Failed sign-in attempts, by step", ["etape"])
+CONNEXIONS_FREINEES = Counter("assista_connexions_freinees_total",
+                              "Failed sign-in attempts that triggered a per-account delay")
+
 
 def _type_label(type_obj):
     return (type_obj.type if type_obj else None) or "unknown"

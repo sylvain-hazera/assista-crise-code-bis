@@ -3,8 +3,18 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
-import { AuthService } from '../../services/auth.service';
+import { AuthService, ErreurConnexion, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
 
+/** Où en est la personne. Le code n'est demandé qu'aux comptes qui en ont un. */
+type EtapeConnexion = 'adresse' | 'code' | 'mot_de_passe';
+
+/**
+ * Connexion en étapes (demande de Sylvain du 15/11/2026) : l'adresse, puis le code de
+ * sécurité si le compte est protégé, puis le mot de passe.
+ *
+ * L'ordre est voulu : tant que le code n'a pas été donné, le serveur ne regarde pas le mot de
+ * passe. Un mot de passe fuité seul ne permet donc ni d'entrer, ni de savoir s'il est bon.
+ */
 @Component({
   selector: 'app-login',
   standalone: true,
@@ -14,10 +24,13 @@ import { AuthService } from '../../services/auth.service';
 })
 export class LoginComponent implements OnInit {
   loginForm!: FormGroup;
+  etape: EtapeConnexion = 'adresse';
   isSubmitting = false;
   errorMessage = '';
   showPassword = false;
   returnUrl = '/accueil';
+  /** Preuve que le code a été donné, à joindre au mot de passe. Valable cinq minutes. */
+  private jetonEtape = '';
 
   constructor(
     private formBuilder: FormBuilder,
@@ -41,7 +54,8 @@ export class LoginComponent implements OnInit {
   private initForm(): void {
     this.loginForm = this.formBuilder.group({
       email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required]],
+      code: [''],
+      password: [''],
       rememberMe: [false]
     });
   }
@@ -50,30 +64,76 @@ export class LoginComponent implements OnInit {
     this.showPassword = !this.showPassword;
   }
 
+  /** Le champ de l'étape en cours est-il rempli ? */
+  get peutContinuer(): boolean {
+    const v = this.loginForm.value;
+    if (this.etape === 'adresse') return this.loginForm.get('email')!.valid;
+    if (this.etape === 'code') return (v.code || '').trim().length >= 6;
+    return !!v.password;
+  }
+
+  get libelleBouton(): string {
+    if (this.isSubmitting) return this.etape === 'mot_de_passe' ? 'Connexion...' : 'Vérification...';
+    return this.etape === 'mot_de_passe' ? 'Se connecter' : 'Continuer';
+  }
+
   onSubmit(): void {
-    if (this.loginForm.invalid) {
+    if (!this.peutContinuer) {
       this.markFormAsTouched();
       return;
     }
-
     this.isSubmitting = true;
     this.errorMessage = '';
+    const { email, code, password } = this.loginForm.value;
 
-    const { email, password } = this.loginForm.value;
+    if (this.etape === 'adresse') {
+      this.authService.debutConnexion(email.trim()).subscribe({
+        next: (suite) => this.allerA(suite),
+        error: (error) => this.echec(error),
+      });
+    } else if (this.etape === 'code') {
+      this.authService.verifierCode(email.trim(), code.trim()).subscribe({
+        next: (jeton) => {
+          this.jetonEtape = jeton;
+          this.allerA('mot_de_passe');
+        },
+        error: (error) => {
+          this.loginForm.patchValue({ code: '' });
+          this.echec(error);
+        },
+      });
+    } else {
+      this.authService.login(email.trim(), password, this.jetonEtape).subscribe({
+        next: () => this.router.navigateByUrl(this.returnUrl),
+        error: (error) => {
+          if (error instanceof ErreurConnexion && error.code === SECOND_FACTEUR_A_ACTIVER) {
+            // Identité prouvée, mais le délai d'activation est passé : on l'emmène activer.
+            this.router.navigate(['/securite-du-compte'], { queryParams: { returnUrl: this.returnUrl } });
+            return;
+          }
+          this.loginForm.patchValue({ password: '' });
+          this.echec(error);
+        },
+      });
+    }
+  }
 
-    this.authService.login(email, password ).subscribe({
-      next: (response) => {
-        console.log('Utilisateur:', response.user);
-        this.router.navigate([this.returnUrl]);
-      },
-      error: (error) => {
-        this.errorMessage = error.message || 'Email ou mot de passe incorrect';
-        this.isSubmitting = false;
-      },
-      complete: () => {
-        this.isSubmitting = false;
-      }
-    });
+  private allerA(etape: EtapeConnexion): void {
+    this.etape = etape;
+    this.isSubmitting = false;
+    this.errorMessage = '';
+  }
+
+  private echec(error: unknown): void {
+    this.errorMessage = (error as Error)?.message || 'Une erreur est survenue, réessayez.';
+    this.isSubmitting = false;
+  }
+
+  /** Revenir à l'adresse : tout ce qui a été saisi ensuite est oublié. */
+  recommencer(): void {
+    this.jetonEtape = '';
+    this.loginForm.patchValue({ code: '', password: '' });
+    this.allerA('adresse');
   }
 
   private markFormAsTouched(): void {

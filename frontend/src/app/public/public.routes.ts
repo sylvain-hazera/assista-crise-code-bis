@@ -60,6 +60,14 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MagicLoginComponent)
       },
       {
+        // Code de sécurité du compte. Sans garde : la page sert aussi à qui vient de
+        // s'identifier mais ne peut pas ouvrir de session avant d'avoir activé son code
+        // (délai passé) — elle renvoie elle-même vers la connexion dans les autres cas.
+        path: 'securite-du-compte',
+        loadComponent: () => import('../auth/component/securite-compte/securite-compte.component')
+          .then(m => m.SecuriteCompteComponent)
+      },
+      {
         path: 'mot-de-passe-oublie',
         loadComponent: () => import('../auth/component/forgot-password/forgot-password.component')
           .then(m => m.ForgotPasswordComponent)

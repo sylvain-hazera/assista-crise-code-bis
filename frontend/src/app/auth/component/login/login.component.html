@@ -29,69 +29,96 @@
     </div> -->
 
     <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
-      
-      <!-- Email -->
+
+      <!-- Email : toujours présent, pour que le gestionnaire de mots de passe du navigateur
+           associe le mot de passe à la bonne adresse ; figé une fois l'étape passée. -->
       <div class="form-group">
         <label for="email" class="form-label">
           Email <span class="required">*</span>
         </label>
-        <input 
-          type="email" 
-          id="email" 
+        <input
+          type="email"
+          id="email"
           formControlName="email"
           class="form-input"
+          autocomplete="username"
           placeholder="votre.email@exemple.fr"
+          [readonly]="etape !== 'adresse'"
           [class.invalid]="isFieldInvalid('email')">
         <div class="error-message" *ngIf="isFieldInvalid('email')">
           Email requis et valide
         </div>
+        @if (etape !== 'adresse') {
+          <button type="button" class="lien-etape" (click)="recommencer()">Ce n'est pas la bonne adresse</button>
+        }
       </div>
+
+      <!-- Code de sécurité : seulement pour un compte protégé, et AVANT le mot de passe -->
+      @if (etape === 'code') {
+        <div class="form-group">
+          <label for="code" class="form-label">
+            Code de sécurité <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="code"
+            formControlName="code"
+            class="form-input code-input"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="20"
+            placeholder="123456"
+            autofocus>
+          <p class="aide-etape">
+            Les 6 chiffres affichés par votre application d'authentification. Téléphone
+            indisponible ? Saisissez l'un de vos codes de secours.
+          </p>
+        </div>
+      }
 
       <!-- Mot de passe -->
-      <div class="form-group">
-        <label for="password" class="form-label">
-          Mot de passe <span class="required">*</span>
-        </label>
-        <div class="password-wrapper">
-          <span class="material-icons password-icon">lock</span>
-          <input 
-            [type]="showPassword ? 'text' : 'password'" 
-            id="password" 
-            formControlName="password"
-            class="form-input password-input"
-            placeholder="••••••••"
-            [class.invalid]="isFieldInvalid('password')">
-          <button 
-            type="button" 
-            class="material-icons toggle-password"
-            (click)="togglePasswordVisibility()">
-            {{ showPassword ? 'visibility' : 'visibility_off' }}
-          </button>
+      @if (etape === 'mot_de_passe') {
+        <div class="form-group">
+          <label for="password" class="form-label">
+            Mot de passe <span class="required">*</span>
+          </label>
+          <div class="password-wrapper">
+            <span class="material-icons password-icon">lock</span>
+            <input
+              [type]="showPassword ? 'text' : 'password'"
+              id="password"
+              formControlName="password"
+              class="form-input password-input"
+              autocomplete="current-password"
+              placeholder="••••••••"
+              autofocus>
+            <button
+              type="button"
+              class="material-icons toggle-password"
+              (click)="togglePasswordVisibility()">
+              {{ showPassword ? 'visibility' : 'visibility_off' }}
+            </button>
+          </div>
         </div>
-        <div class="error-message" *ngIf="isFieldInvalid('password')">
-          Mot de passe requis
+
+        <!-- Se souvenir de moi -->
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              formControlName="rememberMe"
+              class="form-checkbox">
+            <span class="checkbox-text">Se souvenir de moi</span>
+          </label>
         </div>
-      </div>
+      }
 
-      <!-- Se souvenir de moi -->
-      <div class="form-group checkbox-group">
-        <label class="checkbox-label">
-          <input 
-            type="checkbox" 
-            formControlName="rememberMe"
-            class="form-checkbox">
-          <span class="checkbox-text">Se souvenir de moi</span>
-        </label>
-      </div>
-
-      <!-- Bouton de connexion -->
       <div class="form-actions">
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           class="btn-submit"
-          [disabled]="loginForm.invalid || isSubmitting">
-          <span *ngIf="!isSubmitting">Se connecter</span>
-          <span *ngIf="isSubmitting">Connexion...</span>
+          [disabled]="!peutContinuer || isSubmitting">
+          {{ libelleBouton }}
         </button>
       </div>
 

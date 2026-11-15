@@ -38,6 +38,9 @@ export interface User {
   // Peut mener une campagne de disponibilite : bureau d'une association, agent ou elu d'une
   // collectivite, encadrant d'une equipe. Calcule cote serveur.
   acces_campagnes?: boolean;
+  /** Protection par code de sécurité. Complet pour soi ; `{ actif }` seulement quand un
+   * administrateur regarde le compte d'un autre ; absent sinon. */
+  second_facteur?: EtatSecondFacteur | { actif: boolean } | null;
   // Rattachement actif a une AASC -- pilote l'entree « Ma fiche de benevole ». Distinct de
   // acces_membres_association, qui dit qui ADMINISTRE des membres : un administrateur y est
   // vrai sans etre benevole de personne.
@@ -78,3 +81,18 @@ export interface UserPayload {
 }
 
 export type Environment = 'PROD' | 'DEMO';
+/** Où en est la protection du compte par un code de sécurité (voir core/second_facteur.py). */
+export interface EtatSecondFacteur {
+  /** Faux sur un satellite : aucun code n'y est demandé. */
+  applicable: boolean;
+  actif: boolean;
+  /** Le compte a des responsabilités : le code est obligatoire. */
+  requis: boolean;
+  /** Date limite d'activation (ISO), tant que le code est requis et pas encore actif. */
+  date_limite: string | null;
+  /** La date limite est passée : plus de session sans activation. */
+  bloquant: boolean;
+  codes_secours_restants: number;
+  /** Faux pour un compte qui ne se connecte que par lien reçu par e-mail. */
+  mot_de_passe_defini?: boolean;
+}

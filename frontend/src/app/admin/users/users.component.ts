@@ -458,6 +458,41 @@ export class UsersComponent implements OnInit, OnDestroy {
       });
   }
 
+  /** Le compte a-t-il un code de sécurité actif ? (visible des seuls administrateurs) */
+  secondFacteurActif(user: User): boolean {
+    return !!user.second_facteur?.actif;
+  }
+
+  /**
+   * Retire le code de sécurité d'un compte (téléphone perdu, codes de secours perdus).
+   * C'est aussi ce que demanderait quelqu'un qui se fait passer pour le titulaire : la
+   * question le rappelle, l'acte est tracé et le titulaire est prévenu par e-mail.
+   */
+  reinitialiserSecondFacteur(user: User): void {
+    if (!confirm(
+      `Retirer le code de sécurité de ${user.email} ?\n\n`
+      + "À ne faire que si vous êtes certain de parler au titulaire du compte : sans ce code, "
+      + "son mot de passe suffit à préparer un nouveau téléphone.\n\n"
+      + "Il devra activer un nouveau code à sa prochaine connexion, et il est prévenu par e-mail.")) {
+      return;
+    }
+    this.isLoading = true;
+    this.userService.reinitialiserSecondFacteur(user.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (reponse) => {
+          user.second_facteur = reponse.user.second_facteur;
+          this.successMessage = `Code de sécurité retiré pour ${user.email}`;
+          this.isLoading = false;
+          setTimeout(() => this.successMessage = '', 3000);
+        },
+        error: (error) => {
+          this.errorMessage = error.error?.error || 'Impossible de retirer le code de sécurité';
+          this.isLoading = false;
+        }
+      });
+  }
+
   /**
    * Valide un utilisateur (changement de rôle)
    */

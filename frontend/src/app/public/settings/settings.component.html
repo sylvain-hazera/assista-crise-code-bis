@@ -582,6 +582,20 @@
       <!-- PASSWORD TAB -->
       @if (activeTab === 'password') {
         <div class="tab-panel">
+          <!-- Code de sécurité (double authentification) : sa propre page -->
+          <div class="position-suivi-block">
+            <h3><span class="material-icons">shield</span> Code de sécurité</h3>
+            <p class="tab-hint">
+              Un code à 6 chiffres, donné par une application de votre téléphone, demandé à
+              chaque connexion avant votre mot de passe : quelqu'un qui connaîtrait votre mot de
+              passe ne pourrait toujours pas entrer.
+            </p>
+            <a routerLink="/securite-du-compte" class="btn btn-secondary">
+              <span class="material-icons">shield</span>
+              Gérer mon code de sécurité
+            </a>
+          </div>
+
           <form [formGroup]="passwordForm" (ngSubmit)="changePassword()"> 
             <div class="form-group">
               <label for="oldPassword" class="form-label">

@@ -18,7 +18,12 @@ function withEnvironment(req: HttpRequest<unknown>, authService: AuthService): H
 function isAuthEndpoint(url: string): boolean {
   // /token/, /token/refresh/, /token/blacklist/ : jamais de retry dessus (boucle infinie
   // sinon, ou tentative de rafraîchissement absurde sur un login qui a juste échoué).
-  return url.includes('/token/');
+  //
+  // Même chose pour les autres étapes de la connexion (15/11/2026) : leur 401 veut dire
+  // « code incorrect » ou « il faut un code », pas « session expirée ». Tenter un
+  // rafraîchissement déconnecterait la personne au milieu de sa connexion.
+  return url.includes('/token/') || url.includes('/connexion/')
+    || url.includes('/magic-login/') || url.includes('/activate-account/');
 }
 
 // Ces en-têtes ne doivent JAMAIS partir vers un service tiers (ex: Base Adresse Nationale
@@ -41,7 +46,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(cloned).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status !== 401 || isAuthEndpoint(req.url)) {
+      // Sans session, un 401 sur l'activation du code de sécurité veut dire « jeton
+      // d'activation expiré » : il n'y a rien à rafraîchir.
+      if (error.status !== 401 || isAuthEndpoint(req.url)
+          || (!token && req.url.includes('/second-facteur/'))) {
         return throwError(() => error);
       }
       return handleUnauthorized(req, next, authService);

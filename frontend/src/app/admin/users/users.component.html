@@ -187,6 +187,14 @@
                   <span class="material-icons">lock_reset</span>
                 </button>
 
+                <!-- Code de sécurité : le bouton n'apparaît que si le compte en a un -->
+                @if (secondFacteurActif(user)) {
+                  <button class="action-btn reset-password-btn" (click)="reinitialiserSecondFacteur(user)"
+                          title="Code de sécurité actif — le retirer (téléphone perdu)">
+                    <span class="material-icons">phonelink_erase</span>
+                  </button>
+                }
+
                 <!-- Renvoi du lien d'activation : seulement pour un compte « Autorité locale »
                      qui n'a pas encore cliqué sur son lien (les autres types sont validés par un
                      administrateur, pas par email). -->

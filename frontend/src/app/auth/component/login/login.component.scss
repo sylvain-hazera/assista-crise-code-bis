@@ -368,3 +368,30 @@
     font-size: 1.5rem;
   }
 }
+// ── Connexion en étapes (15/11/2026) ──────────────────────────────────────────
+.lien-etape {
+  background: none;
+  border: none;
+  padding: .35rem 0 0;
+  font-size: .85rem;
+  color: var(--ac-blue-text, #2563eb);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.form-input[readonly] {
+  background: var(--ac-surface-2, #f3f4f6);
+  color: var(--ac-text-muted, #6b7280);
+}
+
+.code-input {
+  font-size: 1.4rem;
+  letter-spacing: .25em;
+  font-variant-numeric: tabular-nums;
+}
+
+.aide-etape {
+  margin: .4rem 0 0;
+  font-size: .85rem;
+  color: var(--ac-text-muted, #6b7280);
+}

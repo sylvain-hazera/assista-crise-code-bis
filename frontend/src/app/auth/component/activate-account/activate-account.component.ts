@@ -1,14 +1,15 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AuthService } from '../../services/auth.service';
+import { AuthService, CODE_REQUIS, ErreurConnexion, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
 
-type ActivationState = 'loading' | 'success' | 'error';
+type ActivationState = 'loading' | 'success' | 'error' | 'code';
 
 @Component({
   selector: 'app-activate-account',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule],
   templateUrl: './activate-account.component.html',
   styleUrls: ['./activate-account.component.scss']
 })
@@ -32,9 +33,25 @@ export class ActivateAccountComponent implements OnInit {
       this.errorMessage = "Lien d'activation incomplet.";
       return;
     }
+    this.uidb64 = uidb64;
+    this.token = token;
+    this.activer();
+  }
 
-    this.authService.activateAccount(uidb64, token).subscribe({
+  /** Code de sécurité : un lien d'activation reste valable sept jours et rouvre une session
+   * à chaque clic. Sur un compte protégé, il ne suffit donc pas. */
+  code = '';
+  envoiEnCours = false;
+  private uidb64 = '';
+  private token = '';
+
+  activer(): void {
+    const avecCode = this.state === 'code';
+    if (avecCode && this.code.trim().length < 6) return;
+    this.envoiEnCours = true;
+    this.authService.activateAccount(this.uidb64, this.token, avecCode ? this.code.trim() : '').subscribe({
       next: (response) => {
+        this.envoiEnCours = false;
         this.state = 'success';
         this.successMessage = response.message || 'Compte activé avec succès.';
         // Compte Autorité locale pas encore rattaché à une institution : on l'emmène
@@ -59,8 +76,18 @@ export class ActivateAccountComponent implements OnInit {
         }
       },
       error: (error) => {
-        this.state = 'error';
-        this.errorMessage = error.message || "Ce lien d'activation est invalide ou a expiré";
+        this.envoiEnCours = false;
+        const code = error instanceof ErreurConnexion ? error.code : '';
+        if (code === SECOND_FACTEUR_A_ACTIVER) {
+          this.router.navigate(['/securite-du-compte'], { queryParams: { returnUrl: this.returnUrl } });
+        } else if (code === CODE_REQUIS || (avecCode && code === 'TROP_D_ESSAIS')) {
+          this.errorMessage = this.state === 'code' ? error.message : '';
+          this.state = 'code';
+          this.code = '';
+        } else {
+          this.state = 'error';
+          this.errorMessage = error.message || "Ce lien d'activation est invalide ou a expiré";
+        }
       }
     });
   }

@@ -1,0 +1,149 @@
+<div class="securite-page">
+  <div class="securite-carte">
+    <h1>Sécurité du compte</h1>
+
+    @if (ecran === 'chargement') {
+      <p class="discret">Chargement…</p>
+    }
+
+    @if (ecran === 'indisponible') {
+      <p>Le code de sécurité se règle sur le site principal, pas sur cette machine.</p>
+      <a routerLink="/accueil" class="lien">Retour à l'accueil</a>
+    }
+
+    @if (message) {
+      <p class="bandeau succes">{{ message }}</p>
+    }
+
+    <!-- ── Où en est mon compte ─────────────────────────────────────────── -->
+    @if (ecran === 'etat' && etat) {
+      @if (etat.actif) {
+        <p class="statut actif"><span class="material-icons">verified_user</span> Code de sécurité actif</p>
+        <p>
+          À chaque connexion, le site vous demande les 6 chiffres de votre application
+          d'authentification avant votre mot de passe.
+        </p>
+        <p [class.alerte]="etat.codes_secours_restants <= 2">
+          Codes de secours restants : <strong>{{ etat.codes_secours_restants }}</strong> sur 10.
+          Ils servent si votre téléphone est perdu ou en panne.
+        </p>
+
+        @if (!action) {
+          <div class="actions">
+            <button type="button" class="btn secondaire" (click)="demander('renouveler')">Tirer de nouveaux codes de secours</button>
+            <button type="button" class="btn secondaire" (click)="demander('retirer')">Changer de téléphone</button>
+          </div>
+        } @else {
+          <form class="bloc" (ngSubmit)="valider()">
+            <p>
+              @if (action === 'retirer') {
+                Pour changer de téléphone, on retire le code actuel puis on en active un nouveau.
+                Saisissez un code de votre application actuelle, ou un code de secours.
+              } @else {
+                Les anciens codes de secours cesseront de fonctionner. Saisissez un code de
+                votre application pour confirmer.
+              }
+            </p>
+            <input type="text" name="code" class="champ-code" inputmode="numeric" maxlength="20"
+                   autocomplete="one-time-code" placeholder="123456" [(ngModel)]="code" autofocus>
+            @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+            <div class="actions">
+              <button type="submit" class="btn" [disabled]="enCours || code.trim().length < 6">Confirmer</button>
+              <button type="button" class="btn secondaire" (click)="annuler()">Annuler</button>
+            </div>
+          </form>
+        }
+      } @else {
+        <p class="statut inactif"><span class="material-icons">gpp_maybe</span> Aucun code de sécurité</p>
+        <p>
+          Avec un code de sécurité, quelqu'un qui devinerait ou volerait votre mot de passe ne
+          pourrait toujours pas entrer : il lui faudrait aussi votre téléphone.
+        </p>
+        @if (etat.requis && dateLimite) {
+          <p class="bandeau attention">
+            Votre compte a des responsabilités : le code de sécurité y est obligatoire.
+            @if (etat.bloquant) {
+              Activez-le maintenant, votre prochaine connexion l'exigera avant d'entrer.
+            } @else {
+              Activez-le avant le <strong>{{ dateLimite | date:'dd/MM/yyyy' }}</strong> ; passé
+              cette date, il faudra l'activer pour se connecter.
+            }
+          </p>
+        }
+        <form class="bloc" (ngSubmit)="preparer()">
+          <p>
+            Il vous faut une application d'authentification sur votre téléphone (par exemple
+            Aegis, FreeOTP, Google Authenticator ou Microsoft Authenticator).
+          </p>
+          @if (etat.mot_de_passe_defini !== false) {
+            <label for="mdp">Votre mot de passe actuel</label>
+            <input id="mdp" type="password" name="motDePasse" autocomplete="current-password" [(ngModel)]="motDePasse">
+          }
+          @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+          <button type="submit" class="btn" [disabled]="enCours || (etat.mot_de_passe_defini !== false && !motDePasse)">
+            Activer un code de sécurité
+          </button>
+        </form>
+      }
+      <a [routerLink]="'/settings'" class="lien">Retour à mon espace</a>
+    }
+
+    <!-- ── Installer : QR code, puis premier code ──────────────────────── -->
+    @if (ecran === 'installer') {
+      @if (obligatoire) {
+        <p class="bandeau attention">
+          Votre compte a des responsabilités : il doit être protégé par un code de sécurité.
+          Deux minutes suffisent, et vous serez connecté aussitôt après.
+        </p>
+      }
+      @if (preparation) {
+        <ol class="etapes">
+          <li>
+            Ouvrez votre application d'authentification (Aegis, FreeOTP, Google Authenticator,
+            Microsoft Authenticator…) et ajoutez un compte.
+          </li>
+          <li>
+            Scannez ce QR code :
+            <div class="qr" [innerHTML]="qr"></div>
+            <p class="discret">
+              Vous êtes sur le téléphone qui porte l'application ?
+              <a [href]="lienApplication" class="lien">Ouvrir dans mon application</a>,
+              ou recopiez cette clé : <code class="secret">{{ secretLisible }}</code>
+            </p>
+          </li>
+          <li>
+            Saisissez les 6 chiffres qu'elle affiche :
+            <form (ngSubmit)="confirmer()">
+              <input type="text" name="code" class="champ-code" inputmode="numeric" maxlength="6"
+                     autocomplete="one-time-code" placeholder="123456" [(ngModel)]="code">
+              @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+              <button type="submit" class="btn" [disabled]="enCours || code.trim().length < 6">
+                {{ enCours ? 'Vérification…' : 'Activer' }}
+              </button>
+            </form>
+          </li>
+        </ol>
+      } @else {
+        @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+        <a routerLink="/login" class="lien">Retour à la connexion</a>
+      }
+    }
+
+    <!-- ── Codes de secours : montrés une seule fois ────────────────────── -->
+    @if (ecran === 'codes') {
+      <p class="statut actif"><span class="material-icons">verified_user</span> Code de sécurité actif</p>
+      <p>
+        <strong>Notez ces codes de secours maintenant</strong> : ils ne seront plus jamais
+        affichés. Chacun remplace une fois le code de votre téléphone, s'il est perdu ou en
+        panne. Gardez-les ailleurs que sur ce téléphone.
+      </p>
+      <ul class="codes">
+        @for (c of codesSecours; track c) { <li>{{ c }}</li> }
+      </ul>
+      <div class="actions">
+        <button type="button" class="btn secondaire" (click)="copierCodes()">{{ copie ? 'Copié' : 'Copier' }}</button>
+        <button type="button" class="btn" (click)="terminer()">J'ai noté mes codes</button>
+      </div>
+    }
+  </div>
+</div>

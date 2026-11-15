@@ -26,12 +26,24 @@
       {% csrf_token %}
       <label for="id_username">Email</label>
       <input type="email" name="username" id="id_username" autofocus required>
+      <label for="id_code">Code de sécurité <span style="font-weight:400">(si votre compte en a un)</span></label>
+      <input type="text" name="code" id="id_code" inputmode="numeric" autocomplete="one-time-code" maxlength="20">
       <label for="id_password">Mot de passe</label>
       <input type="password" name="password" id="id_password" required>
       <input type="hidden" name="next" value="{{ next }}">
       <button type="submit">Se connecter</button>
       {% if form.errors %}
-        <p class="erreurs">Identifiants incorrects.</p>
+        {# Le message dit « identifiants incorrects » sans préciser lequel, sauf quand il faut
+           attendre ou activer son code : là, la personne doit savoir quoi faire. #}
+        {% for erreur in form.non_field_errors.as_data %}
+          {% if erreur.code == "trop_d_essais" or erreur.code == "second_facteur_a_activer" %}
+            <p class="erreurs">{{ erreur.message }}</p>
+          {% else %}
+            <p class="erreurs">Identifiants incorrects.</p>
+          {% endif %}
+        {% empty %}
+          <p class="erreurs">Identifiants incorrects.</p>
+        {% endfor %}
       {% endif %}
     </form>
   </div>

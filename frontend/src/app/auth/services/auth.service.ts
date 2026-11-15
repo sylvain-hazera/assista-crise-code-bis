@@ -1,9 +1,9 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, catchError, delay, Observable, of, tap, throwError } from 'rxjs';
+import { BehaviorSubject, catchError, delay, map, Observable, of, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { User, UserRole, UserPayload, Environment } from '../../shared/models/user.model';
+import { User, UserRole, UserPayload, Environment, EtatSecondFacteur } from '../../shared/models/user.model';
 import { SuiviPositionPermanentService } from '../../services/suivi-position-permanent.service';
 
 interface TokenResponse {
@@ -13,6 +13,7 @@ interface TokenResponse {
 
 interface LoginResponse extends TokenResponse {
   user: User;
+  appareil?: string;
 }
 
 interface ActivationResponse {
@@ -20,6 +21,32 @@ interface ActivationResponse {
   token: string;
   refresh: string;
   message: string;
+  appareil?: string;
+}
+
+/** Erreur de connexion, avec ce qu'il faut pour que l'écran sache quoi proposer ensuite.
+ * `code` reprend celui du serveur : `CODE_REQUIS` (le lien ne suffit pas, il faut le code de
+ * sécurité), `SECOND_FACTEUR_A_ACTIVER` (délai passé : activer avant d'entrer),
+ * `TROP_D_ESSAIS` (attendre). */
+export class ErreurConnexion extends Error {
+  constructor(message: string, public code = '') {
+    super(message);
+  }
+}
+
+export const CODE_REQUIS = 'CODE_REQUIS';
+export const SECOND_FACTEUR_A_ACTIVER = 'SECOND_FACTEUR_A_ACTIVER';
+
+export interface PreparationSecondFacteur {
+  secret: string;
+  adresse: string;
+  qr_svg: string;
+}
+
+export interface ConfirmationSecondFacteur {
+  codes_secours: string[];
+  etat: EtatSecondFacteur;
+  session?: { access: string; refresh: string; user: User; appareil: string };
 }
 
 @Injectable({ providedIn: 'root' })
@@ -37,54 +64,174 @@ export class AuthService {
     this.suiviPosition.demarrerSiConsentement();
   }
 
+  // ── Connexion en étapes (15/11/2026) ───────────────────────────────────────────────────
+  //
+  // Adresse, puis — si le compte est protégé — code de sécurité, puis mot de passe. Tant que
+  // le code n'a pas été donné, le serveur ne regarde pas le mot de passe.
+
+  /** Jeton remis par le serveur à qui s'est identifié mais doit activer son code de sécurité
+   * avant d'entrer. En mémoire seulement : il ne vaut que pour cette activation. */
+  private jetonEnrolement: string | null = null;
+
+  /** Ce que le navigateur présente pour être reconnu : un appareil déjà connu du compte n'est
+   * pas ralenti par les essais ratés de quelqu'un d'autre. Ne dispense de rien. */
+  private get appareil(): string {
+    try { return localStorage.getItem('appareil_connu') || ''; } catch { return ''; }
+  }
+
+  private retenirAppareil(jeton?: string): void {
+    if (!jeton) return;
+    try { localStorage.setItem('appareil_connu', jeton); } catch { /* stockage indisponible */ }
+  }
+
+  private viderSessionLocale(): void {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('current_user');
+  }
+
+  /** Traduit un refus du serveur. Retient le jeton d'activation s'il en vient un. */
+  private erreurDeConnexion(error: HttpErrorResponse, parDefaut: string): ErreurConnexion {
+    const code = error.error?.code || '';
+    if (error.status === 403 && code === SECOND_FACTEUR_A_ACTIVER) {
+      this.jetonEnrolement = error.error?.jeton_enrolement || null;
+      // Une ancienne session expirée partirait avec les requêtes d'activation et les ferait
+      // refuser avant même qu'elles soient lues.
+      this.viderSessionLocale();
+      return new ErreurConnexion(error.error?.detail || 'Activez votre code de sécurité pour continuer.', code);
+    }
+    if (error.status === 429) {
+      return new ErreurConnexion(error.error?.detail || "Trop d'essais. Réessayez dans un moment.", 'TROP_D_ESSAIS');
+    }
+    if (error.status === 0) {
+      return new ErreurConnexion('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    }
+    if (error.status === 401 && code === CODE_REQUIS) {
+      return new ErreurConnexion(error.error?.detail || 'Saisissez votre code de sécurité.', code);
+    }
+    return new ErreurConnexion(error.error?.error || parDefaut, code);
+  }
+
+  /** POST /api/connexion/debut/ : ce que demander après l'adresse. Si le serveur ne répond
+   * pas à cette question (satellite resté sur une version plus ancienne), on demande le mot
+   * de passe, comme avant. */
+  debutConnexion(email: string): Observable<'code' | 'mot_de_passe'> {
+    return this.http
+      .post<{ etape: 'code' | 'mot_de_passe' }>(`${this.url}/connexion/debut/`, { email })
+      .pipe(
+        map(res => res.etape),
+        catchError((error: HttpErrorResponse) =>
+          error.status === 404 ? of('mot_de_passe' as const)
+            : throwError(() => this.erreurDeConnexion(error, 'Une erreur est survenue, réessayez.'))),
+      );
+  }
+
+  /** POST /api/connexion/code/ : rend le jeton d'étape à joindre au mot de passe. */
+  verifierCode(email: string, code: string): Observable<string> {
+    return this.http
+      .post<{ jeton_etape: string }>(`${this.url}/connexion/code/`, { email, code, appareil: this.appareil })
+      .pipe(
+        map(res => res.jeton_etape),
+        catchError((error: HttpErrorResponse) =>
+          throwError(() => this.erreurDeConnexion(error, error.status === 401 ? 'Code incorrect.' : 'Une erreur est survenue, réessayez.'))),
+      );
+  }
+
   /** POST /api/token/ → { access, refresh, user } */
-  login(email: string, password: string): Observable<LoginResponse> {
+  login(email: string, password: string, jetonEtape = ''): Observable<LoginResponse> {
     return this.http
-      .post<LoginResponse>(`${this.url}/token/`, { email, password })
+      .post<LoginResponse>(`${this.url}/token/`, {
+        email, password, jeton_etape: jetonEtape, appareil: this.appareil,
+      })
       .pipe(
-        tap(res => this.setSession(res.access, res.refresh, res.user)),
-        catchError((error: HttpErrorResponse) => {
-          let errorMessage = 'Une erreur est survenue lors de la connexion';
-          
-          if (error.status === 401) {
-            errorMessage = 'Email ou mot de passe incorrect';
-          } else if (error.status === 403) {
-            errorMessage = error.error?.error || 'Accès refusé';
-          } else if (error.status === 0) {
-            errorMessage = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
-          } else if (error.error?.error) {
-            errorMessage = error.error.error;
-          }
-          
-          return throwError(() => new Error(errorMessage));
-        })
+        tap(res => {
+          this.retenirAppareil(res.appareil);
+          this.setSession(res.access, res.refresh, res.user);
+        }),
+        catchError((error: HttpErrorResponse) =>
+          throwError(() => this.erreurDeConnexion(error,
+            error.status === 401 ? 'Email ou mot de passe incorrect'
+              : 'Une erreur est survenue lors de la connexion'))),
       );
   }
 
-  /** GET /api/activate-account/<uidb64>/<token>/ : active le compte → { user, token, refresh, message } */
-  activateAccount(uidb64: string, token: string): Observable<ActivationResponse> {
-    return this.http
-      .get<ActivationResponse>(`${this.url}/activate-account/${uidb64}/${token}/`)
-      .pipe(
-        tap(res => this.setSession(res.token, res.refresh, res.user)),
-        catchError((error: HttpErrorResponse) => {
-          const errorMessage = error.error?.error || "Ce lien d'activation est invalide ou a expiré";
-          return throwError(() => new Error(errorMessage));
-        })
-      );
+  /** Lien reçu par e-mail (activation ou lien magique). Sans code : GET, comme toujours.
+   * Avec le code de sécurité d'un compte protégé : le même lien, en POST. */
+  private sessionParLien(chemin: string, parDefaut: string, code = ''): Observable<ActivationResponse> {
+    const appel = code
+      ? this.http.post<ActivationResponse>(`${this.url}/${chemin}/`, { code, appareil: this.appareil })
+      : this.http.get<ActivationResponse>(`${this.url}/${chemin}/`);
+    return appel.pipe(
+      tap(res => {
+        this.retenirAppareil(res.appareil);
+        this.setSession(res.token, res.refresh, res.user);
+      }),
+      catchError((error: HttpErrorResponse) =>
+        throwError(() => this.erreurDeConnexion(error, parDefaut))),
+    );
   }
 
-  /** GET /api/magic-login/<uidb64>/<token>/ : connexion par lien magique → { user, token, refresh, message } */
-  magicLogin(uidb64: string, token: string): Observable<ActivationResponse> {
-    return this.http
-      .get<ActivationResponse>(`${this.url}/magic-login/${uidb64}/${token}/`)
-      .pipe(
-        tap(res => this.setSession(res.token, res.refresh, res.user)),
-        catchError((error: HttpErrorResponse) => {
-          const errorMessage = error.error?.error || 'Ce lien de connexion est invalide ou a expiré';
-          return throwError(() => new Error(errorMessage));
-        })
-      );
+  /** /api/activate-account/<uidb64>/<token>/ : active le compte → { user, token, refresh, message } */
+  activateAccount(uidb64: string, token: string, code = ''): Observable<ActivationResponse> {
+    return this.sessionParLien(`activate-account/${uidb64}/${token}`,
+      "Ce lien d'activation est invalide ou a expiré", code);
+  }
+
+  /** /api/magic-login/<uidb64>/<token>/ : connexion par lien magique → { user, token, refresh, message } */
+  magicLogin(uidb64: string, token: string, code = ''): Observable<ActivationResponse> {
+    return this.sessionParLien(`magic-login/${uidb64}/${token}`,
+      'Ce lien de connexion est invalide ou a expiré', code);
+  }
+
+  // ── Code de sécurité (second facteur) ──────────────────────────────────────────────────
+
+  /** Vrai si la personne vient de s'identifier et doit activer son code avant d'entrer. */
+  doitActiverSonCode(): boolean {
+    return !!this.jetonEnrolement;
+  }
+
+  etatSecondFacteur(): Observable<EtatSecondFacteur> {
+    return this.http.get<EtatSecondFacteur>(`${this.url}/second-facteur/`);
+  }
+
+  /** Tire un secret, pas encore actif. Depuis une session ouverte, le mot de passe est
+   * redemandé ; pas depuis une activation obligatoire, où l'on vient de le donner. */
+  preparerSecondFacteur(motDePasse = ''): Observable<PreparationSecondFacteur> {
+    return this.http.post<PreparationSecondFacteur>(`${this.url}/second-facteur/preparer/`, {
+      mot_de_passe: motDePasse, jeton_enrolement: this.jetonEnrolement || '',
+    });
+  }
+
+  /** Active le code. Si la personne attendait cela pour entrer, sa session s'ouvre. */
+  confirmerSecondFacteur(code: string): Observable<ConfirmationSecondFacteur> {
+    return this.http.post<ConfirmationSecondFacteur>(`${this.url}/second-facteur/confirmer/`, {
+      code, jeton_enrolement: this.jetonEnrolement || '', appareil: this.appareil,
+    }).pipe(tap(res => {
+      if (res.session) {
+        this.jetonEnrolement = null;
+        this.retenirAppareil(res.session.appareil);
+        this.setSession(res.session.access, res.session.refresh, res.session.user);
+      } else {
+        this.majEtatSecondFacteur(res.etat);
+      }
+    }));
+  }
+
+  retirerSecondFacteur(code: string): Observable<{ etat: EtatSecondFacteur }> {
+    return this.http.post<{ etat: EtatSecondFacteur }>(`${this.url}/second-facteur/retirer/`, { code })
+      .pipe(tap(res => this.majEtatSecondFacteur(res.etat)));
+  }
+
+  renouvelerCodesSecours(code: string): Observable<{ codes_secours: string[]; etat: EtatSecondFacteur }> {
+    return this.http.post<{ codes_secours: string[]; etat: EtatSecondFacteur }>(
+      `${this.url}/second-facteur/codes-secours/`, { code });
+  }
+
+  /** Garde le rappel d'échéance à jour sans attendre le prochain chargement du compte. */
+  private majEtatSecondFacteur(etat: EtatSecondFacteur): void {
+    const utilisateur = this.getCurrentUser();
+    if (!utilisateur) return;
+    localStorage.setItem('current_user', JSON.stringify({ ...utilisateur, second_facteur: etat }));
   }
 
   /** POST /api/token/refresh/. ROTATE_REFRESH_TOKENS : le nouveau refresh doit être stocké,

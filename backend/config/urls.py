@@ -23,7 +23,13 @@ from django.http import HttpResponseForbidden
 from django.urls import path, re_path, include
 from django.views.static import serve as serve_static
 from core.metrics import metrics_view
+from core.formulaires_connexion import FormulaireConnexion, FormulaireConnexionAdmin
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+# L'administration Django se connecte par session, hors de l'API : elle reçoit le même frein
+# et la même exigence de code que le reste (voir core/formulaires_connexion.py).
+admin.site.login_form = FormulaireConnexionAdmin
+admin.site.login_template = "core/login_admin.html"
 
 urlpatterns = [
     # /metrics : réseau interne uniquement, non routé par le proxy public
@@ -41,7 +47,8 @@ urlpatterns = [
     # Django classique (cookie), contrairement au reste de l'appli qui n'utilise que des JWT :
     # login/ ci-dessous fournit ce pont, pour N'IMPORTE QUEL utilisateur actif (contrairement
     # à /django-admin/login/, réservé aux is_staff).
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='core/login_oidc.html'), name='login'),
+    path('accounts/login/', auth_views.LoginView.as_view(
+        template_name='core/login_oidc.html', authentication_form=FormulaireConnexion), name='login'),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
 ]
 

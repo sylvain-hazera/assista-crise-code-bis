@@ -54,6 +54,12 @@ export class UserService {
     return this.http.post<{ message: string }>(`${this.apiUrl}/users/${id}/send_password_reset/`, {});
   }
 
+  /** Retire le code de sécurité d'un compte dont le titulaire a perdu son téléphone et ses
+   * codes de secours. Administrateur seulement ; le titulaire est prévenu par e-mail. */
+  reinitialiserSecondFacteur(id: string): Observable<{ user: User }> {
+    return this.http.post<{ user: User }>(`${this.apiUrl}/users/${id}/reinitialiser-second-facteur/`, {});
+  }
+
   /** Comptes désactivés en attente de décision (inscriptions Secours). Un admin voit tout, une
    * mairie son code postal (filtré côté backend). */
   getPendingValidations(): Observable<User[]> {

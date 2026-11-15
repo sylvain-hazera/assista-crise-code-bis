@@ -356,6 +356,28 @@ def _declarer_lien_magique(request, url):
     return url
 
 
+def mot_de_passe_refuse(mot_de_passe, utilisateur):
+    """Le motif de refus d'un nouveau mot de passe, ou None s'il convient.
+
+    Les règles de Django (longueur, mot de passe courant, trop proche du nom) s'appliquent à
+    tous les chemins. Avant le 15/11/2026, la réinitialisation par e-mail ne vérifiait que
+    « huit caractères » et le changement depuis le profil ne vérifiait rien : « 12345678 »
+    passait. Un compte à pouvoir doit en outre atteindre douze caractères."""
+    from django.contrib.auth.password_validation import validate_password
+    from . import second_facteur
+
+    if not mot_de_passe:
+        return "Le mot de passe est requis."
+    try:
+        validate_password(mot_de_passe, user=utilisateur)
+    except DjangoValidationError as erreur:
+        return " ".join(erreur.messages)
+    if second_facteur.est_a_pouvoir(utilisateur) and len(mot_de_passe) < 12:
+        return ("Ce compte a des responsabilités : son mot de passe doit contenir au moins "
+                "12 caractères.")
+    return None
+
+
 def get_user_from_magic_link(uidb64: str, token: str):
     try:
         unsigned = MAGIC_LINK_SIGNER.unsign(token, max_age=60 * 60 * 24 * 7)
@@ -2361,6 +2383,49 @@ class UserViewSet(viewsets.ModelViewSet):
             'message': 'Compte rejeté',
             'user': UserSerializer(user_to_reject, context={'request': request}).data
         })
+
+    @action(detail=True, methods=['post'], url_path='reinitialiser-second-facteur')
+    def reinitialiser_second_facteur(self, request, pk=None):
+        """Retire le second facteur d'un compte dont le titulaire a perdu son téléphone ET ses
+        codes de secours. Réservé aux administrateurs, tracé, et le titulaire en est prévenu
+        par e-mail : c'est exactement ce que demanderait quelqu'un qui se fait passer pour lui.
+
+        Le compte ne redevient pas ouvert pour quinze jours : à sa prochaine connexion, le
+        titulaire doit activer un nouveau second facteur avant d'entrer."""
+        from . import second_facteur
+
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            return Response({'error': 'Permissions insuffisantes'}, status=status.HTTP_403_FORBIDDEN)
+        if get_active_environment(request) == Environment.DEMO:
+            return Response({'error': 'Indisponible depuis la zone de démonstration.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        cible = self.get_object()
+        if not second_facteur.retirer(cible, exiger_tout_de_suite=True):
+            return Response({'error': "Ce compte n'a pas de second facteur actif."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="User", objet_id=cible.id,
+            commentaire=f"Second facteur de connexion réinitialisé par un administrateur : {cible.email}",
+        )
+        try:
+            send_mail_logged(
+                request,
+                subject="Le code de sécurité de votre compte a été réinitialisé",
+                message=(
+                    f"Bonjour {cible.first_name},\n\n"
+                    "Un administrateur vient de retirer le code de sécurité (application "
+                    "d'authentification) de votre compte, à votre demande.\n\n"
+                    "À votre prochaine connexion, le site vous demandera d'en activer un "
+                    "nouveau.\n\n"
+                    "Si vous n'avez rien demandé, prévenez tout de suite un administrateur et "
+                    "changez votre mot de passe."
+                ),
+                from_email=None, recipient_list=[cible.email], fail_silently=True,
+            )
+        except Exception:  # prévenir ne doit pas faire échouer la réinitialisation, déjà faite
+            pass
+        return Response({'user': UserSerializer(cible, context={'request': request}).data})
 
     @action(detail=True, methods=['post'])
     def send_password_reset(self, request, pk=None):
@@ -11601,9 +11666,31 @@ class MyTokenObtainPairView(TokenObtainPairView):
     authentication_classes = []
 
 class MyTokenRefreshView(TokenRefreshView):
-    """Rafraîchir un token ne nécessite qu'un refresh token valide, pas une session déjà authentifiée."""
+    """Rafraîchir un token ne nécessite qu'un refresh token valide, pas une session déjà authentifiée.
+
+    Une exception depuis le 15/11/2026 : un compte à pouvoir qui n'a pas activé son second
+    facteur dans les quinze jours ne renouvelle plus sa session. Sans cela, une session ouverte
+    avant l'échéance durerait indéfiniment (le jeton se renouvelle tant qu'il sert), et
+    l'obligation ne s'appliquerait jamais à qui ne se déconnecte pas."""
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        from rest_framework_simplejwt.exceptions import TokenError
+        from rest_framework_simplejwt.settings import api_settings as reglages_jwt
+        from . import connexion
+
+        try:
+            identifiant = RefreshToken(request.data.get('refresh') or '')[reglages_jwt.USER_ID_CLAIM]
+            utilisateur = User.objects.filter(pk=identifiant, is_active=True).first()
+        except (TokenError, KeyError, ValueError, DjangoValidationError):
+            utilisateur = None  # jeton invalide : la vue d'origine le refusera proprement
+        if utilisateur is not None and not connexion.session_encore_permise(utilisateur):
+            return Response(
+                {'code': connexion.A_ACTIVER,
+                 'detail': "Votre compte doit être protégé par un code de sécurité. Reconnectez-vous."},
+                status=status.HTTP_401_UNAUTHORIZED)
+        return super().post(request, *args, **kwargs)
 
 class SondeView(APIView):
     """GET /api/sonde/ -- vérification de fonctionnement : un automate (sonde de connectivité
@@ -12205,6 +12292,7 @@ class InstitutionValidationView(generics.GenericAPIView):
 
 class AccountActivationView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def get(self, request, uidb64, token, *args, **kwargs):
         user = get_user_from_magic_link(uidb64, token)
@@ -12260,17 +12348,40 @@ class AccountActivationView(generics.GenericAPIView):
                 except Exception as e:
                     print(f"Erreur envoi email rattachement manuel : {e}")
 
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'user': UserSerializer(user, context={'request': request}).data,
-            'token': str(refresh.access_token),
-            'refresh': str(refresh),
-            'message': 'Compte activé avec succès',
-        }, status=status.HTTP_200_OK)
+        return _session_par_lien(request, user, 'Compte activé avec succès')
+
+    # POST : le même lien, accompagné du code de sécurité d'un compte protégé. Un lien
+    # d'activation reste valable sept jours et rouvre une session à chaque clic : c'est un
+    # lien magique sous un autre nom, il suit la même règle.
+    post = get
+
+
+def _session_par_lien(request, user, message):
+    """Réponse d'une connexion par lien reçu par e-mail (lien magique, lien d'activation).
+
+    Passe par `core/connexion.py`, seul endroit qui délivre une session : si le compte est
+    protégé par un second facteur, le lien ne suffit pas, il faut aussi le code (401
+    `CODE_REQUIS`, puis le même lien en POST avec `code`). Avant le 15/11/2026 ces deux liens
+    fabriquaient leurs jetons eux-mêmes : lire la boîte aux lettres de quelqu'un suffisait."""
+    from . import connexion
+
+    session = connexion.ouvrir_session_par_lien(
+        request, user,
+        code=str(request.data.get('code') or '') if request.method == 'POST' else '',
+        appareil=str(request.data.get('appareil') or '') if request.method == 'POST' else '',
+    )
+    return Response({
+        'user': session['user'],
+        'token': session['access'],
+        'refresh': session['refresh'],
+        'appareil': session['appareil'],
+        'message': message,
+    }, status=status.HTTP_200_OK)
 
 
 class MagicLoginView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def get(self, request, uidb64, token, *args, **kwargs):
         user = get_user_from_magic_link(uidb64, token)
@@ -12281,13 +12392,10 @@ class MagicLoginView(generics.GenericAPIView):
         user.is_active = True
         user.save(update_fields=['enabled', 'is_active'])
 
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'user': UserSerializer(user, context={'request': request}).data,
-            'token': str(refresh.access_token),
-            'refresh': str(refresh),
-            'message': 'Connexion réussie sans mot de passe'
-        }, status=status.HTTP_200_OK)
+        return _session_par_lien(request, user, 'Connexion réussie sans mot de passe')
+
+    # POST : le même lien, accompagné du code de sécurité d'un compte protégé.
+    post = get
 
 
 class UserMeView(generics.RetrieveUpdateAPIView):
@@ -12356,6 +12464,9 @@ class ChangePasswordView(generics.UpdateAPIView):
         new_password = request.data.get("new_password")
         if not user.check_password(old_password):
             return Response({"error": "Ancien mot de passe incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+        erreur = mot_de_passe_refuse(new_password, user)
+        if erreur:
+            return Response({"error": erreur}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_password)
         user.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -12381,6 +12492,15 @@ class PasswordResetRequestView(generics.GenericAPIView):
         email = (request.data.get('email') or '').strip()
         if not email:
             return Response({'error': "L'adresse email est requise."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Cinq demandes par jour et par adresse, puis un délai croissant — en silence, avec la
+        # même réponse : le proxy ne limitait pas ce point d'entrée, et rien n'empêchait
+        # d'inonder la boîte de quelqu'un de liens de réinitialisation.
+        from . import frein_connexion as frein
+        compteur = frein.cle("reinitialisation", email)
+        if frein.attente(compteur):
+            return Response(self.GENERIC_RESPONSE, status=status.HTTP_200_OK)
+        frein.echec(compteur)
 
         user = User.objects.filter(email_bidx=blind_index(email), is_active=True).first()
         if user:
@@ -12428,11 +12548,9 @@ class PasswordResetConfirmView(generics.GenericAPIView):
             return Response({'error': 'Lien invalide ou expiré'}, status=status.HTTP_400_BAD_REQUEST)
 
         new_password = request.data.get('new_password')
-        if not new_password or len(new_password) < 8:
-            return Response(
-                {'error': 'Le mot de passe doit contenir au moins 8 caractères'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        erreur = mot_de_passe_refuse(new_password, user)
+        if erreur:
+            return Response({'error': erreur}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save(update_fields=['password'])
@@ -24158,14 +24276,12 @@ class DefinirMonMotDePasseView(generics.GenericAPIView):
             return Response({"error": "Le mot de passe est requis."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            validate_password(nouveau, user=request.user)
-        except DjangoValidationError as erreur:
-            # Les messages de Django sont déjà traduits et disent QUOI corriger (« trop
-            # court », « trop courant ») : les remplacer par « mot de passe invalide » ferait
-            # perdre la seule information utile.
-            return Response({"error": " ".join(erreur.messages)},
-                            status=status.HTTP_400_BAD_REQUEST)
+        # Les messages de Django sont déjà traduits et disent QUOI corriger (« trop court »,
+        # « trop courant ») : les remplacer par « mot de passe invalide » ferait perdre la
+        # seule information utile.
+        erreur = mot_de_passe_refuse(nouveau, request.user)
+        if erreur:
+            return Response({"error": erreur}, status=status.HTTP_400_BAD_REQUEST)
 
         avait_un_mot_de_passe = request.user.has_usable_password()
         request.user.set_password(nouveau)

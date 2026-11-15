@@ -311,6 +311,7 @@ class UserSerializer(serializers.ModelSerializer):
     acces_registre_vulnerables = serializers.SerializerMethodField()
     acces_membres_association = serializers.SerializerMethodField()
     acces_campagnes = serializers.SerializerMethodField()
+    second_facteur = serializers.SerializerMethodField()
     est_benevole_association = serializers.SerializerMethodField()
     acces_radio = serializers.SerializerMethodField()
     niveau_acces_radio = serializers.SerializerMethodField()
@@ -417,6 +418,28 @@ class UserSerializer(serializers.ModelSerializer):
             institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
         ).exists()
 
+    def get_second_facteur(self, obj):
+        """Où en est la protection du compte. Complet pour soi-même (le site s'en sert pour
+        rappeler l'échéance) ; pour le compte d'un autre, seul un administrateur voit si la
+        protection est active — de quoi savoir à qui proposer une réinitialisation."""
+        from . import second_facteur
+
+        request = self.context.get("request")
+        demandeur = getattr(request, "user", None)
+        if demandeur is None or not getattr(demandeur, "is_authenticated", False):
+            # Réponse de connexion : `request.user` n'est pas encore posé, mais c'est bien
+            # son propre compte que la personne reçoit.
+            if self.context.get("pour_soi"):
+                etat = second_facteur.etat(obj)
+                return {**etat, "date_limite": etat["date_limite"].isoformat() if etat["date_limite"] else None}
+            return None
+        if demandeur.pk == obj.pk:
+            etat = second_facteur.etat(obj)
+            return {**etat, "date_limite": etat["date_limite"].isoformat() if etat["date_limite"] else None}
+        if getattr(demandeur, "type", None) == UserRole.ADMINISTRATOR:
+            return {"actif": second_facteur.second_facteur_actif(obj) is not None}
+        return None
+
     def get_acces_campagnes(self, obj):
         """Qui voit « Campagnes de disponibilité » : ceux qui peuvent en mener une.
 
@@ -516,7 +539,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_campagnes',
+                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_campagnes', 'second_facteur',
                   'est_benevole_association',
                   'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {
@@ -1443,14 +1466,39 @@ class InformationPublicEditSerializer(serializers.ModelSerializer):
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Serializer personnalisé pour l'authentification JWT"""
+    """Connexion par mot de passe : dernière étape du parcours (voir `core/connexion.py`).
+
+    Deux choses se passent AVANT que le mot de passe soit regardé : le frein par compte, et,
+    pour un compte protégé par un second facteur, la vérification que le code a déjà été donné
+    (`jeton_etape`, remis par `/api/connexion/code/`). Sans ce jeton la réponse est celle d'un
+    mot de passe faux, que le mot de passe soit bon ou non.
+
+    Un client qui n'envoie que l'adresse et le mot de passe (ancienne application mobile,
+    satellite, pont radio) continue de fonctionner tant que le compte n'a pas de second
+    facteur."""
     username_field = 'email'
+    jeton_etape = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    appareil = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     def validate(self, attrs):
-        data = super().validate(attrs)
-        # On ajoute l'utilisateur sérialisé à la réponse
-        data['user'] = UserSerializer(self.user).data
-        return data
+        from rest_framework.exceptions import AuthenticationFailed
+        from rest_framework_simplejwt.serializers import TokenObtainSerializer
+
+        from . import connexion
+        from . import frein_connexion as frein
+
+        appareil = attrs.pop('appareil', '') or ''
+        jeton_etape = attrs.pop('jeton_etape', '') or ''
+        _, compteur = connexion.avant_mot_de_passe(attrs.get('email', ''), jeton_etape, appareil)
+        try:
+            # La classe grand-mère : elle authentifie et s'arrête là. Les jetons sont fabriqués
+            # par `ouvrir_session`, seul endroit qui en délivre.
+            TokenObtainSerializer.validate(self, attrs)
+        except AuthenticationFailed:
+            connexion.echec_mot_de_passe(compteur)
+        frein.reussite(compteur)
+        return connexion.ouvrir_session(
+            self.context.get('request'), self.user, appareil, fiche_avec_requete=False)
 
 class RisqueMajeurTypeSerializer(serializers.ModelSerializer):
     class Meta:
