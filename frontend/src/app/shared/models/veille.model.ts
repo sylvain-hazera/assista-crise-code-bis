@@ -334,6 +334,33 @@ export interface Defibrillateur {
 }
 export interface Defibrillateurs extends EnteteVeille { total: number; resultats: Defibrillateur[]; }
 
+/** Pixel chaud vu par satellite ces deux derniers jours (NASA FIRMS). Pas forcément un feu :
+ * `source_fixe` marque ceux qui reviennent au même endroit (usines, torchères). */
+export interface FoyerActif {
+  reference: string;
+  date: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+  confiance: string;
+  puissance_mw: number | null;
+  satellite: string;
+  source_fixe: boolean;
+}
+export interface FoyersActifs extends EnteteVeille {
+  /** Nombre de sources fixes dans l'emprise, qu'elles soient rendues ou non. */
+  sources_fixes: number;
+  resultats: FoyerActif[];
+}
+
+/** Réglage de l'annonce des foyers détectés près d'une institution. */
+export interface ConfigurationAlerteFeu {
+  id: number;
+  institution: string;
+  actif: boolean;
+  rayon_km: number;
+}
+
 /** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
  * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
  * les radars, pas l'image radar elle-même — l'écran doit le dire. */

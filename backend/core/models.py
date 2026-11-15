@@ -2576,6 +2576,64 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class FoyerActif(models.Model):
+    """Pixel chaud détecté par satellite ces deux derniers jours (NASA FIRMS) -- voir
+    core/foyers_actifs.py. Un pixel chaud n'est pas forcément un feu : `source_fixe` marque ceux
+    qui reviennent au même endroit quatre jours sur sept (usines, torchères)."""
+
+    reference = models.CharField(max_length=60, primary_key=True)
+    date = models.DateTimeField(db_index=True)
+    location = gis_models.PointField(srid=4326)
+    satellite = models.CharField(max_length=8, blank=True, default="")
+    confiance = models.CharField(max_length=10, default="nominale")
+    # Puissance radiative du foyer, en mégawatts.
+    puissance_mw = models.FloatField(null=True, blank=True)
+    de_jour = models.BooleanField(default=True)
+    source_fixe = models.BooleanField(default=False, db_index=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Foyer {self.reference}"
+
+
+class ConfigurationAlerteFeu(EnvironmentScopedModel):
+    """Annonce des foyers détectés par satellite près de la commune de l'institution, sur ses
+    canaux radio et par message à ses rattachés (commande relever_sources_ouvertes). Inactive
+    tant que l'institution ne l'a pas demandée : le signal a des faux positifs (écobuages,
+    brûlages) et doit être voulu."""
+
+    institution = models.OneToOneField(
+        "Institution", on_delete=models.CASCADE, related_name="configuration_alerte_feu",
+    )
+    actif = models.BooleanField(default=False)
+    rayon_km = models.PositiveIntegerField(
+        default=15, validators=[MinValueValidator(2), MaxValueValidator(60)])
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Alerte feu {self.institution.nom} ({'active' if self.actif else 'inactive'})"
+
+
+class FoyerSignale(EnvironmentScopedModel):
+    """Maille de 5 km déjà annoncée à une institution (anti-doublon). Effacée au bout de trois
+    jours : un feu qui dure n'est annoncé qu'une fois, un nouveau feu au même endroit l'est."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="foyers_signales",
+    )
+    maille = models.CharField(max_length=24)
+    date_signalement = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["institution", "maille"], name="uq_foyer_signale_institution_maille"),
+        ]
+
+    def __str__(self):
+        return f"Foyer {self.maille} -> {self.institution.nom}"
+
+
 class MesureRadioactivite(models.Model):
     """Dernière mesure d'une balise du réseau Téléray (ASNR) : débit de dose gamma ambiant et
     bruit de fond habituel de la balise, en nanosieverts par heure -- voir

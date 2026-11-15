@@ -1374,9 +1374,14 @@ class TestCommandeDeReleve:
             ordre.append("ANNONCE")
             return ["Mairie : Vigilance ORANGE"]
 
+        def annoncer_un_foyer():
+            ordre.append("ANNONCE_FOYER")
+            return []
+
         sortie = io.StringIO()
         with mock.patch("core.sources_ouvertes.relever_source", side_effect=relever), \
-                mock.patch("core.meteo_france.diffuser_alertes", side_effect=annoncer):
+                mock.patch("core.meteo_france.diffuser_alertes", side_effect=annoncer), \
+                mock.patch("core.foyers_actifs.diffuser_alertes", side_effect=annoncer_un_foyer):
             call_command("relever_sources_ouvertes", *arguments, stdout=sortie)
         return ordre, sortie.getvalue()
 
@@ -1384,7 +1389,9 @@ class TestCommandeDeReleve:
         ordre, sortie = self._lancer({})
 
         assert ordre[:2] == ["VIGILANCE_METEO", "ANNONCE"]
-        assert set(ordre[2:]) == set(sources_ouvertes.SOURCES) - {"VIGILANCE_METEO"}
+        assert set(ordre[2:]) == (set(sources_ouvertes.SOURCES) - {"VIGILANCE_METEO"}) | {"ANNONCE_FOYER"}
+        # Les foyers aussi sont annoncés dès leur relevé, sans attendre la suite.
+        assert ordre[ordre.index("FOYERS_ACTIFS") + 1] == "ANNONCE_FOYER"
         assert "1 annonce(s) de vigilance" in sortie
 
     def test_rien_n_est_annonce_sur_une_vigilance_non_rafraichie(self):

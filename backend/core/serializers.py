@@ -94,6 +94,7 @@ from .models import (
     TracerouteMeshCore,
     AlerteMeshSOS,
     ConfigurationAlerteSismique,
+    ConfigurationAlerteFeu,
     ConfigurationAlerteVigilance,
     VigilanceMeteo,
     InterlocuteurAlertePCS,
@@ -1634,6 +1635,15 @@ class ConfigurationAlerteVigilanceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ConfigurationAlerteVigilance
+        fields = "__all__"
+        read_only_fields = ['id', 'institution']
+
+
+class ConfigurationAlerteFeuSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+
+    class Meta:
+        model = ConfigurationAlerteFeu
         fields = "__all__"
         read_only_fields = ['id', 'institution']
 

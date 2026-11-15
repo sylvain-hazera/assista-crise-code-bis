@@ -2795,7 +2795,7 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Quinze sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+Seize sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
 les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie prévue, stations
 météo, vigilance crues, risque d'avalanche, surfaces brûlées, routes, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
@@ -2809,6 +2809,7 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | Météo-France, météo des forêts | danger de feu par département, demain et après-demain ; **juin à septembre** | même clé | 3 h | `core/meteo_forets.py` |
 | Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
 | VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
+| NASA FIRMS | **foyers actifs** : points chauds vus par satellite depuis 48 h (4 capteurs, ~6 passages par jour, 3 h de délai) | aucune clé | 30 min | `core/foyers_actifs.py` |
 | EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
 | DiaLog (DATEX II v3) | arrêtés de circulation des collectivités : voies interdites, interdites aux poids lourds, alternats | aucune clé | 24 h | `core/arretes_circulation.py` |
 | Santé publique France (Odissé) | part des passages aux urgences pour grippe, Covid-19, gastro-entérite, bronchiolite, par département et par semaine | aucune clé | 24 h | `core/sante_urgences.py` |
@@ -2826,7 +2827,7 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
    une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
 2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `ObservationMeteo`,
    `ImagePluie`, `RisqueAvalanche`, `DangerFeuForet`, `TronconVigilanceCrues`, `RestrictionEau`,
-   `ZoneBrulee`, `ArreteCirculation`, `IndicateurSante`, `MesureRadioactivite`, `Seisme`,
+   `FoyerActif`, `ZoneBrulee`, `ArreteCirculation`, `IndicateurSante`, `MesureRadioactivite`, `Seisme`,
    `Defibrillateur`, `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
    personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
    table. Un flux vide ou tronqué ne remplace pas la copie précédente.
@@ -2874,6 +2875,13 @@ l'image est posée sous les noms de lieux, pour ne rien masquer.
   commune. Le détail par commune existe chez VigiEau, mais il faudrait le demander commune par
   commune — donc dire à l'extérieur quelles communes utilisent la plateforme. On ne le fait pas ;
   l'écran renvoie vers vigieau.gouv.fr.
+- *Foyers actifs* : **un point chaud n'est pas forcément un feu.** Relevé du 15/11/2026 : sur
+  109 détections en 24 h dans l'emprise de la France, presque toutes étaient des hauts-fourneaux
+  et des torchères (Dunkerque, Fos-sur-Mer, la Sarre). Une maille de 2 km où de la chaleur est
+  vue quatre jours sur sept — voisines comprises, un grand site débordant d'une maille — est
+  donc marquée **source fixe** : gardée, grisée sur la carte, écartée des listes et jamais
+  annoncée. Tout le reste est dit « à vérifier » (écobuage, feu de chaume, brûlage). Et
+  l'inverse : sous les nuages ou entre deux passages, un feu réel n'est pas vu.
 - *Surfaces brûlées* : une mémoire, pas une alerte. Seuls les feux d'une trentaine d'hectares
   sont vus par satellite, avec un jour de retard.
 - *Arrêtés de circulation* : seules les collectivités qui publient dans DiaLog y figurent.
@@ -2930,6 +2938,14 @@ récente en France ; OpenRadiation (mesures citoyennes) demande une clé et rel�
 publiés qu'en BUFR, HDF5 ou GRIB, que le serveur ne lit pas ; le niveau des nappes (Hub'Eau)
 est une cote brute, sans la référence historique qui permettrait de dire si elle est haute ou
 basse.
+
+**Annonce des foyers** (`ConfigurationAlerteFeu`, inactive par défaut, rayon de 15 km autour
+de la commune, 2 à 60) : mêmes canaux que la vigilance. Un foyer est annoncé quand une maille
+de 5 km compte au moins deux détections de moins de huit heures (ou une de confiance élevée),
+n'est pas une source fixe, et n'a pas déjà été annoncée à cette institution depuis trois jours
+(`FoyerSignale`). La phrase dit ce qu'on sait — « chaleur détectée par satellite, à vérifier »
+— et pas davantage. Un site industriel vu par intermittence peut passer le filtre : c'est pour
+cela que l'annonce est un choix de l'institution, et que son rayon se règle.
 
 **Clé Météo-France** : secret Docker `meteofrance_cle_api` (fichier
 `meteofrance_cle_api.txt` du dossier des secrets), monté dans `ac_backend` seulement. C'est un

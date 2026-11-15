@@ -1,8 +1,8 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Quinze sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
+Seize sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
 risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau),
-surfaces brûlées (EFFIS), événements routiers (Bison Futé), arrêtés de circulation (DiaLog),
+foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers (Bison Futé), arrêtés de circulation (DiaLog),
 recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
 (BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
@@ -26,7 +26,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    arretes_circulation, avalanche, carburants, defibrillateurs, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
+    arretes_circulation, avalanche, carburants, defibrillateurs, feux_satellite, foyers_actifs, meteo_forets, meteo_france, observations_meteo, pluie,
     radioactivite, restrictions_eau, sante_urgences, seismes, trafic_routier, vigilance_crues,
 )
 
@@ -58,6 +58,10 @@ SOURCES = {
         Source("RESTRICTIONS_EAU", "Restrictions d'usage de l'eau", restrictions_eau.relever,
                datetime.timedelta(hours=6), datetime.timedelta(hours=48),
                "VigiEau - ministère de la Transition écologique"),
+        # Six passages de satellite par jour, publiés trois heures après : toutes les demi-heures
+        # suffit à ne manquer aucun passage.
+        Source("FOYERS_ACTIFS", "Foyers d'incendie détectés par satellite", foyers_actifs.relever,
+               datetime.timedelta(minutes=29), datetime.timedelta(hours=12), "NASA FIRMS"),
         Source("FEUX_SATELLITE", "Surfaces brûlées repérées par satellite", feux_satellite.relever,
                datetime.timedelta(hours=3), datetime.timedelta(hours=24),
                "© Union européenne, Copernicus EFFIS"),

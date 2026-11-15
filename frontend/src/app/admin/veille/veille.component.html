@@ -426,6 +426,46 @@
       }
     }
 
+    <h3>Foyers vus par satellite depuis 48 heures</h3>
+    @if (!foyers) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!foyers.emprise_connue) {
+      <p class="attente">Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder.</p>
+    } @else {
+      @if (foyers.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : ce qui suit n'est peut-être plus d'actualité.</span>
+        </p>
+      }
+      @if (foyers.resultats.length) {
+        <ul class="troncons foyers">
+          @for (foyer of foyers.resultats; track foyer.reference) {
+            <li>
+              <span class="etiquette feu" data-niveau="3">à vérifier</span>
+              <strong>à {{ foyer.distance_km | number:'1.0-0' }} km</strong>
+              <span>{{ foyer.date | date:'dd/MM à HH:mm' }}</span>
+              <span class="adresse">confiance {{ foyer.confiance }}@if (foyer.puissance_mw != null) { · {{ foyer.puissance_mw | number:'1.0-0' }} MW }</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="calme">Aucun foyer détecté dans ce rayon depuis 48 heures.</p>
+      }
+      <p class="note">
+        Source : {{ foyers.source }}@if (foyers.releve_le) {, relevé le {{ foyers.releve_le | date:'dd/MM à HH:mm' }}}.
+        Un « foyer » est un point plus chaud que ses voisins, vu environ trois heures après le
+        passage du satellite. <strong>Ce n'est pas forcément un feu de forêt</strong> : écobuage,
+        feu de chaume et brûlage donnent le même signal.
+        @if (foyers.sources_fixes) {
+          {{ foyers.sources_fixes }} détection(s) dans ce rayon reviennent au même endroit jour
+          après jour (usine, torchère) : elles sont écartées de cette liste et grisées sur la carte.
+        }
+        Et l'inverse est vrai : sous les nuages ou entre deux passages, un feu réel n'est pas vu.
+        Pour être prévenu d'un foyer proche, activez l'annonce dans la fiche de votre institution.
+      </p>
+    }
+
     <h3>Surfaces brûlées des 30 derniers jours</h3>
     @if (erreurFeux) {
       <p class="message erreur" role="alert">

@@ -109,6 +109,11 @@
         <span class="layer-dot avalanche-dot"></span>
         Risque d'avalanche (massifs)
       </label>
+      <label class="layer-toggle-item" title="Points chauds vus par satellite depuis 48 heures (NASA FIRMS). Rouge : à vérifier. Gris : usine ou torchère.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.foyersActifs" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot foyers-dot"></span>
+        Foyers détectés par satellite (48 h)
+      </label>
       <label class="layer-toggle-item" title="Surfaces brûlées des trente derniers jours, vues par satellite (EFFIS). Pas une alerte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.zonesBrulees" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot brule-dot"></span>

@@ -53,6 +53,8 @@ interface LayerVisibility {
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
   zonesBrulees: boolean;
+  /** Foyers actifs vus par satellite depuis 48 h (NASA FIRMS), sources fixes grisées. */
+  foyersActifs: boolean;
   /** Massifs colorés par risque d'avalanche (bulletins de Météo-France). */
   avalanche: boolean;
   /** Arrêtés de circulation des collectivités (DiaLog) : fermetures, poids lourds, alternats. */
@@ -119,6 +121,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     pluie: false,
     vigilanceCrues: false,
     zonesBrulees: false,
+    foyersActifs: false,
     avalanche: false,
     arretesCirculation: false,
     defibrillateurs: false,
@@ -206,6 +209,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
+    this.applyLayerVisibility('foyers-actifs-layer', this.layerVisibility.foyersActifs);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
     this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
@@ -227,9 +231,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private rafraichirVeille(): void {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
-            arretesCirculation, defibrillateurs, seismes, radioactivite } = this.layerVisibility;
+            arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
-        && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite) return;
+        && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
+        && !foyersActifs) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -270,6 +275,27 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
           'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
         }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (foyersActifs) {
+      this.veilleService.foyersActifs({ bbox }, true).subscribe({
+        next: (reponse) => this.afficherCoucheVeille('foyers-actifs', {
+          type: 'FeatureCollection',
+          features: reponse.resultats.map(f => ({
+            type: 'Feature', geometry: { type: 'Point', coordinates: [f.longitude, f.latitude] },
+            properties: {
+              etat: f.source_fixe ? 'fixe' : 'grave',
+              infobulle: (f.source_fixe
+                  ? '<strong>Source de chaleur fixe</strong><br>Vue au même endroit jour après jour : probablement une usine ou une torchère, pas un feu.'
+                  : '<strong>Foyer détecté par satellite — à vérifier</strong><br>Peut être un feu, un écobuage ou un brûlage.')
+                + `<br>${new Date(f.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}, confiance ${this.echapper(f.confiance)}`
+                + (f.puissance_mw != null ? `, ${Math.round(f.puissance_mw)} MW` : '')
+                + '<br><small>Source : NASA FIRMS, environ 3 h après le passage du satellite</small>',
+            },
+          })),
+        // Rouge : foyer à vérifier. Gris : source fixe (usine, torchère).
+        }, ['match', ['get', 'etat'], 'grave', '#dc2626', '#9ca3af'], this.layerVisibility.foyersActifs),
         error: () => {},
       });
     }

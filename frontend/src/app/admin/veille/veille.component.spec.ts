@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
+  ArretesCirculation, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -186,6 +186,12 @@ const VOLCANS = (aPortee: boolean): Volcans => ({
   source: 'BCSF-Rénass', releve_le: '2026-11-15T09:10:00Z', perime: false, rayon_km: 15, volcans: [fournaise(aPortee)],
 });
 
+const FOYERS: FoyersActifs = {
+  ...ENTETE, sources_fixes: 3,
+  resultats: [{ reference: 'f1', date: '2026-11-15T12:30:00Z', latitude: 45.51, longitude: 4.41,
+                distance_km: 8.2, confiance: 'nominale', puissance_mw: 10.1, satellite: 'N20', source_fixe: false }],
+};
+
 const EN_PLAINE: RisqueAvalanche = {
   ...ENTETE, libelles: { '1': 'faible', '2': 'limité', '3': 'marqué', '4': 'fort', '5': 'très fort' }, resultats: [],
 };
@@ -207,7 +213,8 @@ describe('VeilleComponent', () => {
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
                                 arretes?: ArretesCirculation; sante?: SanteUrgences;
-                                radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans } = {}) {
+                                radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
+                                foyers?: FoyersActifs } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
@@ -219,6 +226,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(reponses.radio ?? RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(reponses.seismes ?? SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(reponses.avalanche ?? EN_PLAINE);
+    http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(reponses.foyers ?? FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(reponses.arretes ?? ARRETES);
@@ -235,7 +243,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(14);
+    expect(demandes.length).toBe(15);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -476,6 +484,19 @@ describe('VeilleComponent', () => {
     expect(bloc.querySelector('a[href="https://www.ipgp.fr/observation/ovs/ovpf/"]')).not.toBeNull();
   });
 
+  it('présente un foyer comme un point à vérifier, et dit ce que le satellite ne voit pas', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-feux"]');
+    const ligne = bloc.querySelector('.foyers li')!;
+
+    expect(ligne.textContent).toContain('à vérifier');
+    expect(ligne.textContent).toContain('à 8 km');
+    expect(bloc.textContent).toContain('Ce n\'est pas forcément un feu de forêt');
+    // Les usines repérées ne sont pas dans la liste, et la page le dit.
+    expect(bloc.textContent).toContain('3 détection(s)');
+    expect(bloc.textContent).toContain('un feu réel n\'est pas vu');
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
     // Les deux listes (réseau national, routes locales) partagent leur mise en forme : on ne
@@ -519,6 +540,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/radioactivite/` && r.params.get('rayon_km') === '60').flush(RADIO);
     http.expectOne(r => r.url === `${api}/seismes/` && r.params.get('rayon_km') === '60').flush(SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/` && r.params.get('rayon_km') === '60').flush(EN_PLAINE);
+    http.expectOne(r => r.url === `${api}/foyers-actifs/` && r.params.get('rayon_km') === '60').flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/arretes-circulation/` && r.params.get('rayon_km') === '60').flush(ARRETES);
@@ -534,6 +556,7 @@ describe('VeilleComponent', () => {
       radio: { ...sansEmprise, resultats: [] },
       seismes: { ...sansEmprise, resultats: [] },
       feux: { ...sansEmprise, resultats: [] },
+      foyers: { ...sansEmprise, sources_fixes: 0, resultats: [] },
       observations: { ...sansEmprise, resultats: [] },
       arretes: { ...sansEmprise, bilan: { FERMETURE: 0, POIDS_LOURDS: 0, ALTERNAT: 0 }, resultats: [] },
       routes: { ...sansEmprise, resultats: [] },
@@ -555,6 +578,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(SEISMES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(EN_PLAINE);
+    http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(ARRETES);

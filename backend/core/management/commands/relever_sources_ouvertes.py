@@ -16,7 +16,7 @@ import tempfile
 
 from django.core.management.base import BaseCommand
 
-from core import meteo_france, sources_ouvertes
+from core import foyers_actifs, meteo_france, sources_ouvertes
 
 
 class Command(BaseCommand):
@@ -47,7 +47,7 @@ class Command(BaseCommand):
 
     def _relever(self, options):
         codes = [options["source"]] if options["source"] else list(sources_ouvertes.SOURCES)
-        resultats, annonces = {}, []
+        resultats, annonces, foyers = {}, [], []
         for code in codes:
             resultats[code] = sources_ouvertes.relever_source(code, forcer=options["forcer"])
             # L'annonce part AUSSITÔT la vigilance relevée, sans attendre les autres sources :
@@ -58,6 +58,10 @@ class Command(BaseCommand):
             # trop ancienne.
             if code == "VIGILANCE_METEO" and resultats[code] == "réussi":
                 annonces = meteo_france.diffuser_alertes()
+            # Même principe pour les foyers vus par satellite : annoncés dès leur relevé.
+            if code == "FOYERS_ACTIFS" and resultats[code] == "réussi":
+                foyers = foyers_actifs.diffuser_alertes()
 
         detail = ", ".join(f"{code} {resultat}" for code, resultat in resultats.items())
-        self.stdout.write(f"Veille : {detail} ; {len(annonces)} annonce(s) de vigilance.")
+        self.stdout.write(f"Veille : {detail} ; {len(annonces)} annonce(s) de vigilance, "
+                          f"{len(foyers)} annonce(s) de foyer.")

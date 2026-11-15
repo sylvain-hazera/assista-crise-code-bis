@@ -7,6 +7,7 @@ import io
 from unittest import mock
 
 import pytest
+import requests
 from django.contrib.gis.geos import Point
 from django.urls import reverse
 from django.utils import timezone
@@ -310,3 +311,219 @@ class TestCarteDesDefibrillateurs:
         for code in ("RADIOACTIVITE", "SEISMES", "DEFIBRILLATEURS"):
             assert code in sources_ouvertes.SOURCES
         assert not ReleveSourceOuverte.objects.exists()
+
+
+# ── Foyers d'incendie actifs ────────────────────────────────────────────────────────────────
+
+from core import foyers_actifs  # noqa: E402
+from core.models import (  # noqa: E402
+    CanalMeshCore, Commune, ConfigurationAlerteFeu, ContactInstitution, FoyerActif, FoyerSignale,
+    Institution, InstitutionType, MessageCanalMeshCore,
+)
+
+ENTETE_VIIRS = "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight"
+ENTETE_MODIS = "latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,confidence,version,bright_t31,frp,daynight"
+
+
+def _viirs(lat, lon, jour, heure="1230", confiance="nominal", frp="10.12"):
+    return f"{lat},{lon},339.59,0.57,0.52,{jour},{heure},N20,{confiance},2.0NRT,278.43,{frp},D"
+
+
+def _fichier_viirs(*lignes):
+    return "\n".join((ENTETE_VIIRS,) + lignes)
+
+
+class TestFoyersActifs:
+
+    def test_une_detection_recente_devient_un_foyer(self):
+        (foyer,) = foyers_actifs.analyser([_fichier_viirs(_viirs(45.50, 4.50, "2026-11-15", "1230"))], MAINTENANT)
+
+        assert foyer["date"] == datetime.datetime(2026, 11, 15, 12, 30, tzinfo=UTC)
+        assert (foyer["location"].x, foyer["location"].y) == (4.5, 45.5)
+        assert foyer["confiance"] == "nominale" and foyer["puissance_mw"] == 10.1
+        assert foyer["satellite"] == "N20" and foyer["source_fixe"] is False and foyer["de_jour"] is True
+
+    def test_hors_emprise_trop_ancien_ou_peu_fiable_n_est_pas_garde(self):
+        foyers = foyers_actifs.analyser([_fichier_viirs(
+            _viirs(45.50, 4.50, "2026-11-15"),
+            _viirs(38.00, 23.70, "2026-11-15"),                 # Grèce
+            _viirs(45.60, 4.60, "2026-11-12"),                 # plus de deux jours
+            _viirs(45.70, 4.70, "2026-11-15", confiance="low"),
+        )], MAINTENANT)
+
+        assert [round(f["location"].y, 2) for f in foyers] == [45.5]
+
+    def test_modis_donne_sa_confiance_en_pourcentage(self):
+        modis = "\n".join([ENTETE_MODIS,
+                           "45.5,4.5,300.46,1.17,1.07,2026-11-15,1014,A,85,6.1NRT,274.22,11.62,D",
+                           "45.6,4.6,300.46,1.17,1.07,2026-11-15,1014,A,45,6.1NRT,274.22,11.62,D",
+                           "45.7,4.7,300.46,1.17,1.07,2026-11-15,1014,A,12,6.1NRT,274.22,11.62,D"])
+
+        foyers = foyers_actifs.analyser([modis], MAINTENANT)
+
+        assert [f["confiance"] for f in foyers] == ["élevée", "nominale"]
+
+    def test_un_point_chaud_qui_revient_quatre_jours_sur_sept_est_une_source_fixe(self):
+        """Constaté le 15/11/2026 : sur 109 détections en 24 h, presque toutes étaient des
+        hauts-fourneaux et des torchères. Un feu avance ou s'éteint ; une usine reste."""
+        usine = [_viirs(51.031, 2.301, f"2026-11-{jour}") for jour in (10, 11, 13, 14, 15)]
+        feu = [_viirs(44.201, 5.101, "2026-11-15"), _viirs(44.202, 5.102, "2026-11-15", "1330")]
+
+        foyers = foyers_actifs.analyser([_fichier_viirs(*usine, *feu)], MAINTENANT)
+
+        fixes = {round(f["location"].y, 1) for f in foyers if f["source_fixe"]}
+        libres = {round(f["location"].y, 1) for f in foyers if not f["source_fixe"]}
+        assert fixes == {51.0} and libres == {44.2}
+
+    def test_un_grand_site_qui_deborde_d_une_maille_reste_une_source_fixe(self):
+        """Une aciérie couvre plusieurs mailles de 2 km : chacune n'est vue que certains jours."""
+        site = [_viirs(51.031, 2.301, "2026-11-10"), _viirs(51.031, 2.301, "2026-11-11"),
+                _viirs(51.031, 2.325, "2026-11-13"), _viirs(51.031, 2.325, "2026-11-14"),
+                _viirs(51.045, 2.310, "2026-11-15")]
+
+        foyers = foyers_actifs.analyser([_fichier_viirs(*site)], MAINTENANT)
+
+        assert foyers and all(f["source_fixe"] for f in foyers)
+
+    def test_la_meme_detection_lue_deux_fois_n_est_comptee_qu_une(self):
+        fichier = _fichier_viirs(_viirs(45.50, 4.50, "2026-11-15"))
+
+        assert len(foyers_actifs.analyser([fichier, fichier], MAINTENANT)) == 1
+
+    def test_un_capteur_en_panne_n_empeche_pas_les_autres(self):
+        bon = mock.Mock(text=_fichier_viirs(_viirs(45.5, 4.5, "2026-11-15")), raise_for_status=lambda: None)
+
+        with mock.patch("core.foyers_actifs.requests.get",
+                        side_effect=[requests.ConnectionError("coupé"), bon, bon, requests.ReadTimeout("lent")]):
+            assert len(foyers_actifs.telecharger()) == 2
+
+        with mock.patch("core.foyers_actifs.requests.get", side_effect=requests.ConnectionError("coupé")):
+            with pytest.raises(requests.ConnectionError):
+                foyers_actifs.telecharger()
+
+    @pytest.mark.django_db
+    def test_quand_plus_rien_ne_brule_la_table_se_vide(self):
+        foyers_actifs.enregistrer(foyers_actifs.analyser([_fichier_viirs(_viirs(45.5, 4.5, "2026-11-15"))], MAINTENANT))
+
+        assert foyers_actifs.enregistrer([]) == 0 and FoyerActif.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_la_lecture_met_les_sources_fixes_a_part(self, api_client):
+        def foyer(reference, lon, lat, fixe):
+            FoyerActif.objects.create(reference=reference, date=timezone.now(), location=Point(lon, lat, srid=4326),
+                                      source_fixe=fixe, releve_le=timezone.now())
+        foyer("feu", 4.40, 45.45, False)
+        foyer("usine", 4.41, 45.46, True)
+
+        parametres = {"lat": "45.44", "lon": "4.39", "rayon_km": "10"}
+        sans = api_client.get(reverse("foyers_actifs"), parametres).json()
+        avec = api_client.get(reverse("foyers_actifs"), {**parametres, "fixes": "1"}).json()
+
+        assert [f["reference"] for f in sans["resultats"]] == ["feu"] and sans["sources_fixes"] == 1
+        assert {f["reference"]: f["source_fixe"] for f in avec["resultats"]} == {"feu": False, "usine": True}
+        assert sans["source"] == "NASA FIRMS"
+
+
+@pytest.fixture
+def mairie_feu(db):
+    Commune.objects.create(code="42218", nom="Saint-Étienne", departement_code="42", region_code="84",
+                           epci_code="244200770", centre_latitude=45.44, centre_longitude=4.39)
+    itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
+    institution = Institution.objects.create(
+        nom="Mairie de Saint-Étienne (feux)", type=itype, commune_code="42218",
+        commune_nom="Saint-Étienne", departement_code="42")
+    ConfigurationAlerteFeu.objects.create(institution=institution, actif=True, rayon_km=15)
+    return institution
+
+
+def _foyer_en_base(reference, lat, lon, heures=1, fixe=False, confiance="nominale"):
+    FoyerActif.objects.create(
+        reference=reference, date=MAINTENANT - datetime.timedelta(hours=heures),
+        location=Point(lon, lat, srid=4326), confiance=confiance, source_fixe=fixe, releve_le=MAINTENANT)
+
+
+@pytest.mark.django_db
+class TestAnnonceDesFoyers:
+
+    @pytest.fixture(autouse=True)
+    def sans_messagerie(self):
+        with mock.patch("core.matrix.envoyer_dm") as envoi:
+            self.envoi = envoi
+            yield
+
+    def test_deux_detections_proches_sont_annoncees_sur_la_radio_et_par_message(self, mairie_feu, create_user):
+        agent = create_user(username="agent-feu@test.fr", email="agent-feu@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie_feu, utilisateur=agent, actif=True)
+        canal = CanalMeshCore.objects.create(nom="Mairie", institution=mairie_feu, actif=True, cle_partagee_hex="00" * 16)
+        _foyer_en_base("a", 45.512, 4.412)
+        _foyer_en_base("b", 45.514, 4.415, heures=2)
+
+        (annonce,) = foyers_actifs.diffuser_alertes(MAINTENANT)
+
+        message = MessageCanalMeshCore.objects.get(canal=canal).contenu
+        assert message.isascii()            # il part tel quel sur la radio
+        assert "a ~8 km au nord de Saint-Etienne (2 detection(s), 16h00)" in message
+        assert "A VERIFIER" in message and "NASA FIRMS" in message
+        assert self.envoi.call_args_list[0].args[0] == agent and annonce.endswith(message)
+
+    def test_le_meme_feu_n_est_pas_annonce_deux_fois(self, mairie_feu):
+        _foyer_en_base("a", 45.512, 4.412)
+        _foyer_en_base("b", 45.514, 4.415)
+        foyers_actifs.diffuser_alertes(MAINTENANT)
+        _foyer_en_base("c", 45.513, 4.413)
+
+        assert foyers_actifs.diffuser_alertes(MAINTENANT + datetime.timedelta(hours=1)) == []
+
+    def test_apres_trois_jours_un_nouveau_feu_au_meme_endroit_est_annonce(self, mairie_feu):
+        _foyer_en_base("a", 45.512, 4.412)
+        _foyer_en_base("b", 45.514, 4.415)
+        foyers_actifs.diffuser_alertes(MAINTENANT)
+        FoyerSignale.objects.update(date_signalement=MAINTENANT - datetime.timedelta(days=4))
+
+        assert len(foyers_actifs.diffuser_alertes(MAINTENANT)) == 1
+
+    def test_une_detection_isolee_ordinaire_ne_suffit_pas_une_de_confiance_elevee_si(self, mairie_feu):
+        _foyer_en_base("seule", 45.512, 4.412)
+        assert foyers_actifs.diffuser_alertes(MAINTENANT) == []
+
+        _foyer_en_base("sure", 45.40, 4.30, confiance="élevée")
+        assert len(foyers_actifs.diffuser_alertes(MAINTENANT)) == 1
+
+    def test_une_source_fixe_n_est_jamais_annoncee(self, mairie_feu):
+        _foyer_en_base("u1", 45.512, 4.412, fixe=True)
+        _foyer_en_base("u2", 45.514, 4.415, fixe=True)
+
+        assert foyers_actifs.diffuser_alertes(MAINTENANT) == []
+
+    def test_hors_du_rayon_ou_trop_ancien_rien_n_est_annonce(self, mairie_feu):
+        _foyer_en_base("loin1", 45.80, 4.40)
+        _foyer_en_base("loin2", 45.80, 4.41)
+        _foyer_en_base("vieux1", 45.512, 4.412, heures=20)
+        _foyer_en_base("vieux2", 45.514, 4.415, heures=21)
+
+        assert foyers_actifs.diffuser_alertes(MAINTENANT) == []
+
+    def test_rien_ne_part_sans_abonnement_actif(self, mairie_feu):
+        ConfigurationAlerteFeu.objects.update(actif=False)
+        _foyer_en_base("a", 45.512, 4.412)
+        _foyer_en_base("b", 45.514, 4.415)
+
+        assert foyers_actifs.diffuser_alertes(MAINTENANT) == []
+        self.envoi.assert_not_called()
+
+    def test_seul_un_acteur_institutionnel_regle_l_annonce_et_le_rayon_est_borne(self, mairie_feu, create_user):
+        from rest_framework.test import APIClient
+
+        ConfigurationAlerteFeu.objects.all().delete()
+        adresse = reverse("configurationalertefeu-list")
+        citoyen = create_user(username="citoyen-feu@test.fr", email="citoyen-feu@test.fr")
+        client = APIClient()
+        client.force_authenticate(user=citoyen)
+        assert client.post(adresse, {"institution": str(mairie_feu.id), "actif": True}, format="json").status_code == 403
+
+        agent = create_user(username="agent-feu2@test.fr", email="agent-feu2@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie_feu, utilisateur=agent, actif=True)
+        client.force_authenticate(user=agent)
+        assert client.post(adresse, {"institution": str(mairie_feu.id), "actif": True, "rayon_km": 500}, format="json").status_code == 400
+        reponse = client.post(adresse, {"institution": str(mairie_feu.id), "actif": True, "rayon_km": 20}, format="json")
+        assert reponse.status_code == 201 and reponse.json()["rayon_km"] == 20

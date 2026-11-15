@@ -23,7 +23,7 @@ import { Zone } from '../../shared/models/zone.model';
 import { ConfigurationAlerteSismiqueService } from '../../services/configuration-alerte-sismique.service';
 import { ConfigurationAlerteSismique } from '../../shared/models/configuration-alerte-sismique.model';
 import { VeilleService } from '../../services/veille.service';
-import { ConfigurationAlerteVigilance } from '../../shared/models/veille.model';
+import { ConfigurationAlerteFeu, ConfigurationAlerteVigilance } from '../../shared/models/veille.model';
 import { InterlocuteurAlertePCSService } from '../../services/interlocuteur-alerte-pcs.service';
 import {
   InterlocuteurAlertePCS, CategorieInterlocuteurPCS, ModeAlertePCS,
@@ -537,6 +537,11 @@ export class InstitutionsComponent implements OnInit {
       couleur_min: [3, [Validators.required]],
     });
 
+    this.alerteFeuForm = this.fb.group({
+      actif: [false],
+      rayon_km: [15, [Validators.required, Validators.min(2), Validators.max(60)]],
+    });
+
     this.contactForm = this.fb.group({
       utilisateur: [null, Validators.required],
       fonction: ['', Validators.required],
@@ -848,6 +853,17 @@ export class InstitutionsComponent implements OnInit {
         }
       });
     }
+    this.configAlerteFeu = null;
+    this.alerteFeuEnregistree = false;
+    this.alerteFeuForm.reset({ actif: false, rayon_km: 15 });
+    if (institution.id) {
+      this.veilleService.alerteFeu(institution.id).subscribe(configs => {
+        if (configs.length > 0) {
+          this.configAlerteFeu = configs[0];
+          this.alerteFeuForm.patchValue(configs[0]);
+        }
+      });
+    }
     this.configAlerteVigilance = null;
     this.alerteVigilanceEnregistree = false;
     this.alerteVigilanceForm.reset({ actif: false, couleur_min: 3 });
@@ -1061,6 +1077,34 @@ export class InstitutionsComponent implements OnInit {
         this.savingAlerteSismique = false;
       },
       error: () => { this.savingAlerteSismique = false; },
+    });
+  }
+
+  // ══ Annonce des foyers vus par satellite (détail institution) ═══════════════════
+  configAlerteFeu: ConfigurationAlerteFeu | null = null;
+  savingAlerteFeu = false;
+  alerteFeuEnregistree = false;
+  alerteFeuForm!: FormGroup;
+
+  submitAlerteFeu(): void {
+    if (!this.selectedInstitution?.id || this.alerteFeuForm.invalid) {
+      this.alerteFeuForm.markAllAsTouched();
+      return;
+    }
+    this.savingAlerteFeu = true;
+    this.alerteFeuEnregistree = false;
+    const brut = this.alerteFeuForm.getRawValue();
+    const valeurs = { actif: !!brut.actif, rayon_km: Number(brut.rayon_km) };
+    const request$ = this.configAlerteFeu
+      ? this.veilleService.modifierAlerteFeu(this.configAlerteFeu.id, valeurs)
+      : this.veilleService.creerAlerteFeu({ institution: this.selectedInstitution.id, ...valeurs });
+    request$.subscribe({
+      next: (config) => {
+        this.configAlerteFeu = config;
+        this.savingAlerteFeu = false;
+        this.alerteFeuEnregistree = true;
+      },
+      error: () => { this.savingAlerteFeu = false; },
     });
   }
 

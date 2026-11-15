@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, ConfigurationAlerteVigilance, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
+  ArretesCirculation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -133,6 +133,28 @@ export class VeilleService {
     }
     if (emprise.rayon_km != null) params['rayon_km'] = String(emprise.rayon_km);
     return params;
+  }
+
+  /** Foyers vus par satellite. `fixes` joint les sources fixes (usines), toujours marquées. */
+  foyersActifs(emprise: EmpriseVeille = {}, fixes = false): Observable<FoyersActifs> {
+    const params = this.params(emprise);
+    if (fixes) params['fixes'] = '1';
+    return this.http.get<FoyersActifs>(`${this.api}/foyers-actifs/`, { params });
+  }
+
+  // ── Réglage de l'annonce des foyers, par institution ──
+
+  alerteFeu(institutionId: string): Observable<ConfigurationAlerteFeu[]> {
+    return this.http.get<ConfigurationAlerteFeu[]>(
+      `${this.api}/configurations-alerte-feu/`, { params: { institution: institutionId } });
+  }
+
+  creerAlerteFeu(data: { institution: string; actif: boolean; rayon_km: number }): Observable<ConfigurationAlerteFeu> {
+    return this.http.post<ConfigurationAlerteFeu>(`${this.api}/configurations-alerte-feu/`, data);
+  }
+
+  modifierAlerteFeu(id: number, data: Partial<ConfigurationAlerteFeu>): Observable<ConfigurationAlerteFeu> {
+    return this.http.patch<ConfigurationAlerteFeu>(`${this.api}/configurations-alerte-feu/${id}/`, data);
   }
 
   // ── Réglage de l'annonce de vigilance, par institution ──

@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
-  ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
+  ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
@@ -44,6 +44,7 @@ export class VeilleComponent implements OnInit {
   volcans: Volcan[] = [];
   rayonVolcanKm = 15;
   feux: ZonesBrulees | null = null;
+  foyers: FoyersActifs | null = null;
   /** Reste null en plaine comme en cas d'erreur : le bloc n'apparaît que s'il y a un massif. */
   avalanche: RisqueAvalanche | null = null;
   routes: EvenementsRoutiers | null = null;
@@ -129,6 +130,10 @@ export class VeilleComponent implements OnInit {
     this.service.risqueAvalanche({ rayon_km: this.rayonKm }).subscribe({
       next: (avalanche) => { this.avalanche = avalanche; },
       error: () => { this.avalanche = null; },
+    });
+    this.service.foyersActifs({ rayon_km: this.rayonKm }).subscribe({
+      next: (foyers) => { this.foyers = foyers; },
+      error: () => { this.foyers = null; },
     });
     this.service.zonesBrulees({ rayon_km: this.rayonKm }).subscribe({
       next: (feux) => { this.feux = feux; },

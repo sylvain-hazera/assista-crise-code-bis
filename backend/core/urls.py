@@ -13,7 +13,8 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
-    ArretesCirculationView, ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
+    ArretesCirculationView, ConfigurationAlerteFeuViewSet, ConfigurationAlerteVigilanceViewSet,
+    FoyersActifsView, EvenementsRoutiersView, ImagePluieView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -284,6 +285,7 @@ router.register(r'recherches-personnes-commentaires-photos',RecherchePersonneCom
 router.register(r'zones', ZoneViewSet)
 router.register(r'configurations-alerte-sismique', ConfigurationAlerteSismiqueViewSet)
 router.register(r'configurations-alerte-vigilance', ConfigurationAlerteVigilanceViewSet)
+router.register(r'configurations-alerte-feu', ConfigurationAlerteFeuViewSet)
 router.register(r'interlocuteurs-alerte-pcs', InterlocuteurAlertePCSViewSet)
 router.register(r'risques-majeurs-types', RisqueMajeurTypeViewSet)
 router.register(r'risques-communaux', RisqueCommunalViewSet)
@@ -370,6 +372,7 @@ urlpatterns = [
     path('vigilance-crues/', VigilanceCruesView.as_view(), name='vigilance_crues'),
     path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
+    path('foyers-actifs/', FoyersActifsView.as_view(), name='foyers_actifs'),
     path('meteo-forets/', MeteoForetsView.as_view(), name='meteo_forets'),
     path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
     path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),

@@ -26,13 +26,15 @@ from . import (
     vigilance_crues,
 )
 from .models import (
-    ArreteCirculation, Commune, ConfigurationAlerteVigilance, Defibrillateur, MesureRadioactivite,
+    ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
     ImagePluie, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
-from .serializers import ConfigurationAlerteVigilanceSerializer, VigilanceMeteoSerializer
+from .serializers import (
+    ConfigurationAlerteFeuSerializer, ConfigurationAlerteVigilanceSerializer, VigilanceMeteoSerializer,
+)
 from .views import EnvironmentScopedViewSetMixin, _resolve_institution_or_400
 
 
@@ -408,6 +410,38 @@ class RestrictionsEauView(APIView):
         })
 
 
+class FoyersActifsView(APIView):
+    """GET /api/foyers-actifs/ : les pixels chauds vus par satellite ces deux derniers jours dans
+    une emprise (voir `_emprise`), les plus récents d'abord. Les sources fixes (usines,
+    torchères) ne sont rendues qu'avec `?fixes=1`, et toujours marquées comme telles."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("FOYERS_ACTIFS", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "sources_fixes": 0, "resultats": []})
+        dans_l_emprise = FoyerActif.objects.filter(location__within=emprise)
+        fixes = dans_l_emprise.filter(source_fixe=True).count()
+        if request.query_params.get("fixes") not in ("1", "true"):
+            dans_l_emprise = dans_l_emprise.filter(source_fixe=False)
+        foyers = list(dans_l_emprise.order_by("-date", "reference")[:RESULTATS_MAX + 1])
+        resultats = []
+        for foyer in foyers[:RESULTATS_MAX]:
+            latitude, longitude = _point(foyer.location)
+            resultats.append({
+                "reference": foyer.reference, "date": foyer.date,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 1) if centre else None),
+                "confiance": foyer.confiance, "puissance_mw": foyer.puissance_mw,
+                "satellite": foyer.satellite, "source_fixe": foyer.source_fixe,
+            })
+        return Response({**entete, "emprise_connue": True, "tronque": len(foyers) > RESULTATS_MAX,
+                         "sources_fixes": fixes, "resultats": resultats})
+
+
 class ZonesBruleesView(APIView):
     """GET /api/zones-brulees/ : les surfaces brûlées des trente derniers jours dans une emprise
     (voir `_emprise`), les plus récentes d'abord. `?trace=1` joint leur contour."""
@@ -735,4 +769,38 @@ class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewset
             institution = _resolve_institution_or_400(self.request)
         if ConfigurationAlerteVigilance.objects.filter(institution=institution).exists():
             raise ValidationError("Un réglage d'alerte de vigilance existe déjà pour cette institution.")
+        serializer.save(institution=institution, environment=get_active_environment(self.request))
+
+
+class ConfigurationAlerteFeuViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Réglage de l'annonce des foyers détectés par satellite près d'une institution -- même
+    patron que ConfigurationAlerteVigilanceViewSet."""
+
+    queryset = ConfigurationAlerteFeu.objects.select_related('institution').all()
+    serializer_class = ConfigurationAlerteFeuSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        institution_id = self.request.query_params.get('institution')
+        if institution_id:
+            qs = qs.filter(institution_id=institution_id)
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(institution_id__in=mes_institutions)
+
+    def perform_create(self, serializer):
+        institution_id = self.request.data.get('institution')
+        institution = Institution.objects.filter(pk=institution_id).first() if institution_id else None
+        if institution is None:
+            institution = _resolve_institution_or_400(self.request)
+        if ConfigurationAlerteFeu.objects.filter(institution=institution).exists():
+            raise ValidationError("Un réglage d'alerte de feu existe déjà pour cette institution.")
         serializer.save(institution=institution, environment=get_active_environment(self.request))
