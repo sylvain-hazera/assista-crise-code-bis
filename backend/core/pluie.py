@@ -164,7 +164,15 @@ def relever(maintenant=None):
             brute = premiere
         else:
             time.sleep(PAUSE_ENTRE_IMAGES_S)
-            brute = telecharger_image(calcul, echeance)
+            try:
+                brute = telecharger_image(calcul, echeance)
+            except requests.RequestException as exc:
+                # Une image en panne ne fait pas perdre les autres : celles déjà copiées
+                # restent, et celle-ci sera redemandée au passage suivant (elle n'est pas
+                # « connue » pour ce calcul). Constaté en service le 15/11/2026 : un refus de
+                # connexion sur la quatrième image faisait échouer le relevé entier.
+                logger.warning("Pluie : image de %s non relevée (%s).", _instant_api(echeance), type(exc).__name__)
+                continue
         if brute is None:
             continue        # échéance au-delà de la portée de ce calcul : la précédente reste
         ImagePluie.objects.update_or_create(echeance=echeance, defaults={

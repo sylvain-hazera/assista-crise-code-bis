@@ -861,6 +861,27 @@ class TestPluiePrevue:
             datetime.datetime(2026, 11, 15, 10, 0, tzinfo=UTC)}
 
     @pytest.mark.django_db
+    def test_une_image_en_panne_ne_fait_pas_perdre_les_autres(self, cle_meteo, monkeypatch):
+        """Constaté en service le 15/11/2026 : Météo-France a refusé la connexion sur la
+        quatrième image, et le relevé entier était compté en échec avec trois images."""
+        monkeypatch.setattr(meteo_france, "TENTATIVES_DE_CONNEXION", 1)
+        appels = {"n": 0}
+
+        def service(*_positionnels, **_options):
+            appels["n"] += 1
+            if appels["n"] == 4:
+                raise requests.ConnectionError("refusée")
+            return _reponse_image()
+
+        with mock.patch("core.pluie.requests.get", side_effect=service):
+            assert pluie.relever(MAINTENANT) == 12
+
+        # Au passage suivant, seule l'image manquante est redemandée (plus la vérification du calcul).
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()) as appel:
+            assert pluie.relever(MAINTENANT + datetime.timedelta(minutes=5)) == 13
+        assert appel.call_count == 2
+
+    @pytest.mark.django_db
     def test_sans_aucun_calcul_la_copie_precedente_reste(self, cle_meteo):
         with mock.patch("core.pluie.requests.get", return_value=_reponse_image()):
             pluie.relever(MAINTENANT)
