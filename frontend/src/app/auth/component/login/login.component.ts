@@ -129,9 +129,25 @@ export class LoginComponent implements OnInit {
     this.isSubmitting = false;
   }
 
+  /** Message après « renvoyer le code » : le serveur répond la même chose pour toute adresse. */
+  messageEnvoi = '';
+  envoiEnCours = false;
+
+  /** Pour un compte qui reçoit ses codes par e-mail : en demander un autre (un par minute). */
+  renvoyerCode(): void {
+    if (this.envoiEnCours) return;
+    this.envoiEnCours = true;
+    this.messageEnvoi = '';
+    this.authService.renvoyerCode(this.loginForm.value.email.trim()).subscribe({
+      next: (detail) => { this.messageEnvoi = detail; this.envoiEnCours = false; },
+      error: () => { this.messageEnvoi = "Impossible de renvoyer le code pour l'instant."; this.envoiEnCours = false; },
+    });
+  }
+
   /** Revenir à l'adresse : tout ce qui a été saisi ensuite est oublié. */
   recommencer(): void {
     this.jetonEtape = '';
+    this.messageEnvoi = '';
     this.loginForm.patchValue({ code: '', password: '' });
     this.allerA('adresse');
   }

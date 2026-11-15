@@ -4316,6 +4316,7 @@ ni de savoir s'il est encore bon.
 ```
 POST /api/connexion/debut/  {email}                  → {etape: "code" | "mot_de_passe"}
 POST /api/connexion/code/   {email, code, appareil}  → {jeton_etape}        (5 minutes)
+POST /api/connexion/envoyer-code/ {email}            renvoie le code (mode e-mail), même réponse pour tous
 POST /api/token/            {email, password, jeton_etape, appareil}
 ```
 
@@ -4336,6 +4337,34 @@ Quatre choix qui ne se voient pas dans le code si on ne les cherche pas :
 - **une adresse inconnue est freinée comme les autres**, et une sur huit se voit demander un
   code : ni le frein ni l'étape « code » ne disent qui est inscrit, ni qui a du pouvoir.
 
+**Deux façons d'obtenir le code** (`SecondFacteur.mode`), au choix du titulaire à l'activation :
+
+| Mode | D'où vient le code | Résiste à un mot de passe fuité | Résiste à quelqu'un qui lit la boîte aux lettres |
+|---|---|---|---|
+| `APPLICATION` (proposé en premier) | application d'authentification du téléphone (TOTP) | oui | oui |
+| `EMAIL` | e-mail envoyé par le central à chaque connexion, valable 5 minutes | oui | **non** |
+
+Le mode e-mail répond à la demande d'origine — la force brute, le mot de passe deviné — et
+sert ceux qui n'ont pas de téléphone adapté. Sa limite est à connaître : qui lit la boîte aux
+lettres du titulaire peut réinitialiser le mot de passe par e-mail, puis recevoir le code.
+Trois règles l'encadrent :
+
+- **il exige un mot de passe**. Un compte qui ne se connecte que par lien n'aurait, avec un
+  code par e-mail, que sa boîte aux lettres comme facteur ;
+- **un lien reçu par e-mail demande alors le mot de passe**, pas le code (401
+  `MOT_DE_PASSE_REQUIS`) : le lien et le code arriveraient dans la même boîte et prouveraient
+  deux fois la même chose ;
+- **rien ne dit comment un compte est protégé**. L'envoi part à l'étape de l'adresse sans que
+  la réponse change, « renvoyer le code » répond la même phrase à toute adresse, et l'écran
+  dit toujours « celui de votre application, ou celui que vous venez de recevoir ».
+
+Le code lui-même : six chiffres tirés au hasard, cinq minutes, une seule fois, cinq essais
+puis il faut en redemander un. Seule son empreinte est en base, et il ne figure pas dans
+l'objet du message (qui est journalisé) : il n'existe en clair que dans le message. Un envoi
+par minute et par compte au plus ; au-delà de cinq envois restés sans usage, le frein espace
+les suivants — sauf depuis un appareil déjà connu du compte, qui a son propre quota : saisir
+en boucle l'adresse d'un maire ne l'empêche pas de recevoir son code.
+
 **Qui doit avoir un second facteur** (`second_facteur.est_a_pouvoir`) : administrateur, autorité
 locale, secours, régulateur, membre de bureau, encadrant d'équipe. Jamais une machine (compte de
 pont radio, compte de service de satellite). Le compte a **quinze jours** à partir du moment où
@@ -4352,7 +4381,7 @@ pas copié, aucun code n'y est demandé. Décision de Sylvain. Le frein, lui, y 
 | Chemin | Avant | Maintenant |
 |---|---|---|
 | Lien magique, lien d'activation (valables 7 jours, rejouables) | ouvraient une session | exigent le code si le compte est protégé (401 `CODE_REQUIS`, puis le même lien en POST) |
-| Connexion OIDC (`/accounts/login/` : Matrix, Grafana) | mot de passe seul | code avant mot de passe, frein (`core/formulaires_connexion.py`) |
+| Connexion OIDC (`/accounts/login/` : Matrix, Grafana) | mot de passe seul | code avant mot de passe, frein (`core/formulaires_connexion.py`) ; champ du code laissé vide = envoi du code en mode e-mail |
 | Administration Django | mot de passe seul | idem, gabarit `core/login_admin.html` |
 | Réinitialisation du mot de passe | — | ne retire pas le second facteur ; la demande est freinée par compte |
 | Renouvellement de session | toujours accepté | refusé après l'échéance sans activation |

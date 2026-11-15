@@ -131,3 +131,9 @@
   background: var(--ac-surface, #fff);
   color: var(--ac-text, #111827);
 }
+
+// Un mot de passe ne s'écrit pas en chiffres espacés.
+.code-input.mot-de-passe {
+  letter-spacing: normal;
+  font-size: 1.1rem;
+}

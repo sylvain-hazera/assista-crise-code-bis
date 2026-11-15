@@ -36,7 +36,7 @@
         {# Le message dit « identifiants incorrects » sans préciser lequel, sauf quand il faut
            attendre ou activer son code : là, la personne doit savoir quoi faire. #}
         {% for erreur in form.non_field_errors.as_data %}
-          {% if erreur.code == "trop_d_essais" or erreur.code == "second_facteur_a_activer" %}
+          {% if erreur.code == "trop_d_essais" or erreur.code == "second_facteur_a_activer" or erreur.code == "sans_code" %}
             <p class="erreurs">{{ erreur.message }}</p>
           {% else %}
             <p class="erreurs">Identifiants incorrects.</p>

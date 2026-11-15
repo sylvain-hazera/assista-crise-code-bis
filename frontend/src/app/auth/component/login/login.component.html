@@ -70,9 +70,16 @@
             placeholder="123456"
             autofocus>
           <p class="aide-etape">
-            Les 6 chiffres affichés par votre application d'authentification. Téléphone
-            indisponible ? Saisissez l'un de vos codes de secours.
+            Les 6 chiffres affichés par votre application d'authentification, ou ceux que nous
+            venons de vous envoyer par e-mail si votre compte fonctionne ainsi (valables
+            5 minutes). À défaut, l'un de vos codes de secours.
           </p>
+          <button type="button" class="lien-etape" (click)="renvoyerCode()" [disabled]="envoiEnCours">
+            Renvoyer le code par e-mail
+          </button>
+          @if (messageEnvoi) {
+            <p class="aide-etape">{{ messageEnvoi }}</p>
+          }
         </div>
       }
 

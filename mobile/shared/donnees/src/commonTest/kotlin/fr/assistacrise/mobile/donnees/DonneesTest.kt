@@ -117,6 +117,14 @@ class ClientApiTest {
         assertEquals("APPAREIL-1", banc.demandes.last().corps().getValue("appareil").jsonPrimitive.content)
     }
 
+    @Test fun renvoyerLeCodeRendLaPhraseDuServeur() = runTest {
+        val banc = Banc { json("""{"detail":"Si votre compte reçoit ses codes par e-mail, un nouveau code vient de partir."}""") }
+        val r = banc.api.renvoyerCode(" c@exemple.fr ")
+        assertEquals("POST connexion/envoyer-code/", banc.chemins().single())
+        assertEquals("c@exemple.fr", banc.demandes.single().corps().getValue("email").jsonPrimitive.content)
+        assertTrue((r as Reponse.Ok).valeur.contains("vient de partir"))
+    }
+
     @Test fun unCodeFauxEstDitSimplement() = runTest {
         val banc = Banc { json("""{"detail":"Code incorrect."}""", HttpStatusCode.Unauthorized) }
         val r = banc.api.verifierCode("c@exemple.fr", "000000")

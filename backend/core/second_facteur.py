@@ -36,6 +36,14 @@ DELAI_ACTIVATION = timedelta(days=15)
 NOMBRE_CODES_SECOURS = 10
 EMETTEUR = "Assista-Crise"
 
+# Mode « code par e-mail » : le central envoie un code à chaque connexion.
+VALIDITE_CODE_MAIL = timedelta(minutes=5)
+ESSAIS_CODE_MAIL = 5
+# Entre deux envois à un même compte : sans cela, connaître une adresse suffirait à inonder
+# une boîte aux lettres. Le frein (`core/frein_connexion.py`) borne en plus le nombre par jour.
+DELAI_ENTRE_ENVOIS = timedelta(seconds=60)
+ETAPE_ENVOI = "envoi-code"
+
 
 # ── Le code ──────────────────────────────────────────────────────────────────────────────────
 
@@ -141,6 +149,107 @@ def _consommer_code_secours(utilisateur, code: str) -> bool:
     ).update(utilise_le=timezone.now()) == 1
 
 
+# ── Le code envoyé par e-mail ────────────────────────────────────────────────────────────────
+#
+# Ce mode protège de ce que demandait Sylvain : la force brute et le mot de passe fuité. Il
+# ne protège PAS de quelqu'un qui lit la boîte aux lettres du titulaire — celui-là peut
+# réinitialiser le mot de passe par e-mail, puis recevoir le code. L'application
+# d'authentification, elle, résiste aussi à cela ; c'est pourquoi elle reste le choix proposé
+# en premier. Pour que le mode e-mail soit tout de même DEUX facteurs, il exige un mot de
+# passe (voir `preparer`), et un lien reçu par e-mail ne suffit pas à entrer (voir
+# `core/connexion.py`).
+
+def _empreinte_code_mail(utilisateur_id, code: str) -> str:
+    chiffres = "".join(c for c in (code or "") if c.isdigit())
+    message = f"code-mail|{utilisateur_id}|{chiffres}".encode()
+    return hmac.new(settings.SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
+
+
+def masquer_adresse(email: str) -> str:
+    """« c•••••@exemple.fr » : assez pour reconnaître sa boîte, pas pour l'apprendre."""
+    nom, _, domaine = (email or "").partition("@")
+    return f"{nom[:1]}{'•' * max(3, len(nom) - 1)}@{domaine}" if domaine else "votre adresse"
+
+
+def envoyer_code_par_mail(request, utilisateur, facteur=None, appareil: str = "") -> bool:
+    """Tire un code, valable cinq minutes, et l'envoie à l'adresse du compte. Rend vrai s'il
+    est parti. Ne fait rien (et rend faux) si le compte n'est pas en mode e-mail, ou si un
+    envoi vient d'avoir lieu.
+
+    Le code ne figure ni dans l'objet du message (qui est journalisé), ni en base (où seule
+    son empreinte est gardée) : il n'existe en clair que dans le message lui-même."""
+    from . import frein_connexion as frein
+    from .audit import send_mail_logged
+    from .branding import branding_for_institution
+    from .models import SecondFacteur
+
+    facteur = facteur or SecondFacteur.objects.filter(utilisateur=utilisateur).first()
+    if facteur is None or facteur.mode != SecondFacteur.MODE_EMAIL:
+        return False
+    maintenant = timezone.now()
+    if facteur.code_mail_envoye_le and maintenant - facteur.code_mail_envoye_le < DELAI_ENTRE_ENVOIS:
+        return False
+    # Un appareil déjà connu du compte a son propre quota d'envois, comme il a son propre
+    # compteur d'échecs : quelqu'un qui saisit l'adresse du titulaire en boucle épuise le
+    # quota des inconnus, pas celui du titulaire sur son poste.
+    compteur = frein.cle(ETAPE_ENVOI, utilisateur.email, utilisateur, appareil)
+    if frein.attente(compteur):
+        return False
+    frein.echec(compteur)
+
+    code = f"{secrets.randbelow(10 ** CHIFFRES):0{CHIFFRES}d}"
+    SecondFacteur.objects.filter(pk=facteur.pk).update(
+        code_mail_empreinte=_empreinte_code_mail(utilisateur.pk, code),
+        code_mail_expire_le=maintenant + VALIDITE_CODE_MAIL,
+        code_mail_essais=0,
+        code_mail_envoye_le=maintenant,
+    )
+    nom = branding_for_institution(getattr(utilisateur, "institution", None)).nom_affichage
+    try:
+        send_mail_logged(
+            request,
+            subject=f"Votre code de connexion {nom}",
+            message=(
+                f"Bonjour {utilisateur.first_name},\n\n"
+                f"Votre code de connexion : {code[:3]} {code[3:]}\n\n"
+                "Il est valable 5 minutes et ne sert qu'une fois.\n\n"
+                "Vous n'êtes pas en train de vous connecter ? Quelqu'un a saisi votre adresse. "
+                "Ne communiquez ce code à personne ; sans lui, on ne peut pas entrer. Si cela "
+                "se répète, prévenez un administrateur."
+            ),
+            from_email=None, recipient_list=[utilisateur.email], fail_silently=False,
+        )
+    except Exception:
+        # L'échec est déjà journalisé et remonté par send_mail_logged. Le code tiré ne sert
+        # à personne : on l'efface, et la personne pourra en redemander un tout de suite.
+        SecondFacteur.objects.filter(pk=facteur.pk).update(
+            code_mail_empreinte="", code_mail_expire_le=None, code_mail_envoye_le=None)
+        return False
+    return True
+
+
+def _verifier_code_mail(facteur, code: str) -> bool:
+    """Vrai si `code` est le code envoyé, encore valable. Il ne sert qu'une fois, et cinq
+    essais ratés l'annulent : il faut alors en demander un autre."""
+    from django.db.models import F
+
+    from .models import SecondFacteur
+
+    if (not facteur.code_mail_empreinte or facteur.code_mail_expire_le is None
+            or facteur.code_mail_expire_le <= timezone.now()
+            or facteur.code_mail_essais >= ESSAIS_CODE_MAIL):
+        return False
+    if len("".join(c for c in (code or "") if c.isdigit())) != CHIFFRES:
+        return False
+    attendu = facteur.code_mail_empreinte
+    if hmac.compare_digest(_empreinte_code_mail(facteur.utilisateur_id, code), attendu):
+        # Conditionnelle : si deux requêtes présentent le même code, une seule passe.
+        return SecondFacteur.objects.filter(pk=facteur.pk, code_mail_empreinte=attendu).update(
+            code_mail_empreinte="", code_mail_expire_le=None, code_mail_envoye_le=None) == 1
+    SecondFacteur.objects.filter(pk=facteur.pk).update(code_mail_essais=F("code_mail_essais") + 1)
+    return False
+
+
 # ── Qui est concerné ─────────────────────────────────────────────────────────────────────────
 
 def applicable() -> bool:
@@ -198,11 +307,12 @@ def etat(utilisateur) -> dict:
     c'est ce qui fait courir les quinze jours, pour les comptes existants comme pour celui qui
     devient encadrant demain."""
     if not applicable() or utilisateur is None or not getattr(utilisateur, "pk", None):
-        return {"applicable": False, "actif": False, "requis": False,
+        return {"applicable": False, "actif": False, "requis": False, "mode": None,
                 "date_limite": None, "bloquant": False, "codes_secours_restants": 0,
                 "mot_de_passe_defini": False}
 
-    actif = second_facteur_actif(utilisateur) is not None
+    facteur = second_facteur_actif(utilisateur)
+    actif = facteur is not None
     requis = est_a_pouvoir(utilisateur)
     date_limite = None
     if requis and not actif:
@@ -214,6 +324,8 @@ def etat(utilisateur) -> dict:
     return {
         "applicable": True,
         "actif": actif,
+        # « application » ou « email » : d'où vient le code de ce compte.
+        "mode": facteur.mode.lower() if actif else None,
         "requis": requis,
         "date_limite": date_limite,
         "bloquant": bool(date_limite and date_limite <= timezone.now()),
@@ -235,6 +347,8 @@ def verifier_code(utilisateur, code: str) -> bool:
     facteur = second_facteur_actif(utilisateur)
     if facteur is None:
         return False
+    if facteur.mode == SecondFacteur.MODE_EMAIL:
+        return _verifier_code_mail(facteur, code) or _consommer_code_secours(utilisateur, code)
     pas = pas_du_code(facteur.secret, code, apres_le_pas=facteur.dernier_pas)
     if pas is not None:
         # Conditionnelle : si deux requêtes présentent le même code, une seule passe.
@@ -243,31 +357,65 @@ def verifier_code(utilisateur, code: str) -> bool:
     return _consommer_code_secours(utilisateur, code)
 
 
-def preparer(utilisateur) -> dict:
-    """Tire un nouveau secret, pas encore actif, et rend de quoi le donner à l'application
-    d'authentification. Refuse si un second facteur est déjà actif : il faut d'abord le
-    retirer, ce qui demande un code."""
+class ModeImpossible(ValueError):
+    """Ce compte ne peut pas choisir ce mode. Le message dit pourquoi, pour le titulaire."""
+
+
+def preparer(utilisateur, mode: str = "application", request=None) -> dict:
+    """Prépare un second facteur, pas encore actif.
+
+    - `application` : tire un secret et rend de quoi le donner à l'application
+      d'authentification (QR code, lien, clé à recopier) ;
+    - `email` : envoie un premier code à l'adresse du compte. Le saisir prouvera que la boîte
+      aux lettres est bien lue par le titulaire.
+
+    Refuse si un second facteur est déjà actif : il faut d'abord le retirer, ce qui demande
+    un code."""
     from .models import SecondFacteur
 
     if second_facteur_actif(utilisateur) is not None:
         raise ValueError("Un second facteur est déjà actif sur ce compte.")
+
+    if mode == "email":
+        # Le code arrive là où arrivent aussi les liens de connexion et de réinitialisation.
+        # Sans mot de passe, tout tiendrait à la seule boîte aux lettres : un seul facteur.
+        if not utilisateur.has_usable_password():
+            raise ModeImpossible(
+                "Le code par e-mail demande que votre compte ait un mot de passe. "
+                "Choisissez-en un d'abord, ou utilisez une application d'authentification.")
+        SecondFacteur.objects.filter(utilisateur=utilisateur).delete()
+        facteur = SecondFacteur.objects.create(
+            utilisateur=utilisateur, secret="", mode=SecondFacteur.MODE_EMAIL)
+        if not envoyer_code_par_mail(request, utilisateur, facteur):
+            SecondFacteur.objects.filter(pk=facteur.pk).delete()
+            raise ModeImpossible(
+                "Le code n'a pas pu être envoyé. Attendez une minute et réessayez.")
+        return {"mode": "email", "adresse": masquer_adresse(utilisateur.email)}
+
     SecondFacteur.objects.filter(utilisateur=utilisateur).delete()
     facteur = SecondFacteur.objects.create(utilisateur=utilisateur, secret=nouveau_secret())
     adresse = adresse_otpauth(facteur.secret, utilisateur.email)
-    return {"secret": facteur.secret, "adresse": adresse, "qr_svg": qr_svg(adresse)}
+    return {"mode": "application", "secret": facteur.secret, "adresse": adresse,
+            "qr_svg": qr_svg(adresse)}
 
 
 def confirmer(utilisateur, code: str):
-    """Active le second facteur préparé si `code` prouve que l'application le connaît.
+    """Active le second facteur préparé si `code` prouve que le titulaire le maîtrise : son
+    application connaît le secret, ou il lit bien sa boîte aux lettres.
     Rend les codes de secours (montrés cette seule fois), ou None si le code est faux."""
     from .models import SecondFacteur
 
     facteur = SecondFacteur.objects.filter(utilisateur=utilisateur, confirme_le__isnull=True).first()
     if facteur is None:
         return None
-    pas = pas_du_code(facteur.secret, code)
-    if pas is None:
-        return None
+    if facteur.mode == SecondFacteur.MODE_EMAIL:
+        if not _verifier_code_mail(facteur, code):
+            return None
+        pas = 0
+    else:
+        pas = pas_du_code(facteur.secret, code)
+        if pas is None:
+            return None
     facteur.confirme_le = timezone.now()
     facteur.dernier_pas = pas
     facteur.save(update_fields=["confirme_le", "dernier_pas"])

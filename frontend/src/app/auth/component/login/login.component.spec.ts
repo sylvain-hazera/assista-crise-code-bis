@@ -78,6 +78,17 @@ describe('LoginComponent', () => {
     requete.flush({ access: 'a', refresh: 'r', user: { id: 'u' } });
   });
 
+  it('« renvoyer le code » affiche la réponse du serveur, identique pour toute adresse', () => {
+    saisirAdresse('code');
+    component.renvoyerCode();
+    const requete = http.expectOne(`${api}/connexion/envoyer-code/`);
+    expect(requete.request.body.email).toBe('maire@exemple.test');
+    requete.flush({ detail: 'Si votre compte reçoit ses codes par e-mail, un nouveau code vient de partir.' });
+    expect(component.messageEnvoi).toContain('vient de partir');
+    component.recommencer();
+    expect(component.messageEnvoi).toBe('');
+  });
+
   it("un code faux laisse sur l'étape du code et vide le champ", () => {
     saisirAdresse('code');
     component.loginForm.patchValue({ code: '000000' });

@@ -2,9 +2,9 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AuthService, CODE_REQUIS, ErreurConnexion, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
+import { AuthService, CODE_REQUIS, ErreurConnexion, MOT_DE_PASSE_REQUIS, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
 
-type ActivationState = 'loading' | 'success' | 'error' | 'code';
+type ActivationState = 'loading' | 'success' | 'error' | 'code' | 'mot_de_passe';
 
 @Component({
   selector: 'app-activate-account',
@@ -41,15 +41,22 @@ export class ActivateAccountComponent implements OnInit {
   /** Code de sécurité : un lien d'activation reste valable sept jours et rouvre une session
    * à chaque clic. Sur un compte protégé, il ne suffit donc pas. */
   code = '';
+  /** Demandé à la place du code quand le compte reçoit ses codes par e-mail : le lien et
+   * le code arriveraient dans la même boîte, ils prouveraient deux fois la même chose. */
+  motDePasse = '';
   envoiEnCours = false;
   private uidb64 = '';
   private token = '';
 
   activer(): void {
     const avecCode = this.state === 'code';
+    const avecMotDePasse = this.state === 'mot_de_passe';
     if (avecCode && this.code.trim().length < 6) return;
+    if (avecMotDePasse && !this.motDePasse) return;
     this.envoiEnCours = true;
-    this.authService.activateAccount(this.uidb64, this.token, avecCode ? this.code.trim() : '').subscribe({
+    this.authService.activateAccount(
+      this.uidb64, this.token, avecCode ? this.code.trim() : '', avecMotDePasse ? this.motDePasse : '',
+    ).subscribe({
       next: (response) => {
         this.envoiEnCours = false;
         this.state = 'success';
@@ -80,6 +87,10 @@ export class ActivateAccountComponent implements OnInit {
         const code = error instanceof ErreurConnexion ? error.code : '';
         if (code === SECOND_FACTEUR_A_ACTIVER) {
           this.router.navigate(['/securite-du-compte'], { queryParams: { returnUrl: this.returnUrl } });
+        } else if (code === MOT_DE_PASSE_REQUIS || (avecMotDePasse && code === 'TROP_D_ESSAIS')) {
+          this.errorMessage = this.state === 'mot_de_passe' ? error.message : '';
+          this.state = 'mot_de_passe';
+          this.motDePasse = '';
         } else if (code === CODE_REQUIS || (avecCode && code === 'TROP_D_ESSAIS')) {
           this.errorMessage = this.state === 'code' ? error.message : '';
           this.state = 'code';

@@ -86,6 +86,8 @@ export interface EtatSecondFacteur {
   /** Faux sur un satellite : aucun code n'y est demandé. */
   applicable: boolean;
   actif: boolean;
+  /** D'où vient le code : une application du téléphone, ou un e-mail envoyé à chaque connexion. */
+  mode?: 'application' | 'email' | null;
   /** Le compte a des responsabilités : le code est obligatoire. */
   requis: boolean;
   /** Date limite d'activation (ISO), tant que le code est requis et pas encore actif. */

@@ -247,9 +247,24 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    /** Ce que le serveur a répondu à « renvoyer le code » (la même phrase pour toute adresse). */
+    var messageEnvoiCode by mutableStateOf<String?>(null); private set
+
+    fun renvoyerLeCode(email: String) {
+        if (connexion.enCours) return
+        viewModelScope.launch {
+            messageEnvoiCode = when (val r = app.api.renvoyerCode(email)) {
+                is Reponse.Ok -> r.valeur
+                is Reponse.Refus -> r.message
+                is Reponse.Injoignable -> r.message
+            }
+        }
+    }
+
     /** Revenir à l'adresse : ce qui a été donné ensuite est oublié. */
     fun recommencerLaConnexion() {
         jetonEtape = ""
+        messageEnvoiCode = null
         etapeConnexion = EtapeConnexion.ADRESSE
         connexion = EtatFormulaire()
     }

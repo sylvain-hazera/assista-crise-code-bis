@@ -12369,6 +12369,7 @@ def _session_par_lien(request, user, message):
         request, user,
         code=str(request.data.get('code') or '') if request.method == 'POST' else '',
         appareil=str(request.data.get('appareil') or '') if request.method == 'POST' else '',
+        mot_de_passe=str(request.data.get('mot_de_passe') or '') if request.method == 'POST' else '',
     )
     return Response({
         'user': session['user'],

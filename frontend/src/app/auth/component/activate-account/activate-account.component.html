@@ -28,6 +28,24 @@
       </form>
     }
 
+    @if (state === 'mot_de_passe') {
+      <form class="state-block" (ngSubmit)="activer()">
+        <span class="material-icons state-icon">lock</span>
+        <h1 class="activate-title">Mot de passe</h1>
+        <p class="activate-text">
+          Ce compte est protégé. Pour entrer avec ce lien, saisissez aussi votre mot de passe.
+        </p>
+        <input type="password" name="motDePasse" class="code-input mot-de-passe" autocomplete="current-password"
+               [(ngModel)]="motDePasse" autofocus>
+        @if (errorMessage) {
+          <p class="activate-text error-icon">{{ errorMessage }}</p>
+        }
+        <button type="submit" class="btn-submit" [disabled]="envoiEnCours || !motDePasse">
+          {{ envoiEnCours ? 'Vérification…' : 'Continuer' }}
+        </button>
+      </form>
+    }
+
     @if (state === 'success') {
       <div class="state-block">
         <span class="material-icons state-icon success-icon">check_circle</span>

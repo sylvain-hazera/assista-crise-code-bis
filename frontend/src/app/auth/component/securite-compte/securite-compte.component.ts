@@ -9,7 +9,7 @@ import { EtatSecondFacteur } from '../../../shared/models/user.model';
 
 /** Ce que la page montre. `obligatoire` = la personne s'est identifiée mais ne peut pas
  * entrer avant d'avoir activé son code (délai de quinze jours passé). */
-type Ecran = 'chargement' | 'etat' | 'installer' | 'codes' | 'indisponible';
+type Ecran = 'chargement' | 'etat' | 'choix' | 'installer' | 'codes' | 'indisponible';
 
 /**
  * Sécurité du compte : activer, vérifier ou retirer le code de sécurité (application
@@ -57,9 +57,10 @@ export class SecuriteCompteComponent implements OnInit {
     if (demande && demande.startsWith('/') && !demande.startsWith('//')) this.returnUrl = demande;
 
     if (this.authService.doitActiverSonCode()) {
-      // Identité prouvée à l'instant : pas de mot de passe à redonner, on prépare tout de suite.
+      // Identité prouvée à l'instant : pas de mot de passe à redonner, il reste à choisir
+      // d'où viendra le code.
       this.obligatoire = true;
-      this.preparer();
+      this.ecran = 'choix';
     } else if (this.authService.isLoggedIn()) {
       this.chargerEtat();
     } else {
@@ -91,24 +92,46 @@ export class SecuriteCompteComponent implements OnInit {
 
   // ── Activer ────────────────────────────────────────────────────────────────
 
-  preparer(): void {
+  /** `application` : un code donné par le téléphone. `email` : un code envoyé par le site à
+   * chaque connexion, valable cinq minutes. */
+  preparer(mode: 'application' | 'email' = 'application'): void {
     this.enCours = true;
     this.erreur = '';
-    this.authService.preparerSecondFacteur(this.motDePasse).subscribe({
+    this.message = '';
+    this.authService.preparerSecondFacteur(this.motDePasse, mode).subscribe({
       next: (preparation) => {
         this.enCours = false;
         this.motDePasse = '';
+        this.code = '';
         this.preparation = preparation;
-        // Le QR code et le lien viennent de NOTRE serveur, fabriqués à l'instant pour ce
-        // compte : c'est ce qui autorise à les afficher tels quels.
-        this.qr = this.sanitizer.bypassSecurityTrustHtml(preparation.qr_svg);
-        this.lienApplication = this.sanitizer.bypassSecurityTrustUrl(preparation.adresse);
+        if (preparation.mode === 'application') {
+          // Le QR code et le lien viennent de NOTRE serveur, fabriqués à l'instant pour ce
+          // compte : c'est ce qui autorise à les afficher tels quels.
+          this.qr = this.sanitizer.bypassSecurityTrustHtml(preparation.qr_svg || '');
+          this.lienApplication = this.sanitizer.bypassSecurityTrustUrl(preparation.adresse);
+        }
         this.ecran = 'installer';
       },
-      error: (error: HttpErrorResponse) => {
-        this.dire(error, "Impossible de préparer l'activation.");
-        if (this.ecran === 'chargement') this.ecran = 'installer';
-      },
+      error: (error: HttpErrorResponse) => this.dire(error, "Impossible de préparer l'activation."),
+    });
+  }
+
+  /** Revenir au choix du mode (on s'est trompé, ou le message n'arrive pas). */
+  changerDeMode(): void {
+    this.preparation = null;
+    this.qr = null;
+    this.code = '';
+    this.erreur = '';
+    this.message = '';
+    this.ecran = this.obligatoire ? 'choix' : 'etat';
+  }
+
+  /** Mode e-mail : « je n'ai rien reçu », ou un code pour confirmer un acte. */
+  recevoirUnCode(): void {
+    this.erreur = '';
+    this.authService.envoyerCodeSecondFacteur().subscribe({
+      next: (reponse) => { this.message = reponse.detail; },
+      error: (error: HttpErrorResponse) => this.dire(error, "Impossible d'envoyer le code."),
     });
   }
 
@@ -165,6 +188,8 @@ export class SecuriteCompteComponent implements OnInit {
     this.code = '';
     this.erreur = '';
     this.message = '';
+    // Un compte qui reçoit ses codes par e-mail n'en a pas sous la main : on lui en envoie un.
+    if (this.etat?.mode === 'email') this.recevoirUnCode();
   }
 
   annuler(): void {

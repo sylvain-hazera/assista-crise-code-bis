@@ -3,9 +3,9 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views_connexion import (
-    ConnexionCodeView, ConnexionDebutView, SecondFacteurCodesSecoursView,
-    SecondFacteurConfirmerView, SecondFacteurEtatView, SecondFacteurPreparerView,
-    SecondFacteurRetirerView,
+    ConnexionCodeView, ConnexionDebutView, ConnexionEnvoyerCodeView,
+    SecondFacteurCodesSecoursView, SecondFacteurConfirmerView, SecondFacteurEnvoyerCodeView,
+    SecondFacteurEtatView, SecondFacteurPreparerView, SecondFacteurRetirerView,
 )
 from .views_application import (
     AccuserNotificationsView, MesMobilisationsView, MesNotificationsView, MonAppareilView,
@@ -315,9 +315,11 @@ urlpatterns = [
     # Connexion en étapes et second facteur (15/11/2026) — voir core/views_connexion.py.
     path('connexion/debut/', ConnexionDebutView.as_view(), name='connexion_debut'),
     path('connexion/code/', ConnexionCodeView.as_view(), name='connexion_code'),
+    path('connexion/envoyer-code/', ConnexionEnvoyerCodeView.as_view(), name='connexion_envoyer_code'),
     path('second-facteur/', SecondFacteurEtatView.as_view(), name='second_facteur'),
     path('second-facteur/preparer/', SecondFacteurPreparerView.as_view(), name='second_facteur_preparer'),
     path('second-facteur/confirmer/', SecondFacteurConfirmerView.as_view(), name='second_facteur_confirmer'),
+    path('second-facteur/envoyer-code/', SecondFacteurEnvoyerCodeView.as_view(), name='second_facteur_envoyer_code'),
     path('second-facteur/retirer/', SecondFacteurRetirerView.as_view(), name='second_facteur_retirer'),
     path('second-facteur/codes-secours/', SecondFacteurCodesSecoursView.as_view(), name='second_facteur_codes_secours'),
     path('token/refresh/', MyTokenRefreshView.as_view(), name='token_refresh'),

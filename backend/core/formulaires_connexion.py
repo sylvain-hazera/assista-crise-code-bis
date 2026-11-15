@@ -30,6 +30,12 @@ class _FreinEtCode(forms.Form):
             params={"username": self.username_field.verbose_name},
         )
 
+    def _sans_code(self):
+        return ValidationError(
+            "Identifiants incorrects. Si votre compte reçoit ses codes par e-mail, un code "
+            "vient de vous être envoyé : saisissez-le avec votre mot de passe.",
+            code="sans_code")
+
     def clean(self):
         email = self.cleaned_data.get("username") or ""
         utilisateur = connexion.trouver_utilisateur(email)
@@ -39,16 +45,27 @@ class _FreinEtCode(forms.Form):
             raise ValidationError(f"Trop d'essais. Réessayez dans {max(1, round(reste / 60))} min.",
                                   code="trop_d_essais")
 
+        code = (self.cleaned_data.get("code") or "").strip()
+        if not code:
+            # Champ du code laissé vide : si le compte reçoit ses codes par e-mail, on lui en
+            # envoie un. Le message qui suit est le même pour TOUT essai sans code, que le
+            # compte existe ou non : il ne dit rien de la façon dont un compte est protégé.
+            if utilisateur is not None:
+                second_facteur.envoyer_code_par_mail(getattr(self, "request", None), utilisateur)
         if utilisateur is not None and second_facteur.second_facteur_actif(utilisateur):
             # Le code d'abord : sans lui, le mot de passe n'est pas examiné.
-            if not second_facteur.verifier_code(utilisateur, self.cleaned_data.get("code") or ""):
-                frein.echec(compteur)
-                raise self._refus()
+            if not second_facteur.verifier_code(utilisateur, code):
+                if code:
+                    frein.echec(compteur)
+                    raise self._refus()
+                raise self._sans_code()
 
         try:
             donnees = super().clean()
         except ValidationError:
             frein.echec(compteur)
+            if not code:
+                raise self._sans_code()
             raise
         frein.reussite(compteur)
 

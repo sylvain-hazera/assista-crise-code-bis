@@ -2,9 +2,9 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AuthService, CODE_REQUIS, ErreurConnexion, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
+import { AuthService, CODE_REQUIS, ErreurConnexion, MOT_DE_PASSE_REQUIS, SECOND_FACTEUR_A_ACTIVER } from '../../services/auth.service';
 
-type MagicLoginState = 'loading' | 'success' | 'error' | 'code';
+type MagicLoginState = 'loading' | 'success' | 'error' | 'code' | 'mot_de_passe';
 
 @Component({
   selector: 'app-magic-login',
@@ -26,6 +26,9 @@ export class MagicLoginComponent implements OnInit {
   /** Code de sécurité, demandé seulement si le compte est protégé : le lien prouve l'accès à
    * la boîte aux lettres, pas davantage. */
   code = '';
+  /** Demandé à la place du code quand le compte reçoit ses codes par e-mail : le lien et
+   * le code arriveraient dans la même boîte, ils prouveraient deux fois la même chose. */
+  motDePasse = '';
   envoiEnCours = false;
   private uidb64 = '';
   private token = '';
@@ -58,9 +61,13 @@ export class MagicLoginComponent implements OnInit {
 
   connecter(): void {
     const avecCode = this.state === 'code';
+    const avecMotDePasse = this.state === 'mot_de_passe';
     if (avecCode && this.code.trim().length < 6) return;
+    if (avecMotDePasse && !this.motDePasse) return;
     this.envoiEnCours = true;
-    this.authService.magicLogin(this.uidb64, this.token, avecCode ? this.code.trim() : '').subscribe({
+    this.authService.magicLogin(
+      this.uidb64, this.token, avecCode ? this.code.trim() : '', avecMotDePasse ? this.motDePasse : '',
+    ).subscribe({
       next: () => {
         this.state = 'success';
         this.router.navigateByUrl(this.suite);
@@ -70,6 +77,10 @@ export class MagicLoginComponent implements OnInit {
         const code = error instanceof ErreurConnexion ? error.code : '';
         if (code === SECOND_FACTEUR_A_ACTIVER) {
           this.router.navigate(['/securite-du-compte'], { queryParams: { returnUrl: this.suite } });
+        } else if (code === MOT_DE_PASSE_REQUIS || (avecMotDePasse && code === 'TROP_D_ESSAIS')) {
+          this.errorMessage = this.state === 'mot_de_passe' ? error.message : '';
+          this.state = 'mot_de_passe';
+          this.motDePasse = '';
         } else if (code === CODE_REQUIS || (avecCode && code === 'TROP_D_ESSAIS')) {
           // Premier passage : on demande le code. Code faux ou attente : on reste là, avec
           // le message du serveur.

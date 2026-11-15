@@ -19,10 +19,21 @@
     @if (ecran === 'etat' && etat) {
       @if (etat.actif) {
         <p class="statut actif"><span class="material-icons">verified_user</span> Code de sécurité actif</p>
-        <p>
-          À chaque connexion, le site vous demande les 6 chiffres de votre application
-          d'authentification avant votre mot de passe.
-        </p>
+        @if (etat.mode === 'email') {
+          <p>
+            À chaque connexion, le site vous envoie par e-mail un code à 6 chiffres, valable
+            5 minutes, à saisir avant votre mot de passe.
+          </p>
+          <p class="discret">
+            Une application d'authentification protège mieux : elle résiste aussi à quelqu'un
+            qui lirait vos e-mails. Pour y passer, utilisez « Changer de mode ».
+          </p>
+        } @else {
+          <p>
+            À chaque connexion, le site vous demande les 6 chiffres de votre application
+            d'authentification avant votre mot de passe.
+          </p>
+        }
         <p [class.alerte]="etat.codes_secours_restants <= 2">
           Codes de secours restants : <strong>{{ etat.codes_secours_restants }}</strong> sur 10.
           Ils servent si votre téléphone est perdu ou en panne.
@@ -31,17 +42,22 @@
         @if (!action) {
           <div class="actions">
             <button type="button" class="btn secondaire" (click)="demander('renouveler')">Tirer de nouveaux codes de secours</button>
-            <button type="button" class="btn secondaire" (click)="demander('retirer')">Changer de téléphone</button>
+            <button type="button" class="btn secondaire" (click)="demander('retirer')">
+              {{ etat.mode === 'email' ? 'Changer de mode' : 'Changer de téléphone ou de mode' }}
+            </button>
           </div>
         } @else {
           <form class="bloc" (ngSubmit)="valider()">
             <p>
               @if (action === 'retirer') {
-                Pour changer de téléphone, on retire le code actuel puis on en active un nouveau.
-                Saisissez un code de votre application actuelle, ou un code de secours.
+                On retire le code actuel, puis vous en activez un nouveau.
               } @else {
-                Les anciens codes de secours cesseront de fonctionner. Saisissez un code de
-                votre application pour confirmer.
+                Les anciens codes de secours cesseront de fonctionner.
+              }
+              @if (etat.mode === 'email') {
+                Saisissez le code que nous venons de vous envoyer par e-mail, ou un code de secours.
+              } @else {
+                Saisissez un code de votre application actuelle, ou un code de secours.
               }
             </p>
             <input type="text" name="code" class="champ-code" inputmode="numeric" maxlength="20"
@@ -72,30 +88,81 @@
         }
         <form class="bloc" (ngSubmit)="preparer()">
           <p>
-            Il vous faut une application d'authentification sur votre téléphone (par exemple
-            Aegis, FreeOTP, Google Authenticator ou Microsoft Authenticator).
+            Deux façons d'obtenir ce code : une application d'authentification sur votre
+            téléphone (Aegis, FreeOTP, Google Authenticator, Microsoft Authenticator…), ou un
+            e-mail envoyé par le site à chaque connexion.
           </p>
           @if (etat.mot_de_passe_defini !== false) {
             <label for="mdp">Votre mot de passe actuel</label>
             <input id="mdp" type="password" name="motDePasse" autocomplete="current-password" [(ngModel)]="motDePasse">
           }
           @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
-          <button type="submit" class="btn" [disabled]="enCours || (etat.mot_de_passe_defini !== false && !motDePasse)">
-            Activer un code de sécurité
-          </button>
+          <div class="actions">
+            <button type="submit" class="btn" [disabled]="enCours || (etat.mot_de_passe_defini !== false && !motDePasse)">
+              Avec une application (recommandé)
+            </button>
+            <button type="button" class="btn secondaire" (click)="preparer('email')"
+                    [disabled]="enCours || etat.mot_de_passe_defini === false || !motDePasse">
+              Recevoir mes codes par e-mail
+            </button>
+          </div>
+          <p class="discret">
+            Par e-mail : le site vous envoie un code à chaque connexion, valable 5 minutes.
+            Plus simple, mais moins sûr — quelqu'un qui lirait vos e-mails pourrait entrer.
+            @if (etat.mot_de_passe_defini === false) {
+              Ce mode demande que votre compte ait un mot de passe.
+            }
+          </p>
         </form>
       }
       <a [routerLink]="'/settings'" class="lien">Retour à mon espace</a>
     }
 
-    <!-- ── Installer : QR code, puis premier code ──────────────────────── -->
-    @if (ecran === 'installer') {
-      @if (obligatoire) {
-        <p class="bandeau attention">
-          Votre compte a des responsabilités : il doit être protégé par un code de sécurité.
-          Deux minutes suffisent, et vous serez connecté aussitôt après.
-        </p>
-      }
+    <!-- ── Choisir d'où viendra le code (activation obligatoire) ───────── -->
+    @if (ecran === 'choix') {
+      <p class="bandeau attention">
+        Votre compte a des responsabilités : il doit être protégé par un code de sécurité,
+        demandé à chaque connexion avant votre mot de passe. Deux minutes suffisent, et vous
+        serez connecté aussitôt après.
+      </p>
+      <p>D'où viendra ce code ?</p>
+      @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+      <div class="actions">
+        <button type="button" class="btn" (click)="preparer('application')" [disabled]="enCours">
+          D'une application sur mon téléphone (recommandé)
+        </button>
+        <button type="button" class="btn secondaire" (click)="preparer('email')" [disabled]="enCours">
+          D'un e-mail envoyé par le site
+        </button>
+      </div>
+      <p class="discret">
+        Par e-mail : un code à chaque connexion, valable 5 minutes. Plus simple, mais moins
+        sûr — quelqu'un qui lirait vos e-mails pourrait entrer.
+      </p>
+      <a routerLink="/login" class="lien">Retour à la connexion</a>
+    }
+
+    <!-- ── Installer : QR code ou e-mail, puis premier code ────────────── -->
+    @if (ecran === 'installer' && preparation?.mode === 'email') {
+      <p>
+        Un code vient d'être envoyé à <strong>{{ preparation!.adresse }}</strong>. Il est
+        valable 5 minutes. Saisissez-le pour confirmer que vous recevez bien nos messages :
+      </p>
+      <form (ngSubmit)="confirmer()">
+        <input type="text" name="code" class="champ-code" inputmode="numeric" maxlength="7"
+               autocomplete="one-time-code" placeholder="123456" [(ngModel)]="code">
+        @if (erreur) { <p class="bandeau erreur">{{ erreur }}</p> }
+        <div class="actions">
+          <button type="submit" class="btn" [disabled]="enCours || code.trim().length < 6">
+            {{ enCours ? 'Vérification…' : 'Activer' }}
+          </button>
+          <button type="button" class="btn secondaire" (click)="recevoirUnCode()">Je n'ai rien reçu</button>
+          <button type="button" class="btn secondaire" (click)="changerDeMode()">Choisir l'application</button>
+        </div>
+      </form>
+    }
+
+    @if (ecran === 'installer' && preparation?.mode !== 'email') {
       @if (preparation) {
         <ol class="etapes">
           <li>

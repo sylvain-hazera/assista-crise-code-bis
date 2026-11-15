@@ -27,6 +27,7 @@ VALIDITE_ENROLEMENT_S = 15 * 60
 
 MESSAGE_REFUS = "Identifiants incorrects."
 CODE_REQUIS = "CODE_REQUIS"
+MOT_DE_PASSE_REQUIS = "MOT_DE_PASSE_REQUIS"
 A_ACTIVER = "SECOND_FACTEUR_A_ACTIVER"
 
 
@@ -52,6 +53,16 @@ class CodeRequis(APIException):
 
     def __init__(self, detail="Saisissez le code de votre application d'authentification."):
         super().__init__({"code": CODE_REQUIS, "detail": detail})
+
+
+class MotDePasseRequis(APIException):
+    """Lien reçu par e-mail sur un compte dont le code arrive AUSSI par e-mail : le lien et le
+    code prouveraient deux fois la même chose. Le second facteur est alors le mot de passe."""
+    status_code = status.HTTP_401_UNAUTHORIZED
+    default_code = MOT_DE_PASSE_REQUIS
+
+    def __init__(self, detail="Saisissez votre mot de passe pour continuer."):
+        super().__init__({"code": MOT_DE_PASSE_REQUIS, "detail": detail})
 
 
 class TropDEssais(APIException):
@@ -96,21 +107,37 @@ def exiger_libre(cle_compteur: str) -> None:
 
 # ── Étape 1 : l'adresse ──────────────────────────────────────────────────────────────────────
 
-def etape_apres_adresse(email: str) -> str:
+def etape_apres_adresse(email: str, request=None, appareil: str = "") -> str:
     """« code » ou « mot_de_passe » : ce que le site demande ensuite.
 
     Répondre « code » aux seuls comptes protégés dirait à n'importe qui lesquels le sont, donc
     lesquels ont du pouvoir. Une adresse sur huit qui ne correspond à rien reçoit la même
-    réponse, toujours la même pour une adresse donnée : « code » ne prouve plus rien."""
+    réponse, toujours la même pour une adresse donnée : « code » ne prouve plus rien.
+
+    Si le compte reçoit ses codes par e-mail, le code part ici. La réponse ne le dit pas : le
+    site annonce dans tous les cas « celui de votre application, ou celui que vous venez de
+    recevoir », pour ne pas apprendre à un inconnu comment un compte est protégé."""
     utilisateur = trouver_utilisateur(email)
     if utilisateur is not None:
-        return "code" if second_facteur.second_facteur_actif(utilisateur) else "mot_de_passe"
+        facteur = second_facteur.second_facteur_actif(utilisateur)
+        if facteur is None:
+            return "mot_de_passe"
+        second_facteur.envoyer_code_par_mail(request, utilisateur, facteur, appareil)
+        return "code"
     if not second_facteur.applicable():
         return "mot_de_passe"
     empreinte = hmac.new(settings.SECRET_KEY.encode(),
                          f"etape|{(email or '').strip().lower()}".encode(),
                          hashlib.sha256).digest()
     return "code" if empreinte[0] < 32 else "mot_de_passe"
+
+
+def renvoyer_code(email: str, request=None, appareil: str = "") -> None:
+    """« Renvoyer le code » : n'a d'effet que pour un compte en mode e-mail, au plus une fois
+    par minute. Ne dit rien de ce qui s'est passé — même réponse pour toute adresse."""
+    utilisateur = trouver_utilisateur(email)
+    if utilisateur is not None:
+        second_facteur.envoyer_code_par_mail(request, utilisateur, appareil=appareil)
 
 
 # ── Étape 2 : le code ────────────────────────────────────────────────────────────────────────
@@ -128,6 +155,9 @@ def verifier_code_de_connexion(email: str, code: str, appareil: str = "") -> str
             raise TropDEssais(reste)
         raise AuthenticationFailed("Code incorrect.")
     frein.reussite(compteur)
+    # Le code est arrivé et a servi : le quota d'envois de cet appareil repart de zéro. Seuls
+    # les envois que personne n'utilise (ceux qu'un inconnu déclenche) s'accumulent.
+    frein.reussite(frein.cle(second_facteur.ETAPE_ENVOI, email, utilisateur, appareil))
     return signing.dumps({"u": str(utilisateur.pk)}, salt=SEL_ETAPE)
 
 
@@ -229,12 +259,33 @@ def ouvrir_session(request, utilisateur, appareil: str = "", fiche_avec_requete:
     }
 
 
-def ouvrir_session_par_lien(request, utilisateur, code: str = "", appareil: str = "") -> dict:
+def ouvrir_session_par_lien(request, utilisateur, code: str = "", appareil: str = "",
+                            mot_de_passe: str = "") -> dict:
     """Session ouverte par un lien reçu par e-mail (lien magique, lien d'activation).
 
     Le lien prouve l'accès à la boîte aux lettres : c'est UN facteur. Si le compte est protégé,
-    il faut aussi le code — sinon lire les e-mails de quelqu'un suffirait à entrer chez lui."""
-    if second_facteur.second_facteur_actif(utilisateur):
+    il en faut un second — sinon lire les e-mails de quelqu'un suffirait à entrer chez lui :
+
+    - compte protégé par une application : le code de l'application ;
+    - compte protégé par un code envoyé par e-mail : ce code arriverait dans la même boîte que
+      le lien et ne prouverait rien de plus. On demande donc le **mot de passe**."""
+    from .models import SecondFacteur
+
+    facteur = second_facteur.second_facteur_actif(utilisateur)
+    if facteur is not None and facteur.mode == SecondFacteur.MODE_EMAIL:
+        if not mot_de_passe:
+            raise MotDePasseRequis()
+        compteur = frein.cle(frein.ETAPE_MOT_DE_PASSE, utilisateur.email, utilisateur, appareil,
+                             voie="lien")
+        exiger_libre(compteur)
+        if not utilisateur.check_password(mot_de_passe):
+            _compter_echec(frein.ETAPE_MOT_DE_PASSE)
+            reste = frein.echec(compteur)
+            if reste:
+                raise TropDEssais(reste)
+            raise MotDePasseRequis("Mot de passe incorrect.")
+        frein.reussite(compteur)
+    elif facteur is not None:
         if not code:
             raise CodeRequis()
         compteur = frein.cle(frein.ETAPE_CODE, utilisateur.email, utilisateur, appareil)

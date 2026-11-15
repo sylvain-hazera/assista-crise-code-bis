@@ -9721,6 +9721,21 @@ class SecondFacteur(models.Model):
     # fenêtre de validité (quelqu'un qui le lit par-dessus l'épaule ne peut pas le rejouer).
     dernier_pas = models.BigIntegerField(default=0)
 
+    # D'où vient le code (15/11/2026, demande de Sylvain) : d'une application d'authentification
+    # sur le téléphone, ou d'un e-mail envoyé par le central à chaque connexion. En mode
+    # e-mail il n'y a pas de secret : `secret` est vide, et le code du moment est ci-dessous.
+    MODE_APPLICATION = "APPLICATION"
+    MODE_EMAIL = "EMAIL"
+    mode = models.CharField(
+        max_length=12, default=MODE_APPLICATION,
+        choices=[(MODE_APPLICATION, "Application d'authentification"), (MODE_EMAIL, "Code par e-mail")],
+    )
+    # Le code envoyé par e-mail : son empreinte seulement, cinq minutes, cinq essais, une fois.
+    code_mail_empreinte = models.CharField(max_length=64, blank=True, default="")
+    code_mail_expire_le = models.DateTimeField(null=True, blank=True)
+    code_mail_essais = models.PositiveSmallIntegerField(default=0)
+    code_mail_envoye_le = models.DateTimeField(null=True, blank=True)
+
     def __str__(self):
         return f"Second facteur de {self.utilisateur_id} ({'actif' if self.confirme_le else 'en préparation'})"
 

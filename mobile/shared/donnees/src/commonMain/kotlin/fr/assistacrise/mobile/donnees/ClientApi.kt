@@ -91,10 +91,25 @@ class ClientApi(
      * ancienne) répond 404 : on demande alors le mot de passe, comme avant.
      */
     suspend fun debutConnexion(email: String): Reponse<Boolean> {
-        val corps = buildJsonObject { put("email", email.trim()) }
+        // Si le compte reçoit ses codes par e-mail, le serveur en envoie un à cette étape.
+        // Le téléphone s'annonce : connu du compte, il a son propre quota d'envois.
+        val corps = buildJsonObject { put("email", email.trim()); put("appareil", session.appareil()) }
         return when (val r = appeler(HttpMethod.Post, "connexion/debut/", corps, jeton = null)) {
             is Reponse.Ok -> Reponse.Ok((r.valeur.jsonObject["etape"] as? JsonPrimitive)?.content == "code")
             is Reponse.Refus -> if (r.code == 404) Reponse.Ok(false) else r
+            is Reponse.Injoignable -> r
+        }
+    }
+
+    /**
+     * « Renvoyer le code par e-mail ». Le serveur répond la même phrase pour toute adresse :
+     * il ne dit ni si le compte existe, ni s'il reçoit ses codes ainsi, ni si un message part.
+     */
+    suspend fun renvoyerCode(email: String): Reponse<String> {
+        val corps = buildJsonObject { put("email", email.trim()); put("appareil", session.appareil()) }
+        return when (val r = appeler(HttpMethod.Post, "connexion/envoyer-code/", corps, jeton = null)) {
+            is Reponse.Ok -> Reponse.Ok((r.valeur.jsonObject["detail"] as? JsonPrimitive)?.content.orEmpty())
+            is Reponse.Refus -> r
             is Reponse.Injoignable -> r
         }
     }

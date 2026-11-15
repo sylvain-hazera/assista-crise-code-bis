@@ -35,12 +35,17 @@ export class ErreurConnexion extends Error {
 }
 
 export const CODE_REQUIS = 'CODE_REQUIS';
+/** Lien reçu par e-mail sur un compte dont le code arrive aussi par e-mail : c'est le mot de
+ * passe qui sert de second facteur. */
+export const MOT_DE_PASSE_REQUIS = 'MOT_DE_PASSE_REQUIS';
 export const SECOND_FACTEUR_A_ACTIVER = 'SECOND_FACTEUR_A_ACTIVER';
 
 export interface PreparationSecondFacteur {
-  secret: string;
+  mode: 'application' | 'email';
+  /** Mode application : l'adresse otpauth. Mode e-mail : l'adresse du compte, masquée. */
   adresse: string;
-  qr_svg: string;
+  secret?: string;
+  qr_svg?: string;
 }
 
 export interface ConfirmationSecondFacteur {
@@ -106,8 +111,8 @@ export class AuthService {
     if (error.status === 0) {
       return new ErreurConnexion('Impossible de contacter le serveur. Vérifiez votre connexion.');
     }
-    if (error.status === 401 && code === CODE_REQUIS) {
-      return new ErreurConnexion(error.error?.detail || 'Saisissez votre code de sécurité.', code);
+    if (error.status === 401 && (code === CODE_REQUIS || code === MOT_DE_PASSE_REQUIS)) {
+      return new ErreurConnexion(error.error?.detail || 'Une vérification de plus est nécessaire.', code);
     }
     return new ErreurConnexion(error.error?.error || parDefaut, code);
   }
@@ -117,13 +122,21 @@ export class AuthService {
    * de passe, comme avant. */
   debutConnexion(email: string): Observable<'code' | 'mot_de_passe'> {
     return this.http
-      .post<{ etape: 'code' | 'mot_de_passe' }>(`${this.url}/connexion/debut/`, { email })
+      .post<{ etape: 'code' | 'mot_de_passe' }>(`${this.url}/connexion/debut/`, { email, appareil: this.appareil })
       .pipe(
         map(res => res.etape),
         catchError((error: HttpErrorResponse) =>
           error.status === 404 ? of('mot_de_passe' as const)
             : throwError(() => this.erreurDeConnexion(error, 'Une erreur est survenue, réessayez.'))),
       );
+  }
+
+  /** POST /api/connexion/envoyer-code/ : renvoie le code d'un compte qui les reçoit par
+   * e-mail. La réponse est la même pour toute adresse — elle ne dit pas si un message part. */
+  renvoyerCode(email: string): Observable<string> {
+    return this.http
+      .post<{ detail: string }>(`${this.url}/connexion/envoyer-code/`, { email, appareil: this.appareil })
+      .pipe(map(res => res.detail));
   }
 
   /** POST /api/connexion/code/ : rend le jeton d'étape à joindre au mot de passe. */
@@ -157,9 +170,11 @@ export class AuthService {
 
   /** Lien reçu par e-mail (activation ou lien magique). Sans code : GET, comme toujours.
    * Avec le code de sécurité d'un compte protégé : le même lien, en POST. */
-  private sessionParLien(chemin: string, parDefaut: string, code = ''): Observable<ActivationResponse> {
-    const appel = code
-      ? this.http.post<ActivationResponse>(`${this.url}/${chemin}/`, { code, appareil: this.appareil })
+  private sessionParLien(chemin: string, parDefaut: string, code = '', motDePasse = ''): Observable<ActivationResponse> {
+    const appel = code || motDePasse
+      ? this.http.post<ActivationResponse>(`${this.url}/${chemin}/`, {
+          code, mot_de_passe: motDePasse, appareil: this.appareil,
+        })
       : this.http.get<ActivationResponse>(`${this.url}/${chemin}/`);
     return appel.pipe(
       tap(res => {
@@ -172,15 +187,15 @@ export class AuthService {
   }
 
   /** /api/activate-account/<uidb64>/<token>/ : active le compte → { user, token, refresh, message } */
-  activateAccount(uidb64: string, token: string, code = ''): Observable<ActivationResponse> {
+  activateAccount(uidb64: string, token: string, code = '', motDePasse = ''): Observable<ActivationResponse> {
     return this.sessionParLien(`activate-account/${uidb64}/${token}`,
-      "Ce lien d'activation est invalide ou a expiré", code);
+      "Ce lien d'activation est invalide ou a expiré", code, motDePasse);
   }
 
   /** /api/magic-login/<uidb64>/<token>/ : connexion par lien magique → { user, token, refresh, message } */
-  magicLogin(uidb64: string, token: string, code = ''): Observable<ActivationResponse> {
+  magicLogin(uidb64: string, token: string, code = '', motDePasse = ''): Observable<ActivationResponse> {
     return this.sessionParLien(`magic-login/${uidb64}/${token}`,
-      'Ce lien de connexion est invalide ou a expiré', code);
+      'Ce lien de connexion est invalide ou a expiré', code, motDePasse);
   }
 
   // ── Code de sécurité (second facteur) ──────────────────────────────────────────────────
@@ -196,10 +211,17 @@ export class AuthService {
 
   /** Tire un secret, pas encore actif. Depuis une session ouverte, le mot de passe est
    * redemandé ; pas depuis une activation obligatoire, où l'on vient de le donner. */
-  preparerSecondFacteur(motDePasse = ''): Observable<PreparationSecondFacteur> {
+  preparerSecondFacteur(motDePasse = '', mode: 'application' | 'email' = 'application'): Observable<PreparationSecondFacteur> {
     return this.http.post<PreparationSecondFacteur>(`${this.url}/second-facteur/preparer/`, {
-      mot_de_passe: motDePasse, jeton_enrolement: this.jetonEnrolement || '',
+      mode, mot_de_passe: motDePasse, jeton_enrolement: this.jetonEnrolement || '',
     });
+  }
+
+  /** Mode e-mail : se faire envoyer un code — pendant l'activation, ou avant un acte qui en
+   * demande un (retirer le code, tirer de nouveaux codes de secours). */
+  envoyerCodeSecondFacteur(): Observable<{ envoye: boolean; detail: string }> {
+    return this.http.post<{ envoye: boolean; detail: string }>(
+      `${this.url}/second-facteur/envoyer-code/`, { jeton_enrolement: this.jetonEnrolement || '' });
   }
 
   /** Active le code. Si la personne attendait cela pour entrer, sa session s'ouvre. */

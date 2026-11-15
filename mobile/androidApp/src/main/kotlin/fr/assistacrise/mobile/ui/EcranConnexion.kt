@@ -93,11 +93,19 @@ fun EcranConnexion(modele: ModeleApplication) {
                     actif = !etat.enCours,
                 )
                 Text(
-                    "Les 6 chiffres de votre application d'authentification, ou l'un de vos codes de secours.",
+                    "Les 6 chiffres de votre application d'authentification, ou ceux que nous venons de " +
+                        "vous envoyer par e-mail si votre compte fonctionne ainsi (valables 5 minutes). " +
+                        "À défaut, l'un de vos codes de secours.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                TextButton(onClick = { modele.renvoyerLeCode(email) }, enabled = !etat.enCours) {
+                    Text("Renvoyer le code par e-mail")
+                }
+                modele.messageEnvoiCode?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             if (etape == EtapeConnexion.MOT_DE_PASSE) {
                 Champ(

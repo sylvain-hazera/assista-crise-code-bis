@@ -21,7 +21,7 @@ describe('SecuriteCompteComponent', () => {
     date_limite: '2026-11-30T05:00:00Z', codes_secours_restants: 0, mot_de_passe_defini: true,
   };
   const PREPARATION = {
-    secret: 'ABCDEFGHIJKLMNOP', adresse: 'otpauth://totp/Assista-Crise:a?secret=ABCDEFGHIJKLMNOP',
+    mode: 'application' as const, secret: 'ABCDEFGHIJKLMNOP', adresse: 'otpauth://totp/Assista-Crise:a?secret=ABCDEFGHIJKLMNOP',
     qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1H0z"/></svg>',
   };
 
@@ -118,6 +118,23 @@ describe('SecuriteCompteComponent', () => {
       expect(composant.erreur).toContain('heure de votre téléphone');
     });
 
+    it('en mode e-mail, un acte qui demande un code en fait partir un', () => {
+      monter();
+      http.expectOne(`${api}/second-facteur/`).flush(
+        { ...ETAT, actif: true, mode: 'email', date_limite: null, codes_secours_restants: 10 });
+      composant.demander('renouveler');
+      http.expectOne(`${api}/second-facteur/envoyer-code/`).flush({ envoye: true, detail: 'Un code vient de partir.' });
+      expect(composant.message).toContain('vient de partir');
+    });
+
+    it("en mode application, aucun e-mail ne part pour un acte qui demande un code", () => {
+      monter();
+      http.expectOne(`${api}/second-facteur/`).flush(
+        { ...ETAT, actif: true, mode: 'application', date_limite: null, codes_secours_restants: 10 });
+      composant.demander('renouveler');
+      http.expectNone(`${api}/second-facteur/envoyer-code/`);
+    });
+
     it('retirer le code demande un code, et dit à un compte à pouvoir de réactiver', () => {
       monter();
       http.expectOne(`${api}/second-facteur/`).flush({ ...ETAT, actif: true, date_limite: null, codes_secours_restants: 9 });
@@ -141,12 +158,16 @@ describe('SecuriteCompteComponent', () => {
         { status: 403, statusText: 'Forbidden' });
     });
 
-    it("prépare tout de suite, sans redemander le mot de passe, et ouvre la session à l'activation", () => {
+    it("fait choisir le mode, sans redemander le mot de passe, et ouvre la session à l'activation", () => {
       monter();
+      expect(composant.ecran).toBe('choix');
+      expect(composant.obligatoire).toBeTrue();
+      http.expectNone(`${api}/second-facteur/preparer/`);
+      composant.preparer('application');
       const preparation = http.expectOne(`${api}/second-facteur/preparer/`);
       expect(preparation.request.body.jeton_enrolement).toBe('jeton-activation');
+      expect(preparation.request.body.mode).toBe('application');
       preparation.flush(PREPARATION);
-      expect(composant.obligatoire).toBeTrue();
 
       composant.code = '123456';
       composant.confirmer();
@@ -164,8 +185,34 @@ describe('SecuriteCompteComponent', () => {
       expect(router.navigateByUrl).toHaveBeenCalledWith('/accueil');
     });
 
+    it('par e-mail : le code part, se saisit, et « rien reçu » en redemande un', () => {
+      monter();
+      composant.preparer('email');
+      const preparation = http.expectOne(`${api}/second-facteur/preparer/`);
+      expect(preparation.request.body.mode).toBe('email');
+      preparation.flush({ mode: 'email', adresse: 'm••••@exemple.test' });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('m••••@exemple.test');
+      expect(fixture.nativeElement.querySelector('.qr')).toBeNull();
+
+      composant.recevoirUnCode();
+      const envoi = http.expectOne(`${api}/second-facteur/envoyer-code/`);
+      expect(envoi.request.body.jeton_enrolement).toBe('jeton-activation');
+      envoi.flush({ envoye: false, detail: 'Un code vous a déjà été envoyé. Attendez une minute.' });
+      expect(composant.message).toContain('Attendez une minute');
+
+      composant.code = '123456';
+      composant.confirmer();
+      http.expectOne(`${api}/second-facteur/confirmer/`).flush({
+        codes_secours: ['aaaaa-bbbbb'], etat: { ...ETAT, actif: true, mode: 'email' },
+        session: { access: 'acces', refresh: 'r', user: { id: 'u' }, appareil: 'a' },
+      });
+      expect(composant.ecran).toBe('codes');
+    });
+
     it("dit de se reconnecter quand le délai d'activation est écoulé", () => {
       monter();
+      composant.preparer('application');
       http.expectOne(`${api}/second-facteur/preparer/`).flush(
         { detail: 'Session expirée. Reconnectez-vous.' }, { status: 401, statusText: 'Unauthorized' });
       fixture.detectChanges();
