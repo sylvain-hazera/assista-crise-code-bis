@@ -213,6 +213,11 @@
         Circulation (routes nationales)
         @if (layerVisibility.circulation && veilleTronquee.circulation) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      <label class="layer-toggle-item" title="Qualité de l'air estimée par modèle dans les grandes villes (OpenWeather), indice de 1 à 5. Pas une mesure de station, pas l'indice ATMO.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.qualiteAir" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot air-dot"></span>
+        Qualité de l'air (estimation)
+      </label>
       <label class="layer-toggle-item" title="Antennes mobiles que les opérateurs déclarent en panne ou en maintenance (fichier quotidien de l'Arcep). Rouge : voix et données coupées. Orange : service partiel. Les pannes déclarées depuis plus de six mois ne sont pas montrées.">
         <input type="checkbox" [(ngModel)]="layerVisibility.antennesMobiles" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot antennes-dot"></span>

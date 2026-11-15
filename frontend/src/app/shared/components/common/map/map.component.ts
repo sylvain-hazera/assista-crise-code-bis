@@ -77,6 +77,8 @@ interface LayerVisibility {
   niveauxMer: boolean;
   /** Antennes mobiles déclarées en panne ou en maintenance (Arcep). */
   antennesMobiles: boolean;
+  /** Qualité de l'air estimée dans les grandes villes (OpenWeather). */
+  qualiteAir: boolean;
   /** Vent prévu, animé : des particules portées par le champ de vent. */
   vent: boolean;
   /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
@@ -150,6 +152,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     hauteursEau: false,
     niveauxMer: false,
     antennesMobiles: false,
+    qualiteAir: false,
     vent: false,
     defibrillateurs: false,
     seismes: false,
@@ -243,6 +246,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('hauteurs-eau-layer', this.layerVisibility.hauteursEau);
     this.applyLayerVisibility('niveaux-mer-layer', this.layerVisibility.niveauxMer);
     this.applyLayerVisibility('antennes-mobiles-layer', this.layerVisibility.antennesMobiles);
+    this.applyLayerVisibility('qualite-air-layer', this.layerVisibility.qualiteAir);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
@@ -265,10 +269,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
-        && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles) return;
+        && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
+        && !qualiteAir) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -279,6 +284,33 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       borne(bornes.getWest(), 180), borne(bornes.getSouth(), 90),
       borne(bornes.getEast(), 180), borne(bornes.getNorth(), 90),
     ];
+    if (qualiteAir) {
+      this.veilleService.qualiteAir({ bbox }).subscribe({
+        next: (reponse) => {
+          const noms: Record<string, string> = { pm2_5: 'PM2,5', pm10: 'PM10', no2: 'NO₂', o3: 'O₃', so2: 'SO₂' };
+          this.afficherCoucheVeille('qualite-air', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(p => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+              properties: {
+                etat: p.indice ?? 0,
+                infobulle: `<strong>Qualité de l'air à ${this.echapper(p.nom)}</strong>`
+                  + (p.indice != null ? `<br>Indice ${p.indice} sur 5 : ${this.echapper(p.libelle)}` : '<br>Estimation trop ancienne')
+                  + (p.indice != null ? '<br>' + Object.keys(noms).filter(cle => p.composants[cle] != null)
+                      .map(cle => `${noms[cle]} ${String(p.composants[cle]).replace('.', ',')}`).join(' · ') + ' µg/m³' : '')
+                  + (p.pire_24h != null && p.pire_24h > (p.indice ?? 0) && p.pire_24h_le
+                    ? `<br>D'ici 24 h : jusqu'à ${p.pire_24h} (${this.echapper(p.pire_24h_libelle)}) vers ${new Date(p.pire_24h_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '')
+                  + `<br><small>${this.echapper(reponse.source)}. Estimation par modèle, pas une mesure de station ; `
+                  + 'l\'indice (1 à 5) n\'est pas l\'indice ATMO.</small>',
+              },
+            })),
+          // Du vert (bon) au violet (très mauvais) ; gris : estimation trop ancienne.
+          }, ['match', ['get', 'etat'], 1, '#2f9e44', 2, '#a3c93a', 3, '#e6b800', 4, '#f97316', 5, '#7c1d6f', '#9ca3af'],
+          this.layerVisibility.qualiteAir);
+        },
+        error: () => {},
+      });
+    }
     if (antennesMobiles) {
       this.veilleService.antennesIndisponibles({ bbox }).subscribe({
         next: (reponse) => {

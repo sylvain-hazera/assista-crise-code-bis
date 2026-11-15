@@ -147,8 +147,10 @@ services:
     # `manage.py relever_sources_ouvertes`.
     # signature_satellites_web : la clé de signature des satellites, CHIFFRÉE par la phrase de
     # passe de son détenteur, remise à son navigateur pour signer depuis la page Satellites.
+    # openweathermap_cle_api : clé gratuite d'OpenWeather, pour la qualité de l'air estimée
+    # (core/qualite_air.py), lue par la même tâche planifiée.
     secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password, meteofrance_cle_api,
-              signature_satellites_web]
+              openweathermap_cle_api, signature_satellites_web]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data          # jeton du bot Matrix, partagé avec matrix-bridge
@@ -530,6 +532,7 @@ secrets:
   # : son échéance est surveillée (alerte CleMeteoFranceExpireBientot). Le fichier doit exister,
   # même vide, sinon Compose refuse de créer le conteneur ; vide, la veille météo se tait.
   meteofrance_cle_api:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meteofrance_cle_api.txt" }
+  openweathermap_cle_api:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/openweathermap_cle_api.txt" }
   # Clé de signature des satellites, chiffrée par la phrase de passe (jamais en clair). Produite
   # par scripts/satellites/preparer-signature-web.sh. Le fichier doit exister, même vide : vide,
   # la page Satellites propose seulement le collage d'une signature faite dans un terminal.

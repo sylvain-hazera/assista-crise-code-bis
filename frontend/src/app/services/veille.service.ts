@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  AntennesIndisponibles, ArretesCirculation, Circulation, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
+  AntennesIndisponibles, ArretesCirculation, Circulation, QualiteAir, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -108,6 +108,12 @@ export class VeilleService {
     const params = this.params(emprise);
     if (trace) params['trace'] = '1';
     return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
+  }
+
+  /** Qualité de l'air estimée (OpenWeather) : les villes de la liste fixe du serveur dans
+   * l'emprise, et la plus proche du centre. Lu dans la copie du serveur : rien ne sort. */
+  qualiteAir(emprise: EmpriseVeille = {}): Observable<QualiteAir> {
+    return this.http.get<QualiteAir>(`${this.api}/qualite-air/`, { params: this.params(emprise) });
   }
 
   /** Antennes mobiles déclarées en panne ou en maintenance (Arcep), coupures complètes d'abord.

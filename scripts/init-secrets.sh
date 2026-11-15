@@ -75,6 +75,17 @@ else
     echo "  created   $METEOFRANCE_KEY (empty: paste the Meteo-France key in it)"
 fi
 chmod 644 "$METEOFRANCE_KEY"
+# Clé gratuite d'OpenWeather (qualité de l'air estimée, core/qualite_air.py). Même principe :
+# elle se crée sur https://openweathermap.org avec le compte du porteur et se colle dans ce
+# fichier ; vide, la source se tait sans rien casser.
+OPENWEATHERMAP_KEY="$SECRETS_DIR/openweathermap_cle_api.txt"
+if [ -e "$OPENWEATHERMAP_KEY" ]; then
+    echo "  kept      $OPENWEATHERMAP_KEY"
+else
+    : > "$OPENWEATHERMAP_KEY"
+    echo "  created   $OPENWEATHERMAP_KEY (empty: paste the OpenWeather key in it)"
+fi
+chmod 644 "$OPENWEATHERMAP_KEY"
 # Clé de signature des satellites, chiffrée par la phrase de passe de son détenteur, pour signer
 # depuis la page Satellites. Elle ne se génère pas ici : scripts/satellites/preparer-signature-web.sh
 # la produit. Même raison que ci-dessus pour le fichier vide.

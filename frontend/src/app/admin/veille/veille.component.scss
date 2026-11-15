@@ -208,6 +208,18 @@ table.mesures, table.mesures-sante {
 // Violet : n'existe qu'outre-mer (cyclone).
 .etiquette[data-couleur="5"], .couleur[data-couleur="5"] { background: #6d28d9; color: #fff; }
 
+// ── Qualité de l'air ──
+.air-indice, .air-prevision {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 8px; color: var(--ac-text, #111827);
+  .material-icons { font-size: 18px; }
+}
+.etiquette.air { font-weight: 600; }
+.etiquette.air[data-indice="1"] { background: #d3f9d8; color: #14532d; }
+.etiquette.air[data-indice="2"] { background: #e9f5c4; color: #3f4d0c; }
+.etiquette.air[data-indice="3"] { background: #fff3a3; color: #3d3500; }
+.etiquette.air[data-indice="4"] { background: #ffd08a; color: #3b2100; }
+.etiquette.air[data-indice="5"] { background: #7c1d6f; color: #fff; }
+
 // ── Réseau mobile ──
 .operateurs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--ac-text, #111827); }
 .etiquette.antenne[data-gravite="TOTALE"] { background: #c81e1e; color: #fff; }

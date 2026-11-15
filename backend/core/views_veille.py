@@ -22,13 +22,13 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    antennes_mobiles, arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, niveaux_mer, pluie, precipitations_hiver, rafales, restrictions_eau, sources_ouvertes, trafic_routier, vent,
+    antennes_mobiles, arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, niveaux_mer, pluie, precipitations_hiver, qualite_air, rafales, restrictions_eau, sources_ouvertes, trafic_routier, vent,
     vigilance_crues,
 )
 from .models import (
     AntenneIndisponible, ChampVent, ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, Maregraphe, ImagePrecipitationHiver, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
+    ImagePluie, Maregraphe, PointQualiteAir, ImagePrecipitationHiver, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -594,6 +594,50 @@ class NiveauxMerView(APIView):
                                    l["distance_km"] if l["distance_km"] is not None else 0, l["code"]))
         return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
                          "bilan": bilan, "resultats": lignes[:RESULTATS_MAX]})
+
+
+class QualiteAirView(APIView):
+    """GET /api/qualite-air/ : la qualité de l'air ESTIMÉE (modèle OpenWeather, indice de 1 à 5)
+    aux points fixes du relevé. Avec une emprise (voir `_emprise`), les points qui s'y trouvent ;
+    et dans tous les cas où un centre est connu, `plus_proche` : le point le plus proche de ce
+    centre, où qu'il soit, avec sa distance -- la liste ne compte qu'une ville ou deux par
+    département."""
+    permission_classes = [permissions.AllowAny]
+
+    def _ligne(self, point, centre, maintenant):
+        latitude, longitude = _point(point.location)
+        recente = maintenant - point.mesure_le <= qualite_air.MESURE_VALABLE
+        pire, quand = qualite_air.pire_a_venir(point.prevision, maintenant)
+        return {
+            "code": point.code, "nom": point.nom, "departement": point.departement,
+            "indice": point.indice if recente else None,
+            "libelle": qualite_air.LIBELLES.get(point.indice, "") if recente else "",
+            "composants": point.composants if recente else {},
+            "mesure_le": point.mesure_le,
+            "pire_24h": pire, "pire_24h_libelle": qualite_air.LIBELLES.get(pire, ""), "pire_24h_le": quand,
+            "latitude": latitude, "longitude": longitude,
+            "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                            if centre else None),
+        }
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("QUALITE_AIR", centre, rayon)
+        entete["libelles"] = qualite_air.LIBELLES
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "plus_proche": None, "resultats": []})
+
+        maintenant = timezone.now()
+        lignes = [self._ligne(point, centre, maintenant)
+                  for point in PointQualiteAir.objects.filter(location__within=emprise)]
+        lignes.sort(key=lambda l: (-(l["indice"] or 0), l["distance_km"] if l["distance_km"] is not None else 0, l["code"]))
+        plus_proche = None
+        if centre:
+            tous = [self._ligne(point, centre, maintenant) for point in PointQualiteAir.objects.all()]
+            plus_proche = min(tous, key=lambda l: l["distance_km"], default=None)
+        return Response({**entete, "emprise_connue": True, "tronque": False,
+                         "plus_proche": plus_proche, "resultats": lignes})
 
 
 class RestrictionsEauView(APIView):

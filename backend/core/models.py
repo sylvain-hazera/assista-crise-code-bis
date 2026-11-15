@@ -2784,6 +2784,28 @@ class StationCirculation(models.Model):
         return f"{self.axe} {self.sens} ({self.code})".strip()
 
 
+class PointQualiteAir(models.Model):
+    """Qualité de l'air ESTIMÉE par modèle (OpenWeather) en l'un des points fixes de la liste de
+    core/qualite_air.py : l'indice courant (1 bon à 5 très mauvais -- ce n'est pas l'indice ATMO),
+    les polluants, et la prévision des deux jours à venir. État courant seulement, réécrit à
+    chaque relevé : rien n'est archivé. Donnée sous licence CC BY-SA 4.0, mention obligatoire."""
+
+    code = models.CharField(max_length=10, primary_key=True)        # code INSEE de la commune
+    nom = models.CharField(max_length=120)
+    departement = models.CharField(max_length=3, db_index=True)
+    location = gis_models.PointField(srid=4326)
+    indice = models.PositiveSmallIntegerField()
+    # Concentrations en microgrammes par mètre cube : {"pm2_5": 4.1, "pm10": 6.0, "no2": …}.
+    composants = models.JSONField(default=dict, blank=True)
+    mesure_le = models.DateTimeField()
+    # [[instant ISO, indice]…], heure par heure.
+    prevision = models.JSONField(default=list, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Air à {self.nom} : {self.indice}"
+
+
 class AntenneIndisponible(models.Model):
     """Antenne de téléphonie mobile déclarée en panne ou en maintenance par son opérateur
     (fichier quotidien de l'Arcep) -- voir core/antennes_mobiles.py.

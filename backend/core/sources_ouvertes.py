@@ -1,7 +1,7 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Vingt-quatre sources aujourd'hui -- vigilance (métropole et outre-mer), mesures des stations, pluie, rafales, vent, neige et verglas prévus, météo des forêts et
-risque d'avalanche (Météo-France), vigilance crues (Vigicrues), hauteurs d'eau en rivière (Hub'Eau), niveau de la mer (Shom), antennes mobiles en panne (Arcep), restrictions d'eau (VigiEau),
+Vingt-cinq sources aujourd'hui -- vigilance (métropole et outre-mer), mesures des stations, pluie, rafales, vent, neige et verglas prévus, météo des forêts et
+risque d'avalanche (Météo-France), vigilance crues (Vigicrues), hauteurs d'eau en rivière (Hub'Eau), niveau de la mer (Shom), antennes mobiles en panne (Arcep), qualité de l'air estimée (OpenWeather), restrictions d'eau (VigiEau),
 foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers et circulation (Bison Futé), arrêtés de circulation (DiaLog),
 recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
 (BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
@@ -28,7 +28,7 @@ from django.utils import timezone
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
     observations_meteo, pluie,
-    precipitations_hiver, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
+    precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
 
@@ -75,6 +75,10 @@ SOURCES = {
         # suffisent à le prendre dès sa parution, et « périmé » tolère un week-end sans fichier.
         Source("ANTENNES_MOBILES", "Antennes mobiles en panne ou en maintenance", antennes_mobiles.relever,
                datetime.timedelta(hours=6), datetime.timedelta(hours=96), "Arcep - déclarations des opérateurs"),
+        # Une demande par ville de la liste fixe (112), une par seconde : deux minutes, une fois
+        # par heure. Le service donne des valeurs horaires.
+        Source("QUALITE_AIR", "Qualité de l'air estimée (grandes villes)", qualite_air.relever,
+               datetime.timedelta(minutes=55), datetime.timedelta(hours=4), qualite_air.ATTRIBUTION),
         # Les arrêtés de restriction changent au rythme des préfectures : quatre relevés par
         # jour suffisent, et les données du jour ne paraissent que dans la matinée.
         Source("RESTRICTIONS_EAU", "Restrictions d'usage de l'eau", restrictions_eau.relever,

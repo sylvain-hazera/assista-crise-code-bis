@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, NiveauMer, NiveauxMer, AntenneIndisponible, AntennesIndisponibles, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver,
+  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, NiveauMer, NiveauxMer, AntenneIndisponible, AntennesIndisponibles, QualiteAir, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -171,6 +171,20 @@ const FEUX: ZonesBrulees = {
     departement_nom: 'Loire', surface_ha: 42, latitude: 45.41, longitude: 4.68, distance_km: 23.4,
   }],
 };
+
+/** Saint-Étienne, à 13 km : indice 2, et une dégradation annoncée à 4 dans la nuit. */
+const AIR: QualiteAir = {
+  ...ENTETE, source: 'Données météo fournies par OpenWeather',
+  libelles: { 1: 'bon', 2: 'correct', 3: 'moyen', 4: 'mauvais', 5: 'très mauvais' },
+  plus_proche: {
+    code: '42218', nom: 'Saint-Étienne', departement: '42', indice: 2, libelle: 'correct',
+    composants: { pm2_5: 4.1, pm10: 6, no2: 12.3, o3: 64.3, so2: 0.2, co: 131 },
+    mesure_le: '2026-11-15T21:00:00Z', pire_24h: 4, pire_24h_libelle: 'mauvais', pire_24h_le: '2026-11-16T03:00:00Z',
+    latitude: 45.44, longitude: 4.39, distance_km: 13.5,
+  },
+  resultats: [],
+};
+const AIR_VIDE: QualiteAir = { ...AIR, plus_proche: null };
 
 const ANTENNE: AntenneIndisponible = {
   cle: 'Orange|0692290587', operateur: 'Orange', commune: 'Lyon', gravite: 'TOTALE', voix_hs: true, donnees_hs: true,
@@ -342,7 +356,7 @@ describe('VeilleComponent', () => {
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
                                 arretes?: ArretesCirculation; sante?: SanteUrgences; circulation?: Circulation; hauteurs?: HauteursEau; mer?: NiveauxMer;
-                                antennes?: AntennesIndisponibles;
+                                antennes?: AntennesIndisponibles; air?: QualiteAir;
                                 radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
                                 foyers?: FoyersActifs; rafales?: RafalesPrevues; hiver?: PrecipitationsHiver } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
@@ -361,6 +375,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(reponses.foyers ?? FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/qualite-air/`).flush(reponses.air ?? AIR_VIDE);
     http.expectOne(r => r.url === `${api}/antennes-indisponibles/`).flush(reponses.antennes ?? ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(reponses.mer ?? MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(reponses.hauteurs ?? HAUTEURS_VIDES);
@@ -379,7 +394,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(21);
+    expect(demandes.length).toBe(22);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -418,6 +433,52 @@ describe('VeilleComponent', () => {
 
     it('se tait quand rien de tel n’est prévu, ou hors de la métropole', () => {
       expect(bloc(demarrer({ hiver: HIVER_AU_SEC }))).toBeNull();
+    });
+  });
+
+  /** Qualité de l'air (15/11/2026) : une estimation par modèle dans la ville de la liste la plus
+   * proche. La page doit donner la source (mention obligatoire) et dire ce que ce n'est pas. */
+  describe('qualité de l’air', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('[aria-labelledby="titre-air"]');
+
+    it('donne l’indice, les polluants et la ville où ils sont estimés', () => {
+      const fixture = demarrer({ air: AIR });
+
+      expect(bloc(fixture).querySelector('h2')!.textContent).toContain('Saint-Étienne');
+      expect(bloc(fixture).querySelector('.etiquette.air')!.textContent).toContain('Indice 2 sur 5 : correct');
+      expect(bloc(fixture).querySelector('.etiquette.air')!.getAttribute('data-indice')).toBe('2');
+      expect(bloc(fixture).textContent).toMatch(/particules fines PM2,5 4[.,]1 µg\/m³/);
+      expect(bloc(fixture).textContent).toMatch(/à 14 km de votre commune/);
+    });
+
+    it('annonce une dégradation prévue, et seulement une dégradation', () => {
+      expect(bloc(demarrer({ air: AIR })).querySelector('.air-prevision')!.textContent).toMatch(/jusqu'à 4 \(mauvais\) vers \d\d:00/);
+    });
+
+    it('ne parle pas de prévision quand l’air ne se dégrade pas', () => {
+      const stable = { ...AIR, plus_proche: { ...AIR.plus_proche!, pire_24h: 2, pire_24h_libelle: 'correct' } };
+
+      expect(bloc(demarrer({ air: stable })).querySelector('.air-prevision')).toBeNull();
+    });
+
+    it('cite la source et dit que ce n’est ni une mesure ni l’indice ATMO', () => {
+      const fixture = demarrer({ air: AIR });
+
+      expect(bloc(fixture).textContent).toContain('Données météo fournies par OpenWeather');
+      expect(bloc(fixture).textContent).toContain('pas la mesure d\'une station');
+      expect(bloc(fixture).textContent).toContain('pas l\'indice ATMO');
+    });
+
+    it('ne donne pas une estimation ancienne comme l’air qu’il fait', () => {
+      const ancienne = { ...AIR, plus_proche: { ...AIR.plus_proche!, indice: null, libelle: '', composants: {} } };
+      const fixture = demarrer({ air: ancienne });
+
+      expect(bloc(fixture).textContent).toContain('Estimation ancienne');
+      expect(bloc(fixture).querySelector('.etiquette.air')).toBeNull();
+    });
+
+    it('n’affiche rien tant que rien n’a été relevé', () => {
+      expect(bloc(demarrer({ air: AIR_VIDE }))).toBeNull();
     });
   });
 
@@ -983,6 +1044,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/` && r.params.get('rayon_km') === '60').flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/qualite-air/` && r.params.get('rayon_km') === '60').flush(AIR_VIDE);
     http.expectOne(r => r.url === `${api}/antennes-indisponibles/` && r.params.get('rayon_km') === '60').flush(ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/` && r.params.get('rayon_km') === '60').flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/` && r.params.get('rayon_km') === '60').flush(HAUTEURS_VIDES);
@@ -1027,6 +1089,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/qualite-air/`).flush(AIR_VIDE);
     http.expectOne(r => r.url === `${api}/antennes-indisponibles/`).flush(ANTENNES_VIDES);
     http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(HAUTEURS_VIDES);

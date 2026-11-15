@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
-  AntennesIndisponibles, LIBELLES_GRAVITE_ANTENNE, technologiesCoupees,
+  AntennesIndisponibles, QualiteAir, LIBELLES_GRAVITE_ANTENNE, technologiesCoupees,
   ArreteCirculation, ArretesCirculation, Circulation, LIBELLES_ETAT_CIRCULATION, TronconCirculation, sensDeCirculation,
   HauteursEau, LIBELLES_TENDANCE_EAU, LIBELLES_ETAT_SURCOTE, NiveauMer, NiveauxMer, StationHydrometrique, variationEau, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
@@ -57,6 +57,7 @@ export class VeilleComponent implements OnInit {
   hauteursEau: HauteursEau | null = null;
   mer: NiveauxMer | null = null;
   antennes: AntennesIndisponibles | null = null;
+  air: QualiteAir | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
@@ -160,6 +161,10 @@ export class VeilleComponent implements OnInit {
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
     });
+    this.service.qualiteAir({ rayon_km: this.rayonKm }).subscribe({
+      next: (air) => { this.air = air; },
+      error: () => { this.air = null; },
+    });
     this.service.antennesIndisponibles({ rayon_km: this.rayonKm }).subscribe({
       next: (antennes) => { this.antennes = antennes; },
       error: () => { this.antennes = null; },
@@ -246,6 +251,20 @@ export class VeilleComponent implements OnInit {
   readonly RAFALE_FORTE_KMH = 80;
   readonly PLUIE_FORTE_1H_MM = 20;
   readonly PLUIE_FORTE_24H_MM = 50;
+
+  // ── Qualité de l'air ──
+
+  /** Polluants montrés, avec leur nom d'usage. */
+  readonly POLLUANTS: { cle: string; nom: string }[] = [
+    { cle: 'pm2_5', nom: 'particules fines PM2,5' }, { cle: 'pm10', nom: 'PM10' },
+    { cle: 'no2', nom: 'dioxyde d’azote' }, { cle: 'o3', nom: 'ozone' },
+  ];
+
+  /** Vrai quand la prévision annonce pire que l'état du moment. */
+  get airSeDegrade(): boolean {
+    const point = this.air?.plus_proche;
+    return !!point && point.pire_24h != null && point.indice != null && point.pire_24h > point.indice;
+  }
 
   // ── Réseau mobile ──
 

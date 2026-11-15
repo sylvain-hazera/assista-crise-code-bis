@@ -2795,7 +2795,7 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Vingt-quatre sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+Vingt-cinq sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
 les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie, rafales, neige et verglas prévus, niveau de la mer, stations
 météo, vigilance crues, hauteurs d'eau mesurées, risque d'avalanche, surfaces brûlées, routes, circulation, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
@@ -2814,6 +2814,7 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | Hub'Eau, hydrométrie | **hauteur d'eau et débit mesurés** de ~4 200 stations en rivière, outre-mer compris ; variation sur 1 h et 3 h | aucune clé | 20 min | `core/hauteurs_eau.py` |
 | Shom, marégraphes REFMAR | **niveau de la mer mesuré** par ~140 marégraphes, métropole et outre-mer ; marée attendue et **surcote estimées par le serveur** | aucune clé | 30 min | `core/niveaux_mer.py` |
 | Arcep, sites indisponibles | **antennes mobiles déclarées en panne ou en maintenance** par les opérateurs, par technologie ; état quotidien | aucune clé | 6 h (un fichier par jour) | `core/antennes_mobiles.py` |
+| OpenWeather, Air Pollution | **qualité de l'air estimée par modèle** dans 112 villes (liste fixe) : indice de 1 à 5, polluants, prévision à 48 h | clé gratuite d'OpenWeather (secret `openweathermap_cle_api`) ; licence CC BY-SA 4.0, **mention obligatoire** | 1 h | `core/qualite_air.py` |
 | Météo-France, ARPEGE (WCS) | **vent moyen à 10 m**, heure par heure sur 6 h, pour l'animation de la carte ; maille de 10 km | même clé | 20 min (300 Ko par heure nouvelle) | `core/vent.py` |
 | VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
 | NASA FIRMS | **foyers actifs** : points chauds vus par satellite depuis 48 h (4 capteurs, ~6 passages par jour, 3 h de délai) | aucune clé | 30 min | `core/foyers_actifs.py` |
@@ -2930,6 +2931,22 @@ repère le plus haut niveau mesuré sur la période. Les ajustements sont étal�
 passage, refaits tous les trente jours) : il faut une douzaine d'heures après la mise en service
 pour que toutes les stations aient le leur. Ni prédiction officielle de marée, ni alerte ; un
 marégraphe mesure le niveau au port, pas les vagues sur le rivage. `GET /api/niveaux-mer/`.
+
+**Qualité de l'air.** Seule source de la veille qui ne vienne pas d'un service public : l'API
+« Air Pollution » d'OpenWeather, avec la clé gratuite du porteur (secret Docker
+`openweathermap_cle_api`, même principe que celle de Météo-France). Trois précautions.
+*La mention* « Données météo fournies par OpenWeather » est obligatoire partout où les données
+s'affichent (licence CC BY-SA 4.0), et rien n'est archivé : une ligne par ville, réécrite à
+chaque relevé. *Le lieu* : ce service s'interroge point par point ; pour ne pas lui dire où la
+plateforme est utilisée, le serveur interroge une **liste fixe écrite dans le code** — la commune
+la plus peuplée de chaque département et collectivité d'outre-mer, plus toutes celles de plus de
+100 000 habitants, 112 points — et l'écran montre la ville la plus proche avec sa distance.
+*La nature de la donnée* : c'est une **estimation par modèle**, pas la mesure d'une station, et
+l'indice (1 à 5) n'est pas l'indice ATMO. Constat du premier relevé (15/11/2026) : 1,8 µg/m³ de
+dioxyde d'azote à Paris un dimanche soir, soit le fond régional et non l'air d'une rue — ces
+valeurs situent une tendance, elles ne remplacent pas Atmo, dont l'accès demande un compte que
+le projet n'a pas. La clé est passée dans l'adresse de la requête : toute erreur est donc
+journalisée par son type, jamais par son texte. `GET /api/qualite-air/`.
 
 **Antennes mobiles en panne.** Le fichier quotidien de l'Arcep (« Sites indisponibles ») :
 les sites que les quatre opérateurs déclarent en panne ou en maintenance, avec l'état de la voix

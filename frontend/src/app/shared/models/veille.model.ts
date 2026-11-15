@@ -243,6 +243,34 @@ export interface ArretesCirculation extends EnteteVeille {
   resultats: ArreteCirculation[];
 }
 
+/** Qualité de l'air ESTIMÉE par modèle (OpenWeather) dans une ville de la liste fixe du serveur.
+ * L'indice va de 1 (bon) à 5 (très mauvais) : ce n'est pas l'indice ATMO français, et ce n'est
+ * pas une mesure de station. Mention de la source obligatoire (licence CC BY-SA 4.0). */
+export interface PointQualiteAir {
+  code: string;
+  nom: string;
+  departement: string;
+  /** Vide quand l'estimation est trop ancienne pour être donnée comme actuelle. */
+  indice: number | null;
+  libelle: string;
+  /** Concentrations en µg/m³ : pm2_5, pm10, no2, o3, so2, co. */
+  composants: Record<string, number>;
+  mesure_le: string;
+  /** Le plus mauvais indice prévu dans les 24 heures, et sa première heure. */
+  pire_24h: number | null;
+  pire_24h_libelle: string;
+  pire_24h_le: string | null;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface QualiteAir extends EnteteVeille {
+  libelles: Record<string, string>;
+  /** La ville de la liste la plus proche du centre demandé, où qu'elle soit. */
+  plus_proche: PointQualiteAir | null;
+  resultats: PointQualiteAir[];
+}
+
 export type GraviteAntenne = 'TOTALE' | 'PARTIELLE' | 'DECLAREE';
 
 /** Une antenne mobile déclarée en panne ou en maintenance par son opérateur (fichier quotidien

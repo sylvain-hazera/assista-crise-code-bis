@@ -944,6 +944,44 @@
     }
   </section>
 
+  <!-- ════ Qualité de l'air : estimation par modèle, dans la ville de la liste la plus proche ════ -->
+  @if (air?.plus_proche; as point) {
+    <section aria-labelledby="titre-air">
+      <h2 id="titre-air"><span class="material-icons">masks</span> Qualité de l'air — {{ point.nom }}</h2>
+
+      @if (air!.perime || point.indice == null) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Estimation ancienne</strong> : elle n'est plus donnée comme l'air qu'il fait.</span>
+        </p>
+      } @else {
+        <p class="air-indice">
+          <span class="etiquette air" [attr.data-indice]="point.indice">Indice {{ point.indice }} sur 5 : {{ point.libelle }}</span>
+          @for (polluant of POLLUANTS; track polluant.cle) {
+            @if (point.composants[polluant.cle] != null) {
+              <span>{{ polluant.nom }} {{ point.composants[polluant.cle] | number:'1.0-1' }} µg/m³</span>
+            }
+          }
+        </p>
+        @if (airSeDegrade) {
+          <p class="air-prevision">
+            <span class="material-icons">trending_up</span>
+            D'ici 24 heures : jusqu'à <strong>{{ point.pire_24h }} ({{ point.pire_24h_libelle }})</strong>
+            vers {{ point.pire_24h_le | date:'HH:mm' }}.
+          </p>
+        }
+      }
+      <p class="note">
+        {{ air!.source }}@if (air!.releve_le) {, relevé le {{ air!.releve_le | date:'dd/MM à HH:mm' }}}.
+        @if (point.distance_km != null) { Point d'estimation : {{ point.nom }}, à {{ point.distance_km | number:'1.0-0' }} km de votre commune. }
+        <strong>Une estimation par modèle, pas la mesure d'une station</strong> : elle donne le fond de
+        l'air à l'échelle d'une agglomération et ne voit ni un panache d'incendie, ni un axe routier.
+        L'indice (1 à 5) est celui d'OpenWeather, pas l'indice ATMO français. Les épisodes de
+        pollution sont déclarés par la préfecture.
+      </p>
+    </section>
+  }
+
   <!-- ════ Réseau mobile : antennes déclarées en panne ════ -->
   @if (antennes?.emprise_connue && (nombreAntennes || antennes!.ecartees)) {
     <section aria-labelledby="titre-mobile">
