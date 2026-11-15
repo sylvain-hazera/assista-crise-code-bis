@@ -4,7 +4,8 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationAlerteVigilance, EvenementsRoutiers, StationsCarburant, VigilanceMeteo,
+  ConfigurationAlerteVigilance, EvenementsRoutiers, ObservationsMeteo, StationsCarburant,
+  VigilanceMeteo,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -41,6 +42,11 @@ export class VeilleService {
 
   stationsCarburant(emprise: EmpriseVeille = {}): Observable<StationsCarburant> {
     return this.http.get<StationsCarburant>(`${this.api}/stations-carburant/`, { params: this.params(emprise) });
+  }
+
+  /** Dernières mesures des stations Météo-France de l'emprise. */
+  observationsMeteo(emprise: EmpriseVeille = {}): Observable<ObservationsMeteo> {
+    return this.http.get<ObservationsMeteo>(`${this.api}/observations-meteo/`, { params: this.params(emprise) });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

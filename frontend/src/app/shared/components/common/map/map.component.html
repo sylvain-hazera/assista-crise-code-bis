@@ -67,6 +67,12 @@
         Routes : fermetures, accidents, travaux
         @if (layerVisibility.evenementsRoutiers && veilleTronquee.routes) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      <label class="layer-toggle-item" title="Température, vent, pluie mesurés par les stations Météo-France. Orange : rafale ou pluie forte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.stationsMeteo" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot meteo-dot"></span>
+        Stations météo : vent, pluie
+        @if (layerVisibility.stationsMeteo && veilleTronquee.meteo) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
       <label class="layer-toggle-item" title="Rouge : plus de carburant. Orange : un carburant manque.">
         <input type="checkbox" [(ngModel)]="layerVisibility.stationsCarburant" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot stations-dot"></span>

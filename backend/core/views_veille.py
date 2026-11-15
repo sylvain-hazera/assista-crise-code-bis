@@ -1,4 +1,5 @@
-"""Veille du territoire : vigilance Météo-France, événements routiers, stations de carburant.
+"""Veille du territoire : vigilance et mesures Météo-France, événements routiers, stations de
+carburant.
 
 Aucune de ces vues n'appelle l'extérieur : elles lisent ce que `relever_sources_ouvertes` a
 copié en base (voir core/sources_ouvertes.py). Une requête d'utilisateur ne déclenche donc
@@ -21,7 +22,7 @@ from rest_framework.views import APIView
 from . import meteo_france, sources_ouvertes, trafic_routier
 from .models import (
     Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier, Institution,
-    StationCarburant, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
+    ObservationMeteo, StationCarburant, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
 from .serializers import ConfigurationAlerteVigilanceSerializer, VigilanceMeteoSerializer
@@ -247,6 +248,57 @@ class StationsCarburantView(APIView):
             })
         return Response({**entete, "emprise_connue": True, "tronque": tronque,
                          "bilan": bilan, "resultats": resultats})
+
+
+def _distance_km(latitude1, longitude1, latitude2, longitude2):
+    """Distance à vol d'oiseau, pour ranger les stations de la plus proche à la plus lointaine."""
+    phi1, phi2 = math.radians(latitude1), math.radians(latitude2)
+    a = (math.sin((phi2 - phi1) / 2) ** 2
+         + math.cos(phi1) * math.cos(phi2) * math.sin(math.radians(longitude2 - longitude1) / 2) ** 2)
+    return 2 * 6371.0 * math.asin(math.sqrt(a))
+
+
+class ObservationsMeteoView(APIView):
+    """GET /api/observations-meteo/ : les dernières mesures des stations Météo-France d'une
+    emprise (voir `_emprise`), de la plus proche à la plus lointaine quand un centre est connu."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("OBSERVATIONS_METEO", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "resultats": []})
+
+        stations = list(ObservationMeteo.objects.filter(location__within=emprise)
+                        .order_by("nom", "station")[:RESULTATS_MAX + 1])
+        resultats = []
+        for station in stations[:RESULTATS_MAX]:
+            latitude, longitude = _point(station.location)
+            resultats.append({
+                "station": station.station,
+                "nom": station.nom,
+                "altitude_m": station.altitude_m,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 1) if centre else None),
+                "mesure_le": station.mesure_le,
+                "temperature_c": station.temperature_c,
+                "humidite_pct": station.humidite_pct,
+                "vent_kmh": station.vent_kmh,
+                "vent_direction": station.vent_direction,
+                "rafale_kmh": station.rafale_kmh,
+                "pluie_6min_mm": station.pluie_6min_mm,
+                "neige_cm": station.neige_cm,
+                "heure_le": station.heure_le,
+                "pluie_1h_mm": station.pluie_1h_mm,
+                "rafale_1h_kmh": station.rafale_1h_kmh,
+                "pluie_24h_mm": station.pluie_24h_mm,
+                "heures_cumulees": station.heures_cumulees,
+            })
+        if centre:
+            resultats.sort(key=lambda r: r["distance_km"])
+        return Response({**entete, "emprise_connue": True,
+                         "tronque": len(stations) > RESULTATS_MAX, "resultats": resultats})
 
 
 class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

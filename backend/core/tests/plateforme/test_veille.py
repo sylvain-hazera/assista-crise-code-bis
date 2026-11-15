@@ -17,10 +17,11 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core import carburants, meteo_france, sources_ouvertes, trafic_routier
+from core import carburants, meteo_france, observations_meteo, sources_ouvertes, trafic_routier
 from core.models import (
     CanalMeshCore, Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier,
-    Institution, InstitutionType, MessageCanalMeshCore, ReleveSourceOuverte, StationCarburant,
+    Institution, InstitutionType, MessageCanalMeshCore, ObservationMeteo, ReleveSourceOuverte,
+    StationCarburant,
     VigilanceDiffusee, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from core.opendata import CONNECTEURS, SOURCES_ASYNCHRONES, SOURCES_SANS_DECOUPAGE, dae
@@ -509,6 +510,177 @@ class TestLectureDesStations:
 
         assert set(StationCarburant.objects.values_list("reference", flat=True)) == {"1", "2"}
         assert StationCarburant.objects.get(pk="1").ruptures_temporaires == ["Gazole"]
+
+
+# ── Mesures des stations météorologiques ────────────────────────────────────────────────────
+
+def _mesure(station="42005001", **champs):
+    return {"lat": 45.53, "lon": 4.29, "geo_id_insee": station, "validity_time": "2026-11-15T09:12:00Z",
+            "t": 289.55, "u": 59, "dd": 180, "ff": 6.4, "raf10": 9.0, "rr_per": 0.2, "sss": None, **champs}
+
+
+def _horaire(station="42005001", heure="2026-11-15T09:00:00Z", pluie=1.5, rafale=12.8):
+    return {"geo_id_insee": station, "validity_time": heure, "rr1": pluie, "raf": rafale}
+
+
+class TestMesuresDesStations:
+
+    def test_les_unites_de_la_source_sont_converties_une_fois(self):
+        (mesure,) = observations_meteo.analyser_6_minutes([_mesure()]).values()
+
+        assert mesure["temperature_c"] == 16.4          # 289,55 K
+        assert mesure["vent_kmh"] == 23 and mesure["rafale_kmh"] == 32      # 6,4 et 9,0 m/s
+        assert mesure["pluie_6min_mm"] == 0.2 and mesure["humidite_pct"] == 59
+        assert mesure["departement_code"] == "42"
+        assert mesure["mesure_le"] == datetime.datetime(2026, 11, 15, 9, 12, tzinfo=UTC)
+
+    def test_une_mesure_absente_reste_absente(self):
+        """Quatre stations sur dix seulement mesurent le vent : « pas de mesure » ne doit jamais
+        s'afficher comme « vent nul »."""
+        (mesure,) = observations_meteo.analyser_6_minutes([_mesure(ff=None, raf10=None, t=None)]).values()
+
+        assert mesure["vent_kmh"] is None and mesure["rafale_kmh"] is None
+        assert mesure["temperature_c"] is None
+
+    def test_l_outre_mer_garde_son_departement_a_trois_chiffres(self):
+        assert observations_meteo.departement_de("97418110") == "974"
+        assert observations_meteo.departement_de("42005001") == "42"
+        assert observations_meteo.departement_de("abc") is None
+
+    def test_une_ligne_sans_position_est_ignoree(self):
+        mesures = observations_meteo.analyser_6_minutes([_mesure(lat=None), _mesure("69029001")])
+
+        assert list(mesures) == ["69029001"]
+
+    def test_le_cumul_de_pluie_s_additionne_heure_par_heure_sans_double_compte(self):
+        h9 = datetime.datetime(2026, 11, 15, 9, 0, tzinfo=UTC)
+        h10 = h9 + datetime.timedelta(hours=1)
+
+        cumuls, total, heures = observations_meteo.ajouter_au_cumul([], h9, 1.5, MAINTENANT)
+        # Le même paquet horaire est relu à chaque passage tant que le suivant n'est pas paru.
+        cumuls, total, heures = observations_meteo.ajouter_au_cumul(cumuls, h9, 1.5, MAINTENANT)
+        assert (total, heures) == (1.5, 1)
+
+        cumuls, total, heures = observations_meteo.ajouter_au_cumul(cumuls, h10, 4.0, h10)
+        assert (total, heures) == (5.5, 2)
+
+    def test_le_cumul_oublie_ce_qui_a_plus_de_vingt_quatre_heures(self):
+        h9 = datetime.datetime(2026, 11, 15, 9, 0, tzinfo=UTC)
+        cumuls, _total, _heures = observations_meteo.ajouter_au_cumul([], h9, 30.0, MAINTENANT)
+        lendemain = h9 + datetime.timedelta(hours=25)
+
+        cumuls, total, heures = observations_meteo.ajouter_au_cumul(cumuls, lendemain, 2.0, lendemain)
+
+        assert (total, heures) == (2.0, 1)
+
+    def test_le_creneau_pas_encore_publie_fait_reculer_au_precedent(self, tmp_path, monkeypatch):
+        fichier = tmp_path / "cle"
+        fichier.write_text("a.b.c")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+        refus = mock.Mock(status_code=400)
+        refus.raise_for_status.side_effect = requests.HTTPError(response=refus)
+        vide = mock.Mock(status_code=200, json=lambda: [])
+        plein = mock.Mock(status_code=200, json=lambda: [_mesure()])
+
+        with mock.patch("core.observations_meteo.requests.get", side_effect=[refus, vide, plein]) as appel:
+            paquet = observations_meteo.telecharger_6_minutes(MAINTENANT)
+
+        assert paquet == [_mesure()]
+        dates = [a.kwargs["params"]["date"] for a in appel.call_args_list]
+        # 10 h 30 moins douze minutes, arrondi au créneau de six minutes, puis on recule.
+        assert dates == ["2026-11-15T09:18:00Z", "2026-11-15T09:12:00Z", "2026-11-15T09:06:00Z"]
+        assert all(a.kwargs["headers"]["apikey"] == "a.b.c" for a in appel.call_args_list)
+
+    def test_une_panne_n_est_pas_prise_pour_un_creneau_en_retard(self, tmp_path, monkeypatch):
+        fichier = tmp_path / "cle"
+        fichier.write_text("a.b.c")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+        panne = mock.Mock(status_code=503)
+        panne.raise_for_status.side_effect = requests.HTTPError(response=panne)
+
+        with mock.patch("core.observations_meteo.requests.get", return_value=panne) as appel:
+            with pytest.raises(requests.HTTPError):
+                observations_meteo.telecharger_6_minutes(MAINTENANT)
+
+        assert appel.call_count == 1
+
+    @pytest.mark.django_db
+    def test_le_releve_ecrit_l_etat_courant_et_le_cumul(self, monkeypatch):
+        monkeypatch.setattr(observations_meteo, "MINIMUM_PLAUSIBLE", 1)
+        mesures = observations_meteo.analyser_6_minutes([_mesure(), _mesure("69029001", ff=None)])
+        heure, horaires = observations_meteo.analyser_horaire([_horaire(), _horaire("69029001", pluie=None)])
+
+        observations_meteo.enregistrer(mesures, heure, horaires, MAINTENANT)
+        # Deuxième passage dix minutes plus tard, même paquet horaire.
+        observations_meteo.enregistrer(mesures, heure, horaires, MAINTENANT + datetime.timedelta(minutes=10))
+
+        boutheon = ObservationMeteo.objects.get(pk="42005001")
+        assert boutheon.temperature_c == 16.4 and boutheon.vent_kmh == 23
+        assert boutheon.pluie_1h_mm == 1.5 and boutheon.rafale_1h_kmh == 46
+        assert (boutheon.pluie_24h_mm, boutheon.heures_cumulees) == (1.5, 1)
+        autre = ObservationMeteo.objects.get(pk="69029001")
+        assert autre.vent_kmh is None and autre.pluie_24h_mm is None and autre.heures_cumulees == 0
+
+    @pytest.mark.django_db
+    def test_sans_paquet_horaire_les_cumuls_connus_restent(self, monkeypatch):
+        monkeypatch.setattr(observations_meteo, "MINIMUM_PLAUSIBLE", 1)
+        mesures = observations_meteo.analyser_6_minutes([_mesure()])
+        heure, horaires = observations_meteo.analyser_horaire([_horaire()])
+        observations_meteo.enregistrer(mesures, heure, horaires, MAINTENANT)
+
+        observations_meteo.enregistrer(mesures, None, None, MAINTENANT)
+
+        assert ObservationMeteo.objects.get(pk="42005001").pluie_24h_mm == 1.5
+
+    @pytest.mark.django_db
+    def test_un_paquet_tronque_ne_remplace_pas_la_copie(self):
+        with pytest.raises(ValueError):
+            observations_meteo.enregistrer(observations_meteo.analyser_6_minutes([_mesure()]), None, None)
+
+        assert ObservationMeteo.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_une_station_muette_depuis_deux_jours_est_retiree(self, monkeypatch):
+        monkeypatch.setattr(observations_meteo, "MINIMUM_PLAUSIBLE", 1)
+        ObservationMeteo.objects.create(
+            station="01014002", location=Point(5.67, 46.28, srid=4326),
+            mesure_le=MAINTENANT - datetime.timedelta(days=3), releve_le=MAINTENANT)
+
+        observations_meteo.enregistrer(observations_meteo.analyser_6_minutes([_mesure()]), None, None, MAINTENANT)
+
+        assert set(ObservationMeteo.objects.values_list("station", flat=True)) == {"42005001"}
+
+    def test_la_liste_des_stations_donne_nom_et_altitude(self, tmp_path, monkeypatch):
+        fichier = tmp_path / "cle"
+        fichier.write_text("a.b.c")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+        csv_source = ("Id_station;Id_omm;Nom_usuel;Latitude;Longitude;Altitude;Date_ouverture;Pack\n"
+                      "42005001;07475;ST ETIENNE-BOUTHEON;45.53;4.29;395;1946-01-01;RADOME\n"
+                      "42147001;;MONTBRISON_ÉCOLE;45.6;4.06;;2001-01-01;ETENDU\n").encode("iso-8859-1")
+
+        with mock.patch("core.observations_meteo.requests.get") as appel:
+            appel.return_value.content = csv_source
+            stations = observations_meteo.telecharger_stations()
+
+        assert stations == {"42005001": ("ST ETIENNE-BOUTHEON", 395), "42147001": ("MONTBRISON ÉCOLE", None)}
+
+    @pytest.mark.django_db
+    def test_les_mesures_se_lisent_de_la_station_la_plus_proche_a_la_plus_lointaine(self, api_client):
+        def station(identifiant, nom, lon, lat):
+            ObservationMeteo.objects.create(
+                station=identifiant, nom=nom, location=Point(lon, lat, srid=4326),
+                mesure_le=timezone.now(), temperature_c=12.5, rafale_kmh=85, releve_le=timezone.now())
+        station("42005001", "BOUTHEON", 4.29, 45.53)
+        station("42218001", "CENTRE", 4.39, 45.44)
+        station("75114001", "PARIS", 2.34, 48.82)
+
+        corps = api_client.get(reverse("observations_meteo"), {"lat": "45.44", "lon": "4.39"}).json()
+
+        assert [r["nom"] for r in corps["resultats"]] == ["CENTRE", "BOUTHEON"]
+        assert corps["resultats"][0]["distance_km"] == 0.0
+        assert 10 < corps["resultats"][1]["distance_km"] < 15
+        assert corps["resultats"][0]["rafale_kmh"] == 85 and corps["resultats"][0]["vent_kmh"] is None
+        assert corps["source"] == "Météo-France" and corps["emprise_connue"] is True
 
 
 # ── Le relevé planifié ──────────────────────────────────────────────────────────────────────

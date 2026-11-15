@@ -22,7 +22,7 @@ import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
-import { EvenementRoutier, StationCarburant } from '../../../models/veille.model';
+import { EvenementRoutier, ObservationMeteo, StationCarburant } from '../../../models/veille.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -46,6 +46,7 @@ interface LayerVisibility {
    * la seule emprise affichée. */
   evenementsRoutiers: boolean;
   stationsCarburant: boolean;
+  stationsMeteo: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -98,6 +99,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Veille : masquée et chargée à la demande, comme l'annuaire de bénévoles.
     evenementsRoutiers: false,
     stationsCarburant: false,
+    stationsMeteo: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -177,6 +179,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('benevoles-pompiers-layer', this.layerVisibility.benevolesPompiers);
     this.applyLayerVisibility('evenements-routiers-layer', this.layerVisibility.evenementsRoutiers);
     this.applyLayerVisibility('stations-carburant-layer', this.layerVisibility.stationsCarburant);
+    this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.rafraichirVeille();
   }
 
@@ -184,15 +187,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
-  veilleTronquee = { routes: false, stations: false };
+  veilleTronquee = { routes: false, stations: false, meteo: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
    * chaque déplacement de la carte : ces couches sont nationales, on n'en lit que la fenêtre. */
   private rafraichirVeille(): void {
     if (!this.map) return;
-    const { evenementsRoutiers, stationsCarburant } = this.layerVisibility;
-    if (!evenementsRoutiers && !stationsCarburant) return;
+    const { evenementsRoutiers, stationsCarburant, stationsMeteo } = this.layerVisibility;
+    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -215,6 +218,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         error: () => {},
       });
     }
+    if (stationsMeteo) this.rafraichirStationsMeteo(bbox);
     if (stationsCarburant) {
       this.veilleService.stationsCarburant({ bbox }).subscribe({
         next: (reponse) => {
@@ -227,6 +231,50 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         error: () => {},
       });
     }
+  }
+
+  private rafraichirStationsMeteo(bbox: [number, number, number, number]): void {
+    this.veilleService.observationsMeteo({ bbox }).subscribe({
+      next: (reponse) => {
+        this.veilleTronquee.meteo = reponse.tronque;
+        this.afficherCoucheVeille('stations-meteo', this.mesuresVersGeoJSON(reponse.resultats),
+          // Orange : rafale de 80 km/h ou plus, ou 20 mm de pluie dans l'heure. Bleu : le reste.
+          ['match', ['get', 'etat'], 'attention', '#f97316', '#2563eb'],
+          this.layerVisibility.stationsMeteo);
+      },
+      error: () => {},
+    });
+  }
+
+  private mesuresVersGeoJSON(stations: ObservationMeteo[]): FeatureCollection<Geometry> {
+    const heure = (instant: string | null) => instant
+      ? new Date(instant).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+    return {
+      type: 'FeatureCollection',
+      features: stations.map(s => {
+        const rafales = [s.rafale_kmh, s.rafale_1h_kmh].filter((v): v is number => v != null);
+        const rafale = rafales.length ? Math.max(...rafales) : null;
+        const lignes = [
+          s.temperature_c != null ? `Température : ${s.temperature_c} °C` : '',
+          s.vent_kmh != null ? `Vent moyen : ${s.vent_kmh} km/h` : '',
+          rafale != null ? `Rafale : ${rafale} km/h` : '',
+          s.pluie_1h_mm != null ? `Pluie sur 1 h : ${s.pluie_1h_mm} mm` : '',
+          s.pluie_24h_mm != null ? `Pluie cumulée sur ${s.heures_cumulees} h : ${s.pluie_24h_mm} mm` : '',
+          s.neige_cm ? `Neige au sol : ${s.neige_cm} cm` : '',
+        ].filter(Boolean);
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+          properties: {
+            etat: (rafale ?? 0) >= 80 || (s.pluie_1h_mm ?? 0) >= 20 ? 'attention' : 'ok',
+            infobulle: `<strong>${this.echapper(s.nom || s.station)}</strong>`
+              + (s.altitude_m != null ? ` (${s.altitude_m} m)` : '')
+              + `<br>${lignes.join('<br>') || 'Aucune mesure'}`
+              + `<br><small>Mesuré à ${heure(s.mesure_le)} — source : Météo-France</small>`,
+          },
+        };
+      }),
+    };
   }
 
   /** Les textes de ces couches viennent de flux extérieurs (exploitants routiers, stations) :

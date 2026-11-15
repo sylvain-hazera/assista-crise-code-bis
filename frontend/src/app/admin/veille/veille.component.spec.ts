@@ -6,8 +6,8 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  EvenementRoutier, EvenementsRoutiers, StationCarburant, StationsCarburant, VigilanceDepartement,
-  VigilanceMeteo,
+  EvenementRoutier, EvenementsRoutiers, ObservationMeteo, ObservationsMeteo, StationCarburant,
+  StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
 const api = environment.apiUrl;
@@ -77,6 +77,25 @@ const STATIONS: StationsCarburant = {
               station('vide', [], ['Gazole', 'E10'])],
 };
 
+function mesure(station: string, nom: string, champs: Partial<ObservationMeteo> = {}): ObservationMeteo {
+  return {
+    station, nom, altitude_m: 395, latitude: 45.53, longitude: 4.29, distance_km: 12.4,
+    mesure_le: '2026-11-15T09:12:00Z', temperature_c: 16.4, humidite_pct: 59, vent_kmh: 23,
+    vent_direction: 180, rafale_kmh: 32, pluie_6min_mm: 0, neige_cm: null,
+    heure_le: '2026-11-15T09:00:00Z', pluie_1h_mm: 1.5, rafale_1h_kmh: 46, pluie_24h_mm: 6.5,
+    heures_cumulees: 7, ...champs,
+  };
+}
+
+const OBSERVATIONS: ObservationsMeteo = {
+  ...ENTETE,
+  resultats: [
+    mesure('42005001', 'ST ETIENNE-BOUTHEON'),
+    mesure('42101001', 'PILAT GRAIX', { rafale_1h_kmh: 96 }),
+    mesure('42039003', 'CHALMAZEL', { vent_kmh: null, vent_direction: null, rafale_kmh: null, rafale_1h_kmh: null }),
+  ],
+};
+
 describe('VeilleComponent', () => {
   let http: HttpTestingController;
 
@@ -90,10 +109,12 @@ describe('VeilleComponent', () => {
 
   afterEach(() => http.verify());
 
-  function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant } = {}) {
+  function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
+                                observations?: ObservationsMeteo } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
+    http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush(reponses.routes ?? ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(reponses.stations ?? STATIONS);
     fixture.detectChanges();
@@ -107,7 +128,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(3);
+    expect(demandes.length).toBe(4);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -166,6 +187,31 @@ describe('VeilleComponent', () => {
     expect(fixture.nativeElement.querySelector('.mon-departement')).toBeNull();
   });
 
+  it('affiche les mesures des stations et fait ressortir une rafale forte', () => {
+    const fixture = demarrer();
+    const lignes = Array.from(fixture.nativeElement.querySelectorAll('table.mesures tbody tr')) as HTMLElement[];
+
+    expect(lignes.length).toBe(3);
+    expect(lignes[0].textContent).toContain('ST ETIENNE-BOUTHEON');
+    expect(lignes[0].textContent).toContain('16.4 °C');
+    expect(lignes[0].textContent).toContain('23 km/h S');
+    // La rafale affichée est la plus forte connue : celle de l'heure, pas celle de l'instant.
+    expect(lignes[0].textContent).toContain('46 km/h');
+    expect(lignes[0].textContent).toContain('sur 7 h');
+    expect(lignes[0].classList.contains('remarquable')).toBeFalse();
+    expect(lignes[1].classList.contains('remarquable')).toBeTrue();
+    expect(lignes[1].textContent).toContain('96 km/h');
+  });
+
+  it('n’affiche jamais un vent nul pour une station qui ne mesure pas le vent', () => {
+    const fixture = demarrer();
+    const cellules = fixture.nativeElement.querySelectorAll('table.mesures tbody tr')[2].querySelectorAll('td');
+
+    expect(cellules[3].textContent.trim()).toBe('—');
+    expect(cellules[4].textContent.trim()).toBe('—');
+    expect(fixture.componentInstance.rafale(OBSERVATIONS.resultats[2])).toBeNull();
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
     const liste = () => Array.from(fixture.nativeElement.querySelectorAll('.evenements li')) as HTMLElement[];
@@ -202,6 +248,7 @@ describe('VeilleComponent', () => {
     const fixture = demarrer();
     fixture.componentInstance.changerRayon(60);
 
+    http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/` && r.params.get('rayon_km') === '60').flush(ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/` && r.params.get('rayon_km') === '60').flush(STATIONS);
     expect(fixture.componentInstance.rayonKm).toBe(60);
@@ -210,6 +257,7 @@ describe('VeilleComponent', () => {
   it('explique pourquoi rien ne s’affiche pour un compte sans commune', () => {
     const sansEmprise = { ...ENTETE, emprise_connue: false, centre: null, rayon_km: null };
     const fixture = demarrer({
+      observations: { ...sansEmprise, resultats: [] },
       routes: { ...sansEmprise, resultats: [] },
       stations: { ...sansEmprise, bilan: { total: 0, en_rupture: 0, a_sec: 0 }, resultats: [] },
     });
@@ -221,6 +269,7 @@ describe('VeilleComponent', () => {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(VIGILANCE);
+    http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush('', { status: 500, statusText: 'Erreur' });
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(STATIONS);
     fixture.detectChanges();

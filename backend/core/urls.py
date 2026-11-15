@@ -13,7 +13,8 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView
 from .views_veille import (
-    ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, StationsCarburantView,
+    ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ObservationsMeteoView,
+    StationsCarburantView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
 )
 from .views import (
@@ -359,6 +360,7 @@ urlpatterns = [
     # Evenements routiers (Bison Fute) et stations de carburant : copies en base elles aussi.
     path('evenements-routiers/', EvenementsRoutiersView.as_view(), name='evenements_routiers'),
     path('stations-carburant/', StationsCarburantView.as_view(), name='stations_carburant'),
+    path('observations-meteo/', ObservationsMeteoView.as_view(), name='observations_meteo'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

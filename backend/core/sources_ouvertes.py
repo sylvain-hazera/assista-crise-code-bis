@@ -1,7 +1,7 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Trois sources aujourd'hui -- vigilance Météo-France, événements routiers Bison Futé, stations
-de carburant. Toutes obéissent à la même règle (15/11/2026) :
+Quatre sources aujourd'hui -- vigilance et mesures des stations Météo-France, événements
+routiers Bison Futé, stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
 1. Seul le serveur appelle, depuis la tâche planifiée, et toujours pour la France ENTIÈRE.
    Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne déclenche d'appel
@@ -22,7 +22,7 @@ from collections import namedtuple
 
 from django.utils import timezone
 
-from . import carburants, meteo_france, trafic_routier
+from . import carburants, meteo_france, observations_meteo, trafic_routier
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,10 @@ SOURCES = {
     source.code: source for source in (
         Source("VIGILANCE_METEO", "Vigilance météorologique", meteo_france.relever,
                datetime.timedelta(minutes=9), meteo_france.FRAICHEUR_MAX, "Météo-France"),
+        # Mesures des stations : un paquet toutes les six minutes, relevé à chaque passage.
+        Source("OBSERVATIONS_METEO", "Mesures des stations météorologiques",
+               observations_meteo.relever, datetime.timedelta(minutes=9),
+               datetime.timedelta(hours=1), "Météo-France"),
         Source("TRAFIC_ROUTIER", "Événements routiers", trafic_routier.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1),
                "Bison Futé - ministère chargé des transports"),

@@ -3,7 +3,7 @@
     <h1><span class="material-icons">radar</span> Veille du territoire</h1>
     <p class="explication">
       Ce que les services de l'État publient en ce moment pour votre territoire : vigilance
-      météorologique, routes, carburant. Ces données sont relevées par le serveur à intervalle
+      météorologique, mesures des stations, routes, carburant. Ces données sont relevées par le serveur à intervalle
       régulier ; votre navigateur n'interroge aucun service extérieur, et consulter cette page
       n'apprend rien à personne.
     </p>
@@ -159,7 +159,7 @@
     }
   </section>
 
-  <!-- ════ Rayon commun aux deux blocs suivants ════ -->
+  <!-- ════ Rayon commun aux trois blocs suivants ════ -->
   <div class="rayon" role="group" aria-label="Rayon autour de votre commune">
     <span>Autour de votre commune :</span>
     @for (rayon of RAYONS; track rayon) {
@@ -167,6 +167,92 @@
               (click)="changerRayon(rayon)">{{ rayon }} km</button>
     }
   </div>
+
+  <!-- ════ Mesures des stations ════ -->
+  <section aria-labelledby="titre-mesures">
+    <h2 id="titre-mesures">
+      <span class="material-icons">air</span> Mesures des stations
+      @if (observations?.emprise_connue) { <span class="compte">{{ observations!.resultats.length }}</span> }
+    </h2>
+
+    @if (erreurObservations) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire les mesures des stations.
+      </p>
+    } @else if (!observations) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!observations.emprise_connue) {
+      <p class="attente">Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder.</p>
+    } @else {
+      @if (observations.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            <strong>Relevé ancien</strong>
+            @if (observations.releve_le) { ({{ observations.releve_le | date:'dd/MM à HH:mm' }}) } @else { (aucun relevé réussi) }
+            : ces mesures ne sont plus celles du moment.
+          </span>
+        </p>
+      }
+
+      @if (observations.resultats.length) {
+        <div class="defilement">
+          <table class="mesures">
+            <thead>
+              <tr>
+                <th>Station</th><th>Mesuré à</th><th>Température</th><th>Vent moyen</th>
+                <th>Rafale</th><th>Pluie 1 h</th><th>Pluie cumulée</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (station of observations.resultats; track station.station) {
+                <tr [class.remarquable]="remarquable(station)">
+                  <td>
+                    <strong>{{ station.nom || station.station }}</strong>
+                    <br><span class="adresse">
+                      @if (station.altitude_m != null) { {{ station.altitude_m }} m }
+                      @if (station.distance_km != null) { · à {{ station.distance_km | number:'1.0-0' }} km }
+                    </span>
+                  </td>
+                  <td class="chiffre">{{ station.mesure_le | date:'HH:mm' }}</td>
+                  <td class="chiffre">
+                    @if (station.temperature_c != null) { {{ station.temperature_c | number:'1.1-1' }} °C } @else { <span class="calme">—</span> }
+                  </td>
+                  <td class="chiffre">
+                    @if (station.vent_kmh != null) { {{ station.vent_kmh }} km/h {{ direction(station.vent_direction) }} } @else { <span class="calme">—</span> }
+                  </td>
+                  <td class="chiffre" [class.fort]="(rafale(station) ?? 0) >= RAFALE_FORTE_KMH">
+                    @if (rafale(station) != null) { {{ rafale(station) }} km/h } @else { <span class="calme">—</span> }
+                  </td>
+                  <td class="chiffre" [class.fort]="(station.pluie_1h_mm ?? 0) >= PLUIE_FORTE_1H_MM">
+                    @if (station.pluie_1h_mm != null) { {{ station.pluie_1h_mm | number:'1.1-1' }} mm } @else { <span class="calme">—</span> }
+                  </td>
+                  <td class="chiffre" [class.fort]="(station.pluie_24h_mm ?? 0) >= PLUIE_FORTE_24H_MM">
+                    @if (station.pluie_24h_mm != null) {
+                      {{ station.pluie_24h_mm | number:'1.1-1' }} mm
+                      <br><span class="adresse">sur {{ station.heures_cumulees }} h</span>
+                    } @else { <span class="calme">—</span> }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="calme">Aucune station de mesure dans ce rayon : élargissez-le.</p>
+      }
+      @if (observations.tronque) { <p class="note">Liste limitée aux 500 premières stations : réduisez le rayon.</p> }
+
+      <p class="note">
+        Source : {{ observations.source }}@if (observations.releve_le) {, relevé le {{ observations.releve_le | date:'dd/MM à HH:mm' }}}.
+        Un tiret signale une grandeur que la station ne mesure pas — quatre stations sur dix
+        seulement mesurent le vent. La rafale est la plus forte de l'heure écoulée. Le cumul de
+        pluie est additionné par le serveur heure après heure : il porte sur le nombre d'heures
+        indiqué, 24 au plus. Une ligne surlignée dépasse {{ RAFALE_FORTE_KMH }} km/h de rafale,
+        {{ PLUIE_FORTE_1H_MM }} mm en une heure ou {{ PLUIE_FORTE_24H_MM }} mm cumulés.
+      </p>
+    }
+  </section>
 
   <!-- ════ Routes ════ -->
   <section aria-labelledby="titre-routes">

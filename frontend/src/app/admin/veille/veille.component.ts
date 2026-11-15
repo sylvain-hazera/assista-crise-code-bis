@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import { VeilleService } from '../../services/veille.service';
 import {
   CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance,
-  PhenomeneVigilance, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
+  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
 /** Veille du territoire : ce que les services de l'État publient en ce moment pour le
@@ -31,10 +31,12 @@ import {
 export class VeilleComponent implements OnInit {
 
   vigilance: VigilanceMeteo | null = null;
+  observations: ObservationsMeteo | null = null;
   routes: EvenementsRoutiers | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
+  erreurObservations = false;
   erreurRoutes = false;
   erreurStations = false;
 
@@ -68,7 +70,11 @@ export class VeilleComponent implements OnInit {
   }
 
   chargerTerritoire(): void {
-    this.erreurRoutes = this.erreurStations = false;
+    this.erreurObservations = this.erreurRoutes = this.erreurStations = false;
+    this.service.observationsMeteo({ rayon_km: this.rayonKm }).subscribe({
+      next: (observations) => { this.observations = observations; },
+      error: () => { this.erreurObservations = true; },
+    });
     this.service.evenementsRoutiers({ rayon_km: this.rayonKm }).subscribe({
       next: (routes) => { this.routes = routes; },
       error: () => { this.erreurRoutes = true; },
@@ -125,6 +131,33 @@ export class VeilleComponent implements OnInit {
       }
     }
     return [...parId.values()].sort((a, b) => b.couleur - a.couleur || a.id - b.id);
+  }
+
+  // ── Mesures des stations ──
+
+  /** Seuils d'affichage, pas d'alerte : ils servent à faire ressortir une ligne dans un tableau.
+   * 80 km/h de rafale et 20 mm en une heure sont l'ordre de grandeur à partir duquel
+   * Météo-France parle de vent fort et de pluie intense ; 50 mm sur la journée, de cumul notable. */
+  readonly RAFALE_FORTE_KMH = 80;
+  readonly PLUIE_FORTE_1H_MM = 20;
+  readonly PLUIE_FORTE_24H_MM = 50;
+
+  /** La rafale la plus forte connue : celle de l'heure écoulée ou celle des dix dernières minutes. */
+  rafale(station: ObservationMeteo): number | null {
+    const valeurs = [station.rafale_kmh, station.rafale_1h_kmh].filter((v): v is number => v != null);
+    return valeurs.length ? Math.max(...valeurs) : null;
+  }
+
+  remarquable(station: ObservationMeteo): boolean {
+    return (this.rafale(station) ?? 0) >= this.RAFALE_FORTE_KMH
+      || (station.pluie_1h_mm ?? 0) >= this.PLUIE_FORTE_1H_MM
+      || (station.pluie_24h_mm ?? 0) >= this.PLUIE_FORTE_24H_MM;
+  }
+
+  /** Points cardinaux d'où vient le vent (la source donne des degrés). */
+  direction(degres: number | null): string {
+    if (degres == null) return '';
+    return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(degres / 45) % 8];
   }
 
   // ── Routes ──

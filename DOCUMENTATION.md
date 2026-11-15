@@ -2795,13 +2795,14 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Trois sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
-les alertes. Page : `/admin/veille` ; couches « Routes » et « Stations de carburant » sur la
-carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
+Quatre sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; couches « Routes », « Stations météo » et « Stations de
+carburant » sur la carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
 | Source | Ce qu'elle apporte | Accès | Rythme | Module |
 |---|---|---|---|---|
 | Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
+| Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
 | Bison Futé (DATEX II) | fermetures, accidents, obstacles, travaux du réseau routier **national** | aucune clé | 10 min | `core/trafic_routier.py` |
 | Prix des carburants, flux instantané | stations, carburants disponibles, **ruptures** | aucune clé | 30 min | `core/carburants.py` |
 
@@ -2811,8 +2812,8 @@ carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes
    entière**. Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne
    déclenche d'appel sortant, et rien de ce qui part ne désigne une personne, une commune ou
    une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
-2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `EvenementRoutier`,
-   `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
+2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `ObservationMeteo`,
+   `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
    personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
    table. Un flux vide ou tronqué ne remplace pas la copie précédente.
 3. **Une copie ancienne se dit ancienne.** `ReleveSourceOuverte` garde l'heure du dernier
@@ -2831,6 +2832,16 @@ administrateurs reçoivent **un** résumé par relevé. Une annonce par épisode
 l'entrée dans le seuil puis seulement si la couleur **monte** (`VigilanceDiffusee`) ; pas de
 message de levée. Rien n'est annoncé sur une copie de plus de six heures.
 
+**Mesures des stations.** Deux appels nationaux par relevé (paquet 6 minutes et paquet
+horaire), plus la liste des stations une fois par jour. Les unités de la source (kelvins,
+mètres par seconde) sont converties une fois, à l'écriture. Une grandeur que la station ne
+mesure pas reste vide — quatre stations sur dix seulement mesurent le vent — et ne s'affiche
+jamais comme un zéro. Le **cumul de pluie sur 24 heures** n'est pas publié à l'échelle
+nationale : le serveur l'additionne heure après heure, et `heures_cumulees` dit sur combien
+d'heures il porte (il est partiel pendant les premières 24 heures, et après toute interruption
+du relevé). Les seuils qui font ressortir une ligne (80 km/h de rafale, 20 mm en une heure,
+50 mm cumulés) sont de l'affichage, pas une alerte : l'alerte reste celle de la vigilance.
+
 **Clé Météo-France** : secret Docker `meteofrance_cle_api` (fichier
 `meteofrance_cle_api.txt` du dossier des secrets), monté dans `ac_backend` seulement. C'est un
 jeton valable trois ans au plus ; son échéance, inscrite dans le jeton, est exposée
@@ -2839,7 +2850,8 @@ jeton valable trois ans au plus ; son échéance, inscrite dans le jeton, est ex
 la liste des API autorisées est figée dans le jeton. Sans clé (satellite, développement), la
 vigilance se tait et le reste fonctionne.
 
-**Limites à connaître** : la vigilance ne couvre que la métropole ; Bison Futé ne couvre ni
+**Limites à connaître** : la vigilance ne couvre que la métropole (les mesures des stations,
+elles, couvrent aussi l'outre-mer) ; Bison Futé ne couvre ni
 les autoroutes concédées ni l'essentiel des routes départementales (une liste vide ne veut pas
 dire « routes ouvertes ») ; les ruptures de carburant sont déclarées par les stations
 elles-mêmes. Les satellites ne reçoivent pas encore cette copie.

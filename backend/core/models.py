@@ -2536,6 +2536,46 @@ class StationCarburant(models.Model):
         return f"Station {self.reference} {self.ville}"
 
 
+class ObservationMeteo(models.Model):
+    """Dernière mesure connue d'une station Météo-France (environ 2 000, métropole et
+    outre-mer) -- voir core/observations_meteo.py.
+
+    Donnée publique partagée PROD/DEMO. Une ligne par station, réécrite à chaque relevé : un
+    état courant, pas une série. Seule exception, `cumuls` garde les pluies horaires des
+    dernières 24 heures, parce que le cumul sur la journée -- l'indicateur qui compte pour une
+    inondation -- n'est pas publié et doit être additionné ici."""
+
+    station = models.CharField(max_length=8, primary_key=True)
+    nom = models.CharField(max_length=80, blank=True, default="")
+    altitude_m = models.IntegerField(null=True, blank=True)
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    location = gis_models.PointField(srid=4326)
+    # Mesures du paquet 6 minutes. Toutes les stations ne mesurent pas tout : le vent n'est
+    # relevé que par quatre stations sur dix.
+    mesure_le = models.DateTimeField(null=True, blank=True)
+    temperature_c = models.FloatField(null=True, blank=True)
+    humidite_pct = models.FloatField(null=True, blank=True)
+    vent_kmh = models.FloatField(null=True, blank=True)
+    vent_direction = models.FloatField(null=True, blank=True)
+    rafale_kmh = models.FloatField(null=True, blank=True)
+    pluie_6min_mm = models.FloatField(null=True, blank=True)
+    neige_cm = models.FloatField(null=True, blank=True)
+    # Mesures du paquet horaire.
+    heure_le = models.DateTimeField(null=True, blank=True)
+    pluie_1h_mm = models.FloatField(null=True, blank=True)
+    rafale_1h_kmh = models.FloatField(null=True, blank=True)
+    # [{"h": instant, "rr": mm}] sur 24 heures glissantes, et ce qu'on en tire. `heures_cumulees`
+    # dit sur combien d'heures porte le cumul : il est partiel tant que 24 relevés horaires ne
+    # se sont pas succédé.
+    cumuls = models.JSONField(default=list, blank=True)
+    pluie_24h_mm = models.FloatField(null=True, blank=True)
+    heures_cumulees = models.PositiveSmallIntegerField(default=0)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Station {self.station} {self.nom}".strip()
+
+
 class VigilanceMeteo(models.Model):
     """Dernière vigilance Météo-France connue pour un département (ou « FRA » pour la France
     entière), copiée par `verifier_vigilance_meteo` -- voir core/meteo_france.py.

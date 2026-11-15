@@ -107,6 +107,34 @@ export interface StationsCarburant extends EnteteVeille {
   resultats: StationCarburant[];
 }
 
+export interface ObservationMeteo {
+  station: string;
+  nom: string;
+  altitude_m: number | null;
+  latitude: number;
+  longitude: number;
+  /** Distance au centre de l'emprise, quand il y en a un. */
+  distance_km: number | null;
+  mesure_le: string | null;
+  /** Une mesure absente vaut `null`, jamais zéro : toutes les stations ne mesurent pas tout. */
+  temperature_c: number | null;
+  humidite_pct: number | null;
+  vent_kmh: number | null;
+  vent_direction: number | null;
+  rafale_kmh: number | null;
+  pluie_6min_mm: number | null;
+  neige_cm: number | null;
+  heure_le: string | null;
+  pluie_1h_mm: number | null;
+  rafale_1h_kmh: number | null;
+  /** Cumul construit par le serveur, heure après heure : il porte sur `heures_cumulees`
+   * heures, 24 au plus. */
+  pluie_24h_mm: number | null;
+  heures_cumulees: number;
+}
+
+export interface ObservationsMeteo extends EnteteVeille { resultats: ObservationMeteo[]; }
+
 /** Réglage de l'annonce de vigilance d'une institution (voir ConfigurationAlerteVigilance). */
 export interface ConfigurationAlerteVigilance {
   id: number;
