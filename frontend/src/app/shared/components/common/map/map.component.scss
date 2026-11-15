@@ -142,6 +142,8 @@
 .avalanche-dot { background: linear-gradient(90deg, #ccff66, #ffff00, #ff9900, #ff0000); }
 // Dégradé de la palette radar, pour que la pastille se lise comme « pluie » et non comme un point.
 .pluie-dot { background: linear-gradient(90deg, #7c3aed, #22d3ee, #facc15); }
+// Les teintes des paliers de rafales, du lilas (40 km/h) au violet sombre (140 km/h).
+.rafales-dot { background: linear-gradient(90deg, #d6c6f2, #7c46cc, #c42c9e, #260428); }
 
 // Outil « zone atteignable », dans le panneau des calques.
 .outil-zone {
@@ -193,6 +195,14 @@
   .pluie-note {
     font-size: .72rem; color: var(--ac-text-muted, #6b7280);
     &.ancien { color: var(--ac-amber-text, #92400e); }
+  }
+  // Légende des rafales : une pastille par palier, avec son seuil en km/h.
+  .rafales-legende {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 3px;
+    font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--ac-text, #1f2937);
+    span { display: inline-flex; align-items: center; gap: 3px; }
+    i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, .25); }
+    .unite { color: var(--ac-text-muted, #6b7280); }
   }
 }
 // Dit qu'une couche est incomplète à cette échelle, sans alourdir la légende.

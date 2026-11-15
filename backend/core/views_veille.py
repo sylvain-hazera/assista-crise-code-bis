@@ -22,13 +22,13 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, meteo_forets, sante_urgences, seismes, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
     ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
+    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -327,6 +327,21 @@ class PluiePrevueView(APIView):
         })
 
 
+def _image_d_une_echeance(modele, request):
+    """Réponse PNG de l'image d'une série (pluie, rafales) pour `?echeance=…`, ou 404."""
+    from django.utils.dateparse import parse_datetime
+
+    echeance = parse_datetime(request.query_params.get("echeance") or "")
+    image = modele.objects.filter(pk=echeance).first() if echeance else None
+    if image is None:
+        return HttpResponseNotFound()
+    reponse = HttpResponse(bytes(image.image), content_type="image/png")
+    # Une échéance d'un calcul donné ne change pas : dix minutes de cache suffisent à
+    # rendre l'animation fluide, et laissent passer le calcul suivant.
+    reponse["Cache-Control"] = "public, max-age=600"
+    return reponse
+
+
 class ImagePluieView(APIView):
     """GET /api/pluie-prevue/image/?echeance=… : l'image d'une échéance (PNG transparent).
 
@@ -336,17 +351,50 @@ class ImagePluieView(APIView):
     authentication_classes = []
 
     def get(self, request):
-        from django.utils.dateparse import parse_datetime
+        return _image_d_une_echeance(ImagePluie, request)
 
-        echeance = parse_datetime(request.query_params.get("echeance") or "")
-        image = ImagePluie.objects.filter(pk=echeance).first() if echeance else None
-        if image is None:
-            return HttpResponseNotFound()
-        reponse = HttpResponse(bytes(image.image), content_type="image/png")
-        # Une échéance d'un calcul donné ne change pas : dix minutes de cache suffisent à
-        # rendre l'animation fluide, et laissent passer le calcul suivant.
-        reponse["Cache-Control"] = "public, max-age=600"
-        return reponse
+
+class RafalesPrevuesView(APIView):
+    """GET /api/rafales-prevues/ : les quarts d'heure pour lesquels une image de rafales prévues
+    est disponible, les quatre coins où la poser sur la carte et la légende de ses teintes.
+
+    Avec `lat` et `lon`, ou `ici=1` pour la commune de l'institution de l'appelant, la réponse
+    dit aussi le palier prévu À CET ENDROIT pour chaque échéance. C'est lu dans les images déjà
+    copiées : aucun appel sortant, la position ne quitte pas ce serveur."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ouest, sud, est, nord = rafales.EMPRISE_IMAGE
+        images = list(ImageRafales.objects.order_by("echeance"))
+        ici = None
+        if request.query_params.get("ici") or request.query_params.get("lat"):
+            _emprise_inutile, centre, _rayon = _emprise(request)
+            if centre:
+                paliers = [{"echeance": image.echeance,
+                            "a_partir_de_kmh": rafales.palier_au_point(
+                                bytes(image.image), centre["latitude"], centre["longitude"])}
+                           for image in images]
+                connus = [p["a_partir_de_kmh"] for p in paliers if p["a_partir_de_kmh"] is not None]
+                ici = {**centre, "couvert": bool(connus) or not images,
+                       "maximum_kmh": max(connus, default=None), "paliers": paliers}
+        return Response({
+            **sources_ouvertes.resume("RAFALES_PREVISION"),
+            "calcul": max((image.calcul for image in images), default=None),
+            "coins": [[ouest, nord], [est, nord], [est, sud], [ouest, sud]],
+            "echeances": [image.echeance for image in images],
+            "legende": rafales.legende(),
+            "ici": ici,
+        })
+
+
+class ImageRafalesView(APIView):
+    """GET /api/rafales-prevues/image/?echeance=… : l'image d'une échéance (PNG transparent),
+    servie comme celle de la pluie."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return _image_d_une_echeance(ImageRafales, request)
 
 
 class VigilanceCruesView(APIView):

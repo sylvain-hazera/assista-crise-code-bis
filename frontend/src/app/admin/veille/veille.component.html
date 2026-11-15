@@ -160,14 +160,35 @@
     }
   </section>
 
-  <!-- La pluie prévue ne se lit bien que sur une carte : cette page y renvoie. -->
+  <!-- La pluie et les rafales prévues ne se lisent bien que sur une carte : cette page y
+       renvoie, et dit seulement ce que la prévision donne pour la commune. -->
   <p class="vers-la-carte">
     <span class="material-icons">rainy</span>
     <span>
-      <strong>Pluie des trois heures à venir :</strong> elle se regarde sur la
-      <a routerLink="/admin/carte">carte</a>, calque « Pluie prévue », avec une réglette pour
-      avancer quart d'heure par quart d'heure. Les stations météo, les routes et les stations de
-      carburant y ont aussi leur calque.
+      <strong>Pluie et rafales des trois heures à venir :</strong> elles se regardent sur la
+      <a routerLink="/admin/carte">carte</a>, calques « Pluie prévue » et « Rafales prévues »,
+      avec une réglette pour avancer quart d'heure par quart d'heure. Les stations météo, les
+      routes et les stations de carburant y ont aussi leur calque.
+      @if (rafales?.ici; as ici) {
+        <span class="rafales-ici" [class.fort]="rafalePrevue?.forte">
+          @if (rafalePrevue; as rafale) {
+            <span class="material-icons">air</span>
+            Sur votre commune, rafales prévues de <strong>{{ rafale.libelle }}</strong>
+            vers {{ rafale.echeance | date:'HH:mm' }}
+          } @else if (!ici.couvert) {
+            La prévision de rafales ne couvre que la métropole.
+          } @else if (ici.paliers.length) {
+            Sur votre commune, aucune rafale de {{ rafales!.legende[0].a_partir_de_kmh }} km/h ou plus
+            n'est prévue d'ici trois heures
+          }
+          @if (ici.couvert && ici.paliers.length) {
+            <small [class.ancien]="rafales!.perime">
+              — prévision {{ rafales!.source }}, calcul de {{ rafales!.calcul | date:'HH:mm' }}@if (rafales!.perime) {, <strong>relevé ancien</strong>}.
+              Une prévision, pas une alerte : la vigilance ci-dessus fait foi.
+            </small>
+          }
+        </span>
+      }
     </span>
   </p>
 

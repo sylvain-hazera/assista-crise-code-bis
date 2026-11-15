@@ -841,8 +841,18 @@ class TestPluiePrevue:
             pluie.relever(MAINTENANT + datetime.timedelta(minutes=10))
 
         assert premier_passage == 13
-        # Un seul appel au second passage : celui qui vérifie quel calcul est le plus récent.
-        assert appel.call_count == premier_passage + 1
+        # Rien au second passage : le calcul de l'heure est déjà copié et aucun quart d'heure
+        # nouveau n'est à prendre.
+        assert appel.call_count == premier_passage
+
+    @pytest.mark.django_db
+    def test_le_quart_d_heure_nouveau_est_le_seul_demande(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()) as appel:
+            pluie.relever(MAINTENANT)
+            pluie.relever(MAINTENANT + datetime.timedelta(minutes=20))       # 9 h 50
+
+        assert appel.call_count == 13 + 1
+        assert appel.call_args.kwargs["params"]["time"] == "2026-11-15T12:45:00Z"
 
     @pytest.mark.django_db
     def test_un_nouveau_calcul_remplace_les_images_et_les_echeances_passees_partent(self, cle_meteo):
@@ -876,10 +886,24 @@ class TestPluiePrevue:
         with mock.patch("core.pluie.requests.get", side_effect=service):
             assert pluie.relever(MAINTENANT) == 12
 
-        # Au passage suivant, seule l'image manquante est redemandée (plus la vérification du calcul).
+        # Au passage suivant, seule l'image manquante est redemandée.
         with mock.patch("core.pluie.requests.get", return_value=_reponse_image()) as appel:
             assert pluie.relever(MAINTENANT + datetime.timedelta(minutes=5)) == 13
-        assert appel.call_count == 2
+        assert appel.call_count == 1
+
+    @pytest.mark.django_db
+    def test_si_rien_de_ce_qui_manque_ne_vient_le_releve_est_en_echec(self, cle_meteo, monkeypatch):
+        """Une panne isolée n'est qu'un avertissement ; mais si le service ne rend plus rien de
+        ce qu'on lui demande, le relevé doit échouer -- sans quoi la panne passerait inaperçue."""
+        monkeypatch.setattr(meteo_france, "TENTATIVES_DE_CONNEXION", 1)
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()):
+            pluie.relever(MAINTENANT)
+
+        with mock.patch("core.pluie.requests.get", side_effect=requests.ConnectionError("refusée")):
+            with pytest.raises(ValueError, match="aucune des 1 échéances manquantes"):
+                pluie.relever(MAINTENANT + datetime.timedelta(minutes=20))
+
+        assert ImagePluie.objects.count() == 13
 
     @pytest.mark.django_db
     def test_sans_aucun_calcul_la_copie_precedente_reste(self, cle_meteo):
@@ -887,10 +911,14 @@ class TestPluiePrevue:
             pluie.relever(MAINTENANT)
 
         with mock.patch("core.pluie.requests.get", return_value=_reponse_erreur_xml()):
+            # Dix minutes plus tard rien ne manque : rien n'est demandé, rien n'échoue.
+            assert pluie.relever(MAINTENANT + datetime.timedelta(minutes=10)) == 13
+            # Une heure plus tard il manque quatre quarts d'heure, et le service ne rend rien.
             with pytest.raises(ValueError):
-                pluie.relever(MAINTENANT + datetime.timedelta(minutes=10))
+                pluie.relever(MAINTENANT + datetime.timedelta(hours=1))
 
-        assert ImagePluie.objects.count() == 13
+        # Les images encore à venir restent ; seules les échéances passées sont parties.
+        assert ImagePluie.objects.count() == 10
 
     @pytest.mark.django_db
     def test_la_carte_lit_les_echeances_et_les_images_sans_appel_sortant(self, api_client):

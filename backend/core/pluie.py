@@ -105,24 +105,32 @@ def _mercator(latitude):
     return math.log(math.tan(math.pi / 4 + math.radians(latitude) / 2))
 
 
+def lignes_mercator(hauteur, largeur, sud=EMPRISE[1], nord=EMPRISE[3], ouest=EMPRISE[0], est=EMPRISE[2]):
+    """Pour une grille en latitude/longitude de `hauteur` lignes sur `largeur` colonnes, rend
+    pour chaque ligne de l'image Mercator de sortie le rang de la ligne source à prendre.
+
+    Les lignes de sortie sont espacées régulièrement en ordonnée Mercator ; pour chacune on
+    prend la ligne source qui se trouve à la même latitude. La hauteur de sortie est choisie
+    pour que les pixels restent carrés à l'écran. Sert à la pluie comme aux rafales
+    (core/rafales.py)."""
+    import numpy
+
+    haut, bas = _mercator(nord), _mercator(sud)
+    hauteur_sortie = max(1, round((haut - bas) * largeur / math.radians(est - ouest)))
+    ordonnees = haut - (numpy.arange(hauteur_sortie) + 0.5) * (haut - bas) / hauteur_sortie
+    latitudes = numpy.degrees(2 * numpy.arctan(numpy.exp(ordonnees)) - math.pi / 2)
+    return numpy.clip(((nord - latitudes) / (nord - sud) * hauteur).astype(int), 0, hauteur - 1)
+
+
 def vers_mercator(png, sud=EMPRISE[1], nord=EMPRISE[3], ouest=EMPRISE[0], est=EMPRISE[2]):
     """Redistribue les lignes d'une image en latitude/longitude pour qu'elle se pose juste sur
-    une carte Mercator entre les mêmes quatre coins. Rend un PNG.
-
-    Pour chaque ligne de l'image de sortie (espacées régulièrement en ordonnée Mercator), on
-    prend la ligne de l'image source qui se trouve à la même latitude. La hauteur de sortie est
-    choisie pour que les pixels restent carrés à l'écran."""
+    une carte Mercator entre les mêmes quatre coins (voir `lignes_mercator`). Rend un PNG."""
     import numpy
     from PIL import Image
 
     source = numpy.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))
     hauteur, largeur = source.shape[:2]
-    haut, bas = _mercator(nord), _mercator(sud)
-    hauteur_sortie = max(1, round((haut - bas) * largeur / math.radians(est - ouest)))
-
-    ordonnees = haut - (numpy.arange(hauteur_sortie) + 0.5) * (haut - bas) / hauteur_sortie
-    latitudes = numpy.degrees(2 * numpy.arctan(numpy.exp(ordonnees)) - math.pi / 2)
-    lignes = numpy.clip(((nord - latitudes) / (nord - sud) * hauteur).astype(int), 0, hauteur - 1)
+    lignes = lignes_mercator(hauteur, largeur, sud, nord, ouest, est)
 
     # Palette réduite : l'image ne porte qu'une quinzaine de teintes, la décrire en couleurs
     # indexées la rend six fois plus légère -- treize images réécrites chaque heure, cela compte
@@ -133,51 +141,73 @@ def vers_mercator(png, sud=EMPRISE[1], nord=EMPRISE[3], ouest=EMPRISE[0], est=EM
     return sortie.getvalue()
 
 
-def relever(maintenant=None):
-    """Complète la copie : télécharge les échéances qui manquent pour le calcul le plus récent,
-    retire celles qui sont passées. Rend le nombre d'images en base.
+def completer_serie(modele, telecharger, preparer, maintenant, nom):
+    """Complète une série d'images par échéance (pluie ou rafales) : télécharge les échéances
+    qui manquent pour le calcul le plus récent, retire celles qui sont passées. Rend le nombre
+    d'images en base.
+
+    `telecharger(calcul, echeance)` rend le contenu brut ou None si ce calcul ne propose pas
+    cette échéance ; `preparer(brut)` en fait le PNG à poser sur la carte.
 
     Une échéance déjà copiée pour ce calcul n'est pas redemandée : le gros des appels n'a lieu
-    qu'une fois par heure, quand un nouveau calcul paraît."""
-    from .models import ImagePluie
+    qu'une fois par heure, quand un nouveau calcul paraît. Entre-temps un passage ne demande que
+    le quart d'heure nouveau -- et rien du tout s'il n'y en a pas, hormis la question « le calcul
+    de cette heure est-il paru ? ». Cela compte pour les rafales, dont chaque réponse pèse 13 Mo.
 
-    maintenant = maintenant or timezone.now()
+    Lève ValueError si aucun calcul ne répond, ou si des échéances manquaient et qu'AUCUNE n'a
+    pu être copiée : le relevé est alors compté en échec, et la source finit signalée périmée.
+    Une panne isolée parmi d'autres images réussies n'est qu'un avertissement."""
     voulues = echeances_voulues(maintenant)
     heure = maintenant.replace(minute=0, second=0, microsecond=0)
+    connues = {image.echeance: image.calcul for image in modele.objects.only("echeance", "calcul")}
 
     # Le calcul le plus récent qui sait rendre la première échéance voulue.
     calcul, premiere = None, None
     for recul in range(CALCULS_ESSAYES):
         candidat = heure - datetime.timedelta(hours=recul)
-        premiere = telecharger_image(candidat, voulues[0])
+        if connues.get(voulues[0]) == candidat:
+            # Déjà copiée depuis ce calcul, et aucun plus récent n'a répondu : c'est toujours
+            # lui, inutile de la redemander pour s'en assurer.
+            calcul = candidat
+            break
+        premiere = telecharger(candidat, voulues[0])
         if premiere is not None:
             calcul = candidat
             break
     if calcul is None:
         raise ValueError("aucun calcul de prévision immédiate ne répond pour l'heure en cours")
 
-    connues = {image.echeance: image.calcul for image in ImagePluie.objects.only("echeance", "calcul")}
-    for echeance in voulues:
-        if connues.get(echeance) == calcul:
-            continue
-        if echeance == voulues[0]:
+    manquantes = [echeance for echeance in voulues if connues.get(echeance) != calcul]
+    copiees = 0
+    for echeance in manquantes:
+        if echeance == voulues[0] and premiere is not None:
             brute = premiere
         else:
             time.sleep(PAUSE_ENTRE_IMAGES_S)
             try:
-                brute = telecharger_image(calcul, echeance)
+                brute = telecharger(calcul, echeance)
             except requests.RequestException as exc:
                 # Une image en panne ne fait pas perdre les autres : celles déjà copiées
                 # restent, et celle-ci sera redemandée au passage suivant (elle n'est pas
                 # « connue » pour ce calcul). Constaté en service le 15/11/2026 : un refus de
                 # connexion sur la quatrième image faisait échouer le relevé entier.
-                logger.warning("Pluie : image de %s non relevée (%s).", _instant_api(echeance), type(exc).__name__)
+                logger.warning("%s : image de %s non relevée (%s).", nom, _instant_api(echeance), type(exc).__name__)
                 continue
         if brute is None:
             continue        # échéance au-delà de la portée de ce calcul : la précédente reste
-        ImagePluie.objects.update_or_create(echeance=echeance, defaults={
-            "calcul": calcul, "image": vers_mercator(brute), "releve_le": maintenant})
+        modele.objects.update_or_create(echeance=echeance, defaults={
+            "calcul": calcul, "image": preparer(brute), "releve_le": maintenant})
+        copiees += 1
 
     with transaction.atomic():
-        ImagePluie.objects.filter(echeance__lt=maintenant - GARDER_APRES).delete()
-    return ImagePluie.objects.count()
+        modele.objects.filter(echeance__lt=maintenant - GARDER_APRES).delete()
+    if manquantes and not copiees:
+        raise ValueError(f"aucune des {len(manquantes)} échéances manquantes n'a pu être relevée")
+    return modele.objects.count()
+
+
+def relever(maintenant=None):
+    """Complète la copie des images de pluie prévue (voir `completer_serie`)."""
+    from .models import ImagePluie
+
+    return completer_serie(ImagePluie, telecharger_image, vers_mercator, maintenant or timezone.now(), "Pluie")

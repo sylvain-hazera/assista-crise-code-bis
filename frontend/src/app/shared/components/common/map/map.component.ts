@@ -22,7 +22,7 @@ import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
-import { EvenementRoutier, ObservationMeteo, PluiePrevue, StationCarburant } from '../../../models/veille.model';
+import { EvenementRoutier, ObservationMeteo, PluiePrevue, RafalesPrevues, StationCarburant } from '../../../models/veille.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -49,6 +49,8 @@ interface LayerVisibility {
   stationsMeteo: boolean;
   /** Pluie prévue dans les trois heures (images nationales, voir VeilleService.pluiePrevue). */
   pluie: boolean;
+  /** Rafales prévues dans les trois heures, sur la même réglette de temps que la pluie. */
+  rafales: boolean;
   /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
@@ -119,6 +121,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     stationsCarburant: false,
     stationsMeteo: false,
     pluie: false,
+    rafales: false,
     vigilanceCrues: false,
     zonesBrulees: false,
     foyersActifs: false,
@@ -215,7 +218,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
-    this.basculerPluie();
+    this.basculerPrevisions();
     this.rafraichirVeille();
   }
 
@@ -527,62 +530,87 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  // ── Pluie prévue : une image nationale par quart d'heure, et une réglette de temps ──────
+  // ── Pluie et rafales prévues : une image nationale par quart d'heure, une réglette de temps ──
 
   pluie: PluiePrevue | null = null;
-  /** Rang de l'échéance affichée dans `pluie.echeances`. */
-  indicePluie = 0;
-  animationPluie: ReturnType<typeof setInterval> | null = null;
-  private rafraichissementPluie: ReturnType<typeof setInterval> | null = null;
+  rafales: RafalesPrevues | null = null;
+  /** Échéance choisie sur la réglette ; `null` tant qu'on n'y a pas touché : la carte suit
+   * alors l'heure qu'il est. Les deux calques partagent ce choix. */
+  echeanceChoisie: string | null = null;
+  animationPrevision: ReturnType<typeof setInterval> | null = null;
+  private rafraichissementPrevision: ReturnType<typeof setInterval> | null = null;
+  private previsionsSuivies = { pluie: false, rafales: false };
 
-  /** Appelé à chaque changement de calque : charge la pluie à la première activation, puis
-   * la relit toutes les cinq minutes tant que le calque est coché. */
-  private basculerPluie(): void {
-    const visible = this.layerVisibility.pluie;
-    this.applyLayerVisibility('pluie-layer', visible);
-    if (!visible) {
-      this.arreterAnimationPluie();
-      if (this.rafraichissementPluie) { clearInterval(this.rafraichissementPluie); this.rafraichissementPluie = null; }
+  /** Appelé à chaque changement de calque : charge une série à sa première activation, puis
+   * relit celles qui sont cochées toutes les cinq minutes. */
+  private basculerPrevisions(): void {
+    this.applyLayerVisibility('pluie-layer', this.layerVisibility.pluie);
+    this.applyLayerVisibility('rafales-layer', this.layerVisibility.rafales);
+    for (const serie of ['pluie', 'rafales'] as const) {
+      const visible = this.layerVisibility[serie];
+      if (visible && !this.previsionsSuivies[serie]) this.chargerPrevision(serie);
+      this.previsionsSuivies[serie] = visible;
+    }
+    if (!this.layerVisibility.pluie && !this.layerVisibility.rafales) {
+      this.arreterAnimationPrevision();
+      if (this.rafraichissementPrevision) { clearInterval(this.rafraichissementPrevision); this.rafraichissementPrevision = null; }
       return;
     }
-    if (this.rafraichissementPluie) return;
-    this.chargerPluie();
-    this.rafraichissementPluie = setInterval(() => this.chargerPluie(), 5 * 60 * 1000);
+    // L'autre calque peut ne pas porter l'échéance affichée : on le recale.
+    this.afficherPrevisions();
+    if (this.rafraichissementPrevision) return;
+    this.rafraichissementPrevision = setInterval(() => {
+      if (this.layerVisibility.pluie) this.chargerPrevision('pluie');
+      if (this.layerVisibility.rafales) this.chargerPrevision('rafales');
+    }, 5 * 60 * 1000);
   }
 
-  private chargerPluie(): void {
-    this.veilleService.pluiePrevue().subscribe({
-      next: (pluie) => {
-        const affichee = this.pluie?.echeances[this.indicePluie];
-        this.pluie = pluie;
-        // On reste sur l'échéance regardée si elle existe encore ; sinon, la plus proche de
-        // maintenant.
-        const garde = affichee ? pluie.echeances.indexOf(affichee) : -1;
-        this.indicePluie = garde >= 0 ? garde : this.indicePluieActuelle();
-        this.afficherPluie();
+  private chargerPrevision(serie: 'pluie' | 'rafales'): void {
+    const suite = {
+      next: (donnees: PluiePrevue | RafalesPrevues) => {
+        if (serie === 'pluie') this.pluie = donnees; else this.rafales = donnees as RafalesPrevues;
+        this.afficherPrevisions();
       },
       error: () => {},
-    });
+    };
+    if (serie === 'pluie') this.veilleService.pluiePrevue().subscribe(suite);
+    else this.veilleService.rafalesPrevues().subscribe(suite);
   }
 
-  /** Rang de l'échéance la plus proche de l'heure qu'il est. */
-  indicePluieActuelle(): number {
-    const echeances = this.pluie?.echeances ?? [];
+  /** Les quarts d'heure de la réglette : ceux des calques de prévision cochés, réunis. */
+  get echeancesPrevision(): string[] {
+    const toutes = new Set<string>();
+    if (this.layerVisibility.pluie) this.pluie?.echeances.forEach(e => toutes.add(e));
+    if (this.layerVisibility.rafales) this.rafales?.echeances.forEach(e => toutes.add(e));
+    return [...toutes].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  }
+
+  /** Rang, dans `echeances`, de la plus proche de `instant` (millisecondes). */
+  private rangLePlusProche(echeances: string[], instant: number): number {
     let meilleur = 0;
     echeances.forEach((echeance, i) => {
-      if (Math.abs(new Date(echeance).getTime() - Date.now())
-          < Math.abs(new Date(echeances[meilleur]).getTime() - Date.now())) meilleur = i;
+      if (Math.abs(new Date(echeance).getTime() - instant)
+          < Math.abs(new Date(echeances[meilleur]).getTime() - instant)) meilleur = i;
     });
     return meilleur;
   }
 
-  get echeancePluie(): string | null {
-    return this.pluie?.echeances[this.indicePluie] ?? null;
+  /** Rang de l'échéance affichée : celle qu'on a choisie si elle existe encore, sinon la plus
+   * proche d'elle -- ou de l'heure qu'il est tant qu'on n'a rien choisi. */
+  get indicePrevision(): number {
+    const echeances = this.echeancesPrevision;
+    const choisie = this.echeanceChoisie ? echeances.indexOf(this.echeanceChoisie) : -1;
+    if (choisie >= 0) return choisie;
+    return this.rangLePlusProche(echeances, this.echeanceChoisie ? new Date(this.echeanceChoisie).getTime() : Date.now());
+  }
+
+  get echeancePrevision(): string | null {
+    return this.echeancesPrevision[this.indicePrevision] ?? null;
   }
 
   /** « maintenant », « dans 45 min », « dans 1 h 30 », « il y a 15 min ». */
-  get ecartPluie(): string {
-    const echeance = this.echeancePluie;
+  get ecartPrevision(): string {
+    const echeance = this.echeancePrevision;
     if (!echeance) return '';
     const minutes = Math.round((new Date(echeance).getTime() - Date.now()) / 60000);
     if (Math.abs(minutes) < 8) return 'maintenant';
@@ -592,44 +620,62 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     return minutes > 0 ? `dans ${duree}` : `il y a ${duree}`;
   }
 
-  choisirEcheancePluie(indice: number): void {
-    this.indicePluie = Math.max(0, Math.min((this.pluie?.echeances.length ?? 1) - 1, +indice));
-    this.afficherPluie();
+  choisirEcheance(indice: number): void {
+    const echeances = this.echeancesPrevision;
+    this.echeanceChoisie = echeances[Math.max(0, Math.min(echeances.length - 1, +indice))] ?? null;
+    this.afficherPrevisions();
   }
 
-  basculerAnimationPluie(): void {
-    if (this.animationPluie) { this.arreterAnimationPluie(); return; }
-    this.animationPluie = setInterval(() => {
-      const nombre = this.pluie?.echeances.length ?? 0;
+  basculerAnimationPrevision(): void {
+    if (this.animationPrevision) { this.arreterAnimationPrevision(); return; }
+    this.animationPrevision = setInterval(() => {
+      const nombre = this.echeancesPrevision.length;
       if (nombre < 2) return;
-      this.choisirEcheancePluie((this.indicePluie + 1) % nombre);
+      this.choisirEcheance((this.indicePrevision + 1) % nombre);
     }, 900);
   }
 
-  private arreterAnimationPluie(): void {
-    if (this.animationPluie) { clearInterval(this.animationPluie); this.animationPluie = null; }
+  private arreterAnimationPrevision(): void {
+    if (this.animationPrevision) { clearInterval(this.animationPrevision); this.animationPrevision = null; }
   }
 
-  /** Pose l'image de l'échéance choisie sur la carte, SOUS les noms de lieux du fond de carte
-   * (et donc sous tous nos calques) : la pluie ne doit rien masquer. */
-  private afficherPluie(): void {
-    const echeance = this.echeancePluie;
-    if (!echeance || !this.pluie) return;
-    const url = this.veilleService.imagePluieUrl(echeance);
-    const coordinates = this.pluie.coins as [[number, number], [number, number], [number, number], [number, number]];
+  /** Pose, pour chaque calque de prévision coché, l'image de l'échéance choisie. */
+  private afficherPrevisions(): void {
+    const echeance = this.echeancePrevision;
+    if (!echeance) return;
+    if (this.layerVisibility.pluie && this.pluie) {
+      this.poserImagePrevision('pluie', this.pluie, echeance, 0.7, e => this.veilleService.imagePluieUrl(e));
+    }
+    if (this.layerVisibility.rafales && this.rafales) {
+      this.poserImagePrevision('rafales', this.rafales, echeance, 0.8, e => this.veilleService.imageRafalesUrl(e));
+    }
+  }
+
+  /** Pose l'image d'une série sur la carte, SOUS les noms de lieux du fond de carte (et donc
+   * sous tous nos calques) : une prévision ne doit rien masquer. Si la série n'a pas l'échéance
+   * demandée (une image manquée au relevé), elle montre sa plus proche. */
+  private poserImagePrevision(nom: 'pluie' | 'rafales', serie: PluiePrevue, echeance: string,
+                              opacite: number, adresse: (echeance: string) => string): void {
+    if (!serie.echeances.length) return;
+    const montree = serie.echeances.includes(echeance) ? echeance
+      : serie.echeances[this.rangLePlusProche(serie.echeances, new Date(echeance).getTime())];
+    const url = adresse(montree);
+    const coordinates = serie.coins as [[number, number], [number, number], [number, number], [number, number]];
     this.runWhenMapReady(() => {
       if (!this.map) return;
-      const source = this.map.getSource('pluie') as maplibregl.ImageSource | undefined;
+      const source = this.map.getSource(nom) as maplibregl.ImageSource | undefined;
       if (source) {
         source.updateImage({ url, coordinates });
         return;
       }
-      this.map.addSource('pluie', { type: 'image', url, coordinates });
+      this.map.addSource(nom, { type: 'image', url, coordinates });
       const premierTexte = this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
       this.map.addLayer({
-        id: 'pluie-layer', type: 'raster', source: 'pluie',
-        layout: { visibility: this.layerVisibility.pluie ? 'visible' : 'none' },
-        paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 },
+        id: `${nom}-layer`, type: 'raster', source: nom,
+        layout: { visibility: this.layerVisibility[nom] ? 'visible' : 'none' },
+        // « nearest » pour les rafales : des paliers nets, pas un dégradé inventé entre deux teintes.
+        paint: { 'raster-opacity': opacite, 'raster-fade-duration': 0,
+                 'raster-resampling': nom === 'rafales' ? 'nearest' : 'linear' },
       }, premierTexte);
     });
   }
@@ -902,8 +948,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.subscription) this.subscription.unsubscribe();
     if (this.resizeObserver) this.resizeObserver.disconnect();
-    this.arreterAnimationPluie();
-    if (this.rafraichissementPluie) clearInterval(this.rafraichissementPluie);
+    this.arreterAnimationPrevision();
+    if (this.rafraichissementPrevision) clearInterval(this.rafraichissementPrevision);
     if (this.map) this.map.remove();
   }
 

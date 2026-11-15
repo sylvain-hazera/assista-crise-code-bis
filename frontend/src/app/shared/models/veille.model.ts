@@ -375,6 +375,27 @@ export interface PluiePrevue {
   echeances: string[];
 }
 
+/** Un palier de la légende des rafales : sa teinte vaut « à partir de tant de km/h ». */
+export interface PalierRafales {
+  a_partir_de_kmh: number;
+  couleur: string;
+}
+
+/** Rafales prévues (même prévision immédiate que la pluie), peintes par notre serveur en
+ * paliers de km/h. `ici` n'est rempli que si l'on a demandé la lecture en un point : le palier
+ * prévu à cet endroit pour chaque échéance (0 : moins que le premier palier ; null : hors de
+ * la métropole). Une prévision, ni une mesure ni une alerte. */
+export interface RafalesPrevues extends PluiePrevue {
+  legende: PalierRafales[];
+  ici: {
+    latitude: number;
+    longitude: number;
+    couvert: boolean;
+    maximum_kmh: number | null;
+    paliers: { echeance: string; a_partir_de_kmh: number | null }[];
+  } | null;
+}
+
 /** Réglage de l'annonce de vigilance d'une institution (voir ConfigurationAlerteVigilance). */
 export interface ConfigurationAlerteVigilance {
   id: number;

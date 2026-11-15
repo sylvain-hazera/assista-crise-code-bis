@@ -158,6 +158,13 @@ table.mesures, table.mesures-sante {
   color: var(--ac-text, #111827);
   .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
   a { color: var(--brand-primary-lisible, var(--brand-primary)); font-weight: 600; }
+  // Ce que la prévision de rafales donne pour la commune, sous le renvoi vers la carte.
+  .rafales-ici {
+    display: block; margin-top: 6px;
+    .material-icons { font-size: 18px; vertical-align: text-bottom; }
+    &.fort { color: var(--ac-amber-text, #92400e); .material-icons { color: inherit; } }
+    small { color: var(--ac-text-muted, #6b7280); &.ancien { color: var(--ac-amber-text, #92400e); } }
+  }
 }
 
 // ── Cours d'eau, eau, feux ──

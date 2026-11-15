@@ -14,7 +14,7 @@ from .views_application import (
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
     ArretesCirculationView, ConfigurationAlerteFeuViewSet, ConfigurationAlerteVigilanceViewSet,
-    FoyersActifsView, EvenementsRoutiersView, ImagePluieView,
+    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImageRafalesView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -369,6 +369,8 @@ urlpatterns = [
     path('observations-meteo/', ObservationsMeteoView.as_view(), name='observations_meteo'),
     path('pluie-prevue/', PluiePrevueView.as_view(), name='pluie_prevue'),
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
+    path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
+    path('rafales-prevues/image/', ImageRafalesView.as_view(), name='rafales_prevues_image'),
     path('vigilance-crues/', VigilanceCruesView.as_view(), name='vigilance_crues'),
     path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),

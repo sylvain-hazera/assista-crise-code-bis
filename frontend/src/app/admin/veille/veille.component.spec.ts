@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
+  ArretesCirculation, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -115,6 +115,25 @@ const EAU: RestrictionsEau = {
   departements: [],
 };
 
+/** Rafales prévues sur la commune : 36 km/h puis 60 à 80, puis 80 à 100 à partir de 18 h 15. */
+const RAFALES: RafalesPrevues = {
+  source: 'Météo-France', releve_le: '2026-11-15T17:05:00Z', perime: false, calcul: '2026-11-15T16:00:00Z',
+  coins: [[-5.505, 51.505], [10.005, 51.505], [10.005, 40.995], [-5.505, 40.995]],
+  echeances: ['2026-11-15T17:00:00Z', '2026-11-15T17:15:00Z', '2026-11-15T17:30:00Z'],
+  legende: [40, 60, 80, 100, 120, 140].map(seuil => ({ a_partir_de_kmh: seuil, couleur: '#7c46cc' })),
+  ici: {
+    latitude: 45.44, longitude: 4.39, couvert: true, maximum_kmh: 80,
+    paliers: [
+      { echeance: '2026-11-15T17:00:00Z', a_partir_de_kmh: 0 },
+      { echeance: '2026-11-15T17:15:00Z', a_partir_de_kmh: 60 },
+      { echeance: '2026-11-15T17:30:00Z', a_partir_de_kmh: 80 },
+    ],
+  },
+};
+const RAFALES_CALMES: RafalesPrevues = {
+  ...RAFALES, ici: { ...RAFALES.ici!, maximum_kmh: 0, paliers: RAFALES.ici!.paliers.map(p => ({ ...p, a_partir_de_kmh: 0 })) },
+};
+
 const FORETS_HORS_SAISON: MeteoForets = {
   source: 'Météo-France', releve_le: '2026-11-15T09:10:00Z', perime: false,
   en_saison: false, compris: true,
@@ -214,7 +233,7 @@ describe('VeilleComponent', () => {
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
                                 arretes?: ArretesCirculation; sante?: SanteUrgences;
                                 radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
-                                foyers?: FoyersActifs } = {}) {
+                                foyers?: FoyersActifs; rafales?: RafalesPrevues } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
@@ -222,6 +241,7 @@ describe('VeilleComponent', () => {
     http.expectOne(`${api}/volcans/`).flush(reponses.volcans ?? VOLCANS(false));
     http.expectOne(`${api}/sante-urgences/`).flush(reponses.sante ?? SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
+    http.expectOne(r => r.url === `${api}/rafales-prevues/`).flush(reponses.rafales ?? RAFALES_CALMES);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(reponses.radio ?? RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(reponses.seismes ?? SEISMES);
@@ -243,11 +263,72 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(15);
+    expect(demandes.length).toBe(16);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
     expect(images.every(image => image.src.includes('/vigilance-meteo/vignette/'))).toBeTrue();
+  });
+
+  /** Rafales prévues (15/11/2026) : la page dit ce que la prévision donne pour la commune --
+   * lu par le serveur dans ses propres images -- et renvoie à la carte pour le reste. */
+  describe('rafales prévues sur la commune', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('.rafales-ici');
+
+    it('demande la lecture locale à notre serveur', () => {
+      const fixture = TestBed.createComponent(VeilleComponent);
+      fixture.detectChanges();
+
+      const demande = http.expectOne(r => r.url === `${api}/rafales-prevues/`);
+      expect(demande.request.params.get('ici')).toBe('1');
+      http.match(() => true);
+    });
+
+    it('donne le palier le plus fort et la première heure où il est atteint', () => {
+      const fixture = demarrer({ rafales: RAFALES });
+
+      expect(bloc(fixture).textContent).toContain('80 à 100 km/h');
+      expect(bloc(fixture).textContent).toMatch(/vers \d\d:30/);
+      expect(bloc(fixture).classList).toContain('fort');
+      expect(bloc(fixture).textContent).toContain('pas une alerte');
+    });
+
+    it('dit « ou plus » au dernier palier', () => {
+      const fixture = demarrer({ rafales: {
+        ...RAFALES, ici: { ...RAFALES.ici!, maximum_kmh: 140, paliers: [{ echeance: '2026-11-15T17:00:00Z', a_partir_de_kmh: 140 }] },
+      } });
+
+      expect(bloc(fixture).textContent).toContain('140 km/h ou plus');
+    });
+
+    it('dit le calme sans l’habiller en alerte', () => {
+      const fixture = demarrer({ rafales: RAFALES_CALMES });
+
+      expect(bloc(fixture).textContent).toContain('aucune rafale de 40 km/h ou plus');
+      expect(bloc(fixture).classList).not.toContain('fort');
+    });
+
+    it('dit que l’outre-mer n’est pas couvert', () => {
+      const fixture = demarrer({ rafales: {
+        ...RAFALES, ici: { latitude: -21.1, longitude: 55.5, couvert: false, maximum_kmh: null,
+                           paliers: [{ echeance: '2026-11-15T17:00:00Z', a_partir_de_kmh: null }] },
+      } });
+
+      expect(bloc(fixture).textContent).toContain('ne couvre que la métropole');
+    });
+
+    it('signale un relevé ancien', () => {
+      const fixture = demarrer({ rafales: { ...RAFALES, perime: true } });
+
+      expect(bloc(fixture).textContent).toContain('relevé ancien');
+    });
+
+    it('ne dit rien du lieu quand le serveur ne le connaît pas', () => {
+      const fixture = demarrer({ rafales: { ...RAFALES, ici: null } });
+
+      expect(bloc(fixture)).toBeNull();
+      expect(texte(fixture)).toContain('Rafales prévues');
+    });
   });
 
   it('affiche la vigilance du département, sa couleur et ses horaires', () => {
@@ -574,6 +655,7 @@ describe('VeilleComponent', () => {
     http.expectOne(`${api}/volcans/`).flush(VOLCANS(false));
     http.expectOne(`${api}/sante-urgences/`).flush(SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
+    http.expectOne(r => r.url === `${api}/rafales-prevues/`).flush(RAFALES_CALMES);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(SEISMES);

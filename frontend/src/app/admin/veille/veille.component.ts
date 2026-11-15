@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import { VeilleService } from '../../services/veille.service';
 import {
   ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
-  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
+  ObservationMeteo, ObservationsMeteo, RafalesPrevues, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
@@ -37,6 +37,7 @@ export class VeilleComponent implements OnInit {
   crues: VigilanceCrues | null = null;
   eau: RestrictionsEau | null = null;
   forets: MeteoForets | null = null;
+  rafales: RafalesPrevues | null = null;
   sante: SanteUrgences | null = null;
   radioactivite: Radioactivite | null = null;
   seismes: Seismes | null = null;
@@ -100,6 +101,11 @@ export class VeilleComponent implements OnInit {
     this.service.meteoForets().subscribe({
       next: (forets) => { this.forets = forets; },
       error: () => { this.forets = null; },
+    });
+    // Rafales prévues sur la commune : lues par le serveur dans ses images, rien ne sort.
+    this.service.rafalesPrevues(true).subscribe({
+      next: (rafales) => { this.rafales = rafales; },
+      error: () => { this.rafales = null; },
     });
   }
 
@@ -213,6 +219,23 @@ export class VeilleComponent implements OnInit {
   readonly RAFALE_FORTE_KMH = 80;
   readonly PLUIE_FORTE_1H_MM = 20;
   readonly PLUIE_FORTE_24H_MM = 50;
+
+  /** Rafale la plus forte PRÉVUE sur la commune d'ici trois heures : son palier en clair et la
+   * première échéance où il est atteint. `null` si rien n'atteint le premier palier, ou si la
+   * commune est hors de la prévision (outre-mer). */
+  get rafalePrevue(): { libelle: string; echeance: string; forte: boolean } | null {
+    const ici = this.rafales?.ici;
+    if (!this.rafales || !ici?.couvert || !ici.maximum_kmh) return null;
+    const seuils = this.rafales.legende.map(palier => palier.a_partir_de_kmh);
+    const suivant = seuils[seuils.indexOf(ici.maximum_kmh) + 1];
+    const atteint = ici.paliers.find(palier => palier.a_partir_de_kmh === ici.maximum_kmh);
+    if (!atteint) return null;
+    return {
+      libelle: suivant ? `${ici.maximum_kmh} à ${suivant} km/h` : `${ici.maximum_kmh} km/h ou plus`,
+      echeance: atteint.echeance,
+      forte: ici.maximum_kmh >= this.RAFALE_FORTE_KMH,
+    };
+  }
 
   /** La rafale la plus forte connue : celle de l'heure écoulée ou celle des dix dernières minutes. */
   rafale(station: ObservationMeteo): number | null {

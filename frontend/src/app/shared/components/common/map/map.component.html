@@ -15,29 +15,43 @@
       </div>
     }
 
-    @if (layerVisibility.pluie && pluie) {
-      <!-- Réglette de temps de la pluie prévue. C'est une PRÉVISION recalée sur les radars,
-           pas l'image radar : le libellé le dit, avec l'heure du calcul. -->
-      <div class="pluie-temps" role="group" aria-label="Pluie prévue : choisir l'heure">
-        @if (pluie.echeances.length) {
-          <button type="button" class="pluie-lecture" (click)="basculerAnimationPluie()"
-                  [attr.aria-label]="animationPluie ? 'Arrêter l\'animation' : 'Animer la pluie prévue'">
-            <span class="material-icons">{{ animationPluie ? 'pause' : 'play_arrow' }}</span>
+    @if ((layerVisibility.pluie && pluie) || (layerVisibility.rafales && rafales)) {
+      <!-- Réglette de temps commune à la pluie et aux rafales prévues. Ce sont des PRÉVISIONS
+           (recalées chaque heure), pas des mesures : le libellé le dit, avec l'heure du calcul. -->
+      <div class="pluie-temps" role="group" aria-label="Prévision à trois heures : choisir l'heure">
+        @if (echeancesPrevision.length) {
+          <button type="button" class="pluie-lecture" (click)="basculerAnimationPrevision()"
+                  [attr.aria-label]="animationPrevision ? 'Arrêter l\'animation' : 'Animer la prévision'">
+            <span class="material-icons">{{ animationPrevision ? 'pause' : 'play_arrow' }}</span>
           </button>
           <div class="pluie-reglette">
             <div class="pluie-heure">
-              <strong>{{ echeancePluie | date:'HH:mm' }}</strong> <span>{{ ecartPluie }}</span>
+              <strong>{{ echeancePrevision | date:'HH:mm' }}</strong> <span>{{ ecartPrevision }}</span>
             </div>
-            <input type="range" min="0" [max]="pluie.echeances.length - 1" step="1"
-                   [ngModel]="indicePluie" (ngModelChange)="choisirEcheancePluie($event)"
-                   aria-label="Heure de la pluie prévue">
-            <div class="pluie-note" [class.ancien]="pluie.perime">
-              Pluie prévue — calcul de {{ pluie.calcul | date:'HH:mm' }}, {{ pluie.source }}
-              @if (pluie.perime) { · <strong>relevé ancien</strong> }
-            </div>
+            <input type="range" min="0" [max]="echeancesPrevision.length - 1" step="1"
+                   [ngModel]="indicePrevision" (ngModelChange)="choisirEcheance($event)"
+                   aria-label="Heure de la prévision">
+            @if (layerVisibility.pluie && pluie) {
+              <div class="pluie-note" [class.ancien]="pluie.perime">
+                Pluie prévue — calcul de {{ pluie.calcul | date:'HH:mm' }}, {{ pluie.source }}
+                @if (pluie.perime) { · <strong>relevé ancien</strong> }
+              </div>
+            }
+            @if (layerVisibility.rafales && rafales) {
+              <div class="pluie-note" [class.ancien]="rafales.perime">
+                Rafales prévues — calcul de {{ rafales.calcul | date:'HH:mm' }}, {{ rafales.source }}
+                @if (rafales.perime) { · <strong>relevé ancien</strong> }
+              </div>
+              <div class="rafales-legende" aria-label="Légende des rafales, en km/h">
+                @for (palier of rafales.legende; track palier.a_partir_de_kmh) {
+                  <span><i [style.background]="palier.couleur"></i>{{ palier.a_partir_de_kmh }}</span>
+                }
+                <span class="unite">km/h et plus</span>
+              </div>
+            }
           </div>
         } @else {
-          <div class="pluie-note ancien">Aucune image de pluie prévue n'a encore été relevée.</div>
+          <div class="pluie-note ancien">Aucune image de prévision n'a encore été relevée.</div>
         }
       </div>
     }
@@ -98,6 +112,11 @@
         <input type="checkbox" [(ngModel)]="layerVisibility.pluie" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot pluie-dot"></span>
         Pluie prévue (3 h)
+      </label>
+      <label class="layer-toggle-item" title="Rafales de vent prévues par Météo-France dans les trois heures, par quart d'heure, à partir de 40 km/h. Une prévision, pas une mesure ni une alerte. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.rafales" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot rafales-dot"></span>
+        Rafales prévues (3 h)
       </label>
       <label class="layer-toggle-item" title="Tronçons surveillés par Vigicrues, colorés par niveau de vigilance. Seuls les principaux cours d'eau y figurent.">
         <input type="checkbox" [(ngModel)]="layerVisibility.vigilanceCrues" (ngModelChange)="onLayerToggle()">

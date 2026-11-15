@@ -2874,6 +2874,23 @@ class ImagePluie(models.Model):
         return f"Pluie prévue pour {self.echeance:%d/%m %H:%M}"
 
 
+class ImageRafales(models.Model):
+    """Image nationale des rafales de vent prévues pour un quart d'heure donné (prévision
+    immédiate de Météo-France), peinte par ce serveur en paliers de km/h et déjà en projection
+    Mercator -- voir core/rafales.py. Même forme et même durée de vie que `ImagePluie`.
+
+    Donnée publique partagée PROD/DEMO."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    # Heure de référence du calcul qui a produit cette image.
+    calcul = models.DateTimeField()
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Rafales prévues pour {self.echeance:%d/%m %H:%M}"
+
+
 class VigilanceMeteo(models.Model):
     """Dernière vigilance Météo-France connue pour un département (ou « FRA » pour la France
     entière), copiée par `verifier_vigilance_meteo` -- voir core/meteo_france.py.

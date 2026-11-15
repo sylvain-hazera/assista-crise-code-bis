@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
+  ArretesCirculation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -57,6 +57,16 @@ export class VeilleService {
   /** Adresse de l'image d'une échéance, servie par notre serveur. */
   imagePluieUrl(echeance: string): string {
     return `${this.api}/pluie-prevue/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
+  /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.
+   * `ici` demande en plus le palier prévu sur la commune de l'institution de l'appelant. */
+  rafalesPrevues(ici = false): Observable<RafalesPrevues> {
+    return this.http.get<RafalesPrevues>(`${this.api}/rafales-prevues/`, ici ? { params: { ici: '1' } } : {});
+  }
+
+  imageRafalesUrl(echeance: string): string {
+    return `${this.api}/rafales-prevues/image/?echeance=${encodeURIComponent(echeance)}`;
   }
 
   /** Tronçons de cours d'eau surveillés par Vigicrues. `trace` joint leur tracé (carte). */

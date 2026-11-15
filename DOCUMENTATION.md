@@ -2795,8 +2795,8 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Seize sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
-les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie prévue, stations
+Dix-sept sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie et rafales prévues, stations
 météo, vigilance crues, risque d'avalanche, surfaces brûlées, routes, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
@@ -2805,6 +2805,7 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
 | Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
 | Météo-France, prévision immédiate (AROME-PI, WMS) | **pluie prévue** par quart d'heure sur 3 h, images nationales ; métropole | même clé | 10 min (12 images par heure) | `core/pluie.py` |
+| Météo-France, prévision immédiate (AROME-PI, WCS) | **rafales prévues** par quart d'heure sur 3 h, peintes par le serveur en paliers de km/h ; métropole | même clé | 10 min (13 grilles de 13 Mo par heure) | `core/rafales.py` |
 | Météo-France, bulletins d'avalanche | indice de risque par massif (35 massifs), aujourd'hui et demain ; en saison | même clé | 6 h | `core/avalanche.py` |
 | Météo-France, météo des forêts | danger de feu par département, demain et après-demain ; **juin à septembre** | même clé | 3 h | `core/meteo_forets.py` |
 | Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
@@ -2866,6 +2867,25 @@ en projection Mercator — le service ne rend que du latitude/longitude, ce qui 
 pluie d'une quarantaine de kilomètres au centre du pays — et la garde en couleurs indexées
 (~120 Ko). Sur la carte, une réglette choisit le quart d'heure et peut animer la séquence ;
 l'image est posée sous les noms de lieux, pour ne rien masquer.
+
+**Rafales prévues.** Même prévision immédiate que la pluie, même calcul horaire, mêmes quarts
+d'heure : le champ est la rafale la plus forte des quinze minutes qui précèdent chaque échéance,
+à dix mètres du sol. Le service d'images de Météo-France sait la dessiner, mais d'une seule
+teinte, par paliers de dix **nœuds** et sans légende accessible. Le serveur demande donc les
+**valeurs** (service WCS, grille en m/s au format TIFF, 13 Mo par échéance) et les peint
+lui-même, en km/h : un palier à 40, 60, 80, 100, 120 et 140 km/h, du lilas au violet sombre
+pour ne pas se confondre avec la pluie ; rien en dessous de 40. `rafales.lire_tiff` ne lit que
+ce format précis (nombres à virgule sans compression, grille de 1551 × 1051 points posée sur
+l'emprise demandée) et refuse tout le reste plutôt que de peindre une carte fausse. Seule
+l'image peinte est gardée (~50 Ko).
+
+Sur la carte, le calque « Rafales prévues » partage la **réglette de temps** de la pluie : les
+deux images avancent ensemble, et la légende des paliers s'affiche sous la réglette. La page de
+veille dit ce que la prévision donne **pour la commune** (`GET /api/rafales-prevues/?ici=1`) :
+le palier le plus fort des trois heures et l'heure où il est atteint. Cette lecture se fait
+dans les images déjà copiées — aucun appel sortant, la position ne quitte pas le serveur.
+C'est une prévision, ni une mesure (celles des stations) ni une alerte : la vigilance « vent
+violent » de Météo-France reste la référence, et les deux écrans le disent.
 
 **Ce que chaque écran doit dire, parce que la source ne le dit pas :**
 
