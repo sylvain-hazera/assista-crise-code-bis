@@ -13,7 +13,7 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
-    ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, ConfigurationAlerteVigilanceViewSet,
+    ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, ConfigurationAlerteVigilanceViewSet,
     FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImageRafalesView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
@@ -379,6 +379,7 @@ urlpatterns = [
     path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
     path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),
     path('circulation/', CirculationView.as_view(), name='circulation'),
+    path('hauteurs-eau/', HauteursEauView.as_view(), name='hauteurs_eau'),
     path('sante-urgences/', SanteUrgencesView.as_view(), name='sante_urgences'),
     path('radioactivite/', RadioactiviteView.as_view(), name='radioactivite'),
     path('seismes/', SeismesView.as_view(), name='seismes'),

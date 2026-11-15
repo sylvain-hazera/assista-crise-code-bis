@@ -22,13 +22,13 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, circulation, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
     ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation,
+    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -132,7 +132,10 @@ class VigilanceMeteoView(APIView):
             "source": sources_ouvertes.SOURCES["VIGILANCE_METEO"].attribution,
             "releve_le": dernier,
             "publie_le": france.publie_le if france else None,
-            "perime": bool(dernier) and (timezone.now() - dernier) > meteo_france.FRAICHEUR_MAX,
+            # Métropole et outre-mer sont relevés à part : ce qui compte pour l'appelant, c'est
+            # l'âge de SON département, pas celui du relevé le plus récent de l'autre.
+            "perime": bool(dernier) and (
+                timezone.now() - (mien.releve_le if mien else dernier)) > meteo_france.FRAICHEUR_MAX,
             "phenomenes": meteo_france.PHENOMENES,
             "couleurs": meteo_france.COULEURS,
             "france": VigilanceMeteoSerializer(france, context=avec_bulletin).data if france else None,
@@ -424,6 +427,52 @@ class VigilanceCruesView(APIView):
             resultats.append(ligne)
         return Response({**entete, "emprise_connue": True,
                          "tronque": len(troncons) > RESULTATS_MAX, "resultats": resultats})
+
+
+class HauteursEauView(APIView):
+    """GET /api/hauteurs-eau/ : les stations de mesure en rivière d'une emprise (voir `_emprise`),
+    celles dont l'eau monte le plus vite d'abord. Hauteur à l'échelle de la station, débit,
+    variation sur une et trois heures, et le palier de tendance qui en découle.
+    `?en_hausse=1` ne garde que les stations en hausse."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("HAUTEURS_EAU", centre, rayon)
+        vide = {palier: 0 for palier in hauteurs_eau.ORDRE_TENDANCES}
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "bilan": vide, "resultats": []})
+
+        maintenant = timezone.now()
+        en_hausse_seules = request.query_params.get("en_hausse") in ("1", "true")
+        rang = {palier: i for i, palier in enumerate(hauteurs_eau.ORDRE_TENDANCES)}
+        bilan, lignes = dict(vide), []
+        for station in StationHydrometrique.objects.filter(location__within=emprise).defer("historique"):
+            palier = hauteurs_eau.tendance(station, maintenant)
+            bilan[palier] += 1
+            if en_hausse_seules and palier not in (hauteurs_eau.HAUSSE_RAPIDE, hauteurs_eau.HAUSSE):
+                continue
+            latitude, longitude = _point(station.location)
+            recente = station.hauteur_le is not None and maintenant - station.hauteur_le <= hauteurs_eau.MESURE_VALABLE
+            debit_recent = station.debit_le is not None and maintenant - station.debit_le <= hauteurs_eau.MESURE_VALABLE
+            lignes.append({
+                "code": station.code, "nom": station.nom, "cours_eau": station.cours_eau,
+                "tendance": palier,
+                "hauteur_m": station.hauteur_m if recente else None,
+                "hauteur_le": station.hauteur_le,
+                "variation_1h_cm": station.variation_1h_cm if recente else None,
+                "variation_3h_cm": station.variation_3h_cm if recente else None,
+                "debit_m3s": station.debit_m3s if debit_recent else None,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                                if centre else None),
+            })
+        # Ce qui monte le plus vite d'abord ; à palier égal, la plus forte hausse, puis la plus proche.
+        lignes.sort(key=lambda l: (rang[l["tendance"]], -(l["variation_1h_cm"] or 0),
+                                   l["distance_km"] if l["distance_km"] is not None else 0, l["code"]))
+        return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
+                         "bilan": bilan, "resultats": lignes[:RESULTATS_MAX]})
 
 
 class RestrictionsEauView(APIView):

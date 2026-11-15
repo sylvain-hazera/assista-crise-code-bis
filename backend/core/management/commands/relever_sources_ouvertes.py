@@ -56,8 +56,8 @@ class Command(BaseCommand):
             # Elle ne suit qu'un relevé RÉUSSI à l'instant : sur une copie non rafraîchie il n'y
             # a rien de neuf à annoncer, et diffuser_alertes refuse de toute façon une copie
             # trop ancienne.
-            if code == "VIGILANCE_METEO" and resultats[code] == "réussi":
-                annonces = meteo_france.diffuser_alertes()
+            if code in ("VIGILANCE_METEO", "VIGILANCE_OUTRE_MER") and resultats[code] == "réussi":
+                annonces += meteo_france.diffuser_alertes()
             # Même principe pour les foyers vus par satellite : annoncés dès leur relevé.
             if code == "FOYERS_ACTIFS" and resultats[code] == "réussi":
                 foyers = foyers_actifs.diffuser_alertes()

@@ -123,6 +123,12 @@
         <span class="layer-dot crues-dot"></span>
         Vigilance crues (cours d'eau)
       </label>
+      <label class="layer-toggle-item" title="Stations de mesure en rivière (Hub'Eau), outre-mer compris. Rouge : l'eau monte vite. Orange : elle monte. Bleu : stable. La hauteur ne se compare qu'à elle-même.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.hauteursEau" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot hauteurs-eau-dot"></span>
+        Hauteurs d'eau mesurées
+        @if (layerVisibility.hauteursEau && veilleTronquee.hauteursEau) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
       <label class="layer-toggle-item" title="Massifs des Alpes, des Pyrénées et de Corse, colorés par indice de risque d'avalanche (1 à 5).">
         <input type="checkbox" [(ngModel)]="layerVisibility.avalanche" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot avalanche-dot"></span>
@@ -160,6 +166,12 @@
         <input type="checkbox" [(ngModel)]="layerVisibility.radioactivite" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot radio-dot"></span>
         Radioactivité ambiante (balises)
+      </label>
+      <label class="layer-toggle-item" title="Vitesse mesurée et état du trafic sur les routes nationales et autoroutes de l'État. Vert : fluide. Orange : dense. Rouge : saturé. Gris : sans mesure. Ni autoroutes concédées, ni départementales.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.circulation" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot circulation-dot"></span>
+        Circulation (routes nationales)
+        @if (layerVisibility.circulation && veilleTronquee.circulation) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
       <label class="layer-toggle-item" title="Arrêtés des communes et départements publiés dans DiaLog. Rouge : interdite. Violet : poids lourds. Orange : alternat.">
         <input type="checkbox" [(ngModel)]="layerVisibility.arretesCirculation" (ngModelChange)="onLayerToggle()">

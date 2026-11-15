@@ -243,6 +243,81 @@ export interface ArretesCirculation extends EnteteVeille {
   resultats: ArreteCirculation[];
 }
 
+export type TendanceEau = 'HAUSSE_RAPIDE' | 'HAUSSE' | 'STABLE' | 'BAISSE' | 'INCONNUE';
+
+/** Une station de mesure en rivière (Hub'Eau). La hauteur est celle lue à l'échelle de la
+ * station : elle ne se compare qu'à elle-même, d'où la variation sur une et trois heures. */
+export interface StationHydrometrique {
+  code: string;
+  nom: string;
+  cours_eau: string;
+  tendance: TendanceEau;
+  hauteur_m: number | null;
+  hauteur_le: string | null;
+  variation_1h_cm: number | null;
+  variation_3h_cm: number | null;
+  debit_m3s: number | null;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface HauteursEau extends EnteteVeille {
+  bilan: Record<TendanceEau, number>;
+  resultats: StationHydrometrique[];
+}
+
+export const LIBELLES_TENDANCE_EAU: Record<TendanceEau, string> = {
+  HAUSSE_RAPIDE: 'Hausse rapide', HAUSSE: 'En hausse', STABLE: 'Stable', BAISSE: 'En baisse', INCONNUE: 'Sans mesure récente',
+};
+
+/** « +36 cm », « −4 cm », « stable » : une variation de hauteur d'eau lisible d'un coup d'œil. */
+export function variationEau(cm: number | null): string {
+  if (cm == null) return '';
+  const arrondi = Math.round(cm);
+  if (arrondi === 0) return 'stable';
+  return `${arrondi > 0 ? '+' : '−'}${Math.abs(arrondi)} cm`;
+}
+
+export type EtatCirculation = 'BLOQUE' | 'SATURE' | 'DENSE' | 'FLUIDE' | 'INCONNU';
+
+/** Un tronçon mesuré du réseau routier national, dans un sens de circulation. `origine` dit
+ * d'où vient l'état : « OFFICIEL », l'exploitant de la route ; « ESTIME », notre serveur, qui
+ * compare la vitesse mesurée à la vitesse habituelle qu'il a apprise pour ce tronçon. */
+export interface TronconCirculation {
+  code: string;
+  axe: string;
+  sens: string;
+  etat: EtatCirculation;
+  origine: 'OFFICIEL' | 'ESTIME' | '';
+  vitesse_kmh: number | null;
+  debit_veh_h: number | null;
+  mesure_le: string | null;
+  /** Vide tant que le serveur n'a pas assez de mesures pour la connaître. */
+  vitesse_habituelle_kmh: number | null;
+  /** +1 : chaussée à droite du trait, -1 : à gauche (les deux sens partagent le même trait). */
+  cote: number;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+  trace?: { type: string; coordinates?: unknown };
+}
+export interface Circulation extends EnteteVeille {
+  bilan: Record<EtatCirculation, number>;
+  resultats: TronconCirculation[];
+}
+
+export const LIBELLES_ETAT_CIRCULATION: Record<EtatCirculation, string> = {
+  BLOQUE: 'Bloqué', SATURE: 'Saturé', DENSE: 'Dense', FLUIDE: 'Fluide', INCONNU: 'Sans mesure',
+};
+
+/** « EST_OUEST » -> « vers l'ouest ». Vide quand le sens n'est pas renseigné. */
+export function sensDeCirculation(sens: string): string {
+  const vers: Record<string, string> = {
+    NORD_SUD: 'vers le sud', SUD_NORD: 'vers le nord', EST_OUEST: 'vers l’ouest', OUEST_EST: 'vers l’est',
+  };
+  return vers[sens] ?? '';
+}
+
 /** Part des passages aux urgences attribués à une pathologie, dans un département. Un taux
  * pour 100 000 passages aux urgences : une tendance, pas un nombre de malades. */
 export interface IndicateurSante {

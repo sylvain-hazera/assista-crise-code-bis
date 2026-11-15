@@ -22,7 +22,10 @@ import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
-import { EvenementRoutier, ObservationMeteo, PluiePrevue, RafalesPrevues, StationCarburant } from '../../../models/veille.model';
+import {
+  EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, RafalesPrevues, StationCarburant,
+  sensDeCirculation, variationEau,
+} from '../../../models/veille.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -61,6 +64,10 @@ interface LayerVisibility {
   avalanche: boolean;
   /** Arrêtés de circulation des collectivités (DiaLog) : fermetures, poids lourds, alternats. */
   arretesCirculation: boolean;
+  /** Vitesses et état du trafic sur les routes nationales (stations de comptage de Bison Futé). */
+  circulation: boolean;
+  /** Hauteurs d'eau mesurées en rivière (stations Hub'Eau), colorées par tendance. */
+  hauteursEau: boolean;
   /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
   defibrillateurs: boolean;
   /** Séismes des trente derniers jours (BCSF-Rénass), tirs de carrière compris. */
@@ -127,6 +134,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     foyersActifs: false,
     avalanche: false,
     arretesCirculation: false,
+    circulation: false,
+    hauteursEau: false,
     defibrillateurs: false,
     seismes: false,
     radioactivite: false,
@@ -215,6 +224,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('foyers-actifs-layer', this.layerVisibility.foyersActifs);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
     this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
+    this.applyLayerVisibility('circulation-layer', this.layerVisibility.circulation);
+    this.applyLayerVisibility('hauteurs-eau-layer', this.layerVisibility.hauteursEau);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
@@ -226,7 +237,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
-  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false };
+  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false, circulation: false, hauteursEau: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
@@ -234,10 +245,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private rafraichirVeille(): void {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
-            arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs } = this.layerVisibility;
+            arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
+            hauteursEau } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
-        && !foyersActifs) return;
+        && !foyersActifs && !circulation && !hauteursEau) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -248,6 +260,69 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       borne(bornes.getWest(), 180), borne(bornes.getSouth(), 90),
       borne(bornes.getEast(), 180), borne(bornes.getNorth(), 90),
     ];
+    if (hauteursEau) {
+      this.veilleService.hauteursEau({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.hauteursEau = reponse.tronque;
+          this.afficherCoucheVeille('hauteurs-eau', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(e => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [e.longitude, e.latitude] },
+              properties: {
+                etat: e.tendance,
+                infobulle: `<strong>${this.echapper(e.nom)}</strong>`
+                  + `<br>${LIBELLES_TENDANCE_EAU[e.tendance]}`
+                  + (e.variation_1h_cm != null ? ` : ${variationEau(e.variation_1h_cm)} en 1 h` : '')
+                  + (e.variation_3h_cm != null ? `${e.variation_1h_cm != null ? ',' : ' :'} ${variationEau(e.variation_3h_cm)} en 3 h` : '')
+                  + (e.hauteur_m != null ? `<br>Hauteur à l'échelle : ${e.hauteur_m.toFixed(2).replace('.', ',')} m` : '')
+                  + (e.debit_m3s != null ? `<br>Débit : ${e.debit_m3s >= 10 ? Math.round(e.debit_m3s) : e.debit_m3s.toFixed(1).replace('.', ',')} m³/s` : '')
+                  + (e.hauteur_le ? `<br>Mesuré le ${new Date(e.hauteur_le).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : '')
+                  + '<br><small>Source : Hub\'Eau. Mesure brute, non validée ; la hauteur ne se compare qu\'à elle-même.</small>',
+              },
+            })),
+          // Rouge : hausse rapide. Orange : hausse. Bleu : stable. Bleu-gris : baisse. Gris : sans mesure.
+          }, ['match', ['get', 'etat'], 'HAUSSE_RAPIDE', '#c81e1e', 'HAUSSE', '#f97316', 'STABLE', '#2563eb',
+              'BAISSE', '#64748b', '#9ca3af'], this.layerVisibility.hauteursEau);
+        },
+        error: () => {},
+      });
+    }
+    if (circulation) {
+      this.veilleService.circulation({ bbox }, true).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.circulation = reponse.tronque;
+          const heure = (instant: string | null) => instant
+            ? new Date(instant).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+          this.afficherTracesVeille('circulation', 'line', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.filter(t => t.trace).map(t => ({
+              type: 'Feature', geometry: t.trace as Geometry,
+              properties: {
+                etat: t.etat, cote: t.cote,
+                infobulle: `<strong>${this.echapper(t.axe)} ${sensDeCirculation(t.sens)}</strong>`
+                  + `<br>${LIBELLES_ETAT_CIRCULATION[t.etat]}`
+                  + (t.origine === 'OFFICIEL' ? ' — état donné par l\'exploitant'
+                    : t.origine === 'ESTIME' ? ' — estimé d\'après la vitesse' : '')
+                  + (t.vitesse_kmh != null ? `<br>${Math.round(t.vitesse_kmh)} km/h` : '')
+                  + (t.vitesse_kmh != null && t.vitesse_habituelle_kmh != null ? ` (d'habitude ${t.vitesse_habituelle_kmh})` : '')
+                  + (t.debit_veh_h != null ? `${t.vitesse_kmh != null ? ', ' : '<br>'}${t.debit_veh_h} véhicules/h` : '')
+                  + (t.mesure_le ? `<br>Mesuré à ${heure(t.mesure_le)}` : '')
+                  + '<br><small>Source : Bison Futé. Routes nationales et autoroutes de l\'État seulement ; '
+                  + 'le trait relie les deux bouts du tronçon, sans suivre la route.</small>',
+              },
+            })),
+          }, {
+            // Vert : fluide. Orange : dense. Rouge : saturé. Noir : bloqué. Gris : sans mesure.
+            'line-color': ['match', ['get', 'etat'], 'FLUIDE', '#2f9e44', 'DENSE', '#f59e0b',
+                           'SATURE', '#c81e1e', 'BLOQUE', '#111827', '#9ca3af'],
+            'line-width': ['match', ['get', 'etat'], 'FLUIDE', 3, 'INCONNU', 2, 5],
+            // Les deux sens d'une route partagent le même trait : chacun est décalé de son côté.
+            'line-offset': ['*', ['get', 'cote'], 3],
+          }, this.layerVisibility.circulation);
+        },
+        error: () => {},
+      });
+    }
     if (evenementsRoutiers) {
       this.veilleService.evenementsRoutiers({ bbox }).subscribe({
         next: (reponse) => {

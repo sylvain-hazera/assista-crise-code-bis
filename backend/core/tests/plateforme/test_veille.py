@@ -1416,17 +1416,25 @@ class TestCommandeDeReleve:
     def test_l_annonce_part_aussitot_la_vigilance_relevee_sans_attendre_les_sources_lentes(self):
         ordre, sortie = self._lancer({})
 
-        assert ordre[:2] == ["VIGILANCE_METEO", "ANNONCE"]
-        assert set(ordre[2:]) == (set(sources_ouvertes.SOURCES) - {"VIGILANCE_METEO"}) | {"ANNONCE_FOYER"}
+        # Métropole, puis outre-mer : chacune annoncée dès son propre relevé.
+        assert ordre[:4] == ["VIGILANCE_METEO", "ANNONCE", "VIGILANCE_OUTRE_MER", "ANNONCE"]
+        assert set(ordre[4:]) == (set(sources_ouvertes.SOURCES)
+                                  - {"VIGILANCE_METEO", "VIGILANCE_OUTRE_MER"}) | {"ANNONCE_FOYER"}
         # Les foyers aussi sont annoncés dès leur relevé, sans attendre la suite.
         assert ordre[ordre.index("FOYERS_ACTIFS") + 1] == "ANNONCE_FOYER"
-        assert "1 annonce(s) de vigilance" in sortie
+        assert "2 annonce(s) de vigilance" in sortie
 
     def test_rien_n_est_annonce_sur_une_vigilance_non_rafraichie(self):
         for resultat in ("échec", "ignoré"):
-            ordre, sortie = self._lancer({"VIGILANCE_METEO": resultat})
+            ordre, sortie = self._lancer({"VIGILANCE_METEO": resultat, "VIGILANCE_OUTRE_MER": resultat})
 
             assert "ANNONCE" not in ordre and "0 annonce(s)" in sortie
+
+    def test_l_outre_mer_est_annonce_meme_si_la_metropole_n_a_pas_ete_relevee(self):
+        ordre, sortie = self._lancer({"VIGILANCE_METEO": "échec"})
+
+        assert ordre[:3] == ["VIGILANCE_METEO", "VIGILANCE_OUTRE_MER", "ANNONCE"]
+        assert ordre.count("ANNONCE") == 1 and "1 annonce(s) de vigilance" in sortie
 
     def test_un_second_releve_lance_en_meme_temps_se_retire(self):
         """Constaté en service le 15/11/2026 : deux relevés forcés tournaient ensemble."""

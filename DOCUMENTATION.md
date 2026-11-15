@@ -2795,23 +2795,26 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Dix-sept sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+Vingt sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
 les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie et rafales prévues, stations
-météo, vigilance crues, risque d'avalanche, surfaces brûlées, routes, arrêtés de circulation,
+météo, vigilance crues, hauteurs d'eau mesurées, risque d'avalanche, surfaces brûlées, routes, circulation, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
 | Source | Ce qu'elle apporte | Accès | Rythme | Module |
 |---|---|---|---|---|
 | Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
+| Météo-France, Vigilance outre-mer | couleur par phénomène pour la Guadeloupe, la Martinique, la Guyane, La Réunion, Mayotte, Saint-Pierre-et-Miquelon, Saint-Barthélemy et Saint-Martin ; bulletins de l'océan Indien | même clé | 10 min | `core/meteo_france.py` |
 | Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
 | Météo-France, prévision immédiate (AROME-PI, WMS) | **pluie prévue** par quart d'heure sur 3 h, images nationales ; métropole | même clé | 10 min (12 images par heure) | `core/pluie.py` |
 | Météo-France, prévision immédiate (AROME-PI, WCS) | **rafales prévues** par quart d'heure sur 3 h, peintes par le serveur en paliers de km/h ; métropole | même clé | 10 min (13 grilles de 13 Mo par heure) | `core/rafales.py` |
 | Météo-France, bulletins d'avalanche | indice de risque par massif (35 massifs), aujourd'hui et demain ; en saison | même clé | 6 h | `core/avalanche.py` |
 | Météo-France, météo des forêts | danger de feu par département, demain et après-demain ; **juin à septembre** | même clé | 3 h | `core/meteo_forets.py` |
 | Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
+| Hub'Eau, hydrométrie | **hauteur d'eau et débit mesurés** de ~4 200 stations en rivière, outre-mer compris ; variation sur 1 h et 3 h | aucune clé | 20 min | `core/hauteurs_eau.py` |
 | VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
 | NASA FIRMS | **foyers actifs** : points chauds vus par satellite depuis 48 h (4 capteurs, ~6 passages par jour, 3 h de délai) | aucune clé | 30 min | `core/foyers_actifs.py` |
 | EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
+| Bison Futé, comptages (DATEX II) | **circulation** : vitesse et débit de ~1 400 stations du réseau national, état du trafic autour de 16 agglomérations | aucune clé | 10 min | `core/circulation.py` |
 | DiaLog (DATEX II v3) | arrêtés de circulation des collectivités : voies interdites, interdites aux poids lourds, alternats | aucune clé | 24 h | `core/arretes_circulation.py` |
 | Santé publique France (Odissé) | part des passages aux urgences pour grippe, Covid-19, gastro-entérite, bronchiolite, par département et par semaine | aucune clé | 24 h | `core/sante_urgences.py` |
 | ASNR, réseau Téléray | radioactivité ambiante : débit de dose gamma de ~470 balises et leur niveau habituel | aucune clé — **service non publié**, voir plus bas | 20 min | `core/radioactivite.py` |
@@ -2867,6 +2870,46 @@ en projection Mercator — le service ne rend que du latitude/longitude, ce qui 
 pluie d'une quarantaine de kilomètres au centre du pays — et la garde en couleurs indexées
 (~120 Ko). Sur la carte, une réglette choisit le quart d'heure et peut animer la séquence ;
 l'image est posée sous les noms de lieux, pour ne rien masquer.
+
+**Vigilance outre-mer.** Même API et même clé que la métropole, autre produit : une archive
+(`vigilanceom/flux/dernier`) qui porte un fichier par territoire. Chaque territoire est découpé
+en zones ; le serveur en garde le niveau le plus haut et le range **dans la même table et la même
+forme que les départements** (`VigilanceMeteo`, codes 971 à 978) — la page, la liste nationale et
+l'annonce radio fonctionnent donc pour une commune d'outre-mer sans rien savoir de plus. Trois
+différences à connaître : il n'y a pas de découpage « aujourd'hui / demain » (tout est rangé à
+l'échéance J) ; un cinquième niveau existe, le **violet** (cyclone) ; et l'annonce dit les
+heures **à l'heure du territoire**. Les numéros des phénomènes « cyclone » (10) et « fortes
+pluies et orages » (12) sont **déduits** des fichiers, faute de documentation lisible : à
+confirmer au premier épisode. Saint-Pierre-et-Miquelon n'a qu'une couleur d'ensemble, sans
+phénomène : elle s'affiche mais ne peut pas déclencher d'annonce. Les deux relevés étant
+séparés, la page juge l'âge de la vigilance sur le relevé du département regardé.
+
+**Hauteurs d'eau.** Les mesures quasi temps réel de la plate-forme nationale d'hydrométrie,
+rediffusées par Hub'Eau : hauteur à l'échelle et débit, toutes les 5 à 60 minutes selon la
+station. Une lecture **nationale** bornée dans le temps (la dernière heure, trois pages) à chaque
+passage, jamais une lecture par lieu. La hauteur est relative à l'échelle de chaque station
+(417 m au barrage de Grangent, −0,9 m à Bas-en-Basset) : elle ne dit ni « normal » ni « en
+crue », la source ne publiant pas les seuils. Ce que le serveur en tire, c'est la **tendance** :
+il garde six heures de hauteurs par station et calcule la variation sur une et trois heures.
+Les paliers (« en hausse » à 10 cm/h, « hausse rapide » à 30) sont de l'affichage, pas une
+alerte ; près de la mer, la marée suffit à les franchir. Mesures brutes, non validées : un saut
+de plus de 8 m en une heure est tenu pour un défaut de sonde. `GET /api/hauteurs-eau/`
+(`en_hausse=1`).
+
+**Circulation.** Trois fichiers du serveur « Bison Futé ouvert » : le référentiel des stations
+de comptage (relu une fois par jour), leurs vitesses et débits (toutes les six minutes), et
+l'état du trafic — fluide, dense, saturé, bloqué — que l'exploitant publie autour de seize
+agglomérations (dont Saint-Étienne). Chaque station vaut pour un tronçon et un sens ; le
+référentiel n'en donne que les deux bouts, la carte trace donc un **trait droit**, décalé de son
+côté pour que les deux sens ne se recouvrent pas. L'état affiché a deux origines, toujours
+dites à l'écran : *officiel* quand l'exploitant en publie un récent, *estimé* sinon — le serveur
+apprend la **vitesse habituelle** de chaque tronçon (celle que 85 % des mesures ne dépassent
+pas, soit la circulation libre) et compare : sous 65 % de l'habitude le tronçon est dit dense,
+sous 40 % saturé. Rien n'est estimé avant deux jours de mesures, ni quand le trafic est trop
+faible pour que la vitesse veuille dire quelque chose. Une vitesse de zéro n'est pas un
+bouchon : c'est une station qui ne mesure pas la vitesse. Limite à dire partout : routes
+nationales et autoroutes de l'État seulement — ni autoroutes concédées, ni départementales,
+ni voirie communale. `GET /api/circulation/` (`trace=1` pour la carte, `ralentis=1`).
 
 **Rafales prévues.** Même prévision immédiate que la pluie, même calcul horaire, mêmes quarts
 d'heure : le champ est la rafale la plus forte des quinze minutes qui précèdent chaque échéance,

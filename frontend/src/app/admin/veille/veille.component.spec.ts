@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues,
+  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -149,6 +149,53 @@ const FEUX: ZonesBrulees = {
   }],
 };
 
+const STATION_EAU: StationHydrometrique = {
+  code: 'K058000101', nom: 'L’Ondaine à Unieux - Le Pertuiset', cours_eau: 'l’Ondaine', tendance: 'HAUSSE_RAPIDE',
+  hauteur_m: 0.66, hauteur_le: '2026-11-15T19:30:00Z', variation_1h_cm: 35.9, variation_3h_cm: 48,
+  debit_m3s: 1.39, latitude: 45.409, longitude: 4.252, distance_km: 11.3,
+};
+/** Autour de Saint-Étienne : une station en hausse rapide, une stable, une sans mesure récente. */
+const HAUTEURS: HauteursEau = {
+  ...ENTETE, source: 'Hub’Eau - plate-forme nationale d’hydrométrie',
+  bilan: { HAUSSE_RAPIDE: 1, HAUSSE: 0, STABLE: 1, BAISSE: 0, INCONNUE: 1 },
+  resultats: [
+    STATION_EAU,
+    { ...STATION_EAU, code: 'K060001001', nom: 'La Loire à Saint-Just-Saint-Rambert', tendance: 'STABLE',
+      hauteur_m: 417.02, variation_1h_cm: 1, variation_3h_cm: null, debit_m3s: 37 },
+    { ...STATION_EAU, code: 'K000000001', nom: 'Sonde muette', tendance: 'INCONNUE', hauteur_m: null,
+      variation_1h_cm: null, variation_3h_cm: null, debit_m3s: null },
+  ],
+};
+const HAUTEURS_VIDES: HauteursEau = {
+  ...HAUTEURS, bilan: { HAUSSE_RAPIDE: 0, HAUSSE: 0, STABLE: 0, BAISSE: 0, INCONNUE: 0 }, resultats: [],
+};
+
+const TRONCON: TronconCirculation = {
+  code: 'MYL42.D2', axe: 'A72', sens: 'OUEST_EST', etat: 'SATURE', origine: 'OFFICIEL',
+  vitesse_kmh: 8, debit_veh_h: 820, mesure_le: '2026-11-15T18:24:00Z', vitesse_habituelle_kmh: 88,
+  cote: -1, latitude: 45.458, longitude: 4.407, distance_km: 2.4,
+};
+/** Autour de Saint-Étienne : un tronçon saturé (exploitant), un dense (estimé), deux fluides, un sans mesure. */
+const CIRCULATION: Circulation = {
+  ...ENTETE, source: 'Bison Futé - directions interdépartementales des routes',
+  bilan: { BLOQUE: 0, SATURE: 1, DENSE: 1, FLUIDE: 2, INCONNU: 1 },
+  resultats: [
+    TRONCON,
+    { ...TRONCON, code: 'MYL42.F2', axe: 'N88', sens: 'SUD_NORD', etat: 'DENSE', origine: 'ESTIME',
+      vitesse_kmh: 46.4, vitesse_habituelle_kmh: null, distance_km: 5.3 },
+    { ...TRONCON, code: 'MYL42.H1', axe: 'N88', sens: 'NORD_SUD', etat: 'FLUIDE', vitesse_kmh: 67 },
+    { ...TRONCON, code: 'MYL42.H2', axe: 'N88', sens: 'SUD_NORD', etat: 'FLUIDE', vitesse_kmh: 71 },
+    { ...TRONCON, code: 'MYL42.95', axe: 'A72', sens: '', etat: 'INCONNU', origine: '', vitesse_kmh: null },
+  ],
+};
+const CIRCULATION_FLUIDE: Circulation = {
+  ...CIRCULATION, bilan: { BLOQUE: 0, SATURE: 0, DENSE: 0, FLUIDE: 2, INCONNU: 0 },
+  resultats: CIRCULATION.resultats.filter(t => t.etat === 'FLUIDE'),
+};
+const CIRCULATION_VIDE: Circulation = {
+  ...CIRCULATION, bilan: { BLOQUE: 0, SATURE: 0, DENSE: 0, FLUIDE: 0, INCONNU: 0 }, resultats: [],
+};
+
 const ARRETES: ArretesCirculation = {
   ...ENTETE, bilan: { FERMETURE: 2, POIDS_LOURDS: 5, ALTERNAT: 1 },
   resultats: [
@@ -231,7 +278,7 @@ describe('VeilleComponent', () => {
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
-                                arretes?: ArretesCirculation; sante?: SanteUrgences;
+                                arretes?: ArretesCirculation; sante?: SanteUrgences; circulation?: Circulation; hauteurs?: HauteursEau;
                                 radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
                                 foyers?: FoyersActifs; rafales?: RafalesPrevues } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
@@ -249,6 +296,8 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(reponses.foyers ?? FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(reponses.hauteurs ?? HAUTEURS_VIDES);
+    http.expectOne(r => r.url === `${api}/circulation/`).flush(reponses.circulation ?? CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(reponses.arretes ?? ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush(reponses.routes ?? ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(reponses.stations ?? STATIONS);
@@ -263,11 +312,115 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(16);
+    expect(demandes.length).toBe(18);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
     expect(images.every(image => image.src.includes('/vigilance-meteo/vignette/'))).toBeTrue();
+  });
+
+  /** Hauteurs d'eau (15/11/2026) : les mesures des stations en rivière. La page ne montre
+   * d'abord que ce qui monte, et dit que la hauteur ne se compare qu'à elle-même. */
+  describe('hauteurs d’eau mesurées', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('[aria-labelledby="titre-crues"]');
+    const lignes = (fixture: any): HTMLElement[] => Array.from(bloc(fixture).querySelectorAll('.hauteurs li'));
+
+    it('ne liste d’abord que les stations qui montent, avec leur variation', () => {
+      const fixture = demarrer({ hauteurs: HAUTEURS });
+
+      expect(lignes(fixture).length).toBe(1);
+      expect(lignes(fixture)[0].textContent).toContain('Hausse rapide');
+      expect(lignes(fixture)[0].textContent).toContain('Ondaine à Unieux');
+      expect(lignes(fixture)[0].textContent).toContain('+36 cm en 1 h');
+      expect(lignes(fixture)[0].textContent).toContain('+48 cm en 3 h');
+      // Le séparateur décimal dépend de la langue du navigateur de test.
+      expect(lignes(fixture)[0].textContent).toMatch(/0[.,]66 m à l'échelle/);
+    });
+
+    it('montre toutes les stations mesurées à la demande, pas les sondes muettes', () => {
+      const fixture = demarrer({ hauteurs: HAUTEURS });
+      const bouton: HTMLButtonElement = bloc(fixture).querySelector('button.discret')!;
+
+      expect(bouton.textContent).toContain('Voir les 2 stations mesurées');
+      bouton.click();
+      fixture.detectChanges();
+
+      expect(lignes(fixture).length).toBe(2);
+      expect(lignes(fixture)[1].textContent).toContain('Stable');
+      expect(bloc(fixture).textContent).not.toContain('Sonde muette');
+    });
+
+    it('dit que la hauteur ne se compare qu’à elle-même', () => {
+      const fixture = demarrer({ hauteurs: HAUTEURS });
+
+      expect(bloc(fixture).textContent).toContain('ni « normal » ni « en crue »');
+      expect(bloc(fixture).textContent).toContain('pas une alerte');
+    });
+
+    it('dit le calme quand rien ne monte', () => {
+      const fixture = demarrer({ hauteurs: {
+        ...HAUTEURS, bilan: { HAUSSE_RAPIDE: 0, HAUSSE: 0, STABLE: 1, BAISSE: 0, INCONNUE: 1 },
+        resultats: HAUTEURS.resultats.slice(1),
+      } });
+
+      expect(bloc(fixture).textContent).toContain('Aucune hausse marquée sur les 1 stations mesurées');
+    });
+
+    it('ne dit rien là où il n’y a pas de station', () => {
+      const fixture = demarrer({ hauteurs: HAUTEURS_VIDES });
+
+      expect(bloc(fixture).textContent).not.toContain('Hauteurs mesurées');
+    });
+  });
+
+  /** Circulation (15/11/2026) : vitesses mesurées sur les routes nationales. La page ne liste
+   * que ce qui ne roule pas, dit d'où vient chaque état, et rappelle ce que la source ne couvre pas. */
+  describe('circulation', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('[aria-labelledby="titre-circulation"]');
+
+    it('liste les tronçons encombrés, avec leur vitesse et l’origine de l’état', () => {
+      const fixture = demarrer({ circulation: CIRCULATION });
+      const lignes: HTMLElement[] = Array.from(bloc(fixture).querySelectorAll('.troncons li'));
+
+      expect(lignes.length).toBe(2);                              // ni les fluides, ni le « sans mesure »
+      expect(lignes[0].textContent).toContain('Saturé');
+      expect(lignes[0].textContent).toContain('A72 vers l’est');
+      expect(lignes[0].textContent).toContain('8 km/h');
+      expect(lignes[0].textContent).toContain('d\'habitude 88');
+      expect(lignes[0].textContent).toContain('état donné par l\'exploitant');
+      expect(lignes[1].textContent).toContain('Dense');
+      expect(lignes[1].textContent).toContain('46 km/h');
+      expect(lignes[1].textContent).not.toContain('habitude');    // pas encore apprise : pas de chiffre
+      expect(lignes[1].textContent).toContain('estimé d\'après la vitesse');
+      expect(bloc(fixture).querySelector('.compte')!.textContent).toBe('2');
+    });
+
+    it('dit ce que la source ne couvre pas', () => {
+      const fixture = demarrer({ circulation: CIRCULATION });
+
+      expect(bloc(fixture).textContent).toContain('ni les autoroutes concédées');
+      expect(bloc(fixture).textContent).toContain('1 sans mesure');
+      expect(bloc(fixture).textContent).toContain('Bison Futé');
+    });
+
+    it('dit quand tout roule, en comptant les tronçons mesurés', () => {
+      const fixture = demarrer({ circulation: CIRCULATION_FLUIDE });
+
+      expect(bloc(fixture).textContent).toContain('Aucun ralentissement sur les 2 tronçons mesurés');
+      expect(bloc(fixture).querySelector('.troncons')).toBeNull();
+    });
+
+    it('signale un relevé ancien', () => {
+      const fixture = demarrer({ circulation: { ...CIRCULATION, perime: true } });
+
+      expect(bloc(fixture).textContent).toContain('Relevé ancien');
+    });
+
+    it('n’affiche pas de bloc là où aucune route n’est mesurée', () => {
+      const fixture = demarrer({ circulation: CIRCULATION_VIDE });
+
+      expect(bloc(fixture)).toBeNull();
+    });
   });
 
   /** Rafales prévues (15/11/2026) : la page dit ce que la prévision donne pour la commune --
@@ -624,6 +777,8 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/` && r.params.get('rayon_km') === '60').flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/hauteurs-eau/` && r.params.get('rayon_km') === '60').flush(HAUTEURS_VIDES);
+    http.expectOne(r => r.url === `${api}/circulation/` && r.params.get('rayon_km') === '60').flush(CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/` && r.params.get('rayon_km') === '60').flush(ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/` && r.params.get('rayon_km') === '60').flush(ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/` && r.params.get('rayon_km') === '60').flush(STATIONS);
@@ -663,6 +818,8 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(HAUTEURS_VIDES);
+    http.expectOne(r => r.url === `${api}/circulation/`).flush(CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush('', { status: 500, statusText: 'Erreur' });
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(STATIONS);

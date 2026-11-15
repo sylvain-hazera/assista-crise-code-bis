@@ -4,7 +4,8 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
-  ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
+  ArreteCirculation, ArretesCirculation, Circulation, LIBELLES_ETAT_CIRCULATION, TronconCirculation, sensDeCirculation,
+  HauteursEau, LIBELLES_TENDANCE_EAU, StationHydrometrique, variationEau, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, RafalesPrevues, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
@@ -50,6 +51,8 @@ export class VeilleComponent implements OnInit {
   avalanche: RisqueAvalanche | null = null;
   routes: EvenementsRoutiers | null = null;
   arretes: ArretesCirculation | null = null;
+  circulation: Circulation | null = null;
+  hauteursEau: HauteursEau | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
@@ -149,6 +152,14 @@ export class VeilleComponent implements OnInit {
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
     });
+    this.service.hauteursEau({ rayon_km: this.rayonKm }).subscribe({
+      next: (hauteurs) => { this.hauteursEau = hauteurs; },
+      error: () => { this.hauteursEau = null; },
+    });
+    this.service.circulation({ rayon_km: this.rayonKm }).subscribe({
+      next: (circulation) => { this.circulation = circulation; },
+      error: () => { this.circulation = null; },
+    });
     this.service.arretesCirculation({ rayon_km: this.rayonKm }).subscribe({
       next: (arretes) => { this.arretes = arretes; },
       error: () => { this.arretes = null; },
@@ -219,6 +230,45 @@ export class VeilleComponent implements OnInit {
   readonly RAFALE_FORTE_KMH = 80;
   readonly PLUIE_FORTE_1H_MM = 20;
   readonly PLUIE_FORTE_24H_MM = 50;
+
+  // ── Hauteurs d'eau ──
+
+  readonly LIBELLES_TENDANCE_EAU = LIBELLES_TENDANCE_EAU;
+  readonly variationEau = variationEau;
+  /** Stations stables ou en baisse : masquées tant qu'on ne les demande pas. */
+  toutesLesHauteurs = false;
+
+  get stationsEnHausse(): StationHydrometrique[] {
+    return (this.hauteursEau?.resultats ?? []).filter(s => s.tendance === 'HAUSSE_RAPIDE' || s.tendance === 'HAUSSE');
+  }
+
+  /** Les stations à lister : celles qui montent, ou toutes celles qui ont une mesure. */
+  get stationsEauVisibles(): StationHydrometrique[] {
+    return this.toutesLesHauteurs
+      ? (this.hauteursEau?.resultats ?? []).filter(s => s.tendance !== 'INCONNUE')
+      : this.stationsEnHausse;
+  }
+
+  get stationsEauMesurees(): number {
+    const bilan = this.hauteursEau?.bilan;
+    return bilan ? bilan.HAUSSE_RAPIDE + bilan.HAUSSE + bilan.STABLE + bilan.BAISSE : 0;
+  }
+
+  // ── Circulation ──
+
+  readonly LIBELLES_ETAT_CIRCULATION = LIBELLES_ETAT_CIRCULATION;
+  readonly sensDeCirculation = sensDeCirculation;
+
+  /** Les tronçons qui ne roulent pas normalement : bloqués, saturés ou denses. */
+  get ralentissements(): TronconCirculation[] {
+    return (this.circulation?.resultats ?? []).filter(t => t.etat === 'BLOQUE' || t.etat === 'SATURE' || t.etat === 'DENSE');
+  }
+
+  /** Nombre de tronçons dont on connaît l'état (les « sans mesure » ne disent rien). */
+  get tronconsMesures(): number {
+    const bilan = this.circulation?.bilan;
+    return bilan ? bilan.BLOQUE + bilan.SATURE + bilan.DENSE + bilan.FLUIDE : 0;
+  }
 
   /** Rafale la plus forte PRÉVUE sur la commune d'ici trois heures : son palier en clair et la
    * première échéance où il est atteint. `null` si rien n'atteint le premier palier, ou si la

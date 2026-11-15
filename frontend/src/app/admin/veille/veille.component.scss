@@ -76,6 +76,7 @@ section {
   &[data-couleur="2"] { border-left-color: #ffe600; }
   &[data-couleur="3"] { border-left-color: #ff9d1c; }
   &[data-couleur="4"] { border-left-color: #c81e1e; }
+  &[data-couleur="5"] { border-left-color: #6d28d9; }
 }
 
 .echeances { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
@@ -196,6 +197,21 @@ table.mesures, table.mesures-sante {
 .etiquette.eau[data-rang="2"], .etiquette.feu[data-niveau="3"] { background: #ffd08a; color: #3b2100; }
 .etiquette.eau[data-rang="3"] { background: #ffb37a; color: #3b1500; }
 .etiquette.eau[data-rang="4"], .etiquette.feu[data-niveau="4"] { background: #c81e1e; color: #fff; }
+// ── Hauteurs d'eau mesurées ──
+.sous-titre {
+  display: flex; align-items: center; gap: 8px; margin: 18px 0 8px;
+  font-size: 1rem; color: var(--ac-text, #111827);
+}
+.etiquette.eau-mesuree[data-tendance="HAUSSE"] { background: #ffd08a; color: #3b2100; }
+.etiquette.eau-mesuree[data-tendance="HAUSSE_RAPIDE"] { background: #c81e1e; color: #fff; }
+.etiquette.eau-mesuree[data-tendance="STABLE"] { background: #dbeafe; color: #1e3a8a; }
+// Violet : n'existe qu'outre-mer (cyclone).
+.etiquette[data-couleur="5"], .couleur[data-couleur="5"] { background: #6d28d9; color: #fff; }
+
+// ── Circulation : les couleurs du calque de la carte ──
+.etiquette.trafic[data-etat="DENSE"] { background: #ffd08a; color: #3b2100; }
+.etiquette.trafic[data-etat="SATURE"] { background: #c81e1e; color: #fff; }
+.etiquette.trafic[data-etat="BLOQUE"] { background: #111827; color: #fff; }
 .danger-feu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--ac-text, #111827); }
 
 // ── Avalanche : couleurs de l'échelle européenne ──

@@ -1,7 +1,7 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Dix-huit sources aujourd'hui -- vigilance, mesures des stations, pluie et rafales prévues, météo des forêts et
-risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau),
+Vingt sources aujourd'hui -- vigilance (métropole et outre-mer), mesures des stations, pluie et rafales prévues, météo des forêts et
+risque d'avalanche (Météo-France), vigilance crues (Vigicrues), hauteurs d'eau en rivière (Hub'Eau), restrictions d'eau (VigiEau),
 foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers et circulation (Bison Futé), arrêtés de circulation (DiaLog),
 recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
 (BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
@@ -26,7 +26,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, meteo_forets, meteo_france, observations_meteo, pluie,
+    arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, observations_meteo, pluie,
     radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vigilance_crues,
 )
 
@@ -39,6 +39,9 @@ Source = namedtuple("Source", "code libelle relever intervalle perime_apres attr
 SOURCES = {
     source.code: source for source in (
         Source("VIGILANCE_METEO", "Vigilance météorologique", meteo_france.relever,
+               datetime.timedelta(minutes=9), meteo_france.FRAICHEUR_MAX, "Météo-France"),
+        # Même API, même clé, autre produit : une archive pour tous les territoires.
+        Source("VIGILANCE_OUTRE_MER", "Vigilance météorologique outre-mer", meteo_france.relever_outre_mer,
                datetime.timedelta(minutes=9), meteo_france.FRAICHEUR_MAX, "Météo-France"),
         # Mesures des stations : un paquet toutes les six minutes, relevé à chaque passage.
         Source("OBSERVATIONS_METEO", "Mesures des stations météorologiques",
@@ -53,6 +56,10 @@ SOURCES = {
         Source("VIGILANCE_CRUES", "Vigilance crues par tronçon", vigilance_crues.relever,
                datetime.timedelta(minutes=29), datetime.timedelta(hours=6),
                "Vigicrues - réseau de prévision des crues"),
+        # Les stations mesurent toutes les 5 à 60 minutes ; trois pages à lire à chaque passage.
+        Source("HAUTEURS_EAU", "Hauteurs d'eau mesurées en rivière", hauteurs_eau.relever,
+               datetime.timedelta(minutes=19), datetime.timedelta(hours=2),
+               "Hub'Eau - plate-forme nationale d'hydrométrie"),
         # Les arrêtés de restriction changent au rythme des préfectures : quatre relevés par
         # jour suffisent, et les données du jour ne paraissent que dans la matinée.
         Source("RESTRICTIONS_EAU", "Restrictions d'usage de l'eau", restrictions_eau.relever,

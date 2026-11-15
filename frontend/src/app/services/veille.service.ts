@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue,
+  ArretesCirculation, Circulation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -98,6 +98,20 @@ export class VeilleService {
     const params = this.params(emprise);
     if (trace) params['trace'] = '1';
     return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
+  }
+
+  /** Hauteurs d'eau et débits mesurés en rivière (Hub'Eau), ce qui monte le plus vite d'abord. */
+  hauteursEau(emprise: EmpriseVeille = {}): Observable<HauteursEau> {
+    return this.http.get<HauteursEau>(`${this.api}/hauteurs-eau/`, { params: this.params(emprise) });
+  }
+
+  /** Circulation mesurée sur le réseau routier national (Bison Futé). `trace` joint le trait
+   * des tronçons (carte) ; `ralentis` ne garde que les tronçons denses, saturés ou bloqués. */
+  circulation(emprise: EmpriseVeille = {}, trace = false, ralentis = false): Observable<Circulation> {
+    const params = this.params(emprise);
+    if (trace) params['trace'] = '1';
+    if (ralentis) params['ralentis'] = '1';
+    return this.http.get<Circulation>(`${this.api}/circulation/`, { params });
   }
 
   /** Arrêtés de circulation des collectivités (DiaLog). `trace` joint leur tracé (carte). */

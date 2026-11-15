@@ -2784,6 +2784,32 @@ class StationCirculation(models.Model):
         return f"{self.axe} {self.sens} ({self.code})".strip()
 
 
+class StationHydrometrique(models.Model):
+    """Station de mesure en rivière (Hub'Eau) et ses dernières mesures : hauteur à l'échelle,
+    débit, variation sur une et trois heures -- voir core/hauteurs_eau.py.
+
+    `historique` garde six heures de hauteurs ([[instant ISO, millimètres]…]) : c'est lui qui
+    donne la tendance, sans rien redemander à la source. Donnée publique partagée PROD/DEMO."""
+
+    code = models.CharField(max_length=20, primary_key=True)
+    nom = models.CharField(max_length=200, blank=True, default="")
+    cours_eau = models.CharField(max_length=120, blank=True, default="")
+    departement = models.CharField(max_length=3, blank=True, default="", db_index=True)
+    location = gis_models.PointField(srid=4326)
+    referentiel_le = models.DateTimeField()
+
+    hauteur_m = models.FloatField(null=True, blank=True)
+    hauteur_le = models.DateTimeField(null=True, blank=True)
+    debit_m3s = models.FloatField(null=True, blank=True)
+    debit_le = models.DateTimeField(null=True, blank=True)
+    variation_1h_cm = models.FloatField(null=True, blank=True)
+    variation_3h_cm = models.FloatField(null=True, blank=True)
+    historique = models.JSONField(default=list, blank=True)
+
+    def __str__(self):
+        return self.nom or self.code
+
+
 class RisqueAvalanche(models.Model):
     """Indice de risque d'avalanche d'un massif (bulletin de Météo-France), aujourd'hui et
     demain, sur l'échelle européenne de 1 (faible) à 5 (très fort) -- voir core/avalanche.py.

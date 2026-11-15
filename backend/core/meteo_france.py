@@ -3,8 +3,10 @@
 SOURCE
 API « DonneesPubliquesVigilance » du portail public de Météo-France
 (https://portail-api.meteofrance.fr), Licence Ouverte 2.0 -- il suffit de citer la source. Elle
-couvre la métropole (96 départements, bandes littorales comprises) ; la vigilance outre-mer est
-un autre produit, non repris ici.
+couvre la métropole (96 départements, bandes littorales comprises). La vigilance OUTRE-MER est
+un autre produit de la même API, relevé à part (voir « Outre-mer » plus bas) et rangé dans la
+même table : Guadeloupe, Martinique, Guyane, La Réunion, Mayotte, Saint-Pierre-et-Miquelon,
+Saint-Barthélemy et Saint-Martin.
 
 RÈGLE DE CONCEPTION (15/11/2026)
 Seul le serveur appelle Météo-France, depuis une tâche planifiée, et toujours pour la France
@@ -31,6 +33,7 @@ import logging
 import os
 import time
 import unicodedata
+from xml.etree.ElementTree import ParseError as ET_ParseError
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,8 +61,16 @@ PHENOMENES = {
     7: "grand froid",
     8: "avalanches",
     9: "vagues-submersion",
+    # Outre-mer seulement. Ces deux numéros ne figurent dans aucune documentation que nous
+    # ayons pu lire : ils sont DÉDUITS des fichiers du 15/11/2026 (le 10 existe aux Antilles et
+    # dans l'océan Indien mais pas en Guyane, qui ne connaît pas de cyclone ; le 12 n'existe que
+    # dans l'océan Indien, dont le bulletin nomme « Fortes pluies/Orages »). À confirmer au
+    # premier épisode.
+    10: "cyclone",
+    12: "fortes pluies et orages",
 }
-COULEURS = {1: "vert", 2: "jaune", 3: "orange", 4: "rouge"}
+# Le violet n'existe qu'outre-mer (cyclone).
+COULEURS = {1: "vert", 2: "jaune", 3: "orange", 4: "rouge", 5: "violet"}
 ECHEANCES = ("J", "J1")
 FRANCE = "FRA"
 
@@ -318,10 +329,180 @@ def relever():
     return nombre
 
 
+# ── Outre-mer ───────────────────────────────────────────────────────────────────────────────
+#
+# Une archive (`vigilanceom/flux/dernier`, 1 Mo) porte un fichier par territoire. Les fichiers
+# de niveaux ont la forme de la carte de métropole, sans le découpage « aujourd'hui / demain » :
+# une seule suite de tranches horaires par phénomène. Chaque territoire est découpé en zones
+# (« VIGI974-12 ») ; on en garde le niveau le plus haut, rangé sous le code du territoire, dans
+# la même table et la même forme que les départements -- les écrans et les annonces n'ont donc
+# pas à savoir qu'il s'agit d'outre-mer. Tout y est rangé à l'échéance « J ».
+#
+# Saint-Pierre-et-Miquelon n'a qu'une couleur d'ensemble (fichier XML), sans phénomène : elle
+# s'affiche, mais ne peut pas déclencher d'annonce par phénomène.
+
+TERRITOIRES_OUTRE_MER = {
+    "971": "Guadeloupe", "972": "Martinique", "973": "Guyane", "974": "La Réunion",
+    "975": "Saint-Pierre-et-Miquelon", "976": "Mayotte", "977": "Saint-Barthélemy", "978": "Saint-Martin",
+}
+FUSEAUX_OUTRE_MER = {
+    "971": "America/Guadeloupe", "972": "America/Martinique", "973": "America/Cayenne",
+    "974": "Indian/Reunion", "975": "America/Miquelon", "976": "Indian/Mayotte",
+    "977": "America/St_Barthelemy", "978": "America/Marigot",
+}
+TAILLE_MAX_ARCHIVE = 20 * 1024 * 1024
+_SANS_OBJET = "pas de vigilance particulière"
+
+
+def telecharger_outre_mer():
+    """Archive des fichiers de vigilance de tous les territoires d'outre-mer."""
+    return _appeler("vigilanceom/flux/dernier").content
+
+
+def _territoires_du_domaine(domaine):
+    """« VIGI974-12 » -> ["974"] ; « VIGI978-977 » -> ["977", "978"] ; autre chose -> []."""
+    if not domaine.startswith("VIGI"):
+        return []
+    return sorted(morceau for morceau in domaine[4:].split("-") if morceau in TERRITOIRES_OUTRE_MER)
+
+
+def analyser_niveaux_outre_mer(donnees):
+    """Fichier de niveaux d'un territoire -> (heure de publication, {code: fiche}), la fiche
+    ayant la forme de celles de `analyser_carte`. Le niveau gardé est le plus haut de toutes les
+    zones du territoire ; seul le jaune et au-delà est retenu."""
+    publie_le = parse_datetime(donnees.get("update_time") or "")
+    if publie_le is None:
+        raise ValueError("heure de publication illisible")
+    fiches = {}
+    for domaine in (donnees.get("timelaps") or {}).get("domain_ids") or []:
+        for code in _territoires_du_domaine(str(domaine.get("domain_id", ""))):
+            fiche = fiches.setdefault(code, {"debut": donnees.get("update_time"), "fin": None,
+                                             "couleur": 1, "phenomenes": {}})
+            try:
+                fiche["couleur"] = max(fiche["couleur"], int(domaine.get("max_color_id", 1)))
+                for item in domaine.get("phenomenon_items") or []:
+                    identifiant = int(item["phenomenon_id"])
+                    couleur = int(item["phenomenon_max_color_id"])
+                    if couleur < 2:
+                        continue
+                    periodes = [
+                        {"debut": t.get("begin_time"), "fin": t.get("end_time"), "couleur": int(t["color_id"])}
+                        for t in item.get("timelaps_items") or []
+                        if int(t.get("color_id", 1)) >= 2
+                    ]
+                    connu = fiche["phenomenes"].get(identifiant)
+                    if connu is None or couleur > connu["couleur"]:
+                        fiche["phenomenes"][identifiant] = {"id": identifiant, "couleur": couleur, "periodes": periodes}
+            except (KeyError, ValueError, TypeError):
+                logger.warning("Vigilance outre-mer : domaine %s illisible, ignoré.", domaine.get("domain_id"))
+    for fiche in fiches.values():
+        fiche["phenomenes"] = sorted(fiche["phenomenes"].values(), key=lambda p: (-p["couleur"], p["id"]))
+    return publie_le, fiches
+
+
+def analyser_bulletin_outre_mer(donnees):
+    """Bulletin de suivi d'un territoire -> (codes, sections à la forme de `analyser_textes`).
+    Les rubriques « Pas de vigilance particulière » ne sont pas reprises."""
+    sections = []
+    for bloc in donnees.get("text_bloc_items") or []:
+        for texte in bloc.get("text_items") or []:
+            lignes = [ligne.strip() for ligne in texte.get("text") or [] if ligne and ligne.strip()]
+            if not lignes or all(_SANS_OBJET in ligne.lower() for ligne in lignes):
+                continue
+            sections.append({"rubrique": donnees.get("report_subtype") or "", "alea": "",
+                             "titre": (texte.get("title") or "").strip(), "lignes": lignes})
+    return _territoires_du_domaine(str(donnees.get("domain_id", ""))), sections
+
+
+def analyser_saint_pierre_et_miquelon(contenu):
+    """Fichier XML de Saint-Pierre-et-Miquelon -> (heure de publication, {"975": fiche}).
+    Une couleur d'ensemble, sans phénomène."""
+    import xml.etree.ElementTree as ET
+
+    racine = ET.fromstring(contenu)
+    zone, entete = racine.find("DV"), racine.find("EV")
+    if zone is None or entete is None or zone.get("dep") != "975":
+        raise ValueError("fichier de Saint-Pierre-et-Miquelon illisible")
+
+    def instant(texte):
+        return datetime.datetime.strptime(texte, "%Y%m%d%H%M%S").replace(tzinfo=datetime.timezone.utc)
+
+    publie_le = instant(entete.get("dateinsert"))
+    fin = entete.get("dateprevue")
+    return publie_le, {"975": {"debut": publie_le.isoformat(), "fin": instant(fin).isoformat() if fin else None,
+                               "couleur": int(zone.get("coul", 1)), "phenomenes": []}}
+
+
+def analyser_outre_mer(archive):
+    """Archive de `telecharger_outre_mer` -> {code: {"publie_le", "fiche", "bulletin"}}.
+    Un fichier illisible est ignoré, pas l'archive entière."""
+    import io
+    import zipfile
+
+    territoires, bulletins = {}, {}
+    with zipfile.ZipFile(io.BytesIO(archive)) as fichiers:
+        for membre in fichiers.infolist():
+            if membre.file_size > TAILLE_MAX_ARCHIVE or not membre.filename.lower().endswith((".txt", ".xml")):
+                continue
+            contenu = fichiers.read(membre)
+            try:
+                if membre.filename.lower().endswith(".xml"):
+                    publie_le, fiches = analyser_saint_pierre_et_miquelon(contenu)
+                else:
+                    try:
+                        donnees = json.loads(contenu.decode("utf-8"))
+                    except (UnicodeDecodeError, ValueError):
+                        continue        # bulletin en texte libre, pas un fichier de niveaux
+                    if not isinstance(donnees, dict):
+                        continue
+                    if donnees.get("text_bloc_items") is not None:
+                        codes, sections = analyser_bulletin_outre_mer(donnees)
+                        for code in codes:
+                            bulletins[code] = sections
+                        continue
+                    if "timelaps" not in donnees:
+                        continue
+                    publie_le, fiches = analyser_niveaux_outre_mer(donnees)
+            except (ValueError, KeyError, TypeError, ET_ParseError) as exc:
+                logger.warning("Vigilance outre-mer : %s illisible (%s), ignoré.", membre.filename, type(exc).__name__)
+                continue
+            for code, fiche in fiches.items():
+                connu = territoires.get(code)
+                if connu is None or publie_le > connu["publie_le"]:
+                    territoires[code] = {"publie_le": publie_le, "fiche": fiche}
+    for code, territoire in territoires.items():
+        territoire["bulletin"] = bulletins.get(code, [])
+    return territoires
+
+
+def relever_outre_mer(maintenant=None):
+    """Un relevé de la vigilance outre-mer. Renvoie le nombre de territoires écrits."""
+    from .models import VigilanceMeteo
+
+    maintenant = maintenant or timezone.now()
+    territoires = analyser_outre_mer(telecharger_outre_mer())
+    if not territoires:
+        raise ValueError("aucun territoire lisible dans l'archive de vigilance outre-mer")
+    with transaction.atomic():
+        for code, territoire in territoires.items():
+            VigilanceMeteo.objects.update_or_create(departement_code=code, defaults={
+                "couleur_j": territoire["fiche"]["couleur"], "couleur_j1": 1,
+                "detail": {"J": territoire["fiche"]}, "bulletin": territoire["bulletin"],
+                "publie_le": territoire["publie_le"], "releve_le": maintenant,
+            })
+    return len(territoires)
+
+
 # ── L'annonce aux institutions ──────────────────────────────────────────────────────────────
 
 def nom_departement(code):
-    return DEPARTEMENTS.get(code) or code
+    return DEPARTEMENTS.get(code) or TERRITOIRES_OUTRE_MER.get(code) or code
+
+
+def fuseau_de(code):
+    """Fuseau horaire d'un département ou d'un territoire : celui de Paris en métropole."""
+    nom = FUSEAUX_OUTRE_MER.get(code)
+    return ZoneInfo(nom) if nom else FUSEAU
 
 
 def departement_de(institution):
@@ -373,20 +554,20 @@ def _sans_accent(texte):
     return "".join(c for c in unicodedata.normalize("NFKD", texte) if not unicodedata.combining(c))
 
 
-def _heure(instant):
-    local = instant.astimezone(FUSEAU)
+def _heure(instant, fuseau=FUSEAU):
+    local = instant.astimezone(fuseau)
     if local.hour == 0 and local.minute == 0:
         return "minuit"
     return f"{local.hour}h" if local.minute == 0 else f"{local.hour}h{local.minute:02d}"
 
 
-def _jour(instant, maintenant):
-    ecart = (instant.astimezone(FUSEAU).date() - maintenant.astimezone(FUSEAU).date()).days
+def _jour(instant, maintenant, fuseau=FUSEAU):
+    ecart = (instant.astimezone(fuseau).date() - maintenant.astimezone(fuseau).date()).days
     if ecart <= 0:
         return "aujourd'hui"
     if ecart == 1:
         return "demain"
-    return instant.astimezone(FUSEAU).strftime("le %d/%m")
+    return instant.astimezone(fuseau).strftime("le %d/%m")
 
 
 def texte_alerte(code, phenomene, niveau, maintenant=None):
@@ -394,13 +575,17 @@ def texte_alerte(code, phenomene, niveau, maintenant=None):
     maintenant = maintenant or timezone.now()
     quand = ""
     debut, fin = niveau.get("debut"), niveau.get("fin")
+    # Les heures sont dites à l'heure du territoire : « jusqu'à 18h » à La Réunion n'est pas
+    # 18 h à Paris.
+    fuseau = fuseau_de(code)
     if debut and fin:
         if debut <= maintenant:
-            quand = f", en cours jusqu'a {_heure(fin)}"
+            quand = f", en cours jusqu'a {_heure(fin, fuseau)}"
         else:
-            quand = f", {_jour(debut, maintenant)} de {_heure(debut)} a {_heure(fin)}"
+            quand = f", {_jour(debut, maintenant, fuseau)} de {_heure(debut, fuseau)} a {_heure(fin, fuseau)}"
+    couleur = COULEURS.get(niveau["couleur"], f"niveau {niveau['couleur']}")
     return (
-        f"Vigilance {COULEURS[niveau['couleur']].upper()} {PHENOMENES.get(phenomene, 'meteo')} - "
+        f"Vigilance {couleur.upper()} {PHENOMENES.get(phenomene, 'meteo')} - "
         f"{_sans_accent(nom_departement(code))} ({code}){quand}. Source Meteo-France."
     )
 

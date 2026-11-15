@@ -330,6 +330,56 @@
         « Vigilance crues ».
       </p>
     }
+
+    <!-- Hauteurs mesurées : ce que les stations disent, vigilance ou non. -->
+    @if (hauteursEau?.emprise_connue && hauteursEau!.resultats.length) {
+      <h3 class="sous-titre">
+        Hauteurs mesurées
+        <span class="compte">{{ stationsEnHausse.length }}</span>
+      </h3>
+      @if (hauteursEau!.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : les hauteurs ci-dessous ne sont plus actuelles.</span>
+        </p>
+      }
+      @if (stationsEauVisibles.length) {
+        <ul class="troncons hauteurs">
+          @for (station of stationsEauVisibles; track station.code) {
+            <li>
+              <span class="etiquette eau-mesuree" [attr.data-tendance]="station.tendance">{{ LIBELLES_TENDANCE_EAU[station.tendance] }}</span>
+              <strong>{{ station.nom }}</strong>
+              <span>
+                @if (station.variation_1h_cm != null) { {{ variationEau(station.variation_1h_cm) }} en 1 h }
+                @if (station.variation_3h_cm != null) { · {{ variationEau(station.variation_3h_cm) }} en 3 h }
+              </span>
+              <span class="adresse">
+                @if (station.hauteur_m != null) { {{ station.hauteur_m | number:'1.2-2' }} m à l'échelle }
+                @if (station.debit_m3s != null) { · {{ station.debit_m3s | number:'1.0-1' }} m³/s }
+                @if (station.distance_km != null) { · à {{ station.distance_km | number:'1.0-0' }} km }
+              </span>
+            </li>
+          }
+        </ul>
+      } @else if (stationsEauMesurees) {
+        <p class="calme">Aucune hausse marquée sur les {{ stationsEauMesurees }} stations mesurées dans ce rayon.</p>
+      } @else {
+        <p class="calme">Les stations de ce rayon n'ont pas de mesure récente.</p>
+      }
+      @if (stationsEauMesurees > stationsEnHausse.length) {
+        <button type="button" class="discret" (click)="toutesLesHauteurs = !toutesLesHauteurs" [attr.aria-pressed]="toutesLesHauteurs">
+          {{ toutesLesHauteurs ? 'Ne montrer que les hausses' : 'Voir les ' + stationsEauMesurees + ' stations mesurées' }}
+        </button>
+      }
+      <p class="note">
+        Source : {{ hauteursEau!.source }}@if (hauteursEau!.releve_le) {, relevé le {{ hauteursEau!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Mesures brutes, non validées. <strong>La hauteur est celle de l'échelle de la station : elle
+        ne dit ni « normal » ni « en crue »</strong>, seule sa variation renseigne. « En hausse » à
+        partir de 10 cm par heure, « hausse rapide » à partir de 30 : un repère d'affichage, pas une
+        alerte — et près de la mer, la marée suffit à faire monter l'eau. À voir sur la
+        <a routerLink="/admin/carte">carte</a>, calque « Hauteurs d'eau mesurées ».
+      </p>
+    }
   </section>
 
   <!-- ════ Avalanche : seulement s'il y a un massif dans le rayon ════ -->
@@ -675,6 +725,55 @@
         pathologie. Ce n'est ni un nombre de malades, ni un taux dans la population : cela sert à
         voir une tendance. Données hebdomadaires, publiées avec une dizaine de jours de recul ;
         un écart de moins de 20 % d'une semaine à l'autre est compté comme stable.
+      </p>
+    </section>
+  }
+
+  <!-- ════ Circulation : vitesses mesurées sur le réseau national ════ -->
+  @if (circulation?.emprise_connue && circulation!.resultats.length) {
+    <section aria-labelledby="titre-circulation">
+      <h2 id="titre-circulation">
+        <span class="material-icons">traffic</span> Circulation
+        <span class="compte">{{ ralentissements.length }}</span>
+      </h2>
+
+      @if (circulation!.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : consultez
+            <a href="https://www.bison-fute.gouv.fr" target="_blank" rel="noopener noreferrer">bison-fute.gouv.fr</a>.</span>
+        </p>
+      }
+      @if (ralentissements.length) {
+        <ul class="troncons circulation">
+          @for (troncon of ralentissements; track troncon.code) {
+            <li>
+              <span class="etiquette trafic" [attr.data-etat]="troncon.etat">{{ LIBELLES_ETAT_CIRCULATION[troncon.etat] }}</span>
+              <strong>{{ troncon.axe }} {{ sensDeCirculation(troncon.sens) }}</strong>
+              @if (troncon.vitesse_kmh != null) {
+                <span>{{ troncon.vitesse_kmh | number:'1.0-0' }} km/h@if (troncon.vitesse_habituelle_kmh != null) { (d'habitude {{ troncon.vitesse_habituelle_kmh }})}</span>
+              }
+              <span class="adresse">
+                @if (troncon.distance_km != null) { à {{ troncon.distance_km | number:'1.0-1' }} km · }
+                {{ troncon.origine === 'OFFICIEL' ? "état donné par l'exploitant" : "estimé d'après la vitesse" }}
+              </span>
+            </li>
+          }
+        </ul>
+      } @else if (tronconsMesures) {
+        <p class="calme">Aucun ralentissement sur les {{ tronconsMesures }} tronçons mesurés dans ce rayon.</p>
+      } @else {
+        <p class="calme">Les {{ circulation!.resultats.length }} tronçons de ce rayon n'ont pas de mesure exploitable pour l'instant.</p>
+      }
+      <p class="note">
+        Source : {{ circulation!.source }}@if (circulation!.releve_le) {, relevé le {{ circulation!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Dans ce rayon : {{ circulation!.bilan.FLUIDE }} tronçon(s) fluide(s), {{ circulation!.bilan.DENSE }} dense(s),
+        {{ circulation!.bilan.SATURE + circulation!.bilan.BLOQUE }} saturé(s) ou bloqué(s), {{ circulation!.bilan.INCONNU }} sans mesure.
+        <strong>Seules les routes nationales et autoroutes de l'État portent des stations de comptage</strong> :
+        ni les autoroutes concédées, ni les départementales, ni les rues ne figurent ici, et leur
+        absence ne dit rien de leur état. Là où l'exploitant ne publie pas d'état, il est estimé
+        en comparant la vitesse mesurée à la vitesse habituelle du tronçon. À voir sur la
+        <a routerLink="/admin/carte">carte</a>, calque « Circulation ».
       </p>
     </section>
   }
