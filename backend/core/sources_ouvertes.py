@@ -1,8 +1,8 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Dix-sept sources aujourd'hui -- vigilance, mesures des stations, pluie et rafales prévues, météo des forêts et
+Dix-huit sources aujourd'hui -- vigilance, mesures des stations, pluie et rafales prévues, météo des forêts et
 risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau),
-foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers (Bison Futé), arrêtés de circulation (DiaLog),
+foyers actifs (NASA FIRMS) et surfaces brûlées (EFFIS), événements routiers et circulation (Bison Futé), arrêtés de circulation (DiaLog),
 recours aux urgences (Santé publique France), radioactivité ambiante (Téléray), séismes
 (BCSF-Rénass), défibrillateurs (Géo'DAE), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
@@ -26,7 +26,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    arretes_circulation, avalanche, carburants, defibrillateurs, feux_satellite, foyers_actifs, meteo_forets, meteo_france, observations_meteo, pluie,
+    arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, meteo_forets, meteo_france, observations_meteo, pluie,
     radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vigilance_crues,
 )
 
@@ -103,6 +103,11 @@ SOURCES = {
         Source("CARBURANTS", "Stations de carburant", carburants.relever,
                datetime.timedelta(minutes=29), datetime.timedelta(hours=3),
                "Prix des carburants - ministère de l'Économie"),
+        # Vitesses et débits republiés toutes les six minutes, états du trafic chaque minute :
+        # une trentaine de petits fichiers à chaque passage.
+        Source("CIRCULATION", "Circulation sur le réseau routier national", circulation.relever,
+               datetime.timedelta(minutes=9), datetime.timedelta(minutes=45),
+               "Bison Futé - directions interdépartementales des routes"),
         # Rafales prévues : même calcul horaire que la pluie, treize grilles à chaque parution.
         # EN DERNIER, et c'est voulu : chaque grille pèse 13 Mo et met une quinzaine de secondes
         # à venir, soit trois à quatre minutes une fois par heure (mesuré le 15/11/2026). Les

@@ -22,13 +22,13 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, circulation, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
     ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
+    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -751,6 +751,59 @@ class ArretesCirculationView(APIView):
             resultats.append(ligne)
         return Response({**entete, "emprise_connue": True, "tronque": len(arretes) > RESULTATS_MAX,
                          "bilan": bilan, "resultats": resultats})
+
+
+class CirculationView(APIView):
+    """GET /api/circulation/ : les tronçons mesurés du réseau routier national dans une emprise
+    (voir `_emprise`), les plus encombrés d'abord. Chaque tronçon porte son état, d'où il vient
+    (« OFFICIEL » : l'exploitant ; « ESTIME » : la vitesse comparée à l'habitude apprise par ce
+    serveur), sa vitesse et son débit. `?trace=1` joint le trait du tronçon (pour la carte) ;
+    `?ralentis=1` ne garde que les tronçons denses, saturés ou bloqués."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("CIRCULATION", centre, rayon)
+        vide = {etat: 0 for etat in circulation.ORDRE_ETATS}
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "bilan": vide, "resultats": []})
+
+        maintenant = timezone.now()
+        avec_trace = request.query_params.get("trace") in ("1", "true")
+        ralentis_seuls = request.query_params.get("ralentis") in ("1", "true")
+        rang = {etat: i for i, etat in enumerate(circulation.ORDRE_ETATS)}
+        bilan, lignes = dict(vide), []
+        for station in StationCirculation.objects.filter(location__within=emprise):
+            etat, origine = circulation.etat_affiche(station, maintenant)
+            bilan[etat] += 1
+            if ralentis_seuls and etat not in (circulation.BLOQUE, circulation.SATURE, circulation.DENSE):
+                continue
+            latitude, longitude = _point(station.location)
+            recente = station.mesure_le is not None and maintenant - station.mesure_le <= circulation.MESURE_VALABLE
+            ligne = {
+                "code": station.code, "axe": station.axe, "sens": station.sens,
+                "etat": etat, "origine": origine,
+                "vitesse_kmh": station.vitesse_kmh if recente else None,
+                "debit_veh_h": station.debit_veh_h if recente else None,
+                "mesure_le": station.mesure_le,
+                # L'habitude n'est donnée qu'une fois apprise : avant, ce n'est qu'une mesure.
+                "vitesse_habituelle_kmh": (
+                    round(station.vitesse_habituelle_kmh)
+                    if station.vitesse_habituelle_kmh is not None
+                    and station.mesures_comptees >= circulation.MESURES_POUR_ESTIMER else None),
+                "cote": station.cote, "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                                if centre else None),
+            }
+            if avec_trace:
+                ligne["trace"] = json.loads(station.trace.geojson)
+            lignes.append(ligne)
+        # Les plus encombrés d'abord ; à état égal, les plus proches, sinon par axe.
+        lignes.sort(key=lambda l: (rang[l["etat"]], l["distance_km"] if l["distance_km"] is not None else 0,
+                                   l["axe"], l["code"]))
+        return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
+                         "bilan": bilan, "resultats": lignes[:RESULTATS_MAX]})
 
 
 class RisqueAvalancheView(APIView):

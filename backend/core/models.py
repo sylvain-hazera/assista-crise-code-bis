@@ -2749,6 +2749,41 @@ class ArreteCirculation(models.Model):
         return f"{self.get_categorie_display()} {self.voies}".strip()
 
 
+class StationCirculation(models.Model):
+    """Station de comptage du réseau routier national (un tronçon, un sens de circulation) et
+    sa dernière mesure : vitesse, débit, état du trafic -- voir core/circulation.py.
+
+    `vitesse_habituelle_kmh` n'est pas une donnée de la source : c'est ce serveur qui l'apprend,
+    mesure après mesure, pour reconnaître un ralentissement là où l'exploitant ne publie pas
+    d'état. Donnée publique partagée PROD/DEMO."""
+
+    code = models.CharField(max_length=40, primary_key=True)
+    gestionnaire = models.CharField(max_length=20, blank=True, default="")
+    axe = models.CharField(max_length=20, blank=True, default="", db_index=True)
+    sens = models.CharField(max_length=20, blank=True, default="")
+    longueur_m = models.PositiveIntegerField(default=0)
+    # Code de l'agglomération dont l'exploitant publie un état du trafic (« ST42 »), ou vide.
+    agglomeration = models.CharField(max_length=20, blank=True, default="")
+    # Trait droit du début à la fin du tronçon ; vide quand le référentiel n'a pas de coordonnées.
+    trace = gis_models.LineStringField(srid=4326, null=True, blank=True)
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    # +1 : chaussée à droite du trait, -1 : à gauche, 0 : inconnu (voir cote_de_la_chaussee).
+    cote = models.SmallIntegerField(default=0)
+    referentiel_le = models.DateTimeField()
+
+    vitesse_kmh = models.FloatField(null=True, blank=True)
+    debit_veh_h = models.PositiveIntegerField(null=True, blank=True)
+    mesure_le = models.DateTimeField(null=True, blank=True)
+    # État publié par l'exploitant (FLUIDE, DENSE, SATURE, BLOQUE), vide s'il n'en publie pas.
+    etat = models.CharField(max_length=10, blank=True, default="")
+    etat_le = models.DateTimeField(null=True, blank=True)
+    vitesse_habituelle_kmh = models.FloatField(null=True, blank=True)
+    mesures_comptees = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.axe} {self.sens} ({self.code})".strip()
+
+
 class RisqueAvalanche(models.Model):
     """Indice de risque d'avalanche d'un massif (bulletin de Météo-France), aujourd'hui et
     demain, sur l'échelle européenne de 1 (faible) à 5 (très fort) -- voir core/avalanche.py.
