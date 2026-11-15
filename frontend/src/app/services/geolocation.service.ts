@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../auth/services/auth.service';
 import { PositionEquipeService } from './position-equipe.service';
+import { environment } from '../../environments/environment';
 
 export interface Coordinates {
   latitude: number;
@@ -18,7 +19,13 @@ export class GeolocationService {
 
   private permissionGranted = false;
 
-  private banApiUrl = 'https://api-adresse.data.gouv.fr/search/';
+  /** Recherche d'adresse RELAYÉE PAR NOTRE SERVEUR (15/11/2026, voir
+   * backend/core/views_adresses.py). Avant, le navigateur appelait directement la Base adresse
+   * nationale : chaque frappe dans un champ d'adresse, et chaque « utiliser ma position »,
+   * envoyait à un service extérieur l'adresse IP de la personne avec ce qu'elle cherchait ou
+   * l'endroit où elle se trouvait. Le navigateur ne parle plus qu'à ce site ; ne jamais
+   * remettre ici l'adresse d'un service tiers. La réponse garde le même format GeoJSON. */
+  private adressesUrl = `${environment.apiUrl}/adresses`;
 
   constructor(
     private http: HttpClient,
@@ -40,25 +47,25 @@ export class GeolocationService {
   }
 
   getCoordinates(addressQuery: string): Observable<any> {
-    const url = `${this.banApiUrl}?q=${encodeURIComponent(addressQuery)}&limit=1`;
-    return this.http.get<any>(url);
+    return this.http.get<any>(`${this.adressesUrl}/recherche/`, { params: { q: addressQuery, limit: 1 } });
   }
 
   /** Autocomplétion d'adresse (plusieurs résultats). Si `bias` est fourni (position GPS de
-   * l'utilisateur), la Base Adresse Nationale priorise les adresses proches — sans jamais
-   * présumer que l'utilisateur s'y trouve réellement, juste un tri plus pertinent. */
+   * l'utilisateur), les adresses proches sont proposées d'abord — sans jamais présumer que
+   * l'utilisateur s'y trouve réellement, juste un tri plus pertinent. Le serveur arrondit cette
+   * position au kilomètre avant de la transmettre : assez pour trier, pas pour situer. */
   searchAddresses(query: string, bias?: { lat: number; lon: number }): Observable<any> {
-    let url = `${this.banApiUrl}?q=${encodeURIComponent(query)}&limit=5`;
+    const params: Record<string, string | number> = { q: query, limit: 5 };
     if (bias) {
-      url += `&lat=${bias.lat}&lon=${bias.lon}`;
+      params['lat'] = bias.lat;
+      params['lon'] = bias.lon;
     }
-    return this.http.get<any>(url);
+    return this.http.get<any>(`${this.adressesUrl}/recherche/`, { params });
   }
 
-  /** Géocodage inverse (coordonnées -> adresse/commune) via la Base Adresse Nationale. */
+  /** Géocodage inverse (coordonnées -> adresse/commune), relayé par notre serveur lui aussi. */
   reverseGeocode(lat: number, lng: number): Observable<any> {
-    const url = `https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}`;
-    return this.http.get<any>(url);
+    return this.http.get<any>(`${this.adressesUrl}/inverse/`, { params: { lat, lon: lng } });
   }
 
   private checkStoredLocation(): void {

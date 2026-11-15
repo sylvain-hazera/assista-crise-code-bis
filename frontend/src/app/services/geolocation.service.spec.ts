@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
 
 import { GeolocationService } from './geolocation.service';
 import { fournisseursDeTest } from '../testing/test-providers';
+import { environment } from '../../environments/environment';
 
 /** Le point sensible de ce service n'est pas le GPS, c'est l'INVITE de permission.
  *
@@ -70,6 +72,50 @@ describe('GeolocalisationService', () => {
         (_s: any, echec: any) => echec({ code: 1, PERMISSION_DENIED: 1 }));
 
       await expectAsync(service.positionSansInvite()).toBeResolvedTo(null);
+    });
+  });
+
+  /** Correction du 15/11/2026 : le navigateur appelait la Base adresse nationale lui-même, et
+   * lui livrait donc l'adresse IP de la personne avec ce qu'elle cherchait ou l'endroit où elle
+   * se trouvait. Tout passe désormais par notre serveur. Ces tests échouent si quelqu'un remet
+   * l'adresse d'un service tiers dans ce service. */
+  describe('recherche d’adresse', () => {
+    let http: HttpTestingController;
+
+    beforeEach(() => { http = TestBed.inject(HttpTestingController); });
+    afterEach(() => http.verify());
+
+    const adressesDemandees = () => http.match(() => true).map(demande => demande.request);
+
+    it('l’autocomplétion passe par notre serveur', () => {
+      service.searchAddresses('8 bd du port amiens').subscribe();
+
+      const [demande] = adressesDemandees();
+      expect(demande.url).toBe(`${environment.apiUrl}/adresses/recherche/`);
+      expect(demande.params.get('q')).toBe('8 bd du port amiens');
+      expect(demande.params.get('limit')).toBe('5');
+      expect(demande.params.has('lat')).toBeFalse();
+    });
+
+    it('la position qui sert au tri part vers notre serveur, pas vers un tiers', () => {
+      service.searchAddresses('rue de la paix', { lat: 45.44, lon: 4.39 }).subscribe();
+
+      const [demande] = adressesDemandees();
+      expect(demande.url.startsWith(environment.apiUrl)).toBeTrue();
+      expect(demande.params.get('lat')).toBe('45.44');
+      expect(demande.params.get('lon')).toBe('4.39');
+    });
+
+    it('le géocodage d’une adresse et le géocodage inverse aussi', () => {
+      service.getCoordinates('mairie de lyon').subscribe();
+      service.reverseGeocode(45.76, 4.84).subscribe();
+
+      const [recherche, inverse] = adressesDemandees();
+      expect(recherche.url).toBe(`${environment.apiUrl}/adresses/recherche/`);
+      expect(recherche.params.get('limit')).toBe('1');
+      expect(inverse.url).toBe(`${environment.apiUrl}/adresses/inverse/`);
+      expect(inverse.params.get('lat')).toBe('45.76');
+      expect(inverse.params.get('lon')).toBe('4.84');
     });
   });
 

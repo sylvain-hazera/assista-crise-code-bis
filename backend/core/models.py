@@ -2442,6 +2442,182 @@ class SeismeDiffuse(EnvironmentScopedModel):
         return f"M{self.magnitude} {self.lieu} -> {self.institution.nom}"
 
 
+class ReleveSourceOuverte(models.Model):
+    """État du dernier relevé de chaque source ouverte copiée en base (vigilance, routes,
+    carburants) -- voir core/sources_ouvertes.py. Sert à deux choses : savoir si un relevé est
+    dû, et dire à la supervision qu'une source ne se rafraîchit plus. Une copie périmée
+    affichée comme fraîche serait pire que pas de copie."""
+
+    source = models.CharField(max_length=30, primary_key=True)
+    dernier_essai = models.DateTimeField(null=True, blank=True)
+    dernier_succes = models.DateTimeField(null=True, blank=True)
+    # Nombre de lignes écrites au dernier relevé réussi.
+    lignes = models.PositiveIntegerField(default=0)
+    # Motif du dernier échec, vide après un succès. Jamais de secret ici : le texte d'une
+    # exception réseau ne porte que l'adresse appelée.
+    erreur = models.TextField(blank=True, default="")
+
+    def __str__(self):
+        return f"{self.source} : {self.dernier_succes or 'jamais relevé'}"
+
+
+class EvenementRoutier(models.Model):
+    """Événement en cours sur le réseau routier national (Bison Futé, flux DATEX II des
+    directions interdépartementales des routes) -- voir core/trafic_routier.py.
+
+    Donnée publique partagée PROD/DEMO. Une ligne par SITUATION : une situation regroupe ce que
+    l'exploitant publie d'un même chantier ou d'un même accident (travaux + voie neutralisée +
+    limitation + déviation), et c'est elle qu'un agent lit, pas ses quatre fragments. La table
+    est un instantané : ce qui disparaît du flux est supprimé au relevé suivant."""
+
+    class Categorie(models.TextChoices):
+        FERMETURE = "FERMETURE", "Route fermée"
+        ACCIDENT = "ACCIDENT", "Accident"
+        OBSTACLE = "OBSTACLE", "Obstacle ou dégât"
+        CONDITIONS = "CONDITIONS", "Conditions de circulation"
+        DEVIATION = "DEVIATION", "Déviation"
+        TRAVAUX = "TRAVAUX", "Travaux"
+        RESTRICTION = "RESTRICTION", "Restriction"
+        AUTRE = "AUTRE", "Autre"
+
+    reference = models.CharField(max_length=80, primary_key=True)
+    categorie = models.CharField(max_length=12, choices=Categorie.choices, db_index=True)
+    # Ce que la situation comporte, en clair : ["Travaux", "Voie neutralisée", "Vitesse limitée"].
+    natures = models.JSONField(default=list, blank=True)
+    # low / medium / high / highest, tel que publié.
+    gravite = models.CharField(max_length=10, blank=True, default="")
+    route = models.CharField(max_length=20, blank=True, default="")
+    commune_nom = models.CharField(max_length=120, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    localisation = models.TextField(blank=True, default="")
+    gestionnaire = models.CharField(max_length=160, blank=True, default="")
+    # Lu dans le point de repère routier (« 42PR12D ») : absent pour une ligne sur douze.
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    location = gis_models.PointField(srid=4326)
+    # Autre extrémité quand l'événement porte sur un tronçon.
+    location_fin = gis_models.PointField(srid=4326, null=True, blank=True)
+    debut = models.DateTimeField(null=True, blank=True)
+    fin = models.DateTimeField(null=True, blank=True)
+    mis_a_jour_le = models.DateTimeField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.get_categorie_display()} {self.route} {self.commune_nom}".strip()
+
+
+class StationCarburant(models.Model):
+    """Station-service et ce qu'elle peut encore délivrer (flux instantané des prix des
+    carburants, ministère de l'Économie) -- voir core/carburants.py.
+
+    Donnée publique partagée PROD/DEMO. Ce qui sert en crise n'est pas le prix mais la RUPTURE :
+    savoir où un véhicule d'intervention peut encore faire le plein, et voir une pénurie se
+    dessiner sur un territoire."""
+
+    reference = models.CharField(max_length=20, primary_key=True)
+    adresse = models.CharField(max_length=255, blank=True, default="")
+    ville = models.CharField(max_length=120, blank=True, default="")
+    code_postal = models.CharField(max_length=10, blank=True, default="")
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    location = gis_models.PointField(srid=4326)
+    carburants_disponibles = models.JSONField(default=list, blank=True)
+    # Rupture temporaire : la station vend ce carburant d'ordinaire et n'en a plus.
+    ruptures_temporaires = models.JSONField(default=list, blank=True)
+    # Rupture définitive : la station ne le vend plus, ce n'est pas un signal de pénurie.
+    ruptures_definitives = models.JSONField(default=list, blank=True)
+    # {"Gazole": {"prix": 1.699, "maj": "2026-11-15T06:00:00+00:00"}}
+    prix = models.JSONField(default=dict, blank=True)
+    automate_24_24 = models.BooleanField(default=False)
+    # Dernière mise à jour d'un prix par la station : une station muette depuis des mois a
+    # probablement fermé, l'écran le dit.
+    mis_a_jour_le = models.DateTimeField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Station {self.reference} {self.ville}"
+
+
+class VigilanceMeteo(models.Model):
+    """Dernière vigilance Météo-France connue pour un département (ou « FRA » pour la France
+    entière), copiée par `verifier_vigilance_meteo` -- voir core/meteo_france.py.
+
+    Donnée publique, partagée PROD/DEMO comme `Commune` : rien de personnel, donc rien de
+    chiffré. Une ligne par département, réécrite à chaque relevé : c'est un état courant, pas un
+    historique. Les pages et la diffusion d'alerte lisent CETTE copie ; aucun navigateur
+    n'interroge Météo-France, et aucune requête d'utilisateur ne déclenche d'appel sortant."""
+
+    departement_code = models.CharField(max_length=3, primary_key=True)
+    # 1 vert, 2 jaune, 3 orange, 4 rouge -- le maximum tous phénomènes confondus.
+    couleur_j = models.PositiveSmallIntegerField(default=1)
+    couleur_j1 = models.PositiveSmallIntegerField(default=1)
+    # {"J": {"debut", "fin", "phenomenes": [{"id", "couleur", "periodes": [...]}]}, "J1": {...}}
+    # -- seuls les phénomènes en jaune ou plus y figurent.
+    detail = models.JSONField(default=dict, blank=True)
+    # Bulletin de suivi : [{"titre", "lignes": [...]}]. Vide tant que le département est vert ou
+    # jaune (Météo-France ne rédige un bulletin départemental qu'à partir de l'orange).
+    bulletin = models.JSONField(default=list, blank=True)
+    # Heure de publication par Météo-France, et heure de notre dernier relevé réussi.
+    publie_le = models.DateTimeField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Vigilance {self.departement_code} : J={self.couleur_j} J+1={self.couleur_j1}"
+
+
+class VignetteVigilanceMeteo(models.Model):
+    """Carte nationale de vigilance (image officielle de Météo-France) pour aujourd'hui (« J »)
+    et demain (« J1 »), copiée au même moment que `VigilanceMeteo`. Stockée en base et non dans
+    un cache : la commande planifiée et le serveur web doivent lire la même copie."""
+
+    echeance = models.CharField(max_length=2, primary_key=True)
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Vignette de vigilance {self.echeance}"
+
+
+class ConfigurationAlerteVigilance(EnvironmentScopedModel):
+    """Diffusion automatique de la vigilance Météo-France du département de l'institution, sur
+    ses canaux radio et par message aux personnes qui lui sont rattachées (commande
+    verifier_vigilance_meteo). Inactive tant que l'institution ne l'a pas demandée. Seuil orange
+    par défaut : le jaune revient plusieurs fois par semaine et userait l'attention."""
+
+    COULEURS_SEUIL = [(2, "Jaune"), (3, "Orange"), (4, "Rouge")]
+
+    institution = models.OneToOneField(
+        "Institution", on_delete=models.CASCADE, related_name="configuration_alerte_vigilance",
+    )
+    actif = models.BooleanField(default=False)
+    couleur_min = models.PositiveSmallIntegerField(default=3, choices=COULEURS_SEUIL)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Alerte vigilance {self.institution.nom} ({'active' if self.actif else 'inactive'})"
+
+
+class VigilanceDiffusee(EnvironmentScopedModel):
+    """Niveau de vigilance déjà annoncé à une institution pour un phénomène (anti-doublon entre
+    deux relevés). Une ligne par institution et par phénomène tant que l'épisode dure ; elle est
+    supprimée quand le phénomène repasse sous le seuil, pour que l'épisode suivant soit annoncé."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="vigilances_diffusees",
+    )
+    departement_code = models.CharField(max_length=3)
+    phenomene = models.PositiveSmallIntegerField()
+    couleur = models.PositiveSmallIntegerField()
+    date_diffusion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["institution", "phenomene"], name="uq_vigilance_diffusee_institution_phenomene"),
+        ]
+
+    def __str__(self):
+        return f"Vigilance {self.couleur} phénomène {self.phenomene} -> {self.institution.nom}"
+
+
 class CategorieInterlocuteurPCS(models.TextChoices):
     """Catégories types d'un annuaire de crise PCS/PICS."""
     PREFECTURE = "PREFECTURE", "Préfecture (SIDPC/COD)"
@@ -5244,6 +5420,7 @@ class SourceSiteSensible(models.TextChoices):
     ICPE = "ICPE", "Installations classées (Géorisques)"
     EQUIPEMENTS_SPORTIFS = "EQUIPEMENTS_SPORTIFS", "Équipements sportifs (ministère des Sports)"
     SIRENE = "SIRENE", "Annuaire des entreprises (SIRENE / INSEE)"
+    GEODAE = "GEODAE", "Géo'DAE (base nationale des défibrillateurs)"
     SAISIE = "SAISIE", "Saisie manuelle"
 
 
@@ -5266,6 +5443,9 @@ class CategorieSiteSensible(models.TextChoices):
     MOYENS = "MOYENS", "Moyens et travaux (transport, engins, bâchage)"
     APPROVISIONNEMENT = "APPROVISIONNEMENT", "Approvisionnement (alimentation, carburant, repas)"
     FUNERAIRE = "FUNERAIRE", "Opérateur funéraire"
+    # Un défibrillateur n'est pas un lieu à protéger mais un moyen à connaître : toujours une
+    # ressource, jamais un enjeu.
+    DEFIBRILLATEUR = "DEFIBRILLATEUR", "Défibrillateur"
     AUTRE = "AUTRE", "Autre"
 
 

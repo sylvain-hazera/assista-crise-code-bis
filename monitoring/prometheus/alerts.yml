@@ -229,3 +229,30 @@ groups:
         labels: { severity: none }
         annotations:
           summary: "Heartbeat: the alerting pipeline is alive. This alert must ALWAYS be firing."
+
+  # ---- Veille du territoire : sources ouvertes copiées en base (15/11/2026) ----
+  # Vigilance Météo-France, événements routiers, stations de carburant (core/sources_ouvertes.py).
+  # Le seuil de péremption est décidé par l'application, source par source : une seule règle
+  # couvre toutes les sources, présentes et à venir.
+  - name: veille
+    rules:
+      - alert: SourceOuvertePerimee
+        # 20 min de marge : un relevé manqué n'est pas une panne, deux de suite commencent à
+        # l'être. Sans cette alerte, une vigilance qui cesse d'arriver ne se verrait pas -- les
+        # écrans continueraient d'afficher la dernière connue.
+        expr: assista_source_ouverte_perimee == 1
+        for: 20m
+        labels: { severity: warning }
+        annotations:
+          summary: "Open-data source {{ $labels.source }} is no longer refreshing"
+          description: "Check the cron job (relever-sources-ouvertes.sh) and its log, then run: manage.py relever_sources_ouvertes --source {{ $labels.source }} --forcer"
+
+      - alert: CleMeteoFranceExpireBientot
+        # La clé du portail Météo-France a une durée de vie (trois ans au plus). Un mois de
+        # préavis : la renouveler demande de se connecter au portail avec le compte du porteur.
+        expr: assista_meteofrance_cle_jours_restants < 30
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "The Meteo-France API key expires in {{ $value | printf \"%.0f\" }} days"
+          description: "Generate a new key on portail-api.meteofrance.fr and replace the meteofrance_cle_api secret."

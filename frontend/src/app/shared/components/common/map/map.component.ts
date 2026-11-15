@@ -21,6 +21,8 @@ import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
+import { VeilleService } from '../../../../services/veille.service';
+import { EvenementRoutier, StationCarburant } from '../../../models/veille.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -39,6 +41,11 @@ interface LayerVisibility {
    * /admin/carte-radio — voir CarteRadioComponent pour le pourquoi. */
   noeudsMeshCore: boolean;
   noeudsMeshtastic: boolean;
+  /** Veille du territoire : événements du réseau routier national et stations de carburant,
+   * lus dans la copie que tient NOTRE serveur (voir VeilleService). Chargés à la demande, pour
+   * la seule emprise affichée. */
+  evenementsRoutiers: boolean;
+  stationsCarburant: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -88,6 +95,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     noeudsMeshCore: true,
     // Nœuds personnels Meshtastic : même règle (positions_en_mission).
     noeudsMeshtastic: true,
+    // Veille : masquée et chargée à la demande, comme l'annuaire de bénévoles.
+    evenementsRoutiers: false,
+    stationsCarburant: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -117,6 +127,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private pointOperationnelService: PointOperationnelService,
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
+              private veilleService: VeilleService,
               private authService: AuthService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
@@ -164,6 +175,132 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('centres-hebergement-layer', this.layerVisibility.centresHebergement);
     this.applyLayerVisibility('postes-secours-layer', this.layerVisibility.postesSecours);
     this.applyLayerVisibility('benevoles-pompiers-layer', this.layerVisibility.benevolesPompiers);
+    this.applyLayerVisibility('evenements-routiers-layer', this.layerVisibility.evenementsRoutiers);
+    this.applyLayerVisibility('stations-carburant-layer', this.layerVisibility.stationsCarburant);
+    this.rafraichirVeille();
+  }
+
+  // ── Veille du territoire : routes et carburant ──────────────────────────────────────────
+
+  /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
+   * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
+  veilleTronquee = { routes: false, stations: false };
+  private veilleSuitLaCarte = false;
+
+  /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
+   * chaque déplacement de la carte : ces couches sont nationales, on n'en lit que la fenêtre. */
+  private rafraichirVeille(): void {
+    if (!this.map) return;
+    const { evenementsRoutiers, stationsCarburant } = this.layerVisibility;
+    if (!evenementsRoutiers && !stationsCarburant) return;
+    if (!this.veilleSuitLaCarte) {
+      this.veilleSuitLaCarte = true;
+      this.map.on('moveend', () => this.rafraichirVeille());
+    }
+    const bornes = this.map.getBounds();
+    const borne = (valeur: number, limite: number) => +Math.max(-limite, Math.min(limite, valeur)).toFixed(4);
+    const bbox: [number, number, number, number] = [
+      borne(bornes.getWest(), 180), borne(bornes.getSouth(), 90),
+      borne(bornes.getEast(), 180), borne(bornes.getNorth(), 90),
+    ];
+    if (evenementsRoutiers) {
+      this.veilleService.evenementsRoutiers({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.routes = reponse.tronque;
+          this.afficherCoucheVeille('evenements-routiers', this.evenementsVersGeoJSON(reponse.resultats),
+            // Rouge : la route ne passe plus. Orange : accident, obstacle, conditions. Gris : le reste.
+            ['match', ['get', 'etat'], 'grave', '#c81e1e', 'attention', '#f97316', '#6b7280'],
+            this.layerVisibility.evenementsRoutiers);
+        },
+        error: () => {},
+      });
+    }
+    if (stationsCarburant) {
+      this.veilleService.stationsCarburant({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.stations = reponse.tronque;
+          this.afficherCoucheVeille('stations-carburant', this.stationsVersGeoJSON(reponse.resultats),
+            // Rouge : plus rien à délivrer. Orange : un carburant manque. Vert : rien de signalé.
+            ['match', ['get', 'etat'], 'grave', '#c81e1e', 'attention', '#f97316', '#0f766e'],
+            this.layerVisibility.stationsCarburant);
+        },
+        error: () => {},
+      });
+    }
+  }
+
+  /** Les textes de ces couches viennent de flux extérieurs (exploitants routiers, stations) :
+   * ils sont échappés avant d'entrer dans une infobulle. */
+  private echapper(texte: string | null | undefined): string {
+    return (texte ?? '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
+  }
+
+  private evenementsVersGeoJSON(evenements: EvenementRoutier[]): FeatureCollection<Geometry> {
+    const attention = ['ACCIDENT', 'OBSTACLE', 'CONDITIONS'];
+    return {
+      type: 'FeatureCollection',
+      features: evenements.map(e => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [e.longitude, e.latitude] },
+        properties: {
+          etat: e.categorie === 'FERMETURE' ? 'grave' : attention.includes(e.categorie) ? 'attention' : 'autre',
+          infobulle: `<strong>${this.echapper(e.categorie_libelle)} — ${this.echapper(e.route)}</strong>`
+            + (e.commune_nom ? `<br>${this.echapper(e.commune_nom)}` : '')
+            + `<br>${this.echapper(e.natures.join(' · '))}`
+            + (e.description ? `<br>${this.echapper(e.description).replace(/\n/g, '<br>')}` : '')
+            + '<br><small>Source : Bison Futé (réseau national)</small>',
+        },
+      })),
+    };
+  }
+
+  private stationsVersGeoJSON(stations: StationCarburant[]): FeatureCollection<Geometry> {
+    return {
+      type: 'FeatureCollection',
+      features: stations.map(s => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+        properties: {
+          etat: !s.ruptures_temporaires.length ? 'ok' : s.carburants_disponibles.length ? 'attention' : 'grave',
+          infobulle: `<strong>Station — ${this.echapper(s.ville)}</strong><br>${this.echapper(s.adresse)}`
+            + `<br>Disponible : ${this.echapper(s.carburants_disponibles.join(', ')) || 'aucun carburant'}`
+            + (s.ruptures_temporaires.length ? `<br>En rupture : ${this.echapper(s.ruptures_temporaires.join(', '))}` : '')
+            + (s.automate_24_24 ? '<br>Automate 24 h/24' : '')
+            + '<br><small>Source : prix-carburants.gouv.fr, déclaré par la station</small>',
+        },
+      })),
+    };
+  }
+
+  private afficherCoucheVeille(sourceId: string, data: FeatureCollection<Geometry>,
+                               couleur: any, visible: boolean): void {
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const layerId = `${sourceId}-layer`;
+      const existante = this.map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+      if (existante) {
+        existante.setData(data);
+        return;
+      }
+      this.map.addSource(sourceId, { type: 'geojson', data });
+      this.map.addLayer({
+        id: layerId, type: 'circle', source: sourceId,
+        layout: { visibility: visible ? 'visible' : 'none' },
+        paint: {
+          'circle-color': couleur, 'circle-radius': 6,
+          'circle-stroke-width': 2, 'circle-stroke-color': '#fff',
+        },
+      });
+      this.map.on('click', layerId, (e) => {
+        if (!e.features || e.features.length === 0) return;
+        const coordinates = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
+        new maplibregl.Popup().setLngLat(coordinates)
+          .setHTML((e.features[0].properties || {})['infobulle'] || '').addTo(this.map!);
+      });
+      this.map.on('mouseenter', layerId, () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+      this.map.on('mouseleave', layerId, () => { this.map!.getCanvas().style.cursor = ''; });
+    });
   }
 
   private applyLayerVisibility(layerId: string, visible: boolean): void {

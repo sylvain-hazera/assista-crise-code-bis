@@ -1,0 +1,201 @@
+// Couleurs en var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en mode
+// sombre (styles.scss). Voir DOCUMENTATION.md § 6.6.
+//
+// Les quatre couleurs de vigilance sont celles de Météo-France et ne changent pas avec le
+// thème : ce sont des codes, pas une décoration. Le texte posé dessus est choisi pour rester
+// lisible (sombre sur jaune et orange, clair sur vert et rouge).
+.page { padding: 20px; max-width: 1150px; }
+
+.entete {
+  h1 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 8px; font-size: 1.5rem;
+    color: var(--ac-text, #111827);
+    .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
+  }
+  .explication {
+    margin: 0 0 20px; max-width: 76ch; line-height: 1.5;
+    color: var(--ac-text-muted, #4b5563);
+  }
+}
+
+section {
+  margin-bottom: 24px; padding: 18px;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  h2 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 14px; font-size: 1.15rem; color: var(--ac-text, #111827);
+    .material-icons { font-size: 22px; color: var(--ac-text-muted, #6b7280); }
+  }
+  h3 { margin: 0 0 10px; font-size: 1rem; color: var(--ac-text, #111827); }
+  h4 { margin: 14px 0 6px; font-size: .9rem; color: var(--ac-text, #111827); }
+}
+
+.message {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 14px; border-radius: 6px; margin: 0 0 14px; line-height: 1.5;
+  &.erreur {
+    background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b);
+    border: 1px solid var(--ac-red-border, #fecaca);
+  }
+  &.avertissement {
+    background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e);
+    border: 1px solid var(--ac-amber-border, #fde68a);
+    a { color: inherit; font-weight: 600; }
+  }
+}
+
+.attente, .calme { margin: 0 0 10px; line-height: 1.5; max-width: 76ch; color: var(--ac-text-muted, #6b7280); }
+.note {
+  margin: 14px 0 0; max-width: 86ch; font-size: .85rem; line-height: 1.5;
+  color: var(--ac-text-subtle, #6b7280);
+  a { color: var(--brand-primary-lisible, var(--brand-primary)); }
+}
+
+.compte {
+  padding: 1px 9px; border-radius: 10px; font-size: .8rem; font-weight: 600;
+  background: var(--ac-surface-3, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+}
+
+// ── Pastilles de couleur de vigilance ──
+.couleur {
+  display: inline-block; padding: 1px 10px; border-radius: 10px;
+  font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  background: #2f9e44; color: #fff;
+  &[data-couleur="2"] { background: #ffe600; color: #3d3500; }
+  &[data-couleur="3"] { background: #ff9d1c; color: #3b2100; }
+  &[data-couleur="4"] { background: #c81e1e; color: #fff; }
+}
+
+.mon-departement {
+  padding: 14px 16px; margin-bottom: 18px; border-radius: 8px;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-left: 6px solid #2f9e44;
+  background: var(--ac-surface-2, #f9fafb);
+  &[data-couleur="2"] { border-left-color: #ffe600; }
+  &[data-couleur="3"] { border-left-color: #ff9d1c; }
+  &[data-couleur="4"] { border-left-color: #c81e1e; }
+}
+
+.echeances { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.echeance .jour {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 8px;
+  font-weight: 600; color: var(--ac-text, #111827);
+}
+.phenomenes {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+  li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ac-text, #111827); }
+  .horaire { color: var(--ac-text-muted, #4b5563); font-variant-numeric: tabular-nums; }
+}
+
+.bulletin {
+  margin-top: 12px; max-width: 86ch; line-height: 1.5; font-size: .92rem;
+  color: var(--ac-text, #111827);
+  p { margin: 0 0 6px; }
+  .titre-bulletin { margin-top: 10px; font-weight: 600; }
+}
+
+.national { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
+.vignettes {
+  display: flex; gap: 12px;
+  figure { margin: 0; text-align: center; }
+  // L'image officielle a un fond transparent pensé pour une page claire.
+  img { display: block; border-radius: 6px; background: #fff; border: 1px solid var(--ac-border, #e5e7eb); }
+  figcaption { margin-top: 4px; font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+}
+.liste-nationale h3 { display: flex; align-items: center; gap: 10px; }
+
+.defilement { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse;
+  th, td {
+    padding: 8px 10px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+  }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+       color: var(--ac-text-muted, #6b7280); }
+  td { color: var(--ac-text, #111827); }
+  tr.a-sec td { background: var(--ac-red-bg, #fef2f2); }
+  .adresse { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+  td.muette { color: var(--ac-text-muted, #6b7280); }
+}
+.liste-nationale .defilement { max-height: 330px; overflow-y: auto; }
+.phenomenes-ligne { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.etiquette {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .78rem; white-space: nowrap;
+  background: var(--ac-surface-3, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+  &[data-couleur="2"] { background: #fff3a3; color: #3d3500; }
+  &[data-couleur="3"] { background: #ffd08a; color: #3b2100; }
+  &[data-couleur="4"] { background: #c81e1e; color: #fff; }
+  &.bonne { background: var(--ac-green-bg, #ecfdf5); color: var(--ac-green-text, #065f46); }
+  &.rupture { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); font-weight: 600; }
+}
+
+button.discret {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 6px; border: none; background: none; font: inherit; font-size: .9rem;
+  cursor: pointer; text-decoration: underline; text-align: left; border-radius: 6px;
+  color: var(--brand-primary-lisible, var(--brand-primary));
+  .material-icons { font-size: 18px; }
+  &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+}
+
+// ── Rayon ──
+.rayon {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px;
+  color: var(--ac-text-muted, #4b5563); font-size: .9rem;
+  button {
+    padding: 4px 12px; border-radius: 16px; font: inherit; cursor: pointer;
+    border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+    &.actif {
+      border-color: var(--brand-primary); background: var(--brand-primary); color: #fff; font-weight: 600;
+    }
+    &:focus-visible { outline: 2px solid var(--brand-primary-lisible, var(--brand-primary)); outline-offset: 2px; }
+  }
+}
+
+// ── Événements routiers ──
+.evenements {
+  list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 10px;
+  li {
+    padding: 10px 14px; border-radius: 6px;
+    border: 1px solid var(--ac-border, #e5e7eb);
+    border-left: 4px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface-2, #f9fafb);
+    p { margin: 0 0 4px; line-height: 1.45; color: var(--ac-text, #111827); }
+    &[data-categorie="FERMETURE"] {
+      border-left-color: #c81e1e;
+      .categorie { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); font-weight: 600; }
+    }
+    &[data-categorie="ACCIDENT"], &[data-categorie="OBSTACLE"], &[data-categorie="CONDITIONS"] {
+      border-left-color: #ff9d1c;
+      .categorie { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); font-weight: 600; }
+    }
+  }
+  .titre-evenement { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .natures, .localisation, .periode { font-size: .88rem; color: var(--ac-text-muted, #4b5563); }
+  .description { white-space: pre-line; }
+}
+
+// ── Carburant ──
+.bilan {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0 0 14px;
+  div {
+    padding: 10px 14px; border-radius: 6px;
+    border: 1px solid var(--ac-border, #e5e7eb); background: var(--ac-surface-2, #f9fafb);
+    &.alerte { border-color: var(--ac-amber-border, #fde68a); background: var(--ac-amber-bg, #fef3c7);
+               dt, dd { color: var(--ac-amber-text, #92400e); } }
+  }
+  dt { font-size: .82rem; color: var(--ac-text-muted, #6b7280); }
+  dd { margin: 2px 0 0; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums;
+       color: var(--ac-text, #111827); }
+}
+
+@media (max-width: 860px) {
+  .page { padding: 12px; }
+  .national { grid-template-columns: 1fr; }
+  .vignettes { flex-wrap: wrap; img { width: 150px; height: 150px; } }
+}

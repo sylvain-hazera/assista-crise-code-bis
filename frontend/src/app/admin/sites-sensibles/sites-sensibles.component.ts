@@ -112,6 +112,7 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     { code: 'MOYENS', libelle: 'Moyens et travaux (transport, engins, bâchage)' },
     { code: 'APPROVISIONNEMENT', libelle: 'Approvisionnement (alimentation, carburant, repas)' },
     { code: 'FUNERAIRE', libelle: 'Opérateur funéraire' },
+    { code: 'DEFIBRILLATEUR', libelle: 'Défibrillateur' },
     { code: 'AUTRE', libelle: 'Autre' },
   ];
 
@@ -207,8 +208,8 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** L'état des CINQ sources, y compris celles qu'on n'a jamais interrogées — sans quoi la
-   * page n'en montre que quatre et laisse croire qu'il en manque une. */
+  /** L'état de TOUTES les sources, y compris celles qu'on n'a jamais interrogées — sans quoi
+   * la page laisse croire qu'il en manque. */
   get etatsSources(): { code: SourceSiteSensible; libelle: string;
                         etat: ImportOpenData | null }[] {
     const parSource = new Map((this.synthese?.imports || []).map(i => [i.source, i]));
@@ -343,7 +344,7 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     return this.sites.filter(s => s.statut === statut).length;
   }
 
-  /** Les quatre sources non thématiques. SIRENE est volontairement exclue du bouton principal :
+  /** Les sources non thématiques (défibrillateurs compris). SIRENE est volontairement exclue du bouton principal :
    * elle se demande par thèmes (voir recenserSirene), sinon une grande ville reçoit plus d'un
    * millier de lignes à relire d'un seul clic. */
   private sourcesNonThematiques(): SourceSiteSensible[] {

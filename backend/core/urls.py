@@ -11,6 +11,11 @@ from .views_application import (
     AccuserNotificationsView, MesMobilisationsView, MesNotificationsView, MonAppareilView,
     RepondreIndisponibleView,
 )
+from .views_adresses import GeocodageInverseView, RechercheAdresseView
+from .views_veille import (
+    ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, StationsCarburantView,
+    VigilanceMeteoView, VignetteVigilanceMeteoView,
+)
 from .views import (
     BrouillonEnvoiViewSet,
     DefinirMonMotDePasseView,
@@ -274,6 +279,7 @@ router.register(r'recherches-personnes-photos', RecherchePersonnePhotoViewSet)
 router.register(r'recherches-personnes-commentaires-photos',RecherchePersonneCommentairePhotoViewSet)
 router.register(r'zones', ZoneViewSet)
 router.register(r'configurations-alerte-sismique', ConfigurationAlerteSismiqueViewSet)
+router.register(r'configurations-alerte-vigilance', ConfigurationAlerteVigilanceViewSet)
 router.register(r'interlocuteurs-alerte-pcs', InterlocuteurAlertePCSViewSet)
 router.register(r'risques-majeurs-types', RisqueMajeurTypeViewSet)
 router.register(r'risques-communaux', RisqueCommunalViewSet)
@@ -342,6 +348,17 @@ urlpatterns = [
     # fait (voir core/views_application.py).
     # Les demandes de mobilisation adressees a l'appelant : il en presente le QR code.
     path('mes-mobilisations/', MesMobilisationsView.as_view(), name='mes_mobilisations'),
+    # Recherche d'adresse relayee par le serveur : le navigateur n'appelle plus la Base adresse
+    # (voir core/views_adresses.py).
+    path('adresses/recherche/', RechercheAdresseView.as_view(), name='adresses_recherche'),
+    path('adresses/inverse/', GeocodageInverseView.as_view(), name='adresses_inverse'),
+    # Vigilance Meteo-France : lecture de la copie en base (voir core/meteo_france.py).
+    path('vigilance-meteo/', VigilanceMeteoView.as_view(), name='vigilance_meteo'),
+    path('vigilance-meteo/vignette/<str:echeance>/', VignetteVigilanceMeteoView.as_view(),
+         name='vigilance_meteo_vignette'),
+    # Evenements routiers (Bison Fute) et stations de carburant : copies en base elles aussi.
+    path('evenements-routiers/', EvenementsRoutiersView.as_view(), name='evenements_routiers'),
+    path('stations-carburant/', StationsCarburantView.as_view(), name='stations_carburant'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

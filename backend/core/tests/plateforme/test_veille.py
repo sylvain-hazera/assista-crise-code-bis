@@ -1,0 +1,894 @@
+"""Veille du territoire : vigilance Météo-France, événements routiers, stations de carburant,
+défibrillateurs, et relais de la recherche d'adresse (15/11/2026).
+
+Aucun test n'appelle l'extérieur : les réponses des sources sont des extraits réels réduits,
+rejoués ici. Ce qui est vérifié, c'est ce que NOUS en faisons -- et, pour le relais d'adresse,
+ce que nous laissons sortir."""
+import base64
+import datetime
+import io
+import json
+from unittest import mock
+
+import pytest
+import requests
+from django.contrib.gis.geos import Point
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from core import carburants, meteo_france, sources_ouvertes, trafic_routier
+from core.models import (
+    CanalMeshCore, Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier,
+    Institution, InstitutionType, MessageCanalMeshCore, ReleveSourceOuverte, StationCarburant,
+    VigilanceDiffusee, VigilanceMeteo, VignetteVigilanceMeteo,
+)
+from core.opendata import CONNECTEURS, SOURCES_ASYNCHRONES, SOURCES_SANS_DECOUPAGE, dae
+
+UTC = datetime.timezone.utc
+# Un dimanche à 10 h 30, heure de Paris.
+MAINTENANT = datetime.datetime(2026, 11, 15, 9, 30, tzinfo=UTC)
+
+
+# ── Extraits de réponses ────────────────────────────────────────────────────────────────────
+
+def _domaine(code, couleur, phenomenes):
+    return {
+        "domain_id": code, "max_color_id": couleur,
+        "phenomenon_items": [
+            {"phenomenon_id": str(identifiant), "phenomenon_max_color_id": niveau,
+             "timelaps_items": [{"begin_time": debut, "end_time": fin, "color_id": niveau}] if debut else []}
+            for identifiant, niveau, debut, fin in phenomenes
+        ],
+    }
+
+
+def _carte(domaines_j, domaines_j1=()):
+    return {"product": {
+        "update_time": "2026-11-15T09:00:19Z",
+        "periods": [
+            {"echeance": "J", "begin_validity_time": "2026-11-15T09:00:00Z",
+             "end_validity_time": "2026-11-15T23:00:00Z",
+             "timelaps": {"domain_ids": list(domaines_j)}},
+            {"echeance": "J1", "begin_validity_time": "2026-11-15T23:00:00Z",
+             "end_validity_time": "2026-11-16T23:00:00Z",
+             "timelaps": {"domain_ids": list(domaines_j1)}},
+        ],
+    }}
+
+
+ORANGE_VENT_42 = _domaine("42", 3, [(1, 3, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z"),
+                                    (2, 1, "2026-11-15T09:00:00Z", "2026-11-15T23:00:00Z")])
+
+
+def _enregistrer(*domaines_j, domaines_j1=(), maintenant=MAINTENANT):
+    publie_le, departements = meteo_france.analyser_carte(_carte(domaines_j, domaines_j1))
+    meteo_france.enregistrer(publie_le, departements, {}, maintenant=maintenant)
+
+
+@pytest.fixture
+def mairie(db):
+    # Commune complète (nom, centre, département, région) : Institution.save() n'a alors rien
+    # à demander au service géographique, et le test ne dépend pas du réseau.
+    Commune.objects.create(code="42218", nom="Saint-Étienne", departement_code="42",
+                           region_code="84", epci_code="244200770",
+                           centre_latitude=45.44, centre_longitude=4.39)
+    itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
+    return Institution.objects.create(
+        nom="Mairie de Saint-Étienne (veille)", type=itype, commune_code="42218",
+        commune_nom="Saint-Étienne", departement_code="42",
+    )
+
+
+@pytest.fixture
+def abonnement(mairie):
+    return ConfigurationAlerteVigilance.objects.create(institution=mairie, actif=True, couleur_min=3)
+
+
+@pytest.fixture
+def sans_messagerie():
+    """Le message privé passe par Matrix, absent des tests : on vérifie qu'il est demandé."""
+    with mock.patch("core.matrix.envoyer_dm") as envoi:
+        yield envoi
+
+
+# ── Vigilance : lecture de la carte ─────────────────────────────────────────────────────────
+
+class TestLectureDeLaCarte:
+
+    def test_seul_le_jaune_et_au_dela_est_retenu(self):
+        _publie, departements = meteo_france.analyser_carte(_carte([ORANGE_VENT_42]))
+
+        fiche = departements["42"]["J"]
+        assert fiche["couleur"] == 3
+        assert [p["id"] for p in fiche["phenomenes"]] == [1]
+
+    def test_la_bande_littorale_est_rattachee_a_son_departement(self):
+        """« 3010 » est le littoral du Gard : son phénomène vagues-submersion doit se lire sur
+        le Gard, et sa couleur compter dans celle du département."""
+        gard = _domaine("30", 1, [(1, 1, None, None)])
+        littoral = _domaine("3010", 3, [(9, 3, "2026-11-15T12:00:00Z", "2026-11-15T20:00:00Z")])
+
+        _publie, departements = meteo_france.analyser_carte(_carte([gard, littoral]))
+
+        assert "3010" not in departements
+        assert departements["30"]["J"]["couleur"] == 3
+        assert departements["30"]["J"]["phenomenes"][0]["id"] == 9
+
+    def test_un_domaine_illisible_ne_fait_pas_perdre_les_autres(self):
+        casse = {"domain_id": "43", "max_color_id": 2,
+                 "phenomenon_items": [{"phenomenon_id": "vent", "phenomenon_max_color_id": 2}]}
+
+        _publie, departements = meteo_france.analyser_carte(_carte([casse, ORANGE_VENT_42]))
+
+        assert departements["42"]["J"]["couleur"] == 3
+
+    def test_les_phenomenes_sont_ranges_du_plus_grave_au_moins_grave(self):
+        domaine = _domaine("42", 4, [(3, 2, None, None), (2, 4, None, None), (1, 3, None, None)])
+
+        _publie, departements = meteo_france.analyser_carte(_carte([domaine]))
+
+        assert [p["id"] for p in departements["42"]["J"]["phenomenes"]] == [2, 1, 3]
+
+    def test_les_bulletins_gardent_le_national_et_les_departements(self):
+        partie = {"bold_text": "Faits nouveaux :", "underline_text": "", "text": ["Vent fort.", ""]}
+        bloc = lambda code: {"domain_id": code, "bloc_items": [{"type_name": "Situation", "text_items": [
+            {"hazard_code": None, "hazard_name": "tous aléas", "term_items": [{"subdivision_text": [partie]}]}]}]}
+
+        bulletins = meteo_france.analyser_textes(
+            {"product": {"text_bloc_items": [bloc("FRA"), bloc("42"), bloc("ZDF_SUD")]}})
+
+        assert set(bulletins) == {"FRA", "42"}
+        assert bulletins["42"] == [{"rubrique": "Situation", "alea": "", "titre": "Faits nouveaux",
+                                    "lignes": ["Vent fort."]}]
+
+    @pytest.mark.django_db
+    def test_des_bulletins_non_releves_ne_sont_pas_effaces(self):
+        publie_le, departements = meteo_france.analyser_carte(_carte([ORANGE_VENT_42]))
+        meteo_france.enregistrer(publie_le, departements, {"42": [{"titre": "A", "lignes": ["x"]}]})
+
+        meteo_france.enregistrer(publie_le, departements, None)
+
+        assert VigilanceMeteo.objects.get(pk="42").bulletin == [{"titre": "A", "lignes": ["x"]}]
+
+
+# ── Vigilance : la clé ──────────────────────────────────────────────────────────────────────
+
+class TestCle:
+
+    def _cle(self, tmp_path, monkeypatch, charge):
+        segment = base64.urlsafe_b64encode(json.dumps(charge).encode()).decode().rstrip("=")
+        fichier = tmp_path / "cle"
+        fichier.write_text(f"entete.{segment}.signature\n")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+
+    def test_l_echeance_est_lue_dans_la_cle(self, tmp_path, monkeypatch):
+        self._cle(tmp_path, monkeypatch, {"exp": 1889413774})
+
+        assert meteo_france.echeance_cle() == datetime.datetime.fromtimestamp(1889413774, tz=UTC)
+
+    def test_sans_cle_rien_ne_part(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(tmp_path / "absente"))
+
+        assert meteo_france.lire_cle() is None
+        assert meteo_france.echeance_cle() is None
+        with mock.patch("core.meteo_france.requests.get") as appel:
+            with pytest.raises(meteo_france.CleAbsente):
+                meteo_france.telecharger_carte()
+        appel.assert_not_called()
+
+    def test_une_cle_illisible_ne_fait_rien_planter(self, tmp_path, monkeypatch):
+        fichier = tmp_path / "cle"
+        fichier.write_text("pas.un.jeton")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+
+        assert meteo_france.echeance_cle() is None
+
+    def test_la_cle_part_en_en_tete_jamais_dans_l_adresse(self, tmp_path, monkeypatch):
+        self._cle(tmp_path, monkeypatch, {"exp": 1889413774})
+        with mock.patch("core.meteo_france.requests.get") as appel:
+            appel.return_value.json.return_value = {}
+            meteo_france.telecharger_carte()
+
+        (adresse,), options = appel.call_args
+        assert "signature" not in adresse and "params" not in options
+        assert options["headers"]["apikey"].endswith(".signature")
+
+
+# ── Vigilance : l'annonce ───────────────────────────────────────────────────────────────────
+
+class TestTexteDeLAnnonce:
+
+    def test_un_episode_a_venir_dit_le_jour_et_les_heures_de_paris(self):
+        niveau = {"couleur": 3, "debut": datetime.datetime(2026, 11, 15, 14, 0, tzinfo=UTC),
+                  "fin": datetime.datetime(2026, 11, 15, 22, 0, tzinfo=UTC)}
+
+        texte = meteo_france.texte_alerte("42", 1, niveau, MAINTENANT)
+
+        assert texte == ("Vigilance ORANGE vent violent - Loire (42), aujourd'hui de 15h a 23h. "
+                         "Source Meteo-France.")
+
+    def test_un_episode_en_cours_dit_jusqu_a_quand(self):
+        niveau = {"couleur": 4, "debut": datetime.datetime(2026, 11, 15, 8, 0, tzinfo=UTC),
+                  "fin": datetime.datetime(2026, 11, 15, 23, 0, tzinfo=UTC)}
+
+        texte = meteo_france.texte_alerte("26", 2, niveau, MAINTENANT)
+
+        assert "ROUGE pluie-inondation - Drome (26), en cours jusqu'a minuit" in texte
+
+    def test_le_texte_ne_porte_aucun_accent(self):
+        """Il part tel quel sur la radio, où les accents se perdent."""
+        niveau = {"couleur": 3, "debut": datetime.datetime(2026, 11, 16, 5, 0, tzinfo=UTC),
+                  "fin": datetime.datetime(2026, 11, 16, 17, 0, tzinfo=UTC)}
+
+        texte = meteo_france.texte_alerte("2B", 5, niveau, MAINTENANT)
+
+        assert texte.isascii() and "demain de 6h a 18h" in texte
+
+    def test_une_echeance_terminee_n_est_plus_un_niveau_en_cours(self):
+        _publie, departements = meteo_france.analyser_carte(_carte([ORANGE_VENT_42]))
+        apres = datetime.datetime(2026, 11, 16, 1, 0, tzinfo=UTC)
+
+        assert meteo_france.niveaux_en_cours(departements["42"], apres) == {}
+        assert meteo_france.niveaux_en_cours(departements["42"], MAINTENANT)[1]["couleur"] == 3
+
+
+@pytest.mark.django_db
+class TestAnnonceAuxInstitutions:
+
+    def test_rien_ne_part_sans_abonnement(self, mairie, sans_messagerie):
+        _enregistrer(ORANGE_VENT_42)
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+        sans_messagerie.assert_not_called()
+
+    def test_un_abonnement_inactif_ne_recoit_rien(self, abonnement, sans_messagerie):
+        abonnement.actif = False
+        abonnement.save()
+        _enregistrer(ORANGE_VENT_42)
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+
+    def test_l_orange_est_annonce_sur_la_radio_et_par_message(self, mairie, abonnement,
+                                                               create_user, sans_messagerie):
+        agent = create_user(username="agent-veille@test.fr", email="agent-veille@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        canal = CanalMeshCore.objects.create(nom="Mairie", institution=mairie, actif=True,
+                                             cle_partagee_hex="00" * 16)
+        _enregistrer(ORANGE_VENT_42)
+
+        annonces = meteo_france.diffuser_alertes(MAINTENANT)
+
+        assert len(annonces) == 1 and "ORANGE vent violent - Loire (42)" in annonces[0]
+        message = MessageCanalMeshCore.objects.get(canal=canal)
+        assert message.contenu.startswith("Vigilance ORANGE vent violent")
+        assert sans_messagerie.call_args_list[0].args[0] == agent
+        assert VigilanceDiffusee.objects.get(institution=mairie, phenomene=1).couleur == 3
+
+    def test_le_meme_episode_n_est_annonce_qu_une_fois(self, abonnement, sans_messagerie):
+        _enregistrer(ORANGE_VENT_42)
+        meteo_france.diffuser_alertes(MAINTENANT)
+
+        _enregistrer(ORANGE_VENT_42)
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+
+    def test_le_jaune_ne_franchit_pas_un_seuil_orange(self, abonnement, sans_messagerie):
+        _enregistrer(_domaine("42", 2, [(1, 2, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")]))
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+
+    def test_une_aggravation_est_annoncee_de_nouveau(self, abonnement, sans_messagerie):
+        _enregistrer(ORANGE_VENT_42)
+        meteo_france.diffuser_alertes(MAINTENANT)
+
+        _enregistrer(_domaine("42", 4, [(1, 4, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")]))
+        annonces = meteo_france.diffuser_alertes(MAINTENANT)
+
+        assert len(annonces) == 1 and "ROUGE" in annonces[0]
+
+    def test_une_baisse_au_dessus_du_seuil_ne_fait_aucun_bruit(self, mairie, abonnement, sans_messagerie):
+        _enregistrer(_domaine("42", 4, [(1, 4, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")]))
+        meteo_france.diffuser_alertes(MAINTENANT)
+
+        _enregistrer(ORANGE_VENT_42)
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+        assert VigilanceDiffusee.objects.get(institution=mairie, phenomene=1).couleur == 3
+
+    def test_apres_un_retour_au_calme_l_episode_suivant_est_annonce(self, mairie, abonnement, sans_messagerie):
+        _enregistrer(ORANGE_VENT_42)
+        meteo_france.diffuser_alertes(MAINTENANT)
+        _enregistrer(_domaine("42", 1, []))
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+        assert not VigilanceDiffusee.objects.filter(institution=mairie).exists()
+
+        _enregistrer(ORANGE_VENT_42)
+
+        assert len(meteo_france.diffuser_alertes(MAINTENANT)) == 1
+
+    def test_une_vigilance_annoncee_pour_demain_ne_l_est_pas_deux_fois(self, abonnement, sans_messagerie):
+        demain = _domaine("42", 3, [(5, 3, "2026-11-16T05:00:00Z", "2026-11-16T17:00:00Z")])
+        _enregistrer(_domaine("42", 1, []), domaines_j1=[demain])
+        annonces = meteo_france.diffuser_alertes(MAINTENANT)
+        assert "demain de 6h a 18h" in annonces[0]
+
+        # Le lendemain, le même épisode est passé dans l'échéance du jour.
+        lendemain = datetime.datetime(2026, 11, 16, 5, 30, tzinfo=UTC)
+        _enregistrer(_domaine("42", 3, [(5, 3, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")]),
+                     maintenant=lendemain)
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+
+    def test_une_copie_trop_ancienne_n_annonce_rien(self, abonnement, sans_messagerie):
+        _enregistrer(ORANGE_VENT_42, maintenant=MAINTENANT - datetime.timedelta(hours=7))
+
+        assert meteo_france.diffuser_alertes(MAINTENANT) == []
+
+    def test_les_administrateurs_recoivent_un_seul_resume(self, abonnement, create_user, sans_messagerie):
+        administrateur = create_user(username="adm-veille@test.fr", email="adm-veille@test.fr",
+                                     type="ADMIN")
+        orage = (3, 3, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")
+        vent = (1, 3, "2026-11-15T14:00:00Z", "2026-11-15T22:00:00Z")
+        _enregistrer(_domaine("42", 3, [vent, orage]))
+
+        annonces = meteo_france.diffuser_alertes(MAINTENANT)
+
+        assert len(annonces) == 2
+        resumes = [appel for appel in sans_messagerie.call_args_list if appel.args[0] == administrateur]
+        assert len(resumes) == 1 and "vent violent" in resumes[0].args[1] and "orages" in resumes[0].args[1]
+
+    def test_un_echec_de_messagerie_n_empeche_pas_l_annonce_radio(self, mairie, abonnement, create_user):
+        agent = create_user(username="agent-veille2@test.fr", email="agent-veille2@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        canal = CanalMeshCore.objects.create(nom="Mairie", institution=mairie, actif=True,
+                                             cle_partagee_hex="00" * 16)
+        _enregistrer(ORANGE_VENT_42)
+
+        with mock.patch("core.matrix.envoyer_dm", side_effect=RuntimeError("Matrix en panne")):
+            annonces = meteo_france.diffuser_alertes(MAINTENANT)
+
+        assert len(annonces) == 1
+        assert MessageCanalMeshCore.objects.filter(canal=canal).count() == 1
+
+
+# ── Événements routiers ─────────────────────────────────────────────────────────────────────
+
+def _fragment(genre, contenu, lat="45.44", lon="4.39", fin="2026-11-20T05:00:00+01:00"):
+    fin_xml = f"<overallEndTime>{fin}</overallEndTime>" if fin else ""
+    return f"""<situationRecord xsi:type="ns2:{genre}" id="x" version="1">
+      <source><sourceIdentification>Direction interdépartementale des routes/DIR Centre-Est</sourceIdentification></source>
+      <validity><validityTimeSpecification><overallStartTime>2026-11-14T08:00:00+01:00</overallStartTime>{fin_xml}</validityTimeSpecification></validity>
+      <generalPublicComment><comment><values><value>Poids lourd couché.
+Prudence.</value></values></comment><commentType>description</commentType></generalPublicComment>
+      <generalPublicComment><comment><values><value>De Lyon vers Saint-Étienne</value></values></comment><commentType>locationDescriptor</commentType></generalPublicComment>
+      <groupOfLocations xsi:type="ns2:Point"><tpegPointLocation><point>
+        <pointCoordinates><latitude>{lat}</latitude><longitude>{lon}</longitude></pointCoordinates>
+        <name><descriptor><values><value>Saint-Chamond</value></values></descriptor><tpegOtherPointDescriptorType>townName</tpegOtherPointDescriptorType></name>
+        <name><descriptor><values><value>N88</value></values></descriptor><tpegOtherPointDescriptorType>linkName</tpegOtherPointDescriptorType></name>
+      </point></tpegPointLocation>
+      <pointAlongLinearElement><distanceAlongLinearElement><fromReferent><referentIdentifier>42PR12D</referentIdentifier></fromReferent></distanceAlongLinearElement></pointAlongLinearElement>
+      </groupOfLocations>
+      {contenu}
+    </situationRecord>"""
+
+
+def _flux(*situations):
+    corps = "".join(
+        f'<situation id="{reference}" version="1"><overallSeverity>high</overallSeverity>'
+        f"<situationVersionTime>2026-11-15T10:00:00+01:00</situationVersionTime>{fragments}</situation>"
+        for reference, fragments in situations
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0" xmlns:ns2="http://datex2.eu/schema/2/2_0" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><payloadPublication>'
+        f"<publicationTime>2026-11-15T11:24:33+01:00</publicationTime>{corps}"
+        "</payloadPublication></d2LogicalModel>"
+    ).encode()
+
+
+ACCIDENT = _fragment("Accident", "<accidentType>accident</accidentType>")
+TRAVAUX = _fragment("MaintenanceWorks", "<roadMaintenanceType>roadworks</roadMaintenanceType>")
+FERMEE = _fragment("RoadOrCarriagewayOrLaneManagement",
+                   "<roadOrCarriagewayOrLaneManagementType>roadClosed</roadOrCarriagewayOrLaneManagementType>")
+
+
+class TestLectureDuFluxRoutier:
+
+    def test_une_situation_devient_une_ligne_lisible(self):
+        publie_le, evenements = trafic_routier.analyser(_flux(("s1", ACCIDENT)))
+
+        assert publie_le == datetime.datetime(2026, 11, 15, 10, 24, 33, tzinfo=UTC)
+        (evenement,) = evenements
+        assert evenement["reference"] == "s1"
+        assert evenement["categorie"] == "ACCIDENT" and evenement["natures"] == ["Accident"]
+        assert evenement["route"] == "N88" and evenement["commune_nom"] == "Saint-Chamond"
+        assert evenement["departement_code"] == "42"
+        assert evenement["gestionnaire"] == "DIR Centre-Est"
+        assert evenement["description"] == "Poids lourd couché. Prudence."
+        assert (evenement["location"].x, evenement["location"].y) == (4.39, 45.44)
+        assert evenement["gravite"] == "high"
+
+    def test_la_categorie_est_celle_du_fragment_le_plus_contraignant(self):
+        """Des travaux AVEC route fermée sont une fermeture : c'est ce qu'un agent doit lire."""
+        _publie, (evenement,) = trafic_routier.analyser(_flux(("s1", TRAVAUX + FERMEE)))
+
+        assert evenement["categorie"] == "FERMETURE"
+        assert evenement["natures"] == ["Travaux", "Route fermée"]
+
+    def test_une_fin_inconnue_sur_un_fragment_rend_la_fin_inconnue(self):
+        sans_fin = _fragment("Accident", "<accidentType>accident</accidentType>", fin=None)
+
+        _publie, (evenement,) = trafic_routier.analyser(_flux(("s1", TRAVAUX + sans_fin)))
+
+        assert evenement["fin"] is None
+
+    def test_une_valeur_inconnue_ne_montre_jamais_d_anglais(self):
+        inconnu = _fragment("GeneralObstruction", "<obstructionType>spillageOnTheRoad</obstructionType>")
+
+        _publie, (evenement,) = trafic_routier.analyser(_flux(("s1", inconnu)))
+
+        assert evenement["natures"] == ["Obstacle"]
+
+    def test_une_situation_sans_position_est_ignoree(self):
+        sans_position = _fragment("Accident", "", lat="?", lon="?")
+
+        _publie, evenements = trafic_routier.analyser(_flux(("s1", sans_position), ("s2", ACCIDENT)))
+
+        assert [e["reference"] for e in evenements] == ["s2"]
+
+    @pytest.mark.django_db
+    def test_ce_qui_quitte_le_flux_quitte_la_table(self):
+        _publie, premiers = trafic_routier.analyser(_flux(("s1", ACCIDENT), ("s2", TRAVAUX)))
+        trafic_routier.enregistrer(premiers)
+
+        _publie, suivants = trafic_routier.analyser(_flux(("s2", FERMEE), ("s3", ACCIDENT)))
+        trafic_routier.enregistrer(suivants)
+
+        assert set(EvenementRoutier.objects.values_list("reference", "categorie")) == {
+            ("s2", "FERMETURE"), ("s3", "ACCIDENT")}
+
+    @pytest.mark.django_db
+    def test_un_flux_vide_n_efface_rien(self):
+        _publie, premiers = trafic_routier.analyser(_flux(("s1", ACCIDENT)))
+        trafic_routier.enregistrer(premiers)
+
+        with pytest.raises(ValueError):
+            trafic_routier.enregistrer([])
+
+        assert EvenementRoutier.objects.count() == 1
+
+
+# ── Stations de carburant ───────────────────────────────────────────────────────────────────
+
+def _station(identifiant, **champs):
+    return {
+        "id": identifiant, "geom": {"lon": 4.39, "lat": 45.44}, "cp": "42000",
+        "adresse": "1 rue de la Veille", "ville": "Saint-Étienne", "code_departement": "42",
+        "carburants_disponibles": ["Gazole"], "carburants_rupture_temporaire": None,
+        "carburants_rupture_definitive": "E85;GPLc", "horaires_automate_24_24": "Oui",
+        "gazole_prix": 1.699, "gazole_maj": "2026-11-15T06:00:00+00:00", **champs,
+    }
+
+
+class TestLectureDesStations:
+
+    def test_rupture_temporaire_et_definitive_ne_sont_pas_confondues(self):
+        (station,) = carburants.analyser([_station(1, carburants_rupture_temporaire="SP95;E10")])
+
+        assert station["ruptures_temporaires"] == ["SP95", "E10"]
+        assert station["ruptures_definitives"] == ["E85", "GPLc"]
+        assert station["carburants_disponibles"] == ["Gazole"]
+        assert station["automate_24_24"] is True
+        assert station["prix"] == {"Gazole": {"prix": 1.699, "maj": "2026-11-15T06:00:00+00:00"}}
+        assert station["mis_a_jour_le"] == datetime.datetime(2026, 11, 15, 6, 0, tzinfo=UTC)
+
+    def test_une_station_sans_position_est_ignoree(self):
+        stations = carburants.analyser([_station(1, geom=None), _station(2)])
+
+        assert [s["reference"] for s in stations] == ["2"]
+
+    @pytest.mark.django_db
+    def test_un_export_tronque_ne_remplace_pas_la_copie(self, monkeypatch):
+        monkeypatch.setattr(carburants, "MINIMUM_PLAUSIBLE", 2)
+        carburants.enregistrer(carburants.analyser([_station(1), _station(2), _station(3)]))
+
+        with pytest.raises(ValueError):
+            carburants.enregistrer(carburants.analyser([_station(1)]))
+
+        assert StationCarburant.objects.count() == 3
+
+    @pytest.mark.django_db
+    def test_une_station_fermee_disparait_au_releve_suivant(self, monkeypatch):
+        monkeypatch.setattr(carburants, "MINIMUM_PLAUSIBLE", 2)
+        carburants.enregistrer(carburants.analyser([_station(1), _station(2), _station(3)]))
+
+        carburants.enregistrer(carburants.analyser(
+            [_station(1, carburants_rupture_temporaire="Gazole"), _station(2)]))
+
+        assert set(StationCarburant.objects.values_list("reference", flat=True)) == {"1", "2"}
+        assert StationCarburant.objects.get(pk="1").ruptures_temporaires == ["Gazole"]
+
+
+# ── Le relevé planifié ──────────────────────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestRelevePlanifie:
+
+    def _source(self, monkeypatch, relever, code="TRAFIC_ROUTIER"):
+        source = sources_ouvertes.SOURCES[code]._replace(relever=relever)
+        monkeypatch.setitem(sources_ouvertes.SOURCES, code, source)
+
+    def test_un_releve_reussi_laisse_sa_trace(self, monkeypatch):
+        self._source(monkeypatch, lambda: 250)
+
+        assert sources_ouvertes.relever_source("TRAFIC_ROUTIER") == "réussi"
+
+        trace = ReleveSourceOuverte.objects.get(pk="TRAFIC_ROUTIER")
+        assert trace.lignes == 250 and trace.erreur == "" and trace.dernier_succes is not None
+        assert sources_ouvertes.est_perime("TRAFIC_ROUTIER") is False
+
+    def test_une_source_relevee_a_l_instant_n_est_pas_rappelee(self, monkeypatch):
+        appels = []
+        self._source(monkeypatch, lambda: appels.append(1) or 1)
+        sources_ouvertes.relever_source("TRAFIC_ROUTIER")
+
+        assert sources_ouvertes.relever_source("TRAFIC_ROUTIER") == "ignoré"
+        assert sources_ouvertes.relever_source("TRAFIC_ROUTIER", forcer=True) == "réussi"
+        assert len(appels) == 2
+
+    def test_une_panne_est_consignee_sans_rien_faire_echouer(self, monkeypatch):
+        def en_panne():
+            raise requests.ConnectionError("réseau coupé")
+        self._source(monkeypatch, en_panne)
+
+        assert sources_ouvertes.relever_source("TRAFIC_ROUTIER") == "échec"
+
+        trace = ReleveSourceOuverte.objects.get(pk="TRAFIC_ROUTIER")
+        assert "réseau coupé" in trace.erreur and trace.dernier_succes is None
+        assert sources_ouvertes.est_perime("TRAFIC_ROUTIER") is True
+
+    def test_un_echec_ne_fait_pas_oublier_le_dernier_succes(self, monkeypatch):
+        self._source(monkeypatch, lambda: 5)
+        sources_ouvertes.relever_source("TRAFIC_ROUTIER")
+        succes = ReleveSourceOuverte.objects.get(pk="TRAFIC_ROUTIER").dernier_succes
+
+        def en_panne():
+            raise ValueError("format inattendu")
+        self._source(monkeypatch, en_panne)
+        sources_ouvertes.relever_source("TRAFIC_ROUTIER", forcer=True)
+
+        trace = ReleveSourceOuverte.objects.get(pk="TRAFIC_ROUTIER")
+        assert trace.dernier_succes == succes and trace.lignes == 5
+
+    def test_sans_cle_la_vigilance_se_tait(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(tmp_path / "absente"))
+
+        assert sources_ouvertes.relever_source("VIGILANCE_METEO") == "échec"
+        assert ReleveSourceOuverte.objects.get(pk="VIGILANCE_METEO").erreur == "aucune clé sur cette machine"
+
+    def test_la_supervision_voit_une_source_perimee(self, monkeypatch):
+        from core.metrics import VeilleCollector
+
+        self._source(monkeypatch, lambda: 9)
+        sources_ouvertes.relever_source("TRAFIC_ROUTIER")
+        ReleveSourceOuverte.objects.filter(pk="TRAFIC_ROUTIER").update(
+            dernier_succes=timezone.now() - datetime.timedelta(hours=2))
+
+        familles = {famille.name: famille for famille in VeilleCollector().collect()}
+
+        perimee = {s.labels["source"]: s.value for s in familles["assista_source_ouverte_perimee"].samples}
+        assert perimee == {"TRAFIC_ROUTIER": 1}
+        assert familles["assista_source_ouverte_age_secondes"].samples[0].value > 7000
+
+
+# ── Les lectures ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestLectures:
+
+    def test_la_vigilance_se_lit_sans_compte_et_sans_appel_sortant(self, api_client):
+        _enregistrer(ORANGE_VENT_42, _domaine("FRA", 3, []), _domaine("01", 1, []),
+                     maintenant=timezone.now())
+
+        with mock.patch("core.meteo_france.requests.get") as appel:
+            reponse = api_client.get(reverse("vigilance_meteo"), {"departement": "42"})
+
+        appel.assert_not_called()
+        assert reponse.status_code == 200
+        corps = reponse.json()
+        assert corps["disponible"] is True and corps["perime"] is False
+        assert corps["source"] == "Météo-France"
+        assert corps["mon_departement"]["nom"] == "Loire" and corps["mon_departement"]["couleur_j"] == 3
+        assert [d["departement_code"] for d in corps["departements"]] == ["42"]
+        assert "bulletin" not in corps["departements"][0]
+
+    def test_le_departement_de_l_appelant_est_celui_de_son_institution(self, mairie, create_user):
+        agent = create_user(username="agent-veille3@test.fr", email="agent-veille3@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=agent)
+        _enregistrer(ORANGE_VENT_42, maintenant=timezone.now())
+
+        corps = client.get(reverse("vigilance_meteo")).json()
+
+        assert corps["mon_departement"]["departement_code"] == "42"
+
+    def test_sans_releve_la_page_le_dit(self, api_client):
+        corps = api_client.get(reverse("vigilance_meteo")).json()
+
+        assert corps["disponible"] is False and corps["mon_departement"] is None
+
+    def test_la_carte_nationale_est_servie_depuis_la_copie(self, api_client):
+        assert api_client.get(reverse("vigilance_meteo_vignette", args=["J"])).status_code == 404
+        meteo_france.enregistrer_vignette("J", b"\x89PNG-image")
+
+        reponse = api_client.get(reverse("vigilance_meteo_vignette", args=["J"]))
+
+        assert reponse.status_code == 200 and reponse["Content-Type"] == "image/png"
+        assert reponse.content == b"\x89PNG-image"
+        assert VignetteVigilanceMeteo.objects.count() == 1
+
+    def _evenement(self, reference, lon, lat, categorie="TRAVAUX"):
+        EvenementRoutier.objects.create(
+            reference=reference, categorie=categorie, natures=["Travaux"], route="N88",
+            location=Point(lon, lat, srid=4326), releve_le=timezone.now())
+
+    def test_les_evenements_routiers_sont_bornes_a_l_emprise(self, api_client):
+        self._evenement("pres", 4.40, 45.45)
+        self._evenement("ferme", 4.45, 45.40, categorie="FERMETURE")
+        self._evenement("loin", 2.35, 48.85)
+
+        corps = api_client.get(reverse("evenements_routiers"),
+                               {"lat": "45.44", "lon": "4.39", "rayon_km": "20"}).json()
+
+        # La fermeture passe devant les travaux.
+        assert [e["reference"] for e in corps["resultats"]] == ["ferme", "pres"]
+        assert corps["resultats"][0]["categorie_libelle"] == "Route fermée"
+        assert corps["emprise_connue"] is True and corps["rayon_km"] == 20
+        assert corps["perime"] is True      # aucun relevé consigné dans ce test
+
+    def test_la_carte_demande_par_rectangle(self, api_client):
+        self._evenement("pres", 4.40, 45.45)
+        self._evenement("loin", 2.35, 48.85)
+
+        corps = api_client.get(reverse("evenements_routiers"), {"bbox": "4,45,5,46"}).json()
+
+        assert [e["reference"] for e in corps["resultats"]] == ["pres"]
+        assert api_client.get(reverse("evenements_routiers"), {"bbox": "5,45,4,46"}).status_code == 400
+
+    def test_sans_emprise_ni_institution_la_reponse_est_vide_et_le_dit(self, api_client):
+        self._evenement("pres", 4.40, 45.45)
+
+        corps = api_client.get(reverse("evenements_routiers")).json()
+
+        assert corps["emprise_connue"] is False and corps["resultats"] == []
+
+    def test_l_emprise_par_defaut_est_la_commune_de_l_institution(self, mairie, create_user):
+        agent = create_user(username="agent-veille4@test.fr", email="agent-veille4@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=agent)
+        self._evenement("pres", 4.40, 45.45)
+        self._evenement("loin", 2.35, 48.85)
+
+        corps = client.get(reverse("evenements_routiers")).json()
+
+        assert [e["reference"] for e in corps["resultats"]] == ["pres"]
+        assert corps["centre"] == {"latitude": 45.44, "longitude": 4.39}
+
+    def test_les_stations_disent_ou_l_on_peut_encore_faire_le_plein(self, api_client):
+        def station(reference, disponibles, ruptures):
+            StationCarburant.objects.create(
+                reference=reference, ville="Saint-Étienne", location=Point(4.39, 45.44, srid=4326),
+                carburants_disponibles=disponibles, ruptures_temporaires=ruptures,
+                releve_le=timezone.now())
+        station("pleine", ["Gazole", "E10"], [])
+        station("partielle", ["Gazole"], ["E10"])
+        station("vide", [], ["Gazole", "E10"])
+
+        parametres = {"lat": "45.44", "lon": "4.39"}
+        toutes = api_client.get(reverse("stations_carburant"), parametres).json()
+        en_rupture = api_client.get(reverse("stations_carburant"), {**parametres, "rupture": "1"}).json()
+
+        assert toutes["bilan"] == {"total": 3, "en_rupture": 2, "a_sec": 1}
+        assert len(toutes["resultats"]) == 3
+        assert {s["reference"] for s in en_rupture["resultats"]} == {"partielle", "vide"}
+        assert en_rupture["bilan"] == toutes["bilan"]
+
+    def test_au_dela_du_plafond_les_fermetures_restent_et_le_bilan_reste_juste(self, api_client, monkeypatch):
+        from core import views_veille
+
+        monkeypatch.setattr(views_veille, "RESULTATS_MAX", 2)
+        for i in range(3):
+            self._evenement(f"travaux-{i}", 4.40, 45.45)
+        self._evenement("ferme", 4.41, 45.45, categorie="FERMETURE")
+        for i in range(4):
+            StationCarburant.objects.create(
+                reference=f"s{i}", ville="Saint-Étienne", location=Point(4.39, 45.44, srid=4326),
+                carburants_disponibles=[], ruptures_temporaires=["Gazole"], releve_le=timezone.now())
+
+        parametres = {"lat": "45.44", "lon": "4.39"}
+        routes = api_client.get(reverse("evenements_routiers"), parametres).json()
+        stations = api_client.get(reverse("stations_carburant"), parametres).json()
+
+        assert routes["tronque"] is True and routes["resultats"][0]["reference"] == "ferme"
+        assert stations["tronque"] is True and len(stations["resultats"]) == 2
+        assert stations["bilan"] == {"total": 4, "en_rupture": 4, "a_sec": 4}
+
+    def test_seul_un_acteur_institutionnel_regle_l_annonce(self, mairie, create_user):
+        citoyen = create_user(username="citoyen-veille@test.fr", email="citoyen-veille@test.fr")
+        client = APIClient()
+        client.force_authenticate(user=citoyen)
+        adresse = reverse("configurationalertevigilance-list")
+
+        assert client.post(adresse, {"institution": str(mairie.id), "actif": True}, format="json").status_code == 403
+
+        agent = create_user(username="agent-veille5@test.fr", email="agent-veille5@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        client.force_authenticate(user=agent)
+        reponse = client.post(adresse, {"institution": str(mairie.id), "actif": True, "couleur_min": 4}, format="json")
+
+        assert reponse.status_code == 201 and reponse.json()["couleur_min"] == 4
+        assert client.post(adresse, {"institution": str(mairie.id), "actif": True}, format="json").status_code == 400
+        assert len(client.get(adresse, {"institution": str(mairie.id)}).json()) == 1
+
+
+# ── Défibrillateurs ─────────────────────────────────────────────────────────────────────────
+
+ENTETE_DAE = ("gid;c_gid;c_etat_valid;c_nom;c_lat_coor1;c_long_coor1;c_adr_num;c_adr_voie;c_com_cp;"
+              "c_com_insee;c_com_nom;c_acc;c_acc_lib;c_acc_etg;c_acc_complt;c_disp_complt;"
+              "c_etat_fonct;c_dermnt;c_maj_don;c_expt_rais;c_etat;c_doublon;c_dispo_horaires")
+
+
+def _ligne_dae(gid, insee="42218", etat="Actif", valide="validées", fonction="En fonctionnement",
+               doublon="f", exploitant="COMMUNE DE SAINT-ETIENNE"):
+    return (f"{gid};{gid};{valide};DAE G5;45.44;4.39;1;place de l'Hôtel de Ville;42000;{insee};"
+            f"Saint-Étienne;Extérieur;t;0;Sous le porche;;{fonction};2026-03-01;2026-06-01;"
+            f"{exploitant};{etat};{doublon};24/7")
+
+
+class TestDefibrillateurs:
+
+    def _lire(self, *lignes, communes=("42218",)):
+        return dae.lire(io.StringIO("\n".join((ENTETE_DAE,) + lignes)), set(communes))
+
+    def test_un_appareil_en_service_est_propose_comme_ressource(self):
+        (site,) = self._lire(_ligne_dae(101))
+
+        assert site.source == "GEODAE" and site.source_id == "101"
+        assert site.categorie == "DEFIBRILLATEUR"
+        assert site.est_ressource is True and site.est_enjeu is False
+        assert site.nom == "Défibrillateur — COMMUNE DE SAINT-ETIENNE"
+        assert site.adresse == "1 place de l'Hôtel de Ville, 42000 Saint-Étienne"
+        assert (site.latitude, site.longitude) == (45.44, 4.39)
+        assert site.commune_code == "42218"
+        assert site.attributs["acces"] == "Extérieur" and site.attributs["acces_libre"] is True
+        assert site.attributs["emplacement"] == "Sous le porche"
+        assert site.attributs["disponibilite"] == "24/7"
+
+    def test_seuls_les_appareils_du_perimetre_sont_lus(self):
+        sites = self._lire(_ligne_dae(1), _ligne_dae(2, insee="69123"))
+
+        assert [s.source_id for s in sites] == ["1"]
+
+    @pytest.mark.parametrize("defaut", [
+        {"etat": "Supprimé définitivement"}, {"valide": "en attente de validation"},
+        {"fonction": "Hors service"}, {"doublon": "t"},
+    ])
+    def test_un_appareil_retire_ou_douteux_n_est_pas_propose(self, defaut):
+        assert self._lire(_ligne_dae(1, **defaut)) == []
+
+    def test_sans_exploitant_le_nom_saisi_est_garde(self):
+        (site,) = self._lire(_ligne_dae(1, exploitant=""))
+
+        assert site.nom == "DAE G5"
+
+    def test_la_source_est_branchee_comme_les_autres_fichiers_nationaux(self):
+        assert CONNECTEURS["GEODAE"] is dae
+        assert "GEODAE" in SOURCES_ASYNCHRONES and "GEODAE" in SOURCES_SANS_DECOUPAGE
+
+    def test_un_fichier_injoignable_est_dit_sans_exception(self):
+        from core.opendata.base import perimetre_commune
+
+        with mock.patch("core.opendata.dae._telecharger", side_effect=requests.ConnectionError("coupé")):
+            collecte = dae.collecter(perimetre_commune("42218"))
+
+        assert collecte == [] and "n'a pas pu être téléchargé" in collecte.tronque
+
+
+# ── Relais de la recherche d'adresse ────────────────────────────────────────────────────────
+
+REPONSE_ADRESSE = {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "geometry": {"type": "Point", "coordinates": [2.29, 49.89]},
+     "properties": {"label": "8 Boulevard du Port 80000 Amiens", "citycode": "80021"}}]}
+
+
+@pytest.fixture
+def geocodage():
+    from django.core.cache import cache
+
+    cache.clear()       # le limiteur de débit compte dans le cache
+    with mock.patch("core.views_adresses.requests.get") as appel:
+        appel.return_value.json.return_value = REPONSE_ADRESSE
+        yield appel
+
+
+class TestRelaisDAdresse:
+
+    def test_la_recherche_passe_par_le_serveur_et_rend_la_meme_reponse(self, api_client, geocodage):
+        reponse = api_client.get(reverse("adresses_recherche"), {"q": "8 bd du port amiens"})
+
+        assert reponse.status_code == 200 and reponse.json() == REPONSE_ADRESSE
+        (adresse,), options = geocodage.call_args
+        assert adresse == "https://data.geopf.fr/geocodage/search"
+        assert options["params"] == {"q": "8 bd du port amiens", "limit": 5, "index": "address"}
+
+    def test_rien_du_navigateur_ne_part_vers_le_service(self, api_client, geocodage):
+        api_client.get(reverse("adresses_recherche"), {"q": "8 bd du port amiens"},
+                       HTTP_USER_AGENT="NavigateurDeTest/1.0", HTTP_REFERER="https://exemple.test/demande",
+                       HTTP_X_FORWARDED_FOR="203.0.113.7", HTTP_COOKIE="session=abc")
+
+        _positionnels, options = geocodage.call_args
+        assert set(options) == {"params", "timeout"}        # ni en-têtes, ni cookies
+
+    def test_la_position_qui_sert_au_classement_est_arrondie_au_kilometre(self, api_client, geocodage):
+        api_client.get(reverse("adresses_recherche"),
+                       {"q": "rue de la paix", "lat": "45.439871", "lon": "4.387213"})
+
+        parametres = geocodage.call_args.kwargs["params"]
+        assert (parametres["lat"], parametres["lon"]) == (45.44, 4.39)
+
+    def test_seuls_les_parametres_connus_sont_transmis(self, api_client, geocodage):
+        api_client.get(reverse("adresses_recherche"), {
+            "q": "mairie", "limit": "500", "type": "municipality", "citycode": "42218",
+            "postcode": "42000 OR 1=1", "autocomplete": "0", "index": "poi", "callback": "x"})
+
+        assert geocodage.call_args.kwargs["params"] == {
+            "q": "mairie", "limit": 10, "index": "address", "type": "municipality", "citycode": "42218"}
+
+    def test_une_question_trop_courte_ne_declenche_aucun_appel(self, api_client, geocodage):
+        reponse = api_client.get(reverse("adresses_recherche"), {"q": " a "})
+
+        assert reponse.json() == {"type": "FeatureCollection", "features": []}
+        geocodage.assert_not_called()
+
+    def test_une_question_demesuree_est_coupee(self, api_client, geocodage):
+        api_client.get(reverse("adresses_recherche"), {"q": "x" * 5000})
+
+        assert len(geocodage.call_args.kwargs["params"]["q"]) == 200
+
+    def test_un_service_en_panne_rend_une_liste_vide_pas_une_erreur(self, api_client, geocodage, caplog):
+        geocodage.side_effect = requests.ConnectionError("https://data.geopf.fr/geocodage/search?q=8+bd+du+port")
+
+        reponse = api_client.get(reverse("adresses_recherche"), {"q": "8 bd du port amiens"})
+
+        assert reponse.status_code == 200 and reponse.json()["features"] == []
+        # La question posée ne doit pas finir dans le journal.
+        assert "port" not in caplog.text
+
+    def test_le_geocodage_inverse_garde_la_precision_d_un_numero_de_rue(self, api_client, geocodage):
+        reponse = api_client.get(reverse("adresses_inverse"), {"lat": "45.4398712", "lon": "4.3872139"})
+
+        assert reponse.status_code == 200 and reponse.json() == REPONSE_ADRESSE
+        (adresse,), options = geocodage.call_args
+        assert adresse == "https://data.geopf.fr/geocodage/reverse"
+        assert options["params"] == {"lat": 45.4399, "lon": 4.3872, "limit": 1, "index": "address"}
+
+    @pytest.mark.parametrize("parametres", [{}, {"lat": "45"}, {"lat": "abc", "lon": "4"},
+                                            {"lat": "95", "lon": "4"}])
+    def test_une_position_absente_ou_absurde_est_refusee(self, api_client, geocodage, parametres):
+        assert api_client.get(reverse("adresses_inverse"), parametres).status_code == 400
+        geocodage.assert_not_called()
+
+    def test_le_relais_ne_sert_pas_a_moissonner(self, api_client, geocodage):
+        from core.views_adresses import DebitGeocodage
+
+        with mock.patch.object(DebitGeocodage, "rate", "3/min"), \
+                mock.patch.object(DebitGeocodage, "THROTTLE_RATES", {"geocodage": "3/min"}, create=True):
+            codes = [api_client.get(reverse("adresses_recherche"), {"q": "rue de la paix"}).status_code
+                     for _ in range(5)]
+
+        assert codes == [200, 200, 200, 429, 429]
+        assert geocodage.call_count == 3

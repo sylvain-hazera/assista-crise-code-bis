@@ -139,7 +139,10 @@ services:
     # les comptes d'amorçage (exporter, pont, passerelle1). Sans eux, la première création de
     # compte depuis le web réécrirait les fichiers SANS ces comptes, coupant l'exporteur et le
     # pont -- un garde-fou dans core/mqtt_comptes.py refuse d'écrire tant qu'ils manquent.
-    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password]
+    # meteofrance_cle_api : clé du portail Météo-France, lue par la tâche planifiée de veille
+    # (core/meteo_france.py). Montée ici seulement : c'est dans ce conteneur que cron lance
+    # `manage.py relever_sources_ouvertes`.
+    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password, meteofrance_cle_api]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data          # jeton du bot Matrix, partagé avec matrix-bridge
@@ -517,6 +520,10 @@ secrets:
   mqtt_exporter_password:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_exporter_password.txt" }
   mqtt_pont_password:        { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_pont_password.txt" }
   mqtt_passerelle1_password: { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_passerelle1_password.txt" }
+  # Clé du portail public de Météo-France (vigilance). Un jeton signé, valable trois ans au plus
+  # : son échéance est surveillée (alerte CleMeteoFranceExpireBientot). Le fichier doit exister,
+  # même vide, sinon Compose refuse de créer le conteneur ; vide, la veille météo se tait.
+  meteofrance_cle_api:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meteofrance_cle_api.txt" }
 
 # Réseaux existants (créés à la main avant compose) : jamais recréés -- ac_waf, les sauvegardes et
 # les satellites s'y rattachent par nom.

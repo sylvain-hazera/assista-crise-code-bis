@@ -59,6 +59,20 @@
         <span class="layer-dot postes-secours-dot"></span>
         Postes de secours / soins
       </label>
+      <!-- Veille du territoire : donnees publiques, lues dans la copie que tient notre serveur.
+           Chargees a la demande, pour la seule emprise affichee. -->
+      <label class="layer-toggle-item" title="Réseau routier national seulement (Bison Futé)">
+        <input type="checkbox" [(ngModel)]="layerVisibility.evenementsRoutiers" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot routes-dot"></span>
+        Routes : fermetures, accidents, travaux
+        @if (layerVisibility.evenementsRoutiers && veilleTronquee.routes) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Rouge : plus de carburant. Orange : un carburant manque.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.stationsCarburant" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot stations-dot"></span>
+        Stations de carburant
+        @if (layerVisibility.stationsCarburant && veilleTronquee.stations) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
       @if (isInstitutional) {
         <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.positions" (ngModelChange)="onLayerToggle()">

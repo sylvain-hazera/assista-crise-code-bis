@@ -2,11 +2,12 @@
  * gymnase… Pré-alimenté depuis les bases publiques nationales (voir backend core/opendata/) et
  * toujours déposé en `PROPOSE` : une base ouverte se trompe et vieillit, la commune décide. */
 export type SourceSiteSensible =
-  'ANNUAIRE_EDUCATION' | 'FINESS' | 'ICPE' | 'EQUIPEMENTS_SPORTIFS' | 'SIRENE' | 'SAISIE';
+  'ANNUAIRE_EDUCATION' | 'FINESS' | 'ICPE' | 'EQUIPEMENTS_SPORTIFS' | 'SIRENE' | 'GEODAE' | 'SAISIE';
 
 export type CategorieSiteSensible =
   'ENSEIGNEMENT' | 'PETITE_ENFANCE' | 'SOINS' | 'INDUSTRIE' | 'ELEVAGE' | 'VETERINAIRE'
-  | 'HEBERGEMENT' | 'RASSEMBLEMENT' | 'MOYENS' | 'APPROVISIONNEMENT' | 'FUNERAIRE' | 'AUTRE';
+  | 'HEBERGEMENT' | 'RASSEMBLEMENT' | 'MOYENS' | 'APPROVISIONNEMENT' | 'FUNERAIRE'
+  | 'DEFIBRILLATEUR' | 'AUTRE';
 
 export type StatutSiteSensible = 'PROPOSE' | 'RETENU' | 'ECARTE';
 

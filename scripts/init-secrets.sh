@@ -63,6 +63,18 @@ create_secret pg_monitoring_password 32
 create_secret mqtt_exporter_password 32
 create_secret mqtt_pont_password 32
 create_secret mqtt_passerelle1_password 32
+# Clé du portail public de Météo-France (vigilance, core/meteo_france.py). Elle ne se génère
+# pas : elle se crée sur https://portail-api.meteofrance.fr avec le compte du porteur, puis se
+# colle dans ce fichier. On ne crée ici que le fichier VIDE, parce que Compose refuse de démarrer
+# un conteneur dont un secret manque ; vide, la veille météo se tait sans rien casser.
+METEOFRANCE_KEY="$SECRETS_DIR/meteofrance_cle_api.txt"
+if [ -e "$METEOFRANCE_KEY" ]; then
+    echo "  kept      $METEOFRANCE_KEY"
+else
+    : > "$METEOFRANCE_KEY"
+    echo "  created   $METEOFRANCE_KEY (empty: paste the Meteo-France key in it)"
+fi
+chmod 644 "$METEOFRANCE_KEY"
 # mosquitto-exporter lit MQTT_USER/MQTT_PASS dans son environnement (il ne sait pas lire un
 # fichier de secret) : on lui fabrique son env_file à partir du secret ci-dessus.
 MQTT_EXPORTER_ENV="$SECRETS_DIR/mqtt-exporter.env"

@@ -133,11 +133,13 @@ Les clés de chiffrement doivent être présentes dans `.env`, sinon une quinzai
 | `purge_audit_logs` | supprime les entrées d'`AuditLog` plus anciennes que `AUDIT_LOG_RETENTION_DAYS` |
 | `purger_pieces_non_validees [--appliquer]` | détruit les justificatifs déposés depuis plus de 30 jours que personne n'a instruits, après un rappel à J-7 (simulation par défaut) |
 | `verifier_alertes_sismiques` | diffuse sur le mesh les séismes récents proches des institutions abonnées |
+| `relever_sources_ouvertes [--source X] [--forcer]` | relève la veille du territoire (vigilance Météo-France, événements routiers, stations de carburant) et annonce la vigilance aux institutions abonnées |
 | `backfill_zones_mon_territoire` | rattrapage de la Zone « Mon territoire » des collectivités créées avant son automatisation |
 | `synchroniser_sortant` / `synchroniser_entrant` | synchronisation satellite ↔ central (sur un satellite `full`) |
 
-`cleanup_crises`, `purge_audit_logs`, `purger_pieces_non_validees` et
-`verifier_alertes_sismiques` sont prévues pour être planifiées (cron) en production.
+`cleanup_crises`, `purge_audit_logs`, `purger_pieces_non_validees`,
+`verifier_alertes_sismiques` et `relever_sources_ouvertes` sont prévues pour être planifiées
+(cron) en production.
 
 Scripts de développement à la racine du backend :
 

@@ -129,6 +129,10 @@
 .personnel-dot { background: #f59e0b; }
 .centres-dot { background: #6366f1; }
 .benevoles-pompiers-dot { background: #7c3aed; }
+.routes-dot { background: #c81e1e; }
+.stations-dot { background: #0f766e; }
+// Dit qu'une couche est incomplète à cette échelle, sans alourdir la légende.
+.layer-note { margin-left: 4px; font-size: .72rem; font-style: italic; opacity: .8; }
 .centres-hebergement-dot { background: #059669; }
 
 // Mini reproduction du pictogramme réel du calque (croix rouge sur fond blanc), plutôt qu'un

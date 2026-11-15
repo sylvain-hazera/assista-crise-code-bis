@@ -1,0 +1,329 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">radar</span> Veille du territoire</h1>
+    <p class="explication">
+      Ce que les services de l'État publient en ce moment pour votre territoire : vigilance
+      météorologique, routes, carburant. Ces données sont relevées par le serveur à intervalle
+      régulier ; votre navigateur n'interroge aucun service extérieur, et consulter cette page
+      n'apprend rien à personne.
+    </p>
+  </header>
+
+  <!-- ════ Vigilance météorologique ════ -->
+  <section aria-labelledby="titre-vigilance">
+    <h2 id="titre-vigilance"><span class="material-icons">thunderstorm</span> Vigilance météorologique</h2>
+
+    @if (erreurVigilance) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire la vigilance.
+      </p>
+    } @else if (!vigilance) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!vigilance.disponible) {
+      <p class="attente">
+        Aucun relevé pour l'instant. La vigilance apparaîtra ici dès le premier relevé réussi du
+        serveur.
+      </p>
+    } @else {
+      @if (vigilance.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            <strong>Relevé ancien.</strong> Le dernier date du
+            {{ vigilance.releve_le | date:'dd/MM à HH:mm' }} : ce qui suit n'est peut-être plus
+            d'actualité. Consultez
+            <a href="https://vigilance.meteofrance.fr" target="_blank" rel="noopener noreferrer">vigilance.meteofrance.fr</a>.
+          </span>
+        </p>
+      }
+
+      @if (vigilance.mon_departement; as dep) {
+        <div class="mon-departement" [attr.data-couleur]="dep.couleur_j > dep.couleur_j1 ? dep.couleur_j : dep.couleur_j1">
+          <h3>{{ dep.nom }} ({{ dep.departement_code }})</h3>
+          <div class="echeances">
+            @for (echeance of ECHEANCES; track echeance.cle) {
+              <div class="echeance">
+                <p class="jour">
+                  {{ echeance.libelle }}
+                  <span class="couleur" [attr.data-couleur]="echeance.cle === 'J' ? dep.couleur_j : dep.couleur_j1">
+                    {{ nomCouleur(echeance.cle === 'J' ? dep.couleur_j : dep.couleur_j1) }}
+                  </span>
+                </p>
+                @if (fiche(dep, echeance.cle)?.phenomenes?.length) {
+                  <ul class="phenomenes">
+                    @for (phenomene of fiche(dep, echeance.cle)!.phenomenes; track phenomene.id) {
+                      <li>
+                        <span class="couleur" [attr.data-couleur]="phenomene.couleur">{{ nomCouleur(phenomene.couleur) }}</span>
+                        <strong>{{ nomPhenomene(phenomene) }}</strong>
+                        @if (horaire(phenomene); as h) {
+                          <span class="horaire">de {{ h.debut | date:'HH:mm' }} à {{ h.fin | date:'HH:mm' }}</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="calme">Pas de vigilance particulière.</p>
+                }
+              </div>
+            }
+          </div>
+
+          @if (dep.bulletin?.length) {
+            <div class="bulletin">
+              <h4>Bulletin de suivi</h4>
+              @for (partie of dep.bulletin; track $index) {
+                @if (partie.titre) { <p class="titre-bulletin">{{ partie.titre }}@if (partie.alea) { — {{ partie.alea }} }</p> }
+                @for (ligne of partie.lignes; track $index) { <p>{{ ligne }}</p> }
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <p class="attente">
+          Votre compte n'est rattaché à aucun département : choisissez-en un dans la liste
+          ci-dessous pour lire son détail.
+        </p>
+      }
+
+      <div class="national">
+        <div class="vignettes">
+          @for (echeance of ECHEANCES; track echeance.cle) {
+            @if (vigilance.vignettes.includes(echeance.cle)) {
+              <figure>
+                <img [src]="vignetteUrl(echeance.cle)" width="250" height="250" loading="lazy"
+                     [alt]="'Carte nationale de vigilance, ' + echeance.libelle.toLowerCase()">
+                <figcaption>{{ echeance.libelle }}</figcaption>
+              </figure>
+            }
+          }
+        </div>
+
+        <div class="liste-nationale">
+          <h3>Départements en vigilance <span class="compte">{{ vigilance.departements.length }}</span></h3>
+          @if (vigilance.departements.length) {
+            <div class="defilement">
+              <table>
+                <thead>
+                  <tr><th>Département</th><th>Aujourd'hui</th><th>Demain</th><th>Phénomènes</th></tr>
+                </thead>
+                <tbody>
+                  @for (dep of vigilance.departements; track dep.departement_code) {
+                    <tr>
+                      <td>
+                        <button type="button" class="discret" (click)="chargerVigilance(dep.departement_code)"
+                                [attr.aria-label]="'Lire le détail pour ' + dep.nom">
+                          {{ dep.nom }} ({{ dep.departement_code }})
+                        </button>
+                      </td>
+                      <td><span class="couleur" [attr.data-couleur]="dep.couleur_j">{{ nomCouleur(dep.couleur_j) }}</span></td>
+                      <td><span class="couleur" [attr.data-couleur]="dep.couleur_j1">{{ nomCouleur(dep.couleur_j1) }}</span></td>
+                      <td class="phenomenes-ligne">
+                        @for (phenomene of resumePhenomenes(dep); track phenomene.id) {
+                          <span class="etiquette" [attr.data-couleur]="phenomene.couleur">{{ nomPhenomene(phenomene) }}</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="calme">Aucun département en vigilance jaune, orange ou rouge.</p>
+          }
+        </div>
+      </div>
+
+      @if (vigilance.france?.bulletin?.length) {
+        <button type="button" class="discret" (click)="bulletinNationalOuvert = !bulletinNationalOuvert"
+                [attr.aria-expanded]="bulletinNationalOuvert">
+          <span class="material-icons">{{ bulletinNationalOuvert ? 'expand_less' : 'expand_more' }}</span>
+          Bulletin national
+        </button>
+        @if (bulletinNationalOuvert) {
+          <div class="bulletin">
+            @for (partie of vigilance.france!.bulletin; track $index) {
+              @if (partie.titre) { <p class="titre-bulletin">{{ partie.titre }}</p> }
+              @for (ligne of partie.lignes; track $index) { <p>{{ ligne }}</p> }
+            }
+          </div>
+        }
+      }
+
+      <p class="note">
+        Source : {{ vigilance.source }}. Publiée le {{ vigilance.publie_le | date:'dd/MM à HH:mm' }},
+        relevée le {{ vigilance.releve_le | date:'dd/MM à HH:mm' }}. Métropole seulement.
+        Pour être prévenu quand votre département passe à l'orange ou au rouge, activez
+        l'annonce dans la fiche de votre institution
+        (<a routerLink="/admin/institutions">Institutions</a>).
+      </p>
+    }
+  </section>
+
+  <!-- ════ Rayon commun aux deux blocs suivants ════ -->
+  <div class="rayon" role="group" aria-label="Rayon autour de votre commune">
+    <span>Autour de votre commune :</span>
+    @for (rayon of RAYONS; track rayon) {
+      <button type="button" [class.actif]="rayon === rayonKm" [attr.aria-pressed]="rayon === rayonKm"
+              (click)="changerRayon(rayon)">{{ rayon }} km</button>
+    }
+  </div>
+
+  <!-- ════ Routes ════ -->
+  <section aria-labelledby="titre-routes">
+    <h2 id="titre-routes">
+      <span class="material-icons">add_road</span> Routes
+      @if (routes?.emprise_connue) { <span class="compte">{{ evenementsVisibles.length }}</span> }
+    </h2>
+
+    @if (erreurRoutes) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire les événements routiers.
+      </p>
+    } @else if (!routes) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!routes.emprise_connue) {
+      <p class="attente">
+        Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder. Les
+        événements routiers restent visibles sur la <a routerLink="/admin/carte">carte</a>.
+      </p>
+    } @else {
+      @if (routes.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            <strong>Relevé ancien</strong>
+            @if (routes.releve_le) { ({{ routes.releve_le | date:'dd/MM à HH:mm' }}) } @else { (aucun relevé réussi) }
+            : la situation a pu changer.
+          </span>
+        </p>
+      }
+
+      @if (evenementsVisibles.length) {
+        <ul class="evenements">
+          @for (evenement of evenementsVisibles; track evenement.reference) {
+            <li [attr.data-categorie]="evenement.categorie">
+              <p class="titre-evenement">
+                <span class="etiquette categorie">{{ evenement.categorie_libelle }}</span>
+                <strong>{{ evenement.route }}</strong>
+                @if (evenement.commune_nom) { <span>{{ evenement.commune_nom }}</span> }
+                @if (aVenir(evenement)) { <span class="etiquette">à venir</span> }
+              </p>
+              <p class="natures">{{ evenement.natures.join(' · ') }}</p>
+              @if (evenement.description) { <p class="description">{{ evenement.description }}</p> }
+              @if (evenement.localisation) { <p class="localisation">{{ evenement.localisation }}</p> }
+              <p class="periode">
+                @if (evenement.debut) { Depuis le {{ evenement.debut | date:'dd/MM à HH:mm' }} }
+                @if (evenement.fin) { — jusqu'au {{ evenement.fin | date:'dd/MM à HH:mm' }} }
+                @else { — fin non annoncée }
+                @if (evenement.gestionnaire) { · {{ evenement.gestionnaire }} }
+              </p>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="calme">Aucune fermeture, aucun accident ni obstacle signalé dans ce rayon.</p>
+      }
+
+      @if (nombreSecondaires) {
+        <button type="button" class="discret" (click)="avecTravaux = !avecTravaux" [attr.aria-pressed]="avecTravaux">
+          {{ avecTravaux ? 'Masquer' : 'Afficher aussi' }} les travaux et restrictions ({{ nombreSecondaires }})
+        </button>
+      }
+      @if (routes.tronque) { <p class="note">Liste limitée aux 500 premiers événements : réduisez le rayon.</p> }
+
+      <p class="note">
+        Source : {{ routes.source }}@if (routes.releve_le) {, relevé le {{ routes.releve_le | date:'dd/MM à HH:mm' }}}.
+        <strong>Réseau routier national seulement</strong> (routes nationales et autoroutes de
+        l'État) : une liste vide ne dit rien des routes départementales, de la voirie communale
+        ni des autoroutes concédées.
+      </p>
+    }
+  </section>
+
+  <!-- ════ Carburant ════ -->
+  <section aria-labelledby="titre-carburant">
+    <h2 id="titre-carburant"><span class="material-icons">local_gas_station</span> Carburant</h2>
+
+    @if (erreurStations) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire les stations.
+      </p>
+    } @else if (!stations) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!stations.emprise_connue) {
+      <p class="attente">Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder.</p>
+    } @else {
+      @if (stations.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            <strong>Relevé ancien</strong>
+            @if (stations.releve_le) { ({{ stations.releve_le | date:'dd/MM à HH:mm' }}) } @else { (aucun relevé réussi) }
+            : la situation a pu changer.
+          </span>
+        </p>
+      }
+
+      <dl class="bilan">
+        <div><dt>Stations dans le rayon</dt><dd>{{ stations.bilan.total }}</dd></div>
+        <div [class.alerte]="stations.bilan.en_rupture > 0">
+          <dt>Avec un carburant en rupture</dt><dd>{{ stations.bilan.en_rupture }}</dd>
+        </div>
+        <div [class.alerte]="stations.bilan.a_sec > 0">
+          <dt>Sans aucun carburant</dt><dd>{{ stations.bilan.a_sec }}</dd>
+        </div>
+      </dl>
+
+      @if (stationsVisibles.length) {
+        <div class="defilement">
+          <table>
+            <thead>
+              <tr><th>Station</th><th>Disponible</th><th>En rupture</th><th>Dernière déclaration</th></tr>
+            </thead>
+            <tbody>
+              @for (station of stationsVisibles; track station.reference) {
+                <tr [class.a-sec]="aSec(station)">
+                  <td>
+                    <strong>{{ station.ville }}</strong>
+                    @if (station.automate_24_24) { <span class="etiquette">24 h/24</span> }
+                    <br><span class="adresse">{{ station.adresse }}</span>
+                  </td>
+                  <td>
+                    @for (carburant of station.carburants_disponibles; track carburant) {
+                      <span class="etiquette bonne">{{ carburant }}</span>
+                    } @empty { <span class="calme">aucun</span> }
+                  </td>
+                  <td>
+                    @for (carburant of station.ruptures_temporaires; track carburant) {
+                      <span class="etiquette rupture">{{ carburant }}</span>
+                    } @empty { <span class="calme">—</span> }
+                  </td>
+                  <td [class.muette]="muette(station)">
+                    @if (station.mis_a_jour_le) { {{ station.mis_a_jour_le | date:'dd/MM/yyyy' }} } @else { inconnue }
+                    @if (muette(station)) { <br><span class="adresse">station muette depuis plus d'un mois</span> }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (!toutesLesStations) {
+        <p class="calme">Aucune station ne déclare de rupture dans ce rayon.</p>
+      }
+
+      @if (stations.bilan.total) {
+        <button type="button" class="discret" (click)="toutesLesStations = !toutesLesStations" [attr.aria-pressed]="toutesLesStations">
+          {{ toutesLesStations ? 'Ne montrer que les stations en rupture' : 'Montrer toutes les stations' }}
+        </button>
+      }
+      @if (stations.tronque) { <p class="note">Liste limitée aux 500 premières stations : réduisez le rayon.</p> }
+
+      <p class="note">
+        Source : {{ stations.source }}@if (stations.releve_le) {, relevé le {{ stations.releve_le | date:'dd/MM à HH:mm' }}}.
+        Les stations déclarent elles-mêmes leurs ruptures : une station qui n'a rien déclaré
+        n'est pas forcément approvisionnée. « En rupture » désigne un carburant que la station
+        vend d'ordinaire et n'a plus.
+      </p>
+    }
+  </section>
+</div>

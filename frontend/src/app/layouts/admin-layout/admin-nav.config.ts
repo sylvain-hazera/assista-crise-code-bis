@@ -109,6 +109,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers', groupe: 'crise' },
   { icon: 'search', label: 'Recherches de personnes', route: '/admin/recherches-personnes', groupe: 'crise' },
   { icon: 'map', label: 'Carte', route: '/admin/carte', groupe: 'crise' },
+  // Vigilance Météo-France, événements routiers, stations de carburant : relevés par le
+  // serveur et copiés en base (voir core/sources_ouvertes.py). Dans « Crise en cours » parce
+  // que c'est l'écran qu'on ouvre quand la situation se tend, pas un réglage.
+  { icon: 'radar', label: 'Veille du territoire', route: '/admin/veille', groupe: 'crise' },
   { icon: 'fact_check', label: 'Main courante', route: '/admin/main-courante', groupe: 'crise', visibilite: 'sysadmin' },
 
   // ── Post-critique — gestion à long terme ────────────────────────────

@@ -2793,6 +2793,62 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
   sur `Fr_EMCOM` ; `SeismeDiffuse` évite les doublons (réglages : `ConfigurationAlerteSismique`).
 - Traceroute (`TracerouteMeshCore`) et batterie du companion servent au diagnostic.
 
+### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
+
+Trois sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; couches « Routes » et « Stations de carburant » sur la
+carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
+
+| Source | Ce qu'elle apporte | Accès | Rythme | Module |
+|---|---|---|---|---|
+| Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
+| Bison Futé (DATEX II) | fermetures, accidents, obstacles, travaux du réseau routier **national** | aucune clé | 10 min | `core/trafic_routier.py` |
+| Prix des carburants, flux instantané | stations, carburants disponibles, **ruptures** | aucune clé | 30 min | `core/carburants.py` |
+
+**Règle commune** (`core/sources_ouvertes.py`) :
+
+1. **Seul le serveur appelle**, depuis une tâche planifiée, et toujours pour la **France
+   entière**. Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne
+   déclenche d'appel sortant, et rien de ce qui part ne désigne une personne, une commune ou
+   une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
+2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `EvenementRoutier`,
+   `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
+   personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
+   table. Un flux vide ou tronqué ne remplace pas la copie précédente.
+3. **Une copie ancienne se dit ancienne.** `ReleveSourceOuverte` garde l'heure du dernier
+   relevé réussi ; chaque écran l'affiche et signale une copie périmée ; la supervision alerte
+   (`SourceOuvertePerimee`, une seule règle pour toutes les sources).
+
+**Planification** : `manage.py relever_sources_ouvertes`, lancée par cron toutes les dix
+minutes (`~/scripts/relever-sources-ouvertes.sh`, même patron que les alertes sismiques). La
+commande ne relève que les sources dont l'intervalle est écoulé ; `--forcer` et `--source`
+servent au diagnostic. Une source en panne n'empêche pas les autres.
+
+**Annonce de la vigilance** (`ConfigurationAlerteVigilance`, inactive par défaut, seuil orange
+par défaut) : quand le département de l'institution atteint le seuil, une phrase part sur ses
+canaux mesh actifs et en message privé Matrix aux personnes qui lui sont rattachées ; les
+administrateurs reçoivent **un** résumé par relevé. Une annonce par épisode et par phénomène, à
+l'entrée dans le seuil puis seulement si la couleur **monte** (`VigilanceDiffusee`) ; pas de
+message de levée. Rien n'est annoncé sur une copie de plus de six heures.
+
+**Clé Météo-France** : secret Docker `meteofrance_cle_api` (fichier
+`meteofrance_cle_api.txt` du dossier des secrets), monté dans `ac_backend` seulement. C'est un
+jeton valable trois ans au plus ; son échéance, inscrite dans le jeton, est exposée
+(`assista_meteofrance_cle_jours_restants`) et alerte un mois avant
+(`CleMeteoFranceExpireBientot`). Une API ajoutée à l'abonnement demande une **nouvelle** clé :
+la liste des API autorisées est figée dans le jeton. Sans clé (satellite, développement), la
+vigilance se tait et le reste fonctionne.
+
+**Limites à connaître** : la vigilance ne couvre que la métropole ; Bison Futé ne couvre ni
+les autoroutes concédées ni l'essentiel des routes départementales (une liste vide ne veut pas
+dire « routes ouvertes ») ; les ruptures de carburant sont déclarées par les stations
+elles-mêmes. Les satellites ne reçoivent pas encore cette copie.
+
+**Défibrillateurs** : ils ne relèvent pas de cette veille mais des **sites sensibles**
+(`core/opendata/dae.py`, source `GEODAE`) : le fichier national Géo'DAE (~80 Mo) est lu en
+tâche de fond comme FINESS, et chaque appareil actif, validé et en fonctionnement est proposé
+comme **ressource** à vérifier par la collectivité.
+
 ### 7.3 Satellites (Raspberry Pi sur site)
 
 - **Profils** : `gw` (pont et proxy radio locaux) ou `full` (instance Assista-Crise complète,
@@ -4427,6 +4483,34 @@ les clés d'accès (passkeys), liées à un nom de domaine alors que le site en 
 
 ---
 
+
+### 10.3.1 Recherche d'adresse relayée par le serveur (15/11/2026)
+
+**Constat.** Le site appelait la Base adresse nationale **depuis le navigateur**
+(`GeolocationService`). Chaque frappe dans un champ d'adresse, et chaque « utiliser ma
+position », envoyait donc à un service extérieur — certes de l'État — l'adresse IP de la
+personne, son navigateur, la page d'où elle venait, et ce qu'elle cherchait ou l'endroit où
+elle se trouvait.
+
+**Correction.** Le navigateur ne parle plus qu'à ce serveur : `GET /api/adresses/recherche/`
+et `GET /api/adresses/inverse/` (`core/views_adresses.py`) interrogent le géocodage de la
+Géoplateforme IGN (`data.geopf.fr/geocodage`, successeur officiel d'`api-adresse.data.gouv.fr`,
+même format de réponse). Le service voit une question venant d'Assista-Crise, sans rien qui la
+rattache à quelqu'un.
+
+- **Ce qui sort encore** : le texte cherché et, pour le géocodage inverse, la position
+  (arrondie à une dizaine de mètres) — il faut bien poser la question.
+- **Ce qui ne sort plus** : adresse IP, en-têtes du navigateur, identité. La position qui ne
+  sert qu'à **classer** les résultats est arrondie au kilomètre.
+- **Rien n'est conservé** : ni journal des recherches, ni cache ; un échec ne journalise que la
+  nature de l'erreur, jamais la question.
+- **Bornes** : vues publiques (les formulaires de demande d'aide le sont), donc paramètres en
+  liste fermée, question plafonnée à 200 caractères, 180 requêtes par minute et par adresse IP.
+
+**Reste à faire** : le navigateur interroge encore directement `geo.api.gouv.fr` (recherche
+d'une commune par nom ou code postal) et `georisques.gouv.fr` (risques d'une commune, page
+guide). Ces appels ne portent ni adresse ni position GPS, seulement une commune — mais ils
+livrent eux aussi l'adresse IP du visiteur ; même traitement possible.
 
 ### 10.4 Scanners et moteurs de recensement (15/11/2026)
 

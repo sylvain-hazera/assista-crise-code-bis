@@ -641,3 +641,11 @@
     background: currentColor;
   }
 }
+
+// Second réglage du même onglet « Alertes » : assez d'air pour ne pas se lire comme la suite du
+// formulaire sismique.
+.sous-titre-alertes {
+  margin: 24px 0 6px; padding-top: 16px; font-size: 1rem;
+  border-top: 1px solid var(--ac-border, #e5e7eb);
+  color: var(--ac-text, #111827);
+}

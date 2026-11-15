@@ -28,6 +28,8 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'recherches-personnes/new', loadComponent: () => import('../pages/recherche-personne-create/recherche-personne-create.component').then(m => m.RecherchePersonneCreateComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'recherches-personnes/:id', loadComponent: () => import('../pages/recherche-personne-detail/recherche-personne-detail.component').then(m => m.RecherchePersonneDetailComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'carte', loadComponent: () => import('../shared/components/common/map/map.component').then(m => m.MapComponent), canActivate: [institutionalEffectiveGuard] },
+  // Ce que l'Etat publie en ce moment pour le territoire : vigilance meteo, routes, carburant.
+  { path: 'veille', loadComponent: () => import('./veille/veille.component').then(m => m.VeilleComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'main-courante', loadComponent: () => import('./audit-logs/audit-logs.component').then(m => m.AuditLogsComponent), canActivate: [sysAdminGuard] },
 
   // ── Post-critique — gestion à long terme ──

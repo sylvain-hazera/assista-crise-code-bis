@@ -231,10 +231,69 @@ class MeshStateCollector(Collector):
         yield faible
 
 
+class VeilleCollector(Collector):
+    """Fraîcheur des sources ouvertes copiées en base (15/11/2026) -- voir
+    core/sources_ouvertes.py.
+
+    Une copie périmée affichée comme actuelle est pire que pas de copie : c'est donc l'âge du
+    dernier relevé réussi qui est exposé, pas le nombre d'appels. Le seuil de péremption est
+    décidé ici, source par source (`assista_source_ouverte_perimee`), pour qu'une seule règle
+    d'alerte couvre toutes les sources présentes et à venir.
+
+    Une source n'apparaît qu'après son premier essai : une machine où la tâche planifiée n'a
+    jamais tourné (satellite, poste de développement) ne déclenche donc rien."""
+
+    def describe(self):
+        return []
+
+    def collect(self):
+        try:
+            yield from self._sources()
+        except Exception:
+            logger.exception("Could not collect open-data metrics")
+
+    @staticmethod
+    def _sources():
+        from . import meteo_france, sources_ouvertes
+        from .models import ReleveSourceOuverte
+
+        maintenant = timezone.now()
+        age = GaugeMetricFamily("assista_source_ouverte_age_secondes",
+                                "Time since the last successful refresh of an open-data source",
+                                labels=["source"])
+        perimee = GaugeMetricFamily("assista_source_ouverte_perimee",
+                                    "1 when the local copy of an open-data source is too old to be trusted",
+                                    labels=["source"])
+        lignes = GaugeMetricFamily("assista_source_ouverte_lignes",
+                                   "Rows written by the last successful refresh",
+                                   labels=["source"])
+        for trace in ReleveSourceOuverte.objects.all():
+            source = sources_ouvertes.SOURCES.get(trace.source)
+            if source is None:
+                continue
+            ancien = trace.dernier_succes is None or maintenant - trace.dernier_succes > source.perime_apres
+            perimee.add_metric([trace.source], 1 if ancien else 0)
+            lignes.add_metric([trace.source], trace.lignes)
+            if trace.dernier_succes is not None:
+                age.add_metric([trace.source], (maintenant - trace.dernier_succes).total_seconds())
+        yield age
+        yield perimee
+        yield lignes
+
+        # Jours avant l'expiration de la clé Météo-France (inscrite dans la clé elle-même).
+        # Absente sans clé : rien à surveiller sur une machine qui n'en a pas.
+        echeance = meteo_france.echeance_cle()
+        if echeance is not None:
+            jours = GaugeMetricFamily("assista_meteofrance_cle_jours_restants",
+                                      "Days before the Meteo-France API key expires")
+            jours.add_metric([], (echeance - maintenant).total_seconds() / 86400)
+            yield jours
+
+
 # Source unique des collecteurs personnalisés : `register()` les met dans le registre global, et
 # `metrics_view` dans le registre neuf du mode multi-processus. Les deux DOIVENT lire la même
 # liste — voir le commentaire de metrics_view.
-COLLECTEURS = (BusinessStateCollector, MeshStateCollector)
+COLLECTEURS = (BusinessStateCollector, MeshStateCollector, VeilleCollector)
 
 
 def register():

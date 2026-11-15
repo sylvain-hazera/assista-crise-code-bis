@@ -22,6 +22,8 @@ import { ZoneService } from '../../services/zone.service';
 import { Zone } from '../../shared/models/zone.model';
 import { ConfigurationAlerteSismiqueService } from '../../services/configuration-alerte-sismique.service';
 import { ConfigurationAlerteSismique } from '../../shared/models/configuration-alerte-sismique.model';
+import { VeilleService } from '../../services/veille.service';
+import { ConfigurationAlerteVigilance } from '../../shared/models/veille.model';
 import { InterlocuteurAlertePCSService } from '../../services/interlocuteur-alerte-pcs.service';
 import {
   InterlocuteurAlertePCS, CategorieInterlocuteurPCS, ModeAlertePCS,
@@ -180,6 +182,7 @@ export class InstitutionsComponent implements OnInit {
     private locationService: LocationService,
     private zoneService: ZoneService,
     private configurationAlerteSismiqueService: ConfigurationAlerteSismiqueService,
+    private veilleService: VeilleService,
     private brouillonsService: BrouillonsEnvoiService,
     private interlocuteurAlertePCSService: InterlocuteurAlertePCSService,
     private risqueMajeurTypeService: RisqueMajeurTypeService,
@@ -529,6 +532,11 @@ export class InstitutionsComponent implements OnInit {
       magnitude_min: [3.5, [Validators.required, Validators.min(0)]],
     });
 
+    this.alerteVigilanceForm = this.fb.group({
+      actif: [false],
+      couleur_min: [3, [Validators.required]],
+    });
+
     this.contactForm = this.fb.group({
       utilisateur: [null, Validators.required],
       fonction: ['', Validators.required],
@@ -840,6 +848,17 @@ export class InstitutionsComponent implements OnInit {
         }
       });
     }
+    this.configAlerteVigilance = null;
+    this.alerteVigilanceEnregistree = false;
+    this.alerteVigilanceForm.reset({ actif: false, couleur_min: 3 });
+    if (institution.id) {
+      this.veilleService.alerteVigilance(institution.id).subscribe(configs => {
+        if (configs.length > 0) {
+          this.configAlerteVigilance = configs[0];
+          this.alerteVigilanceForm.patchValue(configs[0]);
+        }
+      });
+    }
     this.chargerInterlocuteursPCS();
     this.chargerRisquesCommunaux();
     this.suggestionsGeorisques = [];
@@ -1042,6 +1061,34 @@ export class InstitutionsComponent implements OnInit {
         this.savingAlerteSismique = false;
       },
       error: () => { this.savingAlerteSismique = false; },
+    });
+  }
+
+  // ══ Annonce de la vigilance Météo-France (détail institution) ═══════════════════
+  configAlerteVigilance: ConfigurationAlerteVigilance | null = null;
+  savingAlerteVigilance = false;
+  alerteVigilanceEnregistree = false;
+  alerteVigilanceForm!: FormGroup;
+
+  submitAlerteVigilance(): void {
+    if (!this.selectedInstitution?.id || this.alerteVigilanceForm.invalid) {
+      this.alerteVigilanceForm.markAllAsTouched();
+      return;
+    }
+    this.savingAlerteVigilance = true;
+    this.alerteVigilanceEnregistree = false;
+    const brut = this.alerteVigilanceForm.getRawValue();
+    const valeurs = { actif: !!brut.actif, couleur_min: Number(brut.couleur_min) };
+    const request$ = this.configAlerteVigilance
+      ? this.veilleService.modifierAlerteVigilance(this.configAlerteVigilance.id, valeurs)
+      : this.veilleService.creerAlerteVigilance({ institution: this.selectedInstitution.id, ...valeurs });
+    request$.subscribe({
+      next: (config) => {
+        this.configAlerteVigilance = config;
+        this.savingAlerteVigilance = false;
+        this.alerteVigilanceEnregistree = true;
+      },
+      error: () => { this.savingAlerteVigilance = false; },
     });
   }
 

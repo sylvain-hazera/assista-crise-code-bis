@@ -673,6 +673,38 @@
                 {{ configAlerteSismique ? 'Mettre à jour' : 'Activer' }}
               </button>
             </form>
+
+            <h4 class="sous-titre-alertes">Vigilance Météo-France</h4>
+            <p class="hint">
+              Annonce la vigilance météorologique du département de cette institution quand elle
+              atteint le niveau choisi : sur ses canaux mesh actifs, et par message privé aux
+              personnes qui lui sont rattachées. Une annonce par épisode et par phénomène, puis
+              seulement si la couleur monte. Le détail se lit à tout moment dans
+              <a routerLink="/admin/veille">Veille du territoire</a>.
+              @if (!selectedInstitution.commune_code) {
+                <strong> Aucune commune renseignée pour cette institution — impossible de savoir
+                quel département surveiller tant que ce n'est pas le cas.</strong>
+              }
+            </p>
+            <form class="inline-form" [formGroup]="alerteVigilanceForm" (ngSubmit)="submitAlerteVigilance()">
+              <label class="checkbox-label">
+                <input type="checkbox" formControlName="actif">
+                Annonce active
+              </label>
+              <label>
+                À partir de
+                <select formControlName="couleur_min" class="form-input-sm">
+                  <option [ngValue]="2">Jaune</option>
+                  <option [ngValue]="3">Orange</option>
+                  <option [ngValue]="4">Rouge</option>
+                </select>
+                <span class="hint-sm">Orange conseillé : le jaune revient plusieurs fois par semaine</span>
+              </label>
+              <button type="submit" class="btn-primary sm" [disabled]="savingAlerteVigilance">
+                {{ configAlerteVigilance ? 'Mettre à jour' : 'Activer' }}
+              </button>
+              @if (alerteVigilanceEnregistree) { <span class="hint-sm" role="status">Enregistré.</span> }
+            </form>
           }
 
           @if (detailTab === 'annuaire-pcs') {

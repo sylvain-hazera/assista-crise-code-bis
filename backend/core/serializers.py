@@ -94,6 +94,8 @@ from .models import (
     TracerouteMeshCore,
     AlerteMeshSOS,
     ConfigurationAlerteSismique,
+    ConfigurationAlerteVigilance,
+    VigilanceMeteo,
     InterlocuteurAlertePCS,
     NotificationAlertePCS,
     SecteurRecherche,
@@ -1625,6 +1627,36 @@ class ConfigurationAlerteSismiqueSerializer(serializers.ModelSerializer):
         model = ConfigurationAlerteSismique
         fields = "__all__"
         read_only_fields = ['id', 'institution']
+
+
+class ConfigurationAlerteVigilanceSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+
+    class Meta:
+        model = ConfigurationAlerteVigilance
+        fields = "__all__"
+        read_only_fields = ['id', 'institution']
+
+
+class VigilanceMeteoSerializer(serializers.ModelSerializer):
+    """Vigilance d'un département telle que les écrans la lisent. Le bulletin n'est servi qu'à
+    la demande (`avec_bulletin` dans le contexte) : la liste nationale n'en a pas l'usage."""
+    nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VigilanceMeteo
+        fields = ['departement_code', 'nom', 'couleur_j', 'couleur_j1', 'detail', 'bulletin',
+                  'publie_le', 'releve_le']
+
+    def get_nom(self, obj):
+        from .meteo_france import FRANCE, nom_departement
+        return "France" if obj.departement_code == FRANCE else nom_departement(obj.departement_code)
+
+    def to_representation(self, instance):
+        donnees = super().to_representation(instance)
+        if not self.context.get('avec_bulletin'):
+            donnees.pop('bulletin', None)
+        return donnees
 
 
 class InterlocuteurAlertePCSSerializer(serializers.ModelSerializer):

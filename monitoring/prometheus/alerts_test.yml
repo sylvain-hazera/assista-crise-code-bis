@@ -255,3 +255,43 @@ tests:
             exp_annotations:
               summary: "2 Meshtastic admin task(s) abandoned after retries"
               description: "See /admin/meshtastic-administration: usually the gateway public key is not in the target node's security.admin_key."
+
+  # ---- veille du territoire (groupe « veille », ajouté le 15/11/2026) ----
+  - name: an open-data source stops refreshing
+    interval: 1m
+    input_series:
+      - series: 'assista_source_ouverte_perimee{source="VIGILANCE_METEO"}'
+        values: '0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'assista_source_ouverte_perimee{source="CARBURANTS"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 10m            # périmée depuis 8 min, « for: 20m » pas atteint
+        alertname: SourceOuvertePerimee
+        exp_alerts: []
+      - eval_time: 24m            # seule la source en panne est signalée
+        alertname: SourceOuvertePerimee
+        exp_alerts:
+          - exp_labels: { severity: warning, source: VIGILANCE_METEO }
+            exp_annotations:
+              summary: "Open-data source VIGILANCE_METEO is no longer refreshing"
+              description: "Check the cron job (relever-sources-ouvertes.sh) and its log, then run: manage.py relever_sources_ouvertes --source VIGILANCE_METEO --forcer"
+
+  - name: the Meteo-France key is about to expire
+    interval: 1m
+    input_series:
+      - series: 'assista_meteofrance_cle_jours_restants'
+        values: '45+0x30 29+0x120'
+    alert_rule_test:
+      - eval_time: 20m            # 45 jours : rien
+        alertname: CleMeteoFranceExpireBientot
+        exp_alerts: []
+      - eval_time: 50m            # sous le seuil depuis 19 min, « for: 1h » pas atteint
+        alertname: CleMeteoFranceExpireBientot
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: CleMeteoFranceExpireBientot
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "The Meteo-France API key expires in 29 days"
+              description: "Generate a new key on portail-api.meteofrance.fr and replace the meteofrance_cle_api secret."
