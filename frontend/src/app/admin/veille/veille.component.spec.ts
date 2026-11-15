@@ -6,8 +6,8 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
-  RestrictionsEau, RisqueAvalanche, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
+  ArretesCirculation, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
 
@@ -130,6 +130,30 @@ const FEUX: ZonesBrulees = {
   }],
 };
 
+const ARRETES: ArretesCirculation = {
+  ...ENTETE, bilan: { FERMETURE: 2, POIDS_LOURDS: 5, ALTERNAT: 1 },
+  resultats: [
+    { reference: 'a1', categorie: 'FERMETURE', categorie_libelle: 'Circulation interdite',
+      description: 'Travaux de voirie', autorite: 'Ville de Saint-Étienne', voies: 'Rue Henri Gandais',
+      tonnage_max: null, debut: '2026-11-01T07:00:00Z', fin: '2026-12-31T17:00:00Z',
+      url: 'https://dialog.beta.gouv.fr/regulations/a1', latitude: 45.43, longitude: 4.38 },
+    { reference: 'a2', categorie: 'FERMETURE', categorie_libelle: 'Circulation interdite',
+      description: 'Voie piétonne', autorite: 'Ville de Saint-Étienne', voies: 'Rue des Martyrs',
+      tonnage_max: null, debut: '2010-01-01T00:00:00Z', fin: null, url: '', latitude: 45.44, longitude: 4.39 },
+  ],
+};
+
+const SANTE: SanteUrgences = {
+  source: 'Santé publique France', releve_le: '2026-11-15T09:10:00Z', perime: false,
+  departement_code: '42', departement_nom: 'Loire',
+  indicateurs: [
+    { pathologie: 'GRIPPE', libelle: 'Grippe', semaine: '2026-S45', debut_semaine: '2026-11-02',
+      taux_urgences: 241.2, taux_urgences_precedent: 180, taux_sos: 1136.4, tendance: 'hausse' },
+    { pathologie: 'COVID', libelle: 'Covid-19', semaine: '2026-S45', debut_semaine: '2026-11-02',
+      taux_urgences: 30, taux_urgences_precedent: null, taux_sos: null, tendance: '' },
+  ],
+};
+
 const EN_PLAINE: RisqueAvalanche = {
   ...ENTETE, libelles: { '1': 'faible', '2': 'limité', '3': 'marqué', '4': 'fort', '5': 'très fort' }, resultats: [],
 };
@@ -149,16 +173,19 @@ describe('VeilleComponent', () => {
 
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
-                                forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche } = {}) {
+                                forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
+                                arretes?: ArretesCirculation; sante?: SanteUrgences } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
     http.expectOne(`${api}/restrictions-eau/`).flush(reponses.eau ?? EAU);
+    http.expectOne(`${api}/sante-urgences/`).flush(reponses.sante ?? SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(reponses.avalanche ?? EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(reponses.arretes ?? ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush(reponses.routes ?? ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(reponses.stations ?? STATIONS);
     fixture.detectChanges();
@@ -172,7 +199,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(9);
+    expect(demandes.length).toBe(11);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -332,9 +359,47 @@ describe('VeilleComponent', () => {
     expect(bloc.textContent).toContain('ne dit rien d\'un couloir ou d\'une pente');
   });
 
+  it('liste les fermetures temporaires des routes locales et compte le reste', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-routes"]');
+
+    // L'arrêté permanent (voie piétonne) n'encombre pas la liste : il est compté.
+    expect(bloc.textContent).toContain('Rue Henri Gandais');
+    expect(bloc.textContent).not.toContain('Rue des Martyrs');
+    expect(bloc.textContent).toContain('2 voie(s) interdite(s)');
+    expect(bloc.textContent).toContain('5 interdite(s) aux poids lourds');
+    expect(bloc.querySelector('a[href="https://dialog.beta.gouv.fr/regulations/a1"]')).not.toBeNull();
+    // Une commune absente de DiaLog n'est pas une commune sans route fermée.
+    expect(bloc.textContent).toContain('Seules les collectivités qui publient dans DiaLog');
+  });
+
+  it('donne les recours aux urgences du département et dit ce que le chiffre mesure', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-sante"]');
+    const lignes = bloc.querySelectorAll('tbody tr');
+
+    expect(bloc.textContent).toContain('Loire');
+    expect(lignes[0].textContent).toContain('Grippe');
+    expect(lignes[0].textContent).toContain('241');
+    expect(lignes[0].textContent).toContain('en hausse');
+    expect(lignes[0].classList.contains('remarquable')).toBeTrue();
+    // Une semaine sans comparaison possible n'affiche pas de tendance inventée.
+    expect(lignes[1].querySelector('.tendance')).toBeNull();
+    expect(bloc.textContent).toContain('ni un nombre de malades');
+  });
+
+  it('ne montre pas le bloc santé sans indicateur pour ce département', () => {
+    const fixture = demarrer({ sante: { ...SANTE, indicateurs: [] } });
+
+    expect(fixture.nativeElement.querySelector('section[aria-labelledby="titre-sante"]')).toBeNull();
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
-    const liste = () => Array.from(fixture.nativeElement.querySelectorAll('.evenements li')) as HTMLElement[];
+    // Les deux listes (réseau national, routes locales) partagent leur mise en forme : on ne
+    // regarde ici que les événements du réseau national, qui portent une route numérotée.
+    const liste = () => (Array.from(fixture.nativeElement.querySelectorAll('.evenements li')) as HTMLElement[])
+      .filter(li => li.textContent!.includes('N88'));
 
     expect(liste().map(li => li.getAttribute('data-categorie'))).toEqual(['FERMETURE']);
 
@@ -372,6 +437,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/risque-avalanche/` && r.params.get('rayon_km') === '60').flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/arretes-circulation/` && r.params.get('rayon_km') === '60').flush(ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/` && r.params.get('rayon_km') === '60').flush(ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/` && r.params.get('rayon_km') === '60').flush(STATIONS);
     expect(fixture.componentInstance.rayonKm).toBe(60);
@@ -383,6 +449,7 @@ describe('VeilleComponent', () => {
       crues: { ...sansEmprise, resultats: [] },
       feux: { ...sansEmprise, resultats: [] },
       observations: { ...sansEmprise, resultats: [] },
+      arretes: { ...sansEmprise, bilan: { FERMETURE: 0, POIDS_LOURDS: 0, ALTERNAT: 0 }, resultats: [] },
       routes: { ...sansEmprise, resultats: [] },
       stations: { ...sansEmprise, bilan: { total: 0, en_rupture: 0, a_sec: 0 }, resultats: [] },
     });
@@ -395,11 +462,13 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(VIGILANCE);
     http.expectOne(`${api}/restrictions-eau/`).flush(EAU);
+    http.expectOne(`${api}/sante-urgences/`).flush(SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
     http.expectOne(r => r.url === `${api}/risque-avalanche/`).flush(EN_PLAINE);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(ARRETES);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush('', { status: 500, statusText: 'Erreur' });
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(STATIONS);
     fixture.detectChanges();

@@ -2576,6 +2576,59 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class IndicateurSante(models.Model):
+    """Part des passages aux urgences attribués à une pathologie dans un département, pour la
+    dernière semaine publiée par Santé publique France -- voir core/sante_urgences.py. Un taux
+    pour 100 000 passages aux urgences : une tendance, pas un nombre de malades."""
+
+    pathologie = models.CharField(max_length=16)
+    departement_code = models.CharField(max_length=3, db_index=True)
+    semaine = models.CharField(max_length=10, blank=True, default="")
+    debut_semaine = models.DateField()
+    taux_urgences = models.FloatField(null=True, blank=True)
+    taux_urgences_precedent = models.FloatField(null=True, blank=True)
+    taux_sos = models.FloatField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["pathologie", "departement_code"],
+                                    name="uq_indicateur_sante_pathologie_departement"),
+        ]
+
+    def __str__(self):
+        return f"{self.pathologie} {self.departement_code} {self.semaine}"
+
+
+class ArreteCirculation(models.Model):
+    """Arrêté de circulation d'une collectivité publié dans DiaLog, quand il change un
+    itinéraire : circulation interdite, interdite aux poids lourds, ou alternée -- voir
+    core/arretes_circulation.py. Donnée publique partagée PROD/DEMO ; instantané quotidien."""
+
+    class Categorie(models.TextChoices):
+        FERMETURE = "FERMETURE", "Circulation interdite"
+        POIDS_LOURDS = "POIDS_LOURDS", "Interdite aux poids lourds"
+        ALTERNAT = "ALTERNAT", "Circulation alternée"
+
+    reference = models.CharField(max_length=80, primary_key=True)
+    categorie = models.CharField(max_length=12, choices=Categorie.choices, db_index=True)
+    description = models.CharField(max_length=500, blank=True, default="")
+    autorite = models.CharField(max_length=200, blank=True, default="")
+    voies = models.CharField(max_length=300, blank=True, default="")
+    # Tonnage à partir duquel l'interdiction s'applique (poids lourds).
+    tonnage_max = models.FloatField(null=True, blank=True)
+    debut = models.DateTimeField(null=True, blank=True)
+    # Vide = arrêté permanent.
+    fin = models.DateTimeField(null=True, blank=True)
+    url = models.CharField(max_length=300, blank=True, default="")
+    geometrie = gis_models.GeometryCollectionField(srid=4326)
+    location = gis_models.PointField(srid=4326)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.get_categorie_display()} {self.voies}".strip()
+
+
 class RisqueAvalanche(models.Model):
     """Indice de risque d'avalanche d'un massif (bulletin de Météo-France), aujourd'hui et
     demain, sur l'échelle européenne de 1 (faible) à 5 (très fort) -- voir core/avalanche.py.

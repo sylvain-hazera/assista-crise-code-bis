@@ -220,6 +220,51 @@ export interface RisqueAvalanche extends EnteteVeille {
   resultats: MassifAvalanche[];
 }
 
+/** Arrêté de circulation d'une collectivité (DiaLog) qui change un itinéraire. */
+export interface ArreteCirculation {
+  reference: string;
+  categorie: 'FERMETURE' | 'POIDS_LOURDS' | 'ALTERNAT';
+  categorie_libelle: string;
+  description: string;
+  autorite: string;
+  voies: string;
+  /** Tonnage à partir duquel l'interdiction s'applique, pour les poids lourds. */
+  tonnage_max: number | null;
+  debut: string | null;
+  /** null = arrêté permanent. */
+  fin: string | null;
+  url: string;
+  latitude: number;
+  longitude: number;
+  trace?: { type: string; geometries?: unknown; coordinates?: unknown };
+}
+export interface ArretesCirculation extends EnteteVeille {
+  bilan: { FERMETURE: number; POIDS_LOURDS: number; ALTERNAT: number };
+  resultats: ArreteCirculation[];
+}
+
+/** Part des passages aux urgences attribués à une pathologie, dans un département. Un taux
+ * pour 100 000 passages aux urgences : une tendance, pas un nombre de malades. */
+export interface IndicateurSante {
+  pathologie: string;
+  libelle: string;
+  semaine: string;
+  debut_semaine: string;
+  taux_urgences: number | null;
+  taux_urgences_precedent: number | null;
+  taux_sos: number | null;
+  /** 'hausse', 'baisse', 'stable', ou '' si la comparaison est impossible. */
+  tendance: string;
+}
+export interface SanteUrgences {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  departement_code: string | null;
+  departement_nom: string | null;
+  indicateurs: IndicateurSante[];
+}
+
 /** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
  * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
  * les radars, pas l'image radar elle-même — l'écran doit le dire. */

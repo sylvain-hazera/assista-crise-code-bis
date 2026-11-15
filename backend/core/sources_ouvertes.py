@@ -1,8 +1,9 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Dix sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
-risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau), surfaces brûlées
-(EFFIS), événements routiers (Bison Futé), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
+Douze sources aujourd'hui -- vigilance, mesures des stations, pluie prévue, météo des forêts et
+risque d'avalanche (Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau),
+surfaces brûlées (EFFIS), événements routiers (Bison Futé), arrêtés de circulation (DiaLog),
+recours aux urgences (Santé publique France), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
 1. Seul le serveur appelle, depuis la tâche planifiée, et toujours pour la France ENTIÈRE.
    Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne déclenche d'appel
@@ -24,8 +25,8 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    avalanche, carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
-    restrictions_eau, trafic_routier, vigilance_crues,
+    arretes_circulation, avalanche, carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
+    restrictions_eau, sante_urgences, trafic_routier, vigilance_crues,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,15 @@ SOURCES = {
                "Bison Futé - ministère chargé des transports"),
         # Les stations se déclarent au fil de la journée : une demi-heure suffit à voir une
         # pénurie s'installer, et 6 Mo toutes les dix minutes seraient du gaspillage.
+        # Un fichier de 80 Mo, qui change au rythme des arrêtés municipaux : une fois par jour.
+        Source("ARRETES_CIRCULATION", "Arrêtés de circulation des collectivités",
+               arretes_circulation.relever, datetime.timedelta(hours=23),
+               datetime.timedelta(hours=72), "DiaLog - ministère chargé des transports"),
+        # Données hebdomadaires, publiées avec une dizaine de jours de recul : un relevé par jour
+        # suffit, et « périmé » ne veut dire ici que « le relevé ne tourne plus ».
+        Source("SANTE_URGENCES", "Recours aux urgences par pathologie", sante_urgences.relever,
+               datetime.timedelta(hours=23), datetime.timedelta(hours=72),
+               "Santé publique France (réseaux OSCOUR et SOS Médecins)"),
         Source("CARBURANTS", "Stations de carburant", carburants.relever,
                datetime.timedelta(minutes=29), datetime.timedelta(hours=3),
                "Prix des carburants - ministère de l'Économie"),

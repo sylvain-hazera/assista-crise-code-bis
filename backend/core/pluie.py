@@ -30,6 +30,7 @@ import datetime
 import io
 import logging
 import math
+import time
 
 import requests
 from django.db import transaction
@@ -57,6 +58,9 @@ NOMBRE_D_ECHEANCES = 13
 # possible, puis on recule.
 CALCULS_ESSAYES = 4
 GARDER_APRES = datetime.timedelta(minutes=20)
+# Souffle entre deux images : treize demandes d'affilée à chaque nouveau calcul, sur un service
+# limité à 50 par minute et partagé avec nos autres relevés.
+PAUSE_ENTRE_IMAGES_S = 1.5
 # Nombre de teintes gardées à l'écriture (voir vers_mercator).
 COULEURS = 64
 
@@ -81,14 +85,14 @@ def telecharger_image(calcul, echeance):
     if cle is None:
         raise meteo_france.CleAbsente()
     ouest, sud, est, nord = EMPRISE
-    reponse = requests.get(URL_WMS, headers={"apikey": cle}, timeout=DELAI_REPONSE_S, params={
+    reponse = meteo_france.avec_reprise(lambda: requests.get(URL_WMS, headers={"apikey": cle}, timeout=DELAI_REPONSE_S, params={
         "service": "WMS", "version": "1.3.0", "layers": COUCHE, "styles": STYLE,
         "crs": "EPSG:4326",
         # WMS 1.3.0 en EPSG:4326 : la latitude d'abord.
         "bbox": f"{sud},{ouest},{nord},{est}",
         "width": LARGEUR, "height": HAUTEUR, "format": "image/png", "transparent": "true",
         "reference_time": _instant_api(calcul), "time": _instant_api(echeance),
-    })
+    }))
     if reponse.status_code in (400, 404):
         return None
     reponse.raise_for_status()
@@ -156,7 +160,11 @@ def relever(maintenant=None):
     for echeance in voulues:
         if connues.get(echeance) == calcul:
             continue
-        brute = premiere if echeance == voulues[0] else telecharger_image(calcul, echeance)
+        if echeance == voulues[0]:
+            brute = premiere
+        else:
+            time.sleep(PAUSE_ENTRE_IMAGES_S)
+            brute = telecharger_image(calcul, echeance)
         if brute is None:
             continue        # échéance au-delà de la portée de ce calcul : la précédente reste
         ImagePluie.objects.update_or_create(echeance=echeance, defaults={

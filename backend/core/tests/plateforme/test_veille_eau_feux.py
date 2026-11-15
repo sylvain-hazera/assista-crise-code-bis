@@ -453,6 +453,22 @@ class TestRisqueAvalanche:
         assert dict(RisqueAvalanche.objects.values_list("massif_code", "risque")) == {1: 4, 2: 3}
 
     @pytest.mark.django_db
+    def test_apres_plusieurs_pannes_de_suite_le_service_n_est_plus_appele(self, massifs_de_test, monkeypatch):
+        """Un service manifestement indisponible ne doit pas recevoir trente-cinq appels de plus."""
+        monkeypatch.setattr(avalanche, "PANNES_AVANT_ABANDON", 2)
+        codes = {code: _bulletin("3", "3") for code in range(1, 7)}
+        with mock.patch("core.avalanche.requests.get", side_effect=_service(codes)):
+            avalanche.relever(MAINTENANT)
+
+        panne = requests.ReadTimeout("délai dépassé")
+        with mock.patch("core.avalanche.requests.get", side_effect=_service({code: panne for code in range(1, 7)})) as appel:
+            avalanche.relever(MAINTENANT + datetime.timedelta(hours=6))
+
+        # La liste des massifs, puis deux bulletins en panne : les quatre autres ne sont pas demandés.
+        assert appel.call_count == 3
+        assert set(RisqueAvalanche.objects.values_list("risque", flat=True)) == {3}      # indices gardés
+
+    @pytest.mark.django_db
     def test_hors_saison_les_indices_s_effacent_et_le_releve_reussit(self, massifs_de_test):
         with mock.patch("core.avalanche.requests.get", side_effect=_service({1: _bulletin(), 2: _bulletin()})):
             avalanche.relever(MAINTENANT)
@@ -487,3 +503,238 @@ class TestRisqueAvalanche:
         assert carte["resultats"][0]["trace"]["type"] == "MultiPolygon"
         # En plaine, liste vide : c'est ce qui dit à l'écran de ne pas afficher ce bloc.
         assert plaine["resultats"] == [] and plaine["emprise_connue"] is True
+
+
+# ── Arrêtés de circulation des collectivités ────────────────────────────────────────────────
+
+from core import arretes_circulation  # noqa: E402
+from core.models import ArreteCirculation  # noqa: E402
+
+_ENTETE_DATEX = ('<?xml version="1.0" encoding="UTF-8"?>'
+                 '<d2:payload xmlns:d2="http://datex2.eu/schema/3/d2Payload" '
+                 'xmlns:com="http://datex2.eu/schema/3/common" '
+                 'xmlns:tro="http://datex2.eu/schema/3/trafficRegulation" '
+                 'xmlns:loc="http://datex2.eu/schema/3/locationReferencing" '
+                 'xmlns:dia="https://raw.githubusercontent.com/MTES-MCT/dialog/main/docs/spec/datex2" '
+                 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">')
+
+
+def _mesure(genre="AccessRestriction", corps="<tro:accessRestrictionType>noEntry</tro:accessRestrictionType>",
+            vehicules="", voie="Rue Henri Gandais", trace='{"type":"LineString","coordinates":[[4.38,45.43],[4.39,45.44]]}'):
+    return f"""<tro:trafficRegulation><tro:status>active</tro:status>
+      <tro:typeOfRegulation xsi:type="{genre}">{corps}</tro:typeOfRegulation>
+      <tro:condition xsi:type="ConditionSet">{vehicules}
+        <tro:conditions xsi:type="LocationCondition"><tro:locationByOrder xsi:type="loc:LinearLocation">
+          <loc:supplementaryPositionalDescription><loc:roadInformation><loc:roadName>{voie}</loc:roadName></loc:roadInformation></loc:supplementaryPositionalDescription>
+          <loc:_linearLocationExtension><loc:linearLocationExtended><dia:geoJsonGeometry>{trace}</dia:geoJsonGeometry></loc:linearLocationExtended></loc:_linearLocationExtension>
+        </tro:locationByOrder></tro:conditions>
+      </tro:condition></tro:trafficRegulation>"""
+
+
+def _vehicules(poids=None, type_vehicule="heavyGoodsVehicle", inverse=False):
+    tonnage = (f"<tro:grossWeightCharacteristic><com:comparisonOperator>greaterThan</com:comparisonOperator>"
+               f"<com:grossVehicleWeight>{poids}</com:grossVehicleWeight></tro:grossWeightCharacteristic>") if poids else ""
+    return (f'<tro:conditions xsi:type="VehicleCondition"><tro:negate>{"true" if inverse else "false"}</tro:negate>'
+            f"<tro:vehicleCharacteristics><com:vehicleType>{type_vehicule}</com:vehicleType>{tonnage}"
+            f"</tro:vehicleCharacteristics></tro:conditions>")
+
+
+def _arrete(reference, *mesures, fin="2026-12-31T17:00:00+00:00"):
+    fin_xml = f"<com:overallEndTime>{fin}</com:overallEndTime>" if fin else ""
+    return f"""<tro:trafficRegulationOrder id="{reference}" version="1">
+      <tro:description><com:values><com:value>Travaux de voirie</com:value></com:values></tro:description>
+      <tro:issuingAuthority><com:values><com:value>Ville de Saint-Étienne</com:value></com:values></tro:issuingAuthority>
+      <tro:status>madeAndImplemented</tro:status>
+      <tro:validityByOrder><com:validityTimeSpecification>
+        <com:overallStartTime>2026-01-01T07:00:00+00:00</com:overallStartTime>{fin_xml}
+      </com:validityTimeSpecification></tro:validityByOrder>
+      {"".join(mesures)}
+      <tro:_trafficRegulationOrderExtension><tro:trafficRegulationOrderExtended>
+        <dia:publicUrl>https://dialog.beta.gouv.fr/regulations/{reference}</dia:publicUrl>
+      </tro:trafficRegulationOrderExtended></tro:_trafficRegulationOrderExtension>
+    </tro:trafficRegulationOrder>"""
+
+
+def _lire_arretes(tmp_path, *arretes):
+    fichier = tmp_path / "dialog.xml"
+    fichier.write_text(_ENTETE_DATEX + "".join(arretes) + "</d2:payload>", encoding="utf-8")
+    return arretes_circulation.lire(str(fichier), MAINTENANT)
+
+
+class TestArretesDeCirculation:
+
+    def test_une_interdiction_sans_condition_est_une_fermeture(self, tmp_path):
+        (arrete,) = _lire_arretes(tmp_path, _arrete("a1", _mesure()))
+
+        assert arrete["categorie"] == "FERMETURE" and arrete["tonnage_max"] is None
+        assert arrete["voies"] == "Rue Henri Gandais" and arrete["autorite"] == "Ville de Saint-Étienne"
+        assert arrete["url"] == "https://dialog.beta.gouv.fr/regulations/a1"
+        assert arrete["fin"] == datetime.datetime(2026, 12, 31, 17, 0, tzinfo=UTC)
+        assert arrete["geometrie"].geom_type == "GeometryCollection" and arrete["location"].srid == 4326
+
+    def test_une_interdiction_aux_poids_lourds_garde_son_tonnage(self, tmp_path):
+        (arrete,) = _lire_arretes(tmp_path, _arrete("a1", _mesure(vehicules=_vehicules(poids="7.5"))))
+
+        assert arrete["categorie"] == "POIDS_LOURDS" and arrete["tonnage_max"] == 7.5
+
+    def test_une_exception_ne_restreint_pas_le_champ_de_l_interdiction(self, tmp_path):
+        """« Sauf bus » ne fait pas de l'arrêté une interdiction limitée aux bus : la route
+        reste fermée à tous les autres."""
+        (arrete,) = _lire_arretes(tmp_path, _arrete("a1", _mesure(vehicules=_vehicules(type_vehicule="bus", inverse=True))))
+
+        assert arrete["categorie"] == "FERMETURE"
+
+    def test_vitesse_et_stationnement_ne_sont_pas_copies(self, tmp_path):
+        vitesse = _mesure(genre="SpeedLimit", corps="")
+        stationnement = _mesure(genre="StandingOrParkingRestriction", corps="")
+
+        arretes = _lire_arretes(tmp_path, _arrete("v", vitesse), _arrete("s", stationnement), _arrete("f", _mesure()))
+
+        assert [a["reference"] for a in arretes] == ["f"]
+
+    def test_un_arrete_termine_n_est_pas_copie_un_permanent_l_est(self, tmp_path):
+        arretes = _lire_arretes(
+            tmp_path,
+            _arrete("fini", _mesure(), fin="2026-11-01T00:00:00+00:00"),
+            _arrete("permanent", _mesure(), fin=None))
+
+        assert [(a["reference"], a["fin"]) for a in arretes] == [("permanent", None)]
+
+    def test_la_mesure_la_plus_contraignante_donne_la_categorie(self, tmp_path):
+        alternat = _mesure(genre="RoadOrCarriagewayOrLaneManagement", corps="", voie="Route de la Mailleraye")
+
+        (arrete,) = _lire_arretes(tmp_path, _arrete("a1", alternat, _mesure(vehicules=_vehicules(poids="3.5")), _mesure()))
+
+        assert arrete["categorie"] == "FERMETURE" and arrete["tonnage_max"] == 3.5
+        assert arrete["voies"] == "Route de la Mailleraye, Rue Henri Gandais"
+
+    def test_un_trace_imbrique_ou_abime_ne_fait_rien_planter(self, tmp_path):
+        """Constaté sur le vrai fichier : certains tracés sont eux-mêmes des assemblages."""
+        imbrique = ('{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[4.38,45.43]},'
+                    '{"type":"LineString","coordinates":[[4.38,45.43],[4.39,45.44]]}]}')
+
+        arretes = _lire_arretes(tmp_path, _arrete("imb", _mesure(trace=imbrique)), _arrete("casse", _mesure(trace="pas du json")))
+
+        assert [a["reference"] for a in arretes] == ["imb"]
+        assert len(arretes[0]["geometrie"]) == 2
+
+    @pytest.mark.django_db
+    def test_un_fichier_tronque_ne_remplace_pas_la_copie(self, tmp_path):
+        with pytest.raises(ValueError):
+            arretes_circulation.enregistrer(_lire_arretes(tmp_path, _arrete("a1", _mesure())))
+
+        assert ArreteCirculation.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_la_lecture_classe_les_fermetures_d_abord_et_les_temporaires_avant_les_permanentes(
+            self, api_client, tmp_path, monkeypatch):
+        monkeypatch.setattr(arretes_circulation, "MINIMUM_PLAUSIBLE", 1)
+        loin = '{"type":"LineString","coordinates":[[2.34,48.85],[2.35,48.86]]}'
+        arretes_circulation.enregistrer(_lire_arretes(
+            tmp_path,
+            _arrete("pl", _mesure(vehicules=_vehicules(poids="3.5"))),
+            _arrete("permanente", _mesure(), fin=None),
+            _arrete("temporaire", _mesure()),
+            _arrete("paris", _mesure(trace=loin)),
+        ))
+
+        parametres = {"lat": "45.44", "lon": "4.39", "rayon_km": "10"}
+        liste = api_client.get(reverse("arretes_circulation"), parametres).json()
+        carte = api_client.get(reverse("arretes_circulation"), {**parametres, "trace": "1"}).json()
+
+        assert [a["reference"] for a in liste["resultats"]] == ["temporaire", "permanente", "pl"]
+        assert liste["bilan"] == {"FERMETURE": 2, "POIDS_LOURDS": 1, "ALTERNAT": 0}
+        assert liste["resultats"][2]["categorie_libelle"] == "Interdite aux poids lourds"
+        assert "trace" not in liste["resultats"][0]
+        assert carte["resultats"][0]["trace"]["type"] == "GeometryCollection"
+        assert liste["source"].startswith("DiaLog")
+
+
+# ── Recours aux urgences ────────────────────────────────────────────────────────────────────
+
+from core import sante_urgences  # noqa: E402
+from core.models import IndicateurSante  # noqa: E402
+
+
+def _semaine(departement, debut, semaine, taux, sos=None, champ="grippe"):
+    return {"dep": departement, "semaine": semaine, "date_complet": debut,
+            f"taux_passages_{champ}_sau": taux, f"taux_actes_{champ}_sos": sos}
+
+
+class TestRecoursAuxUrgences:
+
+    def test_la_derniere_semaine_et_la_precedente_sont_retenues(self):
+        indicateurs = sante_urgences.analyser("GRIPPE", [
+            _semaine("42", "2026-10-19", "2026-S43", 100.0),
+            _semaine("42", "2026-11-02", "2026-S45", 241.196, 1136.4),
+            _semaine("42", "2026-10-26", "2026-S44", 180.04),
+        ])
+
+        loire = indicateurs["42"]
+        assert loire["semaine"] == "2026-S45" and loire["debut_semaine"] == datetime.date(2026, 11, 2)
+        assert (loire["taux_urgences"], loire["taux_urgences_precedent"], loire["taux_sos"]) == (241.2, 180.0, 1136.4)
+
+    def test_une_valeur_absente_reste_absente(self):
+        (indicateur,) = sante_urgences.analyser("GRIPPE", [_semaine("42", "2026-11-02", "2026-S45", None)]).values()
+
+        assert indicateur["taux_urgences"] is None and indicateur["taux_urgences_precedent"] is None
+
+    @pytest.mark.parametrize("actuel, precedent, attendu", [
+        (241.2, 180.0, "hausse"), (100.0, 180.0, "baisse"), (190.0, 180.0, "stable"),
+        (5.0, 0.0, "hausse"), (0.0, 0.0, "stable"), (None, 180.0, ""), (241.2, None, ""),
+    ])
+    def test_la_tendance_ignore_le_bruit_d_une_semaine_a_l_autre(self, actuel, precedent, attendu):
+        assert sante_urgences.tendance(actuel, precedent) == attendu
+
+    def test_la_bronchiolite_est_demandee_pour_les_moins_d_un_an(self):
+        with mock.patch("core.sante_urgences.requests.get") as appel:
+            appel.return_value.json.return_value = []
+            sante_urgences.telecharger("BRONCHIOLITE", MAINTENANT)
+
+        (adresse,), options = appel.call_args
+        assert adresse.endswith("/bronchiolite-passages-aux-urgences-et-actes-sos-medecins-departement/exports/json")
+        assert options["params"]["where"] == "sursaud_cl_age_gene=\"0 an\" and date_complet >= date'2026-10-04'"
+        assert "taux_passages_bronchio_sau" in options["params"]["select"]
+
+    @pytest.mark.django_db
+    def test_une_pathologie_en_panne_n_empeche_pas_les_autres(self, monkeypatch):
+        monkeypatch.setattr(sante_urgences, "MINIMUM_PLAUSIBLE", 1)
+
+        def service(code, _maintenant):
+            if code == "COVID":
+                raise requests.ConnectionError("coupé")
+            champ = sante_urgences.PATHOLOGIES[code][2]
+            return [_semaine("42", "2026-11-02", "2026-S45", 50.0, champ=champ)]
+
+        with mock.patch("core.sante_urgences.telecharger", side_effect=service):
+            assert sante_urgences.relever(MAINTENANT) == 3
+
+        assert set(IndicateurSante.objects.values_list("pathologie", flat=True)) == {"GRIPPE", "GASTRO", "BRONCHIOLITE"}
+
+    @pytest.mark.django_db
+    def test_si_rien_ne_repond_le_releve_echoue_et_la_copie_reste(self, monkeypatch):
+        IndicateurSante.objects.create(pathologie="GRIPPE", departement_code="42", semaine="2026-S44",
+                                       debut_semaine=datetime.date(2026, 10, 26), taux_urgences=10, releve_le=MAINTENANT)
+
+        with mock.patch("core.sante_urgences.telecharger", side_effect=requests.ConnectionError("coupé")):
+            assert sources_ouvertes.relever_source("SANTE_URGENCES", forcer=True) == "échec"
+
+        assert IndicateurSante.objects.count() == 1
+
+    @pytest.mark.django_db
+    def test_la_lecture_donne_les_quatre_pathologies_du_departement_avec_leur_tendance(self, api_client):
+        def indicateur(pathologie, departement, taux, precedent):
+            IndicateurSante.objects.create(
+                pathologie=pathologie, departement_code=departement, semaine="2026-S45",
+                debut_semaine=datetime.date(2026, 11, 2), taux_urgences=taux,
+                taux_urgences_precedent=precedent, releve_le=timezone.now())
+        indicateur("GRIPPE", "42", 241.2, 180.0)
+        indicateur("COVID", "42", 30.0, 60.0)
+        indicateur("GRIPPE", "69", 999.0, 999.0)
+
+        corps = api_client.get(reverse("sante_urgences"), {"departement": "42"}).json()
+
+        assert corps["departement_nom"] == "Loire"
+        assert [(i["libelle"], i["tendance"]) for i in corps["indicateurs"]] == [("Grippe", "hausse"), ("Covid-19", "baisse")]
+        assert "Santé publique France" in corps["source"]
+        assert api_client.get(reverse("sante_urgences")).json()["indicateurs"] == []      # sans département

@@ -55,6 +55,8 @@ interface LayerVisibility {
   zonesBrulees: boolean;
   /** Massifs colorés par risque d'avalanche (bulletins de Météo-France). */
   avalanche: boolean;
+  /** Arrêtés de circulation des collectivités (DiaLog) : fermetures, poids lourds, alternats. */
+  arretesCirculation: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -112,6 +114,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     vigilanceCrues: false,
     zonesBrulees: false,
     avalanche: false,
+    arretesCirculation: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -195,6 +198,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
+    this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
     this.basculerPluie();
     this.rafraichirVeille();
   }
@@ -203,15 +207,17 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
-  veilleTronquee = { routes: false, stations: false, meteo: false };
+  veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
    * chaque déplacement de la carte : ces couches sont nationales, on n'en lit que la fenêtre. */
   private rafraichirVeille(): void {
     if (!this.map) return;
-    const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche } = this.layerVisibility;
-    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees && !avalanche) return;
+    const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
+            arretesCirculation } = this.layerVisibility;
+    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
+        && !avalanche && !arretesCirculation) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -252,6 +258,36 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
           'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
         }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (arretesCirculation) {
+      this.veilleService.arretesCirculation({ bbox }, true).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.arretes = reponse.tronque;
+          const jour = (instant: string | null) => instant ? new Date(instant).toLocaleDateString('fr-FR') : '';
+          this.afficherTracesVeille('arretes-circulation', 'line', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.filter(a => a.trace).map(a => ({
+              type: 'Feature', geometry: a.trace as Geometry,
+              properties: {
+                categorie: a.categorie,
+                infobulle: `<strong>${this.echapper(a.categorie_libelle)}`
+                  + (a.tonnage_max != null ? ` de plus de ${a.tonnage_max} t` : '') + '</strong>'
+                  + (a.voies ? `<br>${this.echapper(a.voies)}` : '')
+                  + (a.description ? `<br>${this.echapper(a.description)}` : '')
+                  + `<br>${a.fin ? `Jusqu'au ${jour(a.fin)}` : 'Arrêté permanent'}`
+                  + (a.autorite ? ` — ${this.echapper(a.autorite)}` : '')
+                  + (a.url ? `<br><a href="${this.echapper(a.url)}" target="_blank" rel="noopener noreferrer">Voir l'arrêté</a>` : '')
+                  + '<br><small>Source : DiaLog. Seules les collectivités qui y publient figurent ici.</small>',
+              },
+            })),
+          }, {
+            // Rouge : interdite à tous. Violet : poids lourds. Orange : alternat.
+            'line-color': ['match', ['get', 'categorie'], 'FERMETURE', '#c81e1e', 'POIDS_LOURDS', '#7c3aed', '#f97316'],
+            'line-width': 4,
+          }, this.layerVisibility.arretesCirculation);
+        },
         error: () => {},
       });
     }
@@ -310,6 +346,80 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         error: () => {},
       });
     }
+  }
+
+  // ── Outil : zone atteignable depuis un point ─────────────────────────────────────────────
+  //
+  // « Jusqu'où va-t-on en dix minutes depuis la caserne ? » On choisit une durée et un mode,
+  // on clique un point, le contour s'affiche. Le calcul est demandé par notre serveur.
+
+  readonly DUREES_ZONE = [5, 10, 15, 20, 30, 45];
+  zone = {
+    minutes: 10, mode: 'voiture' as 'voiture' | 'pied',
+    /** Le prochain clic sur la carte désigne le point de départ. */
+    attendUnPoint: false, enCours: false, affichee: false, erreur: '',
+  };
+
+  choisirPointDeLaZone(): void {
+    if (!this.map) return;
+    this.zone.attendUnPoint = true;
+    this.zone.erreur = '';
+    this.map.getCanvas().style.cursor = 'crosshair';
+    this.map.once('click', (e) => {
+      this.map!.getCanvas().style.cursor = '';
+      this.zone.attendUnPoint = false;
+      this.calculerZone(e.lngLat.lat, e.lngLat.lng);
+    });
+  }
+
+  calculerZone(lat: number, lon: number): void {
+    this.zone.enCours = true;
+    this.zone.erreur = '';
+    this.geolocationService.zoneAtteignable(lat, lon, this.zone.minutes, this.zone.mode).subscribe({
+      next: (reponse) => {
+        this.zone.enCours = false;
+        this.zone.affichee = true;
+        this.dessinerZone(reponse.contour as Geometry, lat, lon);
+      },
+      error: (erreur) => {
+        this.zone.enCours = false;
+        this.zone.erreur = erreur?.error?.detail || 'Le calcul n\'a pas abouti.';
+      },
+    });
+  }
+
+  effacerZone(): void {
+    this.zone.affichee = false;
+    this.zone.erreur = '';
+    const vide: FeatureCollection<Geometry> = { type: 'FeatureCollection', features: [] };
+    (this.map?.getSource('zone-atteignable') as maplibregl.GeoJSONSource | undefined)?.setData(vide);
+  }
+
+  private dessinerZone(contour: Geometry, lat: number, lon: number): void {
+    const data: FeatureCollection<Geometry> = {
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: contour, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} },
+      ],
+    };
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const source = this.map.getSource('zone-atteignable') as maplibregl.GeoJSONSource | undefined;
+      if (source) { source.setData(data); return; }
+      this.map.addSource('zone-atteignable', { type: 'geojson', data });
+      const premierTexte = this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+      this.map.addLayer({
+        id: 'zone-atteignable-layer', type: 'fill', source: 'zone-atteignable',
+        filter: ['!=', ['geometry-type'], 'Point'],
+        paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.18, 'fill-outline-color': '#1d4ed8' },
+      }, premierTexte);
+      this.map.addLayer({
+        id: 'zone-atteignable-point', type: 'circle', source: 'zone-atteignable',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: { 'circle-color': '#1d4ed8', 'circle-radius': 6, 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
+      });
+    });
   }
 
   // ── Pluie prévue : une image nationale par quart d'heure, et une réglette de temps ──────

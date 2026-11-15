@@ -11,11 +11,11 @@ from .views_application import (
     AccuserNotificationsView, MesMobilisationsView, MesNotificationsView, MonAppareilView,
     RepondreIndisponibleView,
 )
-from .views_adresses import GeocodageInverseView, RechercheAdresseView
+from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
-    ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
+    ArretesCirculationView, ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
     MeteoForetsView, ObservationsMeteoView, PluiePrevueView, RestrictionsEauView,
-    RisqueAvalancheView,
+    RisqueAvalancheView, SanteUrgencesView,
     StationsCarburantView, VigilanceCruesView, ZonesBruleesView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
 )
@@ -355,6 +355,7 @@ urlpatterns = [
     # (voir core/views_adresses.py).
     path('adresses/recherche/', RechercheAdresseView.as_view(), name='adresses_recherche'),
     path('adresses/inverse/', GeocodageInverseView.as_view(), name='adresses_inverse'),
+    path('zone-atteignable/', ZoneAtteignableView.as_view(), name='zone_atteignable'),
     # Vigilance Meteo-France : lecture de la copie en base (voir core/meteo_france.py).
     path('vigilance-meteo/', VigilanceMeteoView.as_view(), name='vigilance_meteo'),
     path('vigilance-meteo/vignette/<str:echeance>/', VignetteVigilanceMeteoView.as_view(),
@@ -370,6 +371,8 @@ urlpatterns = [
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
     path('meteo-forets/', MeteoForetsView.as_view(), name='meteo_forets'),
     path('risque-avalanche/', RisqueAvalancheView.as_view(), name='risque_avalanche'),
+    path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),
+    path('sante-urgences/', SanteUrgencesView.as_view(), name='sante_urgences'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

@@ -130,3 +130,55 @@ class GeocodageInverseView(APIView):
         parametres = {"lat": round(latitude, 4), "lon": round(longitude, 4), "limit": 1,
                       "index": "address"}
         return Response(_interroger("reverse", parametres) or _VIDE)
+
+
+# ── Zone atteignable depuis un point (isochrone) ────────────────────────────────────────────
+#
+# « Jusqu'où va-t-on en dix minutes depuis la caserne, le centre d'accueil, le point de
+# rassemblement ? » Le calcul est fait par le service d'itinéraires de la Géoplateforme de
+# l'IGN (https://data.geopf.fr/navigation), ouvert et sans clé. Comme pour les adresses, c'est
+# le serveur qui pose la question : le service reçoit un point et une durée venant
+# d'Assista-Crise, sans adresse IP ni en-tête de navigateur. Le point est arrondi à une dizaine
+# de mètres ; rien n'est conservé.
+
+URL_ISOCHRONE = "https://data.geopf.fr/navigation/isochrone"
+MINUTES_MIN, MINUTES_MAX = 1, 60
+MODES = {"voiture": "car", "pied": "pedestrian"}
+
+
+class ZoneAtteignableView(APIView):
+    """GET /api/zone-atteignable/?lat=…&lon=…[&minutes=10][&mode=voiture|pied] : le contour de
+    ce qu'on atteint depuis ce point en ce temps, par la route ou à pied."""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [DebitGeocodage]
+
+    def get(self, request):
+        latitude = _flottant(request.query_params.get("lat"), -90, 90)
+        longitude = _flottant(request.query_params.get("lon"), -180, 180)
+        if latitude is None or longitude is None:
+            return Response({"detail": "Latitude et longitude attendues."}, status=400)
+        try:
+            minutes = int(request.query_params.get("minutes", 10))
+        except ValueError:
+            minutes = 10
+        minutes = max(MINUTES_MIN, min(MINUTES_MAX, minutes))
+        mode = request.query_params.get("mode")
+        mode = mode if mode in MODES else "voiture"
+
+        donnees = None
+        try:
+            reponse = requests.get(URL_ISOCHRONE, timeout=DELAI_REPONSE_S * 2, params={
+                "point": f"{round(longitude, 4)},{round(latitude, 4)}",
+                "resource": "bdtopo-valhalla", "costType": "time", "costValue": minutes * 60,
+                "profile": MODES[mode], "direction": "departure", "geometryFormat": "geojson",
+            })
+            reponse.raise_for_status()
+            donnees = reponse.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("Calcul de zone atteignable indisponible (%s).", type(exc).__name__)
+        contour = donnees.get("geometry") if isinstance(donnees, dict) else None
+        if not isinstance(contour, dict) or contour.get("type") not in ("Polygon", "MultiPolygon"):
+            return Response({"detail": "Le calcul n'a pas abouti : réessayez, ou choisissez un "
+                                       "point plus proche d'une route."}, status=503)
+        return Response({"minutes": minutes, "mode": mode, "contour": contour,
+                         "source": "Géoplateforme IGN (BD TOPO)"})

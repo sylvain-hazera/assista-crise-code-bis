@@ -4,8 +4,9 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
-  CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
+  ArreteCirculation, ArretesCirculation, CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
   ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
+  SanteUrgences,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
@@ -36,10 +37,12 @@ export class VeilleComponent implements OnInit {
   crues: VigilanceCrues | null = null;
   eau: RestrictionsEau | null = null;
   forets: MeteoForets | null = null;
+  sante: SanteUrgences | null = null;
   feux: ZonesBrulees | null = null;
   /** Reste null en plaine comme en cas d'erreur : le bloc n'apparaît que s'il y a un massif. */
   avalanche: RisqueAvalanche | null = null;
   routes: EvenementsRoutiers | null = null;
+  arretes: ArretesCirculation | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
@@ -80,6 +83,10 @@ export class VeilleComponent implements OnInit {
       next: (eau) => { this.eau = eau; },
       error: () => { this.erreurEau = true; },
     });
+    this.service.santeUrgences().subscribe({
+      next: (sante) => { this.sante = sante; },
+      error: () => { this.sante = null; },
+    });
     this.service.meteoForets().subscribe({
       next: (forets) => { this.forets = forets; },
       error: () => { this.forets = null; },
@@ -112,6 +119,10 @@ export class VeilleComponent implements OnInit {
     this.service.observationsMeteo({ rayon_km: this.rayonKm }).subscribe({
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
+    });
+    this.service.arretesCirculation({ rayon_km: this.rayonKm }).subscribe({
+      next: (arretes) => { this.arretes = arretes; },
+      error: () => { this.arretes = null; },
     });
     this.service.evenementsRoutiers({ rayon_km: this.rayonKm }).subscribe({
       next: (routes) => { this.routes = routes; },
@@ -226,6 +237,12 @@ export class VeilleComponent implements OnInit {
 
   get nombreSecondaires(): number {
     return (this.routes?.resultats ?? []).filter(e => this.SECONDAIRES.includes(e.categorie)).length;
+  }
+
+  /** Arrêtés temporaires de fermeture : ce qu'une cellule de crise doit voir d'abord. Les
+   * arrêtés permanents et les restrictions de tonnage sont comptés, et se lisent sur la carte. */
+  get fermeturesTemporaires(): ArreteCirculation[] {
+    return (this.arretes?.resultats ?? []).filter(a => a.categorie === 'FERMETURE' && a.fin);
   }
 
   /** L'événement n'a pas encore commencé (chantier annoncé). */

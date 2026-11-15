@@ -59,8 +59,9 @@ def _appeler(chemin, parametres=None):
     cle = meteo_france.lire_cle()
     if cle is None:
         raise meteo_france.CleAbsente()
-    reponse = requests.get(f"{URL_BASE}/{chemin}", params=parametres,
-                           headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S)
+    reponse = meteo_france.avec_reprise(lambda: requests.get(
+        f"{URL_BASE}/{chemin}", params=parametres,
+        headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S))
     reponse.raise_for_status()
     return reponse
 

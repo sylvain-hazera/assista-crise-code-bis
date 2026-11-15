@@ -26,6 +26,40 @@ describe('MapComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  /** Zone atteignable : le calcul est demandé à NOTRE serveur, jamais à un service tiers. */
+  describe('zone atteignable depuis un point', () => {
+    const api = environment.apiUrl;
+    let http: HttpTestingController;
+
+    beforeEach(() => { http = TestBed.inject(HttpTestingController); });
+
+    it('demande le contour à notre serveur avec la durée et le mode choisis', () => {
+      component.zone.minutes = 20;
+      component.zone.mode = 'pied';
+      component.calculerZone(45.44, 4.39);
+
+      const demande = http.expectOne(r => r.url === `${api}/zone-atteignable/`);
+      expect(demande.request.params.get('minutes')).toBe('20');
+      expect(demande.request.params.get('mode')).toBe('pied');
+      expect(demande.request.params.get('lat')).toBe('45.44');
+      demande.flush({ minutes: 20, mode: 'pied', source: 'IGN',
+                      contour: { type: 'Polygon', coordinates: [[[4.38, 45.43], [4.4, 45.43], [4.4, 45.45], [4.38, 45.43]]] } });
+      expect(component.zone.affichee).toBeTrue();
+      expect(component.zone.enCours).toBeFalse();
+    });
+
+    it('dit quand le calcul n’aboutit pas, et on peut effacer', () => {
+      component.calculerZone(45.44, 4.39);
+      http.expectOne(r => r.url === `${api}/zone-atteignable/`).flush(
+        { detail: 'Le calcul n\'a pas abouti : réessayez.' }, { status: 503, statusText: 'Indisponible' });
+
+      expect(component.zone.erreur).toContain('pas abouti');
+      expect(component.zone.affichee).toBeFalse();
+      component.effacerZone();
+      expect(component.zone.erreur).toBe('');
+    });
+  });
+
   /** Pluie prévue (15/11/2026) : des images nationales copiées par notre serveur, une par
    * quart d'heure. Ce qui est testé : la carte ne les demande qu'à notre serveur, seulement
    * quand le calque est coché, et la réglette dit l'heure sans ambiguïté. */

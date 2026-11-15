@@ -68,6 +68,15 @@ export class GeolocationService {
     return this.http.get<any>(`${this.adressesUrl}/inverse/`, { params: { lat, lon: lng } });
   }
 
+  /** Zone atteignable depuis un point en un temps donné, par la route ou à pied. Calculée par
+   * le service d'itinéraires de l'IGN, mais demandée par NOTRE serveur : le navigateur ne
+   * parle à personne d'autre (voir backend/core/views_adresses.py). */
+  zoneAtteignable(lat: number, lon: number, minutes: number, mode: 'voiture' | 'pied'): Observable<{
+    minutes: number; mode: string; contour: { type: string; coordinates: unknown }; source: string;
+  }> {
+    return this.http.get<any>(`${environment.apiUrl}/zone-atteignable/`, { params: { lat, lon, minutes, mode } });
+  }
+
   private checkStoredLocation(): void {
     const stored = localStorage.getItem('userLocation');
     if (stored) {

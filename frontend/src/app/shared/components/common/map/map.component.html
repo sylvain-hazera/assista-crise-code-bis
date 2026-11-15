@@ -120,12 +120,37 @@
         Stations météo : vent, pluie
         @if (layerVisibility.stationsMeteo && veilleTronquee.meteo) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      <label class="layer-toggle-item" title="Arrêtés des communes et départements publiés dans DiaLog. Rouge : interdite. Violet : poids lourds. Orange : alternat.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.arretesCirculation" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot arretes-dot"></span>
+        Arrêtés de circulation (routes locales)
+        @if (layerVisibility.arretesCirculation && veilleTronquee.arretes) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
       <label class="layer-toggle-item" title="Rouge : plus de carburant. Orange : un carburant manque.">
         <input type="checkbox" [(ngModel)]="layerVisibility.stationsCarburant" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot stations-dot"></span>
         Stations de carburant
         @if (layerVisibility.stationsCarburant && veilleTronquee.stations) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      <!-- Outil : jusqu'ou va-t-on en N minutes depuis un point (calcul demande par notre serveur). -->
+      <div class="outil-zone">
+        <div class="outil-zone-titre"><span class="material-icons">explore</span> Zone atteignable depuis un point</div>
+        <div class="outil-zone-reglages">
+          <select [(ngModel)]="zone.minutes" aria-label="Durée du trajet">
+            @for (duree of DUREES_ZONE; track duree) { <option [ngValue]="duree">{{ duree }} min</option> }
+          </select>
+          <select [(ngModel)]="zone.mode" aria-label="Mode de déplacement">
+            <option value="voiture">en voiture</option>
+            <option value="pied">à pied</option>
+          </select>
+        </div>
+        <button type="button" class="outil-zone-bouton" (click)="choisirPointDeLaZone()" [disabled]="zone.attendUnPoint || zone.enCours">
+          {{ zone.attendUnPoint ? 'Cliquez le point de départ sur la carte…' : zone.enCours ? 'Calcul…' : 'Choisir le point de départ' }}
+        </button>
+        @if (zone.affichee) { <button type="button" class="outil-zone-effacer" (click)="effacerZone()">Effacer la zone</button> }
+        @if (zone.erreur) { <p class="outil-zone-erreur" role="alert">{{ zone.erreur }}</p> }
+      </div>
+
       @if (isInstitutional) {
         <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.positions" (ngModelChange)="onLayerToggle()">

@@ -158,6 +158,46 @@ class TestLectureDeLaCarte:
 
 # ── Vigilance : la clé ──────────────────────────────────────────────────────────────────────
 
+class TestRepriseSurRefusDeConnexion:
+    """La passerelle de Météo-France refuse par moments la connexion, une requête sur deux ou
+    trois (constaté le 15/11/2026). Un refus de connexion se réessaie ; le reste, non."""
+
+    @pytest.fixture(autouse=True)
+    def sans_attente(self, monkeypatch):
+        monkeypatch.setattr(meteo_france, "ATTENTE_ENTRE_TENTATIVES_S", 0)
+
+    def test_un_refus_passager_est_reessaye(self):
+        appel = mock.Mock(side_effect=[requests.ConnectionError("refusée"), requests.ConnectionError("refusée"), "réponse"])
+
+        assert meteo_france.avec_reprise(appel) == "réponse"
+        assert appel.call_count == 3
+
+    def test_un_refus_persistant_finit_par_remonter(self):
+        appel = mock.Mock(side_effect=requests.ConnectionError("refusée"))
+
+        with pytest.raises(requests.ConnectionError):
+            meteo_france.avec_reprise(appel)
+        assert appel.call_count == meteo_france.TENTATIVES_DE_CONNEXION
+
+    @pytest.mark.parametrize("panne", [requests.ReadTimeout("lent"), requests.ConnectTimeout("lent"), requests.HTTPError("500")])
+    def test_un_delai_depasse_ou_une_erreur_du_service_ne_sont_pas_reessayes(self, panne):
+        appel = mock.Mock(side_effect=panne)
+
+        with pytest.raises(type(panne)):
+            meteo_france.avec_reprise(appel)
+        assert appel.call_count == 1
+
+    def test_la_vigilance_passe_malgre_un_refus_passager(self, tmp_path, monkeypatch):
+        fichier = tmp_path / "cle"
+        fichier.write_text("a.b.c")
+        monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+        bonne = mock.Mock(json=lambda: {"product": {}}, raise_for_status=lambda: None)
+
+        with mock.patch("core.meteo_france.requests.get", side_effect=[requests.ConnectionError("refusée"), bonne]) as appel:
+            assert meteo_france.telecharger_carte() == {"product": {}}
+        assert appel.call_count == 2
+
+
 class TestCle:
 
     def _cle(self, tmp_path, monkeypatch, charge):
@@ -728,6 +768,7 @@ def cle_meteo(tmp_path, monkeypatch):
     fichier = tmp_path / "cle"
     fichier.write_text("a.b.c")
     monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+    monkeypatch.setattr(pluie, "PAUSE_ENTRE_IMAGES_S", 0)
 
 
 class TestPluiePrevue:
@@ -1230,3 +1271,123 @@ class TestRelaisDAdresse:
 
         assert codes == [200, 200, 200, 429, 429]
         assert geocodage.call_count == 3
+
+
+# ── Zone atteignable depuis un point ────────────────────────────────────────────────────────
+
+CONTOUR = {"type": "Polygon", "coordinates": [[[4.38, 45.43], [4.40, 45.43], [4.40, 45.45], [4.38, 45.43]]]}
+
+
+@pytest.fixture
+def itineraires():
+    from django.core.cache import cache
+
+    cache.clear()
+    with mock.patch("core.views_adresses.requests.get") as appel:
+        appel.return_value.json.return_value = {"geometry": CONTOUR, "costValue": 600}
+        yield appel
+
+
+class TestZoneAtteignable:
+
+    def test_le_serveur_pose_la_question_et_rend_le_contour(self, api_client, itineraires):
+        reponse = api_client.get(reverse("zone_atteignable"), {"lat": "45.4398712", "lon": "4.3872139"})
+
+        assert reponse.status_code == 200
+        assert reponse.json() == {"minutes": 10, "mode": "voiture", "contour": CONTOUR,
+                                  "source": "Géoplateforme IGN (BD TOPO)"}
+        (adresse,), options = itineraires.call_args
+        assert adresse == "https://data.geopf.fr/navigation/isochrone"
+        # Longitude d'abord, arrondie à une dizaine de mètres ; dix minutes en secondes.
+        assert options["params"]["point"] == "4.3872,45.4399"
+        assert options["params"]["costValue"] == 600 and options["params"]["profile"] == "car"
+        assert set(options) == {"params", "timeout"}        # rien du navigateur ne part
+
+    def test_a_pied_et_sur_une_autre_duree(self, api_client, itineraires):
+        corps = api_client.get(reverse("zone_atteignable"),
+                               {"lat": "45.44", "lon": "4.39", "minutes": "20", "mode": "pied"}).json()
+
+        assert (corps["minutes"], corps["mode"]) == (20, "pied")
+        assert itineraires.call_args.kwargs["params"]["profile"] == "pedestrian"
+        assert itineraires.call_args.kwargs["params"]["costValue"] == 1200
+
+    @pytest.mark.parametrize("demande, attendu", [("0", 1), ("999", 60), ("abc", 10)])
+    def test_la_duree_est_bornee(self, api_client, itineraires, demande, attendu):
+        corps = api_client.get(reverse("zone_atteignable"), {"lat": "45.44", "lon": "4.39", "minutes": demande}).json()
+
+        assert corps["minutes"] == attendu
+
+    def test_un_mode_inconnu_revient_a_la_voiture(self, api_client, itineraires):
+        corps = api_client.get(reverse("zone_atteignable"), {"lat": "45.44", "lon": "4.39", "mode": "helicoptere"}).json()
+
+        assert corps["mode"] == "voiture"
+
+    def test_sans_point_aucun_appel_ne_part(self, api_client, itineraires):
+        assert api_client.get(reverse("zone_atteignable"), {"lat": "45.44"}).status_code == 400
+        itineraires.assert_not_called()
+
+    def test_un_service_en_panne_ou_sans_contour_est_dit_clairement(self, api_client, itineraires):
+        itineraires.return_value.json.return_value = {"geometry": None}
+        sans_contour = api_client.get(reverse("zone_atteignable"), {"lat": "45.44", "lon": "4.39"})
+        itineraires.side_effect = requests.ConnectionError("coupé")
+        en_panne = api_client.get(reverse("zone_atteignable"), {"lat": "45.44", "lon": "4.39"})
+
+        assert sans_contour.status_code == 503 and en_panne.status_code == 503
+        assert "n'a pas abouti" in en_panne.json()["detail"]
+
+
+# ── La commande planifiée ───────────────────────────────────────────────────────────────────
+
+class TestCommandeDeReleve:
+
+    def _lancer(self, resultats, *arguments):
+        from django.core.management import call_command
+
+        ordre = []
+
+        def relever(code, forcer=False):
+            ordre.append(code)
+            return resultats.get(code, "réussi")
+
+        def annoncer():
+            ordre.append("ANNONCE")
+            return ["Mairie : Vigilance ORANGE"]
+
+        sortie = io.StringIO()
+        with mock.patch("core.sources_ouvertes.relever_source", side_effect=relever), \
+                mock.patch("core.meteo_france.diffuser_alertes", side_effect=annoncer):
+            call_command("relever_sources_ouvertes", *arguments, stdout=sortie)
+        return ordre, sortie.getvalue()
+
+    def test_l_annonce_part_aussitot_la_vigilance_relevee_sans_attendre_les_sources_lentes(self):
+        ordre, sortie = self._lancer({})
+
+        assert ordre[:2] == ["VIGILANCE_METEO", "ANNONCE"]
+        assert set(ordre[2:]) == set(sources_ouvertes.SOURCES) - {"VIGILANCE_METEO"}
+        assert "1 annonce(s) de vigilance" in sortie
+
+    def test_rien_n_est_annonce_sur_une_vigilance_non_rafraichie(self):
+        for resultat in ("échec", "ignoré"):
+            ordre, sortie = self._lancer({"VIGILANCE_METEO": resultat})
+
+            assert "ANNONCE" not in ordre and "0 annonce(s)" in sortie
+
+    def test_un_second_releve_lance_en_meme_temps_se_retire(self):
+        """Constaté en service le 15/11/2026 : deux relevés forcés tournaient ensemble."""
+        import fcntl
+        import os
+        import tempfile
+
+        with open(os.path.join(tempfile.gettempdir(), "relever-sources-ouvertes.verrou"), "w") as tenu:
+            fcntl.flock(tenu, fcntl.LOCK_EX)
+
+            ordre, sortie = self._lancer({}, "--forcer")
+
+        assert ordre == [] and "déjà en cours" in sortie
+        # Verrou relâché : le relevé suivant passe.
+        assert self._lancer({})[0][0] == "VIGILANCE_METEO"
+
+    def test_une_source_seule_peut_etre_relevee(self):
+        ordre, _sortie = self._lancer({}, "--source", "CARBURANTS")
+
+        assert ordre == ["CARBURANTS"]

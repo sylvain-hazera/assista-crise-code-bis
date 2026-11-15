@@ -457,6 +457,48 @@
     }
   </section>
 
+  <!-- ════ Santé : seulement si le département a des indicateurs ════ -->
+  @if (sante?.indicateurs?.length) {
+    <section aria-labelledby="titre-sante">
+      <h2 id="titre-sante"><span class="material-icons">local_hospital</span> Recours aux urgences — {{ sante!.departement_nom }}</h2>
+      <div class="defilement">
+        <table class="mesures-sante">
+          <thead>
+            <tr><th>Pathologie</th><th>Semaine du {{ sante!.indicateurs[0].debut_semaine | date:'dd/MM' }}</th><th>Semaine précédente</th><th>Tendance</th></tr>
+          </thead>
+          <tbody>
+            @for (indicateur of sante!.indicateurs; track indicateur.pathologie) {
+              <tr [class.remarquable]="indicateur.tendance === 'hausse'">
+                <td><strong>{{ indicateur.libelle }}</strong></td>
+                <td class="chiffre">
+                  @if (indicateur.taux_urgences != null) { {{ indicateur.taux_urgences | number:'1.0-0' }} } @else { <span class="calme">—</span> }
+                </td>
+                <td class="chiffre">
+                  @if (indicateur.taux_urgences_precedent != null) { {{ indicateur.taux_urgences_precedent | number:'1.0-0' }} } @else { <span class="calme">—</span> }
+                </td>
+                <td>
+                  @switch (indicateur.tendance) {
+                    @case ('hausse') { <span class="etiquette tendance hausse">en hausse</span> }
+                    @case ('baisse') { <span class="etiquette tendance">en baisse</span> }
+                    @case ('stable') { <span class="etiquette tendance">stable</span> }
+                    @default { <span class="calme">—</span> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        Source : {{ sante!.source }}. Chiffres <strong>pour 100 000 passages aux urgences</strong> :
+        sur 100 000 personnes venues aux urgences cette semaine-là, combien venaient pour cette
+        pathologie. Ce n'est ni un nombre de malades, ni un taux dans la population : cela sert à
+        voir une tendance. Données hebdomadaires, publiées avec une dizaine de jours de recul ;
+        un écart de moins de 20 % d'une semaine à l'autre est compté comme stable.
+      </p>
+    </section>
+  }
+
   <!-- ════ Routes ════ -->
   <section aria-labelledby="titre-routes">
     <h2 id="titre-routes">
@@ -487,6 +529,7 @@
         </p>
       }
 
+      <h3>Réseau national</h3>
       @if (evenementsVisibles.length) {
         <ul class="evenements">
           @for (evenement of evenementsVisibles; track evenement.reference) {
@@ -519,6 +562,39 @@
         </button>
       }
       @if (routes.tronque) { <p class="note">Liste limitée aux 500 premiers événements : réduisez le rayon.</p> }
+
+      @if (arretes?.emprise_connue) {
+        <h3>Routes locales : arrêtés des collectivités</h3>
+        @if (fermeturesTemporaires.length) {
+          <ul class="evenements">
+            @for (arrete of fermeturesTemporaires; track arrete.reference) {
+              <li data-categorie="FERMETURE">
+                <p class="titre-evenement">
+                  <span class="etiquette categorie">Circulation interdite</span>
+                  <strong>{{ arrete.voies || 'Voie non précisée' }}</strong>
+                </p>
+                @if (arrete.description) { <p class="description">{{ arrete.description }}</p> }
+                <p class="periode">
+                  @if (arrete.debut) { Du {{ arrete.debut | date:'dd/MM/yyyy' }} } au {{ arrete.fin | date:'dd/MM/yyyy' }}
+                  @if (arrete.autorite) { · {{ arrete.autorite }} }
+                  @if (arrete.url) { · <a [href]="arrete.url" target="_blank" rel="noopener noreferrer">l'arrêté</a> }
+                </p>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="calme">Aucune fermeture temporaire publiée dans ce rayon.</p>
+        }
+        <p class="note">
+          Source : {{ arretes!.source }}@if (arretes!.releve_le) {, relevé le {{ arretes!.releve_le | date:'dd/MM à HH:mm' }}}.
+          Dans ce rayon : {{ arretes!.bilan.FERMETURE }} voie(s) interdite(s) à la circulation,
+          {{ arretes!.bilan.POIDS_LOURDS }} interdite(s) aux poids lourds,
+          {{ arretes!.bilan.ALTERNAT }} en circulation alternée — permanentes comprises, à voir sur
+          la <a routerLink="/admin/carte">carte</a>, calque « Arrêtés de circulation ».
+          <strong>Seules les collectivités qui publient dans DiaLog y figurent</strong>, et elles
+          sont encore peu nombreuses : aucune fermeture ici ne veut pas dire aucune route fermée.
+        </p>
+      }
 
       <p class="note">
         Source : {{ routes.source }}@if (routes.releve_le) {, relevé le {{ routes.releve_le | date:'dd/MM à HH:mm' }}}.

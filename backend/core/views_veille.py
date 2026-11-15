@@ -11,7 +11,7 @@ mairie. Seul le RÉGLAGE de l'annonce de vigilance est réservé aux acteurs ins
 import math
 
 from django.contrib.gis.geos import Polygon
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, Count, F, IntegerField, Value, When
 from django.http import HttpResponse, HttpResponseNotFound
 from django.utils import timezone
 from rest_framework import permissions, viewsets
@@ -22,12 +22,12 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    avalanche, meteo_forets, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, meteo_forets, sante_urgences, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
-    Commune, ConfigurationAlerteVigilance, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
+    ArreteCirculation, Commune, ConfigurationAlerteVigilance, ContactInstitution, DangerFeuForet, EvenementRoutier,
+    ImagePluie, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -470,6 +470,79 @@ class MeteoForetsView(APIView):
             "mon_departement": self._ligne(mien) if mien else None,
             "departements": [self._ligne(d) for d in eleves],
         })
+
+
+class SanteUrgencesView(APIView):
+    """GET /api/sante-urgences/ : pour le département de l'appelant (`?departement=42` pour un
+    autre), la part des passages aux urgences attribués à quatre pathologies, cette semaine et
+    la précédente. Un taux pour 100 000 passages : une tendance, pas un nombre de malades."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        code = request.query_params.get("departement") or _departement_de_l_appelant(request)
+        lignes = {i.pathologie: i for i in IndicateurSante.objects.filter(departement_code=code)} if code else {}
+        indicateurs = []
+        for pathologie, (libelle, *_reste) in sante_urgences.PATHOLOGIES.items():
+            ligne = lignes.get(pathologie)
+            if ligne is None:
+                continue
+            indicateurs.append({
+                "pathologie": pathologie, "libelle": libelle,
+                "semaine": ligne.semaine, "debut_semaine": ligne.debut_semaine,
+                "taux_urgences": ligne.taux_urgences,
+                "taux_urgences_precedent": ligne.taux_urgences_precedent,
+                "taux_sos": ligne.taux_sos,
+                "tendance": sante_urgences.tendance(ligne.taux_urgences, ligne.taux_urgences_precedent),
+            })
+        return Response({
+            **sources_ouvertes.resume("SANTE_URGENCES"),
+            "departement_code": code or None,
+            "departement_nom": meteo_france.nom_departement(code) if code else None,
+            "indicateurs": indicateurs,
+        })
+
+
+class ArretesCirculationView(APIView):
+    """GET /api/arretes-circulation/ : les arrêtés de circulation des collectivités (DiaLog)
+    dans une emprise (voir `_emprise`) : circulation interdite d'abord, puis poids lourds, puis
+    alternats ; les arrêtés temporaires avant les permanents. `?trace=1` joint leur tracé."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("ARRETES_CIRCULATION", centre, rayon)
+        vide = {categorie: 0 for categorie in arretes_circulation.ORDRE_CATEGORIES}
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "bilan": vide, "resultats": []})
+
+        dans_l_emprise = ArreteCirculation.objects.filter(location__within=emprise)
+        bilan = {**vide, **{ligne["categorie"]: ligne["nombre"] for ligne in
+                            dans_l_emprise.values("categorie").annotate(nombre=Count("pk"))}}
+        rang = Case(
+            *[When(categorie=categorie, then=Value(i))
+              for i, categorie in enumerate(arretes_circulation.ORDRE_CATEGORIES)],
+            default=Value(9), output_field=IntegerField(),
+        )
+        avec_trace = request.query_params.get("trace") in ("1", "true")
+        arretes = list(dans_l_emprise.annotate(rang=rang)
+                       .order_by("rang", F("fin").asc(nulls_last=True), "reference")[:RESULTATS_MAX + 1])
+        resultats = []
+        for arrete in arretes[:RESULTATS_MAX]:
+            latitude, longitude = _point(arrete.location)
+            ligne = {
+                "reference": arrete.reference, "categorie": arrete.categorie,
+                "categorie_libelle": arrete.get_categorie_display(),
+                "description": arrete.description, "autorite": arrete.autorite,
+                "voies": arrete.voies, "tonnage_max": arrete.tonnage_max,
+                "debut": arrete.debut, "fin": arrete.fin, "url": arrete.url,
+                "latitude": latitude, "longitude": longitude,
+            }
+            if avec_trace:
+                ligne["trace"] = json.loads(arrete.geometrie.geojson)
+            resultats.append(ligne)
+        return Response({**entete, "emprise_connue": True, "tronque": len(arretes) > RESULTATS_MAX,
+                         "bilan": bilan, "resultats": resultats})
 
 
 class RisqueAvalancheView(APIView):

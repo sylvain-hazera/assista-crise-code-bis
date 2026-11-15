@@ -40,7 +40,12 @@ URL_BASE = "https://public-api.meteofrance.fr/public/DPBRA/v1"
 # Le service est lent et parfois muet : un délai court, et une lecture ratée garde l'indice
 # précédent (voir `relever`).
 DELAI_REPONSE_S = 15
-PAUSE_ENTRE_MASSIFS_S = 1.3
+# 35 bulletins à la suite : à ce rythme, une vingtaine d'appels par minute, moins de la moitié du
+# débit autorisé (50) -- les autres relevés Météo-France passent par la même porte.
+PAUSE_ENTRE_MASSIFS_S = 2.5
+# Au-delà de ce nombre de pannes D'AFFILÉE, le service est manifestement indisponible : on
+# cesse de l'appeler pour ce relevé, et les massifs restants gardent leur indice précédent.
+PANNES_AVANT_ABANDON = 4
 NIVEAUX = {1: "faible", 2: "limité", 3: "marqué", 4: "fort", 5: "très fort"}
 MINIMUM_MASSIFS = 20
 FUSEAU = meteo_france.FUSEAU
@@ -50,8 +55,9 @@ def _appeler(chemin, parametres=None):
     cle = meteo_france.lire_cle()
     if cle is None:
         raise meteo_france.CleAbsente()
-    return requests.get(f"{URL_BASE}/{chemin}", params=parametres,
-                        headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S)
+    return meteo_france.avec_reprise(lambda: requests.get(
+        f"{URL_BASE}/{chemin}", params=parametres,
+        headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S))
 
 
 def telecharger_massifs():
@@ -149,18 +155,29 @@ def relever(maintenant=None):
 
     champs_bulletin = ("risque", "risque_demain", "commentaire", "resume", "publie_le", "valide_jusqu_a")
     connus = {m.massif_code: m for m in RisqueAvalanche.objects.all()}
-    lignes, avec_bulletin = [], 0
+    def precedent_de(code):
+        precedent = connus.get(code)
+        return {c: getattr(precedent, c) for c in champs_bulletin} if precedent else {}
+
+    lignes, avec_bulletin, pannes_de_suite = [], 0, 0
     for rang, (code, massif) in enumerate(sorted(massifs.items())):
-        if rang:
-            time.sleep(PAUSE_ENTRE_MASSIFS_S)
-        try:
-            xml = telecharger_bulletin(code)
-            bulletin = (analyser_bulletin(xml) if xml else None) or {}
-        except requests.RequestException as exc:
-            logger.warning("Avalanche : bulletin du massif %s non relevé (%s), le précédent est gardé.",
-                           code, type(exc).__name__)
-            precedent = connus.get(code)
-            bulletin = {c: getattr(precedent, c) for c in champs_bulletin} if precedent else {}
+        if pannes_de_suite >= PANNES_AVANT_ABANDON:
+            bulletin = precedent_de(code)
+        else:
+            if rang:
+                time.sleep(PAUSE_ENTRE_MASSIFS_S)
+            try:
+                xml = telecharger_bulletin(code)
+                bulletin = (analyser_bulletin(xml) if xml else None) or {}
+                pannes_de_suite = 0
+            except requests.RequestException as exc:
+                pannes_de_suite += 1
+                logger.warning("Avalanche : bulletin du massif %s non relevé (%s), le précédent est gardé.",
+                               code, type(exc).__name__)
+                if pannes_de_suite == PANNES_AVANT_ABANDON:
+                    logger.warning("Avalanche : %s pannes de suite, les massifs restants ne sont pas "
+                                   "demandés pour ce relevé.", pannes_de_suite)
+                bulletin = precedent_de(code)
         avec_bulletin += bulletin.get("risque") is not None
         lignes.append(RisqueAvalanche(massif_code=code, releve_le=maintenant, **massif, **bulletin))
 

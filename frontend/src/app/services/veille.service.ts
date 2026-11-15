@@ -4,8 +4,8 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationAlerteVigilance, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
-  RestrictionsEau, RisqueAvalanche, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
+  ArretesCirculation, ConfigurationAlerteVigilance, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -88,6 +88,19 @@ export class VeilleService {
     const params = this.params(emprise);
     if (trace) params['trace'] = '1';
     return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
+  }
+
+  /** Arrêtés de circulation des collectivités (DiaLog). `trace` joint leur tracé (carte). */
+  arretesCirculation(emprise: EmpriseVeille = {}, trace = false): Observable<ArretesCirculation> {
+    const params = this.params(emprise);
+    if (trace) params['trace'] = '1';
+    return this.http.get<ArretesCirculation>(`${this.api}/arretes-circulation/`, { params });
+  }
+
+  /** Recours aux urgences par pathologie, pour le département de l'appelant ou un autre. */
+  santeUrgences(departement?: string): Observable<SanteUrgences> {
+    const params: Record<string, string> = departement ? { departement } : {};
+    return this.http.get<SanteUrgences>(`${this.api}/sante-urgences/`, { params });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

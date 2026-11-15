@@ -29,6 +29,7 @@ import datetime
 import json
 import logging
 import os
+import time
 import unicodedata
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -109,13 +110,37 @@ def echeance_cle():
 
 # ── Les appels ──────────────────────────────────────────────────────────────────────────────
 
+# La passerelle de Météo-France refuse par moments la connexion (« Connection refused »), une
+# requête sur deux ou trois, puis répond normalement à la suivante. Constaté le 15/11/2026,
+# en essai comme en service, sur toutes ses API. Un refus de CONNEXION est donc réessayé, avec
+# une courte attente ; une réponse d'erreur (4xx, 5xx) ou un délai dépassé ne le sont pas -- ce
+# ne sont pas des hasards de passerelle, et insister n'y changerait rien.
+TENTATIVES_DE_CONNEXION = 3
+ATTENTE_ENTRE_TENTATIVES_S = 2.0
+
+
+def avec_reprise(appel):
+    """Exécute `appel()` (une requête vers Météo-France) en réessayant les refus de connexion.
+    Sert à tous les modules qui parlent à ce portail (vigilance, mesures, pluie, avalanche,
+    météo des forêts)."""
+    for rang in range(TENTATIVES_DE_CONNEXION):
+        try:
+            return appel()
+        except requests.ConnectionError as exc:
+            # Un délai de connexion dépassé est aussi une ConnectionError : on ne le réessaie
+            # pas, il coûte déjà cher en attente.
+            if isinstance(exc, requests.Timeout) or rang == TENTATIVES_DE_CONNEXION - 1:
+                raise
+            time.sleep(ATTENTE_ENTRE_TENTATIVES_S * (rang + 1))
+
+
 def _appeler(chemin):
     cle = lire_cle()
     if cle is None:
         raise CleAbsente()
-    reponse = requests.get(
+    reponse = avec_reprise(lambda: requests.get(
         f"{URL_BASE}/{chemin}", headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S,
-    )
+    ))
     reponse.raise_for_status()
     return reponse
 

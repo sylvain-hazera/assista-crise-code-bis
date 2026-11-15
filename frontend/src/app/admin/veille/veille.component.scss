@@ -143,7 +143,7 @@ button.discret {
 }
 
 // ── Mesures des stations ──
-table.mesures {
+table.mesures, table.mesures-sante {
   // Des chiffres de largeur fixe : on compare les stations en colonne.
   td.chiffre { font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.fort { font-weight: 700; color: var(--ac-amber-text, #92400e); }
@@ -206,6 +206,8 @@ table.mesures {
 .etiquette.avalanche[data-niveau="3"] { background: #ff9900; color: #3b2100; }
 .etiquette.avalanche[data-niveau="4"] { background: #ff0000; color: #fff; }
 .etiquette.avalanche[data-niveau="5"] { background: #1f1f1f; color: #ff4d4d; }
+
+.etiquette.tendance.hausse { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); font-weight: 600; }
 
 // ── Rayon ──
 .rayon {

@@ -2795,15 +2795,23 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Cinq sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
-les alertes. Page : `/admin/veille` ; couches « Pluie prévue », « Stations météo », « Routes »
-et « Stations de carburant » sur la carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
+Douze sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie prévue, stations
+météo, vigilance crues, risque d'avalanche, surfaces brûlées, routes, arrêtés de circulation,
+stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
 | Source | Ce qu'elle apporte | Accès | Rythme | Module |
 |---|---|---|---|---|
 | Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
 | Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
 | Météo-France, prévision immédiate (AROME-PI, WMS) | **pluie prévue** par quart d'heure sur 3 h, images nationales ; métropole | même clé | 10 min (12 images par heure) | `core/pluie.py` |
+| Météo-France, bulletins d'avalanche | indice de risque par massif (35 massifs), aujourd'hui et demain ; en saison | même clé | 6 h | `core/avalanche.py` |
+| Météo-France, météo des forêts | danger de feu par département, demain et après-demain ; **juin à septembre** | même clé | 3 h | `core/meteo_forets.py` |
+| Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
+| VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
+| EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
+| DiaLog (DATEX II v3) | arrêtés de circulation des collectivités : voies interdites, interdites aux poids lourds, alternats | aucune clé | 24 h | `core/arretes_circulation.py` |
+| Santé publique France (Odissé) | part des passages aux urgences pour grippe, Covid-19, gastro-entérite, bronchiolite, par département et par semaine | aucune clé | 24 h | `core/sante_urgences.py` |
 | Bison Futé (DATEX II) | fermetures, accidents, obstacles, travaux du réseau routier **national** | aucune clé | 10 min | `core/trafic_routier.py` |
 | Prix des carburants, flux instantané | stations, carburants disponibles, **ruptures** | aucune clé | 30 min | `core/carburants.py` |
 
@@ -2814,7 +2822,9 @@ et « Stations de carburant » sur la carte ; réglage de l'annonce dans la fich
    déclenche d'appel sortant, et rien de ce qui part ne désigne une personne, une commune ou
    une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
 2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `ObservationMeteo`,
-   `ImagePluie`, `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
+   `ImagePluie`, `RisqueAvalanche`, `DangerFeuForet`, `TronconVigilanceCrues`, `RestrictionEau`,
+   `ZoneBrulee`, `ArreteCirculation`, `IndicateurSante`, `EvenementRoutier`,
+   `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
    personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
    table. Un flux vide ou tronqué ne remplace pas la copie précédente.
 3. **Une copie ancienne se dit ancienne.** `ReleveSourceOuverte` garde l'heure du dernier
@@ -2853,8 +2863,41 @@ pluie d'une quarantaine de kilomètres au centre du pays — et la garde en coul
 (~120 Ko). Sur la carte, une réglette choisit le quart d'heure et peut animer la séquence ;
 l'image est posée sous les noms de lieux, pour ne rien masquer.
 
-**Hors saison** : la « météo des forêts » (danger de feu) n'est publiée par Météo-France que
-de juin à septembre ; son connecteur reste à écrire quand il y aura des données à lire.
+**Ce que chaque écran doit dire, parce que la source ne le dit pas :**
+
+- *Vigilance crues* : Vigicrues ne surveille que les principaux cours d'eau ; un ruisseau
+  absent de la liste n'est pas un ruisseau sans risque.
+- *Restrictions d'eau* : c'est le niveau le plus élevé du **département**, pas celui de la
+  commune. Le détail par commune existe chez VigiEau, mais il faudrait le demander commune par
+  commune — donc dire à l'extérieur quelles communes utilisent la plateforme. On ne le fait pas ;
+  l'écran renvoie vers vigieau.gouv.fr.
+- *Surfaces brûlées* : une mémoire, pas une alerte. Seuls les feux d'une trentaine d'hectares
+  sont vus par satellite, avec un jour de retard.
+- *Arrêtés de circulation* : seules les collectivités qui publient dans DiaLog y figurent.
+  Sur ~7 000 arrêtés, on ne copie que ceux qui changent un itinéraire (voie interdite, interdite
+  aux poids lourds, alternat) et qui ne sont pas terminés ; vitesse et stationnement sont
+  laissés de côté.
+- *Recours aux urgences* : un taux pour 100 000 **passages aux urgences**, ni un nombre de
+  malades ni un taux dans la population ; il sert à voir une tendance. Données hebdomadaires,
+  publiées avec une dizaine de jours de recul.
+- *Avalanche* : un indice pour tout le massif, pas pour une pente. Le bloc n'apparaît que s'il
+  y a un massif dans le rayon regardé. Une lecture en panne garde l'indice précédent (le
+  service est lent) ; un 404 (hors saison) l'efface.
+
+**Météo des forêts — écrite sans donnée réelle.** Le produit n'est publié que de juin à
+septembre : le 15/11/2026, l'API répondait 404 « no matching blob » et la forme de la réponse
+n'a pas pu être constatée. Le connecteur est donc écrit pour ne pas en dépendre : l'analyse
+cherche, à n'importe quelle profondeur, des objets portant un code de département et un niveau
+de 1 à 4, quels que soient les noms des champs ; la réponse brute est **gardée**
+(`ReleveMeteoForets.brut`) ; et si une carte paraît sans que rien n'y soit reconnu, le relevé
+échoue, la source est signalée par la supervision et l'écran dit que la carte n'a pas été
+comprise — jamais « rien à signaler ». **À vérifier à la première publication de juin** :
+si l'alerte se déclenche, ajuster `meteo_forets.analyser` d'après l'échantillon gardé.
+
+**Non intégrés, et pourquoi** : le radar de pluie observé et les modèles de vagues ne sont
+publiés qu'en BUFR, HDF5 ou GRIB, que le serveur ne lit pas ; le niveau des nappes (Hub'Eau)
+est une cote brute, sans la référence historique qui permettrait de dire si elle est haute ou
+basse.
 
 **Clé Météo-France** : secret Docker `meteofrance_cle_api` (fichier
 `meteofrance_cle_api.txt` du dossier des secrets), monté dans `ac_backend` seulement. C'est un
@@ -4532,6 +4575,11 @@ rattache à quelqu'un.
   nature de l'erreur, jamais la question.
 - **Bornes** : vues publiques (les formulaires de demande d'aide le sont), donc paramètres en
   liste fermée, question plafonnée à 200 caractères, 180 requêtes par minute et par adresse IP.
+
+**Zone atteignable (isochrone).** Même principe : l'outil de la carte « Zone atteignable
+depuis un point » passe par `GET /api/zone-atteignable/` (`core/views_adresses.py`), qui
+interroge le service d'itinéraires de la Géoplateforme (`data.geopf.fr/navigation`). Le service
+reçoit un point arrondi à une dizaine de mètres et une durée, sans rien du navigateur.
 
 **Reste à faire** : le navigateur interroge encore directement `geo.api.gouv.fr` (recherche
 d'une commune par nom ou code postal) et `georisques.gouv.fr` (risques d'une commune, page

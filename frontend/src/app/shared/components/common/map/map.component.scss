@@ -134,9 +134,35 @@
 .meteo-dot { background: #2563eb; }
 .crues-dot { background: linear-gradient(90deg, #2f9e44, #e6b800, #c81e1e); }
 .brule-dot { background: #7c2d12; }
+.arretes-dot { background: linear-gradient(90deg, #c81e1e, #7c3aed); }
 .avalanche-dot { background: linear-gradient(90deg, #ccff66, #ffff00, #ff9900, #ff0000); }
 // Dégradé de la palette radar, pour que la pastille se lise comme « pluie » et non comme un point.
 .pluie-dot { background: linear-gradient(90deg, #7c3aed, #22d3ee, #facc15); }
+
+// Outil « zone atteignable », dans le panneau des calques.
+.outil-zone {
+  margin: 8px 0; padding: 8px 0; display: grid; gap: 6px;
+  border-top: 1px solid var(--ac-border, #e5e7eb); border-bottom: 1px solid var(--ac-border, #e5e7eb);
+  font-size: .82rem; color: var(--ac-text, #1f2937);
+
+  .outil-zone-titre { display: flex; align-items: center; gap: 6px; font-weight: 600; .material-icons { font-size: 16px; } }
+  .outil-zone-reglages { display: flex; gap: 6px; }
+  select {
+    flex: 1; min-width: 0; padding: 3px 4px; font: inherit; border-radius: 4px;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface, white); color: var(--ac-text, #1f2937);
+  }
+  .outil-zone-bouton {
+    padding: 5px 8px; border: none; border-radius: 4px; font: inherit; cursor: pointer;
+    background: var(--brand-primary); color: #fff;
+    &:disabled { opacity: .7; cursor: default; }
+  }
+  .outil-zone-effacer {
+    padding: 0; border: none; background: none; font: inherit; cursor: pointer; text-align: left;
+    text-decoration: underline; color: var(--brand-primary-lisible, var(--brand-primary));
+  }
+  .outil-zone-erreur { margin: 0; color: var(--ac-red-text, #991b1b); }
+}
 
 // Réglette de temps de la pluie prévue, en bas de la carte.
 .pluie-temps {
