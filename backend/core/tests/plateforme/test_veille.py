@@ -542,6 +542,16 @@ class TestMesuresDesStations:
         assert mesure["vent_kmh"] is None and mesure["rafale_kmh"] is None
         assert mesure["temperature_c"] is None
 
+    def test_des_traces_de_pluie_valent_zero(self):
+        """Constaté en production le 15/11/2026 : Paris-Montsouris affichait « -0,1 mm ». La
+        source note ainsi une pluie non mesurable ; soustraite heure après heure, elle aurait
+        aussi faussé le cumul."""
+        (mesure,) = observations_meteo.analyser_6_minutes([_mesure(rr_per=-0.1)]).values()
+        _heure, horaires = observations_meteo.analyser_horaire([_horaire(pluie=-0.1)])
+
+        assert mesure["pluie_6min_mm"] == 0.0
+        assert horaires["42005001"]["pluie_1h_mm"] == 0.0
+
     def test_l_outre_mer_garde_son_departement_a_trois_chiffres(self):
         assert observations_meteo.departement_de("97418110") == "974"
         assert observations_meteo.departement_de("42005001") == "42"

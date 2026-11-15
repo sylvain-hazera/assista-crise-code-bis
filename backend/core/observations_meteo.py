@@ -137,6 +137,13 @@ def _arrondi(valeur, decimales=1):
     return None if valeur is None else round(valeur, decimales)
 
 
+def _pluie(millimetres):
+    """Hauteur de pluie. La source note -0,1 une pluie trop faible pour être mesurée (des
+    « traces ») : c'est zéro, et surtout pas une valeur à soustraire d'un cumul."""
+    hauteur = _arrondi(millimetres)
+    return None if hauteur is None else max(0.0, hauteur)
+
+
 def departement_de(station):
     """Département lu dans l'identifiant de la station (ses premiers chiffres sont ceux de la
     commune). Outre-mer : trois chiffres (974 pour La Réunion). La Corse est publiée sous « 20 »,
@@ -168,7 +175,7 @@ def analyser_6_minutes(paquet):
             "vent_kmh": _kmh(brut.get("ff")),
             "vent_direction": _arrondi(brut.get("dd"), 0),
             "rafale_kmh": _kmh(brut.get("raf10")),
-            "pluie_6min_mm": _arrondi(brut.get("rr_per")),
+            "pluie_6min_mm": _pluie(brut.get("rr_per")),
             "neige_cm": None if neige is None else round(neige * 100),
         }
     return mesures
@@ -184,7 +191,7 @@ def analyser_horaire(paquet):
             continue
         heure = heure or instant
         mesures[station] = {
-            "pluie_1h_mm": _arrondi(brut.get("rr1")),
+            "pluie_1h_mm": _pluie(brut.get("rr1")),
             "rafale_1h_kmh": _kmh(brut.get("raf")),
         }
     return heure, mesures
@@ -209,7 +216,8 @@ def ajouter_au_cumul(cumuls, heure, pluie_mm, maintenant):
     garde.sort(key=lambda e: e["h"])
     if not garde:
         return [], None, 0
-    return garde, round(sum(e["rr"] for e in garde), 1), len(garde)
+    # max(0, ...) : une heure enregistrée avant la correction des « traces » peut porter -0,1.
+    return garde, round(sum(max(0.0, e["rr"]) for e in garde), 1), len(garde)
 
 
 # ── La copie en base ────────────────────────────────────────────────────────────────────────
