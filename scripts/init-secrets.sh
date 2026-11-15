@@ -75,6 +75,17 @@ else
     echo "  created   $METEOFRANCE_KEY (empty: paste the Meteo-France key in it)"
 fi
 chmod 644 "$METEOFRANCE_KEY"
+# Clé de signature des satellites, chiffrée par la phrase de passe de son détenteur, pour signer
+# depuis la page Satellites. Elle ne se génère pas ici : scripts/satellites/preparer-signature-web.sh
+# la produit. Même raison que ci-dessus pour le fichier vide.
+SIGNATURE_WEB="$SECRETS_DIR/signature_satellites_web.json"
+if [ -e "$SIGNATURE_WEB" ]; then
+    echo "  kept      $SIGNATURE_WEB"
+else
+    : > "$SIGNATURE_WEB"
+    echo "  created   $SIGNATURE_WEB (empty: run scripts/satellites/preparer-signature-web.sh)"
+fi
+chmod 644 "$SIGNATURE_WEB"
 # mosquitto-exporter lit MQTT_USER/MQTT_PASS dans son environnement (il ne sait pas lire un
 # fichier de secret) : on lui fabrique son env_file à partir du secret ci-dessus.
 MQTT_EXPORTER_ENV="$SECRETS_DIR/mqtt-exporter.env"

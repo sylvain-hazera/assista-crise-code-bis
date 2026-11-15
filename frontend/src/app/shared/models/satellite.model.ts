@@ -105,3 +105,14 @@ export interface LigneSupervision {
   derniere_activite_humaine: string | null;
   contacts_secours: ContactSecours[];
 }
+
+/** Réponse de `versions-satellite/a-signer/` : de quoi signer la dernière version poussée
+ * depuis la page, sans que la phrase de passe quitte le navigateur. */
+export interface VersionASigner {
+  /** Dernier commit poussé sur le dépôt public, ou null s'il n'a pas répondu. */
+  version: { commit: string; titre: string; date: string } | null;
+  erreur_depot: string | null;
+  deja_publiee: boolean;
+  /** Clé de signature chiffrée par la phrase de passe, ou null si elle n'a pas été préparée. */
+  cle: import('../../services/signature-satellite').CleEmballee | null;
+}

@@ -106,9 +106,16 @@ ni ouvrir de port chez lui : c'est toujours lui qui appelle.
 ### Ce que la signature garantit — et ne garantit pas
 
 Le central **transmet** un numéro de commit et sa signature ; il ne peut rien rendre
-installable. Seul le détenteur de la clé privée le peut, et cette clé n'est ni dans le dépôt ni
-sur le serveur. Prendre la main sur le central, sur un compte d'administrateur ou sur le dépôt
-GitHub ne suffit donc pas à faire exécuter du code sur un satellite.
+installable. Seul le détenteur de la clé privée le peut : cette clé n'est jamais dans le dépôt,
+et jamais en clair sur le serveur. Voler un compte d'administrateur ou prendre la main sur le
+dépôt GitHub ne suffit donc pas à faire exécuter du code sur un satellite.
+
+**Nuance depuis le 15/11/2026** (signature depuis la page, voir plus bas) : le central garde une
+copie de la clé **chiffrée par la phrase de passe**, et c'est lui qui sert la page où la phrase
+est tapée. Sans la phrase, cette copie ne sert à rien ; mais quelqu'un qui prendrait la main
+sur le central lui-même pourrait modifier la page pour capter la phrase à la prochaine
+signature. C'est le prix, accepté, d'une signature en un geste. Pour y renoncer : vider
+`signature_satellites_web.json` dans le dossier des secrets et signer dans un terminal.
 
 - **La clé publique est copiée une fois** sur le satellite (`.cle-signature.pub`) et n'est
   **jamais remplacée automatiquement**. Si elle suivait le dépôt, il suffirait de pousser une
@@ -141,6 +148,23 @@ Sur **chaque satellite déjà installé**, une dernière fois sur place :
 ```
 
 ### À chaque nouvelle version
+
+**Depuis la page Satellites** (le chemin ordinaire) : après `git push`, le cadre « Signer la
+dernière version » montre le dernier commit poussé ; on tape la phrase de passe, on clique
+« Signer et publier ». La signature est calculée **dans le navigateur** : la phrase de passe
+n'est pas envoyée, le serveur ne reçoit que le numéro de version et sa signature, qu'il vérifie
+comme avant. Chaque remise de la clé chiffrée au navigateur est inscrite à la main courante.
+
+À préparer une fois, dans un terminal du central (et à refaire si la phrase de passe change) :
+
+```bash
+scripts/satellites/preparer-signature-web.sh   # demande la phrase, dépose la clé chiffrée
+```
+
+Il faut un navigateur qui signe en Ed25519 : Chrome ou Edge 137, Firefox 129, Safari 17, ou
+plus récent.
+
+**Dans un terminal** (toujours possible, et la seule voie si la clé n'a pas été préparée) :
 
 ```bash
 git push                                   # un satellite récupère son code sur le dépôt distant

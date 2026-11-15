@@ -5,7 +5,10 @@ import { SatellitesComponent } from './satellites.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
 import { AuthService } from '../../auth/services/auth.service';
 import { environment } from '../../../environments/environment';
-import { Satellite, VersionSatellite } from '../../shared/models/satellite.model';
+import { Satellite, VersionASigner, VersionSatellite } from '../../shared/models/satellite.model';
+import {
+  EMBALLAGE_DE_TEST, PHRASE_DE_TEST, SIGNATURE_SSH_KEYGEN_A,
+} from '../../testing/cle-signature-de-test';
 
 /**
  * Mises à jour des satellites ordonnées d'ici. Ce qui est testé est ce qui a des conséquences :
@@ -172,6 +175,78 @@ describe('SatellitesComponent — mises à jour', () => {
       requete.flush({ error: 'La signature ne correspond pas à cette version.' },
         { status: 400, statusText: 'Bad Request' });
       expect(composant.errorMessage).toContain('signature');
+    });
+  });
+  /** Demande du 15/11/2026 : signer d'ici, avec la seule phrase de passe. Ce qui compte :
+   * la phrase ne part JAMAIS vers le serveur, et ce qui part est une vraie signature. */
+  describe('signer la dernière version depuis la page', () => {
+    const A_SIGNER: VersionASigner = {
+      version: { commit: COMMIT, titre: 'Veille : mesures des stations', date: '2026-11-15T12:50:00Z' },
+      erreur_depot: null, deja_publiee: false, cle: EMBALLAGE_DE_TEST,
+    };
+
+    beforeEach(() => {
+      composant.estAdministrateur = true;
+      composant.aSigner = A_SIGNER;
+      composant.libelleASigner = A_SIGNER.version!.titre;
+    });
+
+    it('signe dans le navigateur et n’envoie que le numéro et la signature', async () => {
+      composant.phraseDePasse = PHRASE_DE_TEST;
+      await composant.signerEtPublier();
+
+      const envoi = http.expectOne(r => r.method === 'POST' && r.url === `${api}/versions-satellite/`);
+      expect(envoi.request.body).toEqual({
+        commit: COMMIT, signature: SIGNATURE_SSH_KEYGEN_A, libelle: 'Veille : mesures des stations' });
+      // LE test : la phrase de passe n'est dans aucune requête, et ne reste pas dans la page.
+      expect(JSON.stringify(envoi.request.body)).not.toContain(PHRASE_DE_TEST);
+      expect(envoi.request.urlWithParams).not.toContain('phrase');
+      expect(composant.phraseDePasse).toBe('');
+
+      envoi.flush({ ...VERSION });
+      expect(composant.messageSucces).toContain('signée et publiée');
+    });
+
+    it('avec une mauvaise phrase, rien ne part et la page le dit', async () => {
+      composant.phraseDePasse = 'pas la bonne';
+      await composant.signerEtPublier();
+
+      http.expectNone(r => r.method === 'POST');
+      expect(composant.erreurSignature).toBe('Phrase de passe incorrecte.');
+      expect(composant.phraseDePasse).toBe('');
+      expect(composant.signatureEnCours).toBeFalse();
+    });
+
+    it('affiche le refus du serveur s’il ne reconnaît pas la signature', async () => {
+      composant.phraseDePasse = PHRASE_DE_TEST;
+      await composant.signerEtPublier();
+
+      http.expectOne(r => r.method === 'POST').flush(
+        { error: "Cette signature ne vient pas d'une clé autorisée." }, { status: 400, statusText: 'Refus' });
+      expect(composant.erreurSignature).toContain('clé autorisée');
+    });
+
+    it('ne propose pas de signer sans phrase, sans clé préparée, ni une version déjà publiée', () => {
+      expect(composant.peutSigner).toBeFalse();                       // pas de phrase
+      composant.phraseDePasse = PHRASE_DE_TEST;
+      expect(composant.peutSigner).toBeTrue();
+      composant.aSigner = { ...A_SIGNER, deja_publiee: true };
+      expect(composant.peutSigner).toBeFalse();
+      composant.aSigner = { ...A_SIGNER, cle: null };
+      expect(composant.peutSigner).toBeFalse();
+      composant.aSigner = { ...A_SIGNER, version: null, erreur_depot: 'Le dépôt public n’a pas répondu.' };
+      expect(composant.peutSigner).toBeFalse();
+    });
+
+    it('ne demande la clé chiffrée que pour un administrateur, hors démonstration', () => {
+      composant.estAdministrateur = false;
+      composant.chargerVersionASigner();
+      http.expectNone(`${api}/versions-satellite/a-signer/`);
+
+      composant.estAdministrateur = true;
+      composant.chargerVersionASigner();
+      http.expectOne(`${api}/versions-satellite/a-signer/`).flush(A_SIGNER);
+      expect(composant.libelleASigner).toBe('Veille : mesures des stations');
     });
   });
 });

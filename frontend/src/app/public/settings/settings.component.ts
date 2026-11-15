@@ -286,6 +286,74 @@ export class SettingsComponent implements OnInit {
     return this.candidatsMeshtastic.filter(c => !c.deja_associe);
   }
 
+  // ── Filtre des listes de boîtiers par premières lettres (demande du 15/11/2026) ──
+  //
+  // Nos passerelles entendent des centaines de nœuds : chercher le sien dans une liste
+  // déroulante de cette taille est pénible, surtout au téléphone. On tape le début du nom et
+  // la liste se réduit.
+
+  filtreMeshCore = '';
+  filtreMeshtastic = '';
+
+  /** Minuscules sans accent, pour que « élan » trouve « Elan » et inversement. */
+  private static sansAccent(texte: string): string {
+    return texte.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  /** Vrai si l'un des `noms` COMMENCE par les lettres tapées — le nom entier, ou l'un de ses
+   * mots : « pil » trouve « Pilat Graix » comme « Relais du Pilat ». Les noms de nœuds portent
+   * souvent un préfixe (indicatif, emoji, commune), d'où les mots et pas seulement le début. */
+  private static commencePar(filtre: string, ...noms: (string | null | undefined)[]): boolean {
+    const cherche = SettingsComponent.sansAccent(filtre.trim());
+    if (!cherche) return true;
+    return noms.some(nom => {
+      const propre = SettingsComponent.sansAccent(nom ?? '');
+      return propre.startsWith(cherche)
+        || propre.split(/[^a-z0-9]+/).some(mot => mot.startsWith(cherche));
+    });
+  }
+
+  get candidatsMeshCoreFiltres(): CandidatNoeudMeshCore[] {
+    // Un nœud sans nom est affiché par le début de sa clé : c'est alors elle qu'on cherche.
+    return this.candidatsMeshCoreLibres.filter(c =>
+      SettingsComponent.commencePar(this.filtreMeshCore, c.nom || c.pubkey_hex));
+  }
+
+  get candidatsMeshtasticFiltres(): CandidatNoeudMeshtastic[] {
+    // « !a1b2 » cherche l'identifiant ; tout le reste cherche le nom. Sans cette distinction,
+    // taper « ab » ramènerait tous les identifiants qui commencent par ces deux chiffres.
+    const filtre = this.filtreMeshtastic.trim();
+    if (filtre.startsWith('!')) {
+      return this.candidatsMeshtasticLibres.filter(c =>
+        (c.node_id ?? '').toLowerCase().startsWith(filtre.toLowerCase()));
+    }
+    return this.candidatsMeshtasticLibres.filter(c => SettingsComponent.commencePar(
+      filtre, ...(c.long_name || c.short_name ? [c.long_name, c.short_name] : [(c.node_id ?? '').replace(/^!/, '')])));
+  }
+
+  /** À chaque frappe : s'il ne reste qu'un boîtier, il est choisi d'office ; si le boîtier
+   * déjà choisi ne correspond plus à ce qui est tapé, le choix est défait plutôt que de rester
+   * sélectionné sans être visible. */
+  filtrerMeshCore(filtre: string): void {
+    this.filtreMeshCore = filtre;
+    const restants = this.candidatsMeshCoreFiltres;
+    if (restants.length === 1 && filtre.trim()) {
+      this.reclamerMeshCorePubkey = restants[0].pubkey_hex;
+    } else if (!restants.some(c => c.pubkey_hex === this.reclamerMeshCorePubkey)) {
+      this.reclamerMeshCorePubkey = '';
+    }
+  }
+
+  filtrerMeshtastic(filtre: string): void {
+    this.filtreMeshtastic = filtre;
+    const restants = this.candidatsMeshtasticFiltres;
+    if (restants.length === 1 && filtre.trim()) {
+      this.reclamerMeshtasticNodeNum = restants[0].node_num;
+    } else if (!restants.some(c => c.node_num === this.reclamerMeshtasticNodeNum)) {
+      this.reclamerMeshtasticNodeNum = null;
+    }
+  }
+
   /** Choix dans la liste : on remplit la clé ET le nom annoncé par l'appareil, qui est presque
    * toujours le bon libellé — l'utilisateur peut encore le changer. */
   choisirCandidatMeshCore(candidat: CandidatNoeudMeshCore): void {

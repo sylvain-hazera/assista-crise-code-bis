@@ -6,7 +6,7 @@ import { SatelliteService } from '../../services/satellite.service';
 import { AuthService } from '../../auth/services/auth.service';
 import {
   Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, MiseAJourSatellite,
-  VersionSatellite,
+  VersionASigner, VersionSatellite,
 } from '../../shared/models/satellite.model';
 import { UserRole } from '../../shared/models/user.model';
 
@@ -17,6 +17,8 @@ import { UserRole } from '../../shared/models/user.model';
  * satellite le consomme lui-même pour apparaître ci-dessous en attente ; on valide alors pour
  * lui créer un compte de service — les identifiants ne sont affichés qu'à cet instant précis,
  * une seule fois, jamais relisibles ensuite (voir SatelliteService.valider). */
+import { NavigateurInsuffisant, PhraseIncorrecte, signerVersion } from '../../services/signature-satellite';
+
 @Component({
   selector: 'app-satellites',
   standalone: true,
@@ -123,6 +125,7 @@ export class SatellitesComponent implements OnInit {
     this.estAdministrateur = this.authService.getCurrentUser()?.type === UserRole.ADMIN;
     this.load();
     this.chargerVersions();
+    this.chargerVersionASigner();
   }
 
   chargerVersions(): void {
@@ -247,6 +250,70 @@ export class SatellitesComponent implements OnInit {
     if (maj.statut === 'ECHOUEE') return 'statut-erreur';
     if (maj.statut === 'DEMANDEE' || maj.statut === 'EN_COURS') return 'statut-attention';
     return 'statut-inconnu';
+  }
+
+  // ══ Signer la dernière version depuis la page ═══════════════════════════════════════════
+  //
+  // Demande du 15/11/2026 : « que je n'aie que la phrase de passe à rentrer dans la page ».
+  // La signature se fait ICI, dans le navigateur (services/signature-satellite.ts) : la phrase
+  // de passe n'est jamais envoyée, seuls le numéro de version et sa signature le sont.
+
+  aSigner: VersionASigner | null = null;
+  phraseDePasse = '';
+  libelleASigner = '';
+  signatureEnCours = false;
+  erreurSignature = '';
+  /** Le collage du résultat de `signer-version.sh` reste possible, replié par défaut. */
+  collageOuvert = false;
+
+  chargerVersionASigner(): void {
+    if (!this.estAdministrateur || this.isDemo) return;
+    this.service.versionASigner().subscribe({
+      next: (aSigner) => {
+        this.aSigner = aSigner;
+        this.libelleASigner = aSigner.version?.titre ?? '';
+      },
+      error: () => { this.aSigner = null; },
+    });
+  }
+
+  get peutSigner(): boolean {
+    return !!this.aSigner?.version && !!this.aSigner.cle && !this.aSigner.deja_publiee
+      && this.phraseDePasse.length > 0 && !this.signatureEnCours;
+  }
+
+  async signerEtPublier(): Promise<void> {
+    const version = this.aSigner?.version;
+    const cle = this.aSigner?.cle;
+    if (!version || !cle || !this.peutSigner) return;
+    this.signatureEnCours = true;
+    this.erreurSignature = '';
+    this.messageSucces = '';
+    let signature: string;
+    try {
+      signature = await signerVersion(cle, this.phraseDePasse, version.commit);
+    } catch (erreur) {
+      this.signatureEnCours = false;
+      this.erreurSignature = erreur instanceof PhraseIncorrecte || erreur instanceof NavigateurInsuffisant
+        ? erreur.message : 'La signature a échoué dans ce navigateur.';
+      return;
+    } finally {
+      // La phrase ne reste pas dans la page plus longtemps que la signature.
+      this.phraseDePasse = '';
+    }
+    this.service.publierVersion(version.commit, signature, this.libelleASigner.trim()).subscribe({
+      next: () => {
+        this.signatureEnCours = false;
+        this.messageSucces = `Version ${this.court(version.commit)} signée et publiée.`;
+        this.chargerVersions();
+        this.chargerVersionASigner();
+        this.load();
+      },
+      error: (err) => {
+        this.signatureEnCours = false;
+        this.erreurSignature = err.error?.error || 'Publication refusée par le serveur.';
+      },
+    });
   }
 
   private static readonly BLOC_SIGNATURE =

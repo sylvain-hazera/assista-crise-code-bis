@@ -135,6 +135,9 @@ services:
       # Dossier où Django écrit les comptes du broker MQTT (core/mqtt_comptes.py). Pas un secret,
       # donc déclaré ici plutôt que dans backend.env (hors dépôt).
       - MQTT_COMPTES_DIR=/var/lib/assista/mqtt
+      # Dépôt public où les satellites prennent leur code : la page Satellites y lit le dernier
+      # commit poussé pour le proposer à la signature (core/signature_satellites.py).
+      - SATELLITES_DEPOT_GITHUB=sylvain-hazera/assista-crise-code-bis
     # Les mêmes secrets que le broker : `manage.py initialiser_comptes_mqtt` enregistre en base
     # les comptes d'amorçage (exporter, pont, passerelle1). Sans eux, la première création de
     # compte depuis le web réécrirait les fichiers SANS ces comptes, coupant l'exporteur et le
@@ -142,7 +145,10 @@ services:
     # meteofrance_cle_api : clé du portail Météo-France, lue par la tâche planifiée de veille
     # (core/meteo_france.py). Montée ici seulement : c'est dans ce conteneur que cron lance
     # `manage.py relever_sources_ouvertes`.
-    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password, meteofrance_cle_api]
+    # signature_satellites_web : la clé de signature des satellites, CHIFFRÉE par la phrase de
+    # passe de son détenteur, remise à son navigateur pour signer depuis la page Satellites.
+    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password, meteofrance_cle_api,
+              signature_satellites_web]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data          # jeton du bot Matrix, partagé avec matrix-bridge
@@ -524,6 +530,10 @@ secrets:
   # : son échéance est surveillée (alerte CleMeteoFranceExpireBientot). Le fichier doit exister,
   # même vide, sinon Compose refuse de créer le conteneur ; vide, la veille météo se tait.
   meteofrance_cle_api:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meteofrance_cle_api.txt" }
+  # Clé de signature des satellites, chiffrée par la phrase de passe (jamais en clair). Produite
+  # par scripts/satellites/preparer-signature-web.sh. Le fichier doit exister, même vide : vide,
+  # la page Satellites propose seulement le collage d'une signature faite dans un terminal.
+  signature_satellites_web:  { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/signature_satellites_web.json" }
 
 # Réseaux existants (créés à la main avant compose) : jamais recréés -- ac_waf, les sauvegardes et
 # les satellites s'y rattachent par nom.

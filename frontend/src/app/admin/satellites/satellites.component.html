@@ -260,7 +260,55 @@
     </p>
   }
 
-  @if (estAdministrateur && !isDemo && cleConfiguree) {
+  @if (estAdministrateur && !isDemo && cleConfiguree && aSigner) {
+    <form class="signer-version" (ngSubmit)="signerEtPublier()">
+      <h3>Signer la dernière version</h3>
+      @if (aSigner.version; as v) {
+        <p class="version-a-signer">
+          <span class="mono" [title]="v.commit">{{ court(v.commit) }}</span>
+          <strong>{{ v.titre }}</strong>
+          <span class="page-hint">poussée le {{ v.date | date:'dd/MM/yyyy à HH:mm' }}</span>
+        </p>
+        @if (aSigner.deja_publiee) {
+          <p class="reconnu-oui">Cette version est déjà signée et publiée : rien à faire.</p>
+        } @else if (!aSigner.cle) {
+          <p class="page-hint">
+            Pour signer d'ici avec votre seule phrase de passe, préparez la clé une fois, dans un
+            terminal du serveur : <code>scripts/satellites/preparer-signature-web.sh</code>.
+            D'ici là, la méthode par collage reste disponible ci-dessous.
+          </p>
+        } @else {
+          <label>
+            Ce qu'elle apporte (facultatif)
+            <input type="text" name="libelleASigner" maxlength="120" [(ngModel)]="libelleASigner">
+          </label>
+          <label>
+            Phrase de passe de la clé de signature
+            <input type="password" name="phraseDePasse" autocomplete="off" autocapitalize="off"
+                   autocorrect="off" spellcheck="false" [(ngModel)]="phraseDePasse">
+          </label>
+          <p class="page-hint">
+            La signature se fait dans ce navigateur : la phrase de passe n'est pas envoyée au
+            serveur. Signer, c'est déclarer que cette version peut être installée sur tous les
+            satellites.
+          </p>
+          @if (erreurSignature) { <p class="error-message" role="alert">{{ erreurSignature }}</p> }
+          <button type="submit" class="btn-primary" [disabled]="!peutSigner">
+            {{ signatureEnCours ? 'Signature…' : 'Signer et publier' }}
+          </button>
+        }
+      } @else {
+        <p class="error-message">{{ aSigner.erreur_depot || 'Dernière version inconnue.' }}</p>
+      }
+    </form>
+
+    <button type="button" class="btn-link collage-bascule" (click)="collageOuvert = !collageOuvert"
+            [attr.aria-expanded]="collageOuvert">
+      {{ collageOuvert ? 'Masquer' : 'Autre méthode : coller une signature faite dans un terminal' }}
+    </button>
+  }
+
+  @if (estAdministrateur && !isDemo && cleConfiguree && (collageOuvert || !aSigner)) {
     <form class="publier-version" (ngSubmit)="publierVersion()">
       <p class="page-hint">
         Sur votre poste : <code>scripts/satellites/signer-version.sh</code>, puis collez ici

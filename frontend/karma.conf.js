@@ -47,7 +47,13 @@ module.exports = function(config) {
           // « requestedAttributes: antialias » illisible. SwiftShader émule le rendu en
           // logiciel : plus lent, mais c'est du rendu hors écran dont personne ne regarde le
           // résultat — seul compte que le composant se construise sans exploser.
-          '--enable-unsafe-swiftshader'
+          '--enable-unsafe-swiftshader',
+          // La signature des versions de satellite se fait dans le navigateur, en Ed25519
+          // (services/signature-satellite.ts). Chrome l'offre sans drapeau depuis la version
+          // 137 ; celui de l'image de test est plus ancien, où c'est encore une fonction
+          // expérimentale. Sans ce drapeau, le test qui compare notre signature à celle
+          // d'OpenSSH ne pourrait pas tourner.
+          '--enable-experimental-web-platform-features'
         ]
       }
     },

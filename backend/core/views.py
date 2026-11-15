@@ -21532,9 +21532,39 @@ class VersionSatelliteViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, vi
     serializer_class = VersionSatelliteSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'retirer'):
+        if self.action in ('create', 'retirer', 'a_signer'):
             return [IsAdministrator(), DenyInDemo()]
         return [IsInstitutionalActor()]
+
+    @action(detail=False, methods=['get'], url_path='a-signer')
+    def a_signer(self, request):
+        """Ce qu'il faut au navigateur de l'administrateur pour signer la dernière version
+        poussée : son numéro, et la clé emballée (chiffrée par la phrase de passe, que seul le
+        navigateur connaîtra -- voir core/signature_satellites.py). Le serveur ne signe pas.
+
+        Chaque remise de la clé emballée est tracée : elle ne sert à rien sans la phrase de
+        passe, mais savoir qui l'a demandée et quand fait partie de la garde de cette clé."""
+        from .signature_satellites import SignatureInvalide, cle_emballee, derniere_version_poussee
+
+        version, erreur = None, None
+        try:
+            version = derniere_version_poussee()
+        except SignatureInvalide as refus:
+            erreur = str(refus)
+        cle = cle_emballee()
+        if cle is not None:
+            audit_log(
+                request=request, action_code="LECTURE", objet_type="CleSignatureSatellites",
+                commentaire="Clé de signature des satellites remise, chiffrée, pour une signature dans le navigateur.",
+            )
+        reponse = Response({
+            "version": version,
+            "erreur_depot": erreur,
+            "deja_publiee": bool(version) and VersionSatellite.objects.filter(commit=version["commit"]).exists(),
+            "cle": cle,
+        })
+        reponse["Cache-Control"] = "no-store"
+        return reponse
 
     def list(self, request, *args, **kwargs):
         from .signature_satellites import cles_publiques

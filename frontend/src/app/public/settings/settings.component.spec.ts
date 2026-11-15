@@ -72,6 +72,108 @@ describe('SettingsComponent', () => {
     });
   });
 
+  /** Demande du 15/11/2026 : nos passerelles entendent des centaines de nœuds, et retrouver le
+   * sien dans une liste déroulante de cette taille est pénible. On tape le début du nom. */
+  describe('filtre des boîtiers par premières lettres', () => {
+
+    const mc = (nom: string, cle: string) => ({
+      pubkey_hex: cle.repeat(32), nom, dernier_advert: null, deja_associe: false, a_moi: false,
+    });
+    const mt = (num: number, id: string, long: string, court = '') => ({
+      node_num: num, node_id: id, long_name: long, short_name: court, hardware_model: 'HELTEC_V3',
+      compagnon_id: 'c1', compagnon_nom: 'Pont', dernier_advert: null, deja_associe: false, a_moi: false,
+    });
+
+    beforeEach(() => {
+      component.candidatsMeshCore = [
+        mc('Pilat Graix', 'a1'), mc('Relais du Pilat', 'b2'), mc('Élan 42', 'c3'),
+        mc('Talkie de terrain', 'd4'), mc('', 'ab'),
+        { ...mc('Pilat réservé', 'e5'), deja_associe: true },
+      ];
+      component.candidatsMeshtastic = [
+        mt(1, '!a1b2c3d4', 'Talkie Jean', 'JEAN'), mt(2, '!ab000001', 'Mairie Saint-Chamond', 'MSC'),
+        mt(3, '!0000ab12', '', ''),
+      ];
+    });
+
+    const noms = () => component.candidatsMeshCoreFiltres.map(c => c.nom);
+
+    it('sans rien taper, toute la liste libre est proposée', () => {
+      expect(component.candidatsMeshCoreFiltres.length).toBe(5);
+    });
+
+    it('garde les noms qui commencent par les lettres tapées, mot par mot', () => {
+      component.filtrerMeshCore('pil');
+      // « Relais du Pilat » aussi : les noms portent souvent un préfixe avant le mot cherché.
+      expect(noms()).toEqual(['Pilat Graix', 'Relais du Pilat']);
+    });
+
+    it('ne trouve pas des lettres situées au milieu d’un mot', () => {
+      component.filtrerMeshCore('lat');
+      expect(noms()).toEqual([]);
+    });
+
+    it('ignore la casse et les accents, dans les deux sens', () => {
+      component.filtrerMeshCore('ELAN');
+      expect(noms()).toEqual(['Élan 42']);
+      component.filtrerMeshCore('élan');
+      expect(noms()).toEqual(['Élan 42']);
+    });
+
+    it('ne propose jamais un nœud déjà rattaché à quelqu’un, même s’il correspond', () => {
+      component.filtrerMeshCore('pilat r');
+      expect(noms()).toEqual([]);
+    });
+
+    it('ne confond pas les lettres d’un nom avec le début d’une clé', () => {
+      // « ab » est aussi le début de la clé du nœud sans nom : lui seul se cherche par sa clé.
+      component.filtrerMeshCore('ab');
+      expect(component.candidatsMeshCoreFiltres.map(c => c.pubkey_hex.slice(0, 2))).toEqual(['ab']);
+      component.filtrerMeshCore('a1');
+      expect(component.candidatsMeshCoreFiltres).toEqual([]);
+    });
+
+    it('choisit d’office le boîtier quand il n’en reste qu’un', () => {
+      component.filtrerMeshCore('talk');
+      expect(component.reclamerMeshCorePubkey).toBe('d4'.repeat(32));
+    });
+
+    it('défait un choix que le filtre ne montre plus', () => {
+      component.reclamerMeshCorePubkey = 'd4'.repeat(32);
+      component.filtrerMeshCore('pil');
+      expect(component.reclamerMeshCorePubkey).toBe('');
+    });
+
+    it('garde le choix tant qu’il reste visible, et ne choisit rien quand le filtre est vide', () => {
+      component.reclamerMeshCorePubkey = 'b2'.repeat(32);
+      component.filtrerMeshCore('pil');
+      expect(component.reclamerMeshCorePubkey).toBe('b2'.repeat(32));
+      component.candidatsMeshCore = [mc('Seul', 'a1')];
+      component.reclamerMeshCorePubkey = '';
+      component.filtrerMeshCore('');
+      expect(component.reclamerMeshCorePubkey).toBe('');
+    });
+
+    it('côté Meshtastic, cherche dans le nom long comme dans le nom court', () => {
+      component.filtrerMeshtastic('saint');
+      expect(component.candidatsMeshtasticFiltres.map(c => c.node_num)).toEqual([2]);
+      component.filtrerMeshtastic('jea');
+      expect(component.candidatsMeshtasticFiltres.map(c => c.node_num)).toEqual([1]);
+      expect(component.reclamerMeshtasticNodeNum).toBe(1);
+    });
+
+    it('côté Meshtastic, « ! » cherche l’identifiant et rien d’autre', () => {
+      component.filtrerMeshtastic('!ab');
+      expect(component.candidatsMeshtasticFiltres.map(c => c.node_num)).toEqual([2]);
+      // Sans « ! », « ab » ne ramène pas les identifiants : seulement le nœud sans nom, qui
+      // n'a que son identifiant pour être reconnu... et il commence par 0000.
+      component.filtrerMeshtastic('ab');
+      expect(component.candidatsMeshtasticFiltres).toEqual([]);
+      component.filtrerMeshtastic('0000');
+      expect(component.candidatsMeshtasticFiltres.map(c => c.node_num)).toEqual([3]);
+    });
+  });
+
   /**
    * Les deux secteurs (13/11/2026). Ce qui est testé ici est la seule chose qui puisse
    * tromper quelqu'un : **la séparation entre ce que je demande et ce que je fais pour les

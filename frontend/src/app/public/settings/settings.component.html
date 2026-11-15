@@ -1007,20 +1007,32 @@
 
           @if (candidatsMeshCore.length && !saisieManuelleMeshCore) {
             <div class="form-group">
+              <label for="meshcoreFiltre" class="form-label">Premières lettres du nom de mon nœud</label>
+              <input id="meshcoreFiltre" type="search" class="form-input" autocomplete="off"
+                     autocapitalize="off" autocorrect="off" spellcheck="false"
+                     placeholder="Tapez le début du nom pour réduire la liste"
+                     [ngModel]="filtreMeshCore" (ngModelChange)="filtrerMeshCore($event)">
               <label for="meshcoreCandidat" class="form-label">Mon nœud, parmi ceux entendus</label>
               <select id="meshcoreCandidat" class="form-input" [ngModel]="reclamerMeshCorePubkey"
                       (ngModelChange)="reclamerMeshCorePubkey = $event">
                 <option value="">— Choisir mon boîtier —</option>
-                @for (c of candidatsMeshCoreLibres; track c.pubkey_hex) {
+                @for (c of candidatsMeshCoreFiltres; track c.pubkey_hex) {
                   <option [value]="c.pubkey_hex">
                     {{ c.nom || c.pubkey_hex.slice(0, 12) + '…' }}
                     @if (c.dernier_advert) { — vu le {{ c.dernier_advert | date:'dd/MM à HH:mm' }} }
                   </option>
                 }
               </select>
-              <p class="field-hint">
-                {{ candidatsMeshCoreLibres.length }} boîtier(s) entendu(s) par nos passerelles et
-                non encore rattaché(s).
+              <p class="field-hint" aria-live="polite">
+                @if (filtreMeshCore.trim()) {
+                  <strong>{{ candidatsMeshCoreFiltres.length }}</strong> boîtier(s) dont le nom
+                  commence par « {{ filtreMeshCore.trim() }} », sur
+                  {{ candidatsMeshCoreLibres.length }}.
+                  @if (!candidatsMeshCoreFiltres.length) { Vérifiez l'orthographe, ou effacez le filtre. }
+                } @else {
+                  {{ candidatsMeshCoreLibres.length }} boîtier(s) entendu(s) par nos passerelles et
+                  non encore rattaché(s).
+                }
                 @if (candidatsMeshCore.length > candidatsMeshCoreLibres.length) {
                   {{ candidatsMeshCore.length - candidatsMeshCoreLibres.length }} autre(s) sont
                   déjà rattaché(s) à un compte et ne sont donc pas proposés.
@@ -1088,18 +1100,29 @@
           <h3 class="radio-zone-title">Meshtastic</h3>
           @if (candidatsMeshtastic.length && !saisieManuelleMeshtastic) {
             <div class="form-group">
+              <label for="meshtasticFiltre" class="form-label">Premières lettres du nom de mon nœud</label>
+              <input id="meshtasticFiltre" type="search" class="form-input" autocomplete="off"
+                     autocapitalize="off" autocorrect="off" spellcheck="false"
+                     placeholder="Tapez le début du nom, ou de l'identifiant !a1b2…"
+                     [ngModel]="filtreMeshtastic" (ngModelChange)="filtrerMeshtastic($event)">
               <label for="meshtasticCandidat" class="form-label">Mon nœud, parmi ceux entendus</label>
               <select id="meshtasticCandidat" class="form-input" [ngModel]="reclamerMeshtasticNodeNum"
                       (ngModelChange)="reclamerMeshtasticNodeNum = $event">
                 <option [ngValue]="null">— Choisir mon boîtier —</option>
-                @for (c of candidatsMeshtasticLibres; track c.node_num) {
+                @for (c of candidatsMeshtasticFiltres; track c.node_num) {
                   <option [ngValue]="c.node_num">
                     {{ c.long_name || c.short_name || c.node_id }} ({{ c.node_id }})
                     — entendu par {{ c.compagnon_nom }}
                   </option>
                 }
               </select>
-              <p class="field-hint">
+              <p class="field-hint" aria-live="polite">
+                @if (filtreMeshtastic.trim()) {
+                  <strong>{{ candidatsMeshtasticFiltres.length }}</strong> boîtier(s) dont le nom
+                  commence par « {{ filtreMeshtastic.trim() }} », sur
+                  {{ candidatsMeshtasticLibres.length }}.
+                  @if (!candidatsMeshtasticFiltres.length) { Vérifiez l'orthographe, ou effacez le filtre. }
+                }
                 L'identifiant affiché est celui que l'appareil montre lui-même, sous la forme
                 <span class="mono">!a1b2c3d4</span>.
                 <button type="button" class="btn-link" (click)="saisieManuelleMeshtastic = true">

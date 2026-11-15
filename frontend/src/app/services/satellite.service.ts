@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, LigneSupervision,
-  MiseAJourSatellite, VersionSatellite, VersionsSatellite,
+  MiseAJourSatellite, VersionASigner, VersionSatellite, VersionsSatellite,
 } from '../shared/models/satellite.model';
 
 @Injectable({ providedIn: 'root' })
@@ -74,6 +74,12 @@ export class SatelliteService {
   publierVersion(commit: string, signature: string, libelle: string): Observable<VersionSatellite> {
     return this.http.post<VersionSatellite>(
       `${environment.apiUrl}/versions-satellite/`, { commit, signature, libelle });
+  }
+
+  /** Ce qu'il faut pour signer dans le navigateur : la dernière version poussée et la clé de
+   * signature chiffrée par la phrase de passe (voir services/signature-satellite.ts). */
+  versionASigner(): Observable<VersionASigner> {
+    return this.http.get<VersionASigner>(`${environment.apiUrl}/versions-satellite/a-signer/`);
   }
 
   retirerVersion(id: string): Observable<VersionSatellite> {
