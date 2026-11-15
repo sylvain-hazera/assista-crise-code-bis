@@ -4,7 +4,7 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { MapComponent } from './map.component';
 import { fournisseursDeTest } from '../../../../testing/test-providers';
 import { environment } from '../../../../../environments/environment';
-import { PluiePrevue, RafalesPrevues } from '../../../models/veille.model';
+import { PluiePrevue, PrecipitationsHiver, RafalesPrevues } from '../../../models/veille.model';
 
 describe('MapComponent', () => {
   let component: MapComponent;
@@ -225,6 +225,26 @@ describe('MapComponent', () => {
       expect(legende.querySelectorAll('i').length).toBe(2);
       expect(fixture.nativeElement.querySelector('.pluie-temps').textContent).toContain('Rafales prévues — calcul de');
       expect(fixture.nativeElement.querySelector('.pluie-temps').textContent).not.toContain('Pluie prévue');
+    });
+
+    it('la neige et le verglas prévus partagent la même réglette, avec leur légende', () => {
+      const hiver: PrecipitationsHiver = {
+        ...pluie(), echeances: [instants.proche, instants.suivant], ici: null,
+        legende: [{ cle: 'VERGLAS', libelle: 'Pluie ou bruine verglaçante', couleur: '#db2777' },
+                  { cle: 'NEIGE', libelle: 'Neige', couleur: '#38bdf8' }],
+      };
+      component.layerVisibility.hiver = true;
+      component.onLayerToggle();
+      http.expectOne(`${api}/precipitations-hiver/`).flush(hiver);
+      fixture.detectChanges();
+
+      expect(http.match(r => r.url.includes('rafales-prevues') || r.url.includes('pluie-prevue')).length).toBe(0);
+      expect(component.echeancesPrevision).toEqual([instants.proche, instants.suivant]);
+      const reglette: HTMLElement = fixture.nativeElement.querySelector('.pluie-temps');
+      expect(reglette.textContent).toContain('Neige, verglas, grêle prévus — calcul de');
+      expect(reglette.querySelector('.hiver-legende')!.textContent).toContain('Pluie ou bruine verglaçante');
+      component.layerVisibility.hiver = false;
+      component.onLayerToggle();
     });
 
     it('n’affiche pas de réglette quand aucun calque de prévision n’est coché', () => {

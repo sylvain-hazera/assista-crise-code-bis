@@ -2795,8 +2795,8 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Vingt sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
-les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie et rafales prévues, stations
+Vingt-deux sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; sur la carte, un calque par source (pluie, rafales, neige et verglas prévus, niveau de la mer, stations
 météo, vigilance crues, hauteurs d'eau mesurées, risque d'avalanche, surfaces brûlées, routes, circulation, arrêtés de circulation,
 stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
@@ -2807,10 +2807,12 @@ stations de carburant) ; réglage de l'annonce dans la fiche d'une institution (
 | Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
 | Météo-France, prévision immédiate (AROME-PI, WMS) | **pluie prévue** par quart d'heure sur 3 h, images nationales ; métropole | même clé | 10 min (12 images par heure) | `core/pluie.py` |
 | Météo-France, prévision immédiate (AROME-PI, WCS) | **rafales prévues** par quart d'heure sur 3 h, peintes par le serveur en paliers de km/h ; métropole | même clé | 10 min (13 grilles de 13 Mo par heure) | `core/rafales.py` |
+| Météo-France, prévision immédiate (AROME-PI, WCS) | **neige, verglas, grésil, grêle prévus** par quart d'heure sur 3 h (type de précipitation) ; métropole | même clé | 10 min (13 grilles de 13 Mo par heure) | `core/precipitations_hiver.py` |
 | Météo-France, bulletins d'avalanche | indice de risque par massif (35 massifs), aujourd'hui et demain ; en saison | même clé | 6 h | `core/avalanche.py` |
 | Météo-France, météo des forêts | danger de feu par département, demain et après-demain ; **juin à septembre** | même clé | 3 h | `core/meteo_forets.py` |
 | Vigicrues | niveau de vigilance des 337 tronçons de cours d'eau surveillés, avec leur tracé | aucune clé | 30 min | `core/vigilance_crues.py` |
 | Hub'Eau, hydrométrie | **hauteur d'eau et débit mesurés** de ~4 200 stations en rivière, outre-mer compris ; variation sur 1 h et 3 h | aucune clé | 20 min | `core/hauteurs_eau.py` |
+| Shom, marégraphes REFMAR | **niveau de la mer mesuré** par ~140 marégraphes, métropole et outre-mer ; marée attendue et **surcote estimées par le serveur** | aucune clé | 30 min | `core/niveaux_mer.py` |
 | VigiEau | niveau de restriction d'usage de l'eau le plus élevé par département | aucune clé | 6 h | `core/restrictions_eau.py` |
 | NASA FIRMS | **foyers actifs** : points chauds vus par satellite depuis 48 h (4 capteurs, ~6 passages par jour, 3 h de délai) | aucune clé | 30 min | `core/foyers_actifs.py` |
 | EFFIS (Copernicus) | surfaces brûlées des 30 derniers jours, vues par satellite | aucune clé | 3 h | `core/feux_satellite.py` |
@@ -2895,6 +2897,37 @@ Les paliers (« en hausse » à 10 cm/h, « hausse rapide » à 30) sont de l'af
 alerte ; près de la mer, la marée suffit à les franchir. Mesures brutes, non validées : un saut
 de plus de 8 m en une heure est tenu pour un défaut de sonde. `GET /api/hauteurs-eau/`
 (`en_hausse=1`).
+
+**Neige, verglas, grêle prévus.** Le « type de précipitation le plus sévère » de la prévision
+immédiate, par quart d'heure : un code par point de grille, lu comme les rafales (service de
+valeurs, grille TIFF) et peint par le serveur en cinq familles — pluie ou bruine verglaçante,
+neige, neige humide ou mêlée de pluie, grésil, grêle. La pluie et la bruine ordinaires ne sont
+pas peintes. Les codes 1 à 12 sont ceux de la table 4.201 de la norme GRIB2 ; au-delà de 192 ils
+sont propres à Météo-France et leur table n'a pas été trouvée : « 200 + n » est lu comme une
+variante du type n (averses), **par déduction** sur une grille réelle (205 à 207 en montagne au
+contact de la neige, 201 partout comme la pluie), et les codes sans rattachement (193, 213) ne
+sont pas peints. C'est le type de ce qui tombe, pas la quantité ni la tenue au sol. Troisième
+calque de la réglette de temps ; la page de veille dit le plus dangereux de ce qui est prévu sur
+la commune (`GET /api/precipitations-hiver/?ici=1`).
+
+**Niveau de la mer.** Le service du Shom donne le niveau brut de chaque marégraphe, pas l'écart
+avec la marée — et les prédictions de marée ne sont pas ouvertes. Or un niveau brut ne dit rien
+(à Brest, 5,70 m est une mer ordinaire à mi-marée) : ce qui compte est la **surcote**. Le serveur
+calcule donc lui-même la marée de chaque station, par la méthode classique : six mois de ses
+mesures, sur lesquels il ajuste par moindres carrés vingt-deux ondes de marée de périodes
+connues. La surcote estimée est la médiane, sur la dernière heure, de la mesure moins cette
+marée. **Ce que ça vaut**, mesuré le 15/11/2026 : 12 à 14 cm d'écart-type à Brest, Cherbourg et
+Marseille sur des semaines que l'ajustement n'avait pas vues, 4 à 6 cm à La Réunion et aux
+Antilles ; trente jours d'historique ne suffisent pas (la prédiction diverge) et sont refusés.
+Chaque station porte sa propre incertitude, mesurée en ajustant sur les deux premiers tiers de
+son historique et en vérifiant sur le dernier ; au-delà de 25 cm (estuaires, sondes
+capricieuses), rien n'est estimé pour elle. Une surcote est dite « marquée » au-delà de 30 cm
+**et** de 2,5 fois l'incertitude de la station, « forte » au-delà de 50 cm et de 4 fois. La
+prochaine pleine mer est donnée au niveau qu'on verra si la surcote se maintient, avec pour
+repère le plus haut niveau mesuré sur la période. Les ajustements sont étalés (cinq stations par
+passage, refaits tous les trente jours) : il faut une douzaine d'heures après la mise en service
+pour que toutes les stations aient le leur. Ni prédiction officielle de marée, ni alerte ; un
+marégraphe mesure le niveau au port, pas les vagues sur le rivage. `GET /api/niveaux-mer/`.
 
 **Circulation.** Trois fichiers du serveur « Bison Futé ouvert » : le référentiel des stations
 de comptage (relu une fois par jour), leurs vitesses et débits (toutes les six minutes), et

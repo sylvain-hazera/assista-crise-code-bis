@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues,
+  ArretesCirculation, Circulation, TronconCirculation, HauteursEau, StationHydrometrique, NiveauMer, NiveauxMer, FoyersActifs, Radioactivite, Seismes, Volcans, EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
   VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
@@ -130,6 +130,29 @@ const RAFALES: RafalesPrevues = {
     ],
   },
 };
+/** Sur la commune : rien, puis neige humide, puis pluie verglaçante à 17 h 30. */
+const HIVER: PrecipitationsHiver = {
+  source: 'Météo-France', releve_le: '2026-11-15T17:05:00Z', perime: false, calcul: '2026-11-15T16:00:00Z',
+  coins: [[-5.505, 51.505], [10.005, 51.505], [10.005, 40.995], [-5.505, 40.995]],
+  echeances: ['2026-11-15T17:00:00Z', '2026-11-15T17:15:00Z', '2026-11-15T17:30:00Z'],
+  legende: [
+    { cle: 'VERGLAS', libelle: 'Pluie ou bruine verglaçante', couleur: '#db2777' },
+    { cle: 'NEIGE', libelle: 'Neige', couleur: '#38bdf8' },
+    { cle: 'NEIGE_HUMIDE', libelle: 'Neige humide, pluie et neige mêlées', couleur: '#4f46e5' },
+  ],
+  ici: {
+    latitude: 45.44, longitude: 4.39, couvert: true, pire: 'VERGLAS',
+    familles: [
+      { echeance: '2026-11-15T17:00:00Z', famille: '' },
+      { echeance: '2026-11-15T17:15:00Z', famille: 'NEIGE_HUMIDE' },
+      { echeance: '2026-11-15T17:30:00Z', famille: 'VERGLAS' },
+    ],
+  },
+};
+const HIVER_AU_SEC: PrecipitationsHiver = {
+  ...HIVER, ici: { ...HIVER.ici!, pire: '', familles: HIVER.ici!.familles.map(f => ({ ...f, famille: '' as const })) },
+};
+
 const RAFALES_CALMES: RafalesPrevues = {
   ...RAFALES, ici: { ...RAFALES.ici!, maximum_kmh: 0, paliers: RAFALES.ici!.paliers.map(p => ({ ...p, a_partir_de_kmh: 0 })) },
 };
@@ -148,6 +171,27 @@ const FEUX: ZonesBrulees = {
     departement_nom: 'Loire', surface_ha: 42, latitude: 45.41, longitude: 4.68, distance_km: 23.4,
   }],
 };
+
+const MAREGRAPHE: NiveauMer = {
+  code: '5', nom: 'LE CONQUET', etat: 'FORTE', niveau_m: 6.41, niveau_le: '2026-11-15T19:30:00Z',
+  maree_attendue_m: 5.83, surcote_cm: 58, incertitude_cm: 12.4, pleine_mer_le: '2026-11-15T22:30:00Z',
+  pleine_mer_niveau_m: 7.12, maximum_m: 7.51, maximum_le: '2026-09-29T17:40:00Z', jours_ajustes: 180,
+  latitude: 48.36, longitude: -4.78, distance_km: 21,
+};
+/** Autour de Brest : une forte surcote, un marégraphe dont la marée n'est pas encore calculée,
+ * et un troisième sans mesure récente. */
+const MER: NiveauxMer = {
+  ...ENTETE, source: 'Shom - réseaux de marégraphes REFMAR',
+  bilan: { FORTE: 1, MARQUEE: 0, NORMALE: 0, INCONNUE: 2 },
+  resultats: [
+    MAREGRAPHE,
+    { ...MAREGRAPHE, code: '3', nom: 'BREST', etat: 'INCONNUE', niveau_m: 5.69, maree_attendue_m: null,
+      surcote_cm: null, incertitude_cm: null, pleine_mer_le: null, pleine_mer_niveau_m: null,
+      maximum_m: null, maximum_le: null, jours_ajustes: null },
+    { ...MAREGRAPHE, code: '9', nom: 'MUET', etat: 'INCONNUE', niveau_m: null, surcote_cm: null },
+  ],
+};
+const MER_VIDE: NiveauxMer = { ...MER, bilan: { FORTE: 0, MARQUEE: 0, NORMALE: 0, INCONNUE: 0 }, resultats: [] };
 
 const STATION_EAU: StationHydrometrique = {
   code: 'K058000101', nom: 'L’Ondaine à Unieux - Le Pertuiset', cours_eau: 'l’Ondaine', tendance: 'HAUSSE_RAPIDE',
@@ -278,9 +322,9 @@ describe('VeilleComponent', () => {
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
                                 observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
                                 forets?: MeteoForets; feux?: ZonesBrulees; avalanche?: RisqueAvalanche;
-                                arretes?: ArretesCirculation; sante?: SanteUrgences; circulation?: Circulation; hauteurs?: HauteursEau;
+                                arretes?: ArretesCirculation; sante?: SanteUrgences; circulation?: Circulation; hauteurs?: HauteursEau; mer?: NiveauxMer;
                                 radio?: Radioactivite; seismes?: Seismes; volcans?: Volcans;
-                                foyers?: FoyersActifs; rafales?: RafalesPrevues } = {}) {
+                                foyers?: FoyersActifs; rafales?: RafalesPrevues; hiver?: PrecipitationsHiver } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
@@ -289,6 +333,7 @@ describe('VeilleComponent', () => {
     http.expectOne(`${api}/sante-urgences/`).flush(reponses.sante ?? SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/rafales-prevues/`).flush(reponses.rafales ?? RAFALES_CALMES);
+    http.expectOne(r => r.url === `${api}/precipitations-hiver/`).flush(reponses.hiver ?? HIVER_AU_SEC);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(reponses.radio ?? RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(reponses.seismes ?? SEISMES);
@@ -296,6 +341,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(reponses.foyers ?? FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(reponses.mer ?? MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(reponses.hauteurs ?? HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/`).flush(reponses.circulation ?? CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(reponses.arretes ?? ARRETES);
@@ -312,11 +358,87 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(18);
+    expect(demandes.length).toBe(20);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
     expect(images.every(image => image.src.includes('/vigilance-meteo/vignette/'))).toBeTrue();
+  });
+
+  /** Neige, verglas, grêle prévus (15/11/2026) : la page dit le plus dangereux de ce qui est
+   * prévu sur la commune, et se tait quand rien de tel n'est annoncé. */
+  describe('neige et verglas prévus sur la commune', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('.hiver-ici');
+
+    it('demande la lecture locale à notre serveur', () => {
+      const fixture = TestBed.createComponent(VeilleComponent);
+      fixture.detectChanges();
+
+      expect(http.expectOne(r => r.url === `${api}/precipitations-hiver/`).request.params.get('ici')).toBe('1');
+      http.match(() => true);
+    });
+
+    it('dit le plus dangereux de ce qui est prévu et sa première heure', () => {
+      const fixture = demarrer({ hiver: HIVER });
+
+      expect(bloc(fixture).textContent).toContain('pluie ou bruine verglaçante');
+      expect(bloc(fixture).textContent).toMatch(/vers \d\d:30/);
+      expect(bloc(fixture).classList).toContain('fort');
+      expect(bloc(fixture).textContent).toContain('pas la quantité ni la tenue au sol');
+    });
+
+    it('n’habille pas la neige humide en danger', () => {
+      const fixture = demarrer({ hiver: { ...HIVER, ici: { ...HIVER.ici!, pire: 'NEIGE_HUMIDE' } } });
+
+      expect(bloc(fixture).textContent).toContain('neige humide');
+      expect(bloc(fixture).textContent).toMatch(/vers \d\d:15/);
+      expect(bloc(fixture).classList).not.toContain('fort');
+    });
+
+    it('se tait quand rien de tel n’est prévu, ou hors de la métropole', () => {
+      expect(bloc(demarrer({ hiver: HIVER_AU_SEC }))).toBeNull();
+    });
+  });
+
+  /** Niveau de la mer (15/11/2026) : la mesure des marégraphes, et la surcote que notre serveur
+   * estime. La page doit dire que c'est une estimation, et se taire loin de la mer. */
+  describe('niveau de la mer', () => {
+    const bloc = (fixture: any): HTMLElement => fixture.nativeElement.querySelector('[aria-labelledby="titre-mer"]');
+
+    it('donne la mesure, la surcote estimée avec son incertitude et la prochaine pleine mer', () => {
+      const fixture = demarrer({ mer: MER });
+      const lignes: HTMLElement[] = Array.from(bloc(fixture).querySelectorAll('.mer li'));
+
+      expect(lignes.length).toBe(2);                              // le marégraphe muet n'est pas listé
+      expect(lignes[0].textContent).toContain('Forte surcote');
+      expect(lignes[0].textContent).toContain('LE CONQUET');
+      expect(lignes[0].textContent).toMatch(/6[.,]41 m mesurés/);
+      expect(lignes[0].textContent).toContain('surcote estimée +58 cm');
+      expect(lignes[0].textContent).toContain('± 12');
+      expect(lignes[0].textContent).toMatch(/pleine mer vers \d\d:30 : 7[.,]12 m si l'écart se maintient/);
+      expect(lignes[0].textContent).toMatch(/plus haut mesuré en 180 jours : 7[.,]51 m/);
+      expect(bloc(fixture).querySelector('.compte')!.textContent).toBe('1');
+    });
+
+    it('ne prétend rien pour un marégraphe dont la marée n’est pas encore calculée', () => {
+      const fixture = demarrer({ mer: MER });
+      const brest: HTMLElement = bloc(fixture).querySelectorAll('.mer li')[1] as HTMLElement;
+
+      expect(brest.textContent).toContain('marée pas encore calculée');
+      expect(brest.textContent).not.toContain('surcote estimée');
+      expect(brest.textContent).not.toContain('pleine mer');
+    });
+
+    it('dit que la surcote est une estimation de ce serveur, pas une alerte', () => {
+      const fixture = demarrer({ mer: MER });
+
+      expect(bloc(fixture).textContent).toContain('calculées par ce');
+      expect(bloc(fixture).textContent).toContain('ni une prédiction officielle de marée, ni une alerte');
+    });
+
+    it('se tait loin de la mer', () => {
+      expect(bloc(demarrer({ mer: MER_VIDE }))).toBeNull();
+    });
   });
 
   /** Hauteurs d'eau (15/11/2026) : les mesures des stations en rivière. La page ne montre
@@ -777,6 +899,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/` && r.params.get('rayon_km') === '60').flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/niveaux-mer/` && r.params.get('rayon_km') === '60').flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/` && r.params.get('rayon_km') === '60').flush(HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/` && r.params.get('rayon_km') === '60').flush(CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/` && r.params.get('rayon_km') === '60').flush(ARRETES);
@@ -811,6 +934,7 @@ describe('VeilleComponent', () => {
     http.expectOne(`${api}/sante-urgences/`).flush(SANTE);
     http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
     http.expectOne(r => r.url === `${api}/rafales-prevues/`).flush(RAFALES_CALMES);
+    http.expectOne(r => r.url === `${api}/precipitations-hiver/`).flush(HIVER_AU_SEC);
     http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
     http.expectOne(r => r.url === `${api}/radioactivite/`).flush(RADIO);
     http.expectOne(r => r.url === `${api}/seismes/`).flush(SEISMES);
@@ -818,6 +942,7 @@ describe('VeilleComponent', () => {
     http.expectOne(r => r.url === `${api}/foyers-actifs/`).flush(FOYERS);
     http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
+    http.expectOne(r => r.url === `${api}/niveaux-mer/`).flush(MER_VIDE);
     http.expectOne(r => r.url === `${api}/hauteurs-eau/`).flush(HAUTEURS_VIDES);
     http.expectOne(r => r.url === `${api}/circulation/`).flush(CIRCULATION_VIDE);
     http.expectOne(r => r.url === `${api}/arretes-circulation/`).flush(ARRETES);

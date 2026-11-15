@@ -208,6 +208,11 @@ table.mesures, table.mesures-sante {
 // Violet : n'existe qu'outre-mer (cyclone).
 .etiquette[data-couleur="5"], .couleur[data-couleur="5"] { background: #6d28d9; color: #fff; }
 
+// ── Niveau de la mer ──
+.etiquette.surcote[data-etat="MARQUEE"] { background: #ffd08a; color: #3b2100; }
+.etiquette.surcote[data-etat="FORTE"] { background: #c81e1e; color: #fff; }
+.etiquette.surcote[data-etat="NORMALE"] { background: #cffafe; color: #164e63; }
+
 // ── Circulation : les couleurs du calque de la carte ──
 .etiquette.trafic[data-etat="DENSE"] { background: #ffd08a; color: #3b2100; }
 .etiquette.trafic[data-etat="SATURE"] { background: #c81e1e; color: #fff; }

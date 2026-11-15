@@ -15,7 +15,7 @@
       </div>
     }
 
-    @if ((layerVisibility.pluie && pluie) || (layerVisibility.rafales && rafales)) {
+    @if ((layerVisibility.pluie && pluie) || (layerVisibility.rafales && rafales) || (layerVisibility.hiver && hiver)) {
       <!-- Réglette de temps commune à la pluie et aux rafales prévues. Ce sont des PRÉVISIONS
            (recalées chaque heure), pas des mesures : le libellé le dit, avec l'heure du calcul. -->
       <div class="pluie-temps" role="group" aria-label="Prévision à trois heures : choisir l'heure">
@@ -47,6 +47,17 @@
                   <span><i [style.background]="palier.couleur"></i>{{ palier.a_partir_de_kmh }}</span>
                 }
                 <span class="unite">km/h et plus</span>
+              </div>
+            }
+            @if (layerVisibility.hiver && hiver) {
+              <div class="pluie-note" [class.ancien]="hiver.perime">
+                Neige, verglas, grêle prévus — calcul de {{ hiver.calcul | date:'HH:mm' }}, {{ hiver.source }}
+                @if (hiver.perime) { · <strong>relevé ancien</strong> }
+              </div>
+              <div class="rafales-legende hiver-legende" aria-label="Légende des types de précipitation">
+                @for (famille of hiver.legende; track famille.cle) {
+                  <span><i [style.background]="famille.couleur"></i>{{ famille.libelle }}</span>
+                }
               </div>
             }
           </div>
@@ -118,6 +129,11 @@
         <span class="layer-dot rafales-dot"></span>
         Rafales prévues (3 h)
       </label>
+      <label class="layer-toggle-item" title="Type de précipitation prévu par Météo-France dans les trois heures : neige, pluie verglaçante, grésil, grêle. Le type de ce qui tombe, pas la quantité ni la tenue au sol. Une prévision, pas une alerte. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.hiver" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot hiver-dot"></span>
+        Neige, verglas, grêle prévus (3 h)
+      </label>
       <label class="layer-toggle-item" title="Tronçons surveillés par Vigicrues, colorés par niveau de vigilance. Seuls les principaux cours d'eau y figurent.">
         <input type="checkbox" [(ngModel)]="layerVisibility.vigilanceCrues" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot crues-dot"></span>
@@ -128,6 +144,11 @@
         <span class="layer-dot hauteurs-eau-dot"></span>
         Hauteurs d'eau mesurées
         @if (layerVisibility.hauteursEau && veilleTronquee.hauteursEau) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Marégraphes du Shom, métropole et outre-mer : niveau de la mer mesuré, et surcote estimée par ce serveur. Rouge : forte surcote. Orange : marquée. Une estimation, pas une alerte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.niveauxMer" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot niveaux-mer-dot"></span>
+        Niveau de la mer (marégraphes)
       </label>
       <label class="layer-toggle-item" title="Massifs des Alpes, des Pyrénées et de Corse, colorés par indice de risque d'avalanche (1 à 5).">
         <input type="checkbox" [(ngModel)]="layerVisibility.avalanche" (ngModelChange)="onLayerToggle()">

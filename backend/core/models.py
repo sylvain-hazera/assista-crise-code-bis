@@ -2784,6 +2784,36 @@ class StationCirculation(models.Model):
         return f"{self.axe} {self.sens} ({self.code})".strip()
 
 
+class Maregraphe(models.Model):
+    """Marégraphe du réseau REFMAR (Shom et partenaires) : dernier niveau mesuré, et ce que ce
+    serveur en déduit -- marée attendue, surcote estimée, prochaine pleine mer. Voir
+    core/niveaux_mer.py.
+
+    `ajustement` n'est pas une donnée de la source : ce sont les amplitudes des ondes de marée
+    que ce serveur a ajustées sur six mois de mesures de la station, avec l'incertitude mesurée
+    de cet ajustement. Vide tant que l'historique ne suffit pas. Donnée publique partagée
+    PROD/DEMO."""
+
+    code = models.CharField(max_length=20, primary_key=True)
+    nom = models.CharField(max_length=120, blank=True, default="")
+    reseau = models.CharField(max_length=20, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    referentiel_le = models.DateTimeField()
+
+    niveau_m = models.FloatField(null=True, blank=True)
+    niveau_le = models.DateTimeField(null=True, blank=True)
+    maree_attendue_m = models.FloatField(null=True, blank=True)
+    surcote_cm = models.IntegerField(null=True, blank=True)
+    pleine_mer_le = models.DateTimeField(null=True, blank=True)
+    pleine_mer_niveau_m = models.FloatField(null=True, blank=True)
+
+    ajustement = models.JSONField(default=dict, blank=True)
+    ajuste_le = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return self.nom or self.code
+
+
 class StationHydrometrique(models.Model):
     """Station de mesure en rivière (Hub'Eau) et ses dernières mesures : hauteur à l'échelle,
     débit, variation sur une et trois heures -- voir core/hauteurs_eau.py.
@@ -2950,6 +2980,22 @@ class ImageRafales(models.Model):
 
     def __str__(self):
         return f"Rafales prévues pour {self.echeance:%d/%m %H:%M}"
+
+
+class ImagePrecipitationHiver(models.Model):
+    """Image nationale du type de précipitation prévu pour un quart d'heure donné -- neige,
+    verglas, grésil, grêle -- peinte par ce serveur, en projection Mercator. Voir
+    core/precipitations_hiver.py. Même forme et même durée de vie que `ImagePluie`.
+
+    Donnée publique partagée PROD/DEMO."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    calcul = models.DateTimeField()
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Neige et verglas prévus pour {self.echeance:%d/%m %H:%M}"
 
 
 class VigilanceMeteo(models.Model):

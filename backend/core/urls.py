@@ -13,8 +13,8 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_veille import (
-    ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, ConfigurationAlerteVigilanceViewSet,
-    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImageRafalesView, RafalesPrevuesView,
+    ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
+    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, PrecipitationsHiverView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -371,6 +371,8 @@ urlpatterns = [
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
     path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
     path('rafales-prevues/image/', ImageRafalesView.as_view(), name='rafales_prevues_image'),
+    path('precipitations-hiver/', PrecipitationsHiverView.as_view(), name='precipitations_hiver'),
+    path('precipitations-hiver/image/', ImagePrecipitationHiverView.as_view(), name='precipitations_hiver_image'),
     path('vigilance-crues/', VigilanceCruesView.as_view(), name='vigilance_crues'),
     path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
     path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
@@ -380,6 +382,7 @@ urlpatterns = [
     path('arretes-circulation/', ArretesCirculationView.as_view(), name='arretes_circulation'),
     path('circulation/', CirculationView.as_view(), name='circulation'),
     path('hauteurs-eau/', HauteursEauView.as_view(), name='hauteurs_eau'),
+    path('niveaux-mer/', NiveauxMerView.as_view(), name='niveaux_mer'),
     path('sante-urgences/', SanteUrgencesView.as_view(), name='sante_urgences'),
     path('radioactivite/', RadioactiviteView.as_view(), name='radioactivite'),
     path('seismes/', SeismesView.as_view(), name='seismes'),

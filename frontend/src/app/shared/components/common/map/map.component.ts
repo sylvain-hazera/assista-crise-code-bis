@@ -23,7 +23,8 @@ import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
 import {
-  EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, RafalesPrevues, StationCarburant,
+  EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues,
+  StationCarburant,
   sensDeCirculation, variationEau,
 } from '../../../models/veille.model';
 
@@ -54,6 +55,8 @@ interface LayerVisibility {
   pluie: boolean;
   /** Rafales prévues dans les trois heures, sur la même réglette de temps que la pluie. */
   rafales: boolean;
+  /** Neige, verglas et grêle prévus dans les trois heures, sur la même réglette. */
+  hiver: boolean;
   /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
@@ -68,6 +71,8 @@ interface LayerVisibility {
   circulation: boolean;
   /** Hauteurs d'eau mesurées en rivière (stations Hub'Eau), colorées par tendance. */
   hauteursEau: boolean;
+  /** Niveau de la mer aux marégraphes (Shom), colorés par surcote estimée. */
+  niveauxMer: boolean;
   /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
   defibrillateurs: boolean;
   /** Séismes des trente derniers jours (BCSF-Rénass), tirs de carrière compris. */
@@ -129,6 +134,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     stationsMeteo: false,
     pluie: false,
     rafales: false,
+    hiver: false,
     vigilanceCrues: false,
     zonesBrulees: false,
     foyersActifs: false,
@@ -136,6 +142,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     arretesCirculation: false,
     circulation: false,
     hauteursEau: false,
+    niveauxMer: false,
     defibrillateurs: false,
     seismes: false,
     radioactivite: false,
@@ -226,6 +233,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
     this.applyLayerVisibility('circulation-layer', this.layerVisibility.circulation);
     this.applyLayerVisibility('hauteurs-eau-layer', this.layerVisibility.hauteursEau);
+    this.applyLayerVisibility('niveaux-mer-layer', this.layerVisibility.niveauxMer);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
@@ -246,10 +254,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau } = this.layerVisibility;
+            hauteursEau, niveauxMer } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
-        && !foyersActifs && !circulation && !hauteursEau) return;
+        && !foyersActifs && !circulation && !hauteursEau && !niveauxMer) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -260,6 +268,36 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       borne(bornes.getWest(), 180), borne(bornes.getSouth(), 90),
       borne(bornes.getEast(), 180), borne(bornes.getNorth(), 90),
     ];
+    if (niveauxMer) {
+      this.veilleService.niveauxMer({ bbox }).subscribe({
+        next: (reponse) => {
+          const metres = (valeur: number) => valeur.toFixed(2).replace('.', ',');
+          const quand = (instant: string) => new Date(instant).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+          this.afficherCoucheVeille('niveaux-mer', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(m => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [m.longitude, m.latitude] },
+              properties: {
+                etat: m.etat,
+                infobulle: `<strong>Marégraphe de ${this.echapper(m.nom)}</strong>`
+                  + (m.niveau_m != null ? `<br>Niveau mesuré : ${metres(m.niveau_m)} m` : '<br>Pas de mesure récente')
+                  + (m.surcote_cm != null
+                    ? `<br><strong>${LIBELLES_ETAT_SURCOTE[m.etat]}</strong> : ${m.surcote_cm > 0 ? '+' : ''}${m.surcote_cm} cm par rapport à la marée calculée (± ${Math.round(m.incertitude_cm ?? 0)} cm)`
+                    : (m.niveau_m != null ? '<br>Marée pas encore calculée pour ce marégraphe' : ''))
+                  + (m.pleine_mer_le && m.pleine_mer_niveau_m != null
+                    ? `<br>Prochaine pleine mer vers ${new Date(m.pleine_mer_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : ${metres(m.pleine_mer_niveau_m)} m si l'écart se maintient` : '')
+                  + (m.maximum_m != null ? `<br>Plus haut mesuré en ${m.jours_ajustes} jours : ${metres(m.maximum_m)} m` : '')
+                  + (m.niveau_le ? `<br>Mesuré le ${quand(m.niveau_le)}` : '')
+                  + '<br><small>Source : Shom (REFMAR), mesure brute. La marée et la surcote sont une estimation de ce serveur, pas une prédiction officielle ni une alerte.</small>',
+              },
+            })),
+          // Rouge : forte surcote. Orange : marquée. Bleu : niveau attendu. Gris : sans estimation.
+          }, ['match', ['get', 'etat'], 'FORTE', '#c81e1e', 'MARQUEE', '#f97316', 'NORMALE', '#0e7490', '#9ca3af'],
+          this.layerVisibility.niveauxMer);
+        },
+        error: () => {},
+      });
+    }
     if (hauteursEau) {
       this.veilleService.hauteursEau({ bbox }).subscribe({
         next: (reponse) => {
@@ -609,24 +647,27 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   pluie: PluiePrevue | null = null;
   rafales: RafalesPrevues | null = null;
+  hiver: PrecipitationsHiver | null = null;
   /** Échéance choisie sur la réglette ; `null` tant qu'on n'y a pas touché : la carte suit
    * alors l'heure qu'il est. Les deux calques partagent ce choix. */
   echeanceChoisie: string | null = null;
   animationPrevision: ReturnType<typeof setInterval> | null = null;
   private rafraichissementPrevision: ReturnType<typeof setInterval> | null = null;
-  private previsionsSuivies = { pluie: false, rafales: false };
+  private previsionsSuivies = { pluie: false, rafales: false, hiver: false };
+  private readonly SERIES_PREVISION = ['pluie', 'rafales', 'hiver'] as const;
 
   /** Appelé à chaque changement de calque : charge une série à sa première activation, puis
    * relit celles qui sont cochées toutes les cinq minutes. */
   private basculerPrevisions(): void {
     this.applyLayerVisibility('pluie-layer', this.layerVisibility.pluie);
     this.applyLayerVisibility('rafales-layer', this.layerVisibility.rafales);
-    for (const serie of ['pluie', 'rafales'] as const) {
+    this.applyLayerVisibility('hiver-layer', this.layerVisibility.hiver);
+    for (const serie of this.SERIES_PREVISION) {
       const visible = this.layerVisibility[serie];
       if (visible && !this.previsionsSuivies[serie]) this.chargerPrevision(serie);
       this.previsionsSuivies[serie] = visible;
     }
-    if (!this.layerVisibility.pluie && !this.layerVisibility.rafales) {
+    if (!this.SERIES_PREVISION.some(serie => this.layerVisibility[serie])) {
       this.arreterAnimationPrevision();
       if (this.rafraichissementPrevision) { clearInterval(this.rafraichissementPrevision); this.rafraichissementPrevision = null; }
       return;
@@ -637,19 +678,20 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.rafraichissementPrevision = setInterval(() => {
       if (this.layerVisibility.pluie) this.chargerPrevision('pluie');
       if (this.layerVisibility.rafales) this.chargerPrevision('rafales');
+      if (this.layerVisibility.hiver) this.chargerPrevision('hiver');
     }, 5 * 60 * 1000);
   }
 
-  private chargerPrevision(serie: 'pluie' | 'rafales'): void {
-    const suite = {
-      next: (donnees: PluiePrevue | RafalesPrevues) => {
-        if (serie === 'pluie') this.pluie = donnees; else this.rafales = donnees as RafalesPrevues;
-        this.afficherPrevisions();
-      },
-      error: () => {},
-    };
-    if (serie === 'pluie') this.veilleService.pluiePrevue().subscribe(suite);
-    else this.veilleService.rafalesPrevues().subscribe(suite);
+  private chargerPrevision(serie: 'pluie' | 'rafales' | 'hiver'): void {
+    const fin = { error: () => {} };
+    const afficher = () => this.afficherPrevisions();
+    if (serie === 'pluie') {
+      this.veilleService.pluiePrevue().subscribe({ next: (donnees) => { this.pluie = donnees; afficher(); }, ...fin });
+    } else if (serie === 'rafales') {
+      this.veilleService.rafalesPrevues().subscribe({ next: (donnees) => { this.rafales = donnees; afficher(); }, ...fin });
+    } else {
+      this.veilleService.precipitationsHiver().subscribe({ next: (donnees) => { this.hiver = donnees; afficher(); }, ...fin });
+    }
   }
 
   /** Les quarts d'heure de la réglette : ceux des calques de prévision cochés, réunis. */
@@ -657,6 +699,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     const toutes = new Set<string>();
     if (this.layerVisibility.pluie) this.pluie?.echeances.forEach(e => toutes.add(e));
     if (this.layerVisibility.rafales) this.rafales?.echeances.forEach(e => toutes.add(e));
+    if (this.layerVisibility.hiver) this.hiver?.echeances.forEach(e => toutes.add(e));
     return [...toutes].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
   }
 
@@ -724,12 +767,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.layerVisibility.rafales && this.rafales) {
       this.poserImagePrevision('rafales', this.rafales, echeance, 0.8, e => this.veilleService.imageRafalesUrl(e));
     }
+    if (this.layerVisibility.hiver && this.hiver) {
+      this.poserImagePrevision('hiver', this.hiver, echeance, 0.85, e => this.veilleService.imagePrecipitationHiverUrl(e));
+    }
   }
 
   /** Pose l'image d'une série sur la carte, SOUS les noms de lieux du fond de carte (et donc
    * sous tous nos calques) : une prévision ne doit rien masquer. Si la série n'a pas l'échéance
    * demandée (une image manquée au relevé), elle montre sa plus proche. */
-  private poserImagePrevision(nom: 'pluie' | 'rafales', serie: PluiePrevue, echeance: string,
+  private poserImagePrevision(nom: 'pluie' | 'rafales' | 'hiver', serie: PluiePrevue, echeance: string,
                               opacite: number, adresse: (echeance: string) => string): void {
     if (!serie.echeances.length) return;
     const montree = serie.echeances.includes(echeance) ? echeance
@@ -748,9 +794,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.map.addLayer({
         id: `${nom}-layer`, type: 'raster', source: nom,
         layout: { visibility: this.layerVisibility[nom] ? 'visible' : 'none' },
-        // « nearest » pour les rafales : des paliers nets, pas un dégradé inventé entre deux teintes.
+        // « nearest » pour ce que nous peignons nous-mêmes : des classes nettes, pas un dégradé
+        // inventé entre deux teintes.
         paint: { 'raster-opacity': opacite, 'raster-fade-duration': 0,
-                 'raster-resampling': nom === 'rafales' ? 'nearest' : 'linear' },
+                 'raster-resampling': nom === 'pluie' ? 'linear' : 'nearest' },
       }, premierTexte);
     });
   }

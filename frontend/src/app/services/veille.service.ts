@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ArretesCirculation, Circulation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue,
+  ArretesCirculation, Circulation, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
   RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
@@ -69,6 +69,16 @@ export class VeilleService {
     return `${this.api}/rafales-prevues/image/?echeance=${encodeURIComponent(echeance)}`;
   }
 
+  /** Quarts d'heure pour lesquels une image de neige, verglas et grêle prévus est disponible.
+   * `ici` demande en plus ce qui est prévu sur la commune de l'institution de l'appelant. */
+  precipitationsHiver(ici = false): Observable<PrecipitationsHiver> {
+    return this.http.get<PrecipitationsHiver>(`${this.api}/precipitations-hiver/`, ici ? { params: { ici: '1' } } : {});
+  }
+
+  imagePrecipitationHiverUrl(echeance: string): string {
+    return `${this.api}/precipitations-hiver/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
   /** Tronçons de cours d'eau surveillés par Vigicrues. `trace` joint leur tracé (carte). */
   vigilanceCrues(emprise: EmpriseVeille = {}, trace = false): Observable<VigilanceCrues> {
     const params = this.params(emprise);
@@ -98,6 +108,11 @@ export class VeilleService {
     const params = this.params(emprise);
     if (trace) params['trace'] = '1';
     return this.http.get<RisqueAvalanche>(`${this.api}/risque-avalanche/`, { params });
+  }
+
+  /** Niveau de la mer aux marégraphes (Shom) et surcote estimée, les plus fortes d'abord. */
+  niveauxMer(emprise: EmpriseVeille = {}): Observable<NiveauxMer> {
+    return this.http.get<NiveauxMer>(`${this.api}/niveaux-mer/`, { params: this.params(emprise) });
   }
 
   /** Hauteurs d'eau et débits mesurés en rivière (Hub'Eau), ce qui monte le plus vite d'abord. */

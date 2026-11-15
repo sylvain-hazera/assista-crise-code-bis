@@ -22,13 +22,13 @@ from rest_framework.views import APIView
 import json
 
 from . import (
-    arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, pluie, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
+    arretes_circulation, avalanche, circulation, hauteurs_eau, meteo_forets, sante_urgences, seismes, meteo_france, niveaux_mer, pluie, precipitations_hiver, rafales, restrictions_eau, sources_ouvertes, trafic_routier,
     vigilance_crues,
 )
 from .models import (
     ArreteCirculation, Commune, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyerActif, Defibrillateur, MesureRadioactivite,
     Seisme, ContactInstitution, DangerFeuForet, EvenementRoutier,
-    ImagePluie, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
+    ImagePluie, Maregraphe, ImagePrecipitationHiver, ImageRafales, IndicateurSante, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau, RisqueAvalanche, StationCirculation, StationHydrometrique,
     StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
@@ -400,6 +400,51 @@ class ImageRafalesView(APIView):
         return _image_d_une_echeance(ImageRafales, request)
 
 
+class PrecipitationsHiverView(APIView):
+    """GET /api/precipitations-hiver/ : les quarts d'heure pour lesquels une image de neige,
+    verglas et grêle prévus est disponible, où la poser sur la carte et la légende des teintes.
+
+    Avec `lat` et `lon`, ou `ici=1` pour la commune de l'institution de l'appelant, la réponse
+    dit aussi ce qui est prévu À CET ENDROIT pour chaque échéance. C'est lu dans les images déjà
+    copiées : aucun appel sortant, la position ne quitte pas ce serveur."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ouest, sud, est, nord = rafales.EMPRISE_IMAGE
+        images = list(ImagePrecipitationHiver.objects.order_by("echeance"))
+        ici = None
+        if request.query_params.get("ici") or request.query_params.get("lat"):
+            _emprise_inutile, centre, _rayon = _emprise(request)
+            if centre:
+                familles = [{"echeance": image.echeance,
+                             "famille": precipitations_hiver.famille_au_point(
+                                 bytes(image.image), centre["latitude"], centre["longitude"])}
+                            for image in images]
+                prevues = {f["famille"] for f in familles if f["famille"]}
+                couvert = any(f["famille"] is not None for f in familles) or not images
+                ici = {**centre, "couvert": couvert, "familles": familles,
+                       # La plus dangereuse de ce qui est prévu, ou "" si rien ne l'est.
+                       "pire": next((cle for cle in precipitations_hiver.ORDRE_DE_GRAVITE if cle in prevues), "")}
+        return Response({
+            **sources_ouvertes.resume("PRECIPITATIONS_HIVER"),
+            "calcul": max((image.calcul for image in images), default=None),
+            "coins": [[ouest, nord], [est, nord], [est, sud], [ouest, sud]],
+            "echeances": [image.echeance for image in images],
+            "legende": precipitations_hiver.legende(),
+            "ici": ici,
+        })
+
+
+class ImagePrecipitationHiverView(APIView):
+    """GET /api/precipitations-hiver/image/?echeance=… : l'image d'une échéance (PNG
+    transparent), servie comme celle de la pluie."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return _image_d_une_echeance(ImagePrecipitationHiver, request)
+
+
 class VigilanceCruesView(APIView):
     """GET /api/vigilance-crues/ : les tronçons de cours d'eau surveillés par Vigicrues qui
     traversent une emprise (voir `_emprise`), les plus préoccupants d'abord. `?trace=1` joint
@@ -470,6 +515,52 @@ class HauteursEauView(APIView):
             })
         # Ce qui monte le plus vite d'abord ; à palier égal, la plus forte hausse, puis la plus proche.
         lignes.sort(key=lambda l: (rang[l["tendance"]], -(l["variation_1h_cm"] or 0),
+                                   l["distance_km"] if l["distance_km"] is not None else 0, l["code"]))
+        return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
+                         "bilan": bilan, "resultats": lignes[:RESULTATS_MAX]})
+
+
+class NiveauxMerView(APIView):
+    """GET /api/niveaux-mer/ : les marégraphes d'une emprise (voir `_emprise`), les plus fortes
+    surcotes d'abord. Niveau mesuré, marée calculée par ce serveur, surcote ESTIMÉE avec son
+    incertitude, et la prochaine pleine mer telle qu'on la verra si la surcote se maintient."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("NIVEAUX_MER", centre, rayon)
+        vide = {palier: 0 for palier in niveaux_mer.ORDRE_ETATS}
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False,
+                             "bilan": vide, "resultats": []})
+
+        maintenant = timezone.now()
+        rang = {palier: i for i, palier in enumerate(niveaux_mer.ORDRE_ETATS)}
+        bilan, lignes = dict(vide), []
+        for station in Maregraphe.objects.filter(location__within=emprise):
+            palier = niveaux_mer.etat(station, maintenant)
+            bilan[palier] += 1
+            latitude, longitude = _point(station.location)
+            recente = station.niveau_le is not None and maintenant - station.niveau_le <= niveaux_mer.MESURE_VALABLE
+            estimee = recente and bool(station.ajustement) and station.surcote_cm is not None
+            a_venir = estimee and station.pleine_mer_le is not None and station.pleine_mer_le > maintenant
+            lignes.append({
+                "code": station.code, "nom": station.nom, "etat": palier,
+                "niveau_m": station.niveau_m if recente else None, "niveau_le": station.niveau_le,
+                "maree_attendue_m": station.maree_attendue_m if estimee else None,
+                "surcote_cm": station.surcote_cm if estimee else None,
+                "incertitude_cm": station.ajustement.get("incertitude_cm") if estimee else None,
+                "pleine_mer_le": station.pleine_mer_le if a_venir else None,
+                "pleine_mer_niveau_m": station.pleine_mer_niveau_m if a_venir else None,
+                # Repère : le niveau le plus haut que ce marégraphe a mesuré sur les mois ajustés.
+                "maximum_m": station.ajustement.get("maximum_m") if estimee else None,
+                "maximum_le": station.ajustement.get("maximum_le") if estimee else None,
+                "jours_ajustes": station.ajustement.get("jours") if estimee else None,
+                "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                                if centre else None),
+            })
+        lignes.sort(key=lambda l: (rang[l["etat"]], -(l["surcote_cm"] or 0),
                                    l["distance_km"] if l["distance_km"] is not None else 0, l["code"]))
         return Response({**entete, "emprise_connue": True, "tronque": len(lignes) > RESULTATS_MAX,
                          "bilan": bilan, "resultats": lignes[:RESULTATS_MAX]})

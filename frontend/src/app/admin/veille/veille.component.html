@@ -165,9 +165,9 @@
   <p class="vers-la-carte">
     <span class="material-icons">rainy</span>
     <span>
-      <strong>Pluie et rafales des trois heures à venir :</strong> elles se regardent sur la
-      <a routerLink="/admin/carte">carte</a>, calques « Pluie prévue » et « Rafales prévues »,
-      avec une réglette pour avancer quart d'heure par quart d'heure. Les stations météo, les
+      <strong>Pluie, rafales, neige et verglas des trois heures à venir :</strong> ils se regardent
+      sur la <a routerLink="/admin/carte">carte</a>, calques « Pluie prévue », « Rafales prévues »
+      et « Neige, verglas, grêle prévus », avec une réglette pour avancer quart d'heure par quart d'heure. Les stations météo, les
       routes et les stations de carburant y ont aussi leur calque.
       @if (rafales?.ici; as ici) {
         <span class="rafales-ici" [class.fort]="rafalePrevue?.forte">
@@ -187,6 +187,16 @@
               Une prévision, pas une alerte : la vigilance ci-dessus fait foi.
             </small>
           }
+        </span>
+      }
+      @if (hiverPrevu; as prevu) {
+        <span class="rafales-ici hiver-ici" [class.fort]="prevu.grave">
+          <span class="material-icons">ac_unit</span>
+          Sur votre commune, <strong>{{ prevu.libelle }}</strong> prévu(e) vers {{ prevu.echeance | date:'HH:mm' }}
+          <small [class.ancien]="hiver!.perime">
+            — prévision {{ hiver!.source }}, calcul de {{ hiver!.calcul | date:'HH:mm' }}@if (hiver!.perime) {, <strong>relevé ancien</strong>}.
+            Le type de ce qui tombe, pas la quantité ni la tenue au sol.
+          </small>
         </span>
       }
     </span>
@@ -725,6 +735,56 @@
         pathologie. Ce n'est ni un nombre de malades, ni un taux dans la population : cela sert à
         voir une tendance. Données hebdomadaires, publiées avec une dizaine de jours de recul ;
         un écart de moins de 20 % d'une semaine à l'autre est compté comme stable.
+      </p>
+    </section>
+  }
+
+  <!-- ════ Mer : marégraphes, seulement là où il y en a dans le rayon ════ -->
+  @if (mer?.emprise_connue && maregraphesMesures.length) {
+    <section aria-labelledby="titre-mer">
+      <h2 id="titre-mer">
+        <span class="material-icons">sailing</span> Niveau de la mer
+        <span class="compte">{{ mer!.bilan.FORTE + mer!.bilan.MARQUEE }}</span>
+      </h2>
+
+      @if (mer!.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : les niveaux ci-dessous ne sont plus actuels.</span>
+        </p>
+      }
+      <ul class="troncons mer">
+        @for (maregraphe of maregraphesMesures; track maregraphe.code) {
+          <li>
+            <span class="etiquette surcote" [attr.data-etat]="maregraphe.etat">{{ LIBELLES_ETAT_SURCOTE[maregraphe.etat] }}</span>
+            <strong>{{ maregraphe.nom }}</strong>
+            <span>
+              {{ maregraphe.niveau_m | number:'1.2-2' }} m mesurés
+              @if (maregraphe.surcote_cm != null) {
+                · surcote estimée {{ maregraphe.surcote_cm > 0 ? '+' : '' }}{{ maregraphe.surcote_cm }} cm
+                (± {{ maregraphe.incertitude_cm | number:'1.0-0' }})
+              } @else {
+                · marée pas encore calculée
+              }
+            </span>
+            <span class="adresse">
+              @if (maregraphe.pleine_mer_le && maregraphe.pleine_mer_niveau_m != null) {
+                pleine mer vers {{ maregraphe.pleine_mer_le | date:'HH:mm' }} : {{ maregraphe.pleine_mer_niveau_m | number:'1.2-2' }} m si l'écart se maintient
+              }
+              @if (maregraphe.maximum_m != null) { · plus haut mesuré en {{ maregraphe.jours_ajustes }} jours : {{ maregraphe.maximum_m | number:'1.2-2' }} m }
+              @if (maregraphe.distance_km != null) { · à {{ maregraphe.distance_km | number:'1.0-0' }} km }
+            </span>
+          </li>
+        }
+      </ul>
+      <p class="note">
+        Source : {{ mer!.source }}@if (mer!.releve_le) {, relevé le {{ mer!.releve_le | date:'dd/MM à HH:mm' }}}.
+        Le niveau est une mesure brute. <strong>La marée attendue et la surcote sont calculées par ce
+        serveur</strong> à partir de l'historique de chaque marégraphe : une estimation, donnée avec
+        son incertitude — ni une prédiction officielle de marée, ni une alerte. La vigilance
+        « vagues-submersion » de Météo-France fait foi. Un marégraphe mesure le niveau au port,
+        pas les vagues sur le rivage. À voir sur la <a routerLink="/admin/carte">carte</a>, calque
+        « Niveau de la mer ».
       </p>
     </section>
   }

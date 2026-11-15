@@ -133,7 +133,7 @@ Les clés de chiffrement doivent être présentes dans `.env`, sinon une quinzai
 | `purge_audit_logs` | supprime les entrées d'`AuditLog` plus anciennes que `AUDIT_LOG_RETENTION_DAYS` |
 | `purger_pieces_non_validees [--appliquer]` | détruit les justificatifs déposés depuis plus de 30 jours que personne n'a instruits, après un rappel à J-7 (simulation par défaut) |
 | `verifier_alertes_sismiques` | diffuse sur le mesh les séismes récents proches des institutions abonnées |
-| `relever_sources_ouvertes [--source X] [--forcer]` | relève la veille du territoire (vingt sources, voir `core/sources_ouvertes.py`) et annonce la vigilance et les foyers d'incendie aux institutions abonnées |
+| `relever_sources_ouvertes [--source X] [--forcer]` | relève la veille du territoire (vingt-deux sources, voir `core/sources_ouvertes.py`) et annonce la vigilance et les foyers d'incendie aux institutions abonnées |
 | `backfill_zones_mon_territoire` | rattrapage de la Zone « Mon territoire » des collectivités créées avant son automatisation |
 | `synchroniser_sortant` / `synchroniser_entrant` | synchronisation satellite ↔ central (sur un satellite `full`) |
 

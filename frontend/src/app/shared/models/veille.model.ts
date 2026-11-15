@@ -243,6 +243,41 @@ export interface ArretesCirculation extends EnteteVeille {
   resultats: ArreteCirculation[];
 }
 
+export type EtatSurcote = 'FORTE' | 'MARQUEE' | 'NORMALE' | 'INCONNUE';
+
+/** Un marégraphe (Shom) : le niveau de la mer mesuré, et ce que notre serveur en déduit. La
+ * marée attendue est CALCULÉE par notre serveur à partir de l'historique de la station ; la
+ * surcote est donc une estimation, donnée avec son incertitude. Ni prédiction officielle de
+ * marée, ni alerte. */
+export interface NiveauMer {
+  code: string;
+  nom: string;
+  etat: EtatSurcote;
+  niveau_m: number | null;
+  niveau_le: string | null;
+  maree_attendue_m: number | null;
+  surcote_cm: number | null;
+  incertitude_cm: number | null;
+  /** Prochaine pleine mer, au niveau qu'on verra si la surcote du moment se maintient. */
+  pleine_mer_le: string | null;
+  pleine_mer_niveau_m: number | null;
+  /** Le plus haut niveau mesuré par ce marégraphe sur la période ajustée, pour repère. */
+  maximum_m: number | null;
+  maximum_le: string | null;
+  jours_ajustes: number | null;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+}
+export interface NiveauxMer extends EnteteVeille {
+  bilan: Record<EtatSurcote, number>;
+  resultats: NiveauMer[];
+}
+
+export const LIBELLES_ETAT_SURCOTE: Record<EtatSurcote, string> = {
+  FORTE: 'Forte surcote', MARQUEE: 'Surcote marquée', NORMALE: 'Niveau attendu', INCONNUE: 'Sans estimation',
+};
+
 export type TendanceEau = 'HAUSSE_RAPIDE' | 'HAUSSE' | 'STABLE' | 'BAISSE' | 'INCONNUE';
 
 /** Une station de mesure en rivière (Hub'Eau). La hauteur est celle lue à l'échelle de la
@@ -448,6 +483,23 @@ export interface PluiePrevue {
   /** Haut-gauche, haut-droite, bas-droite, bas-gauche : [longitude, latitude]. */
   coins: [number, number][];
   echeances: string[];
+}
+
+export type FamillePrecipitationHiver = 'VERGLAS' | 'NEIGE' | 'NEIGE_HUMIDE' | 'GRESIL' | 'GRELE';
+
+/** Neige, verglas et grêle prévus (type de précipitation de la prévision immédiate), peints par
+ * notre serveur. `ici` : ce qui est prévu au point demandé pour chaque échéance ("" : rien de
+ * tel ; null : hors de la métropole), et `pire`, le plus dangereux de la liste. C'est le TYPE
+ * de ce qui tombe, pas la quantité ni la tenue au sol ; une prévision, pas une alerte. */
+export interface PrecipitationsHiver extends PluiePrevue {
+  legende: { cle: FamillePrecipitationHiver; libelle: string; couleur: string }[];
+  ici: {
+    latitude: number;
+    longitude: number;
+    couvert: boolean;
+    pire: FamillePrecipitationHiver | '';
+    familles: { echeance: string; famille: FamillePrecipitationHiver | '' | null }[];
+  } | null;
 }
 
 /** Un palier de la légende des rafales : sa teinte vaut « à partir de tant de km/h ». */

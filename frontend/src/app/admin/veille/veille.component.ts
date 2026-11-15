@@ -5,8 +5,8 @@ import { RouterLink } from '@angular/router';
 import { VeilleService } from '../../services/veille.service';
 import {
   ArreteCirculation, ArretesCirculation, Circulation, LIBELLES_ETAT_CIRCULATION, TronconCirculation, sensDeCirculation,
-  HauteursEau, LIBELLES_TENDANCE_EAU, StationHydrometrique, variationEau, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
-  ObservationMeteo, ObservationsMeteo, RafalesPrevues, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
+  HauteursEau, LIBELLES_TENDANCE_EAU, LIBELLES_ETAT_SURCOTE, NiveauMer, NiveauxMer, StationHydrometrique, variationEau, CategorieEvenementRoutier, FoyersActifs, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
+  ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
@@ -39,6 +39,7 @@ export class VeilleComponent implements OnInit {
   eau: RestrictionsEau | null = null;
   forets: MeteoForets | null = null;
   rafales: RafalesPrevues | null = null;
+  hiver: PrecipitationsHiver | null = null;
   sante: SanteUrgences | null = null;
   radioactivite: Radioactivite | null = null;
   seismes: Seismes | null = null;
@@ -53,6 +54,7 @@ export class VeilleComponent implements OnInit {
   arretes: ArretesCirculation | null = null;
   circulation: Circulation | null = null;
   hauteursEau: HauteursEau | null = null;
+  mer: NiveauxMer | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
@@ -110,6 +112,10 @@ export class VeilleComponent implements OnInit {
       next: (rafales) => { this.rafales = rafales; },
       error: () => { this.rafales = null; },
     });
+    this.service.precipitationsHiver(true).subscribe({
+      next: (hiver) => { this.hiver = hiver; },
+      error: () => { this.hiver = null; },
+    });
   }
 
   chargerVigilance(departement?: string): void {
@@ -151,6 +157,10 @@ export class VeilleComponent implements OnInit {
     this.service.observationsMeteo({ rayon_km: this.rayonKm }).subscribe({
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
+    });
+    this.service.niveauxMer({ rayon_km: this.rayonKm }).subscribe({
+      next: (mer) => { this.mer = mer; },
+      error: () => { this.mer = null; },
     });
     this.service.hauteursEau({ rayon_km: this.rayonKm }).subscribe({
       next: (hauteurs) => { this.hauteursEau = hauteurs; },
@@ -231,6 +241,15 @@ export class VeilleComponent implements OnInit {
   readonly PLUIE_FORTE_1H_MM = 20;
   readonly PLUIE_FORTE_24H_MM = 50;
 
+  // ── Niveau de la mer ──
+
+  readonly LIBELLES_ETAT_SURCOTE = LIBELLES_ETAT_SURCOTE;
+
+  /** Les marégraphes qui ont une mesure récente : les autres ne disent rien. */
+  get maregraphesMesures(): NiveauMer[] {
+    return (this.mer?.resultats ?? []).filter(m => m.niveau_m != null);
+  }
+
   // ── Hauteurs d'eau ──
 
   readonly LIBELLES_TENDANCE_EAU = LIBELLES_TENDANCE_EAU;
@@ -268,6 +287,18 @@ export class VeilleComponent implements OnInit {
   get tronconsMesures(): number {
     const bilan = this.circulation?.bilan;
     return bilan ? bilan.BLOQUE + bilan.SATURE + bilan.DENSE + bilan.FLUIDE : 0;
+  }
+
+  /** Neige, verglas ou grêle PRÉVUS sur la commune d'ici trois heures : le plus dangereux de ce
+   * qui est annoncé, et la première échéance où il l'est. `null` si rien de tel n'est prévu. */
+  get hiverPrevu(): { libelle: string; echeance: string; grave: boolean } | null {
+    const ici = this.hiver?.ici;
+    if (!this.hiver || !ici?.couvert || !ici.pire) return null;
+    const premiere = ici.familles.find(f => f.famille === ici.pire);
+    const famille = this.hiver.legende.find(f => f.cle === ici.pire);
+    if (!premiere || !famille) return null;
+    return { libelle: famille.libelle.toLowerCase(), echeance: premiere.echeance,
+             grave: ici.pire === 'VERGLAS' || ici.pire === 'GRELE' };
   }
 
   /** Rafale la plus forte PRÉVUE sur la commune d'ici trois heures : son palier en clair et la

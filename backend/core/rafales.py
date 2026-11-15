@@ -77,32 +77,41 @@ VITESSE_MAX_PLAUSIBLE_MS = 110
 MS_EN_KMH = 3.6
 
 
-def _identifiant(calcul):
-    return f"{COUVERTURE}___{calcul.astimezone(datetime.timezone.utc):%Y-%m-%dT%H.%M.%SZ}_{SERIE}"
-
-
-def telecharger_grille(calcul, echeance):
-    """Fichier TIFF des rafales prévues par `calcul` pour `echeance`, ou None si ce calcul ne
-    la propose pas (pas encore paru, ou échéance hors de sa portée).
+def telecharger_couverture(couverture, calcul, echeance, serie="", hauteur_m=None):
+    """Fichier TIFF d'un champ de la prévision immédiate (service de valeurs, WCS) pour le
+    `calcul` et l'`echeance` donnés, sur l'emprise nationale, ou None si ce calcul ne le propose
+    pas (pas encore paru, ou échéance hors de sa portée). Sert aux rafales et aux types de
+    précipitation (core/precipitations_hiver.py).
 
     Le service annonce un type de contenu sans rapport avec ce qu'il envoie (« wmo-grib » pour
     un TIFF) : ce sont les premiers octets qui disent si l'on tient la grille."""
     cle = meteo_france.lire_cle()
     if cle is None:
         raise meteo_france.CleAbsente()
+    identifiant = f"{couverture}___{calcul.astimezone(datetime.timezone.utc):%Y-%m-%dT%H.%M.%SZ}"
+    if serie:
+        identifiant += f"_{serie}"
+    params = [
+        ("service", "WCS"), ("version", "2.0.1"), ("coverageid", identifiant),
+        ("subset", f"time({pluie._instant_api(echeance)})"),
+        ("subset", f"lat({SUD},{NORD})"), ("subset", f"long({OUEST},{EST})"),
+    ]
+    if hauteur_m is not None:
+        params.append(("subset", f"height({hauteur_m})"))
+    params.append(("format", "image/tiff"))
     reponse = meteo_france.avec_reprise(lambda: requests.get(
-        URL_WCS, headers={"apikey": cle}, timeout=DELAI_REPONSE_S, params=[
-            ("service", "WCS"), ("version", "2.0.1"), ("coverageid", _identifiant(calcul)),
-            ("subset", f"time({pluie._instant_api(echeance)})"),
-            ("subset", f"lat({SUD},{NORD})"), ("subset", f"long({OUEST},{EST})"),
-            ("subset", f"height({HAUTEUR_M})"), ("format", "image/tiff"),
-        ]))
+        URL_WCS, headers={"apikey": cle}, timeout=DELAI_REPONSE_S, params=params))
     if reponse.status_code in (400, 404):
         return None
     reponse.raise_for_status()
     if reponse.content[:4] not in (b"II*\x00", b"MM\x00*"):
         return None
     return reponse.content
+
+
+def telecharger_grille(calcul, echeance):
+    """Fichier TIFF des rafales prévues par `calcul` pour `echeance` (voir `telecharger_couverture`)."""
+    return telecharger_couverture(COUVERTURE, calcul, echeance, serie=SERIE, hauteur_m=HAUTEUR_M)
 
 
 # Étiquettes TIFF lues, et rien d'autre : largeur, hauteur, bits par valeur, compression,
@@ -168,35 +177,25 @@ def lire_tiff(octets):
     return valeurs.reshape(hauteur, largeur)
 
 
-def peindre(grille):
-    """Image PNG, en projection Mercator, d'une grille de rafales en m/s : une teinte par
-    palier de SEUILS_KMH, transparent en dessous du premier et là où la valeur manque."""
-    import numpy
+def peindre_rangs(rangs, teintes, opacites):
+    """Image PNG, en projection Mercator, d'une grille de rangs de palette (0 : rien à
+    dessiner ; n : la n-ième teinte). Commun aux rafales et aux types de précipitation."""
     from PIL import Image
 
-    hauteur, largeur = grille.shape
-    plausible = numpy.isfinite(grille) & (grille >= 0) & (grille <= VITESSE_MAX_PLAUSIBLE_MS)
-    kmh = numpy.where(plausible, grille, 0) * MS_EN_KMH
-    # 0 : rien à dessiner ; 1 à 6 : le palier atteint.
-    paliers = numpy.digitize(kmh, SEUILS_KMH).astype(numpy.uint8)
+    hauteur, largeur = rangs.shape
     ouest, sud, est, nord = EMPRISE_IMAGE
-    paliers = paliers[pluie.lignes_mercator(hauteur, largeur, sud, nord, ouest, est)]
-
-    image = Image.fromarray(paliers)        # niveaux de gris, que la palette change en couleurs
-    image.putpalette([0, 0, 0] + [composante for teinte in TEINTES for composante in teinte])
+    rangs = rangs[pluie.lignes_mercator(hauteur, largeur, sud, nord, ouest, est)]
+    image = Image.fromarray(rangs)        # niveaux de gris, que la palette change en couleurs
+    image.putpalette([0, 0, 0] + [composante for teinte in teintes for composante in teinte])
     sortie = io.BytesIO()
     # Rang 0 de la palette : entièrement transparent.
-    image.save(sortie, format="PNG", optimize=True, transparency=bytes((0,) + OPACITES))
+    image.save(sortie, format="PNG", optimize=True, transparency=bytes((0,) + tuple(opacites)))
     return sortie.getvalue()
 
 
-def preparer(octets):
-    return peindre(lire_tiff(octets))
-
-
-def palier_au_point(png, latitude, longitude):
-    """Palier de rafale peint à un endroit d'une image rendue par `peindre` : le seuil bas en
-    km/h (40, 60…), 0 en dessous du premier palier, None hors de l'image."""
+def rang_au_point(png, latitude, longitude):
+    """Rang de palette peint à un endroit d'une image rendue par `peindre_rangs`, ou None hors
+    de l'image."""
     from PIL import Image
 
     ouest, sud, est, nord = EMPRISE_IMAGE
@@ -206,8 +205,31 @@ def palier_au_point(png, latitude, longitude):
     haut, bas = pluie._mercator(nord), pluie._mercator(sud)
     colonne = min(image.width - 1, int((longitude - ouest) / (est - ouest) * image.width))
     ligne = min(image.height - 1, int((haut - pluie._mercator(latitude)) / (haut - bas) * image.height))
-    palier = image.getpixel((colonne, ligne))
-    return SEUILS_KMH[palier - 1] if palier else 0
+    return image.getpixel((colonne, ligne))
+
+
+def peindre(grille):
+    """Image PNG, en projection Mercator, d'une grille de rafales en m/s : une teinte par
+    palier de SEUILS_KMH, transparent en dessous du premier et là où la valeur manque."""
+    import numpy
+
+    plausible = numpy.isfinite(grille) & (grille >= 0) & (grille <= VITESSE_MAX_PLAUSIBLE_MS)
+    kmh = numpy.where(plausible, grille, 0) * MS_EN_KMH
+    # 0 : rien à dessiner ; 1 à 6 : le palier atteint.
+    return peindre_rangs(numpy.digitize(kmh, SEUILS_KMH).astype(numpy.uint8), TEINTES, OPACITES)
+
+
+def preparer(octets):
+    return peindre(lire_tiff(octets))
+
+
+def palier_au_point(png, latitude, longitude):
+    """Palier de rafale peint à un endroit d'une image rendue par `peindre` : le seuil bas en
+    km/h (40, 60…), 0 en dessous du premier palier, None hors de l'image."""
+    rang = rang_au_point(png, latitude, longitude)
+    if rang is None:
+        return None
+    return SEUILS_KMH[rang - 1] if rang else 0
 
 
 def legende():
