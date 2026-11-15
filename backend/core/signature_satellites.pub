@@ -10,3 +10,4 @@
 #     et ne fait ensuite confiance qu'a cette copie. Modifier ce fichier ne change donc rien sur
 #     un satellite deja installe : c'est voulu, sinon il suffirait de pousser une nouvelle cle
 #     pour prendre la main sur tous les satellites.
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOz96QykGr8Odvo4OXk4racvsn0j6P2oimXv4dYCnUDo signature-satellites-assista-crise
