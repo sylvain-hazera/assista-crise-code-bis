@@ -17,9 +17,12 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core import carburants, meteo_france, observations_meteo, sources_ouvertes, trafic_routier
+from core import (
+    carburants, meteo_france, observations_meteo, pluie, sources_ouvertes, trafic_routier,
+)
 from core.models import (
     CanalMeshCore, Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier,
+    ImagePluie,
     Institution, InstitutionType, MessageCanalMeshCore, ObservationMeteo, ReleveSourceOuverte,
     StationCarburant,
     VigilanceDiffusee, VigilanceMeteo, VignetteVigilanceMeteo,
@@ -691,6 +694,159 @@ class TestMesuresDesStations:
         assert 10 < corps["resultats"][1]["distance_km"] < 15
         assert corps["resultats"][0]["rafale_kmh"] == 85 and corps["resultats"][0]["vent_kmh"] is None
         assert corps["source"] == "Météo-France" and corps["emprise_connue"] is True
+
+
+# ── Pluie prévue ────────────────────────────────────────────────────────────────────────────
+
+def _png(largeur=155, hauteur=105, ligne_rouge=None):
+    """Image transparente aux proportions de l'emprise réelle (un pixel par dixième de degré),
+    avec éventuellement une ligne rouge opaque à la hauteur donnée."""
+    from PIL import Image
+
+    image = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
+    if ligne_rouge is not None:
+        for x in range(largeur):
+            image.putpixel((x, ligne_rouge), (255, 0, 0, 255))
+    sortie = io.BytesIO()
+    image.save(sortie, format="PNG")
+    return sortie.getvalue()
+
+
+def _reponse_image(contenu=None):
+    return mock.Mock(status_code=200, headers={"content-type": "image/png"},
+                     content=contenu or _png(), raise_for_status=lambda: None)
+
+
+def _reponse_erreur_xml():
+    """Ce que rend le service pour un calcul pas encore paru : 200, mais un document XML."""
+    return mock.Mock(status_code=200, headers={"content-type": "text/xml"},
+                     content=b"<ServiceExceptionReport/>", raise_for_status=lambda: None)
+
+
+@pytest.fixture
+def cle_meteo(tmp_path, monkeypatch):
+    fichier = tmp_path / "cle"
+    fichier.write_text("a.b.c")
+    monkeypatch.setenv("METEOFRANCE_CLE_API_FILE", str(fichier))
+
+
+class TestPluiePrevue:
+
+    def test_les_echeances_sont_les_quarts_d_heure_des_trois_heures_a_venir(self):
+        echeances = pluie.echeances_voulues(MAINTENANT)        # 9 h 30 TU
+
+        assert len(echeances) == 13
+        assert echeances[0] == MAINTENANT and echeances[1] - echeances[0] == datetime.timedelta(minutes=15)
+        assert echeances[-1] == MAINTENANT + datetime.timedelta(hours=3)
+        # À 9 h 44, le quart d'heure en cours reste celui de 9 h 30.
+        assert pluie.echeances_voulues(MAINTENANT + datetime.timedelta(minutes=14))[0] == MAINTENANT
+
+    def test_la_reprojection_garde_les_bords_et_deplace_le_milieu_vers_le_nord(self):
+        """En latitude/longitude, la ligne du milieu est à 46,25° ; en Mercator, le milieu de
+        l'image est plus au nord (46,5° environ). Une pluie située à 46,25° doit donc se
+        retrouver SOUS le milieu de l'image de sortie -- c'est toute la correction."""
+        from PIL import Image
+
+        # Ligne 52 sur 105 : le milieu de l'image source, soit 46,25° de latitude.
+        sortie = Image.open(io.BytesIO(pluie.vers_mercator(_png(ligne_rouge=52)))).convert("RGBA")
+
+        rouges = [y for y in range(sortie.height) if sortie.getpixel((5, y))[3] > 0]
+        assert rouges, "la pluie a disparu à la reprojection"
+        milieu = sum(rouges) / len(rouges)
+        assert sortie.height / 2 < milieu < sortie.height * 0.56
+        # Pixels carrés à l'écran : l'image s'allonge avec la latitude.
+        assert sortie.width == 155 and sortie.height > 105
+
+    def test_la_reprojection_garde_la_transparence(self):
+        from PIL import Image
+
+        sortie = Image.open(io.BytesIO(pluie.vers_mercator(_png(ligne_rouge=10)))).convert("RGBA")
+
+        assert sortie.getpixel((0, sortie.height - 1))[3] == 0
+        assert max(sortie.getpixel((0, y))[3] for y in range(sortie.height)) == 255
+
+    def test_la_cle_part_en_en_tete_et_l_emprise_est_nationale(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()) as appel:
+            pluie.telecharger_image(MAINTENANT, MAINTENANT)
+
+        options = appel.call_args.kwargs
+        assert options["headers"] == {"apikey": "a.b.c"}
+        assert options["params"]["bbox"] == "41.0,-5.5,51.5,10.0"       # latitude d'abord
+        assert options["params"]["reference_time"] == "2026-11-15T09:30:00Z"
+        assert "apikey" not in options["params"]
+
+    def test_une_reponse_qui_n_est_pas_une_image_vaut_pas_d_image(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_erreur_xml()):
+            assert pluie.telecharger_image(MAINTENANT, MAINTENANT) is None
+
+    @pytest.mark.django_db
+    def test_le_releve_recule_jusqu_au_dernier_calcul_paru(self, cle_meteo):
+        def service(_adresse, params=None, **_reste):
+            # Le calcul de 9 h n'est pas encore paru ; celui de 8 h répond.
+            return _reponse_erreur_xml() if params["reference_time"] == "2026-11-15T09:00:00Z" else _reponse_image()
+
+        with mock.patch("core.pluie.requests.get", side_effect=service):
+            assert pluie.relever(MAINTENANT) == 13
+
+        calculs = set(ImagePluie.objects.values_list("calcul", flat=True))
+        assert calculs == {datetime.datetime(2026, 11, 15, 8, 0, tzinfo=UTC)}
+        assert ImagePluie.objects.order_by("echeance").first().echeance == MAINTENANT
+
+    @pytest.mark.django_db
+    def test_ce_qui_est_deja_copie_n_est_pas_redemande(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()) as appel:
+            pluie.relever(MAINTENANT)
+            premier_passage = appel.call_count
+            pluie.relever(MAINTENANT + datetime.timedelta(minutes=10))
+
+        assert premier_passage == 13
+        # Un seul appel au second passage : celui qui vérifie quel calcul est le plus récent.
+        assert appel.call_count == premier_passage + 1
+
+    @pytest.mark.django_db
+    def test_un_nouveau_calcul_remplace_les_images_et_les_echeances_passees_partent(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()):
+            pluie.relever(MAINTENANT)
+            plus_tard = MAINTENANT + datetime.timedelta(hours=1)
+            pluie.relever(plus_tard)
+
+        images = list(ImagePluie.objects.order_by("echeance"))
+        # Le quart d'heure précédent est gardé vingt minutes (on vient peut-être de le regarder) ;
+        # tout ce qui est plus ancien est parti.
+        assert images[0].echeance == plus_tard - datetime.timedelta(minutes=15)
+        assert images[-1].echeance == plus_tard + datetime.timedelta(hours=3) and len(images) == 14
+        # Tout ce qui est à venir vient du nouveau calcul, y compris les échéances déjà copiées.
+        assert {i.calcul for i in images if i.echeance >= plus_tard} == {
+            datetime.datetime(2026, 11, 15, 10, 0, tzinfo=UTC)}
+
+    @pytest.mark.django_db
+    def test_sans_aucun_calcul_la_copie_precedente_reste(self, cle_meteo):
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_image()):
+            pluie.relever(MAINTENANT)
+
+        with mock.patch("core.pluie.requests.get", return_value=_reponse_erreur_xml()):
+            with pytest.raises(ValueError):
+                pluie.relever(MAINTENANT + datetime.timedelta(minutes=10))
+
+        assert ImagePluie.objects.count() == 13
+
+    @pytest.mark.django_db
+    def test_la_carte_lit_les_echeances_et_les_images_sans_appel_sortant(self, api_client):
+        echeance = timezone.now().replace(second=0, microsecond=0)
+        ImagePluie.objects.create(echeance=echeance, calcul=echeance, image=_png(), releve_le=timezone.now())
+
+        with mock.patch("core.pluie.requests.get") as appel:
+            liste = api_client.get(reverse("pluie_prevue")).json()
+            image = api_client.get(reverse("pluie_prevue_image"), {"echeance": liste["echeances"][0]})
+            absente = api_client.get(reverse("pluie_prevue_image"), {"echeance": "2020-01-01T00:00:00Z"})
+
+        appel.assert_not_called()
+        assert liste["coins"] == [[-5.5, 51.5], [10.0, 51.5], [10.0, 41.0], [-5.5, 41.0]]
+        assert liste["source"] == "Météo-France" and len(liste["echeances"]) == 1
+        assert image.status_code == 200 and image["Content-Type"] == "image/png"
+        assert image.content == _png()
+        assert absente.status_code == 404
+        assert api_client.get(reverse("pluie_prevue_image"), {"echeance": "pas une date"}).status_code == 404
 
 
 # ── Le relevé planifié ──────────────────────────────────────────────────────────────────────

@@ -15,6 +15,33 @@
       </div>
     }
 
+    @if (layerVisibility.pluie && pluie) {
+      <!-- Réglette de temps de la pluie prévue. C'est une PRÉVISION recalée sur les radars,
+           pas l'image radar : le libellé le dit, avec l'heure du calcul. -->
+      <div class="pluie-temps" role="group" aria-label="Pluie prévue : choisir l'heure">
+        @if (pluie.echeances.length) {
+          <button type="button" class="pluie-lecture" (click)="basculerAnimationPluie()"
+                  [attr.aria-label]="animationPluie ? 'Arrêter l\'animation' : 'Animer la pluie prévue'">
+            <span class="material-icons">{{ animationPluie ? 'pause' : 'play_arrow' }}</span>
+          </button>
+          <div class="pluie-reglette">
+            <div class="pluie-heure">
+              <strong>{{ echeancePluie | date:'HH:mm' }}</strong> <span>{{ ecartPluie }}</span>
+            </div>
+            <input type="range" min="0" [max]="pluie.echeances.length - 1" step="1"
+                   [ngModel]="indicePluie" (ngModelChange)="choisirEcheancePluie($event)"
+                   aria-label="Heure de la pluie prévue">
+            <div class="pluie-note" [class.ancien]="pluie.perime">
+              Pluie prévue — calcul de {{ pluie.calcul | date:'HH:mm' }}, {{ pluie.source }}
+              @if (pluie.perime) { · <strong>relevé ancien</strong> }
+            </div>
+          </div>
+        } @else {
+          <div class="pluie-note ancien">Aucune image de pluie prévue n'a encore été relevée.</div>
+        }
+      </div>
+    }
+
     @if (!layersPanelOpen) {
       <button type="button" class="layer-toggle-fab" (click)="layersPanelOpen = true" title="Afficher les calques">
         <span class="material-icons">layers</span>
@@ -66,6 +93,11 @@
         <span class="layer-dot routes-dot"></span>
         Routes : fermetures, accidents, travaux
         @if (layerVisibility.evenementsRoutiers && veilleTronquee.routes) { <small class="layer-note">zoomez pour tout voir</small> }
+      </label>
+      <label class="layer-toggle-item" title="Pluie prévue par Météo-France dans les trois heures, par quart d'heure. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.pluie" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot pluie-dot"></span>
+        Pluie prévue (3 h)
       </label>
       <label class="layer-toggle-item" title="Température, vent, pluie mesurés par les stations Météo-France. Orange : rafale ou pluie forte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.stationsMeteo" (ngModelChange)="onLayerToggle()">

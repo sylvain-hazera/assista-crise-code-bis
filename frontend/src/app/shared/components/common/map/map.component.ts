@@ -22,7 +22,7 @@ import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
-import { EvenementRoutier, ObservationMeteo, StationCarburant } from '../../../models/veille.model';
+import { EvenementRoutier, ObservationMeteo, PluiePrevue, StationCarburant } from '../../../models/veille.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -47,6 +47,8 @@ interface LayerVisibility {
   evenementsRoutiers: boolean;
   stationsCarburant: boolean;
   stationsMeteo: boolean;
+  /** Pluie prévue dans les trois heures (images nationales, voir VeilleService.pluiePrevue). */
+  pluie: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -100,6 +102,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     evenementsRoutiers: false,
     stationsCarburant: false,
     stationsMeteo: false,
+    pluie: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -180,6 +183,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('evenements-routiers-layer', this.layerVisibility.evenementsRoutiers);
     this.applyLayerVisibility('stations-carburant-layer', this.layerVisibility.stationsCarburant);
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
+    this.basculerPluie();
     this.rafraichirVeille();
   }
 
@@ -231,6 +235,113 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         error: () => {},
       });
     }
+  }
+
+  // ── Pluie prévue : une image nationale par quart d'heure, et une réglette de temps ──────
+
+  pluie: PluiePrevue | null = null;
+  /** Rang de l'échéance affichée dans `pluie.echeances`. */
+  indicePluie = 0;
+  animationPluie: ReturnType<typeof setInterval> | null = null;
+  private rafraichissementPluie: ReturnType<typeof setInterval> | null = null;
+
+  /** Appelé à chaque changement de calque : charge la pluie à la première activation, puis
+   * la relit toutes les cinq minutes tant que le calque est coché. */
+  private basculerPluie(): void {
+    const visible = this.layerVisibility.pluie;
+    this.applyLayerVisibility('pluie-layer', visible);
+    if (!visible) {
+      this.arreterAnimationPluie();
+      if (this.rafraichissementPluie) { clearInterval(this.rafraichissementPluie); this.rafraichissementPluie = null; }
+      return;
+    }
+    if (this.rafraichissementPluie) return;
+    this.chargerPluie();
+    this.rafraichissementPluie = setInterval(() => this.chargerPluie(), 5 * 60 * 1000);
+  }
+
+  private chargerPluie(): void {
+    this.veilleService.pluiePrevue().subscribe({
+      next: (pluie) => {
+        const affichee = this.pluie?.echeances[this.indicePluie];
+        this.pluie = pluie;
+        // On reste sur l'échéance regardée si elle existe encore ; sinon, la plus proche de
+        // maintenant.
+        const garde = affichee ? pluie.echeances.indexOf(affichee) : -1;
+        this.indicePluie = garde >= 0 ? garde : this.indicePluieActuelle();
+        this.afficherPluie();
+      },
+      error: () => {},
+    });
+  }
+
+  /** Rang de l'échéance la plus proche de l'heure qu'il est. */
+  indicePluieActuelle(): number {
+    const echeances = this.pluie?.echeances ?? [];
+    let meilleur = 0;
+    echeances.forEach((echeance, i) => {
+      if (Math.abs(new Date(echeance).getTime() - Date.now())
+          < Math.abs(new Date(echeances[meilleur]).getTime() - Date.now())) meilleur = i;
+    });
+    return meilleur;
+  }
+
+  get echeancePluie(): string | null {
+    return this.pluie?.echeances[this.indicePluie] ?? null;
+  }
+
+  /** « maintenant », « dans 45 min », « dans 1 h 30 », « il y a 15 min ». */
+  get ecartPluie(): string {
+    const echeance = this.echeancePluie;
+    if (!echeance) return '';
+    const minutes = Math.round((new Date(echeance).getTime() - Date.now()) / 60000);
+    if (Math.abs(minutes) < 8) return 'maintenant';
+    const absolu = Math.abs(minutes);
+    const duree = absolu < 60 ? `${absolu} min`
+      : `${Math.floor(absolu / 60)} h${absolu % 60 ? ' ' + String(absolu % 60).padStart(2, '0') : ''}`;
+    return minutes > 0 ? `dans ${duree}` : `il y a ${duree}`;
+  }
+
+  choisirEcheancePluie(indice: number): void {
+    this.indicePluie = Math.max(0, Math.min((this.pluie?.echeances.length ?? 1) - 1, +indice));
+    this.afficherPluie();
+  }
+
+  basculerAnimationPluie(): void {
+    if (this.animationPluie) { this.arreterAnimationPluie(); return; }
+    this.animationPluie = setInterval(() => {
+      const nombre = this.pluie?.echeances.length ?? 0;
+      if (nombre < 2) return;
+      this.choisirEcheancePluie((this.indicePluie + 1) % nombre);
+    }, 900);
+  }
+
+  private arreterAnimationPluie(): void {
+    if (this.animationPluie) { clearInterval(this.animationPluie); this.animationPluie = null; }
+  }
+
+  /** Pose l'image de l'échéance choisie sur la carte, SOUS les noms de lieux du fond de carte
+   * (et donc sous tous nos calques) : la pluie ne doit rien masquer. */
+  private afficherPluie(): void {
+    const echeance = this.echeancePluie;
+    if (!echeance || !this.pluie) return;
+    const url = this.veilleService.imagePluieUrl(echeance);
+    const coordinates = this.pluie.coins as [[number, number], [number, number], [number, number], [number, number]];
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const source = this.map.getSource('pluie') as maplibregl.ImageSource | undefined;
+      if (source) {
+        source.updateImage({ url, coordinates });
+        return;
+      }
+      this.map.addSource('pluie', { type: 'image', url, coordinates });
+      const premierTexte = this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+      this.map.addLayer({
+        id: 'pluie-layer', type: 'raster', source: 'pluie',
+        layout: { visibility: this.layerVisibility.pluie ? 'visible' : 'none' },
+        paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 },
+      }, premierTexte);
+    });
   }
 
   private rafraichirStationsMeteo(bbox: [number, number, number, number]): void {
@@ -473,6 +584,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.subscription) this.subscription.unsubscribe();
     if (this.resizeObserver) this.resizeObserver.disconnect();
+    this.arreterAnimationPluie();
+    if (this.rafraichissementPluie) clearInterval(this.rafraichissementPluie);
     if (this.map) this.map.remove();
   }
 

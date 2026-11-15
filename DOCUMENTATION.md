@@ -2795,14 +2795,15 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
 
 ### 7.2.1 Veille du territoire : sources ouvertes de l'État (15/11/2026)
 
-Quatre sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
-les alertes. Page : `/admin/veille` ; couches « Routes », « Stations météo » et « Stations de
-carburant » sur la carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
+Cinq sources publiques sont **copiées en base** par le serveur, puis lues par les écrans et
+les alertes. Page : `/admin/veille` ; couches « Pluie prévue », « Stations météo », « Routes »
+et « Stations de carburant » sur la carte ; réglage de l'annonce dans la fiche d'une institution (onglet « Alertes »).
 
 | Source | Ce qu'elle apporte | Accès | Rythme | Module |
 |---|---|---|---|---|
 | Météo-France, Vigilance | couleur par département et par phénomène, aujourd'hui et demain ; bulletins ; cartes nationales | clé du portail `portail-api.meteofrance.fr` | 10 min | `core/meteo_france.py` |
 | Météo-France, Observations | température, vent, rafales, pluie de ~2 000 stations, **outre-mer compris** ; cumul de pluie sur 24 h | même clé | 10 min | `core/observations_meteo.py` |
+| Météo-France, prévision immédiate (AROME-PI, WMS) | **pluie prévue** par quart d'heure sur 3 h, images nationales ; métropole | même clé | 10 min (12 images par heure) | `core/pluie.py` |
 | Bison Futé (DATEX II) | fermetures, accidents, obstacles, travaux du réseau routier **national** | aucune clé | 10 min | `core/trafic_routier.py` |
 | Prix des carburants, flux instantané | stations, carburants disponibles, **ruptures** | aucune clé | 30 min | `core/carburants.py` |
 
@@ -2813,7 +2814,7 @@ carburant » sur la carte ; réglage de l'annonce dans la fiche d'une institutio
    déclenche d'appel sortant, et rien de ce qui part ne désigne une personne, une commune ou
    une institution. Il n'y a donc aucune fuite possible vers l'extérieur.
 2. **Copie en base** (`VigilanceMeteo`, `VignetteVigilanceMeteo`, `ObservationMeteo`,
-   `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
+   `ImagePluie`, `EvenementRoutier`, `StationCarburant`) : données publiques, partagées PROD/DEMO, non chiffrées — rien de
    personnel. Routes et stations sont des **instantanés** : ce qui quitte le flux quitte la
    table. Un flux vide ou tronqué ne remplace pas la copie précédente.
 3. **Une copie ancienne se dit ancienne.** `ReleveSourceOuverte` garde l'heure du dernier
@@ -2841,6 +2842,19 @@ nationale : le serveur l'additionne heure après heure, et `heures_cumulees` dit
 d'heures il porte (il est partiel pendant les premières 24 heures, et après toute interruption
 du relevé). Les seuils qui font ressortir une ligne (80 km/h de rafale, 20 mm en une heure,
 50 mm cumulés) sont de l'affichage, pas une alerte : l'alerte reste celle de la vigilance.
+
+**Pluie prévue.** Ce n'est pas l'image radar : le radar observé n'est publié qu'en BUFR et
+HDF5, que le serveur ne lit pas. C'est la **prévision immédiate** (AROME-PI), recalée chaque
+heure sur les radars, dans la palette des images radar. La carte l'affiche comme « pluie
+prévue », avec l'heure du calcul. Le serveur demande **une image nationale par échéance**
+(jamais une tuile à la demande : déplacer la carte ne déclenche aucun appel sortant), la remet
+en projection Mercator — le service ne rend que du latitude/longitude, ce qui décalerait la
+pluie d'une quarantaine de kilomètres au centre du pays — et la garde en couleurs indexées
+(~120 Ko). Sur la carte, une réglette choisit le quart d'heure et peut animer la séquence ;
+l'image est posée sous les noms de lieux, pour ne rien masquer.
+
+**Hors saison** : la « météo des forêts » (danger de feu) n'est publiée par Météo-France que
+de juin à septembre ; son connecteur reste à écrire quand il y aura des données à lire.
 
 **Clé Météo-France** : secret Docker `meteofrance_cle_api` (fichier
 `meteofrance_cle_api.txt` du dossier des secrets), monté dans `ac_backend` seulement. C'est un

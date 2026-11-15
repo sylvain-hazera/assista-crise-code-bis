@@ -135,6 +135,20 @@ export interface ObservationMeteo {
 
 export interface ObservationsMeteo extends EnteteVeille { resultats: ObservationMeteo[]; }
 
+/** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
+ * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
+ * les radars, pas l'image radar elle-même — l'écran doit le dire. */
+export interface PluiePrevue {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  /** Heure du calcul qui a produit les images. */
+  calcul: string | null;
+  /** Haut-gauche, haut-droite, bas-droite, bas-gauche : [longitude, latitude]. */
+  coins: [number, number][];
+  echeances: string[];
+}
+
 /** Réglage de l'annonce de vigilance d'une institution (voir ConfigurationAlerteVigilance). */
 export interface ConfigurationAlerteVigilance {
   id: number;

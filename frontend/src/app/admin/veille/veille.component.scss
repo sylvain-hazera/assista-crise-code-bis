@@ -150,6 +150,16 @@ table.mesures {
   tr.remarquable td { background: var(--ac-amber-bg, #fef3c7); }
 }
 
+// Renvoi vers la carte, entre la vigilance et les blocs du territoire.
+.vers-la-carte {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 0 0 20px; padding: 12px 16px; border-radius: 8px; line-height: 1.5;
+  border: 1px solid var(--ac-border, #e5e7eb); background: var(--ac-surface-2, #f9fafb);
+  color: var(--ac-text, #111827);
+  .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
+  a { color: var(--brand-primary-lisible, var(--brand-primary)); font-weight: 600; }
+}
+
 // ── Rayon ──
 .rayon {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px;

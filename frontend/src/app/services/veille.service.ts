@@ -4,8 +4,8 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationAlerteVigilance, EvenementsRoutiers, ObservationsMeteo, StationsCarburant,
-  VigilanceMeteo,
+  ConfigurationAlerteVigilance, EvenementsRoutiers, ObservationsMeteo, PluiePrevue,
+  StationsCarburant, VigilanceMeteo,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -47,6 +47,16 @@ export class VeilleService {
   /** Dernières mesures des stations Météo-France de l'emprise. */
   observationsMeteo(emprise: EmpriseVeille = {}): Observable<ObservationsMeteo> {
     return this.http.get<ObservationsMeteo>(`${this.api}/observations-meteo/`, { params: this.params(emprise) });
+  }
+
+  /** Quarts d'heure pour lesquels une image de pluie prévue est disponible. */
+  pluiePrevue(): Observable<PluiePrevue> {
+    return this.http.get<PluiePrevue>(`${this.api}/pluie-prevue/`);
+  }
+
+  /** Adresse de l'image d'une échéance, servie par notre serveur. */
+  imagePluieUrl(echeance: string): string {
+    return `${this.api}/pluie-prevue/image/?echeance=${encodeURIComponent(echeance)}`;
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

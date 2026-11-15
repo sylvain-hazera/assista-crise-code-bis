@@ -2576,6 +2576,24 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class ImagePluie(models.Model):
+    """Image nationale de la pluie prévue pour un quart d'heure donné (prévision immédiate de
+    Météo-France), déjà mise en projection Mercator pour être posée sur la carte -- voir
+    core/pluie.py. Une douzaine de lignes au plus : les échéances passées sont retirées.
+
+    Donnée publique partagée PROD/DEMO. En base et non dans un cache, pour la même raison que
+    `VignetteVigilanceMeteo` : la tâche planifiée et le serveur web lisent la même copie."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    # Heure de référence du calcul qui a produit cette image.
+    calcul = models.DateTimeField()
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Pluie prévue pour {self.echeance:%d/%m %H:%M}"
+
+
 class VigilanceMeteo(models.Model):
     """Dernière vigilance Météo-France connue pour un département (ou « FRA » pour la France
     entière), copiée par `verifier_vigilance_meteo` -- voir core/meteo_france.py.

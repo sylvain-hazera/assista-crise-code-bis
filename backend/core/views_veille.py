@@ -19,10 +19,10 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import meteo_france, sources_ouvertes, trafic_routier
+from . import meteo_france, pluie, sources_ouvertes, trafic_routier
 from .models import (
-    Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier, Institution,
-    ObservationMeteo, StationCarburant, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
+    Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier, ImagePluie,
+    Institution, ObservationMeteo, StationCarburant, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
 from .serializers import ConfigurationAlerteVigilanceSerializer, VigilanceMeteoSerializer
@@ -299,6 +299,45 @@ class ObservationsMeteoView(APIView):
             resultats.sort(key=lambda r: r["distance_km"])
         return Response({**entete, "emprise_connue": True,
                          "tronque": len(stations) > RESULTATS_MAX, "resultats": resultats})
+
+
+class PluiePrevueView(APIView):
+    """GET /api/pluie-prevue/ : les quarts d'heure pour lesquels une image de pluie prévue est
+    disponible, et les quatre coins où la poser sur la carte."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ouest, sud, est, nord = pluie.EMPRISE
+        images = list(ImagePluie.objects.order_by("echeance").values("echeance", "calcul"))
+        return Response({
+            **sources_ouvertes.resume("PLUIE_PREVISION"),
+            "calcul": max((i["calcul"] for i in images), default=None),
+            # Ordre attendu par la carte : haut-gauche, haut-droite, bas-droite, bas-gauche.
+            "coins": [[ouest, nord], [est, nord], [est, sud], [ouest, sud]],
+            "echeances": [i["echeance"] for i in images],
+        })
+
+
+class ImagePluieView(APIView):
+    """GET /api/pluie-prevue/image/?echeance=… : l'image d'une échéance (PNG transparent).
+
+    Sans authentification, comme la carte de vigilance : une source d'image de la carte
+    n'envoie pas le jeton de session, et la donnée est publique. Relit la copie en base."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from django.utils.dateparse import parse_datetime
+
+        echeance = parse_datetime(request.query_params.get("echeance") or "")
+        image = ImagePluie.objects.filter(pk=echeance).first() if echeance else None
+        if image is None:
+            return HttpResponseNotFound()
+        reponse = HttpResponse(bytes(image.image), content_type="image/png")
+        # Une échéance d'un calcul donné ne change pas : dix minutes de cache suffisent à
+        # rendre l'animation fluide, et laissent passer le calcul suivant.
+        reponse["Cache-Control"] = "public, max-age=600"
+        return reponse
 
 
 class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

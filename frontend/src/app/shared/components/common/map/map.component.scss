@@ -132,6 +132,36 @@
 .routes-dot { background: #c81e1e; }
 .stations-dot { background: #0f766e; }
 .meteo-dot { background: #2563eb; }
+// Dégradé de la palette radar, pour que la pastille se lise comme « pluie » et non comme un point.
+.pluie-dot { background: linear-gradient(90deg, #7c3aed, #22d3ee, #facc15); }
+
+// Réglette de temps de la pluie prévue, en bas de la carte.
+.pluie-temps {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+  z-index: 5; width: min(440px, calc(100% - 24px));
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--ac-surface, white); color: var(--ac-text, #1f2937);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+
+  .pluie-lecture {
+    flex: none; width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--brand-primary); color: #fff;
+    &:focus-visible { outline: 2px solid var(--ac-text, #1f2937); outline-offset: 2px; }
+  }
+  .pluie-reglette { flex: 1; min-width: 0; }
+  .pluie-heure {
+    display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums;
+    strong { font-size: 1.05rem; }
+    span { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+  }
+  input[type="range"] { width: 100%; margin: 2px 0; accent-color: var(--brand-primary); }
+  .pluie-note {
+    font-size: .72rem; color: var(--ac-text-muted, #6b7280);
+    &.ancien { color: var(--ac-amber-text, #92400e); }
+  }
+}
 // Dit qu'une couche est incomplète à cette échelle, sans alourdir la légende.
 .layer-note { margin-left: 4px; font-size: .72rem; font-style: italic; opacity: .8; }
 .centres-hebergement-dot { background: #059669; }
