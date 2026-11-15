@@ -239,3 +239,20 @@
 .publier-version .mono, .versions-signees .mono {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
+
+// Ce que la page a retrouvé dans le texte collé — dit pourquoi « Publier » reste grisé.
+.reconnu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  font-size: .85rem;
+
+  .mono { overflow-wrap: anywhere; }
+}
+.reconnu-oui { color: var(--ac-green-text, #15803d); }
+.reconnu-oui::before { content: "✓ "; }
+.reconnu-non { color: var(--ac-red-text, #b91c1c); }
+.reconnu-non::before { content: "✗ "; }

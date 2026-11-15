@@ -116,23 +116,58 @@ describe('SatellitesComponent — mises à jour', () => {
   });
 
   describe('publier une version', () => {
-    it("refuse un numéro incomplet ou un bloc qui n'est pas une signature", () => {
-      composant.nouvelleVersion = { commit: 'abc1234', signature: '-----BEGIN SSH SIGNATURE-----', libelle: '' };
+    const SIGNATURE = '-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAA\nAQAAADMAAAAL\n=\n-----END SSH SIGNATURE-----';
+    /** Ce qu'affiche signer-version.sh, tel qu'un terminal de téléphone le rend. */
+    const AFFICHAGE = `================\nNumero de version :\n${COMMIT}\n\nSignature :\n${SIGNATURE}\n=================\n`;
+
+    it("refuse un numéro incomplet ou un bloc qui n'est pas une signature, et dit lequel manque", () => {
+      composant.nouvelleVersion = { colle: `abc1234\n${SIGNATURE}`, libelle: '' };
+      expect(composant.commitReconnu).toBeNull();
+      expect(composant.signatureReconnue).not.toBeNull();
       expect(composant.peutPublier).toBeFalse();
-      composant.nouvelleVersion = { commit: COMMIT, signature: 'bonjour', libelle: '' };
+
+      composant.nouvelleVersion = { colle: `${COMMIT}\nbonjour`, libelle: '' };
+      expect(composant.commitReconnu).toBe(COMMIT);
+      expect(composant.signatureReconnue).toBeNull();
+      expect(composant.signatureTronquee).toBeFalse();
       expect(composant.peutPublier).toBeFalse();
+
       composant.publierVersion();
       http.expectNone(`${api}/versions-satellite/`);
     });
 
-    it('envoie le numéro en minuscules, sans espaces, et affiche le refus du serveur', () => {
-      composant.nouvelleVersion = {
-        commit: `  ${COMMIT.toUpperCase()} `, signature: '-----BEGIN SSH SIGNATURE-----\nxx', libelle: ' A ',
-      };
+    it('signale une signature dont la fin manque', () => {
+      composant.nouvelleVersion = { colle: `${COMMIT}\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH`, libelle: '' };
+      expect(composant.signatureTronquee).toBeTrue();
+      expect(composant.commitReconnu).toBe(COMMIT);
+      expect(composant.peutPublier).toBeFalse();
+    });
+
+    it("retrouve numéro et signature dans tout l'affichage du script collé d'un bloc", () => {
+      composant.nouvelleVersion = { colle: AFFICHAGE, libelle: '' };
+      expect(composant.commitReconnu).toBe(COMMIT);
+      expect(composant.signatureReconnue).toBe(SIGNATURE);
       expect(composant.peutPublier).toBeTrue();
+    });
+
+    it('recolle un numéro coupé en deux lignes et accepte les majuscules', () => {
+      const coupe = `${COMMIT.slice(0, 25).toUpperCase()}\n ${COMMIT.slice(25)} \n${SIGNATURE}`;
+      composant.nouvelleVersion = { colle: coupe, libelle: '' };
+      expect(composant.commitReconnu).toBe(COMMIT);
+    });
+
+    it('ne prend pas pour numéro une suite de 40 caractères située dans la signature', () => {
+      const piege = `-----BEGIN SSH SIGNATURE-----\n${'a'.repeat(40)}\n-----END SSH SIGNATURE-----`;
+      composant.nouvelleVersion = { colle: piege, libelle: '' };
+      expect(composant.commitReconnu).toBeNull();
+    });
+
+    it('envoie le numéro et la signature retrouvés, et affiche le refus du serveur', () => {
+      composant.nouvelleVersion = { colle: AFFICHAGE, libelle: ' A ' };
       composant.publierVersion();
       const requete = http.expectOne(r => r.method === 'POST' && r.url === `${api}/versions-satellite/`);
       expect(requete.request.body.commit).toBe(COMMIT);
+      expect(requete.request.body.signature).toBe(SIGNATURE);
       expect(requete.request.body.libelle).toBe('A');
       requete.flush({ error: 'La signature ne correspond pas à cette version.' },
         { status: 400, statusText: 'Bad Request' });

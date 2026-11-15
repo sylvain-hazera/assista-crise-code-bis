@@ -103,8 +103,11 @@ export class SatellitesComponent implements OnInit {
   /** Faux = le serveur n'a aucune clé publique : rien ne peut être publié. */
   cleConfiguree = true;
   estAdministrateur = false;
-  /** Saisie de publication : ce qu'affiche `scripts/satellites/signer-version.sh`. */
-  nouvelleVersion = { commit: '', signature: '', libelle: '' };
+  /** Saisie de publication : TOUT ce qu'affiche `scripts/satellites/signer-version.sh`, collé
+   * d'un bloc. La page y retrouve le numéro et la signature : deux champs à remplir
+   * séparément se sont révélés impraticables au téléphone (15/11/2026) — un espace collé
+   * avant le numéro suffisait à le tronquer, et le bouton restait grisé sans explication. */
+  nouvelleVersion = { colle: '', libelle: '' };
   publicationEnCours = false;
   /** Satellite dont on regarde l'historique, et cet historique. */
   historiqueDe: Satellite | null = null;
@@ -246,20 +249,56 @@ export class SatellitesComponent implements OnInit {
     return 'statut-inconnu';
   }
 
+  private static readonly BLOC_SIGNATURE =
+    /-----BEGIN SSH SIGNATURE-----[\s\S]*?-----END SSH SIGNATURE-----/;
+
+  /** Le bloc de signature retrouvé dans ce qui a été collé, ou null. Les retours à la ligne
+   * ajoutés par un terminal étroit sont laissés tels quels : le serveur les ignore. */
+  get signatureReconnue(): string | null {
+    return this.nouvelleVersion.colle.match(SatellitesComponent.BLOC_SIGNATURE)?.[0] ?? null;
+  }
+
+  /** Vrai si une signature a été commencée mais que sa fin manque (collage tronqué). */
+  get signatureTronquee(): boolean {
+    return !this.signatureReconnue && this.nouvelleVersion.colle.includes('BEGIN SSH SIGNATURE');
+  }
+
+  /** Le numéro de version (40 caractères hexadécimaux) retrouvé hors de la signature, ou
+   * null. Un numéro coupé en deux lignes par un terminal étroit est recollé. */
+  get commitReconnu(): string | null {
+    const hors = this.nouvelleVersion.colle
+      .replace(SatellitesComponent.BLOC_SIGNATURE, '\n')
+      .replace(/-----BEGIN SSH SIGNATURE-----[\s\S]*$/, '\n')
+      .toLowerCase();
+    const entier = hors.match(/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/);
+    if (entier) return entier[0];
+    let suite = '';
+    for (const ligne of hors.split('\n').map(l => l.trim())) {
+      if (/^[0-9a-f]+$/.test(ligne)) {
+        suite += ligne;
+        if (suite.length === 40) return suite;
+        if (suite.length > 40) suite = '';
+      } else {
+        suite = '';
+      }
+    }
+    return null;
+  }
+
   get peutPublier(): boolean {
-    return /^[0-9a-f]{40}$/.test(this.nouvelleVersion.commit.trim().toLowerCase())
-      && this.nouvelleVersion.signature.includes('BEGIN SSH SIGNATURE');
+    return !!this.commitReconnu && !!this.signatureReconnue;
   }
 
   publierVersion(): void {
     if (!this.peutPublier) return;
     this.publicationEnCours = true;
     this.errorMessage = '';
-    const v = this.nouvelleVersion;
-    this.service.publierVersion(v.commit.trim().toLowerCase(), v.signature.trim(), v.libelle.trim()).subscribe({
+    this.service.publierVersion(
+      this.commitReconnu!, this.signatureReconnue!, this.nouvelleVersion.libelle.trim(),
+    ).subscribe({
       next: () => {
         this.publicationEnCours = false;
-        this.nouvelleVersion = { commit: '', signature: '', libelle: '' };
+        this.nouvelleVersion = { colle: '', libelle: '' };
         this.messageSucces = 'Version publiée : signature vérifiée.';
         this.chargerVersions();
         this.load();

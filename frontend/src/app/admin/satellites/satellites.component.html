@@ -263,20 +263,33 @@
   @if (estAdministrateur && !isDemo && cleConfiguree) {
     <form class="publier-version" (ngSubmit)="publierVersion()">
       <p class="page-hint">
-        Sur votre poste : <code>scripts/satellites/signer-version.sh</code>, puis collez ici ce
-        qu'il affiche.
+        Sur votre poste : <code>scripts/satellites/signer-version.sh</code>, puis collez ici
+        <strong>tout</strong> ce qu'il affiche, d'un seul bloc. La page y retrouve le numéro de
+        version et la signature.
       </p>
       <label>
-        Numéro de version (les 40 caractères)
-        <input type="text" name="commit" class="mono" maxlength="40" autocomplete="off"
-               [(ngModel)]="nouvelleVersion.commit">
+        Ce qu'affiche le script
+        <textarea name="colle" class="mono" rows="9" autocomplete="off" autocapitalize="off"
+                  autocorrect="off" spellcheck="false"
+                  placeholder="Numero de version :&#10;…&#10;-----BEGIN SSH SIGNATURE-----&#10;…&#10;-----END SSH SIGNATURE-----"
+                  [(ngModel)]="nouvelleVersion.colle"></textarea>
       </label>
-      <label>
-        Signature
-        <textarea name="signature" class="mono" rows="6" autocomplete="off"
-                  placeholder="-----BEGIN SSH SIGNATURE-----"
-                  [(ngModel)]="nouvelleVersion.signature"></textarea>
-      </label>
+      @if (nouvelleVersion.colle.trim()) {
+        <ul class="reconnu">
+          @if (commitReconnu) {
+            <li class="reconnu-oui">Numéro de version reconnu : <span class="mono">{{ commitReconnu }}</span></li>
+          } @else {
+            <li class="reconnu-non">Numéro de version introuvable : il manque la ligne de 40 caractères (chiffres et lettres de a à f).</li>
+          }
+          @if (signatureReconnue) {
+            <li class="reconnu-oui">Signature reconnue.</li>
+          } @else if (signatureTronquee) {
+            <li class="reconnu-non">Signature incomplète : la ligne « END SSH SIGNATURE » manque. Recopiez jusqu'au bout.</li>
+          } @else {
+            <li class="reconnu-non">Signature introuvable : il manque le bloc qui commence par « BEGIN SSH SIGNATURE ».</li>
+          }
+        </ul>
+      }
       <label>
         Ce qu'elle apporte (facultatif)
         <input type="text" name="libelle" maxlength="120" [(ngModel)]="nouvelleVersion.libelle">
