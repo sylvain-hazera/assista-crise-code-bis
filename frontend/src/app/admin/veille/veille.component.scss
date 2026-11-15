@@ -160,6 +160,37 @@ table.mesures {
   a { color: var(--brand-primary-lisible, var(--brand-primary)); font-weight: 600; }
 }
 
+// ── Cours d'eau, eau, feux ──
+.troncons {
+  list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px;
+  li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; color: var(--ac-text, #111827); }
+  .adresse { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+}
+
+.eau-departement {
+  padding: 12px 16px; margin-bottom: 4px; border-radius: 8px;
+  border: 1px solid var(--ac-border, #e5e7eb); border-left: 6px solid #2f9e44;
+  background: var(--ac-surface-2, #f9fafb);
+  &[data-rang="1"] { border-left-color: #ffe600; }
+  &[data-rang="2"] { border-left-color: #ff9d1c; }
+  &[data-rang="3"] { border-left-color: #e8590c; }
+  &[data-rang="4"] { border-left-color: #c81e1e; }
+  .eau-titre { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; color: var(--ac-text, #111827); }
+}
+.eau-detail {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 10px 0 0;
+  dt { font-size: .8rem; color: var(--ac-text-muted, #6b7280); }
+  dd { margin: 2px 0 0; color: var(--ac-text, #111827); font-weight: 600; }
+}
+// Niveaux de restriction d'eau et de danger de feu : même gradation que la vigilance, du
+// jaune au rouge, avec un texte toujours lisible.
+.etiquette.eau, .etiquette.feu { font-weight: 600; }
+.etiquette.eau[data-rang="1"], .etiquette.feu[data-niveau="2"] { background: #fff3a3; color: #3d3500; }
+.etiquette.eau[data-rang="2"], .etiquette.feu[data-niveau="3"] { background: #ffd08a; color: #3b2100; }
+.etiquette.eau[data-rang="3"] { background: #ffb37a; color: #3b1500; }
+.etiquette.eau[data-rang="4"], .etiquette.feu[data-niveau="4"] { background: #c81e1e; color: #fff; }
+.danger-feu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--ac-text, #111827); }
+
 // ── Rayon ──
 .rayon {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px;

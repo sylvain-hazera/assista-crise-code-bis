@@ -4,8 +4,8 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationAlerteVigilance, EvenementsRoutiers, ObservationsMeteo, PluiePrevue,
-  StationsCarburant, VigilanceMeteo,
+  ConfigurationAlerteVigilance, EvenementsRoutiers, MeteoForets, ObservationsMeteo, PluiePrevue,
+  RestrictionsEau, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -57,6 +57,30 @@ export class VeilleService {
   /** Adresse de l'image d'une échéance, servie par notre serveur. */
   imagePluieUrl(echeance: string): string {
     return `${this.api}/pluie-prevue/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
+  /** Tronçons de cours d'eau surveillés par Vigicrues. `trace` joint leur tracé (carte). */
+  vigilanceCrues(emprise: EmpriseVeille = {}, trace = false): Observable<VigilanceCrues> {
+    const params = this.params(emprise);
+    if (trace) params['trace'] = '1';
+    return this.http.get<VigilanceCrues>(`${this.api}/vigilance-crues/`, { params });
+  }
+
+  restrictionsEau(departement?: string): Observable<RestrictionsEau> {
+    const params: Record<string, string> = departement ? { departement } : {};
+    return this.http.get<RestrictionsEau>(`${this.api}/restrictions-eau/`, { params });
+  }
+
+  /** Surfaces brûlées des trente derniers jours. `trace` joint leur contour (carte). */
+  zonesBrulees(emprise: EmpriseVeille = {}, trace = false): Observable<ZonesBrulees> {
+    const params = this.params(emprise);
+    if (trace) params['trace'] = '1';
+    return this.http.get<ZonesBrulees>(`${this.api}/zones-brulees/`, { params });
+  }
+
+  meteoForets(departement?: string): Observable<MeteoForets> {
+    const params: Record<string, string> = departement ? { departement } : {};
+    return this.http.get<MeteoForets>(`${this.api}/meteo-forets/`, { params });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

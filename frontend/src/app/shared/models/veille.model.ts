@@ -135,6 +135,71 @@ export interface ObservationMeteo {
 
 export interface ObservationsMeteo extends EnteteVeille { resultats: ObservationMeteo[]; }
 
+/** Tronçon de cours d'eau surveillé par Vigicrues. `trace` n'est joint que pour la carte. */
+export interface TronconCrues {
+  code: string;
+  nom: string;
+  /** 1 vert, 2 jaune, 3 orange, 4 rouge. */
+  niveau: number;
+  couleur: string;
+  publie_le: string | null;
+  trace?: { type: string; coordinates: unknown };
+}
+export interface VigilanceCrues extends EnteteVeille { resultats: TronconCrues[]; }
+
+export interface RestrictionEauDepartement {
+  departement_code: string;
+  nom: string;
+  /** '' (aucune), 'vigilance', 'alerte', 'alerte_renforcee' ou 'crise' : le plus élevé des trois. */
+  niveau: string;
+  niveau_superficielle: string;
+  niveau_souterraine: string;
+  niveau_potable: string;
+}
+export interface RestrictionsEau {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  date_donnees: string | null;
+  libelles: Record<string, string>;
+  mon_departement: RestrictionEauDepartement | null;
+  departements: RestrictionEauDepartement[];
+}
+
+/** Surface brûlée des trente derniers jours, vue par satellite. Une mémoire, pas une alerte. */
+export interface ZoneBrulee {
+  reference: string;
+  date_feu: string | null;
+  commune_nom: string;
+  departement_nom: string;
+  surface_ha: number | null;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+  trace?: { type: string; coordinates: unknown };
+}
+export interface ZonesBrulees extends EnteteVeille { resultats: ZoneBrulee[]; }
+
+export interface DangerFeuDepartement {
+  departement_code: string;
+  nom: string;
+  /** 1 faible, 2 modéré, 3 élevé, 4 très élevé. */
+  niveau_demain: number | null;
+  niveau_apres_demain: number | null;
+}
+export interface MeteoForets {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  /** Faux d'octobre à mai : Météo-France ne publie alors rien. */
+  en_saison: boolean;
+  /** Faux si une carte a été publiée mais que le serveur n'a pas su la lire. */
+  compris: boolean;
+  libelles: Record<string, string>;
+  mon_departement: DangerFeuDepartement | null;
+  departements: DangerFeuDepartement[];
+}
+
 /** Pluie prévue (prévision immédiate de Météo-France) : une image nationale par quart d'heure,
  * à poser sur la carte entre les quatre `coins`. C'est une prévision recalée chaque heure sur
  * les radars, pas l'image radar elle-même — l'écran doit le dire. */

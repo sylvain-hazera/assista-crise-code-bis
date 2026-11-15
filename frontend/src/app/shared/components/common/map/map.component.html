@@ -99,6 +99,16 @@
         <span class="layer-dot pluie-dot"></span>
         Pluie prévue (3 h)
       </label>
+      <label class="layer-toggle-item" title="Tronçons surveillés par Vigicrues, colorés par niveau de vigilance. Seuls les principaux cours d'eau y figurent.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.vigilanceCrues" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot crues-dot"></span>
+        Vigilance crues (cours d'eau)
+      </label>
+      <label class="layer-toggle-item" title="Surfaces brûlées des trente derniers jours, vues par satellite (EFFIS). Pas une alerte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.zonesBrulees" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot brule-dot"></span>
+        Surfaces brûlées (30 jours)
+      </label>
       <label class="layer-toggle-item" title="Température, vent, pluie mesurés par les stations Météo-France. Orange : rafale ou pluie forte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.stationsMeteo" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot meteo-dot"></span>

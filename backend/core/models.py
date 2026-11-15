@@ -2576,6 +2576,91 @@ class ObservationMeteo(models.Model):
         return f"Station {self.station} {self.nom}".strip()
 
 
+class TronconVigilanceCrues(models.Model):
+    """Tronçon de cours d'eau surveillé par Vigicrues et son niveau de vigilance (1 vert,
+    2 jaune, 3 orange, 4 rouge) -- voir core/vigilance_crues.py. Donnée publique partagée
+    PROD/DEMO ; instantané réécrit à chaque relevé."""
+
+    code = models.CharField(max_length=20, primary_key=True)
+    nom = models.CharField(max_length=160, blank=True, default="")
+    niveau = models.PositiveSmallIntegerField(default=1, db_index=True)
+    geometrie = gis_models.MultiLineStringField(srid=4326)
+    publie_le = models.DateTimeField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.nom} (vigilance {self.niveau})"
+
+
+class RestrictionEau(models.Model):
+    """Niveau de restriction d'usage de l'eau le plus élevé en vigueur dans un département,
+    d'après VigiEau -- voir core/restrictions_eau.py. Vide = aucune restriction ; sinon
+    « vigilance », « alerte », « alerte_renforcee » ou « crise ». Le niveau le plus élevé du
+    département ne s'applique pas forcément à chaque commune : l'écran le dit."""
+
+    departement_code = models.CharField(max_length=3, primary_key=True)
+    niveau = models.CharField(max_length=20, blank=True, default="")
+    niveau_superficielle = models.CharField(max_length=20, blank=True, default="")
+    niveau_souterraine = models.CharField(max_length=20, blank=True, default="")
+    niveau_potable = models.CharField(max_length=20, blank=True, default="")
+    # Jour auquel VigiEau rapporte ces niveaux (le jour même, ou la veille le matin).
+    date_donnees = models.DateField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Restrictions d'eau {self.departement_code} : {self.niveau or 'aucune'}"
+
+
+class ZoneBrulee(models.Model):
+    """Surface brûlée des trente derniers jours, repérée par satellite (EFFIS, Copernicus) --
+    voir core/feux_satellite.py. Une mémoire de ce qui a brûlé, pas une alerte : seuls les feux
+    d'une trentaine d'hectares ou plus y figurent, avec un jour de retard."""
+
+    reference = models.CharField(max_length=40, primary_key=True)
+    date_feu = models.DateTimeField(null=True, blank=True)
+    commune_nom = models.CharField(max_length=160, blank=True, default="")
+    departement_nom = models.CharField(max_length=120, blank=True, default="")
+    surface_ha = models.FloatField(null=True, blank=True)
+    geometrie = gis_models.MultiPolygonField(srid=4326)
+    # Centre de la zone : pour la borner à une emprise sans manipuler le contour.
+    location = gis_models.PointField(srid=4326)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Feu {self.commune_nom} ({self.surface_ha} ha)"
+
+
+class DangerFeuForet(models.Model):
+    """Danger de feu de forêt d'un département pour demain et après-demain (« météo des
+    forêts » de Météo-France, publiée de juin à septembre) -- voir core/meteo_forets.py.
+    1 faible, 2 modéré, 3 élevé, 4 très élevé. Table vide hors saison."""
+
+    departement_code = models.CharField(max_length=3, primary_key=True)
+    niveau_demain = models.PositiveSmallIntegerField(null=True, blank=True)
+    niveau_apres_demain = models.PositiveSmallIntegerField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Danger feu {self.departement_code} : {self.niveau_demain}"
+
+
+class ReleveMeteoForets(models.Model):
+    """Ligne unique : l'état du dernier relevé de la météo des forêts, et la réponse BRUTE de
+    Météo-France. Le connecteur a été écrit hors saison, sans avoir vu une vraie réponse :
+    garder la première permet d'ajuster l'analyse sans attendre la publication suivante (voir
+    l'avertissement en tête de core/meteo_forets.py)."""
+
+    en_saison = models.BooleanField(default=False)
+    # Faux quand une carte a été publiée mais que l'analyse n'y a rien reconnu.
+    compris = models.BooleanField(default=True)
+    type_contenu = models.CharField(max_length=120, blank=True, default="")
+    brut = models.BinaryField(null=True, blank=True)
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return "Météo des forêts : " + ("en saison" if self.en_saison else "hors saison")
+
+
 class ImagePluie(models.Model):
     """Image nationale de la pluie prévue pour un quart d'heure donné (prévision immédiate de
     Météo-France), déjà mise en projection Mercator pour être posée sur la carte -- voir

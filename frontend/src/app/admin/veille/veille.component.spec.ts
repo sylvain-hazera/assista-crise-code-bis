@@ -6,8 +6,9 @@ import { provideRouter } from '@angular/router';
 import { VeilleComponent } from './veille.component';
 import { environment } from '../../../environments/environment';
 import {
-  EvenementRoutier, EvenementsRoutiers, ObservationMeteo, ObservationsMeteo, StationCarburant,
-  StationsCarburant, VigilanceDepartement, VigilanceMeteo,
+  EvenementRoutier, EvenementsRoutiers, MeteoForets, ObservationMeteo, ObservationsMeteo,
+  RestrictionsEau, StationCarburant, StationsCarburant, VigilanceCrues, VigilanceDepartement,
+  VigilanceMeteo, ZonesBrulees,
 } from '../../shared/models/veille.model';
 
 const api = environment.apiUrl;
@@ -96,6 +97,39 @@ const OBSERVATIONS: ObservationsMeteo = {
   ],
 };
 
+const CRUES: VigilanceCrues = {
+  ...ENTETE,
+  resultats: [
+    { code: 'LO13', nom: 'Gier', niveau: 3, couleur: 'orange', publie_le: '2026-11-15T08:55:47Z' },
+    { code: 'LO12', nom: 'Furan', niveau: 1, couleur: 'vert', publie_le: '2026-11-15T08:55:47Z' },
+  ],
+};
+
+const EAU: RestrictionsEau = {
+  source: 'VigiEau', releve_le: '2026-11-15T09:10:00Z', perime: false, date_donnees: '2026-11-14',
+  libelles: { vigilance: 'Vigilance', alerte: 'Alerte', alerte_renforcee: 'Alerte renforcée', crise: 'Crise' },
+  mon_departement: {
+    departement_code: '42', nom: 'Loire', niveau: 'alerte_renforcee',
+    niveau_superficielle: 'alerte_renforcee', niveau_souterraine: 'alerte', niveau_potable: '',
+  },
+  departements: [],
+};
+
+const FORETS_HORS_SAISON: MeteoForets = {
+  source: 'Météo-France', releve_le: '2026-11-15T09:10:00Z', perime: false,
+  en_saison: false, compris: true,
+  libelles: { '1': 'faible', '2': 'modéré', '3': 'élevé', '4': 'très élevé' },
+  mon_departement: null, departements: [],
+};
+
+const FEUX: ZonesBrulees = {
+  ...ENTETE,
+  resultats: [{
+    reference: '288759', date_feu: '2026-10-16T12:19:00Z', commune_nom: 'Pélussin',
+    departement_nom: 'Loire', surface_ha: 42, latitude: 45.41, longitude: 4.68, distance_km: 23.4,
+  }],
+};
+
 describe('VeilleComponent', () => {
   let http: HttpTestingController;
 
@@ -110,10 +144,15 @@ describe('VeilleComponent', () => {
   afterEach(() => http.verify());
 
   function demarrer(reponses: { vigilance?: VigilanceMeteo; routes?: EvenementsRoutiers; stations?: StationsCarburant;
-                                observations?: ObservationsMeteo } = {}) {
+                                observations?: ObservationsMeteo; crues?: VigilanceCrues; eau?: RestrictionsEau;
+                                forets?: MeteoForets; feux?: ZonesBrulees } = {}) {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(reponses.vigilance ?? VIGILANCE);
+    http.expectOne(`${api}/restrictions-eau/`).flush(reponses.eau ?? EAU);
+    http.expectOne(`${api}/meteo-forets/`).flush(reponses.forets ?? FORETS_HORS_SAISON);
+    http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(reponses.crues ?? CRUES);
+    http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(reponses.feux ?? FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(reponses.observations ?? OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush(reponses.routes ?? ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(reponses.stations ?? STATIONS);
@@ -128,7 +167,7 @@ describe('VeilleComponent', () => {
     fixture.detectChanges();
 
     const demandes = http.match(() => true);
-    expect(demandes.length).toBe(4);
+    expect(demandes.length).toBe(8);
     // LE test de cette page : aucun appel ne sort vers un service tiers.
     for (const demande of demandes) expect(demande.request.url.startsWith(api)).toBeTrue();
     const images: HTMLImageElement[] = Array.from(fixture.nativeElement.querySelectorAll('img'));
@@ -212,6 +251,58 @@ describe('VeilleComponent', () => {
     expect(fixture.componentInstance.rafale(OBSERVATIONS.resultats[2])).toBeNull();
   });
 
+  it('liste les cours d’eau surveillés, le plus préoccupant d’abord, et rappelle la limite de Vigicrues', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-crues"]');
+    const lignes = Array.from(bloc.querySelectorAll('.troncons li')) as HTMLElement[];
+
+    expect(lignes.map(li => [li.querySelector('.couleur')!.textContent!.trim(), li.querySelector('strong')!.textContent]))
+      .toEqual([['orange', 'Gier'], ['vert', 'Furan']]);
+    expect(lignes[0].querySelector('.couleur')!.getAttribute('data-couleur')).toBe('3');
+    // Un ruisseau absent de la liste n'est pas un ruisseau sans risque.
+    expect(bloc.textContent).toContain('ne surveille que les principaux cours d\'eau');
+  });
+
+  it('donne le niveau de restriction d’eau du département et dit qu’il ne vaut pas pour toute commune', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-eau"]');
+
+    expect(bloc.querySelector('.eau-departement')!.getAttribute('data-rang')).toBe('3');
+    expect(bloc.textContent).toContain('Alerte renforcée');
+    expect(bloc.textContent).toContain('Aucune restriction');          // l'eau potable
+    expect(bloc.textContent).toContain('ne s\'applique pas forcément à votre commune');
+    expect(bloc.querySelector('a[href="https://vigieau.gouv.fr"]')).not.toBeNull();
+  });
+
+  it('dit « hors saison » pour la météo des forêts au lieu de « rien à signaler »', () => {
+    const fixture = demarrer();
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-feux"]');
+
+    expect(bloc.textContent).toContain('Hors saison');
+    expect(bloc.textContent).toContain('Pélussin');
+    expect(bloc.textContent).toContain('42 ha');
+    expect(bloc.textContent).toContain('Ce n\'est pas une alerte');
+  });
+
+  it('en saison, donne le danger de feu du département', () => {
+    const fixture = demarrer({ forets: {
+      ...FORETS_HORS_SAISON, en_saison: true,
+      mon_departement: { departement_code: '42', nom: 'Loire', niveau_demain: 3, niveau_apres_demain: 4 },
+      departements: [{ departement_code: '13', nom: 'Bouches-du-Rhône', niveau_demain: 4, niveau_apres_demain: 4 }],
+    } });
+    const bloc: HTMLElement = fixture.nativeElement.querySelector('section[aria-labelledby="titre-feux"]');
+
+    expect(bloc.textContent).toContain('élevé');
+    expect(bloc.textContent).toContain('très élevé');
+    expect(bloc.textContent).toContain('Bouches-du-Rhône');
+  });
+
+  it('signale une carte de danger de feu que le serveur n’a pas su lire', () => {
+    const fixture = demarrer({ forets: { ...FORETS_HORS_SAISON, en_saison: true, compris: false } });
+
+    expect(texte(fixture)).toContain('le serveur n\'a pas su la lire');
+  });
+
   it('montre d’abord les fermetures et garde les travaux sur demande', () => {
     const fixture = demarrer();
     const liste = () => Array.from(fixture.nativeElement.querySelectorAll('.evenements li')) as HTMLElement[];
@@ -248,6 +339,8 @@ describe('VeilleComponent', () => {
     const fixture = demarrer();
     fixture.componentInstance.changerRayon(60);
 
+    http.expectOne(r => r.url === `${api}/vigilance-crues/` && r.params.get('rayon_km') === '60').flush(CRUES);
+    http.expectOne(r => r.url === `${api}/zones-brulees/` && r.params.get('rayon_km') === '60').flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/` && r.params.get('rayon_km') === '60').flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/` && r.params.get('rayon_km') === '60').flush(ROUTES);
     http.expectOne(r => r.url === `${api}/stations-carburant/` && r.params.get('rayon_km') === '60').flush(STATIONS);
@@ -257,6 +350,8 @@ describe('VeilleComponent', () => {
   it('explique pourquoi rien ne s’affiche pour un compte sans commune', () => {
     const sansEmprise = { ...ENTETE, emprise_connue: false, centre: null, rayon_km: null };
     const fixture = demarrer({
+      crues: { ...sansEmprise, resultats: [] },
+      feux: { ...sansEmprise, resultats: [] },
       observations: { ...sansEmprise, resultats: [] },
       routes: { ...sansEmprise, resultats: [] },
       stations: { ...sansEmprise, bilan: { total: 0, en_rupture: 0, a_sec: 0 }, resultats: [] },
@@ -269,6 +364,10 @@ describe('VeilleComponent', () => {
     const fixture = TestBed.createComponent(VeilleComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/vigilance-meteo/`).flush(VIGILANCE);
+    http.expectOne(`${api}/restrictions-eau/`).flush(EAU);
+    http.expectOne(`${api}/meteo-forets/`).flush(FORETS_HORS_SAISON);
+    http.expectOne(r => r.url === `${api}/vigilance-crues/`).flush(CRUES);
+    http.expectOne(r => r.url === `${api}/zones-brulees/`).flush(FEUX);
     http.expectOne(r => r.url === `${api}/observations-meteo/`).flush(OBSERVATIONS);
     http.expectOne(r => r.url === `${api}/evenements-routiers/`).flush('', { status: 500, statusText: 'Erreur' });
     http.expectOne(r => r.url === `${api}/stations-carburant/`).flush(STATIONS);

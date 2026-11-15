@@ -49,6 +49,10 @@ interface LayerVisibility {
   stationsMeteo: boolean;
   /** Pluie prévue dans les trois heures (images nationales, voir VeilleService.pluiePrevue). */
   pluie: boolean;
+  /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
+  vigilanceCrues: boolean;
+  /** Surfaces brûlées des trente derniers jours (EFFIS). */
+  zonesBrulees: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -103,6 +107,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     stationsCarburant: false,
     stationsMeteo: false,
     pluie: false,
+    vigilanceCrues: false,
+    zonesBrulees: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -183,6 +189,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('evenements-routiers-layer', this.layerVisibility.evenementsRoutiers);
     this.applyLayerVisibility('stations-carburant-layer', this.layerVisibility.stationsCarburant);
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
+    this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
+    this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
     this.basculerPluie();
     this.rafraichirVeille();
   }
@@ -198,8 +206,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
    * chaque déplacement de la carte : ces couches sont nationales, on n'en lit que la fenêtre. */
   private rafraichirVeille(): void {
     if (!this.map) return;
-    const { evenementsRoutiers, stationsCarburant, stationsMeteo } = this.layerVisibility;
-    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo) return;
+    const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees } = this.layerVisibility;
+    if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -223,6 +231,44 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     }
     if (stationsMeteo) this.rafraichirStationsMeteo(bbox);
+    if (vigilanceCrues) {
+      this.veilleService.vigilanceCrues({ bbox }, true).subscribe({
+        next: (reponse) => this.afficherTracesVeille('vigilance-crues', 'line', {
+          type: 'FeatureCollection',
+          features: reponse.resultats.filter(t => t.trace).map(t => ({
+            type: 'Feature', geometry: t.trace as Geometry,
+            properties: {
+              niveau: t.niveau,
+              infobulle: `<strong>${this.echapper(t.nom)}</strong><br>Vigilance crues : ${this.echapper(t.couleur)}`
+                + '<br><small>Source : Vigicrues. Seuls les principaux cours d\'eau sont surveillés.</small>',
+            },
+          })),
+        }, {
+          // Vert, jaune, orange, rouge : les couleurs de Vigicrues.
+          'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
+          'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
+        }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (zonesBrulees) {
+      this.veilleService.zonesBrulees({ bbox }, true).subscribe({
+        next: (reponse) => this.afficherTracesVeille('zones-brulees', 'fill', {
+          type: 'FeatureCollection',
+          features: reponse.resultats.filter(z => z.trace).map(z => ({
+            type: 'Feature', geometry: z.trace as Geometry,
+            properties: {
+              infobulle: `<strong>Surface brûlée — ${this.echapper(z.commune_nom)}</strong>`
+                + `<br>${z.surface_ha ?? '?'} ha`
+                + (z.date_feu ? `, le ${new Date(z.date_feu).toLocaleDateString('fr-FR')}` : '')
+                + '<br><small>Vue par satellite, avec un jour de retard — © UE, Copernicus EFFIS</small>',
+            },
+          })),
+        }, { 'fill-color': '#7c2d12', 'fill-opacity': 0.5, 'fill-outline-color': '#431407' },
+        this.layerVisibility.zonesBrulees),
+        error: () => {},
+      });
+    }
     if (stationsCarburant) {
       this.veilleService.stationsCarburant({ bbox }).subscribe({
         next: (reponse) => {
@@ -430,6 +476,34 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         },
       })),
     };
+  }
+
+  /** Comme `afficherCoucheVeille`, pour des lignes ou des surfaces : posées sous les noms de
+   * lieux du fond de carte, pour ne pas les masquer. */
+  private afficherTracesVeille(sourceId: string, type: 'line' | 'fill', data: FeatureCollection<Geometry>,
+                               paint: any, visible: boolean): void {
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const layerId = `${sourceId}-layer`;
+      const existante = this.map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+      if (existante) {
+        existante.setData(data);
+        return;
+      }
+      this.map.addSource(sourceId, { type: 'geojson', data });
+      const premierTexte = this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+      this.map.addLayer({
+        id: layerId, type, source: sourceId,
+        layout: { visibility: visible ? 'visible' : 'none' }, paint,
+      } as maplibregl.LayerSpecification, premierTexte);
+      this.map.on('click', layerId, (e) => {
+        if (!e.features || e.features.length === 0) return;
+        new maplibregl.Popup().setLngLat(e.lngLat)
+          .setHTML((e.features[0].properties || {})['infobulle'] || '').addTo(this.map!);
+      });
+      this.map.on('mouseenter', layerId, () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+      this.map.on('mouseleave', layerId, () => { this.map!.getCanvas().style.cursor = ''; });
+    });
   }
 
   private afficherCoucheVeille(sourceId: string, data: FeatureCollection<Geometry>,

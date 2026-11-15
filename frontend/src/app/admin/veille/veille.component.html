@@ -2,8 +2,9 @@
   <header class="entete">
     <h1><span class="material-icons">radar</span> Veille du territoire</h1>
     <p class="explication">
-      Ce que les services de l'État publient en ce moment pour votre territoire : vigilance
-      météorologique, mesures des stations, routes, carburant. Ces données sont relevées par le serveur à intervalle
+      Ce que les services publics publient en ce moment pour votre territoire : vigilance
+      météorologique, mesures des stations, cours d'eau, restrictions d'eau, feux, routes,
+      carburant. Ces données sont relevées par le serveur à intervalle
       régulier ; votre navigateur n'interroge aucun service extérieur, et consulter cette page
       n'apprend rien à personne.
     </p>
@@ -170,7 +171,7 @@
     </span>
   </p>
 
-  <!-- ════ Rayon commun aux trois blocs suivants ════ -->
+  <!-- ════ Rayon commun aux blocs du territoire (mesures, cours d'eau, feux, routes, carburant) ════ -->
   <div class="rayon" role="group" aria-label="Rayon autour de votre commune">
     <span>Autour de votre commune :</span>
     @for (rayon of RAYONS; track rayon) {
@@ -261,6 +262,162 @@
         pluie est additionné par le serveur heure après heure : il porte sur le nombre d'heures
         indiqué, 24 au plus. Une ligne surlignée dépasse {{ RAFALE_FORTE_KMH }} km/h de rafale,
         {{ PLUIE_FORTE_1H_MM }} mm en une heure ou {{ PLUIE_FORTE_24H_MM }} mm cumulés.
+      </p>
+    }
+  </section>
+
+  <!-- ════ Cours d'eau ════ -->
+  <section aria-labelledby="titre-crues">
+    <h2 id="titre-crues">
+      <span class="material-icons">waves</span> Cours d'eau
+      @if (crues?.emprise_connue) { <span class="compte">{{ crues!.resultats.length }}</span> }
+    </h2>
+
+    @if (erreurCrues) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire la vigilance crues.
+      </p>
+    } @else if (!crues) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!crues.emprise_connue) {
+      <p class="attente">Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder.</p>
+    } @else {
+      @if (crues.perime) {
+        <p class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span><strong>Relevé ancien</strong> : consultez
+            <a href="https://www.vigicrues.gouv.fr" target="_blank" rel="noopener noreferrer">vigicrues.gouv.fr</a>.</span>
+        </p>
+      }
+      @if (crues.resultats.length) {
+        <ul class="troncons">
+          @for (troncon of crues.resultats; track troncon.code) {
+            <li>
+              <span class="couleur" [attr.data-couleur]="troncon.niveau">{{ troncon.couleur }}</span>
+              <strong>{{ troncon.nom }}</strong>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="calme">Aucun cours d'eau surveillé par Vigicrues dans ce rayon.</p>
+      }
+      <p class="note">
+        Source : {{ crues.source }}@if (crues.releve_le) {, relevé le {{ crues.releve_le | date:'dd/MM à HH:mm' }}}.
+        <strong>Vigicrues ne surveille que les principaux cours d'eau</strong> : un ruisseau, un
+        torrent ou un petit affluent n'y figurent pas, et leur absence ici ne dit rien de leur
+        état. Le tracé des tronçons se voit sur la <a routerLink="/admin/carte">carte</a>, calque
+        « Vigilance crues ».
+      </p>
+    }
+  </section>
+
+  <!-- ════ Eau : restrictions d'usage ════ -->
+  <section aria-labelledby="titre-eau">
+    <h2 id="titre-eau"><span class="material-icons">water_drop</span> Restrictions d'eau</h2>
+
+    @if (erreurEau) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire les restrictions d'eau.
+      </p>
+    } @else if (!eau) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!eau.releve_le) {
+      <p class="attente">Aucun relevé pour l'instant.</p>
+    } @else {
+      @if (eau.mon_departement; as dep) {
+        <div class="eau-departement" [attr.data-rang]="rangEau(dep.niveau)">
+          <p class="eau-titre">
+            <strong>{{ dep.nom }} ({{ dep.departement_code }})</strong>
+            <span class="etiquette eau" [attr.data-rang]="rangEau(dep.niveau)">{{ libelleEau(dep.niveau) }}</span>
+          </p>
+          @if (dep.niveau) {
+            <dl class="eau-detail">
+              <div><dt>Eaux superficielles</dt><dd>{{ libelleEau(dep.niveau_superficielle) }}</dd></div>
+              <div><dt>Eaux souterraines</dt><dd>{{ libelleEau(dep.niveau_souterraine) }}</dd></div>
+              <div><dt>Eau potable</dt><dd>{{ libelleEau(dep.niveau_potable) }}</dd></div>
+            </dl>
+          }
+        </div>
+      } @else {
+        <p class="attente">Votre compte n'est rattaché à aucun département.</p>
+      }
+      <p class="note">
+        Source : {{ eau.source }}, données du {{ eau.date_donnees | date:'dd/MM/yyyy' }}.
+        C'est le niveau <strong>le plus élevé</strong> en vigueur dans le département : il ne
+        s'applique pas forcément à votre commune. Pour une adresse précise et le détail des
+        usages interdits :
+        <a href="https://vigieau.gouv.fr" target="_blank" rel="noopener noreferrer">vigieau.gouv.fr</a>.
+        {{ eau.departements.length }} département(s) ont au moins une restriction en vigueur.
+      </p>
+    }
+  </section>
+
+  <!-- ════ Feux de forêt ════ -->
+  <section aria-labelledby="titre-feux">
+    <h2 id="titre-feux"><span class="material-icons">local_fire_department</span> Feux de forêt</h2>
+
+    <h3>Danger de feu (météo des forêts)</h3>
+    @if (!forets) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!forets.en_saison) {
+      <p class="calme">
+        Hors saison : Météo-France ne publie la météo des forêts que de juin à septembre.
+      </p>
+    } @else if (!forets.compris) {
+      <p class="message avertissement" role="alert">
+        <span class="material-icons">warning_amber</span>
+        <span>
+          Une carte a été publiée mais le serveur n'a pas su la lire. Consultez
+          <a href="https://meteofrance.com/meteo-des-forets" target="_blank" rel="noopener noreferrer">meteofrance.com/meteo-des-forets</a>
+          et prévenez l'administrateur de la plateforme.
+        </span>
+      </p>
+    } @else {
+      @if (forets.mon_departement; as dep) {
+        <p class="danger-feu">
+          <strong>{{ dep.nom }} ({{ dep.departement_code }})</strong> — demain :
+          <span class="etiquette feu" [attr.data-niveau]="dep.niveau_demain">{{ libelleFeu(dep.niveau_demain) }}</span>
+          après-demain :
+          <span class="etiquette feu" [attr.data-niveau]="dep.niveau_apres_demain">{{ libelleFeu(dep.niveau_apres_demain) }}</span>
+        </p>
+      }
+      @if (forets.departements.length) {
+        <p class="note">
+          Danger élevé ou très élevé :
+          @for (dep of forets.departements; track dep.departement_code) {
+            {{ dep.nom }}@if (!$last) {, }
+          }.
+        </p>
+      }
+    }
+
+    <h3>Surfaces brûlées des 30 derniers jours</h3>
+    @if (erreurFeux) {
+      <p class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> Impossible de lire les surfaces brûlées.
+      </p>
+    } @else if (!feux) {
+      <p class="attente">Lecture en cours…</p>
+    } @else if (!feux.emprise_connue) {
+      <p class="attente">Votre compte n'est rattaché à aucune commune : impossible de savoir où regarder.</p>
+    } @else {
+      @if (feux.resultats.length) {
+        <ul class="troncons">
+          @for (zone of feux.resultats; track zone.reference) {
+            <li>
+              <strong>{{ zone.commune_nom || 'Commune non précisée' }}</strong>
+              <span>{{ zone.surface_ha | number:'1.0-0' }} ha</span>
+              <span class="adresse">le {{ zone.date_feu | date:'dd/MM' }}@if (zone.distance_km != null) { · à {{ zone.distance_km | number:'1.0-0' }} km }</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="calme">Aucune surface brûlée repérée dans ce rayon depuis trente jours.</p>
+      }
+      <p class="note">
+        Source : {{ feux.source }}@if (feux.releve_le) {, relevé le {{ feux.releve_le | date:'dd/MM à HH:mm' }}}.
+        <strong>Ce n'est pas une alerte</strong> : seuls les feux d'une trentaine d'hectares ou
+        plus sont vus par satellite, avec un jour de retard. Un feu qui démarre n'apparaît pas ici.
       </p>
     }
   </section>

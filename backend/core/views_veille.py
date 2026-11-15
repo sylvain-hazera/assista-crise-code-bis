@@ -19,10 +19,16 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import meteo_france, pluie, sources_ouvertes, trafic_routier
+import json
+
+from . import (
+    meteo_forets, meteo_france, pluie, restrictions_eau, sources_ouvertes, trafic_routier,
+    vigilance_crues,
+)
 from .models import (
-    Commune, ConfigurationAlerteVigilance, ContactInstitution, EvenementRoutier, ImagePluie,
-    Institution, ObservationMeteo, StationCarburant, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
+    Commune, ConfigurationAlerteVigilance, ContactInstitution, DangerFeuForet, EvenementRoutier,
+    ImagePluie, Institution, ObservationMeteo, ReleveMeteoForets, RestrictionEau,
+    StationCarburant, TronconVigilanceCrues, ZoneBrulee, UserRole, VigilanceMeteo, VignetteVigilanceMeteo,
 )
 from .permissions import IsInstitutionalActor, get_active_environment, get_effective_role
 from .serializers import ConfigurationAlerteVigilanceSerializer, VigilanceMeteoSerializer
@@ -338,6 +344,132 @@ class ImagePluieView(APIView):
         # rendre l'animation fluide, et laissent passer le calcul suivant.
         reponse["Cache-Control"] = "public, max-age=600"
         return reponse
+
+
+class VigilanceCruesView(APIView):
+    """GET /api/vigilance-crues/ : les tronçons de cours d'eau surveillés par Vigicrues qui
+    traversent une emprise (voir `_emprise`), les plus préoccupants d'abord. `?trace=1` joint
+    leur tracé (pour la carte) ; sans lui, la réponse reste légère (pour une liste)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("VIGILANCE_CRUES", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "resultats": []})
+
+        avec_trace = request.query_params.get("trace") in ("1", "true")
+        troncons = list(TronconVigilanceCrues.objects.filter(geometrie__intersects=emprise)
+                        .order_by("-niveau", "nom")[:RESULTATS_MAX + 1])
+        resultats = []
+        for troncon in troncons[:RESULTATS_MAX]:
+            ligne = {
+                "code": troncon.code, "nom": troncon.nom, "niveau": troncon.niveau,
+                "couleur": vigilance_crues.COULEURS.get(troncon.niveau, "vert"),
+                "publie_le": troncon.publie_le,
+            }
+            if avec_trace:
+                ligne["trace"] = json.loads(troncon.geometrie.geojson)
+            resultats.append(ligne)
+        return Response({**entete, "emprise_connue": True,
+                         "tronque": len(troncons) > RESULTATS_MAX, "resultats": resultats})
+
+
+class RestrictionsEauView(APIView):
+    """GET /api/restrictions-eau/ : le niveau de restriction d'usage de l'eau le plus élevé de
+    chaque département, et celui de l'appelant (`?departement=42` pour un autre)."""
+    permission_classes = [permissions.AllowAny]
+
+    @staticmethod
+    def _ligne(restriction):
+        return {
+            "departement_code": restriction.departement_code,
+            "nom": meteo_france.nom_departement(restriction.departement_code),
+            "niveau": restriction.niveau,
+            "niveau_superficielle": restriction.niveau_superficielle,
+            "niveau_souterraine": restriction.niveau_souterraine,
+            "niveau_potable": restriction.niveau_potable,
+        }
+
+    def get(self, request):
+        lignes = {r.departement_code: r for r in RestrictionEau.objects.all()}
+        code = request.query_params.get("departement") or _departement_de_l_appelant(request)
+        mien = lignes.get(code) if code else None
+        rang = {niveau: i for i, niveau in enumerate(restrictions_eau.NIVEAUX)}
+        concernes = sorted((r for r in lignes.values() if r.niveau),
+                           key=lambda r: (-rang.get(r.niveau, -1), r.departement_code))
+        return Response({
+            **sources_ouvertes.resume("RESTRICTIONS_EAU"),
+            "date_donnees": max((r.date_donnees for r in lignes.values()), default=None),
+            "libelles": restrictions_eau.LIBELLES,
+            "mon_departement": self._ligne(mien) if mien else None,
+            "departements": [self._ligne(r) for r in concernes],
+        })
+
+
+class ZonesBruleesView(APIView):
+    """GET /api/zones-brulees/ : les surfaces brûlées des trente derniers jours dans une emprise
+    (voir `_emprise`), les plus récentes d'abord. `?trace=1` joint leur contour."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        emprise, centre, rayon = _emprise(request)
+        entete = _entete("FEUX_SATELLITE", centre, rayon)
+        if emprise is None:
+            return Response({**entete, "emprise_connue": False, "tronque": False, "resultats": []})
+
+        avec_trace = request.query_params.get("trace") in ("1", "true")
+        zones = list(ZoneBrulee.objects.filter(location__within=emprise)
+                     .order_by("-date_feu", "reference")[:RESULTATS_MAX + 1])
+        resultats = []
+        for zone in zones[:RESULTATS_MAX]:
+            latitude, longitude = _point(zone.location)
+            ligne = {
+                "reference": zone.reference, "date_feu": zone.date_feu,
+                "commune_nom": zone.commune_nom, "departement_nom": zone.departement_nom,
+                "surface_ha": zone.surface_ha, "latitude": latitude, "longitude": longitude,
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"],
+                                                   latitude, longitude), 1) if centre else None),
+            }
+            if avec_trace:
+                ligne["trace"] = json.loads(zone.geometrie.geojson)
+            resultats.append(ligne)
+        return Response({**entete, "emprise_connue": True,
+                         "tronque": len(zones) > RESULTATS_MAX, "resultats": resultats})
+
+
+class MeteoForetsView(APIView):
+    """GET /api/meteo-forets/ : le danger de feu de forêt de demain et d'après-demain, par
+    département. `en_saison` est faux d'octobre à mai : Météo-France ne publie alors rien."""
+    permission_classes = [permissions.AllowAny]
+
+    @staticmethod
+    def _ligne(danger):
+        return {
+            "departement_code": danger.departement_code,
+            "nom": meteo_france.nom_departement(danger.departement_code),
+            "niveau_demain": danger.niveau_demain,
+            "niveau_apres_demain": danger.niveau_apres_demain,
+        }
+
+    def get(self, request):
+        etat = ReleveMeteoForets.objects.first()
+        lignes = {d.departement_code: d for d in DangerFeuForet.objects.all()}
+        code = request.query_params.get("departement") or _departement_de_l_appelant(request)
+        mien = lignes.get(code) if code else None
+        eleves = sorted(
+            (d for d in lignes.values() if max(d.niveau_demain or 0, d.niveau_apres_demain or 0) >= 3),
+            key=lambda d: (-max(d.niveau_demain or 0, d.niveau_apres_demain or 0), d.departement_code))
+        return Response({
+            **sources_ouvertes.resume("METEO_FORETS"),
+            "en_saison": bool(etat and etat.en_saison),
+            # Une carte publiée que le serveur n'a pas su lire : à dire, plutôt que d'afficher
+            # « rien à signaler ».
+            "compris": etat.compris if etat else True,
+            "libelles": meteo_forets.NIVEAUX,
+            "mon_departement": self._ligne(mien) if mien else None,
+            "departements": [self._ligne(d) for d in eleves],
+        })
 
 
 class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

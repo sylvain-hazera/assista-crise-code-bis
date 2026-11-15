@@ -4,8 +4,8 @@ import { RouterLink } from '@angular/router';
 
 import { VeilleService } from '../../services/veille.service';
 import {
-  CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance,
-  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
+  CategorieEvenementRoutier, EvenementRoutier, EvenementsRoutiers, FicheVigilance, MeteoForets,
+  ObservationMeteo, ObservationsMeteo, PhenomeneVigilance, RestrictionsEau, VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
 } from '../../shared/models/veille.model';
 
 /** Veille du territoire : ce que les services de l'État publient en ce moment pour le
@@ -32,11 +32,18 @@ export class VeilleComponent implements OnInit {
 
   vigilance: VigilanceMeteo | null = null;
   observations: ObservationsMeteo | null = null;
+  crues: VigilanceCrues | null = null;
+  eau: RestrictionsEau | null = null;
+  forets: MeteoForets | null = null;
+  feux: ZonesBrulees | null = null;
   routes: EvenementsRoutiers | null = null;
   stations: StationsCarburant | null = null;
 
   erreurVigilance = false;
   erreurObservations = false;
+  erreurCrues = false;
+  erreurEau = false;
+  erreurFeux = false;
   erreurRoutes = false;
   erreurStations = false;
 
@@ -58,7 +65,22 @@ export class VeilleComponent implements OnInit {
 
   ngOnInit(): void {
     this.chargerVigilance();
+    this.chargerDepartement();
     this.chargerTerritoire();
+  }
+
+  /** Ce qui se lit par département et ne dépend pas du rayon : restrictions d'eau et danger
+   * de feu de forêt. */
+  chargerDepartement(): void {
+    this.erreurEau = false;
+    this.service.restrictionsEau().subscribe({
+      next: (eau) => { this.eau = eau; },
+      error: () => { this.erreurEau = true; },
+    });
+    this.service.meteoForets().subscribe({
+      next: (forets) => { this.forets = forets; },
+      error: () => { this.forets = null; },
+    });
   }
 
   chargerVigilance(departement?: string): void {
@@ -71,6 +93,15 @@ export class VeilleComponent implements OnInit {
 
   chargerTerritoire(): void {
     this.erreurObservations = this.erreurRoutes = this.erreurStations = false;
+    this.erreurCrues = this.erreurFeux = false;
+    this.service.vigilanceCrues({ rayon_km: this.rayonKm }).subscribe({
+      next: (crues) => { this.crues = crues; },
+      error: () => { this.erreurCrues = true; },
+    });
+    this.service.zonesBrulees({ rayon_km: this.rayonKm }).subscribe({
+      next: (feux) => { this.feux = feux; },
+      error: () => { this.erreurFeux = true; },
+    });
     this.service.observationsMeteo({ rayon_km: this.rayonKm }).subscribe({
       next: (observations) => { this.observations = observations; },
       error: () => { this.erreurObservations = true; },
@@ -158,6 +189,21 @@ export class VeilleComponent implements OnInit {
   direction(degres: number | null): string {
     if (degres == null) return '';
     return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(degres / 45) % 8];
+  }
+
+  // ── Eau et feux ──
+
+  /** Rang d'un niveau de restriction d'eau, pour la pastille : 0 aucune … 4 crise. */
+  rangEau(niveau: string): number {
+    return ['', 'vigilance', 'alerte', 'alerte_renforcee', 'crise'].indexOf(niveau);
+  }
+
+  libelleEau(niveau: string): string {
+    return niveau ? (this.eau?.libelles[niveau] ?? niveau) : 'Aucune restriction';
+  }
+
+  libelleFeu(niveau: number | null): string {
+    return niveau == null ? '—' : (this.forets?.libelles[String(niveau)] ?? String(niveau));
   }
 
   // ── Routes ──

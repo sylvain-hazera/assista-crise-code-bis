@@ -1,7 +1,8 @@
 """Relevé planifié des sources ouvertes copiées en base : la « veille du territoire ».
 
-Cinq sources aujourd'hui -- vigilance, mesures des stations et pluie prévue de Météo-France,
-événements routiers Bison Futé, stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
+Neuf sources aujourd'hui -- vigilance, mesures des stations, pluie prévue et météo des forêts
+(Météo-France), vigilance crues (Vigicrues), restrictions d'eau (VigiEau), surfaces brûlées
+(EFFIS), événements routiers (Bison Futé), stations de carburant. Toutes obéissent à la même règle (15/11/2026) :
 
 1. Seul le serveur appelle, depuis la tâche planifiée, et toujours pour la France ENTIÈRE.
    Aucun navigateur n'interroge ces services, aucune requête d'utilisateur ne déclenche d'appel
@@ -22,7 +23,10 @@ from collections import namedtuple
 
 from django.utils import timezone
 
-from . import carburants, meteo_france, observations_meteo, pluie, trafic_routier
+from . import (
+    carburants, feux_satellite, meteo_forets, meteo_france, observations_meteo, pluie,
+    restrictions_eau, trafic_routier, vigilance_crues,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,23 @@ SOURCES = {
         # entre-temps (les échéances déjà copiées ne sont pas redemandées).
         Source("PLUIE_PREVISION", "Pluie prévue (prévision immédiate)", pluie.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1), "Météo-France"),
+        # Vigicrues publie deux fois par jour et à chaque aggravation : une demi-heure borne
+        # le retard sans retélécharger 2 Mo à chaque passage.
+        Source("VIGILANCE_CRUES", "Vigilance crues par tronçon", vigilance_crues.relever,
+               datetime.timedelta(minutes=29), datetime.timedelta(hours=6),
+               "Vigicrues - réseau de prévision des crues"),
+        # Les arrêtés de restriction changent au rythme des préfectures : quatre relevés par
+        # jour suffisent, et les données du jour ne paraissent que dans la matinée.
+        Source("RESTRICTIONS_EAU", "Restrictions d'usage de l'eau", restrictions_eau.relever,
+               datetime.timedelta(hours=6), datetime.timedelta(hours=48),
+               "VigiEau - ministère de la Transition écologique"),
+        Source("FEUX_SATELLITE", "Surfaces brûlées repérées par satellite", feux_satellite.relever,
+               datetime.timedelta(hours=3), datetime.timedelta(hours=24),
+               "© Union européenne, Copernicus EFFIS"),
+        # Publiée une fois par jour à 17 h, de juin à septembre. Hors saison le relevé réussit
+        # « à vide » : la source n'est donc jamais signalée périmée l'hiver.
+        Source("METEO_FORETS", "Météo des forêts (danger de feu)", meteo_forets.relever,
+               datetime.timedelta(hours=3), datetime.timedelta(hours=30), "Météo-France"),
         Source("TRAFIC_ROUTIER", "Événements routiers", trafic_routier.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1),
                "Bison Futé - ministère chargé des transports"),

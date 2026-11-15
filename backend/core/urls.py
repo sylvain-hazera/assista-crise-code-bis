@@ -14,7 +14,8 @@ from .views_application import (
 from .views_adresses import GeocodageInverseView, RechercheAdresseView
 from .views_veille import (
     ConfigurationAlerteVigilanceViewSet, EvenementsRoutiersView, ImagePluieView,
-    ObservationsMeteoView, PluiePrevueView, StationsCarburantView,
+    MeteoForetsView, ObservationsMeteoView, PluiePrevueView, RestrictionsEauView,
+    StationsCarburantView, VigilanceCruesView, ZonesBruleesView,
     VigilanceMeteoView, VignetteVigilanceMeteoView,
 )
 from .views import (
@@ -363,6 +364,10 @@ urlpatterns = [
     path('observations-meteo/', ObservationsMeteoView.as_view(), name='observations_meteo'),
     path('pluie-prevue/', PluiePrevueView.as_view(), name='pluie_prevue'),
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
+    path('vigilance-crues/', VigilanceCruesView.as_view(), name='vigilance_crues'),
+    path('restrictions-eau/', RestrictionsEauView.as_view(), name='restrictions_eau'),
+    path('zones-brulees/', ZonesBruleesView.as_view(), name='zones_brulees'),
+    path('meteo-forets/', MeteoForetsView.as_view(), name='meteo_forets'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),
