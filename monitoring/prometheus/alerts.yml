@@ -64,6 +64,16 @@ groups:
           summary: "Emails of type {{ $labels.kind }} are failing"
           description: "At least one email could not be sent in the last 15 minutes. Check the backend logs (logger.exception) and the SMTP settings."
 
+      # Per-account sign-in brake (core/frein_connexion.py). One person mistyping a password
+      # triggers it 4 or 5 times at most in 15 minutes, because each new failure doubles the
+      # wait. More than 10 means several accounts or several devices are being hammered.
+      - alert: SignInBruteForce
+        expr: sum(increase(assista_connexions_freinees_total[15m])) > 10
+        labels: { severity: warning }
+        annotations:
+          summary: "Sign-in attempts are being slowed down on several accounts"
+          description: "More than 10 failed sign-ins hit the per-account brake in 15 minutes. Look at the Fail2ban page (jail connexion-ratee) and at the audit trail."
+
   # ------------------------------------------------------------------ infrastructure
   - name: infrastructure
     rules:

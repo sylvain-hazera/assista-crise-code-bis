@@ -68,6 +68,30 @@ tests:
         alertname: HighErrorRate
         exp_alerts: []
 
+  - name: sign-in brute force on several accounts
+    interval: 1m
+    input_series:   # one braked failure per minute: no single account can produce that
+      - series: 'assista_connexions_freinees_total'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SignInBruteForce
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Sign-in attempts are being slowed down on several accounts"
+              description: "More than 10 failed sign-ins hit the per-account brake in 15 minutes. Look at the Fail2ban page (jail connexion-ratee) and at the audit trail."
+
+  - name: one person mistyping a password is not an attack
+    interval: 1m
+    input_series:   # the brake doubles the wait: 30 s, 1, 2, 5 min -> 4 braked failures in 15 min
+      - series: 'assista_connexions_freinees_total'
+        values: '0 1 2 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 4 4'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SignInBruteForce
+        exp_alerts: []
+
   - name: crisis active but no help request at all
     interval: 1m
     input_series:
