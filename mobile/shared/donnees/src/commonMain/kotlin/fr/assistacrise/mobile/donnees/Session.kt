@@ -57,11 +57,26 @@ class Session(private val magasin: Magasin) {
         magasin.effacer(FICHIER)
     }
 
+    /**
+     * Ce que ce téléphone présente au serveur pour être reconnu : un appareil déjà connu du
+     * compte n'est pas ralenti par les essais ratés de quelqu'un d'autre. Ne dispense ni du
+     * mot de passe ni du code, et survit à la déconnexion — c'est le téléphone qui est
+     * reconnu, pas la session.
+     */
+    internal suspend fun appareil(): String = magasin.lire(FICHIER_APPAREIL).orEmpty()
+
+    internal suspend fun retenirAppareil(jeton: String) {
+        if (jeton.isNotBlank()) magasin.ecrire(FICHIER_APPAREIL, jeton)
+    }
+
     private suspend fun enregistrer(s: SessionEnregistree) {
         courante = s
         magasin.ecrire(FICHIER, json.encodeToString(SessionEnregistree.serializer(), s))
         _compte.value = s.compte
     }
 
-    private companion object { const val FICHIER = "session" }
+    private companion object {
+        const val FICHIER = "session"
+        const val FICHIER_APPAREIL = "appareil"
+    }
 }

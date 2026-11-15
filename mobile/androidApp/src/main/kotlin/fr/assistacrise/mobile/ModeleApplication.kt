@@ -54,6 +54,9 @@ data class EtatFormulaire(
     val champs: Map<String, String> = emptyMap(),
 )
 
+/** Où en est la connexion. Le code n'est demandé qu'aux comptes qui en ont un. */
+enum class EtapeConnexion { ADRESSE, CODE, MOT_DE_PASSE }
+
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
@@ -92,6 +95,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     var pret by mutableStateOf(false); private set
     var ecran by mutableStateOf(Ecran.CONNEXION); private set
     var connexion by mutableStateOf(EtatFormulaire()); private set
+    var etapeConnexion by mutableStateOf(EtapeConnexion.ADRESSE); private set
+    /** Preuve que le code de sécurité a été donné, à joindre au mot de passe (cinq minutes). */
+    private var jetonEtape = ""
     var inscription by mutableStateOf(EtatFormulaire()); private set
     var synchronisation by mutableStateOf(false); private set
 
@@ -197,6 +203,57 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     // --- Compte --------------------------------------------------------------------------
 
+    /**
+     * Connexion en étapes : l'adresse, puis le code de sécurité si le compte est protégé,
+     * puis le mot de passe. L'ordre est voulu — tant que le code n'a pas été donné, le
+     * serveur ne regarde pas le mot de passe.
+     */
+    fun continuerLaConnexion(email: String) {
+        if (connexion.enCours) return
+        if (email.isBlank()) {
+            connexion = EtatFormulaire(erreur = "Indiquez votre adresse e-mail.")
+            return
+        }
+        connexion = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            connexion = when (val r = app.api.debutConnexion(email)) {
+                is Reponse.Ok -> {
+                    etapeConnexion = if (r.valeur) EtapeConnexion.CODE else EtapeConnexion.MOT_DE_PASSE
+                    EtatFormulaire()
+                }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = r.message)
+            }
+        }
+    }
+
+    fun donnerLeCode(email: String, code: String) {
+        if (connexion.enCours) return
+        if (code.trim().length < 6) {
+            connexion = EtatFormulaire(erreur = "Saisissez les 6 chiffres de votre application d'authentification.")
+            return
+        }
+        connexion = EtatFormulaire(enCours = true)
+        viewModelScope.launch {
+            connexion = when (val r = app.api.verifierCode(email, code)) {
+                is Reponse.Ok -> {
+                    jetonEtape = r.valeur
+                    etapeConnexion = EtapeConnexion.MOT_DE_PASSE
+                    EtatFormulaire()
+                }
+                is Reponse.Refus -> EtatFormulaire(erreur = r.message)
+                is Reponse.Injoignable -> EtatFormulaire(erreur = r.message)
+            }
+        }
+    }
+
+    /** Revenir à l'adresse : ce qui a été donné ensuite est oublié. */
+    fun recommencerLaConnexion() {
+        jetonEtape = ""
+        etapeConnexion = EtapeConnexion.ADRESSE
+        connexion = EtatFormulaire()
+    }
+
     fun connecter(email: String, motDePasse: String) {
         if (connexion.enCours) return
         if (email.isBlank() || motDePasse.isEmpty()) {
@@ -205,8 +262,13 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
         connexion = EtatFormulaire(enCours = true)
         viewModelScope.launch {
-            connexion = when (val r = app.api.connecter(email, motDePasse)) {
-                is Reponse.Ok -> { ouvrir(); EtatFormulaire() }
+            connexion = when (val r = app.api.connecter(email, motDePasse, jetonEtape)) {
+                is Reponse.Ok -> {
+                    jetonEtape = ""
+                    etapeConnexion = EtapeConnexion.ADRESSE
+                    ouvrir()
+                    EtatFormulaire()
+                }
                 is Reponse.Refus -> EtatFormulaire(erreur = r.message)
                 is Reponse.Injoignable -> EtatFormulaire(erreur = r.message)
             }

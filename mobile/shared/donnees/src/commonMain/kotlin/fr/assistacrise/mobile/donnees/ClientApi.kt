@@ -82,21 +82,63 @@ class ClientApi(
 
     // --- Sans compte ---------------------------------------------------------------------
 
-    suspend fun connecter(email: String, motDePasse: String): Reponse<Compte> {
-        val corps = buildJsonObject { put("email", email.trim()); put("password", motDePasse) }
+    /**
+     * Première étape de la connexion : ce que demander après l'adresse. `true` = le compte
+     * est protégé par un code de sécurité, à donner AVANT le mot de passe (tant qu'il ne l'a
+     * pas été, le serveur ne regarde pas le mot de passe).
+     *
+     * Un serveur qui ne connaît pas cette étape (satellite resté sur une version plus
+     * ancienne) répond 404 : on demande alors le mot de passe, comme avant.
+     */
+    suspend fun debutConnexion(email: String): Reponse<Boolean> {
+        val corps = buildJsonObject { put("email", email.trim()) }
+        return when (val r = appeler(HttpMethod.Post, "connexion/debut/", corps, jeton = null)) {
+            is Reponse.Ok -> Reponse.Ok((r.valeur.jsonObject["etape"] as? JsonPrimitive)?.content == "code")
+            is Reponse.Refus -> if (r.code == 404) Reponse.Ok(false) else r
+            is Reponse.Injoignable -> r
+        }
+    }
+
+    /** Deuxième étape des comptes protégés. Rend le jeton à joindre au mot de passe. */
+    suspend fun verifierCode(email: String, code: String): Reponse<String> {
+        val corps = buildJsonObject {
+            put("email", email.trim()); put("code", code.trim()); put("appareil", session.appareil())
+        }
+        return when (val r = appeler(HttpMethod.Post, "connexion/code/", corps, jeton = null)) {
+            is Reponse.Ok -> Reponse.Ok(r.valeur.jsonObject.texte("jeton_etape"))
+            is Reponse.Refus -> if (r.code == 401) r.copy(message = "Code incorrect.") else r
+            is Reponse.Injoignable -> r
+        }
+    }
+
+    suspend fun connecter(email: String, motDePasse: String, jetonEtape: String = ""): Reponse<Compte> {
+        val corps = buildJsonObject {
+            put("email", email.trim()); put("password", motDePasse)
+            put("jeton_etape", jetonEtape); put("appareil", session.appareil())
+        }
         return when (val r = appeler(HttpMethod.Post, "token/", corps, jeton = null)) {
             is Reponse.Ok -> {
                 val o = r.valeur.jsonObject
                 val compte = json.decodeFromJsonElement(Compte.serializer(), o.getValue("user"))
+                (o["appareil"] as? JsonPrimitive)?.content?.let { session.retenirAppareil(it) }
                 session.ouvrir(o.texte("access"), o.texte("refresh"), compte)
                 Reponse.Ok(compte)
             }
-            // SimpleJWT répond 401 en anglais, sans distinguer mauvais mot de passe et compte
-            // inactif. On le dit en français, en couvrant les deux cas.
-            is Reponse.Refus -> if (r.code == 401) r.copy(
-                message = "Adresse ou mot de passe incorrect. Si votre compte attend une " +
-                    "validation, il ne peut pas encore se connecter.",
-            ) else r
+            is Reponse.Refus -> when {
+                // SimpleJWT répond 401 en anglais, sans distinguer mauvais mot de passe et
+                // compte inactif. On le dit en français, en couvrant les deux cas.
+                r.code == 401 -> r.copy(
+                    message = "Adresse ou mot de passe incorrect. Si votre compte attend une " +
+                        "validation, il ne peut pas encore se connecter.",
+                )
+                // Compte à responsabilités dont le délai d'activation est passé : le code se
+                // met en place sur le site, où l'on peut scanner un QR code avec ce téléphone.
+                r.champs["code"] == SECOND_FACTEUR_A_ACTIVER -> r.copy(
+                    message = "Votre compte doit être protégé par un code de sécurité. Activez-le " +
+                        "sur le site (connectez-vous-y, il vous guidera), puis revenez ici.",
+                )
+                else -> r
+            }
             is Reponse.Injoignable -> r
         }
     }
@@ -432,6 +474,9 @@ class ClientApi(
         return when {
             code in 200..299 -> Reponse.Ok(element ?: JsonObject(emptyMap()))
             // Une panne du serveur n'est pas un refus : la même demande passera plus tard.
+            // « Trop d'essais » sur un compte est une réponse du serveur, pas une panne : il
+            // dit combien attendre, et c'est ce message qu'il faut montrer.
+            code == 429 && (element as? JsonObject)?.containsKey("detail") == true -> lireRefus(code, element)
             code >= 500 || code == 408 || code == 429 ->
                 Reponse.Injoignable("Le serveur ne répond pas correctement pour le moment (erreur $code).")
             else -> lireRefus(code, element)
@@ -488,5 +533,6 @@ class ClientApi(
     companion object {
         const val SESSION_EXPIREE = "Votre session a expiré. Reconnectez-vous."
         private val CLES_GENERALES = setOf("detail", "error", "non_field_errors", "message")
+        const val SECOND_FACTEUR_A_ACTIVER = "SECOND_FACTEUR_A_ACTIVER"
     }
 }

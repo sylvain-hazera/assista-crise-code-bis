@@ -77,6 +77,72 @@ class ClientApiTest {
         assertNull(banc.session.compte.value)
     }
 
+    // --- Connexion en étapes et frein (15/11/2026) ----------------------------------------
+
+    @Test fun lAdresseDitSIlFautUnCodeAvantLeMotDePasse() = runTest {
+        val protege = Banc { json("""{"etape":"code"}""") }
+        assertEquals(true, (protege.api.debutConnexion(" c@exemple.fr ") as Reponse.Ok).valeur)
+        assertEquals("POST connexion/debut/", protege.chemins().single())
+        assertEquals("c@exemple.fr", protege.demandes.single().corps().getValue("email").jsonPrimitive.content)
+
+        val simple = Banc { json("""{"etape":"mot_de_passe"}""") }
+        assertEquals(false, (simple.api.debutConnexion("c@exemple.fr") as Reponse.Ok).valeur)
+    }
+
+    @Test fun unServeurQuiIgnoreLesEtapesMeneAuMotDePasse() = runTest {
+        val ancien = Banc { json("""{"detail":"Not found."}""", HttpStatusCode.NotFound) }
+        assertEquals(false, (ancien.api.debutConnexion("c@exemple.fr") as Reponse.Ok).valeur)
+    }
+
+    @Test fun leJetonDuCodeAccompagneLeMotDePasse() = runTest {
+        val banc = Banc { demande ->
+            if (demande.url.encodedPath.endsWith("connexion/code/")) json("""{"jeton_etape":"J1"}""")
+            else json("""{"access":"A1","refresh":"R1","user":$COMPTE,"appareil":"APPAREIL-1"}""")
+        }
+        val jeton = (banc.api.verifierCode("c@exemple.fr", " 123456 ") as Reponse.Ok).valeur
+        assertEquals("123456", banc.demandes[0].corps().getValue("code").jsonPrimitive.content)
+        assertIs<Reponse.Ok<*>>(banc.api.connecter("c@exemple.fr", "secret", jeton))
+        assertEquals("J1", banc.demandes[1].corps().getValue("jeton_etape").jsonPrimitive.content)
+    }
+
+    @Test fun leTelephoneEstReconnuAuxConnexionsSuivantesMemeApresDeconnexion() = runTest {
+        val banc = Banc { demande ->
+            if (demande.url.encodedPath.endsWith("token/blacklist/")) json("{}")
+            else json("""{"access":"A1","refresh":"R1","user":$COMPTE,"appareil":"APPAREIL-1"}""")
+        }
+        banc.api.connecter("c@exemple.fr", "secret")
+        assertEquals("", banc.demandes[0].corps().getValue("appareil").jsonPrimitive.content)
+        banc.api.deconnecter()
+        banc.api.connecter("c@exemple.fr", "secret")
+        assertEquals("APPAREIL-1", banc.demandes.last().corps().getValue("appareil").jsonPrimitive.content)
+    }
+
+    @Test fun unCodeFauxEstDitSimplement() = runTest {
+        val banc = Banc { json("""{"detail":"Code incorrect."}""", HttpStatusCode.Unauthorized) }
+        val r = banc.api.verifierCode("c@exemple.fr", "000000")
+        assertIs<Reponse.Refus>(r)
+        assertEquals("Code incorrect.", r.message)
+    }
+
+    @Test fun tropDEssaisEstUnRefusQuiDitCombienAttendre() = runTest {
+        val banc = Banc {
+            json("""{"code":"TROP_D_ESSAIS","detail":"Trop d'essais. Réessayez dans 30 secondes.","attendre":"30"}""", HttpStatusCode.TooManyRequests)
+        }
+        val r = banc.api.connecter("c@exemple.fr", "faux")
+        assertIs<Reponse.Refus>(r)
+        assertEquals("Trop d'essais. Réessayez dans 30 secondes.", r.message)
+    }
+
+    @Test fun unCompteQuiDoitActiverSonCodeEstRenvoyeVersLeSite() = runTest {
+        val banc = Banc {
+            json("""{"code":"SECOND_FACTEUR_A_ACTIVER","detail":"Activez-le.","jeton_enrolement":"J"}""", HttpStatusCode.Forbidden)
+        }
+        val r = banc.api.connecter("c@exemple.fr", "secret")
+        assertIs<Reponse.Refus>(r)
+        assertTrue(r.message.contains("sur le site"))
+        assertNull(banc.session.compte.value)
+    }
+
     @Test fun lInscriptionEnvoieCeQueLeServeurAttend() = runTest {
         val banc = Banc { json("""{"id":"u9"}""", HttpStatusCode.Created) }
         val r = banc.api.inscrire(Inscription("Camille", "Durand", "c@exemple.fr", "0612345678", "71000", "Abcdef1!", true, true))
