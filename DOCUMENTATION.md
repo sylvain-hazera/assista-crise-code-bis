@@ -2702,6 +2702,67 @@ faisait dépasser `teams.component.scss`.
 
 ---
 
+### 6.7 Référencement, par domaine (16/11/2026)
+
+Le site est une application : la page servie ne contenait qu'un titre, « Assista Crise », le
+même sur `www.assista-crise.fr` et sur `app.reserve-resilience.org`. Un lien partagé par
+WhatsApp ou par SMS s'affichait donc sous la mauvaise marque, sans description ni image, et
+les moteurs lisaient le même titre sur toutes les pages.
+
+**Une seule fiche : `frontend/src/app/seo/referencement.json`.** Elle décrit les marques (nom,
+slogan, description, par nom d'hôte) et les pages publiques à faire connaître (titre,
+description). Deux lecteurs :
+
+| Lecteur | Quand | Ce qu'il en fait |
+|---|---|---|
+| `frontend/scripts/generer-referencement.mjs` | à la construction de l'image du site | fabrique les variables nginx `$seo_*` (`conf.d/00-referencement.conf`) |
+| `ReferencementService` (`frontend/src/app/seo/`) | dans le navigateur, à chaque changement de page | tient à jour titre, description, adresse canonique |
+
+Le serveur du site (`frontend/nginx.conf`) pose l'en-tête **avant tout JavaScript** : titre,
+description, adresse canonique, balises de partage (`og:*`), nom du site (`WebSite` en
+JSON-LD) et un court texte `<noscript>`. C'est ce que lisent un service de partage et un
+moteur qui n'exécute pas le site.
+
+Règles, toutes vérifiées par `scripts/tester-referencement.sh` sur l'image de production :
+
+- **Seules les pages de la fiche sont indexables**, et seulement sous le nom d'hôte d'une
+  marque. Toute autre page — lien à jeton (suivi de dossier, connexion magique,
+  confirmations), espace connecté, administration — est servie avec `X-Robots-Tag: noindex,
+  nofollow`. C'est une liste blanche : une page ajoutée au site n'est pas proposée aux moteurs
+  tant qu'elle n'est pas dans la fiche.
+- **`/accueil` et `/` ont la même adresse canonique**, la racine. Les paramètres d'adresse en
+  sont écartés.
+- **Une adresse inconnue répond 404**, avec la page d'entrée : le visiteur est ramené à
+  l'accueil comme avant, le moteur comprend que la page n'existe pas. La liste des adresses
+  connues est **relue dans les routes à chaque construction** (premier segment de chaque
+  `path:`), jamais recopiée : une route ajoutée est connue sans rien faire.
+- **`robots.txt` n'interdit pas `/api/`** : un moteur qui exécute le site doit pouvoir lire la
+  marque et les crises pour voir la page. L'indexation des réponses de l'API, des fichiers
+  déposés et de l'administration est interdite par en-tête, au relais (`proxy/nginx.conf`,
+  variable `$robots_relais`). Matrix, l'authentification et Element portent la même
+  interdiction.
+- **Un nom par marque.** `assista-crise.fr` et `assista-crise.duckdns.org` renvoient (301) à
+  `www.assista-crise.fr`, `cj.assista-crise.fr` à `app.reserve-resilience.org` (variable
+  `$hote_de_reference` du relais). Seules les pages sont renvoyées : `/api/`, `/o/`, `/media/`
+  et `/.well-known/` continuent de répondre sous l'ancien nom, parce qu'un 301 transforme un
+  POST en GET.
+- **Image de partage** : `og:image` vise `/api/branding/logo/`, qui renvoie (302) vers le logo
+  de la marque du domaine visité (`BrandingLogoView`). Le logo changé dans l'administration
+  est suivi sans redéploiement.
+- **Anciennes adresses** (`/rgpd.php`, `/add.php`, `/list-cards.php`, encore proposées par les
+  moteurs) : renvoyées en 301 vers la page d'aujourd'hui.
+- **Compression gzip** des scripts et des styles, au serveur du site. Les réponses de l'API ne
+  sont pas compressées.
+
+**Ajouter une marque** : une entrée dans `marques`, sous le nom d'hôte exact du site, puis
+reconstruire le site. Sans entrée, le domaine sert les textes Assista-Crise et n'est pas
+proposé aux moteurs.
+
+**Limites connues.** Le contenu des pages reste produit par JavaScript : Google l'exécute, les
+autres moteurs ne lisent que l'en-tête et le texte `<noscript>`. Le logo Assista-Crise fait
+169 × 148 px, en dessous de ce que plusieurs réseaux exigent pour afficher une image (200 ×
+200 au moins, 1200 × 630 conseillé).
+
 ## 7. Services annexes
 
 | Service | Rôle | Statut | Documentation |

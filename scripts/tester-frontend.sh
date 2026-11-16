@@ -42,6 +42,8 @@ if [[ -z "$TESTS_SEULS" ]]; then
   # La même cible que le déploiement (docker-compose.114.yml, service frontend) : vérifier un
   # autre build ne garantirait rien de ce qui part en production.
   docker build -q -f frontend/Dockerfile.prod -t assista-crise-frontend:verif frontend
+  echo "→ referencement (titres par marque, pages privees, 404, compression)"
+  scripts/tester-referencement.sh assista-crise-frontend:verif
 fi
 
 echo "→ construction de l'image de test"

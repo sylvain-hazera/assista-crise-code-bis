@@ -113,8 +113,9 @@ export class BrandingService {
     if (policeTitre) racine.setProperty('--brand-font-title', `'${policeTitre}', Roboto, "Helvetica Neue", sans-serif`);
     if (policeTexte) racine.setProperty('--brand-font-text', `'${policeTexte}', Roboto, "Helvetica Neue", sans-serif`);
 
+    // Le titre de l'onglet n'est plus pose ici : il depend aussi de la page, voir
+    // ReferencementService, qui suit cette marque et la navigation.
     if (branding.nom_affichage !== BRANDING_ASSISTA_CRISE.nom_affichage) {
-      document.title = branding.nom_affichage;
       const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
       if (favicon && branding.logo_url) favicon.href = branding.logo_url;
     }

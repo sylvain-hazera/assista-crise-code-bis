@@ -5,11 +5,17 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build --configuration=production
+# Variables nginx du referencement (marques, pages publiques, adresses connues du site) :
+# relues dans les routes a chaque construction, voir scripts/generer-referencement.mjs.
+RUN node scripts/generer-referencement.mjs > /app/00-referencement.conf
 
 # light nginx server for prod
 FROM nginx:alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d
 COPY --from=builder /app/dist/assista-crise-front/browser /usr/share/nginx/html
+COPY --from=builder /app/00-referencement.conf /etc/nginx/conf.d/00-referencement.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Une erreur de configuration doit faire echouer la construction, pas le demarrage.
+RUN nginx -t
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

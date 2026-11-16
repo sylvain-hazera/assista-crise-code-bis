@@ -1,0 +1,39 @@
+{
+  "_lisezmoi": [
+    "Source unique du referencement : le serveur web (scripts/generer-referencement.mjs, a la",
+    "construction de l'image) et le site (ReferencementService) lisent ce fichier.",
+    "Textes : ni guillemet droit double, ni <, >, &, $ ou antislash (le generateur les refuse).",
+    "Ajouter une marque = une entree dans 'marques', sous le nom d'hote exact de son site.",
+    "Ajouter une page publique a faire connaitre des moteurs = une entree dans 'pages'.",
+    "Toute page absente de 'pages' est servie avec l'interdiction d'indexer."
+  ],
+  "marque_par_defaut": "www.assista-crise.fr",
+  "marques": {
+    "www.assista-crise.fr": {
+      "nom": "Assista-Crise",
+      "slogan": "entraide et gestion de crise pour les communes",
+      "description": "Assista-Crise, la plateforme d'entraide en situation d'urgence : consultez les crises en cours, proposez votre aide ou demandez de l'assistance. En cas de danger immédiat, appelez le 112."
+    },
+    "app.reserve-resilience.org": {
+      "nom": "Réserve Résilience - Casques Jaunes",
+      "slogan": "entraide en situation d'urgence",
+      "description": "Réserve Résilience - Casques Jaunes, la plateforme d'entraide en situation d'urgence : consultez les crises en cours, proposez votre aide ou demandez de l'assistance. En cas de danger immédiat, appelez le 112."
+    }
+  },
+  "pages": [
+    { "chemin": "/", "titre": "", "description": "" },
+    { "chemin": "/guide", "titre": "Guide des risques majeurs", "description": "Consultez les risques majeurs de votre commune, département par département." },
+    { "chemin": "/carte", "titre": "Carte des crises en cours", "description": "La carte des crises en cours et des informations utiles près de chez vous." },
+    { "chemin": "/crises", "titre": "Crises en cours", "description": "La liste des crises en cours suivies sur la plateforme." },
+    { "chemin": "/register", "titre": "Créer un compte", "description": "Créez votre compte pour proposer votre aide ou demander de l'assistance en situation d'urgence." },
+    { "chemin": "/mentions-legales", "titre": "Mentions légales", "description": "Éditeur, hébergeur et contact du site." },
+    { "chemin": "/cgu", "titre": "Conditions générales d'utilisation", "description": "Les conditions générales d'utilisation de la plateforme." },
+    { "chemin": "/rgpd", "titre": "Protection des données personnelles", "description": "Quelles données sont traitées, pourquoi, pendant combien de temps, et comment exercer vos droits." },
+    { "chemin": "/credits", "titre": "Crédits", "description": "Les sources de données ouvertes et les logiciels libres utilisés par la plateforme." }
+  ],
+  "anciennes_adresses": {
+    "/rgpd.php": "/rgpd",
+    "/add.php": "/",
+    "/list-cards.php": "/"
+  }
+}

@@ -11884,6 +11884,26 @@ class BrandingView(APIView):
         })
 
 
+class BrandingLogoView(APIView):
+    """GET /api/branding/logo/ -- renvoie (302) vers le logo de la marque du Host visité.
+
+    C'est l'image de partage du site (`og:image`, posée par frontend/nginx.conf) : ce
+    qu'affichent WhatsApp, un SMS ou un réseau social à côté d'un lien. Ces services
+    n'exécutent pas le JavaScript et ne peuvent donc pas appeler /api/branding/ pour y lire
+    `logo_url` ; il leur faut une adresse fixe, la même pour toutes les marques. Le logo
+    changé dans l'administration est ainsi suivi sans rien redéployer.
+
+    Même résolution que BrandingView, pour la même raison : le Host seul fait foi."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.http import HttpResponseRedirect
+
+        branding = branding_for_institution(resolve_institution_branding(request))
+        # /logo.png : le logo Assista-Crise, servi par le site (frontend/public).
+        return HttpResponseRedirect(branding.logo_url or "/logo.png")
+
+
 class RelaisSerieView(APIView):
     """Ouvrir, maintenir et fermer un relais radio depuis un navigateur.
 

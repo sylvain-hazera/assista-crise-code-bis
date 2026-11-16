@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { SuiviPositionPermanentService } from './services/suivi-position-permanent.service';
 import { BrandingService } from './services/branding.service';
+import { ReferencementService } from './seo/referencement.service';
 import { ThemeService } from './services/theme.service';
 import { RelectureEnvoiComponent } from './shared/components/common/relecture-envoi/relecture-envoi.component';
 
@@ -22,6 +23,7 @@ export class AppComponent implements OnInit {
   constructor(
     private suiviPosition: SuiviPositionPermanentService,
     private branding: BrandingService,
+    private referencement: ReferencementService,
     // Injecté dès le démarrage : pose le thème (clair/sombre) avant le premier rendu.
     private theme: ThemeService,
   ) {}
@@ -37,5 +39,9 @@ export class AppComponent implements OnInit {
     // défaut reste possible le temps de la réponse API (décision assumée : résolution au
     // runtime plutôt qu'un build par marque, voir le plan de conception).
     this.branding.charger();
+
+    // Titre, description et adresse canonique de chaque page, pour les moteurs de recherche
+    // et l'onglet du navigateur (voir ReferencementService).
+    this.referencement.demarrer();
   }
 }
