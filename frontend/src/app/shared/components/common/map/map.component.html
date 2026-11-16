@@ -207,11 +207,12 @@
         <span class="layer-dot radio-dot"></span>
         Radioactivité ambiante (balises)
       </label>
-      <label class="layer-toggle-item" title="Vitesse mesurée et état du trafic sur les routes nationales et autoroutes de l'État. Vert : fluide. Orange : dense. Rouge : saturé. Gris : sans mesure. Ni autoroutes concédées, ni départementales.">
+      <label class="layer-toggle-item" title="Vitesse mesurée et état du trafic sur les routes nationales et autoroutes de l'État. Vert : fluide. Orange : dense. Rouge : saturé. Gris : sans mesure. Ni autoroutes concédées, ni départementales. Aucune mesure dans le Nord, l'Est, l'Ouest ni en Île-de-France : la source n'y situe pas ses stations.">
         <input type="checkbox" [(ngModel)]="layerVisibility.circulation" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot circulation-dot"></span>
         Circulation (routes nationales)
         @if (layerVisibility.circulation && veilleTronquee.circulation) { <small class="layer-note">zoomez pour tout voir</small> }
+        @if (layerVisibility.circulation) { <small class="layer-note">rien dans le Nord, l'Est, l'Ouest ni en Île-de-France</small> }
       </label>
       <label class="layer-toggle-item" title="Qualité de l'air estimée par modèle dans les grandes villes (OpenWeather), indice de 1 à 5. Pas une mesure de station, pas l'indice ATMO.">
         <input type="checkbox" [(ngModel)]="layerVisibility.qualiteAir" (ngModelChange)="onLayerToggle()">

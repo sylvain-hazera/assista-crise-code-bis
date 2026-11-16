@@ -683,8 +683,21 @@ describe('VeilleComponent', () => {
       expect(bloc(fixture).textContent).toContain('Relevé ancien');
     });
 
-    it('n’affiche pas de bloc là où aucune route n’est mesurée', () => {
+    it('prévient, là où aucune route n’est mesurée, que ce silence ne dit rien du trafic', () => {
       const fixture = demarrer({ circulation: CIRCULATION_VIDE });
+
+      // Autour de Lille, Strasbourg, Rennes, Nantes ou Paris, la source ne situe aucune
+      // station : un bloc absent s'y lisait « rien à signaler ».
+      const texte = bloc(fixture).textContent!;
+      expect(texte).toContain('Aucune mesure de circulation dans ce rayon');
+      expect(texte).toContain('cela ne veut pas dire que ça roule');
+      expect(texte).toContain('Île-de-France');
+      expect(bloc(fixture).querySelector('a')!.href).toContain('bison-fute.gouv.fr');
+      expect(bloc(fixture).querySelector('.troncons')).toBeNull();
+    });
+
+    it('n’affiche ni bloc ni avertissement tant que le territoire n’est pas connu', () => {
+      const fixture = demarrer({ circulation: { ...CIRCULATION_VIDE, emprise_connue: false } });
 
       expect(bloc(fixture)).toBeNull();
     });

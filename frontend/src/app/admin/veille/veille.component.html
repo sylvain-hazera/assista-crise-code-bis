@@ -790,6 +790,25 @@
   }
 
   <!-- ════ Circulation : vitesses mesurées sur le réseau national ════ -->
+  <!-- Sans station dans le rayon, le bloc reste, réduit à un avertissement : un bloc absent se
+       lisait « rien à signaler ». Constat du 16/11/2026 sur le référentiel de Bison Futé : les
+       stations des directions des routes Nord (177), Est (72) et Ouest (124) y figurent sans
+       coordonnées, et l'Île-de-France n'y figure pas — rien n'est donc situable autour de
+       Lille, Strasbourg, Rennes, Nantes ou Paris. -->
+  @if (circulation?.emprise_connue && !circulation!.resultats.length) {
+    <section aria-labelledby="titre-circulation">
+      <h2 id="titre-circulation">
+        <span class="material-icons">traffic</span> Circulation
+      </h2>
+      <p class="message avertissement" role="note">
+        <span class="material-icons">warning_amber</span>
+        <span><strong>Aucune mesure de circulation dans ce rayon — cela ne veut pas dire que ça roule.</strong>
+          Soit aucune route nationale n'y est équipée, soit la source ne situe pas ses stations :
+          c'est le cas dans le Nord, l'Est, l'Ouest et en Île-de-France. Consultez
+          <a href="https://www.bison-fute.gouv.fr" target="_blank" rel="noopener noreferrer">bison-fute.gouv.fr</a>.</span>
+      </p>
+    </section>
+  }
   @if (circulation?.emprise_connue && circulation!.resultats.length) {
     <section aria-labelledby="titre-circulation">
       <h2 id="titre-circulation">

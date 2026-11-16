@@ -17,6 +17,13 @@ Le réseau routier NATIONAL non concédé seulement : routes nationales et autor
 Ni les autoroutes concédées, ni les départementales, ni la voirie communale. Et seulement là où
 il y a une station : un tronçon sans mesure n'est pas un tronçon fluide. L'écran doit le dire.
 
+Et seulement là où la station est SITUÉE. Constat du 16/11/2026 : sur 1 399 stations du
+référentiel, 848 portent des coordonnées. Celles des directions des routes Nord (177), Est (72)
+et Ouest (124) n'en ont aucune, et l'Île-de-France est absente du fichier : rien n'est donc
+situable autour de Lille, Strasbourg, Rennes, Nantes ou Paris. Les stations de l'Ouest portent
+une route et un point de repère, qu'on pourrait situer avec un référentiel routier ; les autres
+n'ont rien. L'écran de veille et le calque de la carte le disent.
+
 DEUX ORIGINES POUR L'ÉTAT D'UN TRONÇON
 1. OFFICIEL : l'état publié par l'exploitant (Traficolor), quand il existe et qu'il est récent.
 2. ESTIMÉ : ailleurs, la vitesse mesurée comparée à la vitesse HABITUELLE du tronçon, que ce
