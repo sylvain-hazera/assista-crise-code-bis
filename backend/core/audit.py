@@ -7,16 +7,23 @@ logger = logging.getLogger(__name__)
 
 
 def get_client_ip(request):
-    """Adresse IP réelle du client, en tenant compte du proxy nginx (X-Forwarded-For/X-Real-IP).
-    None hors requête HTTP (signal, commande, shell -- voir audit_log)."""
+    """Adresse IP réelle du client. None hors requête HTTP (signal, commande, shell -- voir
+    audit_log).
+
+    `X-Real-IP` d'abord : c'est le relais (proxy/nginx.conf, et le pare-feu applicatif devant
+    lui) qui l'écrit, avec l'adresse qu'il a lui-même constatée ; ce que le visiteur enverrait
+    sous ce nom est écrasé. `X-Forwarded-For`, lui, COMMENCE par ce que le visiteur a envoyé
+    (`$proxy_add_x_forwarded_for` ajoute à la suite) : le lire en premier laissait n'importe qui
+    inscrire l'adresse de son choix dans la main courante. On ne le lit donc plus qu'à défaut,
+    et par la fin -- le dernier élément est celui qu'a ajouté le relais le plus proche."""
     if request is None:
         return None
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = request.META.get("HTTP_X_REAL_IP")
+    real_ip = (request.META.get("HTTP_X_REAL_IP") or "").strip()
     if real_ip:
         return real_ip
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[-1].strip()
     return request.META.get("REMOTE_ADDR")
 
 

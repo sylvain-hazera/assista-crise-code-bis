@@ -33,7 +33,10 @@ class TestAuditLogCreation:
             url,
             {"nom": "Mairie de Test", "type": str(institution_type.id), "actif": True},
             format='json',
-            HTTP_X_FORWARDED_FOR="203.0.113.7, 10.0.0.1",
+            # Ce que le relais a constaté, et ce que le visiteur a écrit lui-même en tête de
+            # X-Forwarded-For pour se faire passer pour un autre : seul le premier compte.
+            HTTP_X_REAL_IP="203.0.113.7",
+            HTTP_X_FORWARDED_FOR="8.8.8.8, 203.0.113.7",
             HTTP_USER_AGENT="pytest-agent",
         )
 
