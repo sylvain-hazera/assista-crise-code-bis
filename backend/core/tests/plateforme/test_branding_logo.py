@@ -37,13 +37,13 @@ class TestLogoDeLaMarque:
         reponse = APIClient().get(URL)
 
         assert reponse.status_code == 302
-        assert reponse["Location"] == "/logo.png"
+        assert reponse["Location"] == "/partage.png"
 
     def test_une_marque_sans_logo_garde_celui_par_defaut(self, marque):
         reponse = APIClient().get(URL, HTTP_HOST=DOMAINE)
 
         assert reponse.status_code == 302
-        assert reponse["Location"] == "/logo.png"
+        assert reponse["Location"] == "/partage.png"
 
     def test_une_marque_renvoie_vers_son_propre_logo(self, marque):
         marque.logo = SimpleUploadedFile("logo.png", PNG, content_type="image/png")
@@ -54,7 +54,7 @@ class TestLogoDeLaMarque:
         assert reponse.status_code == 302
         assert reponse["Location"] == marque.logo.url
         # Le logo d'une marque ne sort jamais sous le nom d'une autre.
-        assert APIClient().get(URL)["Location"] == "/logo.png"
+        assert APIClient().get(URL)["Location"] == "/partage.png"
 
     def test_la_reponse_est_lisible_sans_compte(self, marque):
         """Les services de partage n'ont pas de session."""

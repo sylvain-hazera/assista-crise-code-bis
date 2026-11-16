@@ -2748,7 +2748,8 @@ Règles, toutes vérifiées par `scripts/tester-referencement.sh` sur l'image de
   POST en GET.
 - **Image de partage** : `og:image` vise `/api/branding/logo/`, qui renvoie (302) vers le logo
   de la marque du domaine visité (`BrandingLogoView`). Le logo changé dans l'administration
-  est suivi sans redéploiement.
+  est suivi sans redéploiement. Sans logo propre, c'est `/partage.png` (l'emblème
+  Assista-Crise, 1200 x 630, le format que demandent les aperçus de lien).
 - **Anciennes adresses** (`/rgpd.php`, `/add.php`, `/list-cards.php`, encore proposées par les
   moteurs) : renvoyées en 301 vers la page d'aujourd'hui.
 - **Compression gzip** des scripts et des styles, au serveur du site. Les réponses de l'API ne

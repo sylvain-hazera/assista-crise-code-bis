@@ -11900,8 +11900,10 @@ class BrandingLogoView(APIView):
         from django.http import HttpResponseRedirect
 
         branding = branding_for_institution(resolve_institution_branding(request))
-        # /logo.png : le logo Assista-Crise, servi par le site (frontend/public).
-        return HttpResponseRedirect(branding.logo_url or "/logo.png")
+        # /partage.png : l'emblème Assista-Crise au format que demandent les aperçus de lien
+        # (1200 x 630), servi par le site (frontend/public). Le petit /logo.png de l'en-tête
+        # serait refusé ou affiché en vignette par la plupart des messageries.
+        return HttpResponseRedirect(branding.logo_url or "/partage.png")
 
 
 class RelaisSerieView(APIView):
