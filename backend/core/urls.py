@@ -39,7 +39,7 @@ from .views import (
     InvitationAssociationViewSet,
     QualificationMembreViewSet,
     QualificationViewSet,
-    ChangePasswordView, PasswordResetRequestView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
+    ChangePasswordView, PasswordResetRequestView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, DefiInscriptionView, InstitutionValidationView, UserMeView,
     AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
     UserViewSet, CrisisViewSet, RequestViewSet, 
     RecherchePersonneCommentairePhotoViewSet,
@@ -339,6 +339,7 @@ urlpatterns = [
     path('token/refresh/', MyTokenRefreshView.as_view(), name='token_refresh'),
     path('token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     path('register/', RegisterView.as_view(), name='auth_register'),
+    path('inscription/defi/', DefiInscriptionView.as_view(), name='inscription_defi'),
     # Fiche du benevole connecte : la relire, la completer, et choisir un mot de passe
     # (voir MaFicheBenevoleView). Hors du routeur : elle n'a pas d'identifiant, c'est
     # toujours celle de l'appelant.

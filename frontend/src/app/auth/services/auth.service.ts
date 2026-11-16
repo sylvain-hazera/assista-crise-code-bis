@@ -1,10 +1,11 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, catchError, delay, map, Observable, of, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { User, UserRole, UserPayload, Environment, EtatSecondFacteur } from '../../shared/models/user.model';
 import { SuiviPositionPermanentService } from '../../services/suivi-position-permanent.service';
+import { DefiInscriptionService } from './defi-inscription.service';
 
 interface TokenResponse {
   access: string;    // JWT access (simplejwt)
@@ -57,6 +58,8 @@ export interface ConfirmationSecondFacteur {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly url = `${environment.apiUrl}`;
+
+  private defiInscription = inject(DefiInscriptionService);
 
   constructor(private http: HttpClient, private suiviPosition: SuiviPositionPermanentService) {}
 
@@ -270,9 +273,15 @@ export class AuthService {
       }));
   }
 
-  /** POST /api/register/ */
-  register(payload: UserPayload & { email: string; password: string }): Observable<User> {
-    return this.http.post<User>(`${this.url}/register/`, payload);
+  /** POST /api/register/, accompagné du calcul anti-robot (voir DefiInscriptionService) :
+   * rien à faire pour l'appelant, ni pour la personne. `piege` est la valeur du champ caché
+   * du formulaire, que seul un robot remplit. */
+  register(payload: UserPayload & { email: string; password: string }, piege = ''): Observable<User> {
+    return this.defiInscription.avecDefi((defi) => this.http.post<User>(`${this.url}/register/`, {
+      ...payload,
+      ...(defi ? { defi } : {}),
+      ...(piege ? { site_web: piege } : {}),
+    }));
   }
 
   validateInstitution(payload: {

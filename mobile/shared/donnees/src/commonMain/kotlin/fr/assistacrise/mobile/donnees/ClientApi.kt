@@ -7,6 +7,8 @@ import fr.assistacrise.mobile.domaine.Photo
 import fr.assistacrise.mobile.domaine.Profil
 import fr.assistacrise.mobile.domaine.TitreDuCatalogue
 import fr.assistacrise.mobile.domaine.Creneau
+import fr.assistacrise.mobile.domaine.Defi
+import fr.assistacrise.mobile.domaine.resoudreDefi
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Etape
 import fr.assistacrise.mobile.domaine.Fiche
@@ -38,6 +40,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
@@ -174,7 +178,41 @@ class ClientApi(
             // serveur le décide d'après l'hôte appelé, jamais d'après ce champ seul.
             put("souhaite_rejoindre_reserve", i.rejoindreLaReserve)
         }
-        return appeler(HttpMethod.Post, "register/", corps, jeton = null).sansValeur()
+        // Le serveur demande un calcul avant de créer un compte (contrôle anti-robot) : la
+        // personne n'a rien à faire. S'il juge le calcul insuffisant (428), on en demande un
+        // plus long et on renvoie le même formulaire.
+        var reponse: Reponse<JsonElement> = Reponse.Injoignable("")
+        for (essai in 0..2) {
+            val defi = defiResolu()
+            val envoi = if (defi == null) corps else JsonObject(corps + ("defi" to defi))
+            reponse = appeler(HttpMethod.Post, "register/", envoi, jeton = null)
+            if ((reponse as? Reponse.Refus)?.code != 428) break
+        }
+        return reponse.sansValeur()
+    }
+
+    /**
+     * Demande un défi au serveur et le résout. `null` si le serveur n'en fournit pas (satellite
+     * pas encore à jour) ou ne répond pas : l'envoi part alors sans, et c'est le serveur qui
+     * décide.
+     */
+    private suspend fun defiResolu(): JsonObject? {
+        val o = (appeler(HttpMethod.Get, "inscription/defi/", null, jeton = null) as? Reponse.Ok)?.valeur as? JsonObject
+            ?: return null
+        val defi = runCatching {
+            Defi(
+                sel = o.texte("sel"), empreinte = o.texte("empreinte"),
+                maximum = o.texte("maximum").toInt(), emis = o.texte("emis").toLong(),
+                expire = o.texte("expire").toLong(), signature = o.texte("signature"),
+            )
+        }.getOrNull() ?: return null
+        // Hors du fil de l'affichage : au niveau le plus dur, le calcul dure plusieurs secondes.
+        val nombre = withContext(Dispatchers.Default) { resoudreDefi(defi) } ?: return null
+        return buildJsonObject {
+            put("sel", defi.sel); put("empreinte", defi.empreinte); put("maximum", defi.maximum)
+            put("emis", defi.emis); put("expire", defi.expire); put("signature", defi.signature)
+            put("nombre", nombre)
+        }
     }
 
     /** Le serveur répond de la même façon que l'adresse existe ou non : on n'en déduit rien. */

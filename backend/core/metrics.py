@@ -44,6 +44,13 @@ CONNEXIONS_ECHOUEES = Counter("assista_connexions_echouees_total",
 CONNEXIONS_FREINEES = Counter("assista_connexions_freinees_total",
                               "Failed sign-in attempts that triggered a per-account delay")
 
+# Création de compte (16/11/2026, voir core/defi_inscription.py). Mêmes règles : ni adresse ni
+# navigateur en étiquette.
+INSCRIPTIONS = Counter("assista_inscriptions_total",
+                       "Sign-up requests, by outcome of the anti-robot check", ["resultat"])
+INSCRIPTION_DEFIS = Counter("assista_inscription_defis_total",
+                            "Sign-up challenges issued, by difficulty level", ["niveau"])
+
 
 def _type_label(type_obj):
     return (type_obj.type if type_obj else None) or "unknown"

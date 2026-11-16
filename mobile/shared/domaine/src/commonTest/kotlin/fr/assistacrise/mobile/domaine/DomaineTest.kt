@@ -72,4 +72,28 @@ class DomaineTest {
         assertEquals(listOf(StatutMission.EN_COURS), StatutMission.EN_PREPARATION.voisins())
         assertFalse(StatutMission.TERMINEE in StatutMission.EN_PREPARATION.voisins())
     }
+
+    // ── Calcul anti-robot de la création de compte ────────────────────────────────────────
+
+    @Test fun sha256DonneLesEmpreintesDeReference() {
+        // Vecteurs FIPS 180-4 : sans eux, un défi du serveur ne serait jamais résolu.
+        assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", sha256Hex(""))
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", sha256Hex("abc"))
+        assertEquals("9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318", sha256Hex("a".repeat(55)))
+    }
+
+    @Test fun leDefiEstResoluAChaqueExtremiteDeLaPlage() {
+        fun defi(nombre: Int, maximum: Int) = Defi("0123456789abcdef01234567", sha256Hex("0123456789abcdef01234567$nombre"), maximum, 0, 0, "")
+        assertEquals(0, resoudreDefi(defi(0, 500)))
+        assertEquals(137, resoudreDefi(defi(137, 500)))
+        assertEquals(500, resoudreDefi(defi(500, 500)))
+        assertEquals(1000, resoudreDefi(defi(1000, 1200)))     // le nombre de chiffres change en route
+    }
+
+    @Test fun unDefiSansSolutionOuMalFormeNeTournePasSansFin() {
+        assertEquals(null, resoudreDefi(Defi("abc", sha256Hex("abc900"), 100, 0, 0, "")))
+        assertEquals(null, resoudreDefi(Defi("abc", "pas-une-empreinte", 100, 0, 0, "")))
+        // Un serveur compromis ne fait pas calculer le téléphone pendant des heures.
+        assertEquals(null, resoudreDefi(Defi("abc", sha256Hex("abc1"), Int.MAX_VALUE, 0, 0, "")))
+    }
 }

@@ -1,9 +1,10 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, Signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors, FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
+import { DefiInscriptionService } from '../../services/defi-inscription.service';
 import { UserRole } from '../../../shared/models/user.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { InstitutionTypeService } from '../../../services/institution-type.service';
@@ -62,9 +63,23 @@ export class RegisterComponent implements OnInit, OnDestroy {
     private locationService: LocationService,
     private institutionTypeService: InstitutionTypeService,
     private brandingService: BrandingService,
-  ) {}
+    private defiInscription: DefiInscriptionService,
+  ) {
+    this.verification = this.defiInscription.verification;
+  }
+
+  /** Vrai pendant que l'envoi attend la fin du calcul anti-robot. */
+  readonly verification: Signal<boolean>;
+
+  /** Champ caché du formulaire, invisible et hors du parcours au clavier : une personne ne le
+   * remplit pas, un robot qui remplit tout, si. Rempli, il ne refuse rien : le serveur demande
+   * seulement un calcul plus long (un gestionnaire de mots de passe peut s'y tromper). */
+  piege = '';
 
   ngOnInit(): void {
+    // Le calcul anti-robot commence à l'ouverture du formulaire et se fait pendant que la
+    // personne le remplit (voir DefiInscriptionService) : elle n'attend rien à l'envoi.
+    this.defiInscription.preparer();
     this.initForm();
     this.setupUserTypeListener();
     this.loadDepartments();
@@ -327,7 +342,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     }
 
     const proceedToRegister = () => {
-      this.authService.register(registerData)
+      this.authService.register(registerData, this.piege)
         .pipe(takeUntil(this.destroy$))
         .subscribe({
           next: (response: any) => {

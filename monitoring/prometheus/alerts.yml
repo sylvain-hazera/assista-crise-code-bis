@@ -74,6 +74,17 @@ groups:
           summary: "Sign-in attempts are being slowed down on several accounts"
           description: "More than 10 failed sign-ins hit the per-account brake in 15 minutes. Look at the Fail2ban page (jail connexion-ratee) and at the audit trail."
 
+      # Sign-up anti-robot check (core/defi_inscription.py). Only what a person's browser
+      # never produces is counted: a forged or replayed challenge, no challenge at all beyond
+      # the legacy quota, the per-address ceiling. A real surge of sign-ups (accepted, or asked
+      # for a harder challenge) does not fire: that is a crisis, not an attack.
+      - alert: SignUpRobots
+        expr: sum(increase(assista_inscriptions_total{resultat=~"defi_invalide|defi_rejoue|defi_requis|plafond"}[15m])) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "Robots are trying to create accounts"
+          description: "More than 20 sign-up requests were refused by the anti-robot check in 15 minutes. To make the check harder for everyone for a while: docker exec ac_backend python manage.py durcir_inscription FORT --heures 2"
+
   # ------------------------------------------------------------------ infrastructure
   - name: infrastructure
     rules:

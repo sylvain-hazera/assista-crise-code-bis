@@ -92,6 +92,32 @@ tests:
         alertname: SignInBruteForce
         exp_alerts: []
 
+  - name: robots hammering the sign-up form
+    interval: 1m
+    input_series:   # two forged challenges a minute: no browser produces even one
+      - series: 'assista_inscriptions_total{resultat="defi_invalide"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SignUpRobots
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Robots are trying to create accounts"
+              description: "More than 20 sign-up requests were refused by the anti-robot check in 15 minutes. To make the check harder for everyone for a while: docker exec ac_backend python manage.py durcir_inscription FORT --heures 2"
+
+  - name: a real surge of sign-ups during a crisis is not an attack
+    interval: 1m
+    input_series:   # ten accepted sign-ups a minute, some of them asked for a harder challenge
+      - series: 'assista_inscriptions_total{resultat="acceptee"}'
+        values: '0+10x30'
+      - series: 'assista_inscriptions_total{resultat="defi_trop_facile"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SignUpRobots
+        exp_alerts: []
+
   - name: crisis active but no help request at all
     interval: 1m
     input_series:

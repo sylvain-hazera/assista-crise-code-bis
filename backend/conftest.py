@@ -12,6 +12,15 @@ def api_client():
 
 
 @pytest.fixture(autouse=True)
+def _inscription_sans_controle_anti_robot(settings):
+    """La création de compte passe par un contrôle anti-robot (core/defi_inscription.py) qui
+    compte les demandes par adresse : laissé actif, il ferait dépendre chaque test qui crée
+    plus de trois comptes d'une règle qui ne le concerne pas. Coupé pour toute la suite ; les
+    tests du contrôle lui-même le rallument (tests/securite/test_defi_inscription.py)."""
+    settings.INSCRIPTION_DEFI_ACTIF = False
+
+
+@pytest.fixture(autouse=True)
 def _reset_geo_resolution_budget():
     """core.geo_lookup._budget est un threading.local posé par GeoResolutionBudgetMiddleware à
     CHAQUE requête HTTP réelle (donc jamais un problème en production) — mais pytest exécute

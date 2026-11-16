@@ -397,3 +397,12 @@
   line-height: 1.5;
   color: var(--ac-text-muted, #6b7280);
 }
+
+// Champ piège anti-robot : présent dans la page, jamais à l'écran.
+.champ-piege {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

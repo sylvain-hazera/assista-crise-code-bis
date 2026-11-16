@@ -1,6 +1,7 @@
 package fr.assistacrise.mobile.donnees
 
 import fr.assistacrise.mobile.domaine.EtatAction
+import fr.assistacrise.mobile.domaine.sha256Hex
 import fr.assistacrise.mobile.domaine.filDeMessages
 import fr.assistacrise.mobile.domaine.Inscription
 import fr.assistacrise.mobile.domaine.Mission
@@ -155,12 +156,43 @@ class ClientApiTest {
         val banc = Banc { json("""{"id":"u9"}""", HttpStatusCode.Created) }
         val r = banc.api.inscrire(Inscription("Camille", "Durand", "c@exemple.fr", "0612345678", "71000", "Abcdef1!", true, true))
         assertIs<Reponse.Ok<*>>(r)
-        val corps = banc.demandes.single().corps()
-        assertEquals("POST register/", banc.chemins().single())
+        // Le défi anti-robot est demandé d'abord ; ce serveur-ci n'en fournit pas, l'envoi part sans.
+        assertEquals(listOf("GET inscription/defi/", "POST register/"), banc.chemins())
+        val corps = banc.demandes.last().corps()
         assertEquals("UTIL_SIMPLE", corps.getValue("type").jsonPrimitive.content)
         assertEquals("c@exemple.fr", corps.getValue("username").jsonPrimitive.content)
         assertEquals("true", corps.getValue("souhaite_rejoindre_reserve").jsonPrimitive.content)
-        assertNull(banc.demandes.single().jeton())
+        assertNull(corps["defi"])
+        assertNull(banc.demandes.last().jeton())
+    }
+
+    @Test fun lInscriptionResoutLeDefiDuServeurEtLeJointAuFormulaire() = runTest {
+        // Le défi que rendrait le serveur pour le nombre 137 : l'empreinte de « sel137 ».
+        val defi = """{"sel":"sel","empreinte":"${sha256Hex("sel137")}","maximum":500,"emis":10,"expire":20,"niveau":"NORMAL","signature":"sig"}"""
+        val banc = Banc { demande ->
+            if (demande.url.encodedPath.endsWith("inscription/defi/")) json(defi) else json("""{"id":"u9"}""", HttpStatusCode.Created)
+        }
+        val r = banc.api.inscrire(Inscription("Camille", "Durand", "c@exemple.fr", "0612345678", "71000", "Abcdef1!", true, true))
+        assertIs<Reponse.Ok<*>>(r)
+        val joint = banc.demandes.last().corps().getValue("defi").jsonObject
+        assertEquals("137", joint.getValue("nombre").jsonPrimitive.content)
+        assertEquals("sig", joint.getValue("signature").jsonPrimitive.content)
+        assertEquals("sel", joint.getValue("sel").jsonPrimitive.content)
+    }
+
+    @Test fun unDefiJugeInsuffisantEstRefaitSansRienRedemanderALaPersonne() = runTest {
+        var envois = 0
+        val banc = Banc { demande ->
+            when {
+                demande.url.encodedPath.endsWith("inscription/defi/") ->
+                    json("""{"sel":"s","empreinte":"${sha256Hex("s3")}","maximum":50,"emis":1,"expire":2,"niveau":"ELEVE","signature":"sig"}""")
+                ++envois == 1 -> json("""{"code":"DEFI_REQUIS","detail":"Vérification requise."}""", HttpStatusCode.fromValue(428))
+                else -> json("""{"id":"u9"}""", HttpStatusCode.Created)
+            }
+        }
+        val r = banc.api.inscrire(Inscription("Camille", "Durand", "c@exemple.fr", "0612345678", "71000", "Abcdef1!", true, true))
+        assertIs<Reponse.Ok<*>>(r)
+        assertEquals(listOf("GET inscription/defi/", "POST register/", "GET inscription/defi/", "POST register/"), banc.chemins())
     }
 
     @Test fun lesErreursDeChampDuServeurSontRenduesParChamp() = runTest {

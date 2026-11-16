@@ -10535,6 +10535,17 @@ class FreinConnexion(models.Model):
     bloque_jusqua = models.DateTimeField(null=True, blank=True)
 
 
+class CompteurInscription(models.Model):
+    """Les compteurs de la création de compte (voir core/defi_inscription.py) : inscriptions
+    venues d'une même adresse dans l'heure, défis déjà utilisés, niveau imposé à la main.
+
+    `cle` est une empreinte (HMAC) : ni l'adresse IP ni la signature du navigateur ne sont
+    lisibles ici. Chaque ligne porte son échéance et s'efface d'elle-même."""
+    cle = models.CharField(max_length=64, unique=True)
+    nombre = models.PositiveIntegerField(default=0)
+    expire_le = models.DateTimeField(db_index=True)
+
+
 class AppareilConnu(models.Model):
     """Un appareil (navigateur, téléphone) depuis lequel ce compte s'est déjà connecté.
 

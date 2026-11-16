@@ -4905,6 +4905,86 @@ les clés d'accès (passkeys), liées à un nom de domaine alors que le site en 
 ---
 
 
+### 10.3.0 Création de compte : arrêter les robots sans rien demander aux personnes (16/11/2026)
+
+**Ce qui existait avant** : rien. L'inscription n'avait ni contrôle ni limite propre, alors
+qu'un compte de particulier est actif aussitôt et reçoit un e-mail de bienvenue. Un robot
+pouvait créer des comptes en série et faire écrire le site à des adresses qui n'avaient rien
+demandé — ce qui abîme la réputation d'expéditeur du domaine, le jour où l'on en a besoin.
+
+**Aucune énigme à lire, aucun service tiers.** Un captcha visible échoue justement en crise :
+téléphone, mains qui tremblent, réseau faible, lecteur d'écran. Tout est dans
+`core/defi_inscription.py` :
+
+```
+GET  /api/inscription/defi/   → {sel, empreinte, maximum, emis, expire, niveau, signature}
+POST /api/register/           {…, defi: {…, nombre}, site_web: ""}   → 201 | 428 | 429
+```
+
+Le serveur donne l'empreinte SHA-256 de `sel + nombre`, où `nombre` est tiré au hasard entre 0
+et `maximum`. Le navigateur (`auth/services/defi-calcul.ts`) ou l'application
+(`mobile/shared/domaine/Defi.kt`) retrouve `nombre` en essayant les valeurs une à une, dès
+l'ouverture du formulaire. Le travail est borné, le défi est signé (aucun état côté serveur à
+l'émission) et ne sert qu'une fois.
+
+| Niveau | `maximum` | Sur un téléphone ordinaire | Quand |
+|---|---|---|---|
+| `NORMAL` | 50 000 | imperceptible | par défaut |
+| `ELEVE` | 600 000 | une à quatre secondes | 15 inscriptions dans l'heure (même adresse, même famille de navigateur), 150 pour l'adresse entière, ou un mauvais signal |
+| `FORT` | 3 000 000 | dix à vingt secondes au pire | 60 et 400 |
+
+**Un mauvais signal ne refuse jamais** : il rend le calcul suivant plus long, pour une heure.
+Deux signaux — formulaire envoyé moins de trois secondes après l'émission du défi, champ piège
+`site_web` rempli (un gestionnaire de mots de passe peut s'y tromper : c'est pour cela qu'on ne
+refuse pas). Le serveur répond alors 428 ; le client redemande un défi, plus long, et renvoie le
+même formulaire. La personne lit « Vérification en cours… ».
+
+**Qui est compté.** L'adresse publique vue par le relais : `X-Real-IP`, écrit par `ac_waf`
+d'après la connexion réelle puis recopié par `ac_proxy`. **Jamais `X-Forwarded-For`**, dont le
+premier élément est ce que le visiteur a bien voulu y mettre. En IPv6, le préfixe /64 (le
+foyer). Deux compteurs par heure :
+
+- par adresse **et famille de navigateur** (système, navigateur, version majeure) : dans un
+  gymnase en Wi-Fi partagé, les iPhone ne pâtissent pas des inscriptions faites sur Android.
+  Ce n'est **pas** une barrière — un robot change de signature à volonté — seulement une
+  largesse pour les personnes. Et elle est moins fine qu'on l'espère : les navigateurs récents
+  ne disent plus le modèle du téléphone ni la version exacte ;
+- par adresse seule, plus haut : c'est lui qui plafonne un robot qui change de signature. Au-delà
+  de 1 000 demandes dans l'heure, l'adresse est refusée (429) jusqu'à l'heure suivante.
+
+L'adresse locale d'un appareil (RFC 1918) n'est visible que là où le serveur est sur le même
+réseau — un satellite, le réseau de la mairie : chaque appareil y a naturellement son compteur.
+À travers une box, aucun navigateur ne la révèle depuis 2019.
+
+**Ce que cela arrête, honnêtement.** Les robots ordinaires, qui postent le formulaire sans
+exécuter le site, sont arrêtés net. Un attaquant qui écrit un programme exprès résout le calcul
+dix à cent fois plus vite qu'un téléphone : pour lui ce sont les compteurs qui plafonnent, pas
+le calcul. Rien n'arrête quelqu'un qui crée dix comptes à la main.
+
+**Rien en clair** (`CompteurInscription`) : la clé d'un compteur est une empreinte de l'adresse
+et de la famille de navigateur ; tout s'efface au bout d'une heure.
+
+**Clients sans défi** — l'application mobile 0.8.1 et antérieures, un satellite ancien — gardent
+un petit quota : trois comptes par adresse et trente en tout par heure. À fermer par
+`INSCRIPTION_SANS_DEFI_TOLEREE = False` quand ces versions auront disparu ; l'application 0.8.2
+résout le défi.
+
+**Durcir à la main**, pendant une vague de faux comptes :
+
+```
+docker exec ac_backend python manage.py durcir_inscription FORT --heures 2
+docker exec ac_backend python manage.py durcir_inscription NORMAL      # retour immédiat
+```
+
+Le réglage s'efface tout seul à l'échéance. **Supervision** :
+`assista_inscriptions_total{resultat}` et `assista_inscription_defis_total{niveau}`, sans
+étiquette par adresse ; alerte `SignUpRobots` au-delà de vingt demandes refusées en quinze
+minutes (défi fabriqué ou rejoué, absence de défi au-delà du quota, plafond). Une vraie vague
+d'inscriptions ne la déclenche pas.
+
+**Les tests coupent ce contrôle** pour toute la suite (`conftest.py`), sauf ceux qui le visent
+(`tests/securite/test_defi_inscription.py`).
+
 ### 10.3.1 Recherche d'adresse relayée par le serveur (15/11/2026)
 
 **Constat.** Le site appelait la Base adresse nationale **depuis le navigateur**

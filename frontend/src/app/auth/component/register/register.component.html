@@ -20,6 +20,15 @@
     }
 
     <form [formGroup]="registerForm" (ngSubmit)="onSubmit()">
+      <!-- Champ piège anti-robot : voir `piege` dans le composant. Hors écran plutôt que
+           display:none, que les robots savent éviter ; ignoré des lecteurs d'écran et de la
+           touche Tab. -->
+      <div class="champ-piege" aria-hidden="true">
+        <label for="site_web">Site web (ne pas remplir)</label>
+        <input id="site_web" name="site_web" type="text" tabindex="-1" autocomplete="off"
+               [value]="piege" (input)="piege = $any($event.target).value">
+      </div>
+
       
       <!-- Je suis -->
       <div class="form-group">
@@ -345,7 +354,8 @@
           class="btn-submit"
           [disabled]="registerForm.invalid || isSubmitting">
           <span *ngIf="!isSubmitting">Créer le compte</span>
-          <span *ngIf="isSubmitting">Création en cours...</span>
+          <span *ngIf="isSubmitting && !verification()">Création en cours...</span>
+          <span *ngIf="isSubmitting && verification()">Vérification en cours…</span>
         </button>
       </div>
 

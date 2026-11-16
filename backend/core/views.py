@@ -12385,10 +12385,46 @@ class PieceIdentiteReserveViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(pieces, many=True).data)
 
 
+class DefiInscriptionView(APIView):
+    """GET /api/inscription/defi/ -- le calcul que le navigateur (ou l'application) doit faire
+    avant de créer un compte. Voir core/defi_inscription.py : rien à lire ni à résoudre pour
+    la personne, et un niveau qui monte avec les signaux d'un robot."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from . import defi_inscription
+
+        if defi_inscription.plafond_atteint(request):
+            return Response(
+                {"code": defi_inscription.TROP_DE_DEMANDES,
+                 "detail": "Trop d'inscriptions depuis ce réseau. Réessayez dans une heure."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(defi_inscription.emettre(request))
+
+
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer # Ajoute la logique de mot de passe dans le serializer
     permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        """Le contrôle anti-robot passe AVANT toute validation : un robot ne doit ni apprendre
+        qu'une adresse est déjà inscrite, ni faire partir un e-mail, sans avoir payé le calcul."""
+        from . import defi_inscription
+
+        verdict = defi_inscription.controler(request)
+        if verdict == defi_inscription.TROP_DE_DEMANDES:
+            return Response(
+                {"code": verdict,
+                 "detail": "Trop d'inscriptions depuis ce réseau. Réessayez dans une heure."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS)
+        if verdict == defi_inscription.DEFI_REQUIS:
+            # 428 et non 400 : ce n'est pas une erreur de saisie. Le client demande un défi
+            # (/api/inscription/defi/), le résout et renvoie le même formulaire.
+            return Response(
+                {"code": verdict, "detail": "Vérification requise avant la création du compte."},
+                status=status.HTTP_428_PRECONDITION_REQUIRED)
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         user = serializer.save()
