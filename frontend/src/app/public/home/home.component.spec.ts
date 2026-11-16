@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { HomeComponent } from './home.component';
+import { HomeComponent, lienDeLApplication } from './home.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
 
 describe('HomeComponent', () => {
@@ -28,7 +28,12 @@ describe('HomeComponent', () => {
 
     expect(lien).withContext('lien de téléchargement').not.toBeNull();
     expect(lien!.textContent).toContain("Télécharger l'application Android");
-    expect(lien!.getAttribute('href')).toBe('/mobile/reserve-resilience.apk');
+    // Les tests tournent sur localhost : c'est l'application Assista-Crise qui y est proposée.
+    expect(lien!.getAttribute('href')).toBe('/mobile/assista-crise.apk');
+    // Une application par marque : chaque domaine sert la sienne.
+    expect(lienDeLApplication('app.reserve-resilience.org')).toBe('/mobile/reserve-resilience.apk');
+    expect(lienDeLApplication('www.assista-crise.fr')).toBe('/mobile/assista-crise.apk');
+    expect(lienDeLApplication('192.168.1.20')).toBe('/mobile/assista-crise.apk');
     expect(lien!.hasAttribute('download')).toBeTrue();
   });
 });

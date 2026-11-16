@@ -36,8 +36,17 @@ La compilation de développement n'accepte le HTTP en clair que vers `localhost`
 ## Marques
 
 Une marque est une saveur Gradle dans `androidApp/build.gradle.kts` : identifiant
-d'application, nom affiché, adresse du serveur. Logo, icône, couleurs et polices sont dans
-`androidApp/src/main/res` et `ui/Theme.kt`. Seule `reserveResilience` existe.
+d'application, nom, adresse du serveur. Deux existent :
+
+| Saveur | Identifiant | Serveur | Fichier servi par le site |
+|---|---|---|---|
+| `reserveResilience` | `org.reserve_resilience.app` | `app.reserve-resilience.org` | `/mobile/reserve-resilience.apk` |
+| `assistaCrise` | `fr.assista_crise.app` | `www.assista-crise.fr` | `/mobile/assista-crise.apk` |
+
+Le code est le même. Ce qui change vit dans le dossier de la saveur : les images
+(`androidApp/src/<saveur>/res`, à défaut celles de `src/main/res`) et la palette
+(`androidApp/src/<saveur>/kotlin/.../ui/Marque.kt`). `ui/Theme.kt` ne porte que ce que les deux
+applications partagent. Les deux s'installent côte à côte sur le même téléphone.
 
 ## Ce qui reste local au téléphone
 

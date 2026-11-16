@@ -1,5 +1,7 @@
 package fr.assistacrise.mobile.donnees
 
+import fr.assistacrise.mobile.domaine.AbonnementAlerte
+import fr.assistacrise.mobile.domaine.Collectivite
 import fr.assistacrise.mobile.domaine.Champs
 import fr.assistacrise.mobile.domaine.Commentaire
 import fr.assistacrise.mobile.domaine.Compte
@@ -29,6 +31,7 @@ import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Headers
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.content.PartData
 import io.ktor.client.request.header
 import io.ktor.client.request.request
@@ -316,6 +319,21 @@ class ClientApi(
         authentifie(HttpMethod.Delete, "mon-appareil/?installation=$installation").sansValeur()
 
     suspend fun notifications(): Reponse<List<Notification>> = liste("mes-notifications/", Notification.serializer())
+
+    // ── Alertes de la commune : je m'abonne et me désabonne pour moi-même. ──
+
+    suspend fun mesAbonnementsAlerte(): Reponse<List<AbonnementAlerte>> =
+        liste("alertes-population/abonnement/", AbonnementAlerte.serializer())
+
+    /** Communes et intercommunalités dont le nom contient `recherche` (deux lettres au moins). */
+    suspend fun collectivitesPourAlerte(recherche: String): Reponse<List<Collectivite>> =
+        liste("alertes-population/collectivites/?q=${recherche.encodeURLParameter()}", Collectivite.serializer())
+
+    suspend fun sAbonnerAuxAlertes(idCollectivite: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "alertes-population/abonnement/", buildJsonObject { put("institution", idCollectivite) }).sansValeur()
+
+    suspend fun seDesabonnerDesAlertes(idCollectivite: String): Reponse<Unit> =
+        authentifie(HttpMethod.Delete, "alertes-population/abonnement/?institution=$idCollectivite").sansValeur()
 
     /** Dit au serveur où en sont ces notifications. Lire la liste, seul, n'accuse rien. */
     suspend fun accuser(etape: Etape, ids: Collection<String>): Reponse<Unit> =

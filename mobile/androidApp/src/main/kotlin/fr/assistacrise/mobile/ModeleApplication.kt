@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import fr.assistacrise.mobile.domaine.AbonnementAlerte
+import fr.assistacrise.mobile.domaine.Collectivite
 import fr.assistacrise.mobile.domaine.Alerte
 import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Crise
@@ -580,6 +582,59 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     /** `ancien == null` : compte sans mot de passe (créé par import), qui en choisit un. */
+    // ── Alertes de la commune ──────────────────────────────────────────────────────────────
+    // L'abonnement est un consentement : il se donne et se retire ici, pour soi-même. Rien n'en
+    // est gardé sur le téléphone — la liste se relit au serveur à chaque ouverture de l'écran.
+    var abonnementsAlerte by mutableStateOf<List<AbonnementAlerte>>(emptyList()); private set
+    var collectivitesTrouvees by mutableStateOf<List<Collectivite>>(emptyList()); private set
+    var erreurAbonnement by mutableStateOf<String?>(null); private set
+    /** Dernière recherche lancée : une réponse arrivée après une frappe plus récente est ignorée. */
+    private var rechercheDeCollectivite = ""
+
+    fun chargerAbonnementsAlerte() {
+        viewModelScope.launch {
+            when (val r = app.api.mesAbonnementsAlerte()) {
+                is Reponse.Ok -> { abonnementsAlerte = r.valeur; erreurAbonnement = null }
+                is Reponse.Refus -> erreurAbonnement = r.message
+                is Reponse.Injoignable -> erreurAbonnement = "Pas de réseau : vos abonnements ne peuvent pas être lus pour l'instant."
+            }
+        }
+    }
+
+    fun chercherCollectivites(recherche: String) {
+        val q = recherche.trim()
+        rechercheDeCollectivite = q
+        if (q.length < 2) { collectivitesTrouvees = emptyList(); return }
+        viewModelScope.launch {
+            val r = app.api.collectivitesPourAlerte(q)
+            if (q != rechercheDeCollectivite) return@launch
+            if (r is Reponse.Ok) {
+                val deja = abonnementsAlerte.map { it.id }.toSet()
+                collectivitesTrouvees = r.valeur.filter { it.id !in deja }
+            }
+        }
+    }
+
+    fun sAbonnerAuxAlertes(idCollectivite: String, reussi: () -> Unit) {
+        viewModelScope.launch {
+            when (val r = app.api.sAbonnerAuxAlertes(idCollectivite)) {
+                is Reponse.Ok -> { collectivitesTrouvees = emptyList(); rechercheDeCollectivite = ""; reussi(); chargerAbonnementsAlerte() }
+                is Reponse.Refus -> erreurAbonnement = r.message
+                is Reponse.Injoignable -> erreurAbonnement = "Pas de réseau : l'abonnement n'est pas enregistré."
+            }
+        }
+    }
+
+    fun seDesabonnerDesAlertes(idCollectivite: String) {
+        viewModelScope.launch {
+            when (val r = app.api.seDesabonnerDesAlertes(idCollectivite)) {
+                is Reponse.Ok -> chargerAbonnementsAlerte()
+                is Reponse.Refus -> erreurAbonnement = r.message
+                is Reponse.Injoignable -> erreurAbonnement = "Pas de réseau : vous êtes toujours abonné."
+            }
+        }
+    }
+
     fun changerMotDePasse(ancien: String?, nouveau: String, confirmation: String, reussi: () -> Unit) {
         val erreurs = validerMotDePasse(ancien, nouveau, confirmation)
         if (erreurs.isNotEmpty()) { formulaireMotDePasse = EtatFormulaire(champs = erreurs); return }

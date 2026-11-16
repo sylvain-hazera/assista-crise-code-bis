@@ -344,3 +344,30 @@ class MonCompteTest {
         assertTrue(banc.demandes.any { it.method == HttpMethod.Post && it.url.encodedPath.endsWith("qualifications-membres/") })
     }
 }
+
+/** Recevoir les alertes de sa commune : on cherche, on s'abonne, on se désabonne — pour soi-même. */
+class AbonnementAlerteTest {
+
+    @Test fun chercherSaCommunePuisSAbonnerEtSeDesabonner() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("alertes-population/collectivites/", """[{"id":"i1","nom":"Mairie de Saint-Chamond"}]""")
+        banc.repond("alertes-population/abonnement/", """[{"institution":"i1","institution_nom":"Mairie de Saint-Chamond"}]""")
+
+        val trouvees = assertIs<Reponse.Ok<List<fr.assistacrise.mobile.domaine.Collectivite>>>(banc.api.collectivitesPourAlerte("Saint Cha")).valeur
+        assertEquals("Mairie de Saint-Chamond", trouvees.single().nom)
+        // L'espace du nom saisi ne casse pas l'adresse.
+        assertEquals("Saint Cha", banc.demandes.last().url.parameters["q"])
+
+        assertIs<Reponse.Ok<Unit>>(banc.api.sAbonnerAuxAlertes("i1"))
+        assertEquals("i1", banc.envois("alertes-population/abonnement/").single()["institution"]!!.jsonPrimitive.content)
+
+        val abonnements = assertIs<Reponse.Ok<List<fr.assistacrise.mobile.domaine.AbonnementAlerte>>>(banc.api.mesAbonnementsAlerte()).valeur
+        assertEquals("i1", abonnements.single().id)
+        assertEquals("Mairie de Saint-Chamond", abonnements.single().nom)
+
+        assertIs<Reponse.Ok<Unit>>(banc.api.seDesabonnerDesAlertes("i1"))
+        val retrait = banc.demandes.last()
+        assertEquals(HttpMethod.Delete, retrait.method)
+        assertEquals("i1", retrait.url.parameters["institution"])
+    }
+}

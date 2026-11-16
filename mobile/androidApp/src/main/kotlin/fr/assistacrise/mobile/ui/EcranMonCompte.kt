@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,7 @@ fun EcranMonCompte(modele: ModeleApplication, compte: Compte) {
             if (modele.horsLigne) Text("Pas de réseau : rien ne peut être modifié pour l'instant.", style = MaterialTheme.typography.bodySmall, color = Attente)
             Identite(modele, compte)
             Connexion(modele, compte)
+            AlertesDeLaCommune(modele)
             Documents(modele)
         }
     }
@@ -121,6 +123,40 @@ private fun Connexion(modele: ModeleApplication, compte: Compte) {
         onClick = { modele.changerMotDePasse(if (aUnMotDePasse) ancien else null, nouveau, confirmation) { ancien = ""; nouveau = ""; confirmation = "" } },
         enabled = !etat.enCours, modifier = Modifier.fillMaxWidth().height(50.dp),
     ) { Text(if (etat.enCours) "Enregistrement…" else "Enregistrer le mot de passe") }
+}
+
+/**
+ * « Recevoir les alertes de ma commune » : je m'abonne, pour moi-même, aux alertes des
+ * collectivités de mon choix. Ce n'est pas FR-Alert, qu'on reçoit sans rien demander.
+ */
+@Composable
+private fun AlertesDeLaCommune(modele: ModeleApplication) {
+    var recherche by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) { modele.chargerAbonnementsAlerte() }
+
+    Section("Alertes de ma commune")
+    Text(
+        "Abonnez-vous aux alertes de votre commune : en cas de crise, elle pourra vous prévenir ici. " +
+            "Vous vous désabonnez quand vous voulez. Ce n'est pas FR-Alert, que vous recevez sans rien demander.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    modele.erreurAbonnement?.let { Text(it, color = Refus, style = MaterialTheme.typography.bodyMedium) }
+    if (modele.abonnementsAlerte.isEmpty()) {
+        Text("Vous n'êtes abonné aux alertes d'aucune commune.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+    }
+    modele.abonnementsAlerte.forEach { abonnement ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(abonnement.nom, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(top = 12.dp))
+            TextButton(onClick = { modele.seDesabonnerDesAlertes(abonnement.id) }) { Text("Me désabonner") }
+        }
+    }
+    Champ(recherche, { recherche = it; modele.chercherCollectivites(it) }, "Nom de votre commune", Modifier.fillMaxWidth())
+    modele.collectivitesTrouvees.forEach { collectivite ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(collectivite.nom, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(top = 12.dp))
+            TextButton(onClick = { modele.sAbonnerAuxAlertes(collectivite.id) { recherche = "" } }) { Text("M'abonner") }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

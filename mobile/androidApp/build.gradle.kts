@@ -11,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.8.2"
+        versionCode = 13
+        versionName = "0.9.0"
     }
 
     buildFeatures {
@@ -37,6 +37,22 @@ android {
             buildConfigField("String", "URL_API", "\"$site/api\"")
             // L'hote des QR codes de mobilisation : l'application propose de les ouvrir elle-meme.
             manifestPlaceholders["hoteSite"] = site.substringAfter("://").substringBefore("/").substringBefore(":")
+            // Sans accent : ce nom part dans les metadonnees des photos (EXIF).
+            buildConfigField("String", "NOM_MARQUE", "\"Reserve Resilience\"")
+        }
+        // Assista-Crise : la meme application, sous sa propre marque (embleme a la flamme, sarcelle
+        // et anthracite), servie par www.assista-crise.fr et qui parle a ce domaine-la. Les deux
+        // applications s'installent cote a cote : identifiants distincts.
+        // Images : src/assistaCrise/res ; palette : src/assistaCrise/kotlin/.../ui/Marque.kt.
+        create("assistaCrise") {
+            dimension = "marque"
+            applicationId = "fr.assista_crise.app"
+            resValue("string", "nom_application", "Assista-Crise")
+            val site = (project.findProperty("urlSite") as String?) ?: "https://www.assista-crise.fr"
+            buildConfigField("String", "URL_SITE", "\"$site\"")
+            buildConfigField("String", "URL_API", "\"$site/api\"")
+            manifestPlaceholders["hoteSite"] = site.substringAfter("://").substringBefore("/").substringBefore(":")
+            buildConfigField("String", "NOM_MARQUE", "\"Assista-Crise\"")
         }
     }
 

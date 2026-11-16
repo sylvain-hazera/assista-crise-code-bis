@@ -19,7 +19,11 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 [ -d "$ANDROID_HOME/platforms" ] || { echo "SDK Android introuvable dans $ANDROID_HOME." >&2; exit 1; }
 
 ./gradlew --quiet :shared:domaine:jvmTest :shared:donnees:jvmTest :shared:lien:jvmTest
-./gradlew --quiet :androidApp:assembleReserveResilienceDebug "$@"
+# Une application par marque : meme code, autre nom, autre embleme, autre domaine.
+./gradlew --quiet :androidApp:assembleReserveResilienceDebug :androidApp:assembleAssistaCriseDebug "$@"
 
-apk=androidApp/build/outputs/apk/reserveResilience/debug/androidApp-reserveResilience-debug.apk
-echo "Tests passes. APK : $PWD/$apk ($(du -h "$apk" | cut -f1))"
+echo "Tests passes."
+for saveur in reserveResilience assistaCrise; do
+  apk=androidApp/build/outputs/apk/$saveur/debug/androidApp-$saveur-debug.apk
+  echo "APK $saveur : $PWD/$apk ($(du -h "$apk" | cut -f1))"
+done

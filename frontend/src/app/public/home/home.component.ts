@@ -30,6 +30,11 @@ import {
   MaMobilisation, VerificationMobilisationService,
 } from '../../services/verification-mobilisation.service';
 
+/** Le fichier de l'application Android à proposer sur ce domaine. */
+export function lienDeLApplication(hote: string): string {
+  return hote.endsWith('reserve-resilience.org') ? '/mobile/reserve-resilience.apk' : '/mobile/assista-crise.apk';
+}
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -69,7 +74,11 @@ export class HomeComponent implements OnInit {
   // Demande de Sylvain du 16/11/2026. L'adresse est fixe : chaque nouvelle version de
   // l'application est déposée sous ce même nom (frontend/public/mobile, avec version.json que
   // l'application lit pour proposer sa mise à jour).
-  readonly lienAppliAndroid = '/mobile/reserve-resilience.apk';
+  //
+  // UNE APPLICATION PAR MARQUE (16/11/2026) : celle de Réserve Résilience reste servie par son
+  // domaine, et Assista-Crise sert la sienne — même code, autre nom, autre emblème, et chacune
+  // parle à son propre domaine. Le domaine visité décide donc du fichier proposé.
+  readonly lienAppliAndroid = lienDeLApplication(typeof location !== 'undefined' ? location.hostname : '');
   /** Un fichier .apk ne s'installe pas sur un iPhone : inutile de le lui proposer. */
   readonly appliAndroidProposee = !/iPhone|iPad|iPod/i.test(navigator.userAgent);
 

@@ -68,7 +68,7 @@ object Photographe {
                     setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, format("yyyy:MM:dd HH:mm:ss", maintenant, TimeZone.getDefault()))
                     // La même heure dans le champ principal : c'est celui que le serveur relève.
                     setAttribute(ExifInterface.TAG_DATETIME, format("yyyy:MM:dd HH:mm:ss", maintenant, TimeZone.getDefault()))
-                    setAttribute(ExifInterface.TAG_SOFTWARE, "Reserve Resilience $version")
+                    setAttribute(ExifInterface.TAG_SOFTWARE, "${BuildConfig.NOM_MARQUE} $version")
                     if (position != null) {
                         setLatLong(position.latitude, position.longitude)
                         // Heure du relevé en temps universel, comme le veut la norme : c'est elle
