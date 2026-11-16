@@ -5,10 +5,10 @@
 # script — mais rien n'installait Chromium, et le Dockerfile de production ne fait qu'un
 # `ng build`. Résultat : aucune page n'avait de test, et on ne pouvait pas en écrire.
 #
-# Même base que le builder de production (node:18-alpine, image épinglée par digest) pour que
+# Même base que le builder de production (node:22-alpine, image épinglée par digest) pour que
 # les tests tournent sur la version de Node qui construit le bundle livré : un test vert sur une
 # autre version ne garantit rien de ce qui part en production.
-FROM node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
 
 # Chromium d'Alpine, et non un téléchargement par Puppeteer : la version du paquet suit celle
 # des bibliothèques de l'image, alors qu'un binaire téléchargé casse au premier changement de

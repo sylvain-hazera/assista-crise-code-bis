@@ -283,7 +283,7 @@ export class TransportBle implements Transport {
 
   async ecrire(octets: Uint8Array): Promise<void> {
     if (!this.carEcriture) { throw new Error('Liaison Bluetooth fermée.'); }
-    await this.carEcriture.writeValueWithResponse(octets);
+    await this.carEcriture.writeValueWithResponse(octets as Uint8Array<ArrayBuffer>);
     // Meshtastic : la réponse attend dans FROM_RADIO, et la bibliothèque relit après chaque
     // écriture plutôt que de compter sur la notification.
     if (this.carLecture) { void this.tirer(); }
@@ -425,7 +425,7 @@ export class TransportHttpMeshtastic implements Transport {
     let reponse: Response;
     try {
       reponse = await fetch(`${this.base}/api/v1/toradio`, this.options({
-        method: 'PUT', headers: { 'Content-Type': 'application/x-protobuf' }, body: octets,
+        method: 'PUT', headers: { 'Content-Type': 'application/x-protobuf' }, body: octets as Uint8Array<ArrayBuffer>,
       }, 4000));
     } catch (e) {
       this.surPerte(`Écriture vers ${this.libelle} impossible.`);
