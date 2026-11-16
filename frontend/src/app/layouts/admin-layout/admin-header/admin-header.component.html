@@ -19,6 +19,9 @@
 }
 
 <div class="header-right">
+  <!-- Administrateur seulement : ce que montrent les listes (son institution par défaut). -->
+  <app-selecteur-perimetre />
+
   <button
     class="icon-button position-toggle"
     [class.actif]="suiviPosition.actif"

@@ -118,7 +118,7 @@ from .views import (
     ModuleDegatsCriseViewSet,
     ConservationPiecesView,
     RelaisSerieView, RelaisPlanCanauxView, RelaisAnnonceView,
-    InstitutionActiveView,
+    InstitutionActiveView, PerimetreAdminView,
     PieceIdentiteReserveViewSet,
     BrandingView,
     SondeView,
@@ -126,6 +126,7 @@ from .views import (
     ImportHabitationsExempleView,
     SalonMatrixEquipeViewSet,
     SalonMatrixInstitutionViewSet,
+    SalonMatrixMissionViewSet,
     PositionMatrixView,
     LogementsDisponiblesView,
     AffecterLogementView,
@@ -181,6 +182,7 @@ router.register(r'liaisons-meshtastic', LiaisonMeshtasticViewSet)
 router.register(r'messages-canal-meshcore', MessageCanalMeshCoreViewSet)
 router.register(r'salons-matrix', SalonMatrixEquipeViewSet)
 router.register(r'salons-matrix-institution', SalonMatrixInstitutionViewSet)
+router.register(r'salons-matrix-mission', SalonMatrixMissionViewSet)
 router.register(r'contacts-meshcore', ContactMeshCoreViewSet)
 router.register(r'traceroutes-meshcore', TracerouteMeshCoreViewSet)
 router.register(r'alertes-sos-mesh', AlerteMeshSOSViewSet)
@@ -415,6 +417,7 @@ urlpatterns = [
     # Contexte de travail d'un compte multi-appartenance (mairie ET association) : voir
     # core/institution_courante.py. Hors du routeur — c'est toujours celui de l'appelant.
     path('me/institution-active/', InstitutionActiveView.as_view(), name='institution_active'),
+    path('me/perimetre/', PerimetreAdminView.as_view(), name='perimetre_admin'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
     # Le meme verdict en JSON, pour le scanner integre a l'application (voir
     # VerifierDemandeMobilisationJsonView). Sous le meme prefixe, parce que c'est le meme fait

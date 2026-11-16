@@ -60,7 +60,10 @@
         <tbody>
           @for (m of filteredMissions; track m.id) {
             <tr (click)="openDetail(m)">
-              <td class="cell-titre">{{ m.titre }}</td>
+              <td class="cell-titre">
+                {{ m.titre }}
+                @if (m.interet_general) { <span class="chip-general" title="Mission d'intérêt général : demandée par l'institution, sans demandeur individuel">Intérêt général</span> }
+              </td>
               <td>{{ m.crise_nom || crisisName(m.crise) }}</td>
               <td class="cell-equipes">
                 @if (m.equipes_noms && m.equipes_noms.length) {
@@ -114,8 +117,26 @@
       </div>
       <form class="modal-body" [formGroup]="missionForm" (ngSubmit)="modal === 'create' ? submitCreate() : submitEdit()">
         <div class="form-field">
-          <label>Titre *</label>
-          <input type="text" formControlName="titre" placeholder="Ex: Dégager les routes secteur nord"/>
+          <label>Intitulé de la mission *</label>
+          <input type="text" formControlName="titre" placeholder="Ex : Garde du feu, Dégagement des routes"/>
+          <!-- L'intitulé est GÉNÉRIQUE : c'est ce qui permet à une mission de porter plusieurs
+               dossiers, et il s'affiche dans le nom du salon de la mission. -->
+          <small class="aide">
+            Intitulé <strong>générique</strong> : il nomme le type de mission, jamais une personne ni une
+            adresse. Ce qui est propre à une intervention s'écrit dans le dossier.
+          </small>
+        </div>
+
+        <div class="form-field case">
+          <label>
+            <input type="checkbox" formControlName="interet_general"/>
+            Mission d'intérêt général
+          </label>
+          <small class="aide">
+            À cocher quand personne n'a appelé à l'aide et que c'est votre institution qui demande la
+            mission (garde du feu, ronde, surveillance d'un site). Elle pourra alors ouvrir des
+            <strong>dossiers génériques</strong>, sans demandeur, pour le chat, les photos et la traçabilité.
+          </small>
         </div>
 
         <div class="form-field">
@@ -185,7 +206,23 @@
           <h2>{{ selectedMission.titre }}
             <span class="statut-chip" [class]="statutClass(selectedMission.statut)">{{ statutLabel(selectedMission.statut) }}</span>
           </h2>
-          <p class="subtitle">{{ selectedMission.crise_nom || crisisName(selectedMission.crise) }}</p>
+          <p class="subtitle">
+            {{ selectedMission.crise_nom || crisisName(selectedMission.crise) }}
+            @if (selectedMission.institution_nom) { · commandée par {{ selectedMission.institution_nom }} }
+            @if (selectedMission.interet_general) { · <span class="chip-general">Intérêt général</span> }
+          </p>
+          <!-- « 1 mission = 1 canal » : le salon naît avec la mission ; le pont Matrix le crée à
+               son passage suivant et y inscrit les membres des équipes affectées. -->
+          @if (selectedMission.salon_matrix) {
+            <p class="salon-mission">
+              <span class="material-icons">forum</span>
+              @if (selectedMission.salon_matrix.pret) {
+                Salon de la mission ouvert : les membres des équipes affectées y sont inscrits.
+              } @else {
+                Salon de la mission en cours de création.
+              }
+            </p>
+          }
         </div>
         <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
       </div>
@@ -240,7 +277,51 @@
           }
         }
 
-        <h3>Dossiers de cette mission</h3>
+        <h3>
+          Dossiers de cette mission
+          @if (peutOuvrirDossier(selectedMission) && !ouvertureDossier) {
+            <button type="button" class="btn-ghost sm ouvrir-dossier" (click)="commencerOuvertureDossier(selectedMission)">
+              <span class="material-icons">add</span> Ouvrir un dossier
+            </button>
+          }
+        </h3>
+        @if (ouvertureDossier) {
+          <form class="ouverture-dossier" (ngSubmit)="ouvrirDossier()">
+            <p class="aide">
+              Dossier <strong>générique</strong>, à la demande de
+              {{ selectedMission.institution_nom || 'votre institution' }} : il n'a pas de demandeur, mais
+              il porte le chat, les photos et la traçabilité. Vous pouvez en ouvrir plusieurs (un par
+              jour de garde, par exemple).
+            </p>
+            <div class="form-field">
+              <label>Titre du dossier</label>
+              <input type="text" name="titre" [(ngModel)]="ouvertureDossier.titre"/>
+            </div>
+            <div class="form-field">
+              <label>Ce que couvre ce dossier *</label>
+              <textarea name="description" rows="2" [(ngModel)]="ouvertureDossier.description"
+                        placeholder="Ex : garde du samedi 14 juillet, col de la République"></textarea>
+            </div>
+            @if (selectedMission.equipe_ids.length > 1) {
+              <div class="form-field">
+                <label>Équipe</label>
+                <select name="equipe" [(ngModel)]="ouvertureDossier.equipe_id">
+                  <option value="">— À affecter plus tard —</option>
+                  @for (tid of selectedMission.equipe_ids; track tid) {
+                    <option [value]="tid">{{ teamName(tid) }}</option>
+                  }
+                </select>
+              </div>
+            }
+            @if (erreurOuverture) { <p class="erreur-ouverture" role="alert">{{ erreurOuverture }}</p> }
+            <div class="ouverture-actions">
+              <button type="button" class="btn-ghost" (click)="fermerOuvertureDossier()">Annuler</button>
+              <button type="submit" class="btn-primary" [disabled]="ouvertureEnCours">
+                {{ ouvertureEnCours ? 'Ouverture…' : 'Ouvrir le dossier' }}
+              </button>
+            </div>
+          </form>
+        }
         @if (dossiersForMission(selectedMission.id!).length === 0) {
           <p class="empty-text">Aucun dossier rattaché pour l'instant.</p>
         } @else {
@@ -250,7 +331,7 @@
               @for (d of dossiersForMission(selectedMission.id!); track d.id) {
                 <tr>
                   <td>{{ d.numero }}</td>
-                  <td>{{ d.titre }}</td>
+                  <td>{{ d.titre }} @if (d.generique) { <span class="chip-general">générique</span> }</td>
                   <td>{{ d.equipe_nom || '—' }}</td>
                   <td>{{ d.statut }}</td>
                 </tr>

@@ -3,6 +3,8 @@ import { inject } from '@angular/core';
 import { AuthService } from '../../auth/services/auth.service';
 import { BehaviorSubject, Observable, catchError, filter, switchMap, take, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { PerimetreService } from '../../services/perimetre.service';
+import { UserRole } from '../../shared/models/user.model';
 
 let isRefreshing = false;
 const refreshedTokenSubject = new BehaviorSubject<string | null>(null);
@@ -13,6 +15,14 @@ function withAuth(req: HttpRequest<unknown>, token: string): HttpRequest<unknown
 
 function withEnvironment(req: HttpRequest<unknown>, authService: AuthService): HttpRequest<unknown> {
   return req.clone({ headers: req.headers.set('X-Environment', authService.getEnvironment()) });
+}
+
+/** Périmètre de consultation d'un administrateur (voir PerimetreService) : ce qu'il a choisi de
+ * regarder part avec chaque requête. Envoyé seulement pour ce rôle — le serveur l'ignorerait
+ * pour tout autre, autant ne pas le dire. */
+function withPerimetre(req: HttpRequest<unknown>, authService: AuthService, perimetre: PerimetreService): HttpRequest<unknown> {
+  if (authService.getEffectiveRole() !== UserRole.ADMIN) { return req; }
+  return req.clone({ headers: req.headers.set('X-Perimetre', perimetre.choix) });
 }
 
 function isAuthEndpoint(url: string): boolean {
@@ -41,6 +51,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const authService = inject(AuthService);
   const token = authService.getToken();
+  // Posé sur la requête d'origine : elle est rejouée telle quelle après un renouvellement de
+  // session, et doit alors porter le même périmètre.
+  req = withPerimetre(req, authService, inject(PerimetreService));
   let cloned = token ? withAuth(req, token) : req;
   cloned = withEnvironment(cloned, authService);
 

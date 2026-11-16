@@ -347,6 +347,46 @@ tentative est datée (`derniere_tentative`, cooldown) : un code introuvable n'es
 redemandé à chaque lecture. Le reverse-géocodage d'un point est mis en cache par
 `PointCommune`, arrondi à 4 décimales (~11 m). En liste, aucun appel réseau.
 
+#### Ce qu'un administrateur regarde (16/11/2026)
+
+Un administrateur échappait à tous les filtres ci-dessus : partout il voyait toutes les
+institutions, équipes et missions de la plateforme. C'est son droit, pas son besoin — un
+administrateur qui est aussi cadre d'une mairie veut d'abord voir sa mairie. Un sélecteur dans la
+barre du haut (« Je regarde ») dit donc ce qu'il regarde, et le navigateur le transmet à chaque
+requête dans l'en-tête `X-Perimetre` (`core/perimetre_admin.py`) :
+
+| Valeur | Ce que montrent les listes |
+|---|---|
+| `MIENNE` (choix par défaut de l'écran) | son institution active, comme un cadre de cette institution |
+| l'identifiant d'une institution | celle-là, comme s'il en était cadre |
+| `TOUT` | toute la plateforme, comme avant |
+
+Trois règles à ne pas perdre de vue :
+
+1. **Le sélecteur réduit ce qui est affiché, jamais les droits.** Seules les routes de liste
+   sont filtrées (`admin_sans_filtre` rend vrai sur toute route de détail) : un administrateur
+   ouvre toujours un objet par son adresse, le modifie, valide un compte. Ce n'est pas une
+   barrière de sécurité et il ne faut pas s'en servir comme telle.
+2. **L'en-tête n'élargit jamais.** Il est ignoré pour tout autre rôle : un cadre qui écrit
+   `TOUT` continue de ne voir que son institution.
+3. **Sans l'en-tête, rien ne change** (ponts, application mobile, scripts) : l'administrateur
+   voit tout. Un en-tête qui ne désigne rien est refusé (400), pas deviné.
+
+Là où le code écrivait « si administrateur : pas de filtre », il écrit désormais
+`admin_sans_filtre(request, vue)`, puis retombe sur la règle d'un cadre avec
+`institution_regardee(request)` (l'institution dont on adopte le point de vue) et
+`institutions_visibles(request)` (les rattachements, ou pour un administrateur l'institution
+regardée). `GET /api/me/perimetre/` alimente le sélecteur ; c'est le seul endroit où le périmètre
+ne s'applique pas, sans quoi on ne pourrait plus en sortir.
+
+Corrigé du même geste : **la liste des missions** n'avait aucun filtre de périmètre — tout acteur
+institutionnel y voyait les missions de toute la plateforme. Elle est réduite aux missions de
+ses équipes, de son institution, ou des crises de son territoire.
+
+Non couverts, volontairement : le registre des personnes vulnérables et le module des dégâts
+(`core/vulnerabilites.py`, `core/habitations.py`), où l'administrateur garde la vue complète
+tracée qu'il avait.
+
 ### 5.6 Contrôle d'accès aux données
 
 - **Localisation des personnes** : l'adresse d'une demande ou d'un signalement n'est visible
@@ -2762,6 +2802,68 @@ périodiquement** des files en base (`MessageMeshLog`, `CommandeMeshCore`,
   capturée par le frontend seulement quand le navigateur a déjà la position (jamais de
   traçage continu).
 - Les erreurs applicatives sont aussi envoyées sur un salon Matrix (§ 5.7).
+
+#### Salons d'office : institution, équipe, mission (16/11/2026)
+
+Règle posée par Sylvain : **« une institution = un canal pour ses cadres et un pour ses
+intervenants ; une équipe = un canal ; une mission = un canal »**. Jusque-là un salon naissait
+d'un geste (un bouton sur la fiche) ; la plupart des objets n'en avaient pas, et les missions ne
+pouvaient pas en avoir. `core/salons_matrix.py` comble les retards :
+
+| Objet | Salons | Quand |
+|---|---|---|
+| Institution | `PERMANENTS` (ses cadres) et `BENEVOLES` (ses intervenants) | à son premier rattachement |
+| Équipe | `INTERVENANTS` et `ENCADREMENT` | à sa création depuis l'écran (déjà en place depuis le 13/11/2026) ; au rattrapage pour les équipes anciennes qui ont des membres |
+| Mission | un salon (`SalonMatrixMission`) | dès qu'une équipe lui est affectée, tant qu'elle n'est pas terminée |
+
+**Un salon ne naît que s'il y a quelqu'un à y mettre** — décision du 11/11/2026 pour
+l'arborescence de coordination (127 équipes auraient fait 254 salons presque tous vides), gardée
+ici pour les trois natures : pas de salon d'institution sans membre, d'équipe sans équipier, de
+mission sans équipe.
+
+Le salon `ANNONCES` d'une institution reste à la demande : c'est une diffusion d'association,
+pas un canal de travail.
+
+Le **salon de mission** réunit les membres actifs de toutes les équipes affectées, leur
+encadrement, leur chef et leur régulateur — c'est le seul endroit où plusieurs équipes d'une
+même mission se parlent. Le pont lit `GET /api/salons-matrix-mission/`, qui ne sert que les
+missions non terminées : une mission close garde son salon et son historique, sa composition
+n'est plus touchée.
+
+Garde-fous : **production seulement** (la zone de démonstration garde ses salons à la demande) ;
+pas sur un satellite (le pont tourne au central, la mission y arrive par la synchronisation où
+le même signal crée son salon) ; et un salon impossible à créer n'empêche jamais de créer
+l'équipe ou la mission — l'erreur est journalisée et le rattrapage reprend.
+
+**Rattrapage de l'existant** : `manage.py rattraper_salons_matrix` (`--simulation` pour compter
+sans rien créer). Idempotent. Il ne crée que des lignes ; le pont crée les salons côté Synapse à
+son passage suivant. Le pont doit être redéployé avec le serveur (`deployer.sh matrix-bridge`)
+pour connaître les salons de mission.
+
+#### Missions d'intérêt général et dossiers génériques (16/11/2026)
+
+Une garde du feu, une ronde, la surveillance d'un site ne répondent pas à l'appel à l'aide de
+quelqu'un : c'est l'institution qui les demande. Deux champs sur `Mission` :
+
+- `institution` : celle qui **commande** la mission. Posée par le serveur à la création
+  (l'institution de l'appelant ; le client ne peut pas créer une mission au nom d'une autre). Elle
+  sert aussi au périmètre de la liste des missions.
+- `interet_general` : la mission peut ouvrir des **dossiers génériques**.
+
+**L'intitulé d'une mission est générique** dans tous les cas : il nomme un type de mission
+(« Garde du feu »), jamais une personne ni une adresse. L'écran le dit sous le champ. Ce qui est
+propre à une intervention s'écrit dans le dossier.
+
+Un **dossier générique** (`Dossier.generique`, `institution_demandeuse`) n'a ni demande, ni
+signalement, ni habitation d'origine, mais il porte le chat, les photos et la traçabilité — ce
+pour quoi il existe. Il s'ouvre **à la demande**, autant de fois qu'il en faut (un par jour de
+garde), par `POST /api/missions/<id>/ouvrir-dossier/` : réservé à l'institution qui commande la
+mission ou à celle d'une de ses équipes ; l'équipe doit être une de celles de la mission ; ni
+`generique` ni `institution_demandeuse` ne se modifient après coup.
+
+Limite connue : un dossier appartient toujours à une crise (`Dossier.crise` est obligatoire, et
+une trentaine d'endroits s'y fient). Une mission menée hors de toute crise doit en désigner une à
+l'ouverture du dossier ; l'écran de création de mission impose déjà une crise.
 
 ### 7.2 Réseaux maillés radio (MeshCore, Meshtastic)
 

@@ -66,6 +66,10 @@ from .institution_attachment import (
     attach_secours_user_to_institution, resolve_or_invite_responsable,
     grant_institution_and_demo_access, _get_or_create_contact_institution,
 )
+from .perimetre_admin import (
+    admin_sans_filtre, est_administrateur as _est_administrateur_plateforme, institution_regardee,
+    institutions_visibles,
+)
 from .permissions import (
     EstComptePont,
     PeutAgirPourCompagnon,
@@ -260,6 +264,7 @@ from .models import (
     StatutQualification,
     ModeleMessage,
     SalonMatrixEquipe,
+    SalonMatrixMission,
     TypeSalonEquipe,
     SalonMatrixInstitution,
     TypeSalonInstitution,
@@ -646,6 +651,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    SalonMatrixMissionSerializer,
     AffectationRotationSerializer,
     CampagneDisponibiliteSerializer,
     CreneauEquipeSerializer,
@@ -1777,10 +1783,14 @@ class UserViewSet(viewsets.ModelViewSet):
         from .visibilite_membres import filtre_utilisateurs_visibles
 
         if self.action in ('list', 'retrieve'):
-            visible = filtre_utilisateurs_visibles(
-                self.request.user,
-                est_administrateur=get_effective_role(self.request) == UserRole.ADMINISTRATOR,
-            )
+            if admin_sans_filtre(self.request, self):
+                visible = None
+            elif _est_administrateur_plateforme(self.request):
+                # Administrateur regardant une institution : ses membres actifs.
+                visible = Q(institutions__institution_id__in=institutions_visibles(self.request),
+                            institutions__actif=True)
+            else:
+                visible = filtre_utilisateurs_visibles(self.request.user)
             if visible is not None:
                 queryset = queryset.filter(visible).distinct()
 
@@ -2770,7 +2780,7 @@ def _dashboard_zone_filter(request):
     tableau vide (contrairement à filter_queryset_to_viewer_zone, qui renvoie .none() faute
     de zone connue — approprié pour des listes de contenu, pas pour un dashboard accessible à
     tout utilisateur authentifié, y compris un bénévole simple sans institution)."""
-    if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+    if admin_sans_filtre(request):
         return None
     zone = viewer_zone_code(request)
     if zone is None or zone[0] == "national":
@@ -3002,7 +3012,7 @@ def _widen_zone_for_reporting(request, queryset, resolver=None):
     if request.query_params.get('scope') != 'zone':
         return queryset
     role = effective_role_or_none(request)
-    if role == UserRole.ADMINISTRATOR:
+    if admin_sans_filtre(request):
         return queryset
     if role not in INSTITUTIONAL_TYPES:
         return queryset.none()
@@ -6330,11 +6340,10 @@ class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
         if institution_ids:
             return qs.filter(institution_id__in=institution_ids)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(institution_id__in=mes_institutions)
 
     def perform_create(self, serializer):
@@ -6382,11 +6391,10 @@ class ConfigurationAlerteSismiqueViewSet(EnvironmentScopedViewSetMixin, viewsets
         institution_id = self.request.query_params.get('institution')
         if institution_id:
             qs = qs.filter(institution_id=institution_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(institution_id__in=mes_institutions)
 
     def perform_create(self, serializer):
@@ -6514,11 +6522,10 @@ class RisqueCommunalViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         institution_id = self.request.query_params.get('institution')
         if institution_id:
             qs = qs.filter(institution_id=institution_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(institution_id__in=mes_institutions)
 
     def perform_create(self, serializer):
@@ -6754,9 +6761,9 @@ class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, view
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        institution = getattr(user, 'institution', None)
+        institution = institution_regardee(self.request)
         # Chacun voit sa propre désignation ; les membres de la collectivité voient celles de
         # leur collectivité. Savoir qui tient le registre n'est pas une donnée du registre :
         # c'est l'organisation interne de la mairie, et R. 121-2 lui impose déjà d'informer ses
@@ -7773,7 +7780,7 @@ class RattachementHabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         habitation_id = self.request.query_params.get('habitation')
         if habitation_id:
             qs = qs.filter(habitation_id=habitation_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         mes_communes = [
             h.commune_code for h in Habitation.objects.filter(
@@ -7992,11 +7999,10 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
         if institution_ids:
             return qs.filter(institution_id__in=institution_ids)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(institution_id__in=mes_institutions)
 
     def perform_create(self, serializer):
@@ -8120,11 +8126,10 @@ class PlanMissionModeleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(plan__institution_id__in=mes_institutions)
 
     def perform_create(self, serializer):
@@ -8287,10 +8292,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         et UserSerializer.get_institution_id, pour que "mes équipes" corresponde exactement à
         l'institution qui recevra une équipe créée à la volée depuis ce même wizard, jamais le
         FK User.institution brut qui peut diverger."""
-        contact = ContactInstitution.objects.filter(
-            utilisateur=request.user, actif=True
-        ).select_related("institution").first()
-        institution = contact.institution if contact else None
+        if _est_administrateur_plateforme(request) and not admin_sans_filtre(request, self):
+            # Administrateur regardant une institution : « mes équipes » sont les siennes.
+            institution = institution_regardee(request)
+        else:
+            contact = ContactInstitution.objects.filter(
+                utilisateur=request.user, actif=True
+            ).select_related("institution").first()
+            institution = contact.institution if contact else None
         if institution is None:
             return Response(
                 {"error": "Aucune institution associée à votre compte : contactez un administrateur."},
@@ -8555,15 +8564,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 'assigned_offers__materiel_catalogue', 'assigned_crises', 'points_operationnels',
             )
         )
-        if effective_role_or_none(request) != UserRole.ADMINISTRATOR:
+        if not admin_sans_filtre(request, self):
             # ContactInstitution (contact actif), pas User.institution_id : même source de
             # vérité que _appartient_a_institution/_appartient_a_equipe utilisées ailleurs pour
             # la même notion d'appartenance — jamais garanti que User.institution (FK
             # dénormalisée, posée à l'inscription) reste synchronisée avec les rattachements
-            # ultérieurs.
-            mes_institutions_ids = ContactInstitution.objects.filter(
-                utilisateur=request.user, actif=True,
-            ).values_list('institution_id', flat=True)
+            # ultérieurs. Pour un administrateur, l'institution qu'il regarde.
+            mes_institutions_ids = institutions_visibles(request)
             teams = teams.filter(
                 Q(institution_id__in=mes_institutions_ids) | Q(institution_delegataire_id__in=mes_institutions_ids)
             )
@@ -10293,22 +10300,47 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()
+    queryset = (Mission.objects.select_related('crise', 'institution', 'salon_matrix')
+                .prefetch_related('equipes', 'dossiers').all())
     serializer_class = MissionSerializer
 
     def get_permissions(self):
         # Écriture réservée aux institutionnels, comme avant. Lecture ouverte à tout
         # authentifié (voir get_queryset) : un bénévole doit pouvoir consulter les missions
         # de sa propre équipe depuis sa "vue équipe", pas seulement un acteur institutionnel.
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'ouvrir_dossier'):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+        if get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
+            return qs.filter(equipes__members=self.request.user).distinct()
+        # AVANT le 16/11/2026, tout acteur institutionnel listait TOUTES les missions de la
+        # plateforme : une mairie voyait celles des équipes de n'importe quelle institution,
+        # partout en France (signalé par Sylvain : « je vois des institutions qui ne sont pas
+        # les miennes, pas mon secteur »). La liste est désormais réduite à ce qui concerne
+        # l'appelant ; l'accès à UNE mission par son identifiant reste ouvert, comme pour une
+        # équipe -- une mission se partage par son adresse.
+        if self.action != 'list' or admin_sans_filtre(self.request, self):
             return qs
-        return qs.filter(equipes__members=self.request.user).distinct()
+        visibles = institutions_visibles(self.request)
+        # Trois façons d'être concerné : c'est une de mes équipes (ou une équipe qu'on m'a
+        # déléguée) ; la mission porte sur une crise de mon territoire, quelle que soit
+        # l'institution qui y a envoyé l'équipe ; ou la mission n'a encore ni équipe ni crise
+        # (elle vient d'être créée) -- sans ce dernier cas, elle disparaîtrait de la liste de
+        # celui qui vient de l'écrire.
+        crises_du_territoire = filter_queryset_to_viewer_zone(
+            self.request, Crisis.objects.all(), resolver=_crisis_zone_resolver)
+        return qs.filter(
+            Q(institution_id__in=visibles)
+            | Q(equipes__institution_id__in=visibles)
+            | Q(equipes__institution_delegataire_id__in=visibles)
+            | Q(crise__in=crises_du_territoire.values('pk'))
+            # Missions d'avant le 16/11/2026, sans institution, sans équipe et sans crise :
+            # rien ne dit à qui elles sont, on ne les fait pas disparaître.
+            | Q(institution__isnull=True, equipes__isnull=True, crise__isnull=True)
+        ).distinct()
 
     def _synchroniser_equipes(self, mission):
         """Même correctif que TeamViewSet.definir_mission/assigner_crise/lier_point (doublon
@@ -10322,9 +10354,110 @@ class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             team.assigned_crises.add(mission.crise_id)
             _assurer_implication_impliquee(self.request, team.institution_id, mission.crise)
 
+    def _institution_qui_commande(self, proposee=None):
+        """L'institution au nom de laquelle la mission est créée : celle que le client propose
+        s'il y a droit, sinon celle dont l'appelant adopte le point de vue. None si rien ne la
+        désigne (administrateur sans institution regardant toute la plateforme) : la mission
+        est alors créée sans, comme avant."""
+        if proposee is not None and _appartient_a_institution(self.request, proposee):
+            return proposee
+        return institution_regardee(self.request)
+
     def perform_create(self, serializer):
-        mission = serializer.save(environment=get_active_environment(self.request))
+        mission = serializer.save(
+            environment=get_active_environment(self.request),
+            institution=self._institution_qui_commande(serializer.validated_data.get('institution')),
+        )
         self._synchroniser_equipes(mission)
+
+    @action(detail=True, methods=['post'], url_path='ouvrir-dossier')
+    def ouvrir_dossier(self, request, pk=None):
+        """Ouvre un dossier GÉNÉRIQUE pour une mission d'intérêt général.
+
+        Une garde du feu, une ronde, la surveillance d'un site : personne n'a appelé à l'aide,
+        c'est l'institution qui demande. Il faut pourtant un dossier, parce que c'est lui qui
+        porte le chat, les photos et la traçabilité de l'intervention. À la demande, et autant
+        qu'il en faut -- un par jour de garde, par exemple (décision du 16/11/2026).
+
+        Corps : `description` (obligatoire), `titre` (à défaut, l'intitulé de la mission),
+        `equipe_id` (une des équipes de la mission ; inutile si elle n'en a qu'une),
+        `crise_id` (seulement si la mission n'est pas rattachée à une crise), `priorite`.
+
+        Limite connue : un dossier appartient toujours à une crise. Une mission d'intérêt
+        général menée hors de toute crise doit en désigner une à l'ouverture du dossier."""
+        mission = self.get_object()
+        if not mission.interet_general:
+            return Response(
+                {"error": "Un dossier générique ne s'ouvre que pour une mission d'intérêt général. "
+                          "Pour une demande d'aide, le dossier naît de la demande."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if mission.statut == Mission.Statut.TERMINEE:
+            return Response({"error": "Cette mission est terminée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        equipes = list(mission.equipes.filter(actif=True))
+        # Qui peut ouvrir : l'institution qui commande la mission, ou celle d'une de ses équipes.
+        autorise = (mission.institution is not None and _appartient_a_institution(request, mission.institution)) \
+            or any(_appartient_a_equipe(request, equipe) for equipe in equipes)
+        if not autorise:
+            return Response(
+                {"error": "Seule l'institution qui commande cette mission, ou celle d'une de ses "
+                          "équipes, peut y ouvrir un dossier."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        description = (request.data.get('description') or '').strip()
+        if not description:
+            return Response({"error": "Décrivez ce que couvre ce dossier."}, status=status.HTTP_400_BAD_REQUEST)
+        titre = (request.data.get('titre') or '').strip() or mission.titre
+
+        equipe = None
+        equipe_id = request.data.get('equipe_id')
+        if equipe_id:
+            equipe = next((e for e in equipes if str(e.id) == str(equipe_id)), None)
+            if equipe is None:
+                return Response({"error": "Cette équipe n'est pas affectée à la mission."},
+                                status=status.HTTP_400_BAD_REQUEST)
+        elif len(equipes) == 1:
+            equipe = equipes[0]
+
+        crise = mission.crise
+        if crise is None:
+            try:
+                crise = Crisis.objects.get(id=request.data.get('crise_id'))
+            except (Crisis.DoesNotExist, ValueError, TypeError, ValidationError, DjangoValidationError):
+                return Response(
+                    {"error": "Cette mission n'est rattachée à aucune crise : indiquez celle à "
+                              "laquelle rattacher le dossier.", "choix_requis": "crise"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        validate_crisis_open(crise, field_name="crise_id")
+
+        priorite = request.data.get('priorite') or Dossier.Priorite.NORMALE
+        if priorite not in Dossier.Priorite.values:
+            return Response({"error": "Priorité invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        dossier = Dossier.objects.create(
+            numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+            crise=crise, equipe=equipe, mission=mission,
+            generique=True, institution_demandeuse=mission.institution,
+            titre=titre, description=description, priorite=priorite,
+            statut=Dossier.Statut.AFFECTE if equipe else Dossier.Statut.EN_ATTENTE_AFFECTATION,
+            environment=get_active_environment(request),
+        )
+        populate_dossier_participants_and_notify(dossier, equipe=equipe)
+        demandeuse = (mission.institution.nom_affichage or mission.institution.nom) if mission.institution else "l'institution"
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=request.user, evenement="Création",
+            commentaire=f"Dossier générique ouvert à la demande de {demandeuse}, pour la mission « {mission.titre} »",
+            environment=dossier.environment,
+        )
+        audit_log(
+            request=request, action_code="CREATION", objet_type="Dossier", objet_id=dossier.id,
+            crise=crise, commentaire=f"Ouverture d'un dossier générique (mission « {mission.titre} ») : {dossier}",
+        )
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data,
+                        status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):
         mission = serializer.save()
@@ -11023,7 +11156,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # sans ce garde, un visiteur anonyme provoque une 500 (AttributeError sur AnonymousUser).
         if self.action == 'list' and self.request.user.is_authenticated:
             role = effective_role_or_none(self.request)
-            if role in INSTITUTIONAL_TYPES and role != UserRole.ADMINISTRATOR:
+            if role in INSTITUTIONAL_TYPES and not admin_sans_filtre(self.request, self):
                 # Hors zone = exclusion totale (pas de résumé, contrairement à RequestViewSet.
                 # vue_secteur) : un acteur institutionnel ne voit plus, sur la liste par
                 # défaut, les signalements hors de sa zone de compétence — l'accès public
@@ -12456,6 +12589,46 @@ class InstitutionActiveView(APIView):
         )
         return Response(self._etat(request))
 
+class PerimetreAdminView(APIView):
+    """GET /api/me/perimetre/ : ce que l'appelant regarde, et pour un administrateur ce qu'il
+    peut choisir de regarder -- alimente le sélecteur de la barre du haut (voir
+    core/perimetre_admin.py). Le choix lui-même ne s'enregistre nulle part : le navigateur le
+    transmet à chaque requête dans l'en-tête `X-Perimetre`.
+
+    La liste des institutions n'est rendue qu'à un administrateur, et toujours entière : c'est
+    le seul endroit où le périmètre choisi ne doit pas s'appliquer, sans quoi on ne pourrait
+    plus en sortir. `?q=` la restreint par le nom."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from . import perimetre_admin
+
+        try:
+            etat = perimetre_admin.etat(request)
+        except ValidationError:
+            # Le choix gardé par le navigateur ne désigne plus rien (institution supprimée) :
+            # on le DIT, pour que l'écran revienne à « mon institution » au lieu de rester
+            # bloqué sur une erreur à chaque page.
+            etat = {"administrateur": True, "mode": "INVALIDE", "institution": None}
+        mienne = getattr(request.user, "institution", None)
+        etat["mienne"] = ({"id": str(mienne.id), "nom": mienne.nom_affichage or mienne.nom}
+                          if mienne is not None else None)
+        etat["institutions"] = []
+        if etat["administrateur"]:
+            institutions = Institution.objects.filter(actif=True, environment=get_active_environment(request))
+            recherche = (request.query_params.get("q") or "").strip()
+            if recherche:
+                institutions = institutions.filter(
+                    Q(nom__icontains=recherche) | Q(nom_affichage__icontains=recherche))
+            etat["institutions"] = [
+                {"id": str(i.id), "nom": i.nom_affichage or i.nom,
+                 "type_libelle": i.type.libelle if i.type_id else ""}
+                for i in institutions.select_related("type").order_by("nom")[:500]
+            ]
+        return Response(etat)
+
+
 class ChangePasswordView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -13265,11 +13438,10 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions_ids = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True,
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions_ids = institutions_visibles(self.request)
         return qs.filter(
             Q(institution_emettrice_id__in=mes_institutions_ids)
             | Q(cible_institution_id__in=mes_institutions_ids)
@@ -14239,7 +14411,7 @@ class InstitutionViewSet(
             # à une institution précise déjà connue (ex: profil affiché dans le cadre d'une
             # crise partagée) n'est pas un vecteur de découverte, contrairement à la liste.
             return qs
-        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         if environment == Environment.DEMO:
             # Bac à sable : la restriction "chez moi + ma zone" ci-dessous protège la
@@ -14257,8 +14429,9 @@ class InstitutionViewSet(
         # dont le .none() par défaut masquerait aussi "chez moi" quand la zone n'est pas
         # résolvable) pour ne jamais comparer un champ de secteur à None (Q(champ=None)
         # matcherait toute institution où ce champ est NULL en base, une fuite, pas juste "moi").
-        user = self.request.user
-        own_institution_id = getattr(user, 'institution_id', None) if user.is_authenticated else None
+        # « Chez moi » : la sienne, ou pour un administrateur celle qu'il regarde.
+        regardee = institution_regardee(self.request)
+        own_institution_id = regardee.id if regardee is not None else None
         condition = Q(pk=own_institution_id) if own_institution_id else Q(pk=None)
         zone = viewer_zone_code(self.request)
         if zone is not None:
@@ -14916,8 +15089,11 @@ class DisponibiliteOperationnelleViewSet(
         from .visibilite_membres import filtre_utilisateurs_visibles
 
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            # Administrateur regardant une institution : les disponibilités qui lui sont déclarées.
+            return qs.filter(affectation__institution_id__in=institutions_visibles(self.request))
 
         filtre = filtre_utilisateurs_visibles(self.request.user)
         if filtre is None:
@@ -15203,7 +15379,7 @@ class PointOperationnelViewSet(
         points sans équipe ou dont l'équipe n'a pas d'institution, un géocodage inverse point
         par point (`commune_code_from_point`, même mécanisme que vue_mairie) résolu au niveau
         de secteur de l'appelant via le référentiel Commune."""
-        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         zone = viewer_zone_code(self.request)
         if zone is None:
@@ -17225,8 +17401,11 @@ class ContactInstitutionViewSet(
 
         utilisateur = self.request.user
         role = get_effective_role(self.request)
-        if role == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if role == UserRole.ADMINISTRATOR:
+            # Administrateur regardant une institution : ses rattachements, et eux seuls.
+            return qs.filter(institution_id__in=institutions_visibles(self.request))
 
         # En DEMO, l'appartenance est levée — exactement comme InstitutionViewSet lève la
         # restriction de zone (voir TestInstitutionAndContactVisibleAcrossEnvironmentsInDemo) :
@@ -17506,8 +17685,14 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         bénévoles — et c'est lui qu'on prévient quand une pièce est déposée."""
         qs = super().get_queryset()
         user = self.request.user
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            # Administrateur regardant une institution : les qualifications de ses membres.
+            return qs.filter(
+                utilisateur__institutions__institution_id__in=institutions_visibles(self.request),
+                utilisateur__institutions__actif=True,
+            ).distinct()
 
         from .visibilite_membres import _equipes_descendantes
 
@@ -17882,8 +18067,11 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
                 qs = qs.filter(institution_id=uuid.UUID(str(demandee)))
             except (TypeError, ValueError):
                 return qs.none()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            visibles = institutions_visibles(self.request)
+            return qs.filter(Q(institution_id__in=visibles) | Q(equipe__institution_id__in=visibles))
         institutions, equipes = perimetre_de_pilotage(self.request.user)
         return qs.filter(Q(institution_id__in=institutions) | Q(equipe_id__in=equipes))
 
@@ -18133,8 +18321,10 @@ class InvitationAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            return qs.filter(institution_id__in=institutions_visibles(self.request))
         return qs.filter(institution_id__in=_institutions_gouvernees(self.request.user))
 
     def perform_create(self, serializer):
@@ -18179,8 +18369,10 @@ class CandidatureAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         Un candidat doit pouvoir suivre son dossier : ne rien lui montrer le laisserait sans
         nouvelle après avoir demandé à rejoindre, ce qui est la meilleure façon de le perdre."""
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            return qs.filter(institution_id__in=institutions_visibles(self.request))
         return qs.filter(
             Q(utilisateur=self.request.user)
             | Q(institution_id__in=_institutions_gouvernees(self.request.user))
@@ -19359,8 +19551,11 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         qs = qs.order_by('date_creation')
         if self.action not in ('list', 'retrieve'):
             return qs
-        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            # Administrateur regardant une institution : les messages de ses équipes.
+            return qs.filter(equipe__institution_id__in=institutions_visibles(self.request))
         user = self.request.user
         return qs.filter(Q(equipe__leader=user) | Q(equipe__regulateur=user))
 
@@ -19686,6 +19881,27 @@ class SalonMatrixEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
     queryset = SalonMatrixEquipe.objects.select_related('equipe').all()
     serializer_class = SalonMatrixEquipeSerializer
     http_method_names = ['get', 'patch', 'head', 'options']
+
+    def perform_update(self, serializer):
+        serializer.save(derniere_synchronisation=timezone.now())
+
+
+class SalonMatrixMissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Salons Matrix de mission (voir SalonMatrixMission) -- même posture que
+    SalonMatrixEquipeViewSet : consommé par le pont, qui crée le salon côté Synapse, y pose
+    room_id et tient sa composition à jour. La liste ne rend que les salons des missions qui ne
+    sont pas terminées : une mission close garde son salon et son historique, mais plus
+    personne n'y est ajouté ni retiré."""
+
+    queryset = SalonMatrixMission.objects.select_related('mission', 'mission__institution').all()
+    serializer_class = SalonMatrixMissionSerializer
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'list':
+            qs = qs.exclude(mission__statut=Mission.Statut.TERMINEE)
+        return qs
 
     def perform_update(self, serializer):
         serializer.save(derniere_synchronisation=timezone.now())
@@ -20488,8 +20704,11 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         qs = qs.order_by('date_creation')
         if self.action not in ('list', 'retrieve'):
             return qs
-        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
+        if _est_administrateur_plateforme(self.request):
+            # Administrateur regardant une institution : les messages de ses équipes.
+            return qs.filter(equipe__institution_id__in=institutions_visibles(self.request))
         user = self.request.user
         return qs.filter(Q(equipe__leader=user) | Q(equipe__regulateur=user))
 
@@ -21358,9 +21577,9 @@ def _communes_visibles_supervision(request):
     de géométrie précise, voir son docstring et SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM).
     None = pas de filtre (administrateur, voit tout) ; ensemble vide = rien de visible (institution
     sans commune connue) — jamais None par défaut faute de zone résolvable."""
-    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+    if admin_sans_filtre(request):
         return None
-    institution = getattr(request.user, 'institution', None)
+    institution = institution_regardee(request)
     if institution is None or not institution.commune_code:
         return set()
 
@@ -21657,11 +21876,10 @@ class SatelliteViewSet(
             # -- c'est le contenu renvoyé qui suit la zone demandée, pas la fiche du satellite.
             return self.queryset
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(institution_id__in=mes_institutions)
 
     @action(detail=False, methods=['post'], url_path='generer-jeton')
@@ -22363,11 +22581,10 @@ class ConflitSynchronisationViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
+        mes_institutions = institutions_visibles(self.request)
         return qs.filter(satellite__institution_id__in=mes_institutions)
 
     @action(detail=True, methods=['post'], url_path='resoudre')
@@ -22437,9 +22654,13 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [IsInstitutionalActor]
 
     def _mes_institutions(self):
-        return ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
+        # Ses rattachements actifs ; pour un administrateur qui regarde une institution, celle-là.
+        visibles = institutions_visibles(self.request)
+        if visibles is None:
+            return ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True
+            ).values_list('institution_id', flat=True)
+        return visibles
 
     def _institution_courante(self):
         """La collectivité au nom de laquelle l'agent agit — celle dont le suivi est lu et
@@ -22532,7 +22753,7 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 qs = qs.exclude(id__in=decides)
             else:
                 qs = qs.filter(id__in=avec_suivi)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         # Visibilité territoriale. Le filet des deux derniers Q couvre les fiches sans commune
         # (saisie manuelle d'un lieu hors référentiel) : on ne perd pas son propre travail.
@@ -24360,13 +24581,11 @@ class DossierRelogementViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         crise_id = self.request.query_params.get("crise")
         if crise_id:
             qs = qs.filter(crise_id=crise_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         # Les crises où l'institution de l'appelant est impliquée, au sens déjà retenu
         # ailleurs : son institution suit le dossier, ou elle a une équipe sur la crise.
-        institutions = list(ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True,
-        ).values_list("institution_id", flat=True))
+        institutions = list(institutions_visibles(self.request))
         return qs.filter(
             Q(institution_id__in=institutions)
             | Q(crise__assigned_teams__institution_id__in=institutions)
@@ -24559,14 +24778,12 @@ class CreneauEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet)
                     qs = qs.filter(**{champ: datetime.date.fromisoformat(valeur)})
                 except (TypeError, ValueError):
                     pass
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        if admin_sans_filtre(self.request, self):
             return qs
         # Les équipes de mes institutions, PLUS celles dont je suis membre : un équipier doit
         # pouvoir lire le planning où il figure, même sans être rattaché à l'institution qui
         # la porte (une équipe déléguée, un renfort).
-        institutions = list(ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True,
-        ).values_list("institution_id", flat=True))
+        institutions = list(institutions_visibles(self.request))
         return qs.filter(
             Q(equipe__institution_id__in=institutions)
             | Q(equipe__institution_delegataire_id__in=institutions)

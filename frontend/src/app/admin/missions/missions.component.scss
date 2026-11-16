@@ -245,3 +245,24 @@ table {
   }
 }
 .mesh-position-meta { margin-left: auto; font-size: .74rem; color: var(--muted); }
+
+// ── Missions d'intérêt général et dossiers génériques ──
+.chip-general {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px;
+  font-size: .72rem; font-weight: 600; white-space: nowrap;
+  background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e);
+}
+.aide { display: block; margin-top: 4px; font-size: .8rem; line-height: 1.4; color: var(--ac-text-muted, #6b7280); }
+.form-field.case label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.salon-mission {
+  display: flex; align-items: center; gap: 6px; margin: 4px 0 0;
+  font-size: .82rem; color: var(--ac-text-muted, #6b7280);
+  .material-icons { font-size: 16px; }
+}
+h3 .ouvrir-dossier { margin-left: 10px; vertical-align: middle; .material-icons { font-size: 16px; vertical-align: text-bottom; } }
+.ouverture-dossier {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid var(--ac-border, #e5e7eb); background: var(--ac-surface-2, #f9fafb);
+  .ouverture-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .erreur-ouverture { margin: 6px 0 0; color: var(--ac-red-text, #991b1b); }
+}

@@ -81,6 +81,7 @@ export class MissionsComponent implements OnInit {
       crise: [null, Validators.required],
       equipe_ids: [[]],
       statut: ['EN_PREPARATION'],
+      interet_general: [false],
     });
   }
 
@@ -176,7 +177,7 @@ export class MissionsComponent implements OnInit {
   // ── Création / édition ──────────────────────────────────────
 
   openCreate(): void {
-    this.missionForm.reset({ titre: '', description: '', crise: null, equipe_ids: [], statut: 'EN_PREPARATION' });
+    this.missionForm.reset({ titre: '', description: '', crise: null, equipe_ids: [], statut: 'EN_PREPARATION', interet_general: false });
     this.teamSearchQuery = '';
     this.modal = 'create';
   }
@@ -190,6 +191,7 @@ export class MissionsComponent implements OnInit {
       crise: mission.crise,
       equipe_ids: [...mission.equipe_ids],
       statut: mission.statut,
+      interet_general: !!mission.interet_general,
     });
     this.teamSearchQuery = '';
     this.modal = 'edit';
@@ -265,7 +267,62 @@ export class MissionsComponent implements OnInit {
 
   openDetail(mission: Mission): void {
     this.selectedMission = mission;
+    this.fermerOuvertureDossier();
     this.modal = 'detail';
+  }
+
+  // ── Dossier générique d'une mission d'intérêt général ───────
+  //
+  // Une garde du feu n'est pas la réponse à un appel à l'aide : c'est l'institution qui la
+  // demande. Il faut pourtant un dossier, parce que c'est lui qui porte le chat, les photos et
+  // la traçabilité. Il s'ouvre ici, à la demande, autant de fois qu'il en faut (un par jour de
+  // garde, par exemple).
+
+  ouvertureDossier: { titre: string; description: string; equipe_id: string } | null = null;
+  ouvertureEnCours = false;
+  erreurOuverture = '';
+
+  /** Vrai si l'on peut ouvrir un dossier générique sur cette mission. */
+  peutOuvrirDossier(mission: Mission): boolean {
+    return !!mission.interet_general && mission.statut !== 'TERMINEE';
+  }
+
+  commencerOuvertureDossier(mission: Mission): void {
+    this.erreurOuverture = '';
+    this.ouvertureDossier = {
+      titre: mission.titre, description: '',
+      // Une seule équipe : c'est la sienne, le serveur la prend d'office. Plusieurs : à choisir.
+      equipe_id: mission.equipe_ids.length === 1 ? mission.equipe_ids[0] : '',
+    };
+  }
+
+  fermerOuvertureDossier(): void {
+    this.ouvertureDossier = null;
+    this.erreurOuverture = '';
+  }
+
+  ouvrirDossier(): void {
+    const mission = this.selectedMission;
+    const saisie = this.ouvertureDossier;
+    if (!mission?.id || !saisie) return;
+    if (!saisie.description.trim()) { this.erreurOuverture = 'Décrivez ce que couvre ce dossier.'; return; }
+    this.ouvertureEnCours = true;
+    this.missionService.ouvrirDossier(mission.id, {
+      description: saisie.description.trim(),
+      titre: saisie.titre.trim() || undefined,
+      equipe_id: saisie.equipe_id || undefined,
+    }).subscribe({
+      next: (dossier) => {
+        this.ouvertureEnCours = false;
+        this.dossiers = [...this.dossiers, dossier];
+        this.fermerOuvertureDossier();
+        this.showSuccess(`Dossier ${dossier.numero} ouvert.`);
+      },
+      error: (err) => {
+        this.ouvertureEnCours = false;
+        this.erreurOuverture = err?.error?.error || "Le dossier n'a pas pu être ouvert.";
+      },
+    });
   }
 
   closeModal(): void {

@@ -112,6 +112,7 @@ from .models import (
     FicheBenevole,
     ModeleMessage,
     SalonMatrixEquipe,
+    SalonMatrixMission,
     TypeSalonEquipe,
     SalonMatrixInstitution,
     TypeSalonInstitution,
@@ -2027,17 +2028,44 @@ class MissionSerializer(serializers.ModelSerializer):
 
     equipes_noms = serializers.SerializerMethodField()
 
+    # Institution qui commande la mission. Posée à la création par le serveur (voir
+    # MissionViewSet.perform_create) : le client peut la proposer, il ne l'impose pas.
+    institution_nom = serializers.SerializerMethodField()
+    # Dossiers génériques ouverts pour cette mission (missions d'intérêt général).
+    dossiers_generiques = serializers.SerializerMethodField()
+    # Salon Matrix de la mission : « 1 mission = 1 canal ». None tant qu'il n'existe pas.
+    salon_matrix = serializers.SerializerMethodField()
+
     class Meta:
         model = Mission
         fields = [
             'id', 'titre', 'description', 'crise', 'crise_nom',
             'equipe_ids', 'equipes_noms', 'statut',
             'date_creation', 'date_cloture',
+            'institution', 'institution_nom', 'interet_general',
+            'dossiers_generiques', 'salon_matrix',
         ]
         read_only_fields = ['id', 'date_creation']
 
     def get_equipes_noms(self, obj):
         return [e.name for e in obj.equipes.all()]
+
+    def get_institution_nom(self, obj):
+        institution = obj.institution
+        return (institution.nom_affichage or institution.nom) if institution is not None else None
+
+    def get_dossiers_generiques(self, obj):
+        return [
+            {"id": str(d.id), "numero": d.numero, "titre": d.titre, "statut": d.statut,
+             "date_creation": d.date_creation}
+            for d in obj.dossiers.all() if d.generique
+        ]
+
+    def get_salon_matrix(self, obj):
+        salon = getattr(obj, "salon_matrix", None)
+        if salon is None:
+            return None
+        return {"id": str(salon.id), "room_id": salon.room_id, "pret": bool(salon.room_id)}
 
 
 def _regulateurs_pour_dossier(dossier, equipe=None):
@@ -2068,6 +2096,13 @@ class DossierSerializer(serializers.ModelSerializer):
         source='crise.name',
         read_only=True
     )
+
+    # Dossier générique : « à la demande de » l'institution, puisqu'il n'a pas de demandeur.
+    institution_demandeuse_nom = serializers.SerializerMethodField()
+
+    def get_institution_demandeuse_nom(self, obj):
+        institution = obj.institution_demandeuse
+        return (institution.nom_affichage or institution.nom) if institution is not None else None
 
     competence_nom = serializers.CharField(
         source='competence.nom',
@@ -2126,6 +2161,11 @@ class DossierSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'important': {'read_only': True},
             'date_signalement_important': {'read_only': True},
+            # Un dossier naît générique (MissionViewSet.ouvrir_dossier) ou ne l'est pas : ce
+            # n'est pas une case qu'on coche après coup, ni l'institution demandeuse un champ
+            # qu'on réattribue.
+            'generique': {'read_only': True},
+            'institution_demandeuse': {'read_only': True},
         }
 
     def validate(self, attrs):
@@ -3837,6 +3877,49 @@ class RelaisMeshCoreSerializer(serializers.ModelSerializer):
             instance.location = Point(float(lon), float(lat), srid=4326)
         instance.save()
         return instance
+
+
+class SalonMatrixMissionSerializer(serializers.ModelSerializer):
+    """membres : identifiants Matrix calculés par Django pour matrix-bridge -- même contrat que
+    SalonMatrixEquipeSerializer, pour que le pont traite les trois natures de salon pareil."""
+
+    mission_titre = serializers.CharField(source='mission.titre', read_only=True)
+    membres = serializers.SerializerMethodField()
+    sujet_salon = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SalonMatrixMission
+        fields = ['id', 'mission', 'mission_titre', 'room_id', 'membres', 'sujet_salon',
+                  'date_creation', 'derniere_synchronisation']
+        read_only_fields = ['id', 'mission', 'date_creation']
+
+    def get_sujet_salon(self, obj):
+        mission = obj.mission
+        morceaux = [f"Mission : {mission.titre}"]
+        if mission.institution_id:
+            morceaux.append(f"commandée par {mission.institution.nom_affichage or mission.institution.nom}")
+        equipes = [equipe.name for equipe in mission.equipes.all()]
+        if equipes:
+            morceaux.append("équipes : " + ", ".join(equipes))
+        return " — ".join(morceaux)[:250]
+
+    def get_membres(self, obj):
+        """Tous ceux que la mission mobilise : les membres actifs de ses équipes, leur
+        encadrement, leur chef et leur régulateur. Une personne présente dans deux équipes de
+        la mission n'y figure qu'une fois."""
+        from .matrix import matrix_user_id
+
+        equipes = list(obj.mission.equipes.filter(actif=True).values_list('id', flat=True))
+        membres = User.objects.filter(
+            Q(teams__id__in=equipes) | Q(teams_encadrees__id__in=equipes)
+            | Q(led_teams__id__in=equipes) | Q(teams_regulees__id__in=equipes),
+            is_active=True,
+        ).distinct()
+        return [
+            {"id": str(m.id), "matrix_user_id": matrix_user_id(m),
+             "nom": nom_affichable(m, self.context.get("request")) or m.email}
+            for m in membres
+        ]
 
 
 class SalonMatrixEquipeSerializer(serializers.ModelSerializer):

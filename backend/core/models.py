@@ -2109,6 +2109,19 @@ class Dossier(EnvironmentScopedModel):
                    "d'estimation des dégâts (rattachement accepté ou dégâts constatés).",
     )
 
+    # Dossier GÉNÉRIQUE : ouvert pour une mission d'intérêt général, à la demande d'une
+    # institution et non d'une personne qui appelle à l'aide. Il n'a donc ni demande, ni
+    # signalement, ni habitation d'origine -- mais il porte le chat, les photos et la
+    # traçabilité de l'intervention, ce pour quoi il existe.
+    generique = models.BooleanField(default=False)
+    institution_demandeuse = models.ForeignKey(
+        "Institution",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="dossiers_demandes",
+        help_text="Institution à la demande de laquelle ce dossier générique a été ouvert.",
+    )
+
     titre = models.CharField(
         max_length=255
     )
@@ -2218,6 +2231,26 @@ class Mission(EnvironmentScopedModel):
         null=True,
         blank=True
     )
+
+    # Institution qui COMMANDE la mission (la mairie qui demande une garde du feu). Sert aussi
+    # au périmètre : c'est par elle qu'une mission sans équipe ni crise reste rattachée à
+    # quelqu'un. Vide sur les missions créées avant le 16/11/2026 sans équipe.
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="missions_commandees",
+    )
+
+    # Mission d'intérêt général (garde du feu, surveillance d'un site, ronde) : elle ne répond
+    # pas à l'appel à l'aide de quelqu'un, elle est demandée par l'institution elle-même. Elle
+    # peut donc donner lieu à des dossiers GÉNÉRIQUES, sans demandeur (voir Dossier.generique),
+    # ouverts à la demande -- un par jour de garde, par exemple.
+    #
+    # `titre` est un intitulé GÉNÉRIQUE dans tous les cas : il nomme un type de mission
+    # (« Garde du feu »), jamais une personne ni une adresse. Ce qui est propre à une
+    # intervention va dans le dossier.
+    interet_general = models.BooleanField(default=False)
 
     # Modèle de plan d'origine : évite de recréer la mission si le plan est réactivé.
     modele_origine = models.ForeignKey(
@@ -7924,6 +7957,29 @@ class SalonMatrixEquipe(EnvironmentScopedModel):
 
     def __str__(self):
         return f"Salon Matrix {self.get_type_display()} de {self.equipe.name}"
+
+
+class SalonMatrixMission(EnvironmentScopedModel):
+    """Salon Matrix d'une mission : « 1 mission = 1 canal » (règle posée par Sylvain le
+    16/11/2026). Il réunit les membres de toutes les équipes affectées à la mission, encadrement
+    compris -- une mission peut mobiliser plusieurs équipes, et c'est le seul endroit où elles se
+    parlent sans passer par leurs salons respectifs.
+
+    Créé automatiquement avec la mission (voir core/salons_matrix.py). Tant que la mission n'est
+    pas terminée, le pont en tient la composition à jour ; ensuite le salon reste, avec son
+    historique, mais n'est plus synchronisé."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    mission = models.OneToOneField("Mission", on_delete=models.CASCADE, related_name="salon_matrix")
+    room_id = models.CharField(
+        max_length=255, null=True, blank=True,
+        help_text="Identifiant Matrix du salon, posé par le pont à la création.",
+    )
+    date_creation = models.DateTimeField(auto_now_add=True)
+    derniere_synchronisation = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Salon Matrix de la mission {self.mission.titre}"
 
 
 class TypeSalonInstitution(models.TextChoices):

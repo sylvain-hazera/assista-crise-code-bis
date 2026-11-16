@@ -5,6 +5,7 @@ import { SuiviPositionPermanentService } from '../../../services/suivi-position-
 import { ThemeService } from '../../../services/theme.service';
 import { User, UserRole } from '../../../shared/models/user.model';
 import { AdminNotificationsComponent } from './admin-notifications/admin-notifications.component';
+import { SelecteurPerimetreComponent } from './selecteur-perimetre/selecteur-perimetre.component';
 
 /** En-tête de l'administration : logo, bannière démo, suivi de position, bascule PROD/DEMO,
  * thème clair/sombre, affichage du menu latéral, cloche et menu utilisateur. Arbitre ses listes déroulantes (une seule ouverte à la fois) et
@@ -12,7 +13,7 @@ import { AdminNotificationsComponent } from './admin-notifications/admin-notific
 @Component({
   selector: 'app-admin-header',
   standalone: true,
-  imports: [AdminNotificationsComponent],
+  imports: [AdminNotificationsComponent, SelecteurPerimetreComponent],
   templateUrl: './admin-header.component.html',
   styleUrl: './admin-header.component.scss',
 })

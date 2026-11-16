@@ -1,0 +1,20 @@
+@if (visible) {
+  <label class="perimetre" [class.ailleurs]="horsDeChezSoi"
+         title="Ce que montrent les listes : votre institution, une autre, ou toute la plateforme. Ne retire aucun droit.">
+    <span class="material-icons" aria-hidden="true">visibility</span>
+    <span class="perimetre-titre">Je regarde</span>
+    <select [ngModel]="choix" (ngModelChange)="choisir($event)" aria-label="Périmètre affiché">
+      @if (etat!.mienne) {
+        <option [value]="MIENNE">Mon institution — {{ etat!.mienne!.nom }}</option>
+      }
+      <option [value]="TOUT">Toute la plateforme</option>
+      @if (autres.length) {
+        <optgroup label="Une autre institution">
+          @for (institution of autres; track institution.id) {
+            <option [value]="institution.id">{{ institution.nom }}</option>
+          }
+        </optgroup>
+      }
+    </select>
+  </label>
+}

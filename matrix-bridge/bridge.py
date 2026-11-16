@@ -107,6 +107,14 @@ class DjangoClient:
     async def rapporter_salon_institution(self, salon_id, room_id, environnement):
         await self._request("PATCH", f"/salons-matrix-institution/{salon_id}/", environnement, json={"room_id": room_id})
 
+    async def salons_mission_a_synchroniser(self, environnement):
+        response = await self._request("GET", "/salons-matrix-mission/", environnement)
+        data = response.json()
+        return data["results"] if isinstance(data, dict) else data
+
+    async def rapporter_salon_mission(self, salon_id, room_id, environnement):
+        await self._request("PATCH", f"/salons-matrix-mission/{salon_id}/", environnement, json={"room_id": room_id})
+
     async def rapporter_position(self, matrix_user_id, latitude, longitude, horodatage_iso):
         await self._request("POST", "/matrix/positions/", json={
             "matrix_user_id": matrix_user_id, "latitude": latitude, "longitude": longitude,
@@ -463,6 +471,52 @@ async def _synchroniser_salons_institution(django, synapse, environnement):
                 logger.info("Membre %s retiré du salon « %s ».", matrix_id, nom_salon)
 
 
+async def boucle_provisionnement_salons_mission(django, synapse):
+    """« 1 mission = 1 canal » (16/11/2026) : même logique que les salons d'équipe, pour le
+    salon qui réunit toutes les équipes d'une mission. Django ne sert que les missions qui ne
+    sont pas terminées : une mission close garde son salon et son historique, mais sa
+    composition n'est plus touchée."""
+    while True:
+        for environnement in ENVIRONNEMENTS:
+            try:
+                await _synchroniser_salons_mission(django, synapse, environnement)
+            except Exception:
+                logger.exception("Échec du cycle de provisionnement des salons de mission (%s).", environnement)
+        await asyncio.sleep(SALONS_POLL_INTERVAL_SECONDS)
+
+
+async def _synchroniser_salons_mission(django, synapse, environnement):
+    salons = await django.salons_mission_a_synchroniser(environnement)
+    for salon in salons:
+        # Voir le même filtrage dans _synchroniser_salons_equipe : un membre sans compte Matrix
+        # n'est ni invité ni expulsé à ce passage.
+        tous_cibles = {m["matrix_user_id"]: m["nom"] for m in salon["membres"]}
+        cibles = {
+            matrix_id: nom for matrix_id, nom in tous_cibles.items()
+            if await synapse.assurer_compte(matrix_id, nom)
+        }
+
+        room_id = salon.get("room_id")
+        if not room_id:
+            nom_salon = f"{PREFIXE_NOM_SALON[environnement]}Mission {salon['mission_titre']}"
+            room_id = await synapse.creer_salon(nom_salon[:64])
+            await django.rapporter_salon_mission(salon["id"], room_id, environnement)
+            logger.info("Salon créé pour la mission « %s » : %s", salon["mission_titre"], room_id)
+
+        if salon.get("sujet_salon"):
+            await synapse.definir_sujet(room_id, salon["sujet_salon"])
+
+        actuels = await synapse.membres_actuels(room_id)
+        for matrix_id in cibles:
+            if matrix_id not in actuels:
+                await synapse.rejoindre_de_force(room_id, matrix_id)
+                logger.info("Membre %s ajouté au salon de la mission « %s ».", matrix_id, salon["mission_titre"])
+        for matrix_id in actuels:
+            if matrix_id != synapse.user_id and matrix_id not in cibles:
+                await synapse.expulser(room_id, matrix_id)
+                logger.info("Membre %s retiré du salon de la mission « %s ».", matrix_id, salon["mission_titre"])
+
+
 def _lire_since():
     if SYNC_STATE_FILE.exists():
         return SYNC_STATE_FILE.read_text().strip() or None
@@ -539,6 +593,7 @@ async def main():
         await asyncio.gather(
             boucle_provisionnement_salons(django, synapse),
             boucle_provisionnement_salons_institution(django, synapse),
+            boucle_provisionnement_salons_mission(django, synapse),
             boucle_positions(django, synapse),
         )
     finally:

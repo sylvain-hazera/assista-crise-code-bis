@@ -18,6 +18,21 @@ SECTEUR_CHAMP_PAR_NIVEAU = {
 }
 
 
+def _institution_regardee(request):
+    """L'institution dont l'appelant adopte le point de vue : la sienne, ou pour un
+    administrateur celle qu'il a choisie de regarder (voir core/perimetre_admin.py). Importé
+    ici à l'appel : ce module est chargé très tôt, avant que tous les modèles le soient."""
+    from .perimetre_admin import institution_regardee
+    return institution_regardee(request)
+
+
+def _admin_voit_tout(request):
+    """Vrai pour un administrateur que cette requête ne doit pas filtrer (il regarde toute la
+    plateforme, ou il ouvre un objet précis) -- voir perimetre_admin.admin_sans_filtre."""
+    from .perimetre_admin import admin_sans_filtre
+    return admin_sans_filtre(request)
+
+
 def _parametre(request, nom):
     """Un paramètre de requête, que l'appelant soit une requête DRF ou une requête Django nue.
 
@@ -46,7 +61,7 @@ def _institution_commune_or_400(request):
     raccourci l'a reçu 75 fois sur quatre sessions avant de cesser de revenir, et
     l'administrateur, qui l'avait bel et bien rattaché, n'avait aucun moyen de comprendre que
     son geste n'y changeait rien."""
-    institution = getattr(request.user, 'institution', None)
+    institution = _institution_regardee(request)
     if institution is None:
         return Response(
             {"error": "Votre compte n'est rattaché à aucune collectivité. Si vous venez "
@@ -130,7 +145,7 @@ def _sdis_en_demo(request):
     from .models import Environment
     from .permissions import get_active_environment
 
-    institution = getattr(request.user, 'institution', None)
+    institution = _institution_regardee(request)
     if institution is None or not institution.type_id:
         return False
     if (institution.type.code or '').upper() != 'SDIS':
@@ -149,7 +164,7 @@ def _institution_secteur_or_400(request):
     if isinstance(commune_code, Response):
         return commune_code
 
-    institution = request.user.institution
+    institution = _institution_regardee(request)
     # calculé par Institution.save()
     niveau = institution.secteur_niveau_effectif or "commune"
 
@@ -241,7 +256,7 @@ def _calculer_communes_accordees(request) -> list:
     user = getattr(request, 'user', None) if request is not None else None
     if not (user and getattr(user, 'is_authenticated', False)):
         return []
-    institution = getattr(user, 'institution', None)
+    institution = _institution_regardee(request)
     if institution is None:
         return []
 
@@ -329,7 +344,7 @@ def widen_zone_from_request(request):
         return natural
     if echelle == "national":
         return ("national", None)
-    institution = request.user.institution
+    institution = _institution_regardee(request)
     code = getattr(institution, f"{echelle}_code", None)
     return (echelle, code) if code else natural
 
@@ -458,7 +473,9 @@ def filter_queryset_to_viewer_zone(request, queryset, resolver=None, champ_par_n
     la zone propre de l'institution, plus les communes qu'une crise ou une convention lui a
     accordées. Pour une mairie sans rien d'accordé, c'est le comportement d'avant à
     l'identique."""
-    if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+    # Un administrateur n'échappe au filtre que s'il regarde toute la plateforme ; s'il a choisi
+    # une institution, il voit ce qu'en verrait un cadre (voir core/perimetre_admin.py).
+    if _admin_voit_tout(request):
         return queryset
     perimetre = viewer_perimetre(request)
     if perimetre is None:

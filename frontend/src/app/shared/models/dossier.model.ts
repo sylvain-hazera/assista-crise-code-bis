@@ -16,6 +16,11 @@ export interface Dossier {
   equipe_nom?: string;
 
   mission?: string | null;
+  /** Dossier générique : ouvert pour une mission d'intérêt général, à la demande d'une
+   * institution et non d'une personne. Il n'a donc ni demande ni signalement d'origine. */
+  generique?: boolean;
+  institution_demandeuse?: string | null;
+  institution_demandeuse_nom?: string | null;
   mission_titre?: string | null;
 
   demande?: string | null;

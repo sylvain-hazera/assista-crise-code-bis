@@ -57,6 +57,8 @@
         </div>
 
         <div class="badges">
+          <span *ngIf="d.generique" class="badge badge-generique"
+                title="Dossier générique : ouvert à la demande d'une institution, sans demandeur individuel">Générique</span>
           <span *ngIf="d.important" class="badge badge-important">
             <span class="material-icons">priority_high</span> Important
           </span>
@@ -122,6 +124,15 @@
       <div class="detail-row">
         <strong>Crise :</strong>
         {{ selectedDossier.crise_nom }}
+      </div>
+
+      <!-- Dossier générique : personne n'a appelé à l'aide, c'est l'institution qui demande
+           (garde du feu, ronde…). Le dire évite de chercher un demandeur qui n'existe pas. -->
+      <div class="detail-row" *ngIf="selectedDossier.generique">
+        <strong>Origine :</strong>
+        dossier générique, à la demande de
+        {{ selectedDossier.institution_demandeuse_nom || "l'institution" }}
+        (mission d'intérêt général, sans demandeur individuel)
       </div>
 
       <div class="detail-row">

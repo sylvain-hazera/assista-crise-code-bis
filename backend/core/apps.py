@@ -35,3 +35,21 @@ class CoreConfig(AppConfig):
             post_save.connect(sync_outbox.enregistrer_evenement, sender=modele, dispatch_uid=f"sync_outbox_{modele.__name__}")
         for modele in (Dossier, Mission):
             pre_save.connect(sync_outbox.capturer_version_avant_ecriture, sender=modele, dispatch_uid=f"sync_outbox_pre_{modele.__name__}")
+
+        # Salons Matrix d'office (16/11/2026) : une mission reçoit son salon dès qu'une équipe
+        # lui est affectée, une institution les siens à son premier rattachement (les équipes
+        # ont déjà les leurs à la création, voir matrix.provisionner_salons_equipe). Voir
+        # core/salons_matrix.py. Pas sur un satellite : le pont Matrix tourne au central, et la
+        # mission y arrive par la synchronisation, où le même signal crée son salon.
+        from django.conf import settings
+
+        if not getattr(settings, "INSTANCE_SATELLITE_LOCALE", False):
+            from django.db.models.signals import m2m_changed
+
+            from . import salons_matrix
+            from .models import ContactInstitution
+
+            m2m_changed.connect(salons_matrix.equipes_de_mission_modifiees, sender=Mission.equipes.through,
+                                dispatch_uid="salons_matrix_mission_equipes")
+            post_save.connect(salons_matrix.rattachement_enregistre, sender=ContactInstitution,
+                              dispatch_uid="salons_matrix_rattachement")
