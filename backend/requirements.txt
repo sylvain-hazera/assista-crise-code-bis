@@ -23,6 +23,9 @@ openpyxl>=3.1.0
 reportlab>=5.0.1
 qrcode>=8.2
 django-oauth-toolkit>=2.4.0
+# Tirée par django-oauth-toolkit. Plancher posé le 16/11/2026 : la 4.0.0 porte un avis de
+# sécurité, et sans plancher l'image garde la version qu'elle avait à sa dernière construction.
+oauthlib>=4.0.1
 numpy>=1.26.0
 scipy>=1.11.0
 
