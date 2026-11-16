@@ -65,6 +65,14 @@ export class HomeComponent implements OnInit {
   /** Celle dont le QR code est montré en grand. */
   mobilisationMontree: MaMobilisation | null = null;
 
+  // ══ Application Android ════════════════════════════════════════════════════
+  // Demande de Sylvain du 16/11/2026. L'adresse est fixe : chaque nouvelle version de
+  // l'application est déposée sous ce même nom (frontend/public/mobile, avec version.json que
+  // l'application lit pour proposer sa mise à jour).
+  readonly lienAppliAndroid = '/mobile/reserve-resilience.apk';
+  /** Un fichier .apk ne s'installe pas sur un iPhone : inutile de le lui proposer. */
+  readonly appliAndroidProposee = !/iPhone|iPad|iPod/i.test(navigator.userAgent);
+
   // ══ Récapitulatif public, au-dessus de la carte ════════════════════════════
   // Lu par des habitants non connectés, souvent sur téléphone et parfois dans l'urgence : les
   // deux seules questions auxquelles il répond sont « que se passe-t-il près de moi ? » et

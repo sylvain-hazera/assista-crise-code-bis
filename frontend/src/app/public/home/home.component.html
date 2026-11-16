@@ -32,6 +32,14 @@
           Mon QR code
         </button>
       }
+      <!-- Un lien et non un bouton : c'est un fichier à télécharger, que le navigateur doit
+           pouvoir proposer d'enregistrer ou de copier. -->
+      @if (appliAndroidProposee) {
+        <a class="btn btn-qr btn-appli" [href]="lienAppliAndroid" download>
+          <span class="material-icons" aria-hidden="true">android</span>
+          Télécharger l'application Android
+        </a>
+      }
     </div>
   </div>
 

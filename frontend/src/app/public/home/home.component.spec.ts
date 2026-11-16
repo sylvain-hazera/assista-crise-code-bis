@@ -22,4 +22,13 @@ describe('HomeComponent', () => {
   it('should create', () => {
     expect(component).toBeTruthy();
   });
+
+  it("propose de télécharger l'application Android, à l'adresse où chaque version est déposée", () => {
+    const lien: HTMLAnchorElement | null = fixture.nativeElement.querySelector('a.btn-appli');
+
+    expect(lien).withContext('lien de téléchargement').not.toBeNull();
+    expect(lien!.textContent).toContain("Télécharger l'application Android");
+    expect(lien!.getAttribute('href')).toBe('/mobile/reserve-resilience.apk');
+    expect(lien!.hasAttribute('download')).toBeTrue();
+  });
 });

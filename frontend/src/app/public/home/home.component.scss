@@ -553,6 +553,9 @@
   border: 1px solid var(--ac-border-strong, #d1d5db);
   .material-icons { font-size: 1.2rem; }
 }
+// Le téléchargement de l'application est un lien : sans cela il garderait le soulignement et
+// la couleur d'un lien au milieu des boutons.
+a.btn.btn-appli { text-decoration: none; justify-content: center; box-sizing: border-box; }
 
 .qr-fond {
   position: fixed; inset: 0; z-index: 1200;
