@@ -5131,8 +5131,12 @@ class CelluleCriseView(generics.GenericAPIView):
                 defaults={"environment": get_active_environment(request)},
             )
 
+        # Le type est obligatoire : une équipe porte deux salons depuis le 11/11/2026, et un
+        # get_or_create sur l'équipe seule lève MultipleObjectsReturned dès que le second
+        # existe (erreur 500 en production le 16/11/2026, après le rattrapage des salons).
         SalonMatrixEquipe.objects.get_or_create(
-            equipe=equipe, defaults={"environment": get_active_environment(request)},
+            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS,
+            defaults={"environment": get_active_environment(request)},
         )
         return equipe
 

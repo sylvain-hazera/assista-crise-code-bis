@@ -143,6 +143,21 @@ class TestSalonsDOffice:
         assert SalonMatrixMission.objects.count() == 1
         assert not SalonMatrixEquipe.objects.filter(equipe__in=[inactive, vide]).exists()
 
+    def test_la_page_de_la_cellule_de_crise_supporte_les_deux_salons(self, cadre, crise):
+        """Erreur 500 en production le 16/11/2026, juste après le rattrapage : la page cherchait
+        « le » salon de la cellule sans dire lequel, et en trouvait deux."""
+        adresse = reverse("cellule_crise", args=[crise.id])
+        reponse = _client(cadre).get(adresse, **PROD)
+        assert reponse.status_code == 200, reponse.content
+        cellule = Team.objects.get(id=reponse.data["equipe_id"])
+        assert list(SalonMatrixEquipe.objects.filter(equipe=cellule).values_list("type", flat=True)) == ["INTERVENANTS"]
+
+        SalonMatrixEquipe.objects.create(equipe=cellule, type="ENCADREMENT", environment="PROD")
+
+        reponse = _client(cadre).get(adresse, **PROD)
+        assert reponse.status_code == 200, reponse.content
+        assert SalonMatrixEquipe.objects.filter(equipe=cellule).count() == 2
+
     def test_la_commande_sait_compter_sans_rien_creer(self, mairie, cadre, equipe):
         equipe.members.add(cadre)
         SalonMatrixEquipe.objects.all().delete()
