@@ -1179,6 +1179,19 @@
                            : 'Clé fournie par l\'opérateur'">
                 </div>
               }
+              <!-- IntraMuros : chaque collectivité a sa propre clé. Elle se range ici, chiffrée ;
+                   l'envoi d'alertes vers IntraMuros n'est pas encore branché (il attend la
+                   documentation de leur API), et l'écran le dit plutôt que de le laisser croire. -->
+              <div class="form-group">
+                <label class="form-label">Clé API IntraMuros</label>
+                <input type="password" class="form-input" autocomplete="off"
+                       [(ngModel)]="intramurosCleSaisie"
+                       [placeholder]="configEnvoi.intramuros_cle_api_renseignee
+                         ? 'Clé enregistrée — laisser vide pour ne pas la changer'
+                         : 'Clé de votre collectivité chez IntraMuros'">
+                <p class="hint">Rangée chiffrée, propre à votre collectivité. L'envoi des alertes vers IntraMuros
+                  n'est pas encore branché : il sera activé dès que la documentation de leur API sera disponible.</p>
+              </div>
               <div class="form-group">
                 <label class="form-label">Expéditeur présenté</label>
                 <input type="text" class="form-input" maxlength="30"

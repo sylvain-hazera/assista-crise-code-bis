@@ -167,8 +167,9 @@ export class TeamService {
   }
 
   /** GET /api/teams/<id>/salon-matrix-messages/ — relayés par le serveur avec le jeton du bot. */
-  getSalonMatrixMessages(id: string): Observable<{ messages: MatrixMessage[] }> {
-    return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/salon-matrix-messages/`);
+  getSalonMatrixMessages(id: string, crise?: string): Observable<{ messages: MatrixMessage[] }> {
+    return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/salon-matrix-messages/`,
+      { params: crise ? { crise } : {} });
   }
 
   /** POST /api/teams/<id>/salon-matrix-messages/ — `urgent` est ouvert à tous les membres. */
@@ -177,19 +178,25 @@ export class TeamService {
   }
 
   /** POST /api/teams/<id>/salon-matrix-reagir/ — accusé « Vu » (cadres seulement). */
-  reagirSalonMatrix(id: string, eventId: string): Observable<{ status: string }> {
-    return this.http.post<{ status: string }>(`${this.url}/${id}/salon-matrix-reagir/`, { event_id: eventId });
+  reagirSalonMatrix(id: string, eventId: string, crise?: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${this.url}/${id}/salon-matrix-reagir/`,
+      crise ? { event_id: eventId, crise } : { event_id: eventId });
   }
 
   /** GET /api/teams/<id>/messagerie-unifiee/ — Matrix + MeshCore + Meshtastic fusionnés ; le
    * salon Matrix est provisionné à la volée. */
-  getMessagerieUnifiee(id: string): Observable<{ messages: MatrixMessage[] }> {
-    return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`);
+  getMessagerieUnifiee(id: string, crise?: string): Observable<{ messages: MatrixMessage[] }> {
+    // `crise` : la crise depuis laquelle on parle à l'équipe (cellule de crise). Le serveur
+    // choisit le salon — celui de cette crise, sinon celui de la crise ouverte de l'équipe,
+    // sinon son salon de tous les jours. Sans `crise`, il choisit seul.
+    return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`,
+      { params: crise ? { crise } : {} });
   }
 
   /** POST /api/teams/<id>/messagerie-unifiee/ — envoie sur Matrix et sur MeshCore/Meshtastic. */
-  envoyerMessageUnifie(id: string, texte: string, urgent = false): Observable<{ messages: MatrixMessage[] }> {
-    return this.http.post<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`, { texte, urgent });
+  envoyerMessageUnifie(id: string, texte: string, urgent = false, crise?: string): Observable<{ messages: MatrixMessage[] }> {
+    return this.http.post<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`,
+      crise ? { texte, urgent, crise } : { texte, urgent });
   }
 
   /** POST /api/teams/<id>/demarrer-engagement/ — engagement_debut=maintenant (idempotent, cadres). */

@@ -33,6 +33,8 @@ export interface ConfigurationEnvoi {
 
   fournisseur_sms: string;
   sms_cle_api_renseignee: boolean;
+  /** Présence seulement : la clé IntraMuros de la collectivité n'est jamais relue. */
+  intramuros_cle_api_renseignee?: boolean;
   sms_expediteur: string;
 
   /** Actif + clé + adresse : les trois, parce qu'un seul manquant produit un refus. */
@@ -56,6 +58,7 @@ export interface ConfigurationEnvoiPatch {
   brevo_expediteur_nom?: string;
   fournisseur_sms?: string;
   sms_cle_api?: string;
+  intramuros_cle_api?: string;
   sms_expediteur?: string;
   brevo_seuil_alerte_email?: number;
   brevo_seuil_alerte_sms?: number;

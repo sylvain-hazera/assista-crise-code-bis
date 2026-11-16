@@ -5087,7 +5087,7 @@ class CelluleCriseView(generics.GenericAPIView):
         # Le salon de la cellule de crise, et non celui de son encadrement : voir la note de
         # TeamViewSet.salon_matrix_messages sur le `.first()` arbitraire.
         salon = SalonMatrixEquipe.objects.filter(
-            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS).first()
+            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS, crise__isnull=True).first()
 
         dossiers_en_attente = Dossier.objects.filter(
             crise=crise,
@@ -5150,7 +5150,7 @@ class CelluleCriseView(generics.GenericAPIView):
         # get_or_create sur l'équipe seule lève MultipleObjectsReturned dès que le second
         # existe (erreur 500 en production le 16/11/2026, après le rattrapage des salons).
         SalonMatrixEquipe.objects.get_or_create(
-            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS,
+            equipe=equipe, type=TypeSalonEquipe.INTERVENANTS, crise=None,
             defaults={"environment": get_active_environment(request)},
         )
         return equipe
@@ -9731,7 +9731,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         salons = []
         for type_salon in (TypeSalonEquipe.INTERVENANTS, TypeSalonEquipe.ENCADREMENT):
             salon, cree = SalonMatrixEquipe.objects.get_or_create(
-                equipe=team, type=type_salon, defaults={"environment": environment},
+                equipe=team, type=type_salon, crise=None, defaults={"environment": environment},
             )
             salons.append(salon)
             audit_log(
@@ -9906,8 +9906,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # se serait retrouvé dans le salon de commandement de son équipe, et y aurait écrit.
         # `SalonMatrixEquipe` n'a pas d'ordonnancement par défaut, le tirage était donc
         # réellement arbitraire.
-        salon = SalonMatrixEquipe.objects.filter(
-            equipe=team, type=TypeSalonEquipe.INTERVENANTS).first()
+        # Le salon de la crise en cours si l'équipe y est engagée, sinon celui de tous les jours
+        # (core/salons_de_crise.py). Lecture seule ici : ce chemin ne crée pas de salon.
+        from .salons_de_crise import salon_du_contexte
+        salon = salon_du_contexte(request, team, creer=False)
         if salon is None or not salon.room_id:
             return Response(
                 {"error": "Le salon Matrix de cette équipe n'est pas encore provisionné."},
@@ -10010,10 +10012,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # c'était le seul salon avant le 11/11/2026. Le salon ENCADREMENT n'est PAS provisionné
         # ici — un intervenant qui ouvre sa messagerie n'a pas à créer le salon de
         # l'encadrement, dont il ne fait pas forcément partie.
-        salon, _ = SalonMatrixEquipe.objects.get_or_create(
-            equipe=team, type=TypeSalonEquipe.INTERVENANTS,
-            defaults={"environment": environment},
-        )
+        #
+        # UN SALON PAR CRISE (16/11/2026) : si l'équipe est engagée dans une crise ouverte, la
+        # messagerie est celle de la crise, et les messages du quotidien ne s'y mêlent pas.
+        # Le choix se fait ici, côté serveur : l'application mobile et la page de l'équipe
+        # n'ont rien à savoir des crises (core/salons_de_crise.py).
+        from .salons_de_crise import salon_du_contexte
+        salon = salon_du_contexte(request, team, creer=True)
         if salon.room_id and not est_membre:
             _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)
 
@@ -10148,8 +10153,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # se serait retrouvé dans le salon de commandement de son équipe, et y aurait écrit.
         # `SalonMatrixEquipe` n'a pas d'ordonnancement par défaut, le tirage était donc
         # réellement arbitraire.
-        salon = SalonMatrixEquipe.objects.filter(
-            equipe=team, type=TypeSalonEquipe.INTERVENANTS).first()
+        # Même salon que celui où le message a été lu : celui de la crise en cours, sinon celui
+        # de tous les jours.
+        from .salons_de_crise import salon_du_contexte
+        salon = salon_du_contexte(request, team, creer=False)
         if salon is None or not salon.room_id:
             return Response({"error": "Le salon Matrix de cette équipe n'est pas encore provisionné."}, status=status.HTTP_409_CONFLICT)
 
@@ -14819,7 +14826,7 @@ class InstitutionViewSet(
         # se sont mis à échouer, ou à partir d'une autre adresse.
         modifies = sorted(k for k in request.data.keys() if k in {
             'brevo_actif', 'brevo_cle_api', 'brevo_expediteur_email', 'brevo_expediteur_nom',
-            'fournisseur_sms', 'sms_cle_api', 'sms_expediteur',
+            'fournisseur_sms', 'sms_cle_api', 'sms_expediteur', 'intramuros_cle_api',
         })
         audit_log(
             request=request, action_code="MODIFICATION",

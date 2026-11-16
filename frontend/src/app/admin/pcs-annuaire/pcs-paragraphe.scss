@@ -54,3 +54,9 @@ input, textarea, select {
 
 .liste { margin-top: 1rem; }
 .fiche-type { white-space: pre-line; margin-top: -.3rem; }
+
+.canaux { border: none; margin: 0 0 .6rem; padding: 0; legend { font-size: .86rem; font-weight: 600; margin-bottom: .3rem; } }
+.canal { flex-direction: row; align-items: flex-start; gap: .5rem; font-weight: 400;
+  input { margin-top: .2rem; padding: 0; }
+  &.indisponible { opacity: .65; } }
+.texte-alerte { white-space: pre-line; }

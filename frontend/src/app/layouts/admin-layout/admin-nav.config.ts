@@ -93,6 +93,7 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'home_work', label: 'Hébergement', route: '/hebergement', groupe: 'permanent', visibilite: 'tous' },
 
   // ── Crise en cours ──────────────────────────────────────────────────
+  { icon: 'notification_important', label: 'Alerter les habitants', route: '/admin/alerte-habitants', groupe: 'crise' },
   { icon: 'flag', label: 'Signalements', route: '/admin/signalements', groupe: 'crise' },
   { icon: 'verified_user', label: 'Sécurité', route: '/admin/declarations-securite', groupe: 'crise' },
   // Démarrer/clôturer une mission (Team.mission_active), condition du suivi de position MeshCore.

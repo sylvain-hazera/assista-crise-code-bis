@@ -1565,6 +1565,10 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
                    "envoi de SMS pour cette institution.",
     )
     sms_cle_api = EncryptedTextField(blank=True, help_text="Jamais relue par l'API.")
+    # IntraMuros : chaque collectivité a SA clé (elle a son propre espace chez IntraMuros).
+    # La clé se range ici, chiffrée ; l'envoi lui-même attend la documentation de leur API
+    # (voir core/alerte_population.py, canal INTRAMUROS).
+    intramuros_cle_api = EncryptedTextField(blank=True, default="", help_text="Jamais relue par l'API.")
     sms_expediteur = models.CharField(
         max_length=30, blank=True,
         help_text="Nom ou numéro d'expéditeur présenté au destinataire, selon ce que le "
@@ -5485,6 +5489,59 @@ class ExercicePCS(EnvironmentScopedModel):
         return f"{self.date:%d/%m/%Y} — {self.theme[:60]}"
 
 
+class AbonnementAlerte(EnvironmentScopedModel):
+    """Un habitant qui a demandé à recevoir les alertes d'une collectivité.
+
+    C'est un consentement, pas une déduction : on n'écrit pas aux gens parce qu'ils habitent
+    quelque part, on écrit à ceux qui l'ont demandé. `actif=False` = il s'est désabonné ; la
+    ligne reste, pour savoir qu'il l'a fait."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="abonnements_alerte")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="abonnes_alerte")
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["utilisateur", "institution", "environment"], name="abonnement_alerte_unique"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Abonnement de {self.utilisateur_id} aux alertes de {self.institution.nom}"
+
+
+class AlertePopulation(EnvironmentScopedModel):
+    """Une alerte envoyée aux habitants par une collectivité, et ce qu'elle est devenue.
+
+    Ce n'est PAS l'alerte officielle (FR-Alert relève du préfet) : c'est le message de la
+    commune à ceux qui ont demandé à le recevoir, et aux personnes déjà touchées par la crise.
+
+    `bilan` garde, canal par canal, combien de personnes étaient joignables, combien de messages
+    sont partis et pourquoi les autres ne le sont pas -- une alerte « envoyée » qui n'a touché
+    personne est la pire des fausses assurances. Immuable : une alerte partie ne se corrige pas,
+    on en envoie une autre."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.PROTECT, related_name="alertes_population")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_population")
+    titre = models.CharField(max_length=150)
+    message = EncryptedTextField()
+    urgent = models.BooleanField(default=True)
+    canaux = models.JSONField(default=list)
+    bilan = models.JSONField(default=dict)
+    destinataires = models.PositiveIntegerField(default=0)
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_population")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self) -> str:
+        return f"{self.date_creation:%d/%m/%Y %H:%M} — {self.titre}"
+
+
 class StatutMateriel(models.TextChoices):
     EN_TRANSIT = "EN_TRANSIT", "En transit"
     SUR_PLACE = "SUR_PLACE", "Sur place"
@@ -8101,6 +8158,15 @@ class SalonMatrixEquipe(EnvironmentScopedModel):
         default=TypeSalonEquipe.INTERVENANTS,
     )
 
+    # Vide = le salon de tous les jours. Renseigné = le salon de l'équipe POUR CETTE CRISE.
+    # Règle posée par Sylvain le 16/11/2026 : « un salon par crise, et les messages hors crise
+    # ne suivent pas » -- alors même qu'une équipe permanente se réutilise d'une crise à
+    # l'autre. C'est donc le salon, et non l'équipe, qui est propre à la crise. Seul le salon
+    # INTERVENANTS a une variante par crise (voir core/salons_de_crise.py).
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.CASCADE, null=True, blank=True, related_name="salons_equipe",
+    )
+
     room_id = models.CharField(
         max_length=255, null=True, blank=True,
         help_text="Identifiant Matrix du salon (ex: !abc123:matrix.assista-crise.local), posé par le pont à la création.",
@@ -8111,11 +8177,17 @@ class SalonMatrixEquipe(EnvironmentScopedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['equipe', 'type'], name='unique_salon_matrix_equipe_type'),
+            # Un seul salon de tous les jours par équipe et par type…
+            models.UniqueConstraint(fields=['equipe', 'type'], condition=models.Q(crise__isnull=True),
+                                    name='unique_salon_matrix_equipe_type'),
+            # … et un seul par crise.
+            models.UniqueConstraint(fields=['equipe', 'type', 'crise'], condition=models.Q(crise__isnull=False),
+                                    name='unique_salon_matrix_equipe_type_crise'),
         ]
 
     def __str__(self):
-        return f"Salon Matrix {self.get_type_display()} de {self.equipe.name}"
+        suffixe = f" — {self.crise.name}" if self.crise_id else ""
+        return f"Salon Matrix {self.get_type_display()} de {self.equipe.name}{suffixe}"
 
 
 class SalonMatrixMission(EnvironmentScopedModel):

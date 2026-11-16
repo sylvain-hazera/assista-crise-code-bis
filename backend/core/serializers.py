@@ -1808,7 +1808,9 @@ class TeamSerializer(serializers.ModelSerializer):
         contournerait — une requête par équipe et par type, soit le N+1 déjà payé une fois sur
         ce même champ (voir TeamViewSet.get_queryset)."""
         for salon in obj.salons_matrix.all():
-            if salon.type == type_salon:
+            # Le salon de tous les jours : une équipe peut en avoir d'autres, un par crise
+            # (core/salons_de_crise.py), qui ne sont pas « le salon de l'équipe ».
+            if salon.type == type_salon and salon.crise_id is None:
                 return salon
         return None
 
@@ -1824,9 +1826,12 @@ class TeamSerializer(serializers.ModelSerializer):
         """Les deux salons, pour la page de l'équipe. `room_id` vide = provisionné côté Django
         mais pas encore créé côté Synapse (le pont y passe toutes les 30 s)."""
         return [
-            {"id": str(salon.id), "type": salon.type,
-             "type_libelle": salon.get_type_display(), "room_id": salon.room_id}
-            for salon in sorted(obj.salons_matrix.all(), key=lambda s: s.type)
+            {"id": str(salon.id), "type": salon.type, "crise": str(salon.crise_id) if salon.crise_id else None,
+             # Un salon de crise porte le nom de sa crise : sans cela la page de l'équipe
+             # afficherait deux « Intervenants » indiscernables.
+             "type_libelle": salon.get_type_display() + (f" — {salon.crise.name}" if salon.crise_id else ""),
+             "room_id": salon.room_id}
+            for salon in sorted(obj.salons_matrix.all(), key=lambda s: (s.crise_id is not None, s.type))
         ]
 
     # L'appelant peut-il gérer cette équipe (ressources, mission, dossiers) ? La liste des
@@ -3948,7 +3953,11 @@ class SalonMatrixMissionSerializer(serializers.ModelSerializer):
 class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
     """membres : identifiants Matrix calculés par Django pour matrix-bridge."""
 
-    equipe_nom = serializers.CharField(source='equipe.name', read_only=True)
+    # Le pont nomme le salon d'après ce champ (« Équipe <nom> — Intervenants ») : pour un salon
+    # de crise il porte donc aussi le nom de la crise, sinon Element afficherait deux salons
+    # homonymes pour la même équipe et l'on écrirait dans le mauvais.
+    equipe_nom = serializers.SerializerMethodField()
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
     membres = serializers.SerializerMethodField()
     # Sujet du salon (régulateur et coordonnées) ; None = le pont ne touche pas au sujet.
     sujet_salon = serializers.SerializerMethodField()
@@ -3958,9 +3967,12 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SalonMatrixEquipe
-        fields = ['id', 'equipe', 'equipe_nom', 'type', 'room_id', 'membres', 'sujet_salon',
-                  'expulsion_activee', 'date_creation', 'derniere_synchronisation']
-        read_only_fields = ['id', 'equipe', 'type', 'date_creation']
+        fields = ['id', 'equipe', 'equipe_nom', 'type', 'crise', 'crise_nom', 'room_id', 'membres',
+                  'sujet_salon', 'expulsion_activee', 'date_creation', 'derniere_synchronisation']
+        read_only_fields = ['id', 'equipe', 'type', 'crise', 'date_creation']
+
+    def get_equipe_nom(self, obj):
+        return f"{obj.equipe.name} — {obj.crise.name}" if obj.crise_id else obj.equipe.name
 
     def get_sujet_salon(self, obj):
         regulateur = obj.equipe.regulateur
@@ -5458,6 +5470,7 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
     # réduisent le travail de qui la cherche.
     brevo_cle_api_renseignee = serializers.SerializerMethodField()
     sms_cle_api_renseignee = serializers.SerializerMethodField()
+    intramuros_cle_api_renseignee = serializers.SerializerMethodField()
     #: Crédits Brevo restants et niveau d'alerte (voir core/credits_brevo.py). Lus au dernier
     #: relevé, jamais appelés depuis le sérialiseur : une lecture d'écran ne doit pas
     #: dépendre de la disponibilité de Brevo.
@@ -5470,6 +5483,7 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
             'brevo_actif', 'brevo_cle_api', 'brevo_cle_api_renseignee',
             'brevo_expediteur_email', 'brevo_expediteur_nom',
             'fournisseur_sms', 'sms_cle_api', 'sms_cle_api_renseignee', 'sms_expediteur',
+            'intramuros_cle_api', 'intramuros_cle_api_renseignee',
             'email_configure', 'sms_configure',
             'brevo_seuil_alerte_email', 'brevo_seuil_alerte_sms', 'brevo_admin_email',
             'cout_unitaire_email', 'cout_unitaire_sms', 'cout_unitaire_sms_mobimel',
@@ -5485,6 +5499,7 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'brevo_cle_api': {'write_only': True, 'required': False, 'allow_blank': True},
             'sms_cle_api': {'write_only': True, 'required': False, 'allow_blank': True},
+            'intramuros_cle_api': {'write_only': True, 'required': False, 'allow_blank': True},
         }
 
     def get_brevo_cle_api_renseignee(self, obj):
@@ -5492,6 +5507,9 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
 
     def get_sms_cle_api_renseignee(self, obj):
         return bool(obj.sms_cle_api)
+
+    def get_intramuros_cle_api_renseignee(self, obj):
+        return bool(obj.intramuros_cle_api)
 
     def get_credits(self, obj):
         from .credits_brevo import etat

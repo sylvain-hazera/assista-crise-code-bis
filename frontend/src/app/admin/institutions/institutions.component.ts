@@ -211,6 +211,8 @@ export class InstitutionsComponent implements OnInit {
   configEnvoiSucces = '';
   brevoCleSaisie = '';
   smsCleSaisie = '';
+  /** Clé IntraMuros en cours de saisie : propre à chaque collectivité, jamais relue. */
+  intramurosCleSaisie = '';
 
   // ── Onglet « Modèles » : textes réécrits par l'institution ────────────────────────────
   //
@@ -386,6 +388,7 @@ export class InstitutionsComponent implements OnInit {
     // clé en place sans que personne ne l'ait voulu.
     if (this.brevoCleSaisie.trim()) patch.brevo_cle_api = this.brevoCleSaisie.trim();
     if (this.smsCleSaisie.trim()) patch.sms_cle_api = this.smsCleSaisie.trim();
+    if (this.intramurosCleSaisie.trim()) patch.intramuros_cle_api = this.intramurosCleSaisie.trim();
 
     this.configEnvoiEnregistrement = true;
     this.configEnvoiErreur = '';
@@ -401,6 +404,8 @@ export class InstitutionsComponent implements OnInit {
         this.configEnvoi = maj;
         this.brevoCleSaisie = '';
         this.smsCleSaisie = '';
+    this.intramurosCleSaisie = '';
+        this.intramurosCleSaisie = '';
         this.configEnvoiEnregistrement = false;
         this.configEnvoiSucces = "Configuration enregistrée.";
         this.enregistrerReplyTo(institutionId);
@@ -821,6 +826,7 @@ export class InstitutionsComponent implements OnInit {
     this.configEnvoi = null;
     this.brevoCleSaisie = '';
     this.smsCleSaisie = '';
+    this.intramurosCleSaisie = '';
     this.configEnvoiErreur = '';
     this.configEnvoiSucces = '';
     // Les contacts de CETTE institution, demandés nommément. La page tirait auparavant la

@@ -13,7 +13,7 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_pcs import (
-    DicrimView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
+    AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
@@ -484,6 +484,9 @@ urlpatterns = [
     path('dossier-pcs/revisions/', RevisionPCSView.as_view(), name='dossier_pcs_revisions'),
     path('dossier-pcs/document/', DocumentPCSView.as_view(), name='dossier_pcs_document'),
     path('dossier-pcs/dicrim/', DicrimView.as_view(), name='dossier_pcs_dicrim'),
+    path('alertes-population/', AlertesPopulationView.as_view(), name='alertes_population'),
+    path('alertes-population/abonnement/', AbonnementAlerteView.as_view(), name='alertes_population_abonnement'),
+    path('alertes-population/collectivites/', CollectivitesAlerteView.as_view(), name='alertes_population_collectivites'),
     path('repondre-offre/<str:token>/', OfferReponsePublicView.as_view(), name='offer_reponse_public'),
     path('edit-request/<str:token>/', RequestEditionPublicView.as_view(), name='request_edition_public'),
     path('edit-information/<str:token>/', InformationEditionPublicView.as_view(), name='information_edition_public'),

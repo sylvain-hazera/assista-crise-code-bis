@@ -195,7 +195,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     // Filtrées AVANT l'indexation : resultats[i] doit correspondre à equipesDeLaCrise[i].
     const equipesDeLaCrise = this.equipes.map(e => e.team).filter(t => !!t.salon_matrix_room_id);
     const appels = equipesDeLaCrise
-      .map(t => this.teamService.getSalonMatrixMessages(t.id!).pipe(
+      .map(t => this.teamService.getSalonMatrixMessages(t.id!, this.criseId).pipe(
         catchError(() => of({ messages: [] as MatrixMessage[] })),
       ));
     if (appels.length === 0) return;
@@ -264,9 +264,12 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   }
 
   // Messagerie unifiée (TeamViewSet.messagerie_unifiee) : Matrix + MeshCore + Meshtastic.
-  chargerMessagesEquipe = (equipeId: string) => () => this.teamService.getMessagerieUnifiee(equipeId);
-  envoyerMessageEquipe = (equipeId: string) => (texte: string, urgent = false) => this.teamService.envoyerMessageUnifie(equipeId, texte, urgent);
-  reagirMessageEquipe = (equipeId: string) => (eventId: string) => this.teamService.reagirSalonMatrix(equipeId, eventId);
+  // Un salon par crise : la cellule nomme TOUJOURS sa crise quand elle parle à une équipe. Une
+  // équipe permanente a un salon de tous les jours et un par crise ; c'est le serveur qui
+  // choisit, mais ici on sait de quelle crise on parle, donc on le dit.
+  chargerMessagesEquipe = (equipeId: string) => () => this.teamService.getMessagerieUnifiee(equipeId, this.criseId);
+  envoyerMessageEquipe = (equipeId: string) => (texte: string, urgent = false) => this.teamService.envoyerMessageUnifie(equipeId, texte, urgent, this.criseId);
+  reagirMessageEquipe = (equipeId: string) => (eventId: string) => this.teamService.reagirSalonMatrix(equipeId, eventId, this.criseId);
 
   demarrerEngagement(team: Team): void {
     this.teamService.demarrerEngagement(team.id!).subscribe({

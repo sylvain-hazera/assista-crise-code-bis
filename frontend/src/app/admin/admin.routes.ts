@@ -49,6 +49,7 @@ export const ADMIN_ROUTES: Routes = [
   // (2.4 / 4.1) se saisissaient au fond de la fiche Institution, sans entrée de menu.
   { path: 'pcs-risques', loadComponent: () => import('./pcs-risques/pcs-risques.component').then(m => m.PcsRisquesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'pcs-annuaire', loadComponent: () => import('./pcs-annuaire/pcs-annuaire.component').then(m => m.PcsAnnuaireComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'alerte-habitants', loadComponent: () => import('./alerte-habitants/alerte-habitants.component').then(m => m.AlerteHabitantsComponent), canActivate: [institutionalEffectiveGuard] },
   // Trois paragraphes tenus en liste, sur le même écran (pcs-liste/pcs-listes.config.ts).
   { path: 'pcs-organisation', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'organisation' } },
   { path: 'pcs-alerte', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'alerte' } },

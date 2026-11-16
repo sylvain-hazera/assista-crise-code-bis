@@ -37,10 +37,12 @@ import {
 
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
+import { AbonnementAlertesComponent } from '../../shared/components/common/abonnement-alertes/abonnement-alertes.component';
+
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule, RouterLink,
+  imports: [TelephonePipe, CommonModule, ReactiveFormsModule, FormsModule, RouterLink, AbonnementAlertesComponent,
             MesJustificatifsComponent],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']

@@ -69,8 +69,11 @@ def assurer_salons_equipe(equipe) -> int:
         return 0
     crees = 0
     for type_salon in TYPES_EQUIPE:
+        # `crise=None` : les salons de tous les jours. Une équipe peut en avoir d'autres, un
+        # par crise (core/salons_de_crise.py), et sans ce critère get_or_create en trouverait
+        # plusieurs.
         _salon, cree = SalonMatrixEquipe.objects.get_or_create(
-            equipe=equipe, type=type_salon, defaults={"environment": equipe.environment})
+            equipe=equipe, type=type_salon, crise=None, defaults={"environment": equipe.environment})
         crees += cree
     return crees
 

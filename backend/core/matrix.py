@@ -377,7 +377,7 @@ def provisionner_salons_equipe(team, environment, request=None):
     try:
         for type_salon in (TypeSalonEquipe.INTERVENANTS, TypeSalonEquipe.ENCADREMENT):
             salon, cree = SalonMatrixEquipe.objects.get_or_create(
-                equipe=team, type=type_salon, defaults={"environment": environment},
+                equipe=team, type=type_salon, crise=None, defaults={"environment": environment},
             )
             salons.append(salon)
             if cree:

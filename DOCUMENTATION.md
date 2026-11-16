@@ -2339,10 +2339,23 @@ l'appelant) :
     hors crise ne suivent pas ». Elle reprend d'office le responsable, l'encadrement et les
     membres de l'équipe permanente (`document_pcs.composer_depuis_le_plan`) : on copie les
     personnes, jamais le salon.
-  - **Limite connue** : une équipe permanente réutilisée garde son salon d'équipe, le même en
-    crise et hors crise (`SalonMatrixEquipe` est unique par équipe et par type). La discussion
-    propre à une crise passe par le salon de la cellule et par ceux des missions (« 1 mission =
-    1 canal »).
+  - **Un salon par crise pour une équipe permanente** (migration 0305,
+    `core/salons_de_crise.py`). `SalonMatrixEquipe.crise` vide = le salon de tous les jours ;
+    renseigné = le salon de l'équipe pour cette crise. Seul le salon INTERVENANTS a une
+    variante par crise ; la cellule de crise n'en a pas (elle est déjà propre à sa crise).
+    **C'est le serveur qui choisit** (`salon_du_contexte`), parce que l'application mobile et
+    la page de l'équipe ne savent rien des crises : la crise nommée par l'appelant (`?crise=`,
+    envoyé par la cellule), sinon la crise ouverte la plus récente où l'équipe est engagée,
+    sinon le salon de tous les jours. À la clôture, l'équipe retrouve seule son salon habituel
+    et celui de la crise reste comme archive. Le salon de crise naît à la première discussion.
+    Le pont Matrix n'est pas modifié : il reçoit `equipe_nom` déjà suffixé du nom de la crise,
+    ce qui distingue les deux salons dans Element.
+    **Toute création d'un salon de tous les jours doit préciser `crise=None`** : sans ce
+    critère, `get_or_create` trouverait autant de salons que de crises (même piège que celui
+    du `type`, qui a fait une erreur 500 en production le 16/11/2026).
+    Effets à connaître : une équipe déjà engagée dans une crise ouverte au moment de la mise en
+    service passe sur un salon neuf ; une équipe affectée à une crise d'essai, jamais clôturée,
+    reste sur le salon de cette crise.
 - La fiche réflexe d'une fonction est celle de la trame de l'État (`core/pcs_fiches.py`) tant que
   la commune n'a pas écrit la sienne (`consignes`).
 - **Alerte** : un moyen peut être rattaché à un quartier de la collectivité, ou valoir pour toute
@@ -2363,9 +2376,59 @@ l'export, relit l'entrée **entière** dans le journal chiffré
 **Après l'activation d'un dispositif**, le lien mène à la cellule de crise de cette crise
 (`/admin/cellule-crise?crise=<id>`), et non plus seulement à la liste des crises.
 
-Ce qui n'existe pas encore : un envoi d'alerte aux habitants depuis l'application (SMS,
-notification), des modèles d'arrêtés pré-remplis (réquisition, interdiction), l'export
-cartographique en annexe.
+**L'alerte aux habitants** (migration 0306, `core/alerte_population.py`, écran
+`/admin/alerte-habitants`, API `/api/alertes-population/`). Ce n'est pas FR-Alert : la commune
+écrit à ceux qui ont **demandé** à recevoir ses alertes (`AbonnementAlerte`, que chacun pose et
+retire pour lui-même par `/api/alertes-population/abonnement/`) et aux personnes déjà touchées
+par la crise (`User.affected_crisis`). Cinq canaux, sur le modèle des campagnes :
+
+| Canal | État | Coché par défaut |
+|---|---|---|
+| Messagerie (Matrix) | en service : message privé à chaque personne | oui |
+| Application mobile | en service : notification urgente, avec son suivi | oui |
+| Courriel | en service, par l'adresse de la collectivité si elle en a une | non |
+| SMS | en service si la collectivité a un fournisseur SMS ; il se paie | non |
+| Radio MeshCore, radio Meshtastic | en service si la commune a un canal radio à elle | non |
+| IntraMuros | **préparé, pas branché** | non |
+
+L'écran annonce, avant l'envoi, combien de personnes chaque canal peut joindre ; `bilan` garde
+ensuite ce qui est réellement parti, canal par canal. Un canal en panne n'arrête ni les autres
+ni les autres personnes. Le message est chiffré au repos ; la main courante ne garde que le
+nombre et les canaux.
+
+**Radio** : l'alerte part sur le canal DE LA COMMUNE — les canaux de la collectivité qui ne sont
+pas ceux d'une équipe (`alerte_population.canaux_radio`) ; un canal ouvert pour une crise ne sert
+qu'à cette crise. Le texte est ramené à 200 caractères : la radio se paie en temps d'antenne.
+
+**En zone de démonstration, l'alerte ne part qu'à celui qui l'envoie** (règle de Sylvain,
+16/11/2026) : il constate le fonctionnement sans qu'aucun habitant reçoive une fausse alerte. La
+radio ne part pas du tout — une diffusion ne se limite pas à une personne.
+
+**S'abonner** : « Recevoir les alertes de ma commune » figure dans la page du compte sur le site
+(`AbonnementAlertesComponent`) et dans « Mon compte » de l'application mobile (version 0.9.0).
+L'habitant cherche sa commune par son nom (`/api/alertes-population/collectivites/?q=`), s'abonne
+et se désabonne pour lui-même.
+
+**IntraMuros n'est pas implémenté, et c'est volontaire** — même position que pour Mobimel
+(`core/envoi_sms.py`). Aucune documentation publique de leur API n'a été trouvée (16/11/2026).
+La clé de chaque collectivité se range, chiffrée (`ConfigurationEnvoiInstitution.
+intramuros_cle_api`, saisie dans l'onglet Envois de la fiche Institution), le canal est déclaré,
+et il manque une seule fonction : `alerte_population._envoyer_intramuros`, à écrire avec leur
+documentation. Aucun appel n'est fait vers une adresse devinée, et un test le garantit.
+
+**Ce qui manque à l'alerte** : le ciblage par quartier.
+
+**Une application Android par marque** (16/11/2026). Le projet mobile avait déjà une « saveur »
+par marque ; il en a deux : `reserveResilience` (identifiant `org.reserve_resilience.app`, parle
+à `app.reserve-resilience.org`) et `assistaCrise` (identifiant `fr.assista_crise.app`, parle à
+`www.assista-crise.fr`). Même code ; diffèrent le nom, l'emblème
+(`mobile/androidApp/src/assistaCrise/res`) et la palette (`ui/Marque.kt`, un fichier par
+saveur). Les deux s'installent côte à côte. `scripts/publier-mobile.sh` dépose
+`reserve-resilience.apk` et `assista-crise.apk` dans `frontend/public/mobile`, et la page
+d'accueil propose l'un ou l'autre selon le domaine visité (`lienDeLApplication`).
+
+Ce qui n'existe pas encore : des modèles d'arrêtés pré-remplis (réquisition, interdiction),
+l'export cartographique en annexe.
 
 ---
 

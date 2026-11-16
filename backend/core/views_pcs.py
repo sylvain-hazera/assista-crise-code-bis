@@ -316,3 +316,112 @@ class ExercicePCSViewSet(_ListeDuDossierPCS):
     queryset = ExercicePCS.objects.select_related("crise")
     serializer_class = ExercicePCSSerializer
     objet = "ExercicePCS"
+
+
+# ───────────────────────────── L'alerte aux habitants ─────────────────────────────
+
+from rest_framework.permissions import IsAuthenticated  # noqa: E402
+
+from . import alerte_population  # noqa: E402
+from .models import AbonnementAlerte, AlertePopulation, Crisis, Institution  # noqa: E402
+
+
+def _alerte_en_clair(alerte, request) -> dict:
+    return {
+        "id": str(alerte.id), "titre": alerte.titre, "message": alerte.message, "urgent": alerte.urgent,
+        "crise": str(alerte.crise_id) if alerte.crise_id else None,
+        "crise_nom": alerte.crise.name if alerte.crise_id else None,
+        "canaux": alerte.canaux, "bilan": alerte.bilan, "destinataires": alerte.destinataires,
+        "auteur": _nommer(request)(alerte.auteur) if alerte.auteur_id else "", "date": alerte.date_creation,
+    }
+
+
+def _crise_demandee(request, valeur):
+    if not valeur:
+        return None
+    crise = Crisis.objects.filter(pk=valeur, end_date__isnull=True, environment=get_active_environment(request)).first()
+    if crise is None:
+        raise ValidationError({"crise": "Cette crise n'existe pas ou est clôturée."})
+    return crise
+
+
+class AlertesPopulationView(APIView):
+    """GET /api/alertes-population/ -- les alertes déjà envoyées par la collectivité, et l'aperçu
+    de la prochaine (`?crise=` : qui serait touché, canal par canal).
+    POST -- envoie une alerte aux habitants. Voir core/alerte_population.py."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        institution = _institution(request)
+        environment = get_active_environment(request)
+        crise = _crise_demandee(request, request.query_params.get("crise"))
+        alertes = AlertePopulation.objects.filter(institution=institution, environment=environment).select_related("crise", "auteur")[:50]
+        return Response({
+            "apercu": alerte_population.apercu(institution, crise, environment),
+            "par_defaut": alerte_population.PAR_DEFAUT,
+            "alertes": [_alerte_en_clair(a, request) for a in alertes],
+        })
+
+    def post(self, request):
+        institution = _institution(request)
+        titre = str(request.data.get("titre") or "").strip()
+        message = str(request.data.get("message") or "").strip()
+        if not titre or not message:
+            raise ValidationError({"message": "Une alerte a un titre et un message."})
+        if len(titre) > 150:
+            raise ValidationError({"titre": "150 caractères au plus."})
+        canaux = request.data.get("canaux")
+        if not isinstance(canaux, list) or not [c for c in canaux if c in alerte_population.CODES]:
+            raise ValidationError({"canaux": "Choisissez au moins un canal."})
+        crise = _crise_demandee(request, request.data.get("crise"))
+        alerte = alerte_population.envoyer(request, institution, crise, titre, message, canaux,
+                                           urgent=bool(request.data.get("urgent", True)))
+        return Response(_alerte_en_clair(alerte, request), status=201)
+
+
+class CollectivitesAlerteView(APIView):
+    """GET /api/alertes-population/collectivites/?q=saint -- les communes et intercommunalités
+    dont on peut recevoir les alertes, cherchées par leur nom. Nom et identifiant seulement :
+    rien ici n'est privé, et c'est ce dont l'habitant a besoin pour s'abonner."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 2:
+            return Response([])
+        collectivites = (Institution.objects
+                         .filter(environment=get_active_environment(request), type__code__in=("MAIRIE", "EPCI"),
+                                 nom__icontains=q, actif=True).order_by("nom")[:15])
+        return Response([{"id": str(i.id), "nom": i.nom} for i in collectivites])
+
+
+class AbonnementAlerteView(APIView):
+    """GET /api/alertes-population/abonnement/ -- les collectivités dont je reçois les alertes.
+    POST {institution} -- je m'abonne. DELETE {institution} -- je me désabonne.
+
+    Ouvert à tout compte connecté : c'est l'habitant qui décide, pour lui-même."""
+    permission_classes = [IsAuthenticated]
+
+    def _institution(self, request):
+        institution = Institution.objects.filter(pk=request.data.get("institution") or request.query_params.get("institution")).first()
+        if institution is None:
+            raise ValidationError({"institution": "Collectivité inconnue."})
+        return institution
+
+    def get(self, request):
+        abonnements = AbonnementAlerte.objects.filter(
+            utilisateur=request.user, actif=True, environment=get_active_environment(request)).select_related("institution")
+        return Response([{"institution": str(a.institution_id), "institution_nom": a.institution.nom} for a in abonnements])
+
+    def post(self, request):
+        institution = self._institution(request)
+        abonnement, _cree = AbonnementAlerte.objects.update_or_create(
+            utilisateur=request.user, institution=institution, environment=get_active_environment(request),
+            defaults={"actif": True})
+        return Response({"institution": str(institution.id), "institution_nom": institution.nom, "actif": True}, status=201)
+
+    def delete(self, request):
+        institution = self._institution(request)
+        AbonnementAlerte.objects.filter(utilisateur=request.user, institution=institution,
+                                        environment=get_active_environment(request)).update(actif=False)
+        return Response(status=204)
