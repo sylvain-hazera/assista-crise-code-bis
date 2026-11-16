@@ -12,6 +12,9 @@ from .views_application import (
     RepondreIndisponibleView,
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
+from .views_pcs import (
+    DicrimView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
+)
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
     FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
@@ -298,6 +301,9 @@ router.register(r'habilitations-registre-vulnerables', HabilitationRegistreVulne
 router.register(r'notifications-alerte-pcs', NotificationAlertePCSViewSet)
 router.register(r'secteurs-recherche', SecteurRechercheViewSet)
 router.register(r'plans', PlanViewSet)
+router.register(r'pcs-fonctions', FonctionPCSViewSet, basename='pcs-fonctions')
+router.register(r'pcs-moyens-alerte', MoyenAlertePCSViewSet, basename='pcs-moyens-alerte')
+router.register(r'pcs-exercices', ExercicePCSViewSet, basename='pcs-exercices')
 router.register(r'habitations', HabitationViewSet)
 router.register(r'habitations-commentaires', HabitationCommentaireViewSet)
 router.register(r'habitations-historique', HabitationHistoriqueViewSet)
@@ -474,6 +480,10 @@ urlpatterns = [
     path('delete-information/<str:token>/', DeleteInformationView.as_view(), name='delete_information'),
     path('engagement-ressource/<str:token>/', EngagementRessourcePublicView.as_view(), name='engagement_ressource_public'),
     path('accuser-reception-pcs/<str:token>/', AccuserReceptionAlertePCSPublicView.as_view(), name='accuser_reception_alerte_pcs'),
+    path('dossier-pcs/', DossierPCSView.as_view(), name='dossier_pcs'),
+    path('dossier-pcs/revisions/', RevisionPCSView.as_view(), name='dossier_pcs_revisions'),
+    path('dossier-pcs/document/', DocumentPCSView.as_view(), name='dossier_pcs_document'),
+    path('dossier-pcs/dicrim/', DicrimView.as_view(), name='dossier_pcs_dicrim'),
     path('repondre-offre/<str:token>/', OfferReponsePublicView.as_view(), name='offer_reponse_public'),
     path('edit-request/<str:token>/', RequestEditionPublicView.as_view(), name='request_edition_public'),
     path('edit-information/<str:token>/', InformationEditionPublicView.as_view(), name='information_edition_public'),

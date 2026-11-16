@@ -94,3 +94,21 @@
     &:disabled { opacity: .5; cursor: not-allowed; }
   }
 }
+
+.btn-journal {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  margin-top: .25rem;
+  padding: .15rem .5rem;
+  border-radius: 4px;
+  border: 1px solid var(--ac-border, #d1d5db);
+  background: transparent;
+  color: var(--ac-text-muted, #6b7280);
+  font-size: .75rem;
+  cursor: pointer;
+
+  .material-icons { font-size: .95rem; }
+  &:hover:not(:disabled) { color: var(--ac-text, #1f2937); border-color: var(--ac-text-muted, #6b7280); }
+  &:disabled { cursor: default; opacity: .75; }
+}

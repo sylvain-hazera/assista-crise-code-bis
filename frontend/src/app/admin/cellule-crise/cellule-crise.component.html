@@ -29,6 +29,8 @@
           <app-matrix-salon-chat
             [cle]="'cellule-' + cellule.equipe_id"
             titre="Cellule de crise"
+            [journal]="true"
+            (versJournal)="porterAuJournal($event, 'cellule de crise')"
             [autoriserUrgent]="true"
             [cadre]="true"
             [chargerMessages]="chargerMessagesEquipe(cellule.equipe_id)"
@@ -248,6 +250,8 @@
                   <app-matrix-salon-chat
                     [cle]="equipe.team.id!"
                     [titre]="'Messagerie — ' + teamDisplayName(equipe.team)"
+                    [journal]="true"
+                    (versJournal)="porterAuJournal($event, teamDisplayName(equipe.team))"
                     [pretACharger]="estDepliee(equipe.team.id!)"
                     [autoriserUrgent]="true"
                     [cadre]="estCadreEquipe(equipe.team)"

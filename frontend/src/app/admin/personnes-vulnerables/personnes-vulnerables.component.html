@@ -18,9 +18,24 @@
       }
     </div>
     @if (peutEcrire) {
-      <button type="button" class="btn-primary" (click)="openCreateModal()">
-        <span class="material-icons">add</span> Nouvelle fiche
-      </button>
+      <div class="header-actions">
+        <!-- Édition PDF : l'annexe nominative du plan communal de sauvegarde. Offerte à qui
+             tient le registre, jamais à la lecture d'exploitation de l'administrateur. -->
+        @if (communes.length > 1) {
+          <select class="choix-commune" [(ngModel)]="communeAImprimer" aria-label="Commune du registre à éditer">
+            <option value="">Commune à éditer…</option>
+            @for (code of communes; track code) { <option [value]="code">{{ code }}</option> }
+          </select>
+        }
+        <button type="button" class="btn-secondary" (click)="imprimerRegistre()" [disabled]="editionEnCours"
+                title="Éditer le registre en PDF pour l'imprimer : l'annexe nominative du plan communal de sauvegarde">
+          <span class="material-icons">picture_as_pdf</span>
+          {{ editionEnCours ? 'Édition…' : 'Éditer le registre (PDF)' }}
+        </button>
+        <button type="button" class="btn-primary" (click)="openCreateModal()">
+          <span class="material-icons">add</span> Nouvelle fiche
+        </button>
+      </div>
     }
   </header>
 

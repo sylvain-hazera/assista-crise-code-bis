@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Observable, of, Subscription } from 'rxjs';
@@ -38,6 +38,19 @@ export class MatrixSalonChatComponent implements OnChanges, OnDestroy {
    * (ex: salons d'institution, hors périmètre de cet accusé de réception). */
   @Input() cadre = false;
   @Input() reagir?: (eventId: string) => Observable<{ status: string }>;
+  /** Vrai dans la cellule de crise : chaque message porte alors un bouton « Au journal », qui
+   * le recopie au journal de bord de la crise. Le salon lui-même ne sait rien du journal : il
+   * signale le message, l'hôte décide. */
+  @Input() journal = false;
+  @Output() versJournal = new EventEmitter<MatrixMessage>();
+  /** Messages déjà portés au journal depuis cet écran : le bouton devient une coche, pour ne
+   * pas inscrire deux fois le même message par mégarde. */
+  portesAuJournal = new Set<string>();
+
+  porterAuJournal(message: MatrixMessage): void {
+    this.portesAuJournal.add(message.event_id);
+    this.versJournal.emit(message);
+  }
 
   chargement = true;
   erreur = '';

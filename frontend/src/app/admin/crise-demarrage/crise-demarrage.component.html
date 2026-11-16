@@ -4,6 +4,9 @@
     <p class="page-hint">Pose rapidement les éléments stratégiques de cette crise. Chaque étape peut être passée si elle ne s'applique pas.</p>
   </div>
 
+  <!-- Un plan incomplet n'empêche pas d'ouvrir la crise : on le dit, sans s'imposer. -->
+  <app-rappel-plan-incomplet></app-rappel-plan-incomplet>
+
   <div class="steps-indicator">
     <span class="step-dot" [class.active]="step === 1" [class.done]="step > 1">1. Points stratégiques</span>
     <span class="step-dot" [class.active]="step === 2" [class.done]="step > 2">2. Équipes</span>

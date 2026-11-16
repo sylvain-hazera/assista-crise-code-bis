@@ -1796,7 +1796,9 @@ class JournalCollectivite(EnvironmentScopedModel):
     # depuis le backfill (migrations 0119/0120).
     crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="journal_entries")
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="journal_entries")
-    contenu = models.TextField()
+    # Chiffré depuis le 16/11/2026 : le journal de bord cite des personnes, et il se nourrit
+    # désormais des messages des équipes (cellule de crise, « Porter au journal »).
+    contenu = EncryptedTextField()
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -5324,6 +5326,163 @@ class PlanMissionModele(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return f"{self.titre} ({self.equipe.name})"
+
+
+class DossierPCS(EnvironmentScopedModel):
+    """Ce que le plan communal de sauvegarde d'une institution a d'ADMINISTRATIF, et que rien
+    d'autre ne porte : l'arrêté qui l'approuve, le lieu du poste de commandement communal, et
+    le texte des modalités d'activation.
+
+    Tout le reste du plan -- risques, enjeux, dispositifs, missions, annuaire, moyens -- existe
+    déjà ailleurs et n'est PAS recopié ici : le document se construit à la demande depuis ces
+    données vivantes (core/document_pcs.py). Recopier ferait deux vérités, dont une périmée.
+
+    Une ligne par institution et par zone (PROD/DEMO), créée à la première ouverture."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="dossiers_pcs")
+
+    arrete_numero = models.CharField(max_length=60, blank=True)
+    arrete_date = models.DateField(null=True, blank=True)
+    lieu_pcc = models.CharField(
+        max_length=255, blank=True,
+        help_text="Où se réunit le poste de commandement communal (salle, adresse).",
+    )
+    lieu_pcc_repli = models.CharField(
+        max_length=255, blank=True,
+        help_text="Lieu de repli si le premier est inaccessible (inondé, sans courant).",
+    )
+    modalites_activation = models.TextField(
+        blank=True,
+        help_text="Qui déclenche le plan, sur quels signaux, et comment l'équipe est prévenue.",
+    )
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["institution", "environment"], name="dossier_pcs_unique"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Dossier PCS — {self.institution.nom}"
+
+
+class RevisionPCS(EnvironmentScopedModel):
+    """Une ligne du « tableau des mises à jour » du plan : ce qui a été revu, quand, par qui.
+    Immuable, comme la main courante : on n'efface pas l'historique d'un plan."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="revisions")
+    date = models.DateField()
+    objet = models.CharField(max_length=500)
+    auteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="revisions_pcs",
+    )
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-date_creation"]
+
+    def __str__(self) -> str:
+        return f"{self.date:%d/%m/%Y} — {self.objet[:60]}"
+
+
+class FonctionPCS(EnvironmentScopedModel):
+    """Une case de l'organigramme du poste de commandement communal, et sa fiche réflexe.
+
+    Deux façons de dire qui tient la fonction, et la première évite les doublons : désigner
+    l'ÉQUIPE qui la tient (`equipe`), dont le responsable et l'encadrement sont alors repris ; ou,
+    à défaut, saisir des NOMS -- dans une petite commune, l'adjoint chargé de la logistique n'a
+    pas forcément de compte, et le jour de la crise c'est un nom et un téléphone qu'on cherche.
+    Un nom saisi l'emporte sur celui de l'équipe. Chiffrés, comme toute coordonnée.
+
+    `consignes` vide = la fiche type de la trame de l'État (core/pcs_fiches.py), reprise telle
+    quelle dans le document. La commune ne réécrit que ce qu'elle veut changer."""
+
+    class Fonction(models.TextChoices):
+        DOS = "DOS", "Maire — directeur des opérations de secours"
+        COORDINATION = "COORDINATION", "Coordinateur des moyens et des actions"
+        ALERTE = "ALERTE", "Responsable de l'alerte de la population"
+        SOUTIEN = "SOUTIEN", "Responsable du soutien des populations"
+        LOGISTIQUE = "LOGISTIQUE", "Responsable logistique"
+        SECRETARIAT = "SECRETARIAT", "Secrétariat"
+        AUTRE = "AUTRE", "Autre fonction"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="fonctions")
+    fonction = models.CharField(max_length=20, choices=Fonction.choices)
+    libelle = models.CharField(max_length=120, blank=True, help_text="Nom de la fonction, quand elle est « autre ».")
+    # L'équipe qui tient la fonction. C'est le lien qui évite de nommer les mêmes personnes deux
+    # fois : quand il est posé, le responsable de l'équipe est le titulaire et son encadrement
+    # fournit le suppléant (voir document_pcs.personnes_de_la_fonction). Et c'est de CETTE
+    # équipe que l'équipe créée pour une crise reprend ses membres, pour le point correspondant
+    # (cellule de crise, centre d'accueil, regroupement des moyens). L'équipe de la crise reste
+    # une équipe à part : un salon par crise (document_pcs.composer_depuis_le_plan).
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="fonctions_pcs",
+    )
+    titulaire = EncryptedTextField(blank=True, default="")
+    titulaire_telephone = EncryptedTextField(blank=True, default="")
+    suppleant = EncryptedTextField(blank=True, default="")
+    suppleant_telephone = EncryptedTextField(blank=True, default="")
+    consignes = models.TextField(blank=True, help_text="Fiche réflexe propre à la commune ; vide = la fiche type.")
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date_maj"]
+
+    def __str__(self) -> str:
+        return self.libelle or self.get_fonction_display()
+
+
+class MoyenAlertePCS(EnvironmentScopedModel):
+    """Un moyen d'alerter la population : sirène, véhicule avec haut-parleur, automate d'appel,
+    personne relais d'un quartier… FR-Alert n'en fait pas partie : il relève du préfet."""
+
+    class Type(models.TextChoices):
+        SIRENE = "SIRENE", "Sirène"
+        VEHICULE = "VEHICULE", "Véhicule avec haut-parleur"
+        AUTOMATE = "AUTOMATE", "Automate d'appel ou de SMS"
+        RELAIS = "RELAIS", "Personne relais de quartier"
+        PORTE_A_PORTE = "PORTE_A_PORTE", "Porte-à-porte"
+        AFFICHAGE = "AFFICHAGE", "Panneaux, site et réseaux de la commune"
+        AUTRE = "AUTRE", "Autre moyen"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="moyens_alerte")
+    type = models.CharField(max_length=20, choices=Type.choices)
+    description = models.CharField(max_length=500, blank=True, help_text="Lieu, circuit, liste de diffusion…")
+    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name="moyens_alerte")
+    personne = EncryptedTextField(blank=True, default="")
+    personne_telephone = EncryptedTextField(blank=True, default="")
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["type", "date_maj"]
+
+    def __str__(self) -> str:
+        return f"{self.get_type_display()} — {self.description[:60]}"
+
+
+class ExercicePCS(EnvironmentScopedModel):
+    """Un exercice du plan et ce qu'on en a tiré. `crise` relie, quand il y en a une, la crise
+    d'exercice qui a servi à le jouer dans l'application."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="exercices")
+    date = models.DateField()
+    theme = models.CharField(max_length=255)
+    deroulement = models.TextField(blank=True)
+    enseignements = models.TextField(blank=True)
+    actions = models.TextField(blank=True, help_text="Ce qui doit changer dans le plan à la suite de l'exercice.")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="exercices_pcs")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date"]
+
+    def __str__(self) -> str:
+        return f"{self.date:%d/%m/%Y} — {self.theme[:60]}"
 
 
 class StatutMateriel(models.TextChoices):

@@ -10,6 +10,10 @@
     </button>
   </header>
 
+  <!-- Le document du plan : construit depuis ce qui est saisi partout ailleurs, il dit ce qui
+       manque encore et sort en PDF. Les dispositifs ci-dessous en sont une partie. -->
+  <app-dossier-pcs></app-dossier-pcs>
+
   @if (errorMessage) {
     <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
   }
@@ -17,6 +21,7 @@
   @if (successMessage) {
     <div class="toast toast-ok">
       <span class="material-icons">check_circle</span> {{ successMessage }}
+      <button type="button" class="btn-link" (click)="ouvrirCellule()">Ouvrir la cellule de crise</button>
       <button type="button" class="btn-link" (click)="goToCrises()">Voir dans Crises</button>
     </div>
   }

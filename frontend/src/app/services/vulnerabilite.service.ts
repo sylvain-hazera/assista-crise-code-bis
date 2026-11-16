@@ -54,6 +54,14 @@ export class PersonneVulnerableService {
   radier(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
+
+  /** Le registre d'une commune, mis en page pour l'impression. Sans `communeCode`, le serveur
+   * prend la commune de l'institution de la personne connectée. Construit à la demande, jamais
+   * stocké, et réservé à qui tient le registre (désigné et engagé au secret). */
+  pdf(communeCode?: string): Observable<Blob> {
+    const params: Record<string, string> = communeCode ? { commune_code: communeCode } : {};
+    return this.http.get(`${this.url}/pdf/`, { params, responseType: 'blob' });
+  }
 }
 
 /**

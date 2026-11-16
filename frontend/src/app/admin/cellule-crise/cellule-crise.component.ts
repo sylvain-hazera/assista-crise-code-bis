@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription, forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
@@ -130,6 +130,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     private requestService: RequestService,
     private informationService: InformationService,
     public authService: AuthService,
+    private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
@@ -141,7 +142,10 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
       next: (crises) => {
         this.crises = crises.filter(c => c.is_open !== false);
         if (this.crises.length > 0 && !this.criseId) {
-          this.criseId = this.crises[0].id;
+          // `?crise=` : on arrive d'un dispositif qu'on vient d'activer, ou d'un lien. Sinon,
+          // la première crise ouverte, comme avant.
+          const demandee = this.route.snapshot.queryParamMap.get('crise');
+          this.criseId = (this.crises.find(c => c.id === demandee) ?? this.crises[0]).id;
           this.onCriseChange();
         }
       },
@@ -561,6 +565,20 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   /** Message renvoyé par l'API (`error` de nos actions, `detail` d'un 403 DRF) ou repli. */
   private messageErreur(err: any, repli: string): string {
     return err?.error?.error || err?.error?.detail || repli;
+  }
+
+  /** Le journal de bord se nourrit des messages des équipes : un message porté au journal y
+   * devient une entrée datée et signée de celui qui l'y porte, qui cite l'équipe, l'auteur et
+   * l'heure du message. Le message n'est pas déplacé : le journal garde ce qui a compté, le
+   * salon garde tout. */
+  porterAuJournal(message: MatrixMessage, equipe: string): void {
+    const heure = new Date(message.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const urgent = message.urgent ? ' (urgent)' : '';
+    const contenu = `[Message de ${message.expediteur_nom}, ${equipe}, ${heure}${urgent}] ${message.texte}`;
+    this.journalService.create(contenu, this.criseId).subscribe({
+      next: () => this.chargerCoordination(),
+      error: (err) => alert(this.messageErreur(err, "Le message n'a pas pu être porté au journal de bord.")),
+    });
   }
 
   envoyerEntreeJournal(): void {

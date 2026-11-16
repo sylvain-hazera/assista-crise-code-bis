@@ -1,0 +1,69 @@
+<div class="paragraphe-page">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphe 1.1</p>
+    <h1><span class="material-icons">warning_amber</span> Risques de la commune</h1>
+    @if (commune) { <p class="sous-titre">{{ commune }} — {{ risques.length }} risque{{ risques.length > 1 ? 's' : '' }} déclaré{{ risques.length > 1 ? 's' : '' }}</p> }
+  </header>
+
+  <p class="a-quoi-ca-sert">
+    <span class="material-icons">sync_alt</span>
+    <span><strong>À quoi cela sert ensuite.</strong> Chaque risque se rattache aux <a routerLink="/admin/plans">dispositifs</a>
+      qu'il déclenche. L'état des lieux et les enjeux que vous écrivez ici sont repris tels quels dans le document du plan.
+      <strong>Rien n'oblige à tout remplir</strong> : une crise s'ouvre même si ce paragraphe est vide.</span>
+  </p>
+
+  @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité : il n'y a pas de plan à remplir.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @if (!chargement && !sansCollectivite) {
+    @if (suggestionsADeclarer.length) {
+      <section class="bloc suggestions">
+        <h2>Recensés par l'État pour votre commune (Géorisques)</h2>
+        <p class="note">Une suggestion, jamais appliquée d'office : déclarez ceux que vous retenez.</p>
+        <ul>
+          @for (s of suggestionsADeclarer; track s.num_risque) {
+            <li>{{ s.libelle }} <button type="button" class="btn-secondary" (click)="accepter(s)">Déclarer</button></li>
+          }
+        </ul>
+      </section>
+    }
+    @if (suggestionsErreur) { <p class="note">{{ suggestionsErreur }}</p> }
+
+    @for (risque of risques; track risque.id) {
+      <section class="bloc">
+        <div class="titre-bloc">
+          <h2>{{ risque.risque_nom }}</h2>
+          <button type="button" class="btn-lien" (click)="retirer(risque)">Retirer</button>
+        </div>
+        @if (risque.risque_generalites) { <p class="generalites">{{ risque.risque_generalites }}</p> }
+        <label>État des lieux sur la commune
+          <textarea rows="3" [(ngModel)]="risque.etat_des_lieux" [name]="'etat-' + risque.id"
+                    placeholder="Où, à partir de quel seuil, avec quels précédents"></textarea></label>
+        <label>Enjeux
+          <textarea rows="2" [(ngModel)]="risque.enjeux" [name]="'enjeux-' + risque.id"
+                    placeholder="Ce qui est exposé : quartiers, établissements, réseaux"></textarea></label>
+        <div class="actions">
+          <button type="button" class="btn-primary" (click)="enregistrer(risque)" [disabled]="enregistrement === risque.id">
+            {{ enregistrement === risque.id ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          @if (enregistre === risque.id) { <span class="ok">Enregistré.</span> }
+        </div>
+      </section>
+    } @empty {
+      <p class="message">Aucun risque n'est déclaré pour l'instant.</p>
+    }
+
+    @if (typesDisponibles.length) {
+      <section class="bloc ajout">
+        <h2>Déclarer un autre risque</h2>
+        <div class="ligne">
+          <select [(ngModel)]="typeAjoute" name="typeAjoute" aria-label="Risque à déclarer">
+            <option value="">Choisir dans le catalogue…</option>
+            @for (t of typesDisponibles; track t.id) { <option [value]="t.id">{{ t.nom }}</option> }
+          </select>
+          <button type="button" class="btn-secondary" (click)="declarer()" [disabled]="!typeAjoute">Déclarer</button>
+        </div>
+      </section>
+    }
+  }
+</div>

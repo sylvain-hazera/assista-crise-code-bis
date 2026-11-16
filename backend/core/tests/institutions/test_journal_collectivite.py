@@ -84,7 +84,31 @@ class TestJournalCollectiviteCreation:
         log = AuditLog.objects.filter(action__code="JOURNAL_BORD", objet_id=response.data["id"]).first()
         assert log is not None
         assert log.utilisateur == user
-        assert "Point de situation." in log.commentaire
+        # La trace dit QU'on a écrit, jamais QUOI : son commentaire n'est pas chiffré.
+        assert "Point de situation." not in log.commentaire
+        assert log.commentaire == f"Journal de bord ({institution.nom})"
+
+    def test_la_main_courante_donne_lentree_entiere_sans_en_garder_de_copie(self, create_user, institution, crisis):
+        """« Tout, pas seulement les 200 premiers caractères » : la main courante relit l'entrée
+        dans le journal chiffré, au lieu d'en porter une copie tronquée et en clair."""
+        from django.db import connection
+
+        from core.serializers import commentaire_de_main_courante
+
+        _impliquer(institution, crisis)
+        user = create_user(email="secretaire3@test.fr", username="secretaire3@test.fr", type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        long_texte = "Décision du maire : évacuation du quartier bas. " + "Détail de la mise en œuvre. " * 20 + "FIN-DE-L-ENTREE"
+
+        response = client.post(reverse("journal-collectivite-list"), {"contenu": long_texte, "crise": str(crisis.id)}, format="json")
+
+        assert response.status_code == 201 and len(long_texte) > 200
+        log = AuditLog.objects.filter(action__code="JOURNAL_BORD", objet_id=response.data["id"]).first()
+        assert commentaire_de_main_courante(log).endswith("FIN-DE-L-ENTREE")
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT commentaire FROM core_auditlog WHERE id = %s", [log.id])
+            assert "évacuation" not in curseur.fetchone()[0]
 
     def test_create_without_institution_is_rejected(self, create_user, crisis):
         user = create_user(email="sans-institution@test.fr", username="sans-institution@test.fr", type="AUT_LOCALE")
@@ -271,3 +295,29 @@ class TestImplicationInstitutionActifFilter:
 
         assert response.status_code == 200
         assert [i["id"] for i in response.data] == [str(active.id)]
+
+
+@pytest.mark.django_db
+class TestJournalChiffre:
+    def test_le_contenu_est_illisible_en_base_brute_et_relu_normalement(self, create_user, institution, crisis):
+        """Le journal de bord cite des personnes et reçoit les messages des équipes : son contenu
+        n'est pas stocké en clair (migration 0302)."""
+        from django.db import connection
+
+        from core.models import JournalCollectivite
+
+        _impliquer(institution, crisis)
+        user = create_user(email="chiffre-journal@test.fr", username="chiffre-journal@test.fr",
+                           type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        texte = "[Message de Jeanne Exemple, équipe logistique, 14:05] Pont de la gare coupé."
+
+        reponse = client.post(reverse("journal-collectivite-list"), {"contenu": texte, "crise": str(crisis.id)}, format="json")
+
+        assert reponse.status_code == 201 and reponse.data["contenu"] == texte
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT contenu FROM core_journalcollectivite WHERE id = %s", [reponse.data["id"]])
+            brut = curseur.fetchone()[0]
+        assert "Pont de la gare" not in brut and "Jeanne" not in brut
+        assert JournalCollectivite.objects.get(pk=reponse.data["id"]).contenu == texte

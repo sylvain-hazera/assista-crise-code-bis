@@ -48,6 +48,10 @@ export class PersonnesVulnerablesComponent implements OnInit {
   modalOpen = false;
   editingPersonne: PersonneVulnerable | null = null;
 
+  /** Commune dont on édite le registre, quand les fiches en couvrent plusieurs (délégation). */
+  communeAImprimer = '';
+  editionEnCours = false;
+
   constructor(
     private personneVulnerableService: PersonneVulnerableService,
     private habilitationService: HabilitationRegistreService,
@@ -143,6 +147,49 @@ export class PersonnesVulnerablesComponent implements OnInit {
   onSaved(): void {
     this.closeModal();
     this.load();
+  }
+
+  /** Les communes présentes dans les fiches affichées. Une mairie n'en a qu'une ; une
+   * institution qui tient le registre par délégation peut en avoir plusieurs, et le registre
+   * s'édite commune par commune — c'est à la commune qu'il appartient. */
+  get communes(): string[] {
+    return [...new Set(this.personnes.map(p => p.commune_code).filter(Boolean))].sort();
+  }
+
+  /** Édite le registre en PDF : l'annexe nominative du plan communal de sauvegarde.
+   *
+   * La confirmation n'est pas une formalité : une fois le fichier sur le poste, plus rien ne le
+   * protège que la personne qui l'a demandé. Son nom figure au pied de chaque page. */
+  imprimerRegistre(): void {
+    const communes = this.communes;
+    const commune = communes.length > 1 ? this.communeAImprimer : communes[0];
+    if (communes.length > 1 && !commune) {
+      this.errorMessage = 'Choisissez la commune dont vous éditez le registre.';
+      return;
+    }
+    if (!confirm(
+      'Vous allez éditer un document nominatif couvert par le secret professionnel.\n\n'
+      + "Votre nom et l'heure figureront au pied de chaque page, et cette édition est inscrite "
+      + 'à la main courante. Gardez le document sous clé et détruisez-le dès qu\'il ne sert plus.\n\n'
+      + 'Éditer le registre ?')) return;
+
+    this.editionEnCours = true;
+    this.errorMessage = '';
+    this.personneVulnerableService.pdf(commune).subscribe({
+      next: (blob) => {
+        this.editionEnCours = false;
+        const url = URL.createObjectURL(blob);
+        const lien = document.createElement('a');
+        lien.href = url;
+        lien.download = `registre-personnes-vulnerables${commune ? '-' + commune : ''}.pdf`;
+        lien.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.editionEnCours = false;
+        this.errorMessage = "Impossible d'éditer le registre. Vérifiez que vous êtes toujours désigné pour le tenir.";
+      },
+    });
   }
 
   radierPersonne(personne: PersonneVulnerable, event: Event): void {

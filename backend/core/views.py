@@ -680,6 +680,7 @@ from .serializers import (
     AuditLogSerializer,
     AuditLogAdminSerializer,
     JournalCollectiviteSerializer,
+    commentaire_de_main_courante,
     InstitutionTypeSerializer,
     InstitutionSerializer,
     RoleOperationnelSerializer,
@@ -5047,6 +5048,17 @@ def _creer_equipe_pour_point(point, nom, institution, request):
     team = Team.objects.create(name=nom, institution=institution, environment=point.environment)
     point.equipe = team
     point.save(update_fields=['equipe'])
+    # La cellule de crise est la seule équipe qui DOIT être propre à chaque crise : c'est elle
+    # qui porte le salon de la crise (un salon par crise). Elle reprend donc d'office le
+    # responsable, l'encadrement et les membres de l'équipe permanente que l'organigramme du
+    # plan de sauvegarde désigne : les personnes ne sont nommées qu'une fois.
+    # Les autres points (centre d'accueil, regroupement des moyens) RÉUTILISENT leur équipe
+    # permanente, proposée par l'assistant de démarrage : une équipe créée ici pour eux est un
+    # choix délibéré de ne pas la réutiliser, et on ne la remplit donc pas d'office.
+    if institution is not None and point.type_id and point.type.code == "CELLULE_CRISE":
+        from .document_pcs import composer_depuis_le_plan
+
+        composer_depuis_le_plan(team, institution, point.environment, point.type.code)
     audit_log(
         request=request,
         action_code="CREATION",
@@ -5122,6 +5134,9 @@ class CelluleCriseView(generics.GenericAPIView):
             equipe = point.equipe
         elif point is not None:
             institution = getattr(request.user, 'institution', None)
+            # Toujours une équipe propre à CETTE crise : c'est elle qui porte le salon, et il y
+            # a un salon par crise (règle de Sylvain, 16/11/2026). Elle est composée d'office
+            # depuis l'équipe que l'organigramme désigne -- voir _creer_equipe_pour_point.
             equipe = _creer_equipe_pour_point(point, f"Cellule de crise — {crise.name}", institution, request)
         else:
             # PointType CELLULE_CRISE absent (référentiel non seedé) -- repli minimal : une
@@ -6734,6 +6749,50 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             request=self.request, action_code="SUPPRESSION", objet_type="PersonneVulnerable",
             objet_id=instance.id, commentaire="Radiation personne vulnérable",
         )
+
+
+    @action(detail=False, methods=["get"], url_path="pdf")
+    def pdf(self, request):
+        """GET /api/personnes-vulnerables/pdf/ -- le registre d'une commune, à imprimer.
+
+        C'est l'annexe nominative du plan communal de sauvegarde. Elle se sort d'ici et de
+        nulle part ailleurs, par quelqu'un qui pourrait aussi y inscrire : désigné par le maire
+        (ou par délégation de compétence) ET engagé au secret. La garde est celle de l'écriture,
+        pas celle de la lecture, pour une raison précise : l'administrateur de la plateforme lit
+        le registre pour l'exploiter, mais sortir sur papier la liste des personnes vulnérables
+        d'une commune n'est pas un acte d'exploitation -- c'est un acte de la collectivité.
+
+        Rien n'est stocké (voir core/registre_vulnerables_pdf.py). L'édition est inscrite à la
+        main courante avec les identifiants des fiches et leur nombre, jamais leur contenu."""
+        from .registre_vulnerables_pdf import generer_pdf_registre, lignes_du_registre, nombre_de_fiches
+
+        institution = getattr(request.user, "institution", None)
+        commune_code = (request.query_params.get("commune_code")
+                        or getattr(institution, "commune_code", None) or "").strip()
+        self._refuser_si_administrateur()
+        if not commune_code:
+            raise ValidationError({"commune_code": "Précisez la commune dont vous éditez le registre."})
+        self._refuser_si_non_accede(commune_code)
+
+        personnes = list(self.get_queryset().filter(commune_code=commune_code, actif=True))
+        groupes = lignes_du_registre(personnes)
+        commune = Commune.objects.filter(code=commune_code).values_list("nom", flat=True).first()
+        libelle = f"{commune} ({commune_code})" if commune else f"commune {commune_code}"
+        pdf = generer_pdf_registre(
+            groupes, commune=libelle,
+            edite_par=nom_affichable(request.user, request) or request.user.username,
+        )
+
+        audit_log(
+            request=request, action_code="EXPORT", objet_type="PersonneVulnerable", objet_id=None,
+            exposition=AuditLog.Exposition.EXPORT, objets_ids=[p.id for p in personnes],
+            commentaire=f"Édition PDF du registre des personnes vulnérables, commune {commune_code} : "
+                        f"{nombre_de_fiches(groupes)} fiche(s)",
+        )
+
+        reponse = HttpResponse(pdf, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="registre-personnes-vulnerables-{commune_code}.pdf"'
+        return reponse
 
 
 class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -13354,7 +13413,8 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
                     entry.action.libelle if entry.action else "",
                     entry.objet_type,
                     str(entry.objet_id) if entry.objet_id else "",
-                    entry.commentaire or "",
+                    # Même lecture qu'à l'écran : une écriture au journal de bord donne l'entrée entière.
+                    commentaire_de_main_courante(entry),
                     "Oui" if entry.succes else "Non",
                     entry.environment,
                     entry.user_agent or "",
@@ -13439,7 +13499,9 @@ class JournalCollectiviteViewSet(
             action_code="JOURNAL_BORD",
             objet_type="JournalCollectivite",
             objet_id=entry.id,
-            commentaire=f"Journal de bord ({institution.nom}) : {entry.contenu[:200]}",
+            # Jamais le texte de l'entrée : ce champ n'est pas chiffré. La main courante relit
+            # l'entrée entière dans le journal (serializers.commentaire_de_main_courante).
+            commentaire=f"Journal de bord ({institution.nom})",
         )
 
 

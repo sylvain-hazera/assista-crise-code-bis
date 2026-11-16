@@ -15,6 +15,8 @@ import { BesoinService } from '../../services/besoin.service';
 import { CompetenceService } from '../../services/competence.service';
 import { UserService } from '../../services/user.service';
 import { NotificationAlertePCSService } from '../../services/notification-alerte-pcs.service';
+import { DossierPcsService } from '../../services/dossier-pcs.service';
+import { RappelPlanIncompletComponent } from '../../shared/components/common/rappel-plan-incomplet/rappel-plan-incomplet.component';
 import { NotificationAlertePCS } from '../../shared/models/notification-alerte-pcs.model';
 import { Crisis } from '../../shared/models/crisis.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
@@ -82,7 +84,7 @@ interface EtapePoint {
 @Component({
   selector: 'app-crise-demarrage',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, AddressPickerComponent],
+  imports: [CommonModule, FormsModule, RouterLink, AddressPickerComponent, RappelPlanIncompletComponent],
   templateUrl: './crise-demarrage.component.html',
   styleUrl: './crise-demarrage.component.scss',
 })
@@ -183,12 +185,20 @@ export class CriseDemarrageComponent implements OnInit {
     private competenceService: CompetenceService,
     private userService: UserService,
     private notificationAlertePCSService: NotificationAlertePCSService,
+    private dossierPcs: DossierPcsService,
   ) {}
 
   ngOnInit(): void {
     this.criseId = this.route.snapshot.paramMap.get('id')!;
+    // L'organigramme du plan de sauvegarde dit quelle équipe tient chaque point : on la propose.
+    // Une erreur est tue : sans plan, l'assistant fonctionne comme avant.
+    this.dossierPcs.lire().subscribe({
+      next: (dossier) => { this.equipesDuPlan = dossier.equipes_par_point ?? {}; this.proposerEquipesDuPlan(); },
+      error: () => {},
+    });
     this.crisisService.getById(this.criseId).subscribe(c => {
       this.crise = c;
+      this.proposerEquipesDuPlan();
       if (!this.messagePCS) {
         this.messagePCS = `La crise « ${c.name} » vient d'être déclarée, ce qui active le plan `
           + `communal/intercommunal de sauvegarde. Merci de prendre contact avec la cellule de crise.`;
@@ -399,6 +409,30 @@ export class CriseDemarrageComponent implements OnInit {
       etape.latitude = existant.latitude ?? null;
       etape.longitude = existant.longitude ?? null;
       etape.equipeId = existant.equipe ?? null;
+    }
+    this.proposerEquipesDuPlan();
+  }
+
+  /** Équipe permanente désignée par l'organigramme du plan de sauvegarde, par type de point. */
+  private equipesDuPlan: Record<string, { id: string; nom: string }> = {};
+
+  /** Propose, pour chaque point par défaut, l'équipe que l'organigramme du plan désigne
+   * (cellule de crise : coordination ; centre d'accueil : soutien ; regroupement des moyens :
+   * logistique). Une simple proposition : elle ne remplace ni une équipe déjà affectée ni un
+   * nom déjà saisi, et se change à l'étape 2.
+   *
+   * - **Centre d'accueil, regroupement des moyens** : l'équipe permanente ELLE-MÊME. C'est tout
+   *   l'intérêt d'une équipe préparée à l'avance : elle est prête pour la crise suivante.
+   * - **Cellule de crise** : une équipe NEUVE, au nom de la crise. Elle porte le salon de la
+   *   crise, et il y a un salon par crise ; le serveur lui donne d'office le responsable,
+   *   l'encadrement et les membres de l'équipe permanente. */
+  private proposerEquipesDuPlan(): void {
+    if (!this.crise) return;
+    for (const etape of this.etapes) {
+      const equipe = etape.pointTypeCode ? this.equipesDuPlan[etape.pointTypeCode] : undefined;
+      if (!equipe || etape.equipeId || etape.nouvelleEquipeNom.trim()) continue;
+      if (etape.pointTypeCode === 'CELLULE_CRISE') etape.nouvelleEquipeNom = `Cellule de crise — ${this.crise.name}`;
+      else etape.equipeId = equipe.id;
     }
   }
 

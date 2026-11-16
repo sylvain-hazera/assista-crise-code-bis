@@ -547,3 +547,119 @@ class TestMonEtatEtEngagement:
             else vue_exterieure.data["results"]
         )
         assert lignes_ext == []
+
+
+URL_PDF = "/api/personnes-vulnerables/pdf/"
+
+
+@pytest.mark.django_db
+class TestEditionPdfDuRegistre:
+    """L'annexe nominative du plan communal de sauvegarde : elle ne se sort que depuis le
+    registre, par quelqu'un qui a les deux actes (désignation et engagement au secret)."""
+
+    def _client(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def _teneur(self, create_user, mairie, maire, nom="teneur-pdf@test.fr"):
+        user = _agent(create_user, mairie, nom)
+        _designer(mairie, user, maire)
+        _signer(user)
+        return user
+
+    def _inscrire(self, mairie, nom, commune=COMMUNE_CODE, actif=True, zone=None):
+        return PersonneVulnerable.objects.create(
+            institution_declarante=mairie, commune_code=commune, zone=zone, nom=nom, prenom="Jeanne",
+            adresse="1 rue du Test", mode_consentement="VOLONTAIRE", actif=actif,
+        )
+
+    def test_le_teneur_du_registre_obtient_un_pdf_et_lacte_est_trace_sans_les_noms(
+            self, create_user, mairie, maire):
+        from core.models import AuditLog
+
+        teneur = self._teneur(create_user, mairie, maire)
+        inscrite = self._inscrire(mairie, "Dupont")
+        self._inscrire(mairie, "Radiee", actif=False)             # radiée : hors du document
+        self._inscrire(mairie, "Voisine", commune="38421")        # autre commune : hors du document
+
+        reponse = self._client(teneur).get(URL_PDF)
+
+        assert reponse.status_code == 200
+        assert reponse["Content-Type"] == "application/pdf"
+        assert reponse.content.startswith(b"%PDF")
+        assert COMMUNE_CODE in reponse["Content-Disposition"]
+
+        trace = AuditLog.objects.filter(objet_type="PersonneVulnerable", action__code="EXPORT").latest("date_action")
+        assert trace.utilisateur == teneur
+        assert trace.objets_ids == [inscrite.id]
+        assert "1 fiche(s)" in trace.commentaire
+        assert "Dupont" not in trace.commentaire
+
+    def test_refuse_a_qui_nest_pas_designe(self, create_user, mairie):
+        agent = _agent(create_user, mairie, "pdf-non-designe@test.fr")
+        _signer(agent)
+
+        reponse = self._client(agent).get(URL_PDF)
+
+        assert reponse.status_code == 403
+        assert "nommément désignées" in str(reponse.data)
+
+    def test_refuse_tant_que_lengagement_au_secret_nest_pas_signe(self, create_user, mairie, maire):
+        agent = _agent(create_user, mairie, "pdf-non-signe@test.fr")
+        _designer(mairie, agent, maire)
+
+        reponse = self._client(agent).get(URL_PDF)
+
+        assert reponse.status_code == 403
+        assert "secret professionnel" in str(reponse.data)
+
+    def test_ladministrateur_de_la_plateforme_lit_mais_nimprime_pas(self, create_user, mairie, maire):
+        """Lire pour exploiter n'est pas sortir la liste sur papier : ce second geste est un
+        acte de la collectivité, comme l'inscription."""
+        self._inscrire(mairie, "Dupont")
+        admin = create_user(username="admin-pdf@test.fr", email="admin-pdf@test.fr", type="ADMIN")
+        _signer(admin)
+
+        reponse = self._client(admin).get(URL_PDF, {"commune_code": COMMUNE_CODE})
+
+        assert reponse.status_code == 403
+        assert "collectivité" in str(reponse.data)
+
+    def test_on_nimprime_pas_le_registre_dune_autre_commune(self, create_user, mairie, maire):
+        teneur = self._teneur(create_user, mairie, maire, "teneur-ailleurs@test.fr")
+
+        reponse = self._client(teneur).get(URL_PDF, {"commune_code": "38421"})
+
+        assert reponse.status_code == 403
+
+    def test_les_fiches_sont_rangees_par_quartier_puis_par_nom(self, mairie):
+        from core.models import Zone
+        from core.registre_vulnerables_pdf import SANS_QUARTIER, lignes_du_registre
+
+        centre = Zone.objects.create(nom="Centre", institution=mairie)
+        bourg = Zone.objects.create(nom="bourg", institution=mairie)
+        self._inscrire(mairie, "Zola", zone=centre)
+        self._inscrire(mairie, "Sansquartier")
+        self._inscrire(mairie, "arnaud", zone=centre)
+        self._inscrire(mairie, "Martin", zone=bourg)
+
+        groupes = lignes_du_registre(PersonneVulnerable.objects.filter(institution_declarante=mairie))
+
+        assert [quartier for quartier, _ in groupes] == ["bourg", "Centre", SANS_QUARTIER]
+        assert [fiche["nom"] for fiche in groupes[1][1]] == ["arnaud Jeanne", "Zola Jeanne"]
+
+    def test_une_saisie_avec_des_chevrons_ne_fait_pas_echouer_ledition(self):
+        """Une adresse comme « Bât. <B> & annexe » est une saisie ordinaire, et le moteur de
+        mise en page lit les chevrons comme du balisage."""
+        from core.registre_vulnerables_pdf import generer_pdf_registre
+
+        groupes = [("Centre", [{
+            "nom": "Dupont Jeanne", "adresse": "Bât. <B> & annexe, 1 rue du Test", "telephone": "",
+            "besoins": ["Aide à l'évacuation"], "aidant": "Paul <fils> — 0600000000",
+        }])]
+
+        pdf = generer_pdf_registre(groupes, commune="Essai (38185)", edite_par="Agent d'essai")
+        vide = generer_pdf_registre([], commune="Essai (38185)", edite_par="Agent d'essai")
+
+        assert pdf.startswith(b"%PDF") and vide.startswith(b"%PDF")

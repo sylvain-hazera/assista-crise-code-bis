@@ -55,7 +55,7 @@ export interface GroupeNav {
 export const GROUPES_NAV: GroupeNav[] = [
   { id: 'crise', label: 'Crise en cours', icon: 'emergency' },
   { id: 'post-critique', label: 'Post-critique — gestion à long terme', icon: 'history' },
-  { id: 'preparation', label: 'Préparation', icon: 'event_available' },
+  { id: 'preparation', label: 'Préparation — plan de sauvegarde', icon: 'event_available' },
   // Cadre propre à la vie associative, demandé le 11/11/2026 : « ramener tout ce qui est
   // association dans une rubrique association ». Ses entrées étaient dispersées dans
   // « Préparation », entre les sites sensibles et les personnes vulnérables — un président
@@ -127,30 +127,25 @@ export const NAV_ITEMS: NavItem[] = [
 
   // ── Préparation ─────────────────────────────────────────────────────
   // Roster réutilisable, préparé à l'avance.
-  { icon: 'groups', label: 'Équipes', route: '/admin/equipes', groupe: 'preparation' },
-  { icon: 'layers', label: 'Zones', route: '/admin/zones', groupe: 'preparation', visibilite: 'autorite-locale' },
-  // Planification préventive pour les mairies.
-  { icon: 'water_drop', label: 'Simulation inondation', route: '/admin/simulation-inondation', groupe: 'preparation', visibilite: 'autorite-locale' },
-  // Dispositif PCS préparé à l'avance, activable sur une crise (PlanViewSet.activer).
+  // Dans l'ordre des paragraphes du plan communal de sauvegarde (demande du 16/11/2026 : « chaque
+  // paragraphe du PCS doit avoir son menu ») : le plan et son document, puis 1.1 risques, 1.2
+  // enjeux et personnes vulnérables, 2.2 zones, 2.4 annuaire, 3.1 moyens humains. Les lieux
+  // d'accueil (2.5, « Centres ») et le matériel (3.2) gardent leur entrée là où on les cherche
+  // pendant la crise ; la table des paragraphes de « Mon plan de sauvegarde » y mène.
   { icon: 'fact_check', label: 'Mon plan de sauvegarde', route: '/admin/plans', groupe: 'preparation' },
-  // Enjeux du territoire (écoles, soins, industrie, salles) pré-alimentés depuis l'open data
-  // national, puis validés un à un par la commune — voir core/opendata/ côté serveur.
+  { icon: 'warning_amber', label: 'Risques de la commune', route: '/admin/pcs-risques', groupe: 'preparation' },
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
-  { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
-  // Sortie du cadre « Mon association » le 14/11/2026 : « ces campagnes peuvent être utilisées
-  // aussi par des municipalités », et ce cadre-là disparaît en entier pour une mairie.
-  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'preparation', visibilite: 'campagnes' },
-  // Associations agréées de sécurité civile : annuaire des membres, circuit de recrutement,
-  // qualifications avec échéances, disponibilités à quinze jours. Champ serveur
-  // `acces_membres_association` : « être au bureau » est un attribut du rattachement et non un
-  // rôle de compte, donc invérifiable depuis le menu. Une institution non associative ne voit
-  // pas l'entrée.
-  // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
-  // Qui tient le registre, designe nominativement par le maire. Visible a toute collectivite
-  // et NON conditionnee a `registre-vulnerables` : une commune ou personne n'est encore
-  // habilite doit pouvoir atteindre cette page, sinon le dispositif n'a aucune porte d'entree.
   { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
+  { icon: 'account_tree', label: 'Poste de commandement', route: '/admin/pcs-organisation', groupe: 'preparation' },
+  { icon: 'layers', label: 'Zones', route: '/admin/zones', groupe: 'preparation', visibilite: 'autorite-locale' },
+  { icon: 'contact_phone', label: 'Annuaire de crise', route: '/admin/pcs-annuaire', groupe: 'preparation' },
+  { icon: 'campaign', label: 'Alerte de la population', route: '/admin/pcs-alerte', groupe: 'preparation' },
+  { icon: 'groups', label: 'Équipes', route: '/admin/equipes', groupe: 'preparation' },
+  { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
+  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'preparation', visibilite: 'campagnes' },
+  { icon: 'water_drop', label: 'Simulation inondation', route: '/admin/simulation-inondation', groupe: 'preparation', visibilite: 'autorite-locale' },
+  { icon: 'sports_score', label: 'Exercices', route: '/admin/pcs-exercices', groupe: 'preparation' },
 
   // ── Communications / Radio ──────────────────────────────────────────
   // Seul cadre transversal, et le seul à deux niveaux : MeshCore et Meshtastic sont deux

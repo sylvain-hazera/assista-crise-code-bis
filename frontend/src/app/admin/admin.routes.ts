@@ -45,6 +45,14 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'plans', loadComponent: () => import('./plans/plans.component').then(m => m.PlansComponent), canActivate: [institutionalEffectiveGuard] },
+  // Un écran par paragraphe du plan communal de sauvegarde : risques (1.1) et annuaire de crise
+  // (2.4 / 4.1) se saisissaient au fond de la fiche Institution, sans entrée de menu.
+  { path: 'pcs-risques', loadComponent: () => import('./pcs-risques/pcs-risques.component').then(m => m.PcsRisquesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'pcs-annuaire', loadComponent: () => import('./pcs-annuaire/pcs-annuaire.component').then(m => m.PcsAnnuaireComponent), canActivate: [institutionalEffectiveGuard] },
+  // Trois paragraphes tenus en liste, sur le même écran (pcs-liste/pcs-listes.config.ts).
+  { path: 'pcs-organisation', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'organisation' } },
+  { path: 'pcs-alerte', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'alerte' } },
+  { path: 'pcs-exercices', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'exercices' } },
   { path: 'sites-sensibles', loadComponent: () => import('./sites-sensibles/sites-sensibles.component').then(m => m.SitesSensiblesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
   // Gestion des membres d'une association agréée de sécurité civile : annuaire, recrutement,

@@ -2465,9 +2465,28 @@ class JournalCollectiviteSerializer(serializers.ModelSerializer):
         ).strip() or obj.auteur.username
 
 
+def commentaire_de_main_courante(trace) -> str:
+    """Le commentaire d'une ligne de main courante, tel qu'il doit être lu.
+
+    Pour une écriture au journal de bord, c'est l'entrée ENTIÈRE, relue dans le journal lui-même
+    (chiffré). La trace n'en garde aucune copie : elle recopiait jusqu'au 16/11/2026 les 200
+    premiers caractères dans `AuditLog.commentaire`, qui n'est pas chiffré -- une copie à la
+    fois tronquée et en clair. La trace dit qu'on a écrit, le journal dit quoi."""
+    commentaire = trace.commentaire or ""
+    if trace.objet_type != "JournalCollectivite" or not trace.objet_id:
+        return commentaire
+    contenu = JournalCollectivite.objects.filter(pk=trace.objet_id).values_list("contenu", flat=True).first()
+    return f"{commentaire} : {contenu}" if contenu else commentaire
+
+
 class AuditLogSerializer(serializers.ModelSerializer):
     """Lecture seule — voir AuditLogViewSet, toujours interrogé avec ?objet_type=&objet_id=,
     jamais en liste globale."""
+
+    commentaire = serializers.SerializerMethodField()
+
+    def get_commentaire(self, obj):
+        return commentaire_de_main_courante(obj)
 
     utilisateur_nom = serializers.SerializerMethodField()
     action_libelle = serializers.CharField(source='action.libelle', read_only=True, default=None)
@@ -2495,6 +2514,10 @@ class AuditLogAdminSerializer(serializers.ModelSerializer):
     objet_type_libelle = serializers.SerializerMethodField()
     objet_libelle = serializers.SerializerMethodField()
     nb_objets = serializers.SerializerMethodField()
+    commentaire = serializers.SerializerMethodField()
+
+    def get_commentaire(self, obj):
+        return commentaire_de_main_courante(obj)
 
     class Meta:
         model = AuditLog

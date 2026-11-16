@@ -1,0 +1,128 @@
+@if (dossier) {
+  <section class="dossier-pcs" aria-labelledby="titre-dossier-pcs">
+    <header class="entete">
+      <div>
+        <h2 id="titre-dossier-pcs"><span class="material-icons">description</span> Le document du plan communal de sauvegarde</h2>
+        <p class="repris">
+          {{ dossier.commune.nom }} — le document est construit à l'instant où vous l'éditez, à partir de ce qui
+          est déjà saisi dans l'application : {{ repris }}.
+        </p>
+      </div>
+      <button type="button" class="btn-primary" (click)="editer()" [disabled]="edition"
+              title="Le plan mis en page selon la trame de l'État. Diffusion restreinte : il porte l'annuaire de crise.">
+        <span class="material-icons">picture_as_pdf</span> {{ edition ? 'Édition…' : 'Éditer le plan (PDF)' }}
+      </button>
+      <button type="button" class="btn-secondary" (click)="editerDicrim()" [disabled]="edition"
+              title="Le document d'information des habitants sur les risques majeurs. Public : il ne contient aucun nom ni téléphone.">
+        <span class="material-icons">groups</span> Éditer le DICRIM pour les habitants
+      </button>
+    </header>
+
+    @if (erreur) { <p class="message erreur" role="alert"><span class="material-icons">error_outline</span> {{ erreur }}</p> }
+    @if (message) { <p class="message ok"><span class="material-icons">check_circle</span> {{ message }}</p> }
+
+    @if (dossier.manques.length) {
+      <div class="manques">
+        <h3><span class="material-icons">rule</span> Ce qui reste à compléter ({{ dossier.manques.length }})</h3>
+        <ul>
+          @for (manque of dossier.manques; track manque.partie + manque.message) {
+            <li>
+              <strong>{{ manque.partie }}</strong> — {{ manque.message }}
+              @if (manque.route && manque.route !== '/admin/plans') {
+                <a class="ou" [routerLink]="manque.route">Compléter dans « {{ manque.ou }} »</a>
+              } @else {
+                <span class="ou">À compléter sur cette page.</span>
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    } @else {
+      <p class="message ok"><span class="material-icons">task_alt</span> Toutes les parties du plan sont renseignées.</p>
+    }
+
+    <!-- La table des paragraphes : chacun a son écran, et dit à quoi il sert une fois la crise
+         ouverte. Aucun n'est obligatoire pour ouvrir une crise. -->
+    <div class="paragraphes">
+      <h3><span class="material-icons">toc</span> Les paragraphes du plan</h3>
+      <p class="note">Aucun n'est obligatoire pour ouvrir une crise : on commence avec ce qu'on a, et l'on revient compléter.</p>
+      <table>
+        <thead><tr><th>N°</th><th>Paragraphe</th><th>État</th><th>À quoi il sert une fois la crise ouverte</th></tr></thead>
+        <tbody>
+          @for (p of dossier.paragraphes; track p.numero + p.titre) {
+            <tr>
+              <td>{{ p.numero }}</td>
+              <td><a [routerLink]="p.route">{{ p.titre }}</a></td>
+              <td>
+                @switch (p.etat) {
+                  @case ('RENSEIGNE') { <span class="etat ok">renseigné@if (p.nombre && p.nombre > 1) { ({{ p.nombre }})}</span> }
+                  @case ('VIDE') { <span class="etat vide">à compléter</span> }
+                  @default { <span class="etat">tenu à part</span> }
+                }
+              </td>
+              <td>{{ p.reutilise }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="colonnes">
+      <div class="bloc">
+        <h3>Arrêté, poste de commandement, activation</h3>
+        @if (!formulaireOuvert) {
+          <dl>
+            <dt>Arrêté du maire</dt>
+            <dd>@if (dossier.arrete_numero) { n° {{ dossier.arrete_numero }}@if (dossier.arrete_date) { du {{ dossier.arrete_date | date:'dd/MM/yyyy' }}} } @else { <em>non renseigné</em> }</dd>
+            <dt>Poste de commandement communal</dt>
+            <dd>@if (dossier.lieu_pcc) { {{ dossier.lieu_pcc }}@if (dossier.lieu_pcc_repli) { — repli : {{ dossier.lieu_pcc_repli }}} } @else { <em>non renseigné</em> }</dd>
+            <dt>Modalités d'activation</dt>
+            <dd class="texte">@if (dossier.modalites_activation) { {{ dossier.modalites_activation }} } @else { <em>non rédigées</em> }</dd>
+          </dl>
+          <button type="button" class="btn-secondary" (click)="formulaireOuvert = true">
+            <span class="material-icons">edit</span> Modifier
+          </button>
+        } @else {
+          <form (ngSubmit)="enregistrer()">
+            <div class="ligne">
+              <label>N° de l'arrêté <input type="text" name="arrete_numero" [(ngModel)]="saisie.arrete_numero" maxlength="60"></label>
+              <label>Date de l'arrêté <input type="date" name="arrete_date" [(ngModel)]="saisie.arrete_date"></label>
+            </div>
+            <label>Lieu du poste de commandement communal
+              <input type="text" name="lieu_pcc" [(ngModel)]="saisie.lieu_pcc" maxlength="255" placeholder="Salle du conseil, hôtel de ville"></label>
+            <label>Lieu de repli, si le premier est inaccessible
+              <input type="text" name="lieu_pcc_repli" [(ngModel)]="saisie.lieu_pcc_repli" maxlength="255"></label>
+            <label>Modalités d'activation : qui déclenche le plan, sur quels signaux, comment l'équipe est prévenue
+              <textarea name="modalites_activation" [(ngModel)]="saisie.modalites_activation" rows="5"></textarea></label>
+            <div class="actions">
+              <button type="submit" class="btn-primary" [disabled]="enregistrement">{{ enregistrement ? 'Enregistrement…' : 'Enregistrer' }}</button>
+              <button type="button" class="btn-secondary" (click)="formulaireOuvert = false">Annuler</button>
+            </div>
+          </form>
+        }
+      </div>
+
+      <div class="bloc">
+        <h3>Mises à jour du plan</h3>
+        @if (dossier.revisions.length) {
+          <ul class="revisions">
+            @for (revision of dossier.revisions; track revision.date + revision.objet) {
+              <li><strong>{{ revision.date | date:'dd/MM/yyyy' }}</strong> — {{ revision.objet }}@if (revision.auteur) { <span class="ou">({{ revision.auteur }})</span> }</li>
+            }
+          </ul>
+        } @else {
+          <p class="vide">Aucune mise à jour inscrite. Notez-en une à chaque fois que le plan est revu : c'est le tableau qui ouvre le document.</p>
+        }
+        <form class="ajout" (ngSubmit)="ajouterRevision()">
+          <input type="text" name="objet" [(ngModel)]="objetRevision" maxlength="500"
+                 placeholder="Ce qui a été mis à jour aujourd'hui (annuaire revu, nouveau lieu d'accueil…)" aria-label="Objet de la mise à jour">
+          <button type="submit" class="btn-secondary" [disabled]="ajoutRevision || !objetRevision.trim()">Inscrire</button>
+        </form>
+        <p class="note">
+          La liste des personnes vulnérables ne figure pas dans ce document : elle s'édite depuis
+          <a routerLink="/admin/personnes-vulnerables">Personnes vulnérables</a>, par les personnes désignées par le maire.
+        </p>
+      </div>
+    </div>
+  </section>
+}

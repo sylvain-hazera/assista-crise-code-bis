@@ -1,0 +1,79 @@
+<div class="paragraphe-page">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › {{ paragraphe.fil }}</p>
+    <h1><span class="material-icons">{{ paragraphe.icone }}</span> {{ paragraphe.titre }}</h1>
+  </header>
+
+  <p class="a-quoi-ca-sert">
+    <span class="material-icons">sync_alt</span>
+    <span><strong>À quoi cela sert ensuite.</strong> {{ paragraphe.aQuoiCaSert }}
+      <strong>Rien de ce qui manque ici n'empêche d'ouvrir une crise.</strong></span>
+  </p>
+
+  @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité : il n'y a pas de plan à remplir.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @if (!chargement && !sansCollectivite) {
+    @if (!formulaireOuvert) {
+      <button type="button" class="btn-primary" (click)="ouvrirAjout()"><span class="material-icons">add</span> {{ paragraphe.ajouter }}</button>
+    } @else {
+      <form class="bloc" (ngSubmit)="enregistrer()">
+        <h2>{{ enModification ? 'Modifier' : paragraphe.ajouter }}</h2>
+        @for (champ of paragraphe.champs; track champ.cle) {
+          <label>{{ champ.libelle }}
+            @switch (champ.type) {
+              @case ('choix') {
+                <select [name]="champ.cle" [(ngModel)]="saisie[champ.cle]">
+                  @for (o of champ.options; track o.valeur) { <option [value]="o.valeur">{{ o.libelle }}</option> }
+                </select>
+              }
+              @case ('zone') {
+                <select [name]="champ.cle" [(ngModel)]="saisie[champ.cle]">
+                  <option [ngValue]="null">Toute la commune</option>
+                  @for (z of zones; track z.id) { <option [ngValue]="z.id">{{ z.nom }}</option> }
+                </select>
+              }
+              @case ('equipe') {
+                <select [name]="champ.cle" [(ngModel)]="saisie[champ.cle]">
+                  <option [ngValue]="null">Aucune équipe : je saisis les noms</option>
+                  @for (e of equipes; track e.id) { <option [ngValue]="e.id">{{ e.name }}</option> }
+                </select>
+              }
+              @case ('long') { <textarea [name]="champ.cle" [(ngModel)]="saisie[champ.cle]" rows="4"></textarea> }
+              @case ('date') { <input type="date" [name]="champ.cle" [(ngModel)]="saisie[champ.cle]"> }
+              @case ('telephone') { <input type="tel" [name]="champ.cle" [(ngModel)]="saisie[champ.cle]"> }
+              @default { <input type="text" [name]="champ.cle" [(ngModel)]="saisie[champ.cle]"> }
+            }
+            @if (champ.indication) { <span class="note">{{ champ.indication }}</span> }
+          </label>
+          @if (champ.parDefaut && !saisie[champ.cle] && parDefaut(champ.parDefaut)) {
+            <p class="generalites fiche-type"><strong>Fiche type reprise tant que ce champ est vide :</strong><br>{{ parDefaut(champ.parDefaut) }}</p>
+          }
+        }
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="enregistrement">{{ enregistrement ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          <button type="button" class="btn-secondary" (click)="formulaireOuvert = false">Annuler</button>
+        </div>
+      </form>
+    }
+
+    @if (lignes.length) {
+      <section class="bloc liste">
+        <ul>
+          @for (ligne of lignes; track ligne.id) {
+            <li>
+              <span><strong>{{ paragraphe.titreLigne(ligne) }}</strong><br><span class="coordonnees">{{ paragraphe.detailLigne(ligne) }}</span></span>
+              <span class="actions">
+                <button type="button" class="btn-secondary" (click)="modifier(ligne)">Modifier</button>
+                <button type="button" class="btn-lien" (click)="retirer(ligne)">Retirer</button>
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    } @else {
+      <p class="message">{{ paragraphe.vide }}</p>
+    }
+  }
+</div>

@@ -2255,6 +2255,118 @@ Règles qui structurent le paquet :
   coordonnées comprises — ce qui évite les centres d'accueil sans adresse, inutilisables par un
   habitant cherchant où aller.
 
+### 5.13 Le document du plan communal de sauvegarde (16/11/2026)
+
+Le plan d'une commune était déjà dans l'application, par morceaux : risques communaux (avec
+l'état des lieux et les enjeux rédigés par la commune), sites sensibles retenus, dispositifs
+activables et leurs missions types, annuaire de crise, équipes, points et leur matériel. Il
+manquait de quoi en sortir **le document**, et de quoi dire ce qui manque.
+
+- **`core/document_pcs.py`** rassemble ces données (`rassembler`) et les met en page dans l'ordre
+  de la trame simplifiée de l'État (`generer_pdf`). **Rien n'y est rédigé qui existe ailleurs** :
+  les textes de la commune sont repris tels quels. Le PDF n'est **jamais stocké** — il sort à
+  l'instant, avec l'annuaire du jour — et chaque édition est inscrite à la main courante.
+- **Ce qui manque** (`manques`) est calculé à chaque lecture : arrêté non renseigné, plan non revu
+  depuis cinq ans, annuaire sans préfecture ni secours, aucun lieu d'accueil avec une capacité…
+  Chaque ligne nomme l'écran où la combler (`ou`, pour le papier) et son adresse (`route`, pour
+  l'application). La même liste ouvre le document édité : un plan qui tairait l'absence de centre
+  d'accueil serait pire que pas de plan.
+- **`DossierPCS`** (une ligne par institution et par zone) ne porte que ce que rien d'autre ne
+  portait : numéro et date de l'arrêté, lieu du poste de commandement communal et son repli,
+  modalités d'activation. **`RevisionPCS`** est le tableau des mises à jour : on y ajoute, on n'y
+  modifie ni n'y supprime rien.
+- API (`core/views_pcs.py`) : `GET/PATCH /api/dossier-pcs/`, `POST /api/dossier-pcs/revisions/`,
+  `GET /api/dossier-pcs/document/`. Réservée aux comptes institutionnels, pour leur propre
+  collectivité (ou celle que regarde l'administrateur).
+- Écran : le panneau « Le document du plan communal de sauvegarde », en tête de
+  « Mon plan de sauvegarde » (`admin/plans/dossier-pcs/`).
+- **Diffusion restreinte** : le document porte l'annuaire et les coordonnées des membres. En zone
+  de démonstration, les noms sont pseudonymisés et les téléphones personnels n'y figurent pas.
+
+**Un paragraphe du plan = un écran, et une utilité en crise.** `document_pcs.PARAGRAPHES` est la
+table des matières du plan : numéro, titre, écran (`route`), ce à quoi le paragraphe sert une
+fois la crise ouverte (`reutilise`), et son état. Elle s'affiche dans le panneau du plan. Le
+cadre « Préparation — plan de sauvegarde » du menu suit le même ordre. Deux paragraphes n'avaient
+pas d'écran — ils se saisissaient au fond de la fiche Institution, côté Administration — et en
+ont un depuis le 16/11/2026, sur les mêmes données et les mêmes services :
+`/admin/pcs-risques` (1.1, risques de la commune) et `/admin/pcs-annuaire` (2.4 et 4.1, annuaire
+de crise).
+
+**Un plan incomplet n'empêche jamais d'ouvrir une crise.** C'est la règle de conception, et
+`manques` ne bloque rien : une commune qui n'a pas découpé ses quartiers travaille à l'échelle de
+la commune, et le message le dit (« rien n'en dépend pour ouvrir une crise »). Au démarrage d'une
+crise, `RappelPlanIncompletComponent` rappelle ce qui manque, replié, avec des liens qui
+s'ouvrent dans un nouvel onglet pour y revenir sans quitter l'écran de crise.
+
+**Les personnes vulnérables ne sont jamais dans ce document.** La trame demande leur liste
+nominative ; elle s'édite à part, depuis l'écran du registre (`GET /api/personnes-vulnerables/pdf/`,
+`core/registre_vulnerables_pdf.py`), par quelqu'un qui pourrait aussi y inscrire : désigné par le
+maire et engagé au secret. La garde est celle de l'**écriture** — l'administrateur de la
+plateforme lit le registre pour l'exploiter, il ne l'imprime pas. Le nom de qui l'a éditée et
+l'heure figurent au pied de chaque page ; la main courante garde les identifiants des fiches et
+leur nombre, jamais leur contenu.
+
+**Journal de bord et messages des équipes.** Dans la cellule de crise, chaque message d'équipe
+porte un bouton « Porter au journal » : il devient une entrée du journal de bord
+(`JournalCollectivite`), signée de qui l'y porte, citant l'équipe, l'auteur et l'heure du message.
+Le contenu du journal est chiffré au repos depuis la migration 0302.
+
+**Trois paragraphes tenus en liste** (migration 0304), sur le même écran
+(`admin/pcs-liste/`, décrit paragraphe par paragraphe dans `pcs-listes.config.ts`) et la même API
+(`core/views_pcs.py`, `_ListeDuDossierPCS`, toujours bornée au dossier de la collectivité de
+l'appelant) :
+
+| Paragraphe | Écran | API | Modèle |
+|---|---|---|---|
+| 2.2 et 4.2 — poste de commandement, fiches réflexes | `/admin/pcs-organisation` | `/api/pcs-fonctions/` | `FonctionPCS` |
+| 2.4 — alerte de la population | `/admin/pcs-alerte` | `/api/pcs-moyens-alerte/` | `MoyenAlertePCS` |
+| 4.5 — exercices | `/admin/pcs-exercices` | `/api/pcs-exercices/` | `ExercicePCS` |
+
+- **Organigramme et équipes : la même organisation, nommée une fois.** Une fonction se relie à
+  l'équipe qui la tient (`FonctionPCS.equipe`) : le responsable de l'équipe en est alors le
+  titulaire et son encadrement fournit le suppléant, sans ressaisie
+  (`document_pcs.personnes_de_la_fonction`). À défaut d'équipe, ou pour quelqu'un qui n'a pas de
+  compte, on saisit un nom — chiffré, et qui l'emporte sur celui de l'équipe.
+- **Des équipes permanentes, prêtes pour la crise suivante.** `pcs_fiches.FONCTIONS_PAR_POINT`
+  fait correspondre les trois points proposés au démarrage d'une crise aux fonctions qui les
+  tiennent : cellule de crise (coordination, à défaut maire, à défaut secrétariat), centre
+  d'accueil (soutien), regroupement des moyens (logistique). L'assistant de démarrage propose
+  d'office l'équipe désignée (`equipes_par_point`, simple proposition, modifiable) :
+  - **centre d'accueil, regroupement des moyens** : l'équipe permanente **elle-même** est
+    réutilisée ;
+  - **cellule de crise** : une équipe **neuve** à chaque crise, parce qu'elle porte le salon de
+    la crise — règle posée par Sylvain le 16/11/2026 : « un salon par crise, et les messages
+    hors crise ne suivent pas ». Elle reprend d'office le responsable, l'encadrement et les
+    membres de l'équipe permanente (`document_pcs.composer_depuis_le_plan`) : on copie les
+    personnes, jamais le salon.
+  - **Limite connue** : une équipe permanente réutilisée garde son salon d'équipe, le même en
+    crise et hors crise (`SalonMatrixEquipe` est unique par équipe et par type). La discussion
+    propre à une crise passe par le salon de la cellule et par ceux des missions (« 1 mission =
+    1 canal »).
+- La fiche réflexe d'une fonction est celle de la trame de l'État (`core/pcs_fiches.py`) tant que
+  la commune n'a pas écrit la sienne (`consignes`).
+- **Alerte** : un moyen peut être rattaché à un quartier de la collectivité, ou valoir pour toute
+  la commune. FR-Alert n'y figure pas : il relève du préfet.
+- **Exercices** : consignés une fois joués (jamais datés dans le futur) ; le plan signale un
+  dernier exercice de plus de cinq ans.
+
+**Le DICRIM** (`GET /api/dossier-pcs/dicrim/`, `document_pcs.generer_dicrim`) est le document
+d'information des habitants. Public par nature, il ne reprend du plan que les risques et ce que
+la commune en a écrit, les types de moyens d'alerte, les lieux d'accueil et les consignes :
+**aucun nom, aucun téléphone personnel**. `texte_public_du_dicrim` sert au test qui le garantit.
+
+**Main courante et journal de bord** : la trace `JOURNAL_BORD` ne recopie plus le texte de
+l'entrée (elle en recopiait 200 caractères, en clair). La main courante, à l'écran comme à
+l'export, relit l'entrée **entière** dans le journal chiffré
+(`serializers.commentaire_de_main_courante`) ; la migration 0303 a retiré les copies existantes.
+
+**Après l'activation d'un dispositif**, le lien mène à la cellule de crise de cette crise
+(`/admin/cellule-crise?crise=<id>`), et non plus seulement à la liste des crises.
+
+Ce qui n'existe pas encore : un envoi d'alerte aux habitants depuis l'application (SMS,
+notification), des modèles d'arrêtés pré-remplis (réquisition, interdiction), l'export
+cartographique en annexe.
+
 ---
 
 ## 6. Frontend Angular

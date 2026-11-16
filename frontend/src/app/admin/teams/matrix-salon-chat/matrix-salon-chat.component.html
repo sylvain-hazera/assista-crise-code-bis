@@ -31,6 +31,13 @@
               Marquer vu
             </button>
           }
+          @if (journal) {
+            <button type="button" class="btn-journal" [disabled]="portesAuJournal.has(m.event_id)" (click)="porterAuJournal(m)"
+                    title="Recopier ce message au journal de bord de la crise, avec son auteur et son heure">
+              <span class="material-icons">{{ portesAuJournal.has(m.event_id) ? 'check' : 'menu_book' }}</span>
+              {{ portesAuJournal.has(m.event_id) ? 'Au journal' : 'Porter au journal' }}
+            </button>
+          }
         </div>
       } @empty {
         <p class="hint">Aucun message pour l'instant.</p>

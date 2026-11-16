@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { PlanService } from '../../services/plan.service';
+import { DossierPcsComponent } from './dossier-pcs/dossier-pcs.component';
 import { Plan, PlanActivationResult } from '../../shared/models/plan.model';
 import { PlanModalComponent } from './plan-modal/plan-modal.component';
 import { PlanActivationModalComponent } from './plan-activation-modal/plan-activation-modal.component';
@@ -15,7 +16,7 @@ import { PlanActivationModalComponent } from './plan-activation-modal/plan-activ
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule, FormsModule, PlanModalComponent, PlanActivationModalComponent],
+  imports: [CommonModule, FormsModule, PlanModalComponent, PlanActivationModalComponent, DossierPcsComponent],
   templateUrl: './plans.component.html',
   styleUrl: './plans.component.scss',
 })
@@ -105,6 +106,16 @@ export class PlansComponent implements OnInit {
       ? `, ${result.dossiers_crees.length} mission(s) instanciée(s)`
       : '';
     this.successMessage = `Plan activé sur la crise « ${result.crise.name} » (${result.equipes_activees.length} équipe(s), ${result.points_actives.length} point(s)${dossiersPart}).`;
+    this.criseActivee = result.crise.id;
+  }
+
+  /** Crise sur laquelle un dispositif vient d'être activé : c'est là qu'on va ensuite. */
+  criseActivee = '';
+
+  /** La suite d'une activation est la conduite de la crise, pas la liste des crises : on ouvre
+   * la cellule de crise de celle qu'on vient d'armer. */
+  ouvrirCellule(): void {
+    this.router.navigate(['/admin/cellule-crise'], { queryParams: this.criseActivee ? { crise: this.criseActivee } : {} });
   }
 
   goToCrises(): void {

@@ -1,0 +1,76 @@
+<div class="paragraphe-page">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphes 2.4 et 4.1</p>
+    <h1><span class="material-icons">contact_phone</span> Annuaire de crise</h1>
+    @if (commune) { <p class="sous-titre">{{ commune }} — {{ interlocuteurs.length }} interlocuteur{{ interlocuteurs.length > 1 ? 's' : '' }}</p> }
+  </header>
+
+  <p class="a-quoi-ca-sert">
+    <span class="material-icons">sync_alt</span>
+    <span><strong>À quoi cela sert ensuite.</strong> À l'ouverture d'une crise, ces interlocuteurs sont proposés pour être
+      prévenus — par courriel ou messagerie d'un geste, au téléphone pour les autres — et l'on suit qui a accusé réception.
+      <strong>Un annuaire incomplet n'empêche pas d'ouvrir une crise</strong> : il manquera seulement à l'appel ceux qui n'y sont pas.</span>
+  </p>
+
+  @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité : il n'y a pas d'annuaire à tenir.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @if (!chargement && !sansCollectivite) {
+    @if (categoriesManquantes.length) {
+      <p class="message manquantes">Il manque encore à l'annuaire : {{ categoriesManquantes.join(', ') }}.</p>
+    }
+
+    @if (!formulaireOuvert) {
+      <button type="button" class="btn-primary" (click)="ouvrirAjout()"><span class="material-icons">add</span> Ajouter un interlocuteur</button>
+    } @else {
+      <form class="bloc" (ngSubmit)="enregistrer()">
+        <h2>{{ enModification ? "Modifier l'interlocuteur" : 'Nouvel interlocuteur' }}</h2>
+        <div class="ligne">
+          <label>Catégorie
+            <select name="categorie" [(ngModel)]="saisie.categorie">
+              @for (c of categories; track c.value) { <option [value]="c.value">{{ c.label }}</option> }
+            </select></label>
+          <label>Prévenu par
+            <select name="mode_alerte" [(ngModel)]="saisie.mode_alerte">
+              @for (m of modes; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
+            </select></label>
+        </div>
+        <div class="ligne">
+          <label>Nom ou service <input type="text" name="nom" [(ngModel)]="saisie.nom" placeholder="SIDPC, astreinte du maire…"></label>
+          <label>Organisme <input type="text" name="organisme" [(ngModel)]="saisie.organisme" maxlength="255"></label>
+        </div>
+        <div class="ligne">
+          <label>Téléphone <input type="tel" name="telephone" [(ngModel)]="saisie.telephone"></label>
+          <label>Courriel <input type="email" name="email" [(ngModel)]="saisie.email"></label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="enregistrement">{{ enregistrement ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          <button type="button" class="btn-secondary" (click)="formulaireOuvert = false">Annuler</button>
+        </div>
+      </form>
+    }
+
+    @for (groupe of parCategorie; track groupe.libelle) {
+      <h2 class="categorie">{{ groupe.libelle }}</h2>
+      <section class="bloc">
+        <ul>
+          @for (fiche of groupe.fiches; track fiche.id) {
+            <li>
+              <span>
+                <strong>{{ fiche.nom }}</strong>@if (fiche.organisme) { — {{ fiche.organisme }} }
+                <br><span class="coordonnees">{{ fiche.telephone || 'pas de téléphone' }} · {{ fiche.email || 'pas de courriel' }} · prévenu par : {{ libelleMode(fiche.mode_alerte) }}</span>
+              </span>
+              <span class="actions">
+                <button type="button" class="btn-secondary" (click)="modifier(fiche)">Modifier</button>
+                <button type="button" class="btn-lien" (click)="retirer(fiche)">Retirer</button>
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    } @empty {
+      <p class="message">L'annuaire de crise est vide.</p>
+    }
+  }
+</div>
