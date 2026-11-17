@@ -1,0 +1,326 @@
+<div class="stocks-page">
+  <header>
+    <h1><span class="material-icons">warehouse</span> Stocks</h1>
+    <p class="chapeau">Ce que {{ etat?.institution_nom || 'votre institution' }} possède, où, et en quelle quantité. Le stock se déduit des
+      mouvements : on enregistre une entrée, une sortie, un transfert ou un inventaire, jamais une quantité.</p>
+  </header>
+
+  @if (etat) {
+    <ul class="alertes" aria-label="Alertes du stock">
+      <li [class.alerte]="etat.alertes.sous_seuil"><strong>{{ etat.alertes.sous_seuil }}</strong> sous le seuil d'alerte</li>
+      <li [class.alerte]="etat.alertes.perimes"><strong>{{ etat.alertes.perimes }}</strong> avec un lot périmé</li>
+      <li [class.attention]="etat.alertes.bientot_perimes"><strong>{{ etat.alertes.bientot_perimes }}</strong> à péremption sous {{ etat.jours_alerte_peremption }} jours</li>
+      <li [class.alerte]="etat.alertes.mal_ranges"><strong>{{ etat.alertes.mal_ranges }}</strong> denrée(s) rangée(s) sans le froid qu'il faut</li>
+      <li><strong>{{ euros(etat.valeur_totale) }}</strong> de valeur indicative</li>
+    </ul>
+  }
+
+  <div class="barre">
+    <button type="button" class="btn-primary" (click)="ouvrirMouvement('ENTREE')"><span class="material-icons">add</span> Entrée</button>
+    <button type="button" class="btn-primary" (click)="ouvrirMouvement('SORTIE')"><span class="material-icons">remove</span> Sortie</button>
+    <button type="button" class="btn-secondary" (click)="ouvrirMouvement('TRANSFERT')">Transfert</button>
+    <button type="button" class="btn-secondary" (click)="ouvrirMouvement('INVENTAIRE')">Inventaire</button>
+    <span class="espace"></span>
+    <button type="button" class="btn-secondary" (click)="nouvelArticle()">Nouvel article</button>
+    <button type="button" class="btn-secondary" (click)="ouvrirImport()">Reprendre un fichier</button>
+    <button type="button" class="btn-secondary" (click)="exporter()">Exporter (CSV)</button>
+  </div>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (etat && !depots.length && !depot) {
+    <p class="message">Commencez par créer un dépôt : le lieu où votre stock est rangé (local, garage, armoire, véhicule).
+      <button type="button" class="btn-primary" (click)="nouveauDepot()">Créer un dépôt</button></p>
+  }
+
+  @if (mouvement; as m) {
+    <form class="fiche" (ngSubmit)="enregistrerMouvement()">
+      <h2>Enregistrer un mouvement</h2>
+      <div class="types" role="radiogroup" aria-label="Type de mouvement">
+        @for (t of ordreTypes; track t) {
+          <label class="type" [class.choisi]="m.type === t"><input type="radio" name="type" [value]="t" [(ngModel)]="m.type"> {{ typesMouvement[t] }}</label>
+        }
+      </div>
+      <div class="ligne">
+        <label>Article <span class="obligatoire">*</span>
+          <select name="article" [(ngModel)]="m.article">
+            <option value="">— Choisir —</option>
+            @for (a of articlesActifs; track a.id) { <option [value]="a.id">{{ a.designation }} ({{ a.reference }})</option> }
+          </select></label>
+        <label>{{ m.type === 'TRANSFERT' ? 'Dépôt de départ' : 'Dépôt' }} <span class="obligatoire">*</span>
+          <select name="depot" [(ngModel)]="m.depot">
+            <option value="">— Choisir —</option>
+            @for (d of depotsActifs; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+          </select></label>
+        @if (m.type === 'TRANSFERT') {
+          <label>Dépôt d'arrivée <span class="obligatoire">*</span>
+            <select name="depot_destination" [(ngModel)]="m.depot_destination">
+              <option [ngValue]="undefined">— Choisir —</option>
+              @for (d of depotsActifs; track d.id) { @if (d.id !== m.depot) { <option [value]="d.id">{{ d.nom }}</option> } }
+            </select></label>
+        }
+      </div>
+      <div class="ligne">
+        <label>{{ libelleQuantite }} <span class="obligatoire">*</span>
+          <input type="number" name="quantite" min="0" step="any" inputmode="decimal" [(ngModel)]="m.quantite">
+          @if (disponible !== '') { <small>En stock dans ce dépôt : {{ nombre(disponible) }} {{ articleDuMouvement?.unite }}</small> }
+        </label>
+        <label>Lot <input type="text" name="lot" maxlength="60" [(ngModel)]="m.lot" placeholder="facultatif"></label>
+        <label>Péremption <input type="date" name="date_peremption" [(ngModel)]="m.date_peremption"></label>
+        @if (m.type === 'ENTREE') {
+          <label>Prix unitaire (€) <input type="number" name="prix_unitaire" min="0" step="any" inputmode="decimal" [(ngModel)]="m.prix_unitaire" placeholder="facultatif"></label>
+        }
+      </div>
+      @if (m.type === 'ENTREE' || m.type === 'SORTIE') {
+        <div class="ligne">
+          <label>{{ m.type === 'ENTREE' ? 'Fournisseur, donateur' : 'Remis à' }}
+            <input type="text" name="tiers" maxlength="200" [(ngModel)]="m.tiers" autocomplete="off"></label>
+          @if (m.type === 'SORTIE' && crises.length) {
+            <label>Pour la crise
+              <select name="crise" [(ngModel)]="m.crise">
+                <option [ngValue]="undefined">— Hors crise —</option>
+                @for (c of crises; track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+              </select></label>
+          }
+        </div>
+      }
+      <label>Motif <input type="text" name="motif" maxlength="300" [(ngModel)]="m.motif"
+          [placeholder]="m.type === 'INVENTAIRE' ? 'Inventaire annuel' : m.type === 'SORTIE' ? 'Dotation de l’équipe, casse, péremption…' : ''"></label>
+      @if (m.type === 'INVENTAIRE') { <p class="note">Indiquez ce que vous avez compté : l'écart avec le stock enregistré est calculé et tracé.</p> }
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="!mouvementComplet || envoi">{{ envoi ? 'Enregistrement…' : 'Enregistrer' }}</button>
+        <button type="button" class="btn-secondary" (click)="mouvement = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (article; as a) {
+    <form class="fiche" (ngSubmit)="enregistrerArticle()">
+      <h2>{{ a.id ? 'Modifier l’article' : 'Nouvel article' }}</h2>
+      <div class="ligne">
+        <label>Référence <span class="obligatoire">*</span> <input type="text" name="reference" maxlength="60" [(ngModel)]="a.reference" placeholder="COUV-SURVIE"></label>
+        <label class="large">Libellé <span class="obligatoire">*</span> <input type="text" name="designation" maxlength="200" [(ngModel)]="a.designation" placeholder="Couverture de survie"></label>
+        <label>Unité <input type="text" name="unite" maxlength="20" [(ngModel)]="a.unite" placeholder="unité, carton, litre…"></label>
+      </div>
+      <div class="ligne">
+        <label>Catégorie
+          <select name="categorie" [(ngModel)]="a.categorie">
+            <option value="">— Aucune —</option>
+            @for (c of categories | keyvalue; track c.key) { <option [value]="c.key">{{ c.value }}</option> }
+          </select></label>
+        <label>Seuil d'alerte <input type="number" name="seuil_alerte" min="0" step="any" [(ngModel)]="a.seuil_alerte" placeholder="aucun"></label>
+        <label>Coût unitaire (€) <input type="number" name="prix_unitaire" min="0" step="any" [(ngModel)]="a.prix_unitaire" placeholder="indicatif"></label>
+        <label>Code-barres <input type="text" name="code_barres" maxlength="64" [(ngModel)]="a.code_barres"></label>
+      </div>
+      <div class="ligne">
+        <label>Conservation
+          <select name="conservation" [(ngModel)]="a.conservation">
+            @for (c of conservations | keyvalue: null; track c.key) { <option [value]="c.key">{{ c.value }}</option> }
+          </select></label>
+        <label>Si c'est une denrée : pour la consommer
+          <select name="preparation" [(ngModel)]="a.preparation">
+            <option value="">— Ce n'est pas une denrée —</option>
+            @for (p of preparations | keyvalue: null; track p.key) { <option [value]="p.key">{{ p.value }}</option> }
+          </select></label>
+      </div>
+      <label>Description <textarea name="description" rows="2" [(ngModel)]="a.description"></textarea></label>
+      <div class="ligne cases">
+        <label class="case"><input type="checkbox" name="perissable" [(ngModel)]="a.perissable"> Périssable (suivre les dates de péremption)</label>
+        @if (a.id) { <label class="case"><input type="checkbox" name="actif" [(ngModel)]="a.actif"> Encore utilisé</label> }
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="envoi || !a.reference?.trim() || !a.designation?.trim()">Enregistrer</button>
+        <button type="button" class="btn-secondary" (click)="article = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (importOuvert) {
+    <section class="fiche">
+      <h2>Reprendre un fichier (export Dolibarr ou tableur)</h2>
+      <p class="note">Fichier CSV avec, au minimum, une colonne « Réf. » ou « Libellé ». Sont aussi reconnues : Stock, Entrepôt, Unité,
+        Stock limite pour alerte, PMP, Lot, Date de péremption, Code-barres. Les quantités sont posées comme un inventaire : reprendre
+        deux fois le même fichier ne double rien.</p>
+      <div class="ligne">
+        <label>Fichier <input type="file" accept=".csv,text/csv" (change)="surFichier($event)"></label>
+        <label>Dépôt des lignes sans entrepôt
+          <select name="depotImport" [(ngModel)]="depotImport">
+            <option value="">— Aucun —</option>
+            @for (d of depotsActifs; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+          </select></label>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-secondary" [disabled]="!fichierImport || envoi" (click)="importer(true)">Vérifier le fichier</button>
+        <button type="button" class="btn-primary" [disabled]="!fichierImport || envoi || !bilanImport?.simulation" (click)="importer(false)">Reprendre</button>
+        <button type="button" class="btn-secondary" (click)="importOuvert = false">Fermer</button>
+      </div>
+      @if (bilanImport; as b) {
+        <div class="bilan" role="status">
+          <p><strong>{{ b.simulation ? 'Ce qui serait fait' : 'Reprise effectuée' }}</strong> — {{ b.lignes }} ligne(s) lue(s) :
+            {{ b.articles_crees }} article(s) {{ b.simulation ? 'à créer' : 'créé(s)' }}, {{ b.articles_existants }} déjà connu(s),
+            {{ b.depots_crees }} dépôt(s) {{ b.simulation ? 'à créer' : 'créé(s)' }}, {{ b.quantites_posees }} quantité(s) {{ b.simulation ? 'à poser' : 'posée(s)' }}.</p>
+          <p class="note">Colonnes reconnues : {{ b.colonnes.join(', ') }}.</p>
+          @if (b.erreurs.length) {
+            <ul class="erreurs">@for (e of b.erreurs; track e.ligne) { <li>Ligne {{ e.ligne }} : {{ e.message }}</li> }</ul>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  <nav class="onglets" aria-label="Vues du stock">
+    <button type="button" [class.actif]="onglet === 'etat'" (click)="ouvrirOnglet('etat')">État du stock</button>
+    <button type="button" [class.actif]="onglet === 'journal'" (click)="ouvrirOnglet('journal')">Journal des mouvements</button>
+    <button type="button" [class.actif]="onglet === 'depots'" (click)="ouvrirOnglet('depots')">Dépôts ({{ depots.length }})</button>
+    <button type="button" [class.actif]="onglet === 'commandes'" (click)="ouvrirOnglet('commandes')">Commandes et factures</button>
+    <button type="button" [class.actif]="onglet === 'prets'" (click)="ouvrirOnglet('prets')">Prêts de matériel</button>
+    <button type="button" [class.actif]="onglet === 'reservations'" (click)="ouvrirOnglet('reservations')">Où en a-t-on ? Réserver</button>
+    <button type="button" [class.actif]="onglet === 'dotations'" (click)="ouvrirOnglet('dotations')">Dotations types</button>
+    <button type="button" [class.actif]="onglet === 'appareils'" (click)="ouvrirOnglet('appareils')">Appareils</button>
+  </nav>
+
+  @if (onglet === 'etat') {
+    <div class="barre filtres">
+      <label>Dépôt
+        <select name="depotFiltre" [(ngModel)]="depotFiltre" (ngModelChange)="charger()">
+          <option value="">Tous les dépôts</option>
+          @for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+        </select></label>
+      <label>Rechercher <input type="search" name="recherche" [(ngModel)]="recherche" placeholder="référence, libellé, code-barres"></label>
+      <label class="case"><input type="checkbox" name="alertesSeulement" [(ngModel)]="alertesSeulement"> Alertes seulement</label>
+      <label>Code-barres <small>facultatif</small>
+        <input type="text" name="codeSaisi" [(ngModel)]="codeSaisi" (keyup.enter)="surCode()" placeholder="scanner ou saisir, puis Entrée" autocomplete="off"></label>
+      @if (photoPossible) {
+        <label class="lien">photographier un code <input type="file" accept="image/*" capture="environment" hidden (change)="surPhotoDeCode($event)"></label>
+      }
+    </div>
+    @if (chargement && !etat) { <p class="note">Lecture du stock…</p> }
+    @if (etat) {
+      <table class="liste">
+        <thead><tr><th>Article</th><th class="num">Stock</th><th>Où</th><th class="num">Seuil</th><th>Péremption</th><th class="num">Valeur</th><th></th></tr></thead>
+        <tbody>
+          @for (a of lignes; track a.id) {
+            <tr [class.inactif]="!a.actif">
+              <td><button type="button" class="lien" (click)="modifierArticle(a)">{{ a.designation }}</button><small>{{ a.reference }}@if (a.conservation !== 'AMBIANT') { · {{ conservations[a.conservation] }} }@if (a.preparation) { · {{ preparations[a.preparation] }} }</small>
+                @if (a.mal_range.length) { <span class="pastille rouge" [title]="malRange(a)">mal rangé</span><small>{{ malRange(a) }}</small> }</td>
+              <td class="num"><strong [class.bas]="a.sous_seuil">{{ nombre(a.total) }}</strong> <small>{{ a.unite }}</small>
+                @if (+a.reserve > 0) { <small class="reserve">dont {{ nombre(a.reserve) }} réservé(s)</small> }</td>
+              <td>{{ repartition(a) }}</td>
+              <td class="num">@if (a.seuil_alerte !== null) { {{ nombre(a.seuil_alerte) }} @if (a.sous_seuil) { <span class="pastille rouge">à réapprovisionner</span> } }</td>
+              <td>
+                @if (+a.perime > 0) { <span class="pastille rouge">{{ nombre(a.perime) }} périmé(s)</span> }
+                @if (+a.bientot_perime > 0) { <span class="pastille orange">{{ nombre(a.bientot_perime) }} bientôt</span> }
+                @if (a.prochaine_peremption) { <small>prochaine : {{ a.prochaine_peremption | date:'dd/MM/yyyy' }}</small> }
+              </td>
+              <td class="num">{{ euros(a.valeur) }}</td>
+              <td class="gestes">
+                <button type="button" class="btn-secondary" (click)="ouvrirMouvement('ENTREE', a)" [attr.aria-label]="'Entrée de ' + a.designation">+</button>
+                <button type="button" class="btn-secondary" (click)="ouvrirMouvement('SORTIE', a)" [attr.aria-label]="'Sortie de ' + a.designation">−</button>
+                <button type="button" class="lien" (click)="chargerJournal(a)">historique</button>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="7" class="note">{{ etat.articles.length ? 'Aucun article ne correspond.' : 'Aucun article pour l’instant : créez-en un, ou reprenez un fichier.' }}</td></tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+
+  @if (onglet === 'journal') {
+    @if (journalArticle) {
+      <p class="message">Mouvements de « {{ journalArticle.designation }} ».
+        <button type="button" class="lien" (click)="chargerJournal()">Voir tout le journal</button></p>
+    }
+    <table class="liste">
+      <thead><tr><th>Date</th><th>Type</th><th>Article</th><th class="num">Quantité</th><th>Dépôt</th><th>Lot</th><th>Motif</th><th>Par</th></tr></thead>
+      <tbody>
+        @for (m of journal; track m.id) {
+          <tr>
+            <td>{{ m.date_mouvement | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td>{{ m.type_libelle }}</td>
+            <td>{{ m.article_designation }}<small>{{ m.article_reference }}</small></td>
+            <td class="num" [class.moins]="+m.quantite < 0">{{ +m.quantite > 0 ? '+' : '' }}{{ nombre(m.quantite) }} <small>{{ m.unite }}</small></td>
+            <td>{{ m.depot_nom }}</td>
+            <td>{{ m.lot }}@if (m.date_peremption) { <small>pér. {{ m.date_peremption | date:'dd/MM/yyyy' }}</small> }</td>
+            <td>{{ m.motif }}@if (m.tiers) { <small>{{ m.tiers }}</small> }@if (m.crise_nom) { <small>crise : {{ m.crise_nom }}</small> }</td>
+            <td>{{ m.auteur_nom }}</td>
+          </tr>
+        } @empty { <tr><td colspan="8" class="note">Aucun mouvement enregistré.</td></tr> }
+      </tbody>
+    </table>
+  }
+
+  @if (onglet === 'commandes') { <app-stocks-commandes [etat]="etat" (stockChange)="charger()"></app-stocks-commandes> }
+  @if (onglet === 'prets') { <app-stocks-prets [etat]="etat" (stockChange)="charger()"></app-stocks-prets> }
+  @if (onglet === 'reservations' || onglet === 'dotations' || onglet === 'appareils') {
+    <app-stocks-logistique [vue]="onglet" [etat]="etat" (stockChange)="charger()"></app-stocks-logistique>
+  }
+
+  @if (onglet === 'depots') {
+    @if (depot; as d) {
+      <form class="fiche" (ngSubmit)="enregistrerDepot()">
+        <h2>{{ d.id ? 'Modifier le dépôt' : 'Nouveau dépôt' }}</h2>
+        <div class="ligne">
+          <label>Nom <span class="obligatoire">*</span> <input type="text" name="nom" maxlength="120" [(ngModel)]="d.nom" placeholder="Local de la rue du Stade"></label>
+          <label class="large">Adresse <input type="text" name="adresse" maxlength="300" [(ngModel)]="d.adresse"></label>
+        </div>
+        <label>Précisions <input type="text" name="commentaire" [(ngModel)]="d.commentaire" placeholder="Clés chez le président, accès par la cour"></label>
+        <div class="ligne cases">
+          <label class="case"><input type="checkbox" name="froid_positif" [(ngModel)]="d.froid_positif"> Réfrigérateur ou chambre froide</label>
+          <label class="case"><input type="checkbox" name="froid_negatif" [(ngModel)]="d.froid_negatif"> Congélateur</label>
+          <label>Pour chauffer
+            <select name="cuisson" [(ngModel)]="d.cuisson">@for (c of cuissons | keyvalue: null; track c.key) { <option [value]="c.key">{{ c.value }}</option> }</select></label>
+        </div>
+        @if (d.id) { <label class="case"><input type="checkbox" name="actif" [(ngModel)]="d.actif"> Encore utilisé</label> }
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="envoi || !d.nom?.trim()">Enregistrer</button>
+          <button type="button" class="btn-secondary" (click)="depot = null">Annuler</button>
+        </div>
+      </form>
+    } @else if (inventaire; as inv) {
+      <form class="fiche" (ngSubmit)="enregistrerInventaire()">
+        <h2>Inventaire — {{ inv.depot.nom }}</h2>
+        <p class="note">Saisissez ce que vous avez compté. Une ligne laissée vide n'est ni comptée ni corrigée ; un zéro dit qu'il n'y en a plus.</p>
+        <table class="liste">
+          <thead><tr><th>Article</th><th>Lot</th><th class="num">Attendu</th><th class="num">Compté</th></tr></thead>
+          <tbody>
+            @for (l of inv.lignes; track $index) {
+              <tr>
+                <td>{{ l.designation }}<small>{{ l.reference }}</small></td>
+                <td>{{ l.lot }}@if (l.date_peremption) { <small>pér. {{ l.date_peremption | date:'dd/MM/yyyy' }}</small> }</td>
+                <td class="num">{{ nombre(l.attendu) }} <small>{{ l.unite }}</small></td>
+                <td class="num"><input type="number" min="0" step="any" inputmode="decimal" [name]="'compte' + $index" [(ngModel)]="l.compte"
+                                       [attr.aria-label]="'Quantité comptée de ' + l.designation + (l.lot ? ', lot ' + l.lot : '')"></td>
+              </tr>
+            } @empty { <tr><td colspan="4" class="note">Aucun article à compter dans ce dépôt.</td></tr> }
+          </tbody>
+        </table>
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="envoi || !lignesComptees">Enregistrer {{ lignesComptees }} ligne(s) comptée(s)</button>
+          <button type="button" class="btn-secondary" (click)="inventaire = null">Annuler</button>
+        </div>
+      </form>
+    } @else {
+      <div class="barre"><button type="button" class="btn-primary" (click)="nouveauDepot()"><span class="material-icons">add</span> Nouveau dépôt</button></div>
+    }
+    <table class="liste">
+      <thead><tr><th>Dépôt</th><th>Adresse</th><th>Précisions</th><th></th></tr></thead>
+      <tbody>
+        @for (d of depots; track d.id) {
+          <tr [class.inactif]="!d.actif">
+            <td>{{ d.nom }}@if (!d.actif) { <small>plus utilisé</small> }@if (d.point) { <small>stock d'un point d'accueil</small> }
+              @if (!d.point) { <small>{{ d.froid_positif ? 'frais' : 'pas de frais' }} · {{ d.froid_negatif ? 'congélateur' : 'pas de congélateur' }} · {{ cuissons[d.cuisson].toLowerCase() }}</small> }</td>
+            <td>{{ d.adresse }}</td><td>{{ d.commentaire }}</td>
+            <td class="gestes">
+              <button type="button" class="btn-secondary" (click)="ouvrirInventaire(d)">Saisir l'inventaire</button>
+              <button type="button" class="lien" (click)="feuilleInventaire(d, false)">feuille (PDF)</button>
+              <button type="button" class="lien" (click)="feuilleInventaire(d, true)" title="Sans les quantités attendues : on compte ce qu'on voit">à l'aveugle</button>
+              <button type="button" class="lien" (click)="modifierDepot(d)">modifier</button></td>
+          </tr>
+        } @empty { <tr><td colspan="4" class="note">Aucun dépôt.</td></tr> }
+      </tbody>
+    </table>
+  }
+</div>

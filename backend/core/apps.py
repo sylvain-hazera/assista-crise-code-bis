@@ -22,6 +22,7 @@ class CoreConfig(AppConfig):
             AlerteMeshSOS, CanalMeshCore, CanalMeshtastic, DeclarationSecurite, Dossier,
             DossierCommentaire, DossierHistorique, MessageCanalMeshCore, MessageCanalMeshtastic,
             MessageMeshLog, MessageMeshtasticLog, Mission,
+            DepotStock, ArticleStock, MouvementStock,
         )
 
         # L'ordre de cette liste n'a aucune importance : les événements sont rejoués chez le
@@ -31,6 +32,7 @@ class CoreConfig(AppConfig):
             Dossier, DossierCommentaire, DossierHistorique, DeclarationSecurite, Mission,
             MessageMeshLog, CanalMeshCore, CanalMeshtastic, MessageCanalMeshCore,
             MessageMeshtasticLog, MessageCanalMeshtastic, AlerteMeshSOS,
+            DepotStock, ArticleStock, MouvementStock,
         ):
             post_save.connect(sync_outbox.enregistrer_evenement, sender=modele, dispatch_uid=f"sync_outbox_{modele.__name__}")
         for modele in (Dossier, Mission):

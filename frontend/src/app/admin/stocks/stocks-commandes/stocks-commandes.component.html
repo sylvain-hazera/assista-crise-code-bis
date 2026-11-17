@@ -1,0 +1,164 @@
+<div class="stocks-page sous-page">
+  <div class="barre">
+    <button type="button" class="btn-primary" (click)="nouvelle()"><span class="material-icons">add</span> Nouvelle commande</button>
+    <button type="button" class="btn-secondary" (click)="nouvelleFacture()">Ranger une facture</button>
+  </div>
+  @if (facturesEnRetard) { <p class="message erreur" role="status">{{ facturesEnRetard }} facture(s) ont dépassé leur échéance sans être notées payées.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (brouillon; as b) {
+    <form class="fiche" (ngSubmit)="enregistrer()">
+      <h2>{{ b.id ? 'Modifier le brouillon' : 'Nouvelle commande' }}</h2>
+      <div class="ligne">
+        <label class="large">Fournisseur <span class="obligatoire">*</span>
+          <select name="tiers" [(ngModel)]="b.tiers">
+            <option value="">— Choisir —</option>
+            @for (t of fournisseurs; track t.id) { <option [value]="t.id">{{ t.nom }}</option> }
+          </select>
+          @if (!nouveauFournisseur) { <button type="button" class="lien" (click)="nouveauFournisseur = { nom: '', telephone: '', email: '' }">Ajouter un fournisseur</button> }
+        </label>
+        <label>À ranger au dépôt
+          <select name="depot" [(ngModel)]="b.depot">
+            <option value="">— À la réception —</option>
+            @for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+          </select></label>
+        <label>Livraison prévue <input type="date" name="livraison_prevue" [(ngModel)]="b.livraison_prevue"></label>
+      </div>
+      @if (nouveauFournisseur; as f) {
+        <div class="ligne sous-fiche">
+          <label>Nom <span class="obligatoire">*</span> <input type="text" name="f_nom" [(ngModel)]="f.nom" autocomplete="off"></label>
+          <label>Téléphone <input type="tel" name="f_tel" [(ngModel)]="f.telephone" autocomplete="off"></label>
+          <label>Courriel <input type="email" name="f_mail" [(ngModel)]="f.email" autocomplete="off"></label>
+          <div class="actions"><button type="button" class="btn-secondary" [disabled]="!f.nom.trim()" (click)="creerFournisseur()">Ajouter</button>
+            <button type="button" class="lien" (click)="nouveauFournisseur = null">Annuler</button></div>
+        </div>
+      }
+      <div class="lignes-commande">
+        @for (l of b.lignes; track $index) {
+          <div class="ligne">
+            <label class="large">Article
+              <select [name]="'article' + $index" [(ngModel)]="l.article">
+                <option value="">— Choisir —</option>
+                @for (a of articles; track a.id) { <option [value]="a.id">{{ a.designation }} ({{ a.reference }})</option> }
+              </select></label>
+            <label>Quantité <input type="number" [name]="'quantite' + $index" min="0" step="any" [(ngModel)]="l.quantite"></label>
+            <label>Prix unitaire (€) <input type="number" [name]="'prix' + $index" min="0" step="any" [(ngModel)]="l.prix_unitaire" placeholder="facultatif"></label>
+            <button type="button" class="lien" [disabled]="b.lignes.length < 2" (click)="retirerLigne($index)">retirer</button>
+          </div>
+        }
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-secondary" (click)="ajouterLigne()">Ajouter une ligne</button>
+        <span class="note">Total : {{ totalBrouillon.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) }}</span>
+      </div>
+      <label>Remarque <input type="text" name="commentaire" [(ngModel)]="b.commentaire"></label>
+      @if (!articles.length) { <p class="note">Créez d'abord les articles dans « État du stock » : une commande porte sur des articles.</p> }
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="!brouillonComplet || envoi">Enregistrer le brouillon</button>
+        <button type="button" class="btn-secondary" (click)="brouillon = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (reception; as r) {
+    <form class="fiche" (ngSubmit)="recevoir()">
+      <h2>Réception — commande {{ r.commande.numero }}</h2>
+      <label>Rangée au dépôt <span class="obligatoire">*</span>
+        <select name="depot_reception" [(ngModel)]="r.depot">
+          <option value="">— Choisir —</option>
+          @for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+        </select></label>
+      @for (l of r.lignes; track l.ligne) {
+        <div class="ligne">
+          <label class="large">{{ l.libelle }}
+            <input type="number" [name]="'recu' + $index" min="0" step="any" [(ngModel)]="l.quantite" aria-label="Quantité reçue"></label>
+          <label>Lot <input type="text" [name]="'lot' + $index" maxlength="60" [(ngModel)]="l.lot" placeholder="facultatif"></label>
+          <label>Péremption <input type="date" [name]="'peremption' + $index" [(ngModel)]="l.date_peremption"></label>
+        </div>
+      }
+      <p class="note">Mettez zéro pour ce qui n'est pas arrivé : la commande restera « reçue en partie ».</p>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="!r.depot || envoi">Faire entrer en stock</button>
+        <button type="button" class="btn-secondary" (click)="reception = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (facture; as f) {
+    <form class="fiche" (ngSubmit)="enregistrerFacture()">
+      <h2>Ranger une facture</h2>
+      <div class="ligne">
+        <label>Fournisseur <span class="obligatoire">*</span>
+          <select name="fac_tiers" [(ngModel)]="f.tiers">
+            <option value="">— Choisir —</option>
+            @for (t of fournisseurs; track t.id) { <option [value]="t.id">{{ t.nom }}</option> }
+          </select></label>
+        <label>Commande
+          <select name="fac_commande" [(ngModel)]="f.commande">
+            <option value="">— Aucune —</option>
+            @for (c of commandes; track c.id) { <option [value]="c.id">{{ c.numero }} — {{ c.tiers_nom }}</option> }
+          </select></label>
+        <label>Numéro de la facture <span class="obligatoire">*</span> <input type="text" name="fac_numero" maxlength="60" [(ngModel)]="f.numero"></label>
+      </div>
+      <div class="ligne">
+        <label>Date <input type="date" name="fac_date" [(ngModel)]="f.date_facture"></label>
+        <label>Montant HT (€) <input type="number" name="fac_ht" min="0" step="0.01" [(ngModel)]="f.montant_ht"></label>
+        <label>Montant TTC (€) <span class="obligatoire">*</span> <input type="number" name="fac_ttc" min="0" step="0.01" [(ngModel)]="f.montant_ttc"></label>
+        <label>Échéance <input type="date" name="fac_echeance" [(ngModel)]="f.echeance"></label>
+      </div>
+      <label>La pièce (PDF ou photo, gardée chiffrée) <input type="file" accept="application/pdf,image/*" (change)="surPiece($event)"></label>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="envoi || !f.tiers || !f.numero.trim() || f.montant_ttc === ''">Ranger la facture</button>
+        <button type="button" class="btn-secondary" (click)="facture = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  <h2 class="titre-section">Commandes</h2>
+  <table class="liste">
+    <thead><tr><th>Numéro</th><th>Fournisseur</th><th>Contenu</th><th class="num">Total</th><th>État</th><th></th></tr></thead>
+    <tbody>
+      @for (c of commandes; track c.id) {
+        <tr [class.inactif]="c.statut === 'ANNULEE'">
+          <td>{{ c.numero }}<small>{{ c.date_commande ? (c.date_commande | date:'dd/MM/yyyy') : 'pas encore passée' }}</small></td>
+          <td>{{ c.tiers_nom }}</td>
+          <td>@for (l of c.lignes; track l.id) { <div>{{ nombre(l.quantite) }} {{ l.unite }} — {{ l.article_designation }}
+            @if (+(l.quantite_recue ?? 0) > 0) { <small>{{ nombre(l.quantite_recue) }} reçu(s)</small> }</div> }</td>
+          <td class="num">{{ euros(c.total) }}</td>
+          <td>{{ c.statut_libelle }}</td>
+          <td class="gestes">
+            @if (c.statut === 'BROUILLON') {
+              <button type="button" class="lien" (click)="modifier(c)">modifier</button>
+              <button type="button" class="btn-primary" (click)="geste(c, 'passer')">Passer la commande</button>
+            }
+            @if (c.statut === 'COMMANDEE' || c.statut === 'RECUE_EN_PARTIE') { <button type="button" class="btn-primary" (click)="ouvrirReception(c)">Réceptionner</button> }
+            @if (c.statut === 'BROUILLON' || c.statut === 'COMMANDEE') { <button type="button" class="lien" (click)="geste(c, 'annuler')">annuler</button> }
+            @if (c.statut !== 'BROUILLON' && c.statut !== 'ANNULEE') { <button type="button" class="lien" (click)="nouvelleFacture(c)">facture</button> }
+          </td>
+        </tr>
+      } @empty { <tr><td colspan="6" class="note">Aucune commande.</td></tr> }
+    </tbody>
+  </table>
+
+  <h2 class="titre-section">Factures</h2>
+  <table class="liste">
+    <thead><tr><th>Numéro</th><th>Fournisseur</th><th>Commande</th><th class="num">TTC</th><th>Échéance</th><th>Payée</th><th></th></tr></thead>
+    <tbody>
+      @for (f of factures; track f.id) {
+        <tr>
+          <td>{{ f.numero }}<small>{{ f.date_facture | date:'dd/MM/yyyy' }}</small></td>
+          <td>{{ f.tiers_nom }}</td>
+          <td>{{ f.commande_numero }}</td>
+          <td class="num">{{ euros(f.montant_ttc) }}</td>
+          <td>{{ f.echeance | date:'dd/MM/yyyy' }} @if (f.en_retard) { <span class="pastille rouge">dépassée</span> }</td>
+          <td>{{ f.payee_le ? (f.payee_le | date:'dd/MM/yyyy') : 'non' }}</td>
+          <td class="gestes">
+            <button type="button" class="lien" (click)="payer(f)">{{ f.payee_le ? 'non payée' : 'noter payée' }}</button>
+            @if (f.a_une_piece) { <button type="button" class="lien" (click)="piece(f)">pièce</button> }
+          </td>
+        </tr>
+      } @empty { <tr><td colspan="7" class="note">Aucune facture rangée.</td></tr> }
+    </tbody>
+  </table>
+</div>

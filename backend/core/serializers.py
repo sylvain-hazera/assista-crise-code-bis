@@ -1228,7 +1228,13 @@ class MaterielPointSerializer(serializers.ModelSerializer):
         return full_name or obj.responsable.email
 
     def get_quantite_totale(self, obj):
-        # Somme des apports actifs ; None si aucun apport tracé (utiliser quantite).
+        # Dès que la ligne a des mouvements de stock (core/stocks_points.py), c'est le journal
+        # qui fait foi : il compte aussi ce qui est sorti. Sinon, comme avant : la somme des
+        # apports actifs, ou None si aucun apport tracé (utiliser quantite).
+        from .models import MouvementStock
+        journal = MouvementStock.objects.filter(depot__point_id=obj.point_id, article__catalogue_id=obj.item_id)
+        if journal.exists():
+            return max(int(journal.aggregate(total=Sum('quantite'))['total'] or 0), 0)
         result = obj.contributions.exclude(statut=StatutMateriel.RETIRE).aggregate(total=Sum('quantite'))
         return result['total']
 

@@ -1,0 +1,49 @@
+<div class="avis-page">
+  <header>
+    <h1>Appels aux dons</h1>
+    <p class="chapeau">Ce dont des familles sinistrées ont besoin, à la pièce et à la taille près. Chaque ligne se ferme dès qu'elle est couverte :
+      ce qui est marqué « couvert » n'est plus à collecter.</p>
+  </header>
+
+  <aside class="comment-aider">
+    <h2>Vous voulez aider ?</h2>
+    <p>{{ commentAider || 'Pour organiser une collecte, passez par une association, une mairie ou toute autre institution du réseau.' }}</p>
+    <p>
+      @if (authService.isLoggedIn()) {
+        <a routerLink="/admin/appels-dons" class="btn-primary">Voir les appels et s'engager</a>
+      } @else {
+        <a routerLink="/register" class="btn-primary">Faire rejoindre le réseau à mon association ou ma mairie (gratuit)</a>
+        <a routerLink="/login" class="lien-secondaire">Mon institution est déjà dans le réseau : me connecter</a>
+      }
+    </p>
+    <p class="note">Vous êtes un particulier ? Rapprochez-vous d'une association ou de votre mairie : c'est elle qui s'engage sur une quantité,
+      reçoit le lieu de livraison et vous dit quoi apporter.</p>
+  </aside>
+
+  @if (chargement) { <p class="note" role="status">Lecture des appels…</p> }
+  @if (erreur) { <p class="note" role="alert">Les appels n'ont pas pu être lus. Réessayez dans un instant.</p> }
+  @if (!chargement && !erreur && !avis.length) { <p class="note">Aucun appel aux dons n'est ouvert en ce moment.</p> }
+
+  @for (a of avis; track a.id) {
+    <article class="avis">
+      <h2>{{ a.titre }}</h2>
+      <p class="origine">{{ a.institution_nom }}@if (a.crise_nom) { — {{ a.crise_nom }} }@if (a.date_ouverture) { — ouvert le {{ a.date_ouverture | date:'dd/MM/yyyy' }} }</p>
+      <p class="origine">Appel lancé {{ a.portee }}@if (a.portee_km) { autour du sinistre : il s'adresse d'abord aux institutions proches, et sera élargi si le besoin n'est pas couvert }.</p>
+      @if (a.description) { <p>{{ a.description }}</p> }
+      <p><span class="jauge" role="img" [attr.aria-label]="pourcent(a) + ' % couvert'"><span [style.width.%]="pourcent(a)"></span></span>
+        <strong>{{ a.pieces_restantes }}</strong> pièce(s) restent à couvrir sur {{ a.pieces_voulues }}.</p>
+      @for (rubrique of parRubrique(a); track rubrique.libelle) {
+        <h3>{{ rubrique.libelle }}</h3>
+        <ul>
+          @for (l of rubrique.lignes; track $index) {
+            <li [class.couvert]="l.couvert">
+              <span>{{ l.formulation }}@if (l.neuf_exige) { <span class="pastille">neuf</span> }@if (l.urgent && !l.couvert) { <span class="pastille urgente">urgent</span> }
+                @if (l.message) { <span class="mot-personnel">« {{ l.message }} »</span> }</span>
+              <span class="reste">{{ l.couvert ? 'couvert' : 'reste ' + l.reste }}</span>
+            </li>
+          }
+        </ul>
+      }
+    </article>
+  }
+</div>

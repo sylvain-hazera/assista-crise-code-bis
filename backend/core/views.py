@@ -3567,14 +3567,20 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         crise = self.get_object()
         points = list(crise.points_operationnels.select_related("type").order_by("nom"))
         materiels = MaterielPoint.objects.filter(point__in=points).select_related("item", "point")
+        # Ce que le journal de stock dit de chaque point (core/stocks_points.py) : la quantité
+        # réelle, là où des mouvements existent ; ailleurs la quantité posée à la main, comme avant.
+        from . import stocks_points
+        au_journal = {p.id: stocks_points.quantites(p) for p in points}
 
         niveaux = {}
         for m in materiels:
+            suivie = au_journal.get(m.point_id, {}).get(m.item_id)
             niveaux.setdefault(str(m.item_id), {})[str(m.point_id)] = {
                 "materiel_point_id": str(m.id),
                 "niveau_stock": m.niveau_stock,
                 "niveau_stock_libelle": m.get_niveau_stock_display(),
-                "quantite": m.quantite,
+                "quantite": max(int(suivie), 0) if suivie is not None else m.quantite,
+                "suivi_par_mouvements": suivie is not None,
                 "unite": m.unite,
             }
 
@@ -11700,6 +11706,8 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             responsable=request.user,
             environment=get_active_environment(request),
         )
+        _journaliser_l_apport(request, contribution)
+        materiel_point.refresh_from_db()
 
         audit_log(
             request=request,
@@ -13670,7 +13678,7 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
-    filterset_fields = ['dossier', 'habitation', 'demande', 'offre', 'bien']
+    filterset_fields = ['dossier', 'habitation', 'demande', 'offre', 'bien', 'pret', 'moment_pret']
 
     def get_queryset(self):
 
@@ -13690,10 +13698,16 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             utilisateur=user, statut=StatutRattachementHabitation.ACCEPTE,
         ).values_list('habitation_id', flat=True)
 
+        # Les photos d'un prêt de matériel se voient dans l'institution qui tient le prêt.
+        mes_prets = Q(pk__in=[])
+        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+            mes_prets = Q(pret__institution_id__in=institutions_visibles(self.request) or [])
+
         return Document.objects.filter(
             Q(auteur=user)
             | _q_dossiers_ou_je_contribue(user)
-            | Q(habitation_id__in=habitations_rattachees),
+            | Q(habitation_id__in=habitations_rattachees)
+            | mes_prets,
             environment=environment,
         ).distinct()
 
@@ -13719,6 +13733,14 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         bien = serializer.validated_data.get('bien')
         if bien and not _voit_le_bien(self.request, bien):
             raise PermissionDenied("Vous n'avez pas accès à ce bien sinistré.")
+
+        pret = serializer.validated_data.get('pret')
+        if pret:
+            visibles = institutions_visibles(self.request)
+            if get_effective_role(self.request) not in INSTITUTIONAL_TYPES or (visibles is not None and pret.institution_id not in visibles):
+                raise PermissionDenied("Vous n'avez pas accès à ce prêt.")
+            if serializer.validated_data.get('moment_pret') not in ("DEPART", "RETOUR"):
+                raise ValidationError({"moment_pret": "Indiquez si la photo montre l'état au départ (DEPART) ou au retour (RETOUR)."})
 
         document = serializer.save(auteur=user, environment=get_active_environment(self.request))
 
@@ -16990,6 +17012,25 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
 
 
 
+def _journaliser_l_apport(request, contribution):
+    """Un apport reçu à un point entre aussi au journal de stock (core/stocks_points.py), pour
+    que ce qui sera distribué puisse en être déduit. Ne fait jamais échouer l'apport lui-même :
+    un point sans institution garde simplement son suivi d'avant, à l'entrée seule."""
+    from . import stocks_points
+    from .perimetre_admin import institution_regardee
+    try:
+        ligne = contribution.materiel_point
+        institution = stocks_points.institution_du_point(ligne.point, a_defaut=institution_regardee(request))
+        if institution is None:
+            return
+        stocks_points.recevoir(
+            point=ligne.point, item=ligne.item, quantite=contribution.quantite, institution=institution,
+            environment=contribution.environment, auteur=request.user, tiers=contribution.fournisseur_nom or "",
+            unite=contribution.unite, apport=contribution)
+    except Exception as exc:
+        logger.warning("Apport non porté au journal de stock (%s).", type(exc).__name__)
+
+
 class ContributionMaterielViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Apports individuels de matériel sur une ligne de stock — voir ContributionMateriel."""
 
@@ -17007,6 +17048,7 @@ class ContributionMaterielViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
                 "peut enregistrer un apport."
             )
         contribution = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
+        _journaliser_l_apport(self.request, contribution)
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -22515,9 +22557,21 @@ def _appliquer_evenement_synchronisation(satellite, evenement, request):
     try:
         with transaction.atomic():
             if nom_modele in APPEND_ONLY:
+                from . import sync_stock
+                if nom_modele in sync_stock.CHAMPS:
+                    # Stock tenu sur le satellite : le catalogue se retrouve par son nom, un lien
+                    # inconnu ici est laissé vide, et le satellite ne remonte que le stock de SON
+                    # institution -- jamais celui d'une autre.
+                    payload = sync_stock.preparer(nom_modele, payload)
+                    proprietaire = (payload.get("institution_id") if nom_modele != "MouvementStock" else str(
+                        apps.get_model("core", "ArticleStock").objects.filter(pk=payload.get("article_id")).values_list("institution_id", flat=True).first() or ""))
+                    if str(proprietaire) != str(satellite.institution_id):
+                        return {"id": evenement_id, "resultat": "erreur", "detail": "Ce stock n'est pas celui de l'institution du satellite."}
                 _, cree = ModeleClasse.objects.get_or_create(
                     id=objet_id, defaults={**payload, "environment": satellite.environment},
                 )
+                if cree and nom_modele in sync_stock.CHAMPS:
+                    sync_stock.apres(nom_modele, objet_id)
                 resultat = "applique" if cree else "deja_applique"
                 if cree:
                     audit_log(
@@ -23190,8 +23244,12 @@ class SatelliteViewSet(
             referentiel_pour_satellite(satellite.institution, env)
             if satellite.profil == ProfilSatellite.FULL else {}
         )
+        from . import sync_stock
         return Response({
             "referentiel": referentiel,
+            # Le stock de l'institution (core/sync_stock.py) : pour un satellite FULL, le seul à
+            # avoir une instance locale où le tenir hors connexion.
+            "stock": sync_stock.pour_satellite(satellite.institution, env) if satellite.profil == ProfilSatellite.FULL else {},
             "crises": [construire_payload_pull(c, "Crisis") for c in crises_qs],
             "demandes": [construire_payload_pull(d, "Request") for d in demandes_qs],
             "dossiers": [_payload_donnees_mutable(d, "Dossier") for d in dossiers_qs],

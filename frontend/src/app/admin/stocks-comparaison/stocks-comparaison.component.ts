@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -23,6 +23,8 @@ interface SelectedItem {
  * détail du point (point-modal > point-inventaire-modal > cette modale) : le tableau, large par
  * nature (une colonne par centre), était trop à l'étroit dans une modale contrainte. */
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
+import { forkJoin } from 'rxjs';
+import { StockService } from '../../services/stock.service';
 
 @Component({
   selector: 'app-stocks-comparaison',
@@ -47,6 +49,8 @@ export class StocksComparaisonComponent implements OnInit {
   sendingTransfer = false;
   transferError = '';
   transferSuccess = '';
+
+  private stockService = inject(StockService);
 
   constructor(
     private route: ActivatedRoute,
@@ -122,14 +126,17 @@ export class StocksComparaisonComponent implements OnInit {
     }
     this.sendingTransfer = true;
     this.transferError = '';
-    this.pointOperationnelService.demanderTransfert(
-      this.sourcePointId,
-      this.destinationPointId,
-      this.selectedItems.map(s => ({ materiel_point_id: s.materielPointId, quantite_demandee: s.quantiteDemandee })),
-      this.transferMessage.trim() || undefined,
-    ).subscribe({
-      next: (res) => {
-        this.transferSuccess = `Demande envoyée à ${res.notifies} responsable(s) du centre « ${this.sourcePointNom()} ».`;
+    // Une demande par article (voir core/stocks_logistique.py) : ceux qui tiennent le centre de départ
+    // l'acceptent ou la refusent, et c'est leur accord qui fait partir le stock — pas cette demande.
+    const source = this.sourcePointId, destination = this.destinationPointId, message = this.transferMessage.trim();
+    const demandes = this.selectedItems
+      .map(s => ({ item: this.data?.items.find(i => i.item_nom === s.itemNom)?.item, quantite: s.quantiteDemandee || 1 }))
+      .filter((d): d is { item: string; quantite: number } => !!d.item)
+      .map(d => this.stockService.demanderTransfert(source, destination, d.item, d.quantite, message));
+    forkJoin(demandes).subscribe({
+      next: (envoyees) => {
+        this.transferSuccess = `${envoyees.length} demande(s) envoyée(s) au centre « ${this.sourcePointNom()} ». Rien ne part tant qu'il n'a pas accepté : `
+          + 'vous serez prévenu de sa réponse.';
         this.sendingTransfer = false;
         this.showTransferForm = false;
         this.selectedItems = [];
@@ -137,8 +144,8 @@ export class StocksComparaisonComponent implements OnInit {
         this.destinationPointId = '';
         this.transferMessage = '';
       },
-      error: () => {
-        this.transferError = "Erreur lors de l'envoi de la demande de transfert.";
+      error: (e) => {
+        this.transferError = e?.error?.detail || "La demande n'a pas pu être envoyée : elle se fait par ceux qui tiennent le centre d'arrivée.";
         this.sendingTransfer = false;
       },
     });

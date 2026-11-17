@@ -12,6 +12,12 @@ from .views_application import (
     RepondreIndisponibleView,
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
+from .views_stocks import ArticleStockViewSet, DepotStockViewSet, EtatStockView, ImportStockView, InventaireStockView, MouvementStockViewSet, StockPointView
+from .views_dons import AppelAuxDonsViewSet, AvisDonsPublicsView, CatalogueDonsView, FoyerSinistreViewSet
+from .views_stocks_logistique import (
+    AppareilStockViewSet, DemandeTransfertViewSet, DisponibiliteStockView, LotTypeViewSet, ReservationStockViewSet,
+)
+from .views_stocks import CommandeStockViewSet, FactureStockViewSet, PretMaterielViewSet, TiersStockViewSet
 from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, ZonagesOfficielsView,
     CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
@@ -271,6 +277,21 @@ router.register(r'affectations',AffectationCompetenceViewSet)
 router.register(r'dossiers', DossierViewSet)
 router.register(r'missions', MissionViewSet)
 router.register(r'biens-sinistres', BienSinistreViewSet)
+# Gestion des stocks (core/stocks.py) : dépôts, articles, journal des mouvements.
+router.register(r'stocks/depots', DepotStockViewSet)
+router.register(r'stocks/articles', ArticleStockViewSet)
+router.register(r'stocks/mouvements', MouvementStockViewSet)
+router.register(r'stocks/tiers', TiersStockViewSet)
+router.register(r'stocks/commandes', CommandeStockViewSet)
+router.register(r'stocks/factures', FactureStockViewSet)
+router.register(r'stocks/prets', PretMaterielViewSet)
+router.register(r'stocks/transferts', DemandeTransfertViewSet)
+router.register(r'stocks/reservations', ReservationStockViewSet)
+router.register(r'stocks/lots-types', LotTypeViewSet)
+router.register(r'stocks/appareils', AppareilStockViewSet)
+# Appels aux dons (core/appels_dons.py).
+router.register(r'dons/foyers', FoyerSinistreViewSet)
+router.register(r'dons/appels', AppelAuxDonsViewSet)
 router.register(r'besoins', BesoinViewSet)
 router.register(r'besoins-competences', BesoinCompetenceViewSet)
 router.register(r'besoins-materiels', BesoinMaterielViewSet)
@@ -489,6 +510,14 @@ urlpatterns = [
     path('dossier-pcs/enjeux-exposes/', EnjeuxExposesView.as_view(), name='dossier_pcs_enjeux_exposes'),
     path('dossier-pcs/zonages-officiels/', ZonagesOfficielsView.as_view(), name='dossier_pcs_zonages_officiels'),
     path('rapports/recevoir/<str:jeton>/', RecevoirRapportView.as_view(), name='rapport_recevoir'),
+    path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
+    path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),
+    path('stocks/etat/', EtatStockView.as_view(), name='stocks_etat'),
+    path('stocks/import/', ImportStockView.as_view(), name='stocks_import'),
+    path('stocks/disponibilite/', DisponibiliteStockView.as_view(), name='stocks_disponibilite'),
+    path('stocks/inventaire/', InventaireStockView.as_view(), name='stocks_inventaire'),
+    path('stocks/points/<uuid:point_id>/', StockPointView.as_view(), name='stocks_point'),
+    path('stocks/points/<uuid:point_id>/<str:geste>/', StockPointView.as_view(), name='stocks_point_geste'),
     path('couches-carto/', CouchesCartoView.as_view(), name='couches_carto'),
     path('couches-carto/quartiers/importer/', ImportQuartiersView.as_view(), name='couches_carto_importer_quartiers'),
     path('couches-carto/<str:couche>/', CoucheCartoView.as_view(), name='couche_carto'),

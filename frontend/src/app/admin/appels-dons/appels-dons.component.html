@@ -1,0 +1,249 @@
+<div class="dons-page">
+  <header>
+    <h1><span class="material-icons">volunteer_activism</span> Appels aux dons</h1>
+    <p class="chapeau">Dire précisément ce qu'il faut, à la pièce et à la taille près. Chaque ligne se ferme dès qu'une institution
+      s'engage à la couvrir : on ne collecte pas ce qui est déjà promis.</p>
+  </header>
+
+  <nav class="onglets" aria-label="Vues des appels aux dons">
+    <button type="button" [class.actif]="onglet === 'autres'" (click)="ouvrirOnglet('autres')">Appels des autres institutions</button>
+    <button type="button" [class.actif]="onglet === 'miens'" (click)="ouvrirOnglet('miens')">Mes appels</button>
+    <button type="button" [class.actif]="onglet === 'foyers'" (click)="ouvrirOnglet('foyers')">Foyers sinistrés</button>
+  </nav>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (onglet !== 'foyers' && !appel) {
+    @if (onglet === 'miens' && !nouvelAppel) {
+      <div class="barre"><button type="button" class="btn-primary" (click)="preparerAppel()"><span class="material-icons">add</span> Nouvel appel</button></div>
+    }
+    @if (nouvelAppel; as n) {
+      <form class="fiche" (ngSubmit)="creerAppel()">
+        <h2>Nouvel appel aux dons</h2>
+        <div class="ligne">
+          <label class="large">Titre <span class="obligatoire">*</span> <input type="text" name="titre" maxlength="200" [(ngModel)]="n.titre" placeholder="Familles sinistrées du feu de La Teste"></label>
+          <label>Crise
+            <select name="crise" [(ngModel)]="n.crise"><option value="">— Hors crise —</option>@for (c of crises; track c.id) { <option [value]="c.id">{{ c.name }}</option> }</select></label>
+          <label>Lancé jusqu'à
+            <select name="portee_km" [(ngModel)]="n.portee_km">@for (p of portees; track p.libelle) { <option [ngValue]="p.km">{{ p.libelle }}</option> }</select>
+            <small>autour du sinistre ; s'élargit ensuite</small></label>
+        </div>
+        <label>Ce qu'il faut savoir <textarea name="description" rows="2" [(ngModel)]="n.description" placeholder="Dons triés, propres, par cartons étiquetés selon les lignes de l'appel."></textarea></label>
+        <div class="ligne">
+          <label>Reçu dans mon dépôt
+            <select name="depot" [(ngModel)]="n.depot"><option value="">— Aucun —</option>@for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }</select></label>
+          <label class="large">Adresse de livraison <input type="text" name="livraison_adresse" [(ngModel)]="n.livraison_adresse" placeholder="Salle des fêtes, 2 rue du Port"></label>
+          <label>Horaires <input type="text" name="livraison_horaires" maxlength="200" [(ngModel)]="n.livraison_horaires" placeholder="9 h – 17 h, sauf dimanche"></label>
+        </div>
+        <div class="ligne">
+          <label>Contact <input type="text" name="contact_nom" [(ngModel)]="n.contact_nom" autocomplete="off"></label>
+          <label>Téléphone <input type="tel" name="contact_telephone" [(ngModel)]="n.contact_telephone" autocomplete="off"></label>
+          <label>Courriel <input type="email" name="contact_email" [(ngModel)]="n.contact_email" autocomplete="off"></label>
+        </div>
+        <p class="note">Une fois ouvert, l'avis est public : chacun lit ce qu'il faut et ce qui reste à couvrir. Le contact et le lieu de livraison
+          ne sont lus que par les institutions du réseau, qui seules peuvent s'engager.</p>
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="envoi || !n.titre.trim()">Créer le brouillon</button>
+          <button type="button" class="btn-secondary" (click)="nouvelAppel = null">Annuler</button>
+        </div>
+      </form>
+    }
+    <ul class="cartes">
+      @for (a of appels; track a.id) {
+        <li>
+          <button type="button" class="carte" (click)="ouvrir(a)">
+            <strong>{{ a.titre }}</strong>
+            <span>{{ a.institution_nom }}@if (a.crise_nom) { · {{ a.crise_nom }} } · {{ a.statut_libelle }}</span>
+            <span>Lancé {{ a.portee }}@if (a.distance_km !== null) { — à {{ a.distance_km }} km de vous }</span>
+            <span class="jauge" role="img" [attr.aria-label]="pourcent(a) + ' % couvert'"><span [style.width.%]="pourcent(a)"></span></span>
+            <span>{{ a.avancement.pieces_restantes }} pièce(s) à couvrir sur {{ a.avancement.pieces_voulues }} —
+              {{ a.avancement.lignes_couvertes }} ligne(s) fermée(s) sur {{ a.avancement.lignes }}</span>
+          </button>
+        </li>
+      } @empty { <li class="note">{{ onglet === 'miens' ? 'Vous n’avez lancé aucun appel.' : 'Aucun appel ouvert par une autre institution en ce moment.' }}</li> }
+    </ul>
+  }
+
+  @if (onglet !== 'foyers' && appel; as a) {
+    <button type="button" class="lien" (click)="appel = null">← Tous les appels</button>
+    <section class="fiche">
+      <h2>{{ a.titre }} <small>{{ a.statut_libelle }}</small></h2>
+      <p>{{ a.institution_nom }}@if (a.crise_nom) { — {{ a.crise_nom }} } — lancé {{ a.portee }}@if (a.distance_km !== null) { (à {{ a.distance_km }} km de vous) }</p>
+      @if (a.description) { <p>{{ a.description }}</p> }
+      <p class="note"><strong>Livraison :</strong> {{ a.point_nom || a.depot_nom || '' }} {{ a.livraison_adresse }} @if (a.livraison_horaires) { ({{ a.livraison_horaires }}) }
+        <br><strong>Contact :</strong> {{ a.contact_nom }} {{ a.contact_telephone }} {{ a.contact_email }}</p>
+      <p><span class="jauge large" role="img" [attr.aria-label]="pourcent(a) + ' % couvert'"><span [style.width.%]="pourcent(a)"></span></span>
+        {{ a.avancement.pieces_recues }} reçue(s), {{ a.avancement.pieces_promises }} promise(s), <strong>{{ a.avancement.pieces_restantes }} à couvrir</strong> sur {{ a.avancement.pieces_voulues }}.</p>
+
+      @if (a.le_mien) {
+        <div class="actions">
+          @if (a.statut !== 'CLOS') { <button type="button" class="btn-secondary" [disabled]="envoi" (click)="reprendreFoyers()">Reprendre le besoin des foyers</button> }
+          @if (a.statut === 'BROUILLON') { <button type="button" class="btn-primary" [disabled]="envoi" (click)="publier()">Ouvrir l'appel aux autres institutions</button> }
+          @if (a.statut === 'OUVERT') { <button type="button" class="btn-secondary" [disabled]="envoi" (click)="clore()">Clore l'appel</button> }
+          @if (a.statut === 'CLOS') { <button type="button" class="btn-secondary" [disabled]="envoi" (click)="publier()">Rouvrir</button> }
+        </div>
+        @if (a.statut !== 'CLOS') {
+          <label class="portee">Périmètre de l'appel
+            <select name="portee_appel" [ngModel]="a.portee_km" (ngModelChange)="changerPortee($event)" [disabled]="envoi">
+              @for (p of portees; track p.libelle) { <option [ngValue]="p.km">{{ p.libelle }}</option> }
+            </select>
+            <small>Élargissez si le besoin n'est pas couvert près du sinistre : les institutions plus lointaines verront alors l'appel.</small></label>
+        }
+        @if (a.statut !== 'CLOS') {
+          <div class="ajout"><strong>Ajouter une ligne</strong><app-choix-don [catalogue]="catalogue" (choisi)="ajouterLigne($event)"></app-choix-don></div>
+        }
+      }
+    </section>
+
+    @for (groupe of parFamille; track groupe.libelle) {
+      <h3>{{ groupe.libelle }}</h3>
+      <table class="liste">
+        <thead><tr><th>Ce qu'il faut, et pour qui</th><th class="num">Pièces</th><th class="num">Promises</th><th class="num">Reçues</th><th class="num">À couvrir</th><th></th></tr></thead>
+        <tbody>
+          @for (b of groupe.lignes; track b.id) {
+            <tr [class.fermee]="b.reste === 0">
+              <td>{{ b.formulation }}@if (b.neuf_exige) { <span class="pastille">neuf</span> }@if (b.urgent && b.reste > 0) { <span class="pastille urgente">dont {{ b.quantite_urgente }} tout de suite</span> }
+                @if (b.message) { <small class="mot-personnel">« {{ b.message }} »</small> }@if (b.precision) { <small>{{ b.precision }}</small> }
+                @for (e of b.engagements; track e.id) {
+                  <small>{{ a.le_mien ? e.institution_nom : 'Mon engagement' }} : {{ e.quantite }} — {{ e.statut_libelle.toLowerCase() }}@if (e.statut === 'RECU') { ({{ e.quantite_recue }} compté(s)) }
+                    @if (e.le_mien && e.statut === 'PROMIS') { · <button type="button" class="lien" (click)="renoncer(e.id)">renoncer</button> }</small>
+                }</td>
+              <td class="num">@if (a.le_mien && a.statut !== 'CLOS') {
+                  <input type="number" min="0" step="1" class="court" [value]="b.quantite_voulue" (change)="changerQuantite(b, $any($event.target).value)" [attr.aria-label]="'Quantité voulue de ' + b.libelle">
+                } @else { {{ b.quantite_voulue }} }</td>
+              <td class="num">{{ b.quantite_promise }}</td>
+              <td class="num">{{ b.quantite_recue }}</td>
+              <td class="num"><strong>{{ b.reste }}</strong></td>
+              <td class="gestes">
+                @if (b.reste === 0) { <span class="pastille verte">couvert</span> }
+                @else if (!a.le_mien && a.statut === 'OUVERT') {
+                  <input type="number" min="1" [max]="b.reste" step="1" class="court" [(ngModel)]="promesses[b.id]" [attr.aria-label]="'Quantité que je fournis de ' + b.libelle" placeholder="0">
+                  <button type="button" class="btn-primary" [disabled]="envoi || !promesses[b.id]" (click)="engager(b)">Je m'engage</button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    } @empty { <p class="note">Cet appel n'a encore aucune ligne.</p> }
+
+    @if (!a.le_mien && mesPromesses.length) {
+      <section class="fiche">
+        <h2>Mon envoi</h2>
+        <ul class="simple">@for (p of mesPromesses; track p.id) { <li>{{ p.quantite }} × {{ p.libelle }}</li> }</ul>
+        @if (annonce; as n) {
+          <div class="ligne">
+            <label>Départ <input type="date" name="date_expedition" [(ngModel)]="n.date_expedition"></label>
+            <label>Arrivée prévue <input type="date" name="arrivee_prevue" [(ngModel)]="n.arrivee_prevue"></label>
+            <label>Transporteur <input type="text" name="transporteur" maxlength="200" [(ngModel)]="n.transporteur" placeholder="Camion de l'association"></label>
+            <label>Contact du convoi <input type="text" name="contact" [(ngModel)]="n.contact" autocomplete="off"></label>
+          </div>
+          <div class="actions"><button type="button" class="btn-primary" [disabled]="envoi" (click)="annoncer()">Annoncer l'envoi de ces {{ mesPromesses.length }} ligne(s)</button>
+            <button type="button" class="btn-secondary" (click)="annonce = null">Annuler</button></div>
+        } @else { <button type="button" class="btn-primary" (click)="preparerAnnonce()">Annoncer mon envoi</button> }
+      </section>
+    }
+
+    @if (a.envois.length) {
+      <h3>Envois</h3>
+      <ul class="cartes">
+        @for (e of a.envois; track e.id) {
+          <li class="carte fixe">
+            <strong>{{ e.institution_nom }} — {{ e.statut_libelle }}</strong>
+            <span>Parti le {{ e.date_expedition | date:'dd/MM/yyyy' }}@if (e.arrivee_prevue) { , attendu le {{ e.arrivee_prevue | date:'dd/MM/yyyy' }} }@if (e.transporteur) { · {{ e.transporteur }} }@if (e.contact) { · {{ e.contact }} }</span>
+            <ul class="simple">@for (l of e.lignes; track l.engagement) { <li>{{ l.quantite }} × {{ l.libelle }}@if (l.quantite_recue !== null) { — {{ l.quantite_recue }} compté(s) }</li> }</ul>
+            @if (a.le_mien && e.statut === 'ANNONCE') {
+              @if (reception?.envoi?.id === e.id) {
+                <div class="ligne">
+                  @for (l of e.lignes; track l.engagement) {
+                    <label>{{ l.libelle }} <input type="number" min="0" step="1" [name]="'compte' + $index" [(ngModel)]="reception!.comptes[l.engagement]"></label>
+                  }
+                  <label>Rangé au dépôt
+                    <select name="depot_reception" [(ngModel)]="reception!.depot"><option value="">— Sans entrée en stock —</option>@for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }</select></label>
+                </div>
+                <div class="actions"><button type="button" class="btn-primary" [disabled]="envoi" (click)="recevoir()">Enregistrer ce qui a été compté</button>
+                  <button type="button" class="btn-secondary" (click)="reception = null">Annuler</button></div>
+              } @else { <button type="button" class="btn-primary" (click)="preparerReception(e)">Réceptionner et compter</button> }
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  @if (onglet === 'foyers') {
+    <p class="note">Les foyers restent dans votre institution. Un appel n'en porte que des quantités et les mots personnels : aucun nom, aucune composition.
+      Remettre n'est pas couvrir : une ligne est « à couvrir », puis « dépannée » quand le foyer a de quoi passer les premiers jours, puis « couverte ».</p>
+    @if (!foyer) { <div class="barre"><button type="button" class="btn-primary" (click)="nouveauFoyer()"><span class="material-icons">add</span> Nouveau foyer</button>
+      <label>Les remises sortent du dépôt
+        <select name="depotRemise" [(ngModel)]="depotRemise"><option value="">— Sans sortie de stock —</option>@for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }</select></label></div> }
+    @if (foyer; as f) {
+      <form class="fiche" (ngSubmit)="enregistrerFoyer()">
+        <h2>{{ f.id ? 'Modifier le foyer' : 'Nouveau foyer sinistré' }}</h2>
+        <div class="ligne">
+          <label class="large">Nom du foyer <span class="obligatoire">*</span> <input type="text" name="nom" [(ngModel)]="f.nom" autocomplete="off"></label>
+          <label>Contact <input type="text" name="contact" [(ngModel)]="f.contact" autocomplete="off"></label>
+          <label>Crise <select name="crise" [(ngModel)]="f.crise"><option value="">— Hors crise —</option>@for (c of crises; track c.id) { <option [value]="c.id">{{ c.name }}</option> }</select></label>
+        </div>
+        <fieldset>
+          <legend>Qui compose le foyer</legend>
+          @for (p of f.personnes; track $index) {
+            <div class="ligne">
+              <label>Profil <select [name]="'public' + $index" [(ngModel)]="p.public" (ngModelChange)="p.taille_haut = ''; p.taille_bas = ''; p.pointure = ''">@for (code of listePublics; track code) { <option [value]="code">{{ publics[code] }}</option> }</select></label>
+              <label>Âge <input type="number" [name]="'age' + $index" min="0" max="120" class="court" [(ngModel)]="p.age"></label>
+              <label>Taille (haut) <select [name]="'haut' + $index" [(ngModel)]="p.taille_haut"><option value="">—</option>@for (t of grille(p, 'haut'); track t) { <option [value]="t">{{ t }}</option> }</select></label>
+              @if (p.public !== 'BEBE') {
+                <label>Taille (bas) <select [name]="'bas' + $index" [(ngModel)]="p.taille_bas"><option value="">comme le haut</option>@for (t of grille(p, 'haut'); track t) { <option [value]="t">{{ t }}</option> }</select></label>
+                <label>Pointure <select [name]="'pointure' + $index" [(ngModel)]="p.pointure"><option value="">—</option>@for (t of grille(p, 'pointure'); track t) { <option [value]="t">{{ t }}</option> }</select></label>
+              }
+              <button type="button" class="lien" (click)="f.personnes.splice($index, 1)">retirer</button>
+            </div>
+          }
+          <div class="actions">
+            <button type="button" class="btn-secondary" (click)="ajouterPersonne()">Ajouter une personne</button>
+            <button type="button" class="btn-secondary" [disabled]="!f.personnes.length" (click)="proposerTrousseau()">Proposer le trousseau de chacun</button>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Ce qu'il faut au foyer ({{ f.besoins.length }} ligne(s))</legend>
+          <app-choix-don [catalogue]="catalogue" (choisi)="ajouterBesoin($event)"></app-choix-don>
+          <ul class="besoins">
+            @for (b of f.besoins; track $index) {
+              <li>
+                <span class="quoi">{{ libelle(b) }}@if (b.neuf_exige) { <span class="pastille">neuf</span> }@if (!b.taille && b.public && b.famille === 'VETEMENTS') { <small class="manque">taille à préciser</small> }</span>
+                <label class="mini">pour durer <input type="number" min="0" step="1" class="court" [name]="'besoin' + $index" [(ngModel)]="b.quantite"></label>
+                <label class="mini">tout de suite <input type="number" min="1" step="1" class="court" [name]="'urgence' + $index" [(ngModel)]="b.quantite_urgence"></label>
+                <label class="mini mot">un mot <input type="text" maxlength="300" [name]="'mot' + $index" [(ngModel)]="b.message" placeholder="facultatif — jamais de nom"></label>
+                <button type="button" class="lien" (click)="f.besoins.splice($index, 1)">retirer</button></li>
+            }
+          </ul>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" class="btn-primary" [disabled]="envoi || !f.nom.trim()">Enregistrer le foyer</button>
+          <button type="button" class="btn-secondary" (click)="foyer = null">Annuler</button>
+        </div>
+      </form>
+    }
+    <ul class="cartes">
+      @for (f of foyers; track f.id) {
+        <li class="carte fixe">
+          <strong>{{ f.reference }} — {{ f.nom }}</strong>
+          <span>{{ f.personnes.length }} personne(s)@if (f.crise_nom) { · {{ f.crise_nom }} } · <button type="button" class="lien" (click)="modifierFoyer(f)">modifier</button></span>
+          <ul class="besoins">
+            @for (b of f.besoins; track b.id) {
+              <li [class.fermee]="b.etat === 'COUVERT'">
+                <span class="quoi">{{ libelle(b) }} : {{ b.quantite_remise }} remis sur {{ b.quantite }}
+                  <span class="pastille" [attr.data-etat]="b.etat">{{ etatsBesoin[b.etat ?? 'A_COUVRIR'] }}</span>
+                  @if (b.etat === 'DEPANNE') { <small>de quoi passer les premiers jours ; il en manque encore {{ b.quantite - (b.quantite_remise ?? 0) }} pour durer</small> }
+                  @if (b.message) { <small class="mot-personnel">« {{ b.message }} »</small> }</span>
+                <input type="number" min="1" step="1" class="court" #q [attr.aria-label]="'Quantité remise de ' + libelle(b)">
+                <button type="button" class="btn-secondary" (click)="remettre(f, b.id!, q.value); q.value = ''">Remettre</button>
+              </li>
+            }
+          </ul>
+        </li>
+      } @empty { <li class="note">Aucun foyer enregistré.</li> }
+    </ul>
+  }
+</div>

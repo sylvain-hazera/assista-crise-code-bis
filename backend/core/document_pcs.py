@@ -216,6 +216,23 @@ def rassembler(institution, environment, nommer=None) -> dict:
         .select_related("leader").prefetch_related("competences", "members").order_by("name")
     ]
 
+    # 3.2 — le matériel que la collectivité POSSÈDE, lu dans son stock réel (core/stocks.py) : ce
+    # qu'elle a, où, et les appareils suivis à l'unité avec l'échéance de leur contrôle.
+    from . import stocks as _stocks
+    from .models import AppareilStock, DepotStock, EtatAppareilStock
+    depots_stock = {str(d.id): d.nom for d in DepotStock.objects.filter(institution=institution, environment=environment, point__isnull=True)}
+    stock_reel = [
+        {"designation": l["article"].designation, "quantite": f"{_stocks._nombre(l['total'])} {l['article'].unite}",
+         "lieux": ", ".join(f"{depots_stock[d]} ({_stocks._nombre(q)})" for d, q in l["par_depot"].items() if d in depots_stock),
+         "alerte": "sous le seuil" if l["sous_seuil"] else ""}
+        for l in _stocks.etat(institution, environment) if l["total"] > 0 and any(d in depots_stock for d in l["par_depot"])
+    ]
+    appareils = [
+        {"designation": a.designation, "numero": a.numero, "etat": a.get_etat_display(), "depot": a.depot.nom if a.depot_id else "",
+         "controle": (f"{a.controle_libelle or 'contrôle'} avant le {a.controle_prochain_le:%d/%m/%Y}" if a.controle_prochain_le else "")}
+        for a in AppareilStock.objects.filter(institution=institution, environment=environment).exclude(etat=EtatAppareilStock.REFORME).select_related("depot")
+    ]
+
     materiels = {}
     for m in (MaterielPoint.objects.filter(point_id__in=list(points_vus)).select_related("item").order_by("nom")):
         libelle = _texte(m.nom) or (m.item.nom if m.item_id else "")
@@ -262,7 +279,8 @@ def rassembler(institution, environment, nommer=None) -> dict:
 
     contenu = {
         "zones": zones,
-        "nombre_materiels": sum(len(liste) for liste in materiels.values()),
+        "nombre_materiels": sum(len(liste) for liste in materiels.values()) + len(stock_reel) + len(appareils),
+        "stock_reel": stock_reel, "appareils": appareils,
         "institution": institution.nom,
         "commune": {"nom": (commune.nom if commune else "") or institution.nom,
                     "code": institution.commune_code or "",
@@ -330,8 +348,8 @@ PARAGRAPHES = (
      "Ouverts pendant la crise, avec leur capacité et le matériel sur place."),
     ("3.1", "Équipes", "/admin/equipes", "equipes",
      "Reçoivent les missions, ont leur messagerie, alimentent le journal de bord."),
-    ("3.2", "Matériel", "/admin/materiel", "materiels",
-     "Stocks suivis par point pendant la crise."),
+    ("3.2", "Matériel", "/admin/stocks", "materiels",
+     "Le stock que la collectivité possède, ses appareils, et les stocks suivis par point pendant la crise."),
     ("4.5", "Exercices", "/admin/pcs-exercices", "exercices",
      "Ce que chaque exercice a appris, et ce qui doit changer dans le plan."),
 )
@@ -688,7 +706,17 @@ def _partie_moyens(c):
     else:
         blocs.append(_vide("Aucune équipe n'est déclarée.", "Équipes"))
     blocs.append(_p("3.2 — Moyens matériels et sites ressources", _H2))
-    blocs.append(_p("Le matériel entreposé figure avec chaque lieu d'accueil (partie 2.5).", _NOTE))
+    if c.get("stock_reel"):
+        blocs.append(_p("Matériel en stock (relevé au jour de l'édition)", _H3))
+        blocs.append(_tableau(("Matériel", "Quantité", "Où", ""), [(l["designation"], l["quantite"], l["lieux"], l["alerte"]) for l in c["stock_reel"]],
+                              (70, 30, 60, 20)))
+    else:
+        blocs.append(_vide("Aucun matériel n'est tenu en stock.", "Stocks"))
+    if c.get("appareils"):
+        blocs.append(_p("Appareils suivis à l'unité", _H3))
+        blocs.append(_tableau(("Appareil", "Numéro", "État", "Où", "Prochain contrôle"),
+                              [(a["designation"], a["numero"], a["etat"], a["depot"], a["controle"]) for a in c["appareils"]], (52, 28, 24, 34, 42)))
+    blocs.append(_p("Le matériel envoyé sur un lieu d'accueil pendant une crise figure avec ce lieu (partie 2.5).", _NOTE))
     blocs += _fiches(c["ressources"], "Aucun site ressource n'est retenu (transport, engins, hébergement, approvisionnement…).",
                      "Sites sensibles")
     return blocs

@@ -126,6 +126,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Route publique ; les actions de gestion sont contrôlées côté backend (Habitation.peut_gerer).
   { icon: 'home_repair_service', label: 'Référencement des dégâts', route: '/referencement-degats', groupe: 'post-critique' },
   { icon: 'directions_car', label: 'Biens sinistrés', route: '/admin/biens-sinistres', groupe: 'post-critique' },
+  // Besoin des foyers sinistrés, à la pièce près, que les autres institutions couvrent ligne par ligne
+  // (voir backend/core/appels_dons.py).
+  { icon: 'volunteer_activism', label: 'Appels aux dons', route: '/admin/appels-dons', groupe: 'post-critique' },
 
   // ── Préparation ─────────────────────────────────────────────────────
   // Roster réutilisable, préparé à l'avance.
@@ -139,6 +142,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'flood', label: 'Enjeux exposés', route: '/admin/pcs-enjeux-exposes', groupe: 'preparation' },
   { icon: 'layers', label: 'Couches cartographiques', route: '/admin/couches-carto', groupe: 'preparation' },
+  // Stock permanent de l'institution (dépôts, articles, mouvements) — voir backend/core/stocks.py.
+  { icon: 'warehouse', label: 'Stocks', route: '/admin/stocks', groupe: 'preparation' },
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
   { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'account_tree', label: 'Poste de commandement', route: '/admin/pcs-organisation', groupe: 'preparation' },

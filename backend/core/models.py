@@ -2434,6 +2434,13 @@ class Document(EnvironmentScopedModel):
         help_text="Bien sinistré autre qu'une habitation (véhicule, bateau, hangar…).",
     )
 
+    pret = models.ForeignKey(
+        "PretMateriel", on_delete=models.CASCADE, null=True, blank=True, related_name="documents",
+        help_text="Prêt de matériel dont cette photo documente l'état.",
+    )
+    #: « DEPART » ou « RETOUR » : à quelle fiche d'état du prêt la photo appartient.
+    moment_pret = models.CharField(max_length=6, blank=True, default="")
+
     habitation = models.ForeignKey(
         "Habitation",
         on_delete=models.CASCADE,
@@ -5159,6 +5166,26 @@ class PointType(models.Model):
     def __str__(self):
         return self.libelle
 
+# Denrées et lieux de stock (core/stocks.py) : conservation, préparation, moyens du lieu.
+class ConservationStock(models.TextChoices):
+    AMBIANT = "AMBIANT", "Température ambiante"
+    FRAIS = "FRAIS", "Au frais (0 à 4 °C)"
+    SURGELE = "SURGELE", "Surgelé (−18 °C)"
+
+
+class PreparationStock(models.TextChoices):
+    """Ce qu'il faut pour qu'une denrée soit consommable. Vide : ce n'est pas une denrée."""
+    PRET = "PRET", "Prêt à consommer"
+    A_RECHAUFFER = "A_RECHAUFFER", "À réchauffer"
+    A_CUISINER = "A_CUISINER", "À cuisiner"
+
+
+class CuissonLieu(models.TextChoices):
+    AUCUNE = "AUCUNE", "Rien pour chauffer"
+    RECHAUFFAGE = "RECHAUFFAGE", "De quoi réchauffer"
+    CUISINE = "CUISINE", "Une cuisine"
+
+
 class PointOperationnel(EnvironmentScopedModel):
 
     id = models.UUIDField(
@@ -5239,6 +5266,12 @@ class PointOperationnel(EnvironmentScopedModel):
         null=True,
         blank=True
     )
+
+    # Ce que le point a pour garder et préparer des denrées (core/stocks_points.py) : sans froid,
+    # on n'y envoie pas de frais ; sans de quoi chauffer, pas de plats à réchauffer.
+    froid_positif = models.BooleanField(default=False, help_text="Réfrigérateur ou chambre froide (0 à 4 °C).")
+    froid_negatif = models.BooleanField(default=False, help_text="Congélateur (−18 °C).")
+    cuisson = models.CharField(max_length=12, choices=CuissonLieu.choices, default=CuissonLieu.AUCUNE)
 
     competences_requises = models.ManyToManyField(
         "Competence",
@@ -10154,6 +10187,10 @@ class ModeleSynchronisable(models.TextChoices):
     MESSAGE_MESHTASTIC_LOG = "MessageMeshtasticLog", "Message direct Meshtastic"
     MESSAGE_CANAL_MESHTASTIC = "MessageCanalMeshtastic", "Message de canal Meshtastic"
     ALERTE_MESH_SOS = "AlerteMeshSOS", "Alerte SOS mesh"
+    # Le stock tenu hors connexion (17/11/2026, core/sync_stock.py).
+    DEPOT_STOCK = "DepotStock", "Dépôt de stock"
+    ARTICLE_STOCK = "ArticleStock", "Article de stock"
+    MOUVEMENT_STOCK = "MouvementStock", "Mouvement de stock"
 
 
 class ActionSynchronisation(models.TextChoices):
@@ -11020,3 +11057,613 @@ class DemandeRapport(EnvironmentScopedModel):
     envois_du_jour = models.PositiveIntegerField(default=0)
     dernier_envoi = models.DateTimeField(null=True, blank=True)
     date_creation = models.DateTimeField(auto_now_add=True)
+
+
+class DepotStock(EnvironmentScopedModel):
+    """Un lieu où une institution range son stock permanent : local, garage, armoire, véhicule
+    (voir core/stocks.py). Distinct d'un point opérationnel, qui n'existe que le temps d'une crise."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="depots_stock")
+    nom = models.CharField(max_length=120)
+    adresse = EncryptedTextField(blank=True, default="")
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    commentaire = EncryptedTextField(blank=True, default="")
+    #: Renseigné quand ce « dépôt » est le stock d'un point d'accueil ou de regroupement pendant
+    #: une crise : le point devient un lieu de stock comme un autre, avec ses mouvements — on le
+    #: dote depuis un dépôt, on y distribue, on en rapatrie le reste (voir core/stocks.py).
+    point = models.ForeignKey("PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True, related_name="depots_stock")
+    #: Moyens du lieu pour les denrées. Pour le dépôt d'un point d'accueil, ce sont ceux du point
+    #: qui font foi (voir `moyens`).
+    froid_positif = models.BooleanField(default=False)
+    froid_negatif = models.BooleanField(default=False)
+    cuisson = models.CharField(max_length=12, choices=CuissonLieu.choices, default=CuissonLieu.AUCUNE)
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nom"]
+        constraints = [
+            models.UniqueConstraint(fields=["institution", "point"], condition=models.Q(point__isnull=False),
+                                    name="uq_depotstock_institution_point"),
+        ]
+
+    def __str__(self) -> str:
+        return self.nom
+
+    @property
+    def moyens(self):
+        """Le lieu qui dit ce qu'on peut y garder et y préparer : le point d'accueil, sinon le dépôt."""
+        return self.point if self.point_id else self
+
+
+class ArticleStock(EnvironmentScopedModel):
+    """Ce qu'une institution tient en stock. Ne porte AUCUNE quantité : elle se déduit des
+    mouvements (voir core/stocks.py)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="articles_stock")
+    reference = models.CharField(max_length=60)
+    designation = models.CharField(max_length=200)
+    categorie = models.CharField(max_length=30, choices=MaterielCatalogueCategorie.choices, blank=True, default="")
+    #: Le même objet dans le vocabulaire des centres de crise, pour doter un point depuis le stock.
+    catalogue = models.ForeignKey(MaterielCatalogue, on_delete=models.SET_NULL, null=True, blank=True, related_name="articles_stock")
+    unite = models.CharField(max_length=20, default="unité")
+    seuil_alerte = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True,
+                                       help_text="Stock total en deçà duquel l'article est signalé. Vide : pas d'alerte.")
+    perissable = models.BooleanField(default=False)
+    #: Denrées : comment la garder, et ce qu'il faut pour qu'elle soit consommable.
+    conservation = models.CharField(max_length=8, choices=ConservationStock.choices, default=ConservationStock.AMBIANT)
+    preparation = models.CharField(max_length=12, choices=PreparationStock.choices, blank=True, default="",
+                                   help_text="Vide : ce n'est pas une denrée.")
+    prix_unitaire = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True,
+                                        help_text="Coût moyen pondéré, recalculé aux entrées valorisées. Indicatif.")
+    code_barres = models.CharField(max_length=64, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["designation"]
+        constraints = [
+            models.UniqueConstraint(fields=["institution", "environment", "reference"], name="uq_articlestock_reference"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference} — {self.designation}"
+
+
+class TypeMouvementStock(models.TextChoices):
+    ENTREE = "ENTREE", "Entrée"
+    SORTIE = "SORTIE", "Sortie"
+    TRANSFERT = "TRANSFERT", "Transfert"
+    INVENTAIRE = "INVENTAIRE", "Inventaire"
+
+
+class MouvementStock(EnvironmentScopedModel):
+    """Une ligne du journal de stock. Ne se modifie ni ne se supprime : une erreur se rattrape
+    par un mouvement contraire ou un inventaire. `quantite` est SIGNÉE (positive : le stock du
+    dépôt augmente). Un transfert, ce sont deux lignes de même `transfert`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(ArticleStock, on_delete=models.PROTECT, related_name="mouvements")
+    depot = models.ForeignKey(DepotStock, on_delete=models.PROTECT, related_name="mouvements")
+    type = models.CharField(max_length=12, choices=TypeMouvementStock.choices)
+    quantite = models.DecimalField(max_digits=12, decimal_places=3)
+    lot = models.CharField(max_length=60, blank=True, default="")
+    date_peremption = models.DateField(null=True, blank=True)
+    prix_unitaire = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    motif = models.CharField(max_length=300, blank=True, default="")
+    #: Fournisseur, donateur ou personne à qui c'est remis : un nom, donc chiffré.
+    tiers = EncryptedTextField(blank=True, default="")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    mission = models.ForeignKey("Mission", on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    transfert = models.UUIDField(null=True, blank=True, db_index=True)
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    date_mouvement = models.DateTimeField(default=timezone.now)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_mouvement", "-date_creation"]
+        indexes = [models.Index(fields=["article", "depot"])]
+
+
+# ── Stocks, second volet (17/11/2026) : denrées, tiers, commandes, factures, prêts ───────────
+
+class TypeTiersStock(models.TextChoices):
+    PARTICULIER = "PARTICULIER", "Particulier"
+    PROFESSIONNEL = "PROFESSIONNEL", "Professionnel, entreprise"
+    ASSOCIATION = "ASSOCIATION", "Association"
+    COLLECTIVITE = "COLLECTIVITE", "Collectivité, service public"
+
+
+class TiersStock(EnvironmentScopedModel):
+    """Quelqu'un avec qui l'institution échange du matériel : fournisseur, donateur, emprunteur,
+    prêteur. Tout ce qui l'identifie est chiffré ; la recherche se fait donc après déchiffrement."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="tiers_stock")
+    type = models.CharField(max_length=14, choices=TypeTiersStock.choices, default=TypeTiersStock.PROFESSIONNEL)
+    nom = EncryptedTextField()
+    contact = EncryptedTextField(blank=True, default="")
+    email = EncryptedTextField(blank=True, default="")
+    telephone = EncryptedTextField(blank=True, default="")
+    adresse = EncryptedTextField(blank=True, default="")
+    siret = EncryptedTextField(blank=True, default="")
+    notes = EncryptedTextField(blank=True, default="")
+    est_fournisseur = models.BooleanField(default=False)
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return self.nom
+
+
+class StatutCommandeStock(models.TextChoices):
+    BROUILLON = "BROUILLON", "Brouillon"
+    COMMANDEE = "COMMANDEE", "Commandée"
+    RECUE_EN_PARTIE = "RECUE_EN_PARTIE", "Reçue en partie"
+    RECUE = "RECUE", "Reçue"
+    ANNULEE = "ANNULEE", "Annulée"
+
+
+class CommandeStock(EnvironmentScopedModel):
+    """Une commande passée à un fournisseur. Sa réception crée les entrées en stock."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="commandes_stock")
+    numero = models.CharField(max_length=30)
+    tiers = models.ForeignKey(TiersStock, on_delete=models.PROTECT, related_name="commandes")
+    statut = models.CharField(max_length=16, choices=StatutCommandeStock.choices, default=StatutCommandeStock.BROUILLON)
+    depot = models.ForeignKey(DepotStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="commandes",
+                              help_text="Où la commande sera rangée à réception.")
+    date_commande = models.DateField(null=True, blank=True)
+    livraison_prevue = models.DateField(null=True, blank=True)
+    commentaire = models.TextField(blank=True, default="")
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+        constraints = [models.UniqueConstraint(fields=["institution", "environment", "numero"], name="uq_commandestock_numero")]
+
+
+class LigneCommandeStock(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commande = models.ForeignKey(CommandeStock, on_delete=models.CASCADE, related_name="lignes")
+    article = models.ForeignKey(ArticleStock, on_delete=models.PROTECT, related_name="lignes_commande")
+    quantite = models.DecimalField(max_digits=12, decimal_places=3)
+    prix_unitaire = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    quantite_recue = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+
+
+class FactureStock(EnvironmentScopedModel):
+    """Une facture de fournisseur, gardée avec la commande qu'elle règle. Ce n'est PAS une
+    comptabilité : un numéro, des montants, une échéance, une date de paiement et la pièce
+    (chiffrée) — de quoi retrouver ce qu'on a payé pour quel matériel."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="factures_stock")
+    tiers = models.ForeignKey(TiersStock, on_delete=models.PROTECT, related_name="factures")
+    commande = models.ForeignKey(CommandeStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="factures")
+    numero = models.CharField(max_length=60)
+    date_facture = models.DateField()
+    montant_ht = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    montant_ttc = models.DecimalField(max_digits=12, decimal_places=2)
+    echeance = models.DateField(null=True, blank=True)
+    payee_le = models.DateField(null=True, blank=True)
+    fichier = models.FileField(storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255, null=True, blank=True)
+    commentaire = models.TextField(blank=True, default="")
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_facture", "-date_creation"]
+
+
+class SensPret(models.TextChoices):
+    CONSENTI = "CONSENTI", "Prêté par l'institution"
+    RECU = "RECU", "Prêté à l'institution"
+
+
+class EtatMaterielPrete(models.TextChoices):
+    NEUF = "NEUF", "Neuf"
+    BON = "BON", "Bon état"
+    USAGE = "USAGE", "Usagé, fonctionne"
+    DEGRADE = "DEGRADE", "Dégradé"
+    HORS_SERVICE = "HORS_SERVICE", "Hors service"
+
+
+class StatutPret(models.TextChoices):
+    EN_COURS = "EN_COURS", "En cours"
+    RENDU = "RENDU", "Rendu"
+    LITIGE = "LITIGE", "Rendu avec réserve"
+
+
+class PretMateriel(EnvironmentScopedModel):
+    """Un prêt de matériel, dans un sens ou dans l'autre : l'institution prête à un particulier
+    ou à un professionnel (CONSENTI), ou ceux-ci lui prêtent (RECU). Chaque prêt porte une fiche
+    d'état au départ et une au retour, avec photos (`Document.pret`), pour qu'il n'y ait pas à
+    discuter de ce qui était abîmé avant.
+
+    Quand le prêt porte sur un article du stock, il fait bouger le stock : un prêt consenti le
+    sort du dépôt puis l'y ramène ; un matériel reçu en prêt y entre puis en ressort."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="prets_materiel")
+    sens = models.CharField(max_length=10, choices=SensPret.choices)
+    tiers = models.ForeignKey(TiersStock, on_delete=models.PROTECT, related_name="prets")
+    article = models.ForeignKey(ArticleStock, on_delete=models.PROTECT, null=True, blank=True, related_name="prets")
+    depot = models.ForeignKey(DepotStock, on_delete=models.PROTECT, null=True, blank=True, related_name="prets")
+    designation = models.CharField(max_length=200)
+    identification = EncryptedTextField(blank=True, default="")      # numéro de série, immatriculation
+    quantite = models.DecimalField(max_digits=12, decimal_places=3, default=1)
+    quantite_rendue = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    date_debut = models.DateField()
+    retour_prevu = models.DateField(null=True, blank=True)
+    date_retour = models.DateField(null=True, blank=True)
+    etat_depart = models.CharField(max_length=14, choices=EtatMaterielPrete.choices, default=EtatMaterielPrete.BON)
+    constat_depart = EncryptedTextField(blank=True, default="")
+    etat_retour = models.CharField(max_length=14, choices=EtatMaterielPrete.choices, blank=True, default="")
+    constat_retour = EncryptedTextField(blank=True, default="")
+    statut = models.CharField(max_length=10, choices=StatutPret.choices, default=StatutPret.EN_COURS)
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="prets_materiel")
+    conditions = models.TextField(blank=True, default="")
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    rendu_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_debut", "-date_creation"]
+
+
+# ── Appels aux dons (core/appels_dons.py, 17/11/2026) ────────────────────────────────────────
+
+class PublicDon(models.TextChoices):
+    HOMME = "HOMME", "Homme"
+    FEMME = "FEMME", "Femme"
+    GARCON = "GARCON", "Garçon"
+    FILLE = "FILLE", "Fille"
+    BEBE = "BEBE", "Bébé"
+
+
+class FoyerSinistre(EnvironmentScopedModel):
+    """Un foyer qui a tout perdu, et ce qu'il lui faut. Reste dans l'institution qui l'accompagne :
+    un appel aux dons n'en montre que des quantités, jamais un nom ni une composition."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="foyers_sinistres")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="foyers_sinistres")
+    reference = models.CharField(max_length=20)
+    nom = EncryptedTextField()
+    contact = EncryptedTextField(blank=True, default="")
+    adresse = EncryptedTextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["reference"]
+
+
+class PersonneFoyer(models.Model):
+    """Un membre du foyer : de quoi choisir ses vêtements. Ni nom, ni date de naissance."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    foyer = models.ForeignKey(FoyerSinistre, on_delete=models.CASCADE, related_name="personnes")
+    public = models.CharField(max_length=6, choices=PublicDon.choices)
+    age = models.PositiveSmallIntegerField(null=True, blank=True)
+    taille_haut = models.CharField(max_length=12, blank=True, default="")
+    taille_bas = models.CharField(max_length=12, blank=True, default="")
+    pointure = models.CharField(max_length=6, blank=True, default="")
+
+
+class BesoinFoyer(models.Model):
+    """Une chose qu'il faut à un foyer, précisément : « T-shirt, homme, L, 3 »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    foyer = models.ForeignKey(FoyerSinistre, on_delete=models.CASCADE, related_name="besoins")
+    famille = models.CharField(max_length=30)
+    designation = models.CharField(max_length=120)
+    public = models.CharField(max_length=6, choices=PublicDon.choices, blank=True, default="")
+    taille = models.CharField(max_length=20, blank=True, default="")
+    neuf_exige = models.BooleanField(default=False)
+    #: `quantite` : ce qu'il faut pour tenir dans la durée. `quantite_urgence` : ce qu'il faut pour
+    #: passer les premiers jours. Trois T-shirts dépannent, ils ne couvrent pas le besoin.
+    quantite = models.PositiveIntegerField(default=1)
+    quantite_urgence = models.PositiveIntegerField(default=1)
+    quantite_remise = models.PositiveIntegerField(default=0)
+    #: Ce qui rend la demande précise et humaine : « son vélo rose », « ses cartes Pokémon ».
+    #: Repris tel quel dans l'appel, donc lu de tous : jamais de nom.
+    message = EncryptedTextField(blank=True, default="")
+
+    A_COUVRIR, DEPANNE, COUVERT = "A_COUVRIR", "DEPANNE", "COUVERT"
+
+    @property
+    def etat(self) -> str:
+        """« À couvrir » tant que le foyer n'a pas de quoi passer les premiers jours ; « dépanné »
+        ensuite ; « couvert » quand il a ce qu'il faut pour durer."""
+        if self.quantite_remise >= self.quantite:
+            return self.COUVERT
+        return self.DEPANNE if self.quantite_remise >= min(self.quantite_urgence, self.quantite) and self.quantite_remise > 0 else self.A_COUVRIR
+
+
+class StatutAppelDons(models.TextChoices):
+    BROUILLON = "BROUILLON", "Brouillon"
+    OUVERT = "OUVERT", "Ouvert"
+    CLOS = "CLOS", "Clos"
+
+
+class AppelAuxDons(EnvironmentScopedModel):
+    """Ce qu'une institution demande, à la pièce près, aux autres institutions (voir
+    core/appels_dons.py). Chaque ligne se ferme quand elle est couverte."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="appels_aux_dons")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
+    titre = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    statut = models.CharField(max_length=10, choices=StatutAppelDons.choices, default=StatutAppelDons.BROUILLON)
+    #: Où livrer : un point de regroupement de la crise, ou un dépôt de l'institution.
+    point = models.ForeignKey("PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
+    depot = models.ForeignKey(DepotStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
+    livraison_adresse = EncryptedTextField(blank=True, default="")
+    livraison_horaires = models.CharField(max_length=200, blank=True, default="")
+    contact_nom = EncryptedTextField(blank=True, default="")
+    contact_telephone = EncryptedTextField(blank=True, default="")
+    contact_email = EncryptedTextField(blank=True, default="")
+    #: Jusqu'où l'appel est lancé, en kilomètres autour de `centre`. Vide : toute la France.
+    #: On commence près (les dons arrivent vite, le transport est court) et on élargit si le
+    #: besoin n'est pas couvert.
+    portee_km = models.PositiveIntegerField(null=True, blank=True)
+    #: Le point d'où la distance se mesure : la crise, à défaut la commune de l'institution.
+    centre = gis_models.PointField(srid=4326, null=True, blank=True)
+    #: Jours laissés à un engagement pour annoncer son envoi avant d'être relâché.
+    delai_engagement_jours = models.PositiveSmallIntegerField(default=7)
+    date_ouverture = models.DateTimeField(null=True, blank=True)
+    date_cloture = models.DateTimeField(null=True, blank=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+
+class BesoinDon(models.Model):
+    """Une ligne d'un appel : quoi, pour qui, quelle taille, combien. `quantite_recue` ne compte
+    que ce qui est arrivé et a été compté."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appel = models.ForeignKey(AppelAuxDons, on_delete=models.CASCADE, related_name="besoins")
+    famille = models.CharField(max_length=30)
+    designation = models.CharField(max_length=120)
+    public = models.CharField(max_length=6, choices=PublicDon.choices, blank=True, default="")
+    taille = models.CharField(max_length=20, blank=True, default="")
+    neuf_exige = models.BooleanField(default=False)
+    precision = models.CharField(max_length=200, blank=True, default="")
+    #: Le mot personnel d'une demande (« son vélo rose ») : une telle ligne ne se fond pas dans
+    #: les autres. Lu de tous, avis public compris : jamais de nom.
+    message = models.CharField(max_length=300, blank=True, default="")
+    #: Pour combien de personnes (ou de foyers, sans public) : on demande « des T-shirts L pour
+    #: 14 personnes », pas « 56 T-shirts ».
+    nb_beneficiaires = models.PositiveIntegerField(default=1)
+    quantite_voulue = models.PositiveIntegerField()
+    #: La part qu'il faut tout de suite, pour passer les premiers jours.
+    quantite_urgente = models.PositiveIntegerField(default=0)
+    quantite_recue = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["famille", "designation", "public", "taille"]
+        constraints = [models.UniqueConstraint(fields=["appel", "famille", "designation", "public", "taille", "message"],
+                                               name="uq_besoindon_ligne_message")]
+
+
+class StatutEnvoiDon(models.TextChoices):
+    ANNONCE = "ANNONCE", "Annoncé"
+    RECU = "RECU", "Reçu"
+
+
+class EnvoiDon(EnvironmentScopedModel):
+    """Un envoi annoncé par une institution qui s'est engagée : ce qui part, quand, par qui."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appel = models.ForeignKey(AppelAuxDons, on_delete=models.CASCADE, related_name="envois")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="envois_de_dons")
+    statut = models.CharField(max_length=8, choices=StatutEnvoiDon.choices, default=StatutEnvoiDon.ANNONCE)
+    date_expedition = models.DateField()
+    arrivee_prevue = models.DateField(null=True, blank=True)
+    transporteur = models.CharField(max_length=200, blank=True, default="")
+    contact = EncryptedTextField(blank=True, default="")
+    commentaire = models.TextField(blank=True, default="")
+    recu_le = models.DateTimeField(null=True, blank=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+
+class StatutEngagementDon(models.TextChoices):
+    PROMIS = "PROMIS", "Promis"
+    EXPEDIE = "EXPEDIE", "Expédié"
+    RECU = "RECU", "Reçu"
+    RELACHE = "RELACHE", "Relâché (délai dépassé)"
+    ANNULE = "ANNULE", "Annulé"
+
+
+class EngagementDon(models.Model):
+    """« J'en fournis 6 sur 14 » : la quantité qu'une institution s'engage à fournir sur une ligne.
+    Tant qu'il tient, les autres ne collectent pas cette part."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    besoin = models.ForeignKey(BesoinDon, on_delete=models.CASCADE, related_name="engagements")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="engagements_de_dons")
+    quantite = models.PositiveIntegerField()
+    quantite_recue = models.PositiveIntegerField(null=True, blank=True)
+    statut = models.CharField(max_length=8, choices=StatutEngagementDon.choices, default=StatutEngagementDon.PROMIS)
+    envoi = models.ForeignKey(EnvoiDon, on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements")
+    expire_le = models.DateTimeField()
+    #: Le rappel « votre engagement sera rendu aux autres dans deux jours » ne part qu'une fois.
+    rappel_envoye_le = models.DateTimeField(null=True, blank=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date_creation"]
+
+
+class AlerteStockEnvoyee(EnvironmentScopedModel):
+    """Le dernier relevé d'alertes de stock envoyé à une institution (core/alertes_stock.py) : son
+    empreinte sert à ne pas réécrire tous les matins la même liste à des gens qui l'ont déjà lue."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="alertes_stock_envoyees")
+    empreinte = models.CharField(max_length=64)
+    nombre = models.PositiveIntegerField(default=0)
+    date_envoi = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["institution", "environment"], name="uq_alertestock_institution")]
+
+
+# ── Stocks, troisième volet (17/11/2026) : demandes de transfert, réservations, lots types, appareils ──
+
+class StatutDemandeTransfert(models.TextChoices):
+    DEMANDEE = "DEMANDEE", "Demandée"
+    ACCEPTEE = "ACCEPTEE", "Acceptée, transférée"
+    REFUSEE = "REFUSEE", "Refusée"
+    ANNULEE = "ANNULEE", "Annulée"
+
+
+class DemandeTransfertStock(EnvironmentScopedModel):
+    """« Pouvez-vous nous envoyer 20 couvertures ? » : un transfert entre deux points se DEMANDE
+    d'abord (décision de Sylvain du 17/11/2026 : « l'autre institution peut réaliser en avoir
+    besoin au dernier moment »). C'est l'acceptation, par ceux qui tiennent le point de départ,
+    qui réalise le transfert — pour tout ou partie de la quantité."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey("PointOperationnel", on_delete=models.CASCADE, related_name="transferts_demandes_sortants")
+    destination = models.ForeignKey("PointOperationnel", on_delete=models.CASCADE, related_name="transferts_demandes_entrants")
+    item = models.ForeignKey(MaterielCatalogue, on_delete=models.PROTECT, related_name="+")
+    quantite = models.PositiveIntegerField()
+    quantite_accordee = models.PositiveIntegerField(null=True, blank=True)
+    message = models.CharField(max_length=300, blank=True, default="")
+    statut = models.CharField(max_length=9, choices=StatutDemandeTransfert.choices, default=StatutDemandeTransfert.DEMANDEE)
+    reponse = models.CharField(max_length=300, blank=True, default="")
+    demande_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decide_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_decision = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+
+class StatutReservationStock(models.TextChoices):
+    ACTIVE = "ACTIVE", "Réservé"
+    SERVIE = "SERVIE", "Remis"
+    ANNULEE = "ANNULEE", "Annulée"
+
+
+class ReservationStock(EnvironmentScopedModel):
+    """Du stock mis de côté pour quelqu'un : il reste dans le dépôt, mais plus personne d'autre ne
+    peut le sortir. Servir la réservation le fait sortir ; l'annuler le rend."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(ArticleStock, on_delete=models.CASCADE, related_name="reservations")
+    depot = models.ForeignKey(DepotStock, on_delete=models.CASCADE, related_name="reservations")
+    quantite = models.DecimalField(max_digits=12, decimal_places=3)
+    #: Pour qui ou pour quoi : une demande d'habitant, une équipe, ou un texte libre.
+    demande = models.ForeignKey("Request", on_delete=models.SET_NULL, null=True, blank=True, related_name="reservations_stock")
+    equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="reservations_stock")
+    pour = EncryptedTextField(blank=True, default="")
+    statut = models.CharField(max_length=8, choices=StatutReservationStock.choices, default=StatutReservationStock.ACTIVE)
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+
+class LotTypeStock(EnvironmentScopedModel):
+    """Une dotation type : le sac d'intervention, la caisse du véhicule, le kit d'accueil. On la
+    vérifie, on la sort et on la rentre d'un geste."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="lots_types_stock")
+    nom = models.CharField(max_length=120)
+    description = models.TextField(blank=True, default="")
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+
+class LigneLotTypeStock(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lot = models.ForeignKey(LotTypeStock, on_delete=models.CASCADE, related_name="lignes")
+    article = models.ForeignKey(ArticleStock, on_delete=models.CASCADE, related_name="lignes_lot_type")
+    quantite = models.DecimalField(max_digits=12, decimal_places=3)
+
+
+class EtatAppareilStock(models.TextChoices):
+    EN_SERVICE = "EN_SERVICE", "En service"
+    EN_PANNE = "EN_PANNE", "En panne"
+    REFORME = "REFORME", "Réformé"
+
+
+class AppareilStock(EnvironmentScopedModel):
+    """Un appareil suivi à l'unité : le groupe électrogène n° 2, tel défibrillateur, tel
+    extincteur. Le stock compte des quantités ; ici on suit UN objet, son état et son contrôle
+    périodique. Le contrôle signale une échéance, il n'interdit rien : en pleine crise on sort
+    un groupe dont la révision a huit jours de retard, et on le sait."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="appareils_stock")
+    article = models.ForeignKey(ArticleStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="appareils")
+    depot = models.ForeignKey(DepotStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="appareils")
+    designation = models.CharField(max_length=200)
+    numero = models.CharField(max_length=100, blank=True, default="", help_text="Numéro de série, d'inventaire ou immatriculation.")
+    etat = models.CharField(max_length=10, choices=EtatAppareilStock.choices, default=EtatAppareilStock.EN_SERVICE)
+    date_acquisition = models.DateField(null=True, blank=True)
+    #: Le contrôle périodique, s'il y en a un : « Vérification annuelle », tous les 12 mois.
+    controle_libelle = models.CharField(max_length=120, blank=True, default="")
+    controle_periodicite_mois = models.PositiveSmallIntegerField(null=True, blank=True)
+    controle_dernier_le = models.DateField(null=True, blank=True)
+    commentaire = models.TextField(blank=True, default="")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["designation", "numero"]
+
+    @property
+    def controle_prochain_le(self):
+        """Quand le prochain contrôle est dû ; None s'il n'y en a pas. Jamais contrôlé : dû tout de suite."""
+        if not self.controle_periodicite_mois:
+            return None
+        depuis = self.controle_dernier_le or self.date_acquisition
+        if depuis is None:
+            return timezone.localdate()
+        mois = depuis.month - 1 + self.controle_periodicite_mois
+        annee, mois = depuis.year + mois // 12, mois % 12 + 1
+        import calendar
+        return depuis.replace(year=annee, month=mois, day=min(depuis.day, calendar.monthrange(annee, mois)[1]))
+
+
+class ControleAppareilStock(models.Model):
+    """Un contrôle fait sur un appareil : la date, ce qu'il a donné, par qui."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appareil = models.ForeignKey(AppareilStock, on_delete=models.CASCADE, related_name="controles")
+    date = models.DateField()
+    conforme = models.BooleanField(default=True)
+    commentaire = models.TextField(blank=True, default="")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-date_creation"]

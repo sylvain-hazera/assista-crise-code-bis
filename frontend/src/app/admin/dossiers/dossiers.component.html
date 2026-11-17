@@ -166,6 +166,11 @@
         </select>
       </div>
 
+      <!-- Face à une demande : « on l'a en stock ? », puis « réserver pour cette demande » (core/stocks_logistique.py). -->
+      <div class="detail-row" *ngIf="selectedDossier.demande && selectedDossier.statut !== 'CLOTURE'">
+        <app-stock-pour-demande [demande]="selectedDossier.demande" [indice]="selectedDossier.titre || ''"></app-stock-pour-demande>
+      </div>
+
       <!-- Le rapport du dossier, à tout moment : « de clôture » une fois le dossier clôturé. -->
       <div class="detail-row">
         <app-bouton-rapport nature="dossier" [id]="selectedDossier.id" [reference]="selectedDossier.numero"

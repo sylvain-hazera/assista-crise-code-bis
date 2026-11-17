@@ -1,0 +1,119 @@
+<div class="stocks-page sous-page">
+  <div class="barre">
+    <button type="button" class="btn-primary" (click)="ouvrir('CONSENTI')">Nous prêtons du matériel</button>
+    <button type="button" class="btn-primary" (click)="ouvrir('RECU')">On nous prête du matériel</button>
+    <span class="espace"></span>
+    <label>Afficher
+      <select name="filtre" [(ngModel)]="filtre">
+        <option value="EN_COURS">Les prêts en cours</option>
+        <option value="TOUS">Tous les prêts</option>
+      </select></label>
+  </div>
+  @if (enRetard) { <p class="message erreur" role="status">{{ enRetard }} prêt(s) n'ont pas été rendus à la date prévue.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (nouveau; as n) {
+    <form class="fiche" (ngSubmit)="enregistrer()">
+      <h2>{{ n.sens === 'CONSENTI' ? 'Nous prêtons du matériel' : 'On nous prête du matériel' }}</h2>
+      <div class="ligne">
+        <label class="large">{{ n.sens === 'CONSENTI' ? 'À qui' : 'Qui nous le prête' }} <span class="obligatoire">*</span>
+          <select name="tiers" [(ngModel)]="n.tiers">
+            <option value="">— Choisir —</option>
+            @for (t of tiers; track t.id) { <option [value]="t.id">{{ t.nom }} ({{ typesTiers[t.type] }})</option> }
+          </select>
+          @if (!nouveauTiers) { <button type="button" class="lien" (click)="nouveauTiers = { nom: '', type: 'PARTICULIER', telephone: '', email: '' }">Ajouter une personne ou une entreprise</button> }
+        </label>
+      </div>
+      @if (nouveauTiers; as t) {
+        <div class="ligne sous-fiche">
+          <label>Nom <span class="obligatoire">*</span> <input type="text" name="tiers_nom" [(ngModel)]="t.nom" autocomplete="off"></label>
+          <label>Qui est-ce
+            <select name="tiers_type" [(ngModel)]="t.type">@for (type of typesTiers | keyvalue; track type.key) { <option [value]="type.key">{{ type.value }}</option> }</select></label>
+          <label>Téléphone <input type="tel" name="tiers_telephone" [(ngModel)]="t.telephone" autocomplete="off"></label>
+          <label>Courriel <input type="email" name="tiers_email" [(ngModel)]="t.email" autocomplete="off"></label>
+          <div class="actions"><button type="button" class="btn-secondary" [disabled]="!t.nom.trim()" (click)="creerTiers()">Ajouter</button>
+            <button type="button" class="lien" (click)="nouveauTiers = null">Annuler</button></div>
+        </div>
+      }
+      <div class="ligne">
+        <label>Article du stock
+          <select name="article" [(ngModel)]="n.article">
+            <option value="">— Hors stock : je le décris —</option>
+            @for (a of articles; track a.id) { <option [value]="a.id">{{ a.designation }} ({{ a.reference }})</option> }
+          </select></label>
+        @if (n.article) {
+          <label>{{ n.sens === 'CONSENTI' ? 'Sort du dépôt' : 'Rangé au dépôt' }} <span class="obligatoire">*</span>
+            <select name="depot" [(ngModel)]="n.depot">
+              <option value="">— Choisir —</option>
+              @for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }
+            </select></label>
+        } @else {
+          <label class="large">Ce qui est prêté <span class="obligatoire">*</span>
+            <input type="text" name="designation" maxlength="200" [(ngModel)]="n.designation" placeholder="Remorque bâchée 750 kg"></label>
+        }
+        <label>Quantité <input type="number" name="quantite" min="0" step="any" [(ngModel)]="n.quantite"></label>
+      </div>
+      <div class="ligne">
+        <label>Numéro de série, immatriculation <input type="text" name="identification" [(ngModel)]="n.identification" autocomplete="off"></label>
+        <label>Début du prêt <input type="date" name="date_debut" [(ngModel)]="n.date_debut"></label>
+        <label>Retour prévu <input type="date" name="retour_prevu" [(ngModel)]="n.retour_prevu"></label>
+      </div>
+      <div class="ligne">
+        <label>État au départ
+          <select name="etat_depart" [(ngModel)]="n.etat_depart">@for (e of etats | keyvalue: null; track e.key) { <option [value]="e.key">{{ e.value }}</option> }</select></label>
+        <label class="large">Constat au départ
+          <input type="text" name="constat_depart" [(ngModel)]="n.constat_depart" placeholder="Rayure sur le capot, plein fait, deux sangles fournies"></label>
+      </div>
+      <label>Conditions du prêt <textarea name="conditions" rows="2" [(ngModel)]="n.conditions" placeholder="Rendu nettoyé, carburant à la charge de l'emprunteur…"></textarea></label>
+      <p class="note">Les photos de l'état au départ s'ajoutent sur la ligne du prêt, une fois celui-ci enregistré.</p>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="!complet || envoi">{{ envoi ? 'Enregistrement…' : 'Enregistrer le prêt' }}</button>
+        <button type="button" class="btn-secondary" (click)="nouveau = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (retour; as r) {
+    <form class="fiche" (ngSubmit)="rendre()">
+      <h2>Fiche de retour — {{ r.pret.designation }}</h2>
+      <p class="note">Au départ : {{ r.pret.etat_depart_libelle }}@if (r.pret.constat_depart) { — {{ r.pret.constat_depart }} }</p>
+      <div class="ligne">
+        <label>État au retour
+          <select name="etat_retour" [(ngModel)]="r.etat_retour">@for (e of etats | keyvalue: null; track e.key) { <option [value]="e.key">{{ e.value }}</option> }</select></label>
+        <label>Quantité rendue <input type="number" name="quantite_rendue" min="0" [max]="+r.pret.quantite" step="any" [(ngModel)]="r.quantite_rendue">
+          <small>sur {{ nombre(r.pret.quantite) }} {{ r.pret.unite }}</small></label>
+        <label class="large">Constat au retour <input type="text" name="constat_retour" [(ngModel)]="r.constat_retour" placeholder="Rien à signaler"></label>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="envoi">Enregistrer le retour</button>
+        <button type="button" class="btn-secondary" (click)="retour = null">Annuler</button>
+      </div>
+    </form>
+  }
+
+  <table class="liste">
+    <thead><tr><th>Matériel</th><th>Sens</th><th>Avec</th><th>Du… au</th><th>État</th><th>Photos</th><th></th></tr></thead>
+    <tbody>
+      @for (p of affiches; track p.id) {
+        <tr>
+          <td>{{ p.designation }}<small>{{ nombre(p.quantite) }} {{ p.unite }}@if (p.identification) { · {{ p.identification }} }</small></td>
+          <td>{{ p.sens === 'CONSENTI' ? 'Nous prêtons' : 'On nous prête' }}</td>
+          <td>{{ p.tiers_nom }}<small>{{ p.tiers_type }}</small></td>
+          <td>{{ p.date_debut | date:'dd/MM/yyyy' }}
+            <small>@if (p.date_retour) { rendu le {{ p.date_retour | date:'dd/MM/yyyy' }} } @else if (p.retour_prevu) { retour prévu le {{ p.retour_prevu | date:'dd/MM/yyyy' }} } @else { sans date de retour }</small>
+            @if (p.en_retard) { <span class="pastille rouge">en retard</span> }</td>
+          <td>{{ p.etat_depart_libelle }}@if (p.etat_retour) { → {{ p.etat_retour_libelle }} }
+            @if (p.statut === 'LITIGE') { <span class="pastille orange">avec réserve</span> }</td>
+          <td>{{ p.photos.depart }} au départ@if (p.statut !== 'EN_COURS') {, {{ p.photos.retour }} au retour }
+            <label class="lien depot-photo">{{ depotPhoto === p.id ? 'Envoi…' : (p.statut === 'EN_COURS' ? 'ajouter (départ)' : 'ajouter (retour)') }}
+              <input type="file" accept="image/*" capture="environment" hidden (change)="ajouterPhoto(p, $event)"></label></td>
+          <td class="gestes">
+            @if (p.statut === 'EN_COURS') { <button type="button" class="btn-secondary" (click)="ouvrirRetour(p)">Retour</button> }
+            <button type="button" class="lien" (click)="fiche(p)">fiche PDF</button>
+          </td>
+        </tr>
+      } @empty { <tr><td colspan="7" class="note">{{ prets.length ? 'Aucun prêt en cours.' : 'Aucun prêt enregistré.' }}</td></tr> }
+    </tbody>
+  </table>
+</div>

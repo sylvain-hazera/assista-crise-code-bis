@@ -162,3 +162,19 @@
     font-size: .8rem;
   }
 }
+
+// Mouvements de stock du point : doter, distribuer, compter, rapatrier.
+.stock-barre, .stock-form, .stock-gestes { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.stock-barre { margin-bottom: .6rem; }
+.stock-form { margin: 0 0 .6rem; padding: .5rem .6rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px; font-size: .85rem;
+  input, select { font: inherit; padding: .35rem .5rem; max-width: 100%; }
+  input[type=number] { width: 9rem; }
+}
+.stock-gestes { margin-top: .3rem; }
+.stock-message { margin: 0 0 .6rem; padding: .45rem .6rem; border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); font-size: .85rem;
+  &.erreur { border-left-color: #b91c1c; background: var(--ac-red-bg, #fef2f2); }
+}
+.stock-form label { display: inline-flex; align-items: center; gap: .3rem; }
+.denree { font-size: .78rem; }
+.denree-alerte { font-size: .78rem; color: #b91c1c; font-weight: 600; }
+.stock-demandes { margin: 0 0 .6rem; padding: .5rem .6rem; border-left: 4px solid #b45309; background: var(--ac-surface-2, #fffbeb); font-size: .85rem; display: grid; gap: .4rem; }

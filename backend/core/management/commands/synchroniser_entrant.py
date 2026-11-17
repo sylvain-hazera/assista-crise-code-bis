@@ -153,6 +153,11 @@ class Command(BaseCommand):
         # Équipes et radio (core/sync_referentiel.py) : après les crises, missions et annonces,
         # qu'une équipe ou un canal peut citer.
         referentiel = appliquer_referentiel(donnees.get("referentiel") or {})
+        # Le stock de l'institution (core/sync_stock.py) : après le référentiel, parce qu'un
+        # mouvement cite une équipe et un dépôt de point cite son point.
+        from core.sync_stock import appliquer as appliquer_stock
+        stock = appliquer_stock(donnees.get("stock") or {})
+        self.stdout.write(f"Stock : {stock['applique']} ligne(s) inscrite(s), {stock['ignore']} déjà là, {stock['erreur']} erreur(s).")
 
         self.stdout.write(
             f"Synchronisation entrante {environnement} : {compteurs['applique']} appliqué(s), "

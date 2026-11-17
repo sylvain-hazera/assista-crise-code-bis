@@ -1,0 +1,21 @@
+.avis-page { max-width: 54rem; margin: 0 auto; padding: 1.5rem 16px 3rem;
+  h1 { font-size: 1.7rem; margin: 0 0 .4rem; text-wrap: balance; }
+  h2 { font-size: 1.2rem; margin: 0 0 .3rem; text-wrap: balance; }
+  h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ac-text-muted, #6b7280); margin: 1rem 0 .3rem; }
+  .chapeau { color: var(--ac-text-muted, #6b7280); margin: 0 0 1.2rem; max-width: 46rem; }
+  .note { font-size: .9rem; color: var(--ac-text-muted, #6b7280); }
+  .comment-aider { padding: 1rem 1.1rem; border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); margin-bottom: 1.5rem;
+    p { margin: .4rem 0; } .lien-secondaire { margin-left: .8rem; } .btn-primary { display: inline-block; text-decoration: none; } }
+  .avis { padding: 1.1rem 0; border-top: 1px solid var(--ac-border, #e5e7eb);
+    p { margin: .3rem 0; } .origine { color: var(--ac-text-muted, #6b7280); font-size: .9rem; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { display: flex; gap: 1rem; justify-content: space-between; align-items: baseline; padding: .4rem 0; border-bottom: 1px solid var(--ac-border, #f0f0f0); }
+    li.couvert { color: var(--ac-text-muted, #6b7280); .reste { color: #15803d; font-weight: 600; } }
+    .reste { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+  }
+  .mot-personnel { display: block; font-style: italic; }
+  .jauge { display: block; height: .5rem; border-radius: 999px; background: var(--ac-border, #e5e7eb); overflow: hidden; margin-bottom: .3rem;
+    > span { display: block; height: 100%; background: #15803d; } }
+  .pastille { display: inline-block; margin-left: .35rem; padding: .05rem .45rem; border-radius: 999px; font-size: .75rem; color: #fff; background: #6b7280;
+    &.urgente { background: #b45309; } }
+}

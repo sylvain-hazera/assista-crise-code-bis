@@ -54,7 +54,7 @@ FOND = colors.HexColor("#e2e8f0")
 FOND_NOTE = colors.HexColor("#fef3c7")
 
 #: Photos par rapport. Au-delà, le rapport dit combien n'y figurent pas.
-MAX_PHOTOS = {"dossier": 40, "mission": 60, "crise": 80, "bien": 40}
+MAX_PHOTOS = {"dossier": 40, "mission": 60, "crise": 80, "bien": 40, "pret": 30}
 LARGEUR_PHOTO_PX = 1400
 #: Dossiers détaillés en annexe d'un rapport de mission ou de crise.
 MAX_DOSSIERS_ANNEXES = 150
@@ -224,6 +224,31 @@ def mission_resume(mission, nommer, dossiers=None) -> dict:
     }
 
 
+def _bilan_stock(institution, crise, environment) -> dict:
+    from . import stocks
+    return stocks.bilan_de_crise(institution, crise, environment)
+
+
+def _blocs_stock(c: dict, numero: int) -> list:
+    """Matériel et dons de la crise : ce qui a été distribué depuis le stock, ce qui y est entré."""
+    stock = c.get("stock") or {}
+    if not stock.get("distribue") and not stock.get("recu"):
+        return []
+    euros = lambda v: (f"{v:.2f} €".replace(".", ",") if v is not None else "")       # noqa: E731
+    blocs = [_p(f"{numero} — Matériel et dons", _H1)]
+    if stock["distribue"]:
+        blocs += [_p("Distribué ou consommé depuis le stock de la collectivité", _H2),
+                  _tableau(("Article", "Quantité", "Valeur indicative"),
+                           [(l["designation"], f"{l['quantite']} {l['unite']}", euros(l["valeur"])) for l in stock["distribue"]], (110, 35, 35))]
+        if stock["valeur_distribuee"]:
+            blocs.append(_p(f"Valeur indicative de ce qui a été distribué : {euros(stock['valeur_distribuee'])} (coût moyen des articles).", _NOTE))
+    if stock["recu"]:
+        blocs += [_p("Reçu pour la crise (dons, apports, achats)", _H2),
+                  _tableau(("Article", "Quantité", "Valeur indicative"),
+                           [(l["designation"], f"{l['quantite']} {l['unite']}", euros(l["valeur"])) for l in stock["recu"]], (110, 35, 35))]
+    return blocs
+
+
 def crise_resume(crise, institution, environment, nommer) -> dict:
     """La crise vue par UNE collectivité : ce qui relève de sa commune, de ses équipes et de ce
     qu'elle a elle-même consigné. Une autre collectivité touchée par la même crise édite le sien."""
@@ -277,6 +302,7 @@ def crise_resume(crise, institution, environment, nommer) -> dict:
         "dossiers_par_statut": sorted(par_statut.items()),
         "equipes": equipes,
         "degats": sorted(degats.items()),
+        "stock": _bilan_stock(institution, crise, environment),
         "causes": sorted(causes.items(), key=lambda paire: -paire[1]),
         "alertes": [(_date(a.date_creation), a.titre, ", ".join(a.canaux or []), a.destinataires) for a in alertes],
         "journal": [(_date(j.date_creation), nommer(j.auteur) if j.auteur_id else "", j.contenu or "") for j in journal[:MAX_LIGNES_JOURNAL]],
@@ -513,7 +539,11 @@ def _blocs_crise(c: dict, horodatage: str, toutes: bool = False) -> list:
         blocs += [_p("4 — Alertes diffusées aux habitants", _H1),
                   _tableau(("Date", "Objet", "Canaux", "Destinataires"), [(d, t, canaux, str(n)) for d, t, canaux, n in c["alertes"]],
                            (32, 78, 46, 24), forte=1)]
-    blocs.append(_p("5 — Journal de bord de la collectivité" if c["alertes"] else "4 — Journal de bord de la collectivité", _H1))
+    suivant = 5 if c["alertes"] else 4
+    stock = _blocs_stock(c, suivant)
+    blocs += stock
+    suivant += 1 if stock else 0
+    blocs.append(_p(f"{suivant} — Journal de bord de la collectivité", _H1))
     if c["journal"]:
         blocs.append(_tableau(("Date", "Par", "Consigné"), c["journal"], (32, 36, 112), forte=-1))
         if c["journal_omis"]:
@@ -551,9 +581,46 @@ def _blocs_bien(b: dict, horodatage: str, toutes: bool = False) -> list:
     return blocs
 
 
-_BLOCS = {"dossier": _blocs_dossier, "mission": _blocs_mission, "crise": _blocs_crise, "bien": _blocs_bien}
+def _blocs_pret(f: dict, horodatage: str, toutes: bool = False) -> list:
+    """La fiche de prêt (core/stocks_echanges.py) : qui prête quoi à qui, l'état au départ, l'état
+    au retour, et la place des signatures — c'est ce papier qu'on sort quand le matériel revient
+    abîmé et que chacun se souvient d'autre chose."""
+    preteur, emprunteur = (f["institution"], f["tiers"]) if f["consenti"] else (f["tiers"], f["institution"])
+    blocs = _entete("Fiche de prêt de matériel", f"{f['designation']} — état au {horodatage}")
+    blocs.append(_fiche([
+        ("Matériel", f["designation"]), ("Numéro de série, immatriculation", f["identification"]),
+        ("Quantité", f"{f['quantite']} {f['unite']}".strip()),
+        ("Prêté par", preteur), ("Prêté à", emprunteur),
+        (f"{f['tiers']} ({f['tiers_type'].lower()})", f["tiers_contact"]),
+        ("Début du prêt", f["debut"]), ("Retour prévu", f["retour_prevu"]), ("Crise", f["crise"]),
+        ("Situation", f["statut"] + (" — retour en retard" if f["en_retard"] else "")), ("Enregistré par", f["enregistre_par"]),
+    ]))
+    if f["conditions"]:
+        blocs += [_p("Conditions du prêt", _H1), _p(f["conditions"])]
+    blocs += [_p("État au départ", _H1), _fiche([("État", f["etat_depart"]), ("Constat", f["constat_depart"]),
+                                                   ("Photos", f"{len(f['photos_depart'])} en annexe" if f["photos_depart"] else "aucune")])]
+    blocs.append(_p("État au retour", _H1))
+    if f["rendu"]:
+        blocs.append(_fiche([("Rendu le", f["retour"]), ("Quantité rendue", f"{f['quantite_rendue']} {f['unite']}".strip()),
+                             ("État", f["etat_retour"]), ("Constat", f["constat_retour"]), ("Reçu par", f["rendu_a"]),
+                             ("Photos", f"{len(f['photos_retour'])} en annexe" if f["photos_retour"] else "aucune")]))
+        if f["reserve"]:
+            blocs.append(_p("Rendu avec réserve : le matériel est revenu en moins bon état qu'au départ, ou en moindre quantité.", _NOTE))
+    else:
+        blocs.append(_p("Le matériel n'est pas encore rendu. État au retour : ……………………………………  Constat : ……………………………………………………………………", _NOTE))
+    blocs += [_p("Signatures", _H1), _fiche([
+        (f"Le prêteur — {preteur}", "Au départ : ……………………………   Au retour : ……………………………"),
+        (f"L'emprunteur — {emprunteur}", "Au départ : ……………………………   Au retour : ……………………………")])]
+    plafond = _plafond("pret", toutes)
+    blocs += _annexe_photos(f["photos_depart"], plafond, titre="Annexe — Photos au départ")
+    blocs += _annexe_photos(f["photos_retour"], plafond, titre="Annexe — Photos au retour")
+    return blocs
+
+
+_BLOCS = {"dossier": _blocs_dossier, "mission": _blocs_mission, "crise": _blocs_crise, "bien": _blocs_bien, "pret": _blocs_pret}
 _PIEDS = {"dossier": lambda r: f"Rapport de dossier n° {r['numero']}", "mission": lambda r: f"Rapport de mission — {r['titre']}",
           "bien": lambda r: f"Rapport de bien sinistré — {r['designation']}",
+          "pret": lambda r: f"Fiche de prêt — {r['designation']}",
           "crise": lambda r: f"Rapport de crise — {r['nom']} — {r['collectivite']}"}
 
 

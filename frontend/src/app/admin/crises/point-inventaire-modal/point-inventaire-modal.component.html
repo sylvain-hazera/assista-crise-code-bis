@@ -19,6 +19,99 @@
         <p>Chargement...</p>
       } @else {
 
+        @if (erreurStock) { <p class="stock-message erreur" role="alert">{{ erreurStock }}</p> }
+        @if (messageStock) { <p class="stock-message" role="status">{{ messageStock }}</p> }
+
+        @if (suivi; as su) {
+          <div class="stock-form" aria-label="Ce que le point a pour les denrées">
+            <strong>Pour les denrées, ce point a :</strong>
+            <label><input type="checkbox" [checked]="su.moyens.froid_positif" [disabled]="!su.peut_distribuer || gesteEnCours"
+                          (change)="changerMoyens('froid_positif', $any($event.target).checked)"> un réfrigérateur</label>
+            <label><input type="checkbox" [checked]="su.moyens.froid_negatif" [disabled]="!su.peut_distribuer || gesteEnCours"
+                          (change)="changerMoyens('froid_negatif', $any($event.target).checked)"> un congélateur</label>
+            <select [value]="su.moyens.cuisson" [disabled]="!su.peut_distribuer || gesteEnCours" aria-label="Pour chauffer"
+                    (change)="changerMoyens('cuisson', $any($event.target).value)">
+              @for (c of cuissons | keyvalue: null; track c.key) { <option [value]="c.key" [selected]="c.key === su.moyens.cuisson">{{ c.value }}</option> }
+            </select>
+          </div>
+        }
+        @if (suivi?.peut_doter) {
+          <div class="stock-barre">
+            @if (!dotation) {
+              <button type="button" class="btn-primary sm" (click)="ouvrirDotation()">
+                <span class="material-icons">local_shipping</span> Doter ce point depuis mon stock</button>
+            }
+            <button type="button" class="btn-secondary sm" (click)="journalOuvert = !journalOuvert">
+              <span class="material-icons">history</span> {{ journalOuvert ? 'Masquer le journal' : 'Journal des mouvements' }}</button>
+          </div>
+          @if (dotation; as d) {
+            <div class="stock-form">
+              <strong>Doter « {{ point.nom }} » depuis un dépôt de {{ suivi?.institution_nom }}</strong>
+              @if (monStock && !monStock.depots.length) {
+                <p class="muted">Votre institution n'a pas encore de dépôt : créez-le dans « Stocks ».</p>
+              } @else {
+                <select [(ngModel)]="d.depot" [ngModelOptions]="{standalone: true}" aria-label="Dépôt de départ">
+                  <option value="">— Dépôt —</option>
+                  @for (depot of monStock?.depots ?? []; track depot.id) { <option [value]="depot.id">{{ depot.nom }}</option> }
+                </select>
+                <select [(ngModel)]="d.article" [ngModelOptions]="{standalone: true}" aria-label="Article">
+                  <option value="">— Article —</option>
+                  @for (a of articlesDotables; track a.id) { <option [value]="a.id">{{ a.libelle }}</option> }
+                </select>
+                <input type="number" min="0" step="any" placeholder="Quantité" [(ngModel)]="d.quantite" [ngModelOptions]="{standalone: true}" aria-label="Quantité">
+                <button type="button" class="btn-primary sm" [disabled]="gesteEnCours || !d.article || !d.depot || !d.quantite" (click)="doter()">Envoyer au point</button>
+              }
+              <button type="button" class="btn-secondary sm" (click)="dotation = null">Annuler</button>
+            </div>
+          }
+          @if (suivi?.a_rapatrier) {
+            <div class="stock-form">
+              <span>À la fermeture du point : ramener le reste au dépôt</span>
+              @if (!monStock) {
+                <button type="button" class="btn-secondary sm" (click)="ouvrirDotation(); dotation = null">Choisir le dépôt</button>
+              } @else {
+                <select [(ngModel)]="depotRetour" [ngModelOptions]="{standalone: true}" aria-label="Dépôt de retour">
+                  <option value="">— Dépôt —</option>
+                  @for (depot of monStock.depots; track depot.id) { <option [value]="depot.id">{{ depot.nom }}</option> }
+                </select>
+                <button type="button" class="btn-secondary sm" [disabled]="gesteEnCours || !depotRetour" (click)="rapatrier()">Rapatrier le reste</button>
+              }
+            </div>
+          }
+        }
+        @if (demandesRecues.length) {
+          <div class="stock-demandes" role="status">
+            <strong>On vous demande du stock ({{ demandesRecues.length }})</strong>
+            @for (d of demandesRecues; track d.id) {
+              <div class="stock-form">
+                <span>« {{ d.destination_nom }} » demande <strong>{{ d.quantite }} × {{ d.item_nom }}</strong> ({{ d.demande_par_nom }})@if (d.message) { — « {{ d.message }} » }.
+                  Vous en avez {{ +d.en_stock_au_depart }}.</span>
+                <input type="number" min="1" [max]="d.quantite" step="1" [ngModel]="accordees[d.id] ?? d.quantite" (ngModelChange)="accordees[d.id] = $event"
+                       [ngModelOptions]="{standalone: true}" [attr.aria-label]="'Quantité accordée à ' + d.destination_nom">
+                <input type="text" #reponse maxlength="300" placeholder="Réponse (facultatif)">
+                <button type="button" class="btn-primary sm" [disabled]="gesteEnCours" (click)="repondre(d, 'accepter', reponse.value)">Accepter : le stock part</button>
+                <button type="button" class="btn-secondary sm" [disabled]="gesteEnCours" (click)="repondre(d, 'refuser', reponse.value)">Refuser</button>
+              </div>
+            }
+          </div>
+        }
+        @if (demandesFaites.length) {
+          <ul class="apports-list">
+            @for (d of demandesFaites; track d.id) {
+              <li>Demandé à « {{ d.source_nom }} » : {{ d.quantite }} × {{ d.item_nom }} — <strong>{{ d.statut_libelle.toLowerCase() }}</strong>@if (d.quantite_accordee) { ({{ d.quantite_accordee }} envoyé(s)) }@if (d.reponse) { — « {{ d.reponse }} » }
+                @if (d.statut === 'DEMANDEE') { <button type="button" class="btn-secondary sm" [disabled]="gesteEnCours" (click)="repondre(d, 'annuler')">Retirer ma demande</button> }</li>
+            }
+          </ul>
+        }
+        @if (journalOuvert && suivi) {
+          <ul class="apports-list">
+            @for (m of suivi.mouvements; track m.id) {
+              <li>{{ m.date_mouvement | date:'dd/MM HH:mm' }} · <strong>{{ m.type_libelle }}</strong> · {{ m.article_designation }} :
+                {{ +m.quantite > 0 ? '+' : '' }}{{ +m.quantite }} {{ m.unite }}@if (m.motif) { · {{ m.motif }} }@if (m.tiers) { · {{ m.tiers }} } · {{ m.auteur_nom }}</li>
+            } @empty { <li class="muted">Aucun mouvement sur ce point pour l'instant.</li> }
+          </ul>
+        }
+
         <app-tag-search-input
           placeholder="Chercher ou ajouter un besoin (lit, eau, nourriture...)..."
           emptyMessage="Aucun besoin existant ne correspond."
@@ -41,7 +134,12 @@
           <tbody>
             @for (entry of stocks; track entry.item) {
               <tr>
-                <td>{{ entry.item_nom }}</td>
+                <td>{{ entry.item_nom }}
+                  @if (denree(entry); as d) {
+                    <div class="muted denree">{{ d.libelle }}</div>
+                    @for (manque of d.manques; track manque) { <div class="denree-alerte" role="status">Attention : {{ manque }}.</div> }
+                  }
+                </td>
                 <td>
                   <div class="niveau-group">
                     @for (n of niveaux; track n.value) {
@@ -61,6 +159,16 @@
                     {{ entry.quantite_totale }} {{ entry.unite }}
                   } @else {
                     <span class="muted">—</span>
+                  }
+                  @if (suivi?.peut_distribuer && entry.id) {
+                    <div class="stock-gestes">
+                      @if (quantiteSuivie(entry)) {
+                        <button type="button" class="btn-secondary sm" (click)="ouvrirGeste(entry, 'distribuer')">Distribuer</button>
+
+                      }
+                      <button type="button" class="btn-secondary sm" (click)="ouvrirGeste(entry, 'compter')" title="Dire ce que vous avez compté : l'écart est tracé">Compter</button>
+                      <button type="button" class="btn-secondary sm" (click)="ouvrirGeste(entry, 'transferer')" title="Demander à un autre point de vous en envoyer : il accepte ou refuse, rien ne part avant">Demander à un autre point</button>
+                    </div>
                   }
                 </td>
                 <td>
@@ -82,6 +190,32 @@
                   </button>
                 </td>
               </tr>
+              @if (geste?.item === entry.item) {
+                <tr class="apports-row">
+                  <td colspan="6">
+                    <div class="stock-form">
+                      <strong>{{ geste!.type === 'distribuer' ? 'Distribuer' : geste!.type === 'transferer' ? 'Demander à un autre point' : 'Inventaire' }} — {{ entry.item_nom }}</strong>
+                      @if (geste!.type === 'transferer') {
+                        <select [(ngModel)]="geste!.destination" [ngModelOptions]="{standalone: true}" aria-label="Point à qui demander">
+                          <option value="">— À quel point demander —</option>
+                          @for (p of autresPoints; track p.id) { <option [value]="p.id">{{ p.nom }}</option> }
+                        </select>
+                      }
+                      <input type="number" min="0" step="any" [placeholder]="geste!.type === 'compter' ? 'Quantité comptée' : geste!.type === 'transferer' ? 'Quantité demandée' : 'Quantité distribuée'"
+                             [(ngModel)]="geste!.quantite" [ngModelOptions]="{standalone: true}" aria-label="Quantité">
+                      @if (geste!.type === 'transferer') {
+                        <input type="text" maxlength="300" placeholder="Un mot pour eux (facultatif)" [(ngModel)]="geste!.motif" [ngModelOptions]="{standalone: true}">
+                      }
+                      @if (geste!.type === 'distribuer') {
+                        <input type="text" maxlength="200" placeholder="À qui (facultatif)" [(ngModel)]="geste!.tiers" [ngModelOptions]="{standalone: true}">
+                        <input type="text" maxlength="300" placeholder="Pour quoi (facultatif)" [(ngModel)]="geste!.motif" [ngModelOptions]="{standalone: true}">
+                      }
+                      <button type="button" class="btn-primary sm" [disabled]="gesteEnCours || geste!.quantite === null" (click)="validerGeste()">Enregistrer</button>
+                      <button type="button" class="btn-secondary sm" (click)="geste = null">Annuler</button>
+                    </div>
+                  </td>
+                </tr>
+              }
               @if (expandedItemId === entry.item) {
                 <tr class="apports-row">
                   <td colspan="6">

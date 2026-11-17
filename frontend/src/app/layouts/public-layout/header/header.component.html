@@ -33,6 +33,7 @@
       <a routerLink="/accueil" routerLinkActive="active" (click)="closeAllMenus()">Accueil</a>
       <a routerLink="/guide" routerLinkActive="active" (click)="closeAllMenus()">Guide</a>
       <a routerLink="/carte" routerLinkActive="active" (click)="closeAllMenus()">Carte</a>
+      <a routerLink="/appels-aux-dons" routerLinkActive="active" (click)="closeAllMenus()">Appels aux dons</a>
       <!-- <a routerLink="/crises" routerLinkActive="active" (click)="closeAllMenus()">Crises</a> -->
       <!-- <a routerLink="/info" routerLinkActive="active" (click)="closeAllMenus()">Info</a> -->
     </nav>
@@ -254,6 +255,10 @@
       (click)="closeAllMenus()">
       <span class="material-icons">warning</span>
       Crises
+    </a>
+    <a routerLink="/appels-aux-dons" routerLinkActive="active" (click)="closeAllMenus()">
+      <span class="material-icons">volunteer_activism</span>
+      Appels aux dons
     </a>
     <a 
       routerLink="/info" 

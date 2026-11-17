@@ -89,10 +89,17 @@ CHAMPS_PAR_MODELE = {
 # ne remonte PAS par ce canal. C'est sans effet pour du trafic observé (il naît déjà reçu), mais
 # c'est précisément pourquoi les ordres d'envoi venus du central ont leur propre canal avec
 # accusé de réception (SatelliteViewSet.mesh_a_emettre / mesh_emis) au lieu de passer par ici.
+from .sync_stock import CHAMPS as _CHAMPS_STOCK  # noqa: E402
+
+CHAMPS_PAR_MODELE.update(_CHAMPS_STOCK)
+
 APPEND_ONLY = {
     "DossierCommentaire", "DossierHistorique", "DeclarationSecurite", "MessageMeshLog",
     "CanalMeshCore", "CanalMeshtastic", "MessageCanalMeshCore", "MessageMeshtasticLog",
     "MessageCanalMeshtastic", "AlerteMeshSOS",
+    # Le stock (17/11/2026, voir core/sync_stock.py) : un journal qui n'ajoute que des lignes, donc
+    # sans conflit possible. Dépôts et articles créés sur place remontent avec leurs mouvements.
+    "DepotStock", "ArticleStock", "MouvementStock",
 }
 MUTABLE = {"Dossier", "Mission"}
 MODELES_SYNCHRONISABLES = APPEND_ONLY | MUTABLE
@@ -111,6 +118,9 @@ def _valeur_serialisable(valeur):
 
 
 def construire_payload(instance, nom_modele):
+    from . import sync_stock
+    if nom_modele in sync_stock.CHAMPS:
+        return sync_stock.payload(instance, nom_modele)
     return {
         champ: _valeur_serialisable(getattr(instance, champ))
         for champ in CHAMPS_PAR_MODELE[nom_modele]

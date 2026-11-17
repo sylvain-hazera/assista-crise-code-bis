@@ -233,6 +233,12 @@ export const PUBLIC_ROUTES: Routes = [
         component: RecherchePersonneDetailComponent
       },
       {
+        // Avis d'appels aux dons, lisibles de tous : ce qu'il faut et ce qui reste à couvrir. S'engager
+        // passe par une institution du réseau (voir backend/core/appels_dons.py, avis_publics).
+        path: 'appels-aux-dons',
+        loadComponent: () => import('../pages/avis-dons/avis-dons.component').then(m => m.AvisDonsComponent)
+      },
+      {
         // Lien personnel reçu par courriel quand la clôture d'une crise est proposée : sans
         // compte, le rapport part à l'adresse du lien (core/cloture_crise.py).
         path: 'rapport/:jeton',

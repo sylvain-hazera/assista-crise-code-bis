@@ -2369,6 +2369,200 @@ adresses de la commune viennent aussi des habitations référencées pour une cr
 d'un relevé simple (`POST /api/personnes-vulnerables/relever-adresses/`). Une adresse non
 simulée ne dit rien de l'eau — on n'affiche pas « au sec ».
 
+**Gestion des stocks** (17/11/2026, `core/stocks.py`, `core/stocks_points.py`, `core/views_stocks.py`,
+migration 0312, page `/admin/stocks`, menu « Stocks »). Pour tenir le stock permanent d'une
+institution sans outil extérieur, et pour que le stock des points d'accueil soit un vrai stock.
+
+- **Trois modèles** : `DepotStock` (un lieu : local, armoire, véhicule — ou le stock d'un point
+  d'accueil, champ `point`), `ArticleStock` (référence unique par institution, unité, seuil
+  d'alerte, coût moyen pondéré indicatif, lien facultatif vers le catalogue des besoins),
+  `MouvementStock` (journal : entrée, sortie, transfert, inventaire ; lot et péremption
+  facultatifs ; tiers chiffré ; crise, mission, équipe).
+- **Le stock ne se saisit pas, il se déduit** : la quantité est la somme des mouvements. Le
+  journal ne se modifie ni ne se supprime (405) ; une sortie ne rend jamais un stock négatif ;
+  un inventaire dit ce qu'on a compté et l'écart est calculé. Un article ou un dépôt qui a des
+  mouvements se désactive, ne se supprime pas.
+- **API** : `/api/stocks/depots/`, `/api/stocks/articles/`, `/api/stocks/mouvements/`
+  (`quantite` toujours positive ; `TRANSFERT` avec `depot_destination`), `GET /api/stocks/etat/`
+  (quantités par dépôt, alertes de seuil, lots périmés ou à moins de 30 jours, valeur ;
+  `?format_fichier=csv` pour un tableur), `POST /api/stocks/import/` (reprise d'un export
+  Dolibarr ou d'un tableur ; `simuler=1` vérifie sans écrire ; les quantités sont posées par
+  inventaire, rejouer le fichier ne double rien). Acteurs institutionnels, chacun sur le stock
+  de son institution.
+- **Points d'accueil** (`/api/stocks/points/<point>/[doter|recevoir|distribuer|compter|rapatrier]/`,
+  fenêtre « Besoins & stocks » du point). Avant, un point avait une jauge à la main et des
+  apports comptés à l'entrée seulement ; « demander un transfert » n'envoyait qu'un courriel.
+  Désormais : on **dote** le point depuis un dépôt (transfert réel), on y **reçoit** (tout
+  apport tracé entre au journal, les apports antérieurs sont repris à la première occasion),
+  on y **distribue** (les lots qui périment d'abord partent d'abord), on **compte**, on
+  **rapatrie** le reste à la fermeture. La ligne de stock du point (`MaterielPoint`) suit : sa
+  quantité vient du journal ; la jauge reste un jugement de l'équipe, corrigée seulement dans
+  l'évidence (zéro = nul ; du stock sur une ligne « nulle » = OK). L'équipe du point reçoit,
+  distribue et compte ; doter et rapatrier reviennent à l'institution propriétaire du stock.
+  Un don reçu à un point appartient à l'institution qui tient le point (celle de son équipe).
+
+**Stock hors connexion sur les satellites** (17/11/2026, `core/sync_stock.py`, migration 0319).
+Un point d'accueil coupé d'Internet reçoit, distribue et compte sur son satellite (profil
+complet). Le journal de stock n'ajoute que des lignes, jamais retouchées (un transfert ou un
+inventaire est inscrit sous son vrai type dès sa création) : il n'y a donc **aucun conflit** à
+arbitrer.
+
+- **Montant** : dépôts et articles créés sur place et tous les mouvements passent par la file de
+  `core/sync_outbox.py` (`DepotStock`, `ArticleStock`, `MouvementStock` en APPEND_ONLY), rejoués
+  au central dans l'ordre de création. Le central refuse le stock d'une autre institution que
+  celle du satellite, et met à jour la ligne de stock du point concerné.
+- **Descendant** : `SatelliteViewSet.donnees` rend, pour un satellite complet, les dépôts, les
+  articles et les mouvements de son institution ; `synchroniser_entrant` inscrit ce qui manque,
+  sans rien écraser et sans le refaire remonter.
+- **À savoir** : le catalogue des besoins voyage par son nom (ses identifiants diffèrent d'un
+  déploiement à l'autre) ; une fiche d'article ou de dépôt MODIFIÉE sur le satellite ne remonte
+  pas (seules les créations voyagent) ; deux sorties faites des deux côtés pendant une coupure
+  peuvent, additionnées, dépasser le stock — le total devient négatif, l'article passe en
+  alerte, un inventaire le rétablit. Réservations, dotations, appareils, commandes, prêts et
+  appels aux dons ne sont pas synchronisés : ils se tiennent au central.
+
+**Stocks, troisième volet** (17/11/2026, `core/stocks_logistique.py`, `core/views_stocks_logistique.py`,
+migration 0318, onglets « Où en a-t-on ? Réserver », « Dotations types », « Appareils »).
+
+- **Un transfert entre points se demande** (`/api/stocks/transferts/`, `accepter`, `refuser`,
+  `annuler`). Ceux qui tiennent le point d'arrivée demandent ; ceux qui tiennent le point de
+  départ acceptent, pour tout ou partie, ou refusent — ils peuvent en avoir besoin au dernier
+  moment. **C'est l'acceptation qui déplace le stock**, jamais la demande ; le transfert
+  direct n'existe plus. Les deux parties sont prévenues (site, application, courriel, Matrix).
+  Depuis le tableau comparatif d'une crise et depuis la fenêtre « Besoins & stocks » du point.
+- **Réserver** (`/api/stocks/reservations/`, `servir`, `liberer`) met du stock de côté sans le
+  sortir : il reste compté au dépôt, mais une sortie pour un autre ne peut plus le prendre
+  (`stocks.quantite_reservee`). L'état du stock dit « dont N réservés ».
+- **« On l'a ? Où ? »** (`GET /api/stocks/disponibilite/?recherche=|item=|demande=`) : pour un
+  mot, un besoin du catalogue ou une demande de matériel d'un habitant, les articles de
+  l'institution, lieu par lieu, avec ce qui est libre.
+  Sur le détail d'un dossier né d'une demande (`app-stock-pour-demande`) : deux boutons, « On
+  l'a en stock ? » puis « Réserver pour cette demande », qui partent du matériel que la demande
+  réclame et rattachent la réservation à la demande.
+- **Dotations types** (`/api/stocks/lots-types/`, `verifier`, `sortir`, `rentrer`) : sac
+  d'intervention, caisse de véhicule. Une dotation sort en entier ou pas du tout, et dit ce
+  qui manque ; au retour on dit ce qui revient.
+- **Appareils suivis à l'unité** (`/api/stocks/appareils/`, `controler`) : état, lieu, contrôle
+  périodique (libellé, périodicité, dernier, prochain). Une échéance dépassée est SIGNALÉE (ici,
+  dans le relevé d'alertes, dans le plan) et **ne bloque jamais** l'usage de l'appareil.
+- **Dans le rapport de crise** : « Matériel et dons » — ce qui a été distribué depuis le stock
+  et ce qui y est entré pour la crise, avec une valeur indicative (`stocks.bilan_de_crise`).
+  **Dans le tableau comparatif** : la quantité du journal remplace la quantité posée à la main
+  là où des mouvements existent. **Dans le plan de sauvegarde** (3.2) : le stock réel de la
+  collectivité et ses appareils, relevés au jour de l'édition.
+- **Code-barres** : un champ de la page Stocks (douchette ou saisie, puis Entrée) et la photo
+  au téléphone quand le navigateur sait la lire. Un raccourci, jamais une condition : tout se
+  fait sans, par le nom ou la référence.
+
+**Stocks : alertes poussées et inventaire d'un bloc** (17/11/2026, migration 0317).
+
+- **Alertes poussées** (`core/alertes_stock.py`, `manage.py alerter_stocks`,
+  `scripts/114/alerter-stocks.sh`, une fois par jour) : seuil franchi, lot périmé ou bientôt,
+  denrée mal rangée, prêt en retard, facture échue. Un relevé par institution, envoyé par les
+  canaux de `notifications_dons.prevenir` aux membres du bureau et à ceux qui ont enregistré
+  un mouvement dans les 90 derniers jours. **Il ne repart que s'il a changé**
+  (`AlerteStockEnvoyee` garde son empreinte), et dit une fois « plus rien à signaler » quand
+  tout est levé. Jamais la zone de démonstration.
+- **Feuille d'inventaire** (`GET /api/stocks/etat/?depot=…&format_fichier=pdf`, `&aveugle=1`
+  sans les quantités attendues, `core/stocks_pdf.py`) et **saisie d'un bloc**
+  (`/api/stocks/inventaire/` : GET les lignes à compter, POST ce qu'on a compté). Une ligne
+  laissée vide n'est ni comptée ni corrigée ; un zéro dit qu'il n'y en a plus ; une ligne
+  fausse annule toute la saisie.
+
+**Stocks, second volet** (17/11/2026, `core/stocks_echanges.py`, migration 0313, onglets « Commandes et
+factures » et « Prêts de matériel » de la page Stocks).
+
+- **Denrées** : un article dit sa `conservation` (ambiant, frais, surgelé) et sa `preparation`
+  (prêt, à réchauffer, à cuisiner ; vide = pas une denrée). Un dépôt et un point d'accueil
+  disent leurs moyens (`froid_positif`, `froid_negatif`, `cuisson`). `stocks.manques_du_lieu`
+  dit ce qui manque à un lieu pour une denrée : l'état du stock la signale « mal rangée », la
+  fenêtre du point l'affiche sur la ligne, et le mouvement d'entrée rend un `avertissement`.
+  **On signale, on ne bloque pas** : un mouvement constate ce qui s'est passé. La préparation
+  ne se juge qu'à un point (c'est là qu'on sert).
+- **Transfert entre points, et propriété** (`…/points/<point>/transferer/`). Un don reçu à un
+  point appartient à l'institution qui le tient ; transféré vers un point tenu par une autre
+  institution, il **change de mains** : il entre dans le stock de celle-ci, et le journal dit
+  de qui il vient (« passe de A à B »). Lots et péremptions suivent.
+- **Tiers** (`/api/stocks/tiers/`) : fournisseurs, donateurs, emprunteurs, prêteurs ; tout ce
+  qui les identifie est chiffré, la recherche se fait après déchiffrement.
+- **Commandes** (`/api/stocks/commandes/`, `passer`, `recevoir`, `annuler`) : brouillon →
+  commandée → reçue en partie → reçue. Numéro `CF-<année>-<rang>` par institution. Les lignes
+  se figent quand la commande part. Chaque réception crée une entrée en stock au prix de la
+  ligne (le coût moyen suit), avec lot et péremption au besoin.
+- **Factures** (`/api/stocks/factures/`, `piece`) : numéro, montants, échéance, date de
+  paiement, pièce jointe chiffrée, rattachées à un fournisseur et à une commande. **Ce n'est
+  pas une comptabilité** (cf. la décision du 28/10/2026 sur les cotisations) : une pièce
+  rangée, pas une écriture.
+- **Prêts de matériel** (`/api/stocks/prets/`, `rendre`, `fiche`) dans les deux sens :
+  `CONSENTI` (l'institution prête) ou `RECU` (on lui prête), à un particulier ou un
+  professionnel. Fiche d'état au départ, fiche au retour, photos aux deux moments
+  (`Document.pret` + `moment_pret`), retard signalé, « rendu avec réserve » si le matériel
+  revient en moins bon état ou en moindre quantité, fiche PDF avec la place des signatures.
+  Un prêt sur un article du stock le fait sortir et rentrer (ou l'inverse pour un prêt reçu) ;
+  un prêt hors stock se décrit librement et ne touche pas au journal. Un prêt ne se supprime
+  pas et ce qui a fait bouger le stock ne se retouche plus.
+
+**Appels aux dons** (17/11/2026, `core/appels_dons.py`, `core/views_dons.py`, migration 0314, page
+`/admin/appels-dons`). Après un sinistre où des familles ont tout perdu : dire précisément ce
+qu'il faut, et ne pas laisser dix institutions collecter la même chose.
+
+- **Le besoin part des foyers** (`FoyerSinistre`, `PersonneFoyer`, `BesoinFoyer`,
+  `/api/dons/foyers/`). On saisit qui compose le foyer (profil, âge, tailles — ni nom ni date
+  de naissance pour les personnes), le trousseau proposé se coche et s'ajuste. Les foyers
+  restent dans l'institution, chiffrés.
+- **Un catalogue avec ses tailles** (`appels_dons.CATALOGUE`, `GET /api/dons/catalogue/`) :
+  vêtements et chaussures par public (homme, femme, garçon, fille, bébé) et grille de tailles
+  ou de pointures, linge, puériculture, hygiène, cuisine, électroménager, mobilier, école.
+  Certaines lignes exigent du neuf (sous-vêtements, biberons, hygiène).
+- **L'appel** (`AppelAuxDons`, `BesoinDon`, `/api/dons/appels/`) porte la somme des foyers
+  (`reprendre-foyers`) et des lignes ajoutées à la main : « T-shirt, homme, L : 14 ». Brouillon,
+  puis ouvert aux autres institutions (comptes institutionnels seulement, pas le public), puis
+  clos. Une autre institution n'y lit que des quantités, le lieu de livraison et le contact.
+- **Une ligne se ferme** : `engager` (« j'en fournis 6 ») est refusé au-delà du reste à couvrir,
+  sous verrou. Le reste = voulu − reçu − promis ou en route. Un engagement sans envoi annoncé
+  passé `delai_engagement_jours` (7 par défaut) est relâché à la lecture suivante.
+- **Envoi et réception** : `annoncer-envoi` (date, transporteur, contact), puis à l'arrivée
+  `recevoir-envoi` où l'on COMPTE. Ce qui est là entre en stock (au nom de l'institution
+  donatrice) ; ce qui manque rouvre la ligne.
+- **Remise au foyer** (`foyers/<id>/remettre/`) : ce qui est remis ne manque plus, et sort du
+  stock si on dit de quel dépôt.
+
+**Appels aux dons, ajustements du 17/11/2026** (migration 0315, `core/notifications_dons.py`, page publique
+`/appels-aux-dons`).
+
+- **Remettre n'est pas couvrir.** Chaque ligne d'un foyer porte ce qu'il faut pour durer
+  (`quantite`) et ce qu'il faut tout de suite (`quantite_urgence`, la moitié par défaut). Son
+  état (`BesoinFoyer.etat`) : « à couvrir », puis « dépanné » quand le foyer a de quoi passer
+  les premiers jours, puis « couvert ». Une remise ne ferme rien ; on remet en plusieurs fois,
+  et au-delà de la quantité prévue le besoin est relevé d'autant. L'appel porte la part
+  urgente (`quantite_urgente`).
+- **Un besoin se dit pour des personnes** : « T-shirt, taille L — pour 14 hommes (56 pièces) »,
+  « Réfrigérateur — pour 3 foyers » (`appels_dons.formulation`). Une ligne de foyer = une
+  personne ; deux garçons en 8 ans font deux lignes, jamais fondues.
+- **Un mot personnel** (`message`) : « elle avait un vélo rose ». Une telle ligne garde sa
+  place à part dans l'appel. Lu de tous, avis public compris : jamais de nom.
+- **Rubriques ajoutées** : outillage et bricolage, jeux/jouets/loisirs, animaux de compagnie.
+- **Avis publics** (`GET /api/dons/avis/`, sans compte ; menu public « Appels aux dons ») : ce
+  qu'il faut, pour qui, ce qui reste à couvrir, les mots personnels. Ni contact, ni lieu de
+  livraison, ni nom d'institution engagée. Pour lancer une collecte il faut passer par une
+  institution (association, mairie…) qui rejoint le réseau, gratuitement : la page le dit et y
+  conduit.
+- **Périmètre de l'appel** (migration 0316, `portee_km`, `centre`) : 50, 100, 200 ou 500 km
+  autour du sinistre (le lieu de la crise, à défaut la commune de l'institution), ou toute la
+  France. Un appel ouvert ne s'adresse qu'aux institutions de son périmètre : les autres ne le
+  voient pas dans le réseau et ne peuvent pas s'y engager. On commence près (transport court,
+  dons vite arrivés) et l'auteur élargit si le besoin n'est pas couvert. Une institution qu'on
+  ne sait pas situer n'est pas écartée. L'avis public dit la portée.
+- **Courriels et notifications** (`notifications_dons.prevenir`) : notification du site,
+  application mobile, courriel aux couleurs de l'institution qui écrit, salon Matrix des
+  permanents de l'institution destinataire. À l'engagement et à l'annonce d'envoi : l'auteur de
+  l'appel et son courriel de contact. À la réception : ceux qui s'étaient engagés, avec l'écart
+  compté. À l'ouverture : le salon de l'institution. On écrit à des personnes précises, jamais
+  à un annuaire.
+- **Rappel et relâchement** (`manage.py rappeler_engagements_dons`,
+  `scripts/114/rappeler-engagements-dons.sh`, à planifier toutes les heures) : rappel deux
+  jours avant qu'un engagement sans envoi soit rendu aux autres, puis avis quand il l'est.
+
 **Rapports en PDF pour les assurances** (16/11/2026, `core/rapports_pdf.py`,
 `GET /api/dossiers/<id>/rapport/`, `/api/missions/<id>/rapport/`, `/api/crises/<id>/rapport/`,
 bouton « Rapport (PDF) » des trois écrans, `app-bouton-rapport`). Le rapport de mission est

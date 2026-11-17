@@ -1,0 +1,142 @@
+<div class="stocks-page sous-page">
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (vue === 'reservations') {
+    <form class="barre filtres" (ngSubmit)="chercher()">
+      <label class="large">On en a ? Où ? <input type="search" name="recherche" [(ngModel)]="recherche" placeholder="couverture, groupe électrogène, lit de camp…"></label>
+      <button type="submit" class="btn-primary">Chercher dans le stock</button>
+    </form>
+    @if (trouve; as t) {
+      @if (!t.articles.length) { <p class="message">Rien dans votre stock ne correspond à « {{ t.cherche }} ».</p> }
+      @for (a of t.articles; track a.article) {
+        <div class="fiche">
+          <h2>{{ a.designation }} <small>{{ a.reference }} — {{ nombre(a.libre) }} {{ a.unite }} de libre</small></h2>
+          @for (l of a.lieux; track l.depot) {
+            <div class="ligne">
+              <span class="large"><strong>{{ l.depot_nom }}</strong>@if (l.au_point) { (point d'accueil) } : {{ nombre(l.en_stock) }} en stock@if (+l.reserve > 0) {, dont {{ nombre(l.reserve) }} réservé(s) } —
+                <strong>{{ nombre(l.libre) }} libre(s)</strong></span>
+              @if (+l.libre > 0) {
+                <label>Mettre de côté <input type="number" min="0" [max]="+l.libre" step="any" [name]="'q' + l.depot" [(ngModel)]="saisie(a.article, l.depot).quantite"></label>
+                <label>Pour qui <input type="text" maxlength="200" [name]="'p' + l.depot" [(ngModel)]="saisie(a.article, l.depot).pour" placeholder="Mme Durand, équipe Nord…" autocomplete="off"></label>
+                <button type="button" class="btn-secondary" [disabled]="!saisie(a.article, l.depot).quantite" (click)="reserver(a.article, l.depot)">Réserver</button>
+              }
+            </div>
+          } @empty { <p class="note">Aucun en stock en ce moment.</p> }
+        </div>
+      }
+    }
+    <h2 class="titre-section">Mis de côté ({{ reservations.length }})</h2>
+    <table class="liste">
+      <thead><tr><th>Article</th><th class="num">Quantité</th><th>Où</th><th>Pour</th><th>Depuis</th><th></th></tr></thead>
+      <tbody>
+        @for (r of reservations; track r.id) {
+          <tr>
+            <td>{{ r.article_designation }}</td><td class="num">{{ nombre(r.quantite) }} <small>{{ r.unite }}</small></td><td>{{ r.depot_nom }}</td>
+            <td>{{ r.pour || r.equipe_nom || r.demande_titre }}</td><td>{{ r.date_creation | date:'dd/MM/yyyy' }}</td>
+            <td class="gestes"><button type="button" class="btn-primary" (click)="clore(r, 'servir')">Remettre</button>
+              <button type="button" class="lien" (click)="clore(r, 'liberer')">annuler</button></td>
+          </tr>
+        } @empty { <tr><td colspan="6" class="note">Rien n'est mis de côté.</td></tr> }
+      </tbody>
+    </table>
+  }
+
+  @if (vue === 'dotations') {
+    <div class="barre">
+      <button type="button" class="btn-primary" (click)="nouveauLot()"><span class="material-icons">add</span> Nouvelle dotation</button>
+      <label>Dépôt
+        <select name="depotLot" [(ngModel)]="depotLot"><option value="">— Choisir —</option>@for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }</select></label>
+    </div>
+    @if (lot; as l) {
+      <form class="fiche" (ngSubmit)="enregistrerLot()">
+        <h2>{{ l.id ? 'Modifier la dotation' : 'Nouvelle dotation' }}</h2>
+        <div class="ligne">
+          <label class="large">Nom <span class="obligatoire">*</span> <input type="text" name="nom" maxlength="120" [(ngModel)]="l.nom" placeholder="Sac d'intervention, caisse du véhicule n° 2"></label>
+          <label class="large">Précisions <input type="text" name="description" [(ngModel)]="l.description"></label>
+        </div>
+        @for (ligne of l.lignes; track $index) {
+          <div class="ligne">
+            <label class="large">Article <select [name]="'art' + $index" [(ngModel)]="ligne.article"><option value="">— Choisir —</option>
+              @for (a of articles; track a.id) { <option [value]="a.id">{{ a.designation }} ({{ a.reference }})</option> }</select></label>
+            <label>Quantité <input type="number" min="0" step="any" [name]="'qte' + $index" [(ngModel)]="ligne.quantite"></label>
+            <button type="button" class="lien" [disabled]="l.lignes.length < 2" (click)="l.lignes.splice($index, 1)">retirer</button>
+          </div>
+        }
+        <div class="actions">
+          <button type="button" class="btn-secondary" (click)="l.lignes.push({ article: '', quantite: 1 })">Ajouter une ligne</button>
+          <button type="submit" class="btn-primary" [disabled]="!lotComplet || envoi">Enregistrer</button>
+          <button type="button" class="btn-secondary" (click)="lot = null">Annuler</button>
+        </div>
+      </form>
+    }
+    @if (verification; as v) {
+      <div class="fiche">
+        <h2>« {{ v.lot.nom }} » — {{ v.resultat.complet ? 'complète dans ce dépôt' : 'incomplète dans ce dépôt' }}</h2>
+        <table class="liste"><thead><tr><th>Article</th><th class="num">Il faut</th><th class="num">Libre</th><th class="num">Manque</th></tr></thead>
+          <tbody>@for (l of v.resultat.lignes; track l.article) {
+            <tr><td>{{ l.designation }}</td><td class="num">{{ nombre(l.requis) }}</td><td class="num">{{ nombre(l.libre) }}</td>
+              <td class="num"><strong [class.bas]="+l.manque > 0">{{ +l.manque > 0 ? nombre(l.manque) : '—' }}</strong></td></tr> }</tbody></table>
+        <p class="note">Une dotation sort en entier ou pas du tout : un sac incomplet qui part sans qu'on le sache est pire qu'un sac qui attend.</p>
+      </div>
+    }
+    <table class="liste">
+      <thead><tr><th>Dotation</th><th>Contenu</th><th></th></tr></thead>
+      <tbody>
+        @for (l of lots; track l.id) {
+          <tr>
+            <td>{{ l.nom }}<small>{{ l.description }}</small></td>
+            <td>@for (x of l.lignes; track x.article) { <div>{{ nombre(x.quantite) }} {{ x.unite }} — {{ x.designation }}</div> }</td>
+            <td class="gestes">
+              <button type="button" class="btn-secondary" (click)="verifier(l)">Vérifier</button>
+              <button type="button" class="btn-primary" (click)="gesteLot(l, 'sortir')">Sortir</button>
+              <button type="button" class="btn-secondary" (click)="gesteLot(l, 'rentrer')">Rentrer</button>
+              <button type="button" class="lien" (click)="modifierLot(l)">modifier</button>
+            </td>
+          </tr>
+        } @empty { <tr><td colspan="3" class="note">Aucune dotation type. Composez-en une : sac d'intervention, caisse de véhicule, kit d'accueil.</td></tr> }
+      </tbody>
+    </table>
+  }
+
+  @if (vue === 'appareils') {
+    @if (!appareil) { <div class="barre"><button type="button" class="btn-primary" (click)="nouvelAppareil()"><span class="material-icons">add</span> Nouvel appareil</button></div> }
+    @if (appareil; as a) {
+      <form class="fiche" (ngSubmit)="enregistrerAppareil()">
+        <h2>{{ a.id ? 'Modifier l’appareil' : 'Nouvel appareil suivi' }}</h2>
+        <div class="ligne">
+          <label class="large">Appareil <span class="obligatoire">*</span> <input type="text" name="designation" maxlength="200" [(ngModel)]="a.designation" placeholder="Groupe électrogène 5 kVA"></label>
+          <label>Numéro <input type="text" name="numero" maxlength="100" [(ngModel)]="a.numero" placeholder="série, inventaire, immatriculation"></label>
+          <label>État <select name="etat" [(ngModel)]="a.etat"><option value="EN_SERVICE">En service</option><option value="EN_PANNE">En panne</option><option value="REFORME">Réformé</option></select></label>
+          <label>Rangé à <select name="depot" [(ngModel)]="a.depot"><option [ngValue]="null">—</option>@for (d of depots; track d.id) { <option [value]="d.id">{{ d.nom }}</option> }</select></label>
+        </div>
+        <div class="ligne">
+          <label class="large">Contrôle périodique <input type="text" name="controle_libelle" maxlength="120" [(ngModel)]="a.controle_libelle" placeholder="Révision annuelle, vérification de l'extincteur…"></label>
+          <label>Tous les (mois) <input type="number" name="periodicite" min="1" max="120" [(ngModel)]="a.controle_periodicite_mois" placeholder="aucun"></label>
+          <label>Dernier contrôle <input type="date" name="dernier" [(ngModel)]="a.controle_dernier_le"></label>
+        </div>
+        <p class="note">L'échéance d'un contrôle est signalée ; elle n'empêche jamais de se servir de l'appareil.</p>
+        <div class="actions"><button type="submit" class="btn-primary" [disabled]="envoi || !a.designation?.trim()">Enregistrer</button>
+          <button type="button" class="btn-secondary" (click)="appareil = null">Annuler</button></div>
+      </form>
+    }
+    <table class="liste">
+      <thead><tr><th>Appareil</th><th>État</th><th>Où</th><th>Contrôle</th><th></th></tr></thead>
+      <tbody>
+        @for (a of appareils; track a.id) {
+          <tr [class.inactif]="a.etat === 'REFORME'">
+            <td><button type="button" class="lien" (click)="modifierAppareil(a)">{{ a.designation }}</button><small>{{ a.numero }}</small></td>
+            <td>{{ a.etat_libelle }}@if (a.etat === 'EN_PANNE') { <span class="pastille rouge">en panne</span> }</td>
+            <td>{{ a.depot_nom }}</td>
+            <td>{{ a.controle_libelle }}
+              @if (a.controle) { <span class="pastille" [class.rouge]="a.controle === 'en_retard'" [class.orange]="a.controle === 'bientot'" [class.verte]="a.controle === 'a_jour'">{{ libelleControle(a) }}</span> }
+              @if (a.controle_prochain_le) { <small>prochain : {{ a.controle_prochain_le | date:'dd/MM/yyyy' }}</small> } @else { <small>{{ libelleControle(a) }}</small> }</td>
+            <td class="gestes">@if (a.controle_periodicite_mois) {
+              <button type="button" class="btn-secondary" (click)="controler(a, true)">Contrôle fait</button>
+              <button type="button" class="lien" (click)="controler(a, false)">fait, à reprendre</button> }</td>
+          </tr>
+        } @empty { <tr><td colspan="5" class="note">Aucun appareil suivi à l'unité.</td></tr> }
+      </tbody>
+    </table>
+  }
+</div>
