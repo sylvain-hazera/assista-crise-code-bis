@@ -27,8 +27,12 @@ RUN chmod +x /entrypoint.sh
 # Le point de montage /app/media est de toute façon écrasé par le bind mount hôte au
 # démarrage : son appartenance ne dépend pas de cette commande, elle doit être gérée
 # côté hôte séparément.
+# `mkdir -p /app/media` : le dossier n'est PAS dans le dépôt (.gitignore). Sans lui dans
+# l'image, un volume nommé monté là est créé en root:root et le serveur ne peut rien y écrire
+# (constaté le 17/11/2026 sur un satellite installé depuis un clone).
 RUN groupadd -g 10001 appuser \
     && useradd -u 10001 -g appuser -M -s /usr/sbin/nologin appuser \
+    && mkdir -p /app/media \
     && chown -R appuser:appuser /app \
     # Dossier partagé avec le conteneur du broker MQTT (settings.MQTT_COMPTES_DIR) : Django y
     # écrit `passwd` et `acl`, le broker les lit. Créé ICI, avec ses droits, parce qu'un volume

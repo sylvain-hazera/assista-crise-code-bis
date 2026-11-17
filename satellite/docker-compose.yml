@@ -323,6 +323,8 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+      preparer-media:
+        condition: service_completed_successfully
     # « Prêt » = migrations appliquées et API qui répond : sync-sortant/sync-entrant attendent
     # ce signal (voir leur `entrypoint`). Délai de démarrage large : à la première installation
     # les migrations prennent plusieurs minutes, sur un Raspberry Pi davantage.
@@ -475,6 +477,23 @@ services:
   # à relancer manuellement (`docker compose run --rm telecharger-tuiles <dép> --forcer`) pour régénérer les
   # tuiles (changement de département, mise à jour du fond de carte). Voir
   # telecharger_tuiles.py — département + limitrophes, pas juste la commune.
+  # Rend le dossier des fichiers au compte du serveur (10001), avant chaque démarrage.
+  #
+  # Constaté le 17/11/2026 sur un satellite installé depuis un clone : `backend/media/` n'est
+  # pas dans le dépôt, donc absent de l'image ; Docker créait alors le volume en root:root et
+  # le serveur, qui ne tourne pas en root, ne pouvait rien y écrire. La migration 0199 (qui y
+  # pose un logo) échouait, et le serveur redémarrait en boucle : « à jour et échoué ».
+  # L'image corrige cela pour les volumes NEUFS ; ce service répare ceux qui existent déjà.
+  # Image de la base : déjà présente sur la machine, rien à télécharger hors ligne.
+  preparer-media:
+    image: postgis/postgis:15-3.3
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R 10001:10001 /app/media"]
+    volumes:
+      - media_volume:/app/media
+    restart: "no"
+    profiles: ["full"]
+
   telecharger-tuiles:
     build:
       context: .
