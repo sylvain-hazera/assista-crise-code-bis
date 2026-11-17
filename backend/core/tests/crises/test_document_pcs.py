@@ -89,7 +89,8 @@ class TestRassembler:
         assert dispositif["description"] == "Évacuation du quartier bas."
         assert dispositif["missions"][0]["description"] == "Prendre les clés en mairie, allumer le chauffage."
         assert contenu["points"][0]["capacite"] == 120
-        assert {m["partie"] for m in contenu["manques"]} == {"Enjeux", "Zones"}
+        # Le gymnase est au plan et la simulation n'a pas tourné : on ne sait pas si l'eau l'atteint.
+        assert {m["partie"] for m in contenu["manques"]} == {"Enjeux", "Enjeux exposés", "Zones"}
 
     def test_un_plan_vide_dit_partie_par_partie_ce_qui_manque_et_ou_le_saisir(self, mairie):
         contenu = document_pcs.rassembler(mairie, "PROD")
@@ -187,7 +188,7 @@ class TestDossier:
         assert etat["arrete_numero"] == "2026-014"
         assert etat["contenu"]["dispositifs"] == 1 and etat["contenu"]["missions_types"] == 1
         assert etat["contenu"]["interlocuteurs"] == 3
-        assert [m["partie"] for m in etat["manques"]] == ["Enjeux", "Zones"]
+        assert [m["partie"] for m in etat["manques"]] == ["Enjeux", "Enjeux exposés", "Zones"]
 
     def test_chaque_paragraphe_du_plan_a_son_ecran_son_utilite_et_son_etat(self, client, mairie):
         """La table des matières du plan : un paragraphe sans écran ne se remplit pas, et un
@@ -497,3 +498,106 @@ class TestOrganigrammeEtEquipes:
 
         assert reponse.status_code == 200
         assert Team.objects.filter(pk=reponse.data["equipe_id"], name="Cellule de crise — Crue du Gier").exists()
+
+
+@pytest.mark.django_db
+class TestEnjeuxExposes:
+    """Ce que l'eau atteint, et à partir de quel niveau : les enjeux du plan croisés avec la
+    simulation d'inondation. Des hypothèses, que l'écran et le document disent telles."""
+
+    def _simulation(self):
+        """Deux niveaux d'eau : à 1 m un petit carré est inondé, à 2 m un carré plus large."""
+        from django.contrib.gis.geos import MultiPolygon, Polygon
+
+        from core.models import PalierInondationSimule
+
+        def carre(demi):
+            return MultiPolygon(Polygon.from_bbox((4.5 - demi, 45.4 - demi, 4.5 + demi, 45.4 + demi)), srid=4326)
+        PalierInondationSimule.objects.create(commune_code="42207", niveau_metres=1.0, polygone=carre(0.001))
+        PalierInondationSimule.objects.create(commune_code="42207", niveau_metres=2.0, polygone=carre(0.003))
+
+    def _site(self, mairie, nom, longitude=None, latitude=None):
+        from django.contrib.gis.geos import Point
+
+        from core.models import CategorieSiteSensible, SiteSensible, SourceSiteSensible, StatutSiteSensible, SuiviSiteSensible
+
+        site = SiteSensible.objects.create(
+            commune_code="42207", commune_nom="Saint-Chamond", source=SourceSiteSensible.values[0], source_id=nom,
+            categorie=CategorieSiteSensible.ENSEIGNEMENT, nom=nom, adresse="1 rue du Test", est_enjeu=True,
+            location=Point(longitude, latitude, srid=4326) if longitude is not None else None)
+        SuiviSiteSensible.objects.create(site=site, institution=mairie, statut=StatutSiteSensible.RETENU)
+        return site
+
+    def test_chaque_enjeu_dit_a_partir_de_quel_niveau_leau_latteint(self, client, mairie):
+        from django.contrib.gis.geos import Point
+
+        self._simulation()
+        self._site(mairie, "École du bas", 4.5005, 45.4005)       # dans le petit carré : dès 1 m
+        self._site(mairie, "Collège", 4.502, 45.402)              # dans le grand seulement : dès 2 m
+        self._site(mairie, "Crèche du haut", 4.6, 45.5)           # au sec
+        self._site(mairie, "Site sans coordonnées")
+        plan = Plan.objects.create(institution=mairie, nom="Dispositif inondation")
+        type_point = PointType.objects.get_or_create(code="CARE_TEST", defaults={"libelle": "Centre d'accueil"})[0]
+        plan.points.add(PointOperationnel.objects.create(nom="Gymnase", type=type_point, capacite_accueil=120,
+                                                         location=Point(4.5002, 45.4002, srid=4326)))
+
+        reponse = client.get(URL + "enjeux-exposes/")
+
+        assert reponse.status_code == 200 and reponse.data["simulation_disponible"] is True
+        assert reponse.data["niveaux_m"] == [1.0, 2.0] and reponse.data["atteints"] == 3 and reponse.data["non_situes"] == 1
+        par_nom = {e["nom"]: e for e in reponse.data["enjeux"]}
+        assert par_nom["École du bas"]["seuil_m"] == 1.0 and par_nom["Collège"]["seuil_m"] == 2.0
+        assert par_nom["Crèche du haut"]["seuil_m"] is None and par_nom["Crèche du haut"]["situe"] is True
+        # Un lieu d'accueil dans l'eau dès 1 m : c'est ce qu'il faut savoir avant d'y envoyer du monde.
+        assert par_nom["Gymnase"]["seuil_m"] == 1.0 and par_nom["Gymnase"]["nature"] == "Lieu d'accueil ou point"
+        # Du plus exposé au moins exposé, les non situés à la fin.
+        assert [e["nom"] for e in reponse.data["enjeux"]][-2:] == ["Crèche du haut", "Site sans coordonnées"]
+
+    def test_le_document_du_plan_reprend_les_enjeux_exposes_et_le_plan_signale_une_simulation_absente(self, client, mairie):
+        self._site(mairie, "École du bas", 4.5005, 45.4005)
+
+        sans = client.get(URL).data
+        assert "Enjeux exposés" in [m["partie"] for m in sans["manques"]]
+        assert next(p for p in sans["paragraphes"] if p["titre"].startswith("Enjeux exposés"))["etat"] == "VIDE"
+
+        self._simulation()
+        avec = client.get(URL).data
+        assert "Enjeux exposés" not in [m["partie"] for m in avec["manques"]]
+        contenu = document_pcs.rassembler(mairie, "PROD")
+        assert contenu["exposition"]["enjeux"][0]["seuil_m"] == 1.0
+        assert document_pcs.generer_pdf(contenu, edite_par="Agent d'essai").startswith(b"%PDF")
+
+    def test_le_niveau_deau_de_chaque_fiche_du_registre_nest_rendu_quaux_personnes_habilitees(self, mairie, create_user):
+        from django.contrib.gis.geos import Point
+
+        from core.models import AdresseSimuleeInondation, HabilitationRegistreVulnerables, QualiteDesignataire, VERSION_ENGAGEMENT_SECRET_REGISTRE
+
+        for libelle, seuil in (("3 Rue du Gier 42400 Saint-Chamond", 1.5), ("8 Rue Haute 42400 Saint-Chamond", None)):
+            # Altitude renseignée : l'adresse a été simulée (sans elle, « pas de niveau » voudrait dire « on ne sait pas »).
+            AdresseSimuleeInondation.objects.create(commune_code="42207", adresse=libelle, seuil_inondation_metres=seuil, altitude_metres=380.0,
+                                                    location=Point(4.5, 45.4, srid=4326))
+        fiches = {nom: PersonneVulnerable.objects.create(
+            institution_declarante=mairie, commune_code="42207", nom=nom, prenom="Jeanne", adresse=adresse,
+            mode_consentement="VOLONTAIRE") for nom, adresse in
+            (("Bas", "3, rue du Gier"), ("Haut", "8 rue Haute, 42400 Saint-Chamond"), ("Ailleurs", "12 impasse Introuvable"))}
+        teneur = create_user(username="teneur-eau@test.fr", email="teneur-eau@test.fr", type="AUT_LOCALE")
+        teneur.institution = mairie
+        teneur.engagement_secret_registre_le = timezone.now()
+        teneur.engagement_secret_registre_version = VERSION_ENGAGEMENT_SECRET_REGISTRE
+        teneur.save()
+        HabilitationRegistreVulnerables.objects.create(institution=mairie, utilisateur=teneur, accordee_par=teneur,
+                                                       qualite_accordant=QualiteDesignataire.MAIRE, attestation_accordant=True)
+        habilite, simple = APIClient(), APIClient()
+        habilite.force_authenticate(user=teneur)
+        autre = create_user(username="agent-eau@test.fr", email="agent-eau@test.fr", type="AUT_LOCALE")
+        autre.institution = mairie
+        autre.save()
+        simple.force_authenticate(user=autre)
+
+        reponse = habilite.get("/api/personnes-vulnerables/exposition/")
+
+        assert reponse.status_code == 200 and reponse.data["non_situees"] == 1
+        assert reponse.data["seuils"] == {str(fiches["Bas"].id): 1.5, str(fiches["Haut"].id): None}
+        assert simple.get("/api/personnes-vulnerables/exposition/").status_code == 403
+        # … et le registre imprimé le porte, pour savoir chez qui aller en premier.
+        assert habilite.get("/api/personnes-vulnerables/pdf/").content.startswith(b"%PDF")

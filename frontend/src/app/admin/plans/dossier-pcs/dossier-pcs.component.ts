@@ -100,8 +100,13 @@ export class DossierPcsComponent implements OnInit {
     });
   }
 
+  /** Cartes d'annexe sur le Plan IGN (une image par carte, demandée à l'IGN pour la seule
+   * emprise de la commune) plutôt qu'en schéma sans fond. Décoché par défaut : le schéma
+   * n'attend aucun service extérieur au moment d'imprimer. */
+  fondIgn = false;
+
   editer(): void {
-    this.telecharger(this.service.document(), 'plan-communal-de-sauvegarde');
+    this.telecharger(this.service.document(this.fondIgn), 'plan-communal-de-sauvegarde');
   }
 
   /** Le DICRIM : ce que les habitants doivent savoir des risques. Public, sans aucun nom. */

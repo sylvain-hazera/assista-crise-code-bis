@@ -39,10 +39,12 @@ type ModalView = 'none' | 'detail';
 
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
+import { BoutonRapportComponent } from '../../shared/components/common/bouton-rapport/bouton-rapport.component';
+
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
+  imports: [BoutonRapportComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -505,9 +507,43 @@ export class CrisesComponent implements OnInit {
       .some(i => i.responsable === me.id && i.actif);
   }
 
+  /** Proposer la clôture : la crise sera close sept jours plus tard, le temps que chacun
+   * récupère son rapport. C'est le chemin ordinaire ; la clôture immédiate reste possible. */
+  proposerFermeture(): void {
+    const crise = this.selectedCrisis;
+    if (!crise) return;
+    if (!confirm(`Proposer la clôture de « ${crise.name} » ?\n\nLa crise sera close dans 7 jours. Les personnes qui ont bénéficié d'un dossier `
+      + `ou y ont participé reçoivent un courriel avec un lien pour se faire envoyer leur rapport. Vous pouvez annuler d'ici là.`)) return;
+    this.crisisService.proposerFermeture(crise.id).subscribe({
+      next: (r) => {
+        this.majCrise({ fermeture_proposee_le: r.fermeture_proposee_le, fermeture_prevue_le: r.fermeture_prevue_le });
+        this.showSuccess(`Clôture proposée : ${r.personnes_prevenues} personne(s) prévenue(s)`
+          + (r.courriels_en_echec ? `, ${r.courriels_en_echec} courriel(s) non parti(s)` : '') + '. Pensez à éditer le rapport de crise.');
+      },
+      error: (err) => this.showError(err.error?.error || 'La clôture n’a pas pu être proposée.'),
+    });
+  }
+
+  annulerFermeture(): void {
+    const crise = this.selectedCrisis;
+    if (!crise || !confirm(`Annuler la clôture proposée de « ${crise.name} » ? La crise continue.`)) return;
+    this.crisisService.annulerFermeture(crise.id).subscribe({
+      next: () => { this.majCrise({ fermeture_proposee_le: null, fermeture_prevue_le: null }); this.showSuccess('Proposition de clôture annulée.'); },
+      error: (err) => this.showError(err.error?.error || 'La proposition n’a pas pu être annulée.'),
+    });
+  }
+
+  private majCrise(champs: Partial<Crisis>): void {
+    this.selectedCrisis = { ...this.selectedCrisis!, ...champs };
+    const idx = this.crises.findIndex(c => c.id === this.selectedCrisis!.id);
+    if (idx !== -1) this.crises[idx] = this.selectedCrisis!;
+  }
+
   cloturerCrisis(): void {
     if (!this.selectedCrisis) return;
-    if (!confirm(`Clôturer la crise « ${this.selectedCrisis.name} » ? Plus aucune institution, point ou délégation ne pourra y être ajouté.`)) {
+    if (!confirm(`Clôturer TOUT DE SUITE la crise « ${this.selectedCrisis.name} » ? Plus aucune institution, point ou délégation ne pourra y être ajouté.\n\n`
+      + `Les rapports gardés sur le serveur et les liens envoyés aux habitants sont effacés à la clôture : éditez d'abord le rapport de crise. `
+      + `Pour laisser à chacun le temps de récupérer le sien, préférez « Proposer la clôture » (7 jours).`)) {
       return;
     }
     this.crisisService.cloturer(this.selectedCrisis.id).subscribe({
@@ -515,7 +551,7 @@ export class CrisesComponent implements OnInit {
         this.selectedCrisis = { ...this.selectedCrisis!, is_open: false, end_date: new Date().toISOString() };
         const idx = this.crises.findIndex(c => c.id === this.selectedCrisis!.id);
         if (idx !== -1) this.crises[idx] = this.selectedCrisis!;
-        this.showSuccess('Crise clôturée.');
+        this.showSuccess('Crise clôturée. Les rapports gardés sur le serveur ont été effacés.');
       },
       error: (err) => this.showError(err.error?.error || 'Impossible de clôturer cette crise.'),
     });

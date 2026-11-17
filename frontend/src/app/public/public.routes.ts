@@ -233,6 +233,13 @@ export const PUBLIC_ROUTES: Routes = [
         component: RecherchePersonneDetailComponent
       },
       {
+        // Lien personnel reçu par courriel quand la clôture d'une crise est proposée : sans
+        // compte, le rapport part à l'adresse du lien (core/cloture_crise.py).
+        path: 'rapport/:jeton',
+        loadComponent: () => import('../pages/recevoir-rapport/recevoir-rapport.component')
+          .then(m => m.RecevoirRapportComponent)
+      },
+      {
         // Public (carte + dépôt de rattachement) -- les actions de gestion sont conditionnées
         // côté backend (voir Habitation.peut_gerer), pas ici : un visiteur sans délégation voit
         // la page mais aucun bouton d'action ne fonctionne pour lui.

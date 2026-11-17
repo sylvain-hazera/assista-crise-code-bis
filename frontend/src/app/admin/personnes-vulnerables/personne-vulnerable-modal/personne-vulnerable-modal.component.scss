@@ -127,3 +127,13 @@
   cursor: pointer;
   color: var(--ac-text-muted, #6b7280);
 }
+
+.propositions-adresse { list-style: none; margin: .25rem 0 0; padding: 0; border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px; max-height: 13rem; overflow-y: auto;
+  li + li { border-top: 1px solid var(--ac-border, #e5e7eb); }
+  button { display: block; width: 100%; text-align: left; padding: .45rem .6rem; background: none; border: 0; font: inherit; cursor: pointer;
+    &:hover, &:focus-visible { background: var(--ac-blue-bg, #eff6ff); }
+  }
+}
+.adresse-rattachee, .adresse-libre { display: flex; gap: .3rem; align-items: center; margin-top: .3rem; font-size: .82rem; }
+.adresse-rattachee { color: #15803d; .material-icons { font-size: 1rem; } }
+.adresse-libre { color: var(--ac-text-muted, #6b7280); }

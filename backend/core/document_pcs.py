@@ -277,6 +277,11 @@ def rassembler(institution, environment, nommer=None) -> dict:
         "dispositifs": dispositifs, "organisation": organisation, "annuaire": annuaire,
         "equipes": equipes, "points": points,
     }
+    from .enjeux_exposes import exposes
+    contenu["exposition"] = exposes(institution, environment)
+    # Les planches ne servent qu'au document : `rassembler` est aussi appelé à chaque
+    # affichage de l'écran du plan, qui n'a pas à payer leur préparation.
+    contenu["cartes"] = None
     contenu["manques"] = _manques(contenu, categories_presentes)
     return contenu
 
@@ -287,6 +292,7 @@ _ROUTES = (
     ("Risques de la commune", "/admin/pcs-risques"),
     ("Annuaire de crise", "/admin/pcs-annuaire"),
     ("Zones", "/admin/zones"),
+    ("Simulation inondation", "/admin/simulation-inondation"),
     ("Poste de commandement", "/admin/pcs-organisation"),
     ("Alerte de la population", "/admin/pcs-alerte"),
     ("Exercices", "/admin/pcs-exercices"),
@@ -304,6 +310,8 @@ PARAGRAPHES = (
      "Rattachés aux dispositifs qu'ils déclenchent ; repris dans le document et l'information des habitants."),
     ("1.2", "Sites sensibles", "/admin/sites-sensibles", "sites_sensibles",
      "Les enjeux à protéger et les sites ressources, vérifiés par la commune avant d'entrer au plan."),
+    ("1.3", "Enjeux exposés à l'inondation", "/admin/pcs-enjeux-exposes", "enjeux_exposes",
+     "Dit, pour chaque niveau d'eau, quels sites sensibles et quels lieux d'accueil seraient atteints : à savoir avant d'y envoyer du monde."),
     ("1.2", "Personnes vulnérables", "/admin/personnes-vulnerables", None,
      "Le registre, rangé par quartier, s'édite sur place par les personnes désignées par le maire."),
     ("2.1", "Arrêté, poste de commandement, activation", "/admin/plans", "administratif",
@@ -365,6 +373,10 @@ def _manques(c: dict, categories_presentes: set) -> list[dict]:
     if not c["enjeux"]:
         manque("Enjeux", "Aucun site sensible n'est retenu au plan (écoles, établissements de santé, sites industriels…).",
                "Sites sensibles")
+    exposition = c.get("exposition") or {}
+    if exposition.get("enjeux") and not exposition.get("simulation_disponible"):
+        manque("Enjeux exposés", "La simulation d'inondation n'a pas été lancée pour la commune : on ne sait pas "
+               "quels sites et quels lieux d'accueil l'eau atteindrait.", "Simulation inondation")
     if not dossier["modalites_activation"]:
         manque("Activation", "Les modalités d'activation du plan ne sont pas rédigées (qui déclenche, sur quels signaux).",
                "Mon plan de sauvegarde")
@@ -523,6 +535,43 @@ def _fiches(groupes, vide, ou):
     return blocs
 
 
+def _niveau(metres) -> str:
+    return f"{metres:g} m".replace(".", ",")
+
+
+def _partie_exposition(c):
+    """1.3 — ce que l'eau atteint, d'après la simulation (core/enjeux_exposes.py)."""
+    e = c.get("exposition") or {}
+    blocs = [_p("1.3 — Enjeux exposés à l'inondation (simulation)", _H2)]
+    if not e.get("enjeux"):
+        return blocs + [_p("Aucun site sensible ni lieu d'accueil n'est encore au plan : rien à croiser avec la simulation.", _NOTE)]
+    if not e.get("simulation_disponible"):
+        return blocs + [_vide("La simulation d'inondation n'a pas été lancée pour la commune.", "Simulation inondation")]
+    blocs.append(_p(
+        f"Hypothèses, pas prévisions : la simulation étend un niveau d'eau sur le relief (jusqu'à {_niveau(e['niveau_max_m'])}) ; "
+        "elle ne tient compte ni des digues, ni des réseaux, ni du courant. Elle dit où aller vérifier sur place.", _NOTE))
+    lignes = []
+    for enjeu in e["enjeux"]:
+        if not enjeu["situe"]:
+            seuil = "non situé"
+        elif enjeu["seuil_m"] is None:
+            seuil = f"au sec jusqu'à {_niveau(e['niveau_max_m'])}"
+        else:
+            seuil = f"atteint à partir de {_niveau(enjeu['seuil_m'])}"
+        lignes.append((enjeu["nom"], enjeu["nature"], enjeu["categorie"], enjeu["effectif"] or "", seuil,
+                       enjeu.get("zone_officielle") or ""))
+    blocs.append(_tableau(("Désignation", "Nature", "Catégorie", "Effectif ou capacité", "Niveau d'eau (simulation)",
+                           "Zone inondable officielle"), lignes, (44, 26, 30, 20, 30, 30)))
+    officiel = e.get("zonages_officiels") or {}
+    if not officiel.get("releve"):
+        blocs.append(_p("Les zones inondables officielles de l'État (Géorisques) n'ont pas été relevées pour la commune : "
+                        "la dernière colonne est vide.", _NOTE))
+    elif not any(couche["presente"] for couche in officiel["couches"]):
+        blocs.append(_p("Géorisques ne publie pas de zone inondable cartographiée pour cette commune (hors territoire à "
+                        "risque important d'inondation) : cela ne veut pas dire qu'il n'y a pas de risque.", _NOTE))
+    return blocs
+
+
 def _partie_risques(c):
     blocs = [_p("1 — Identification des risques sur la commune", _H1), _p("1.1 — Aléas", _H2)]
     if c["risques_recenses"]:
@@ -539,6 +588,7 @@ def _partie_risques(c):
             blocs += [_p("Enjeux", _ENTETE), _p(risque["enjeux"])]
     blocs.append(_p("1.2 — Vulnérabilités et enjeux", _H2))
     blocs += _fiches(c["enjeux"], "Aucun site sensible n'est retenu au plan.", "Sites sensibles")
+    blocs += _partie_exposition(c)
     blocs.append(_p("Populations nécessitant une attention particulière", _H3))
     blocs.append(_p("Elles figurent au registre communal des personnes vulnérables. Leur liste nominative s'édite "
                     "séparément, depuis l'écran « Personnes vulnérables », par les seules personnes désignées par le "
@@ -664,6 +714,39 @@ def _partie_annexes(c):
     return blocs
 
 
+def _partie_cartes(c):
+    """Les planches en annexe (core/cartes_pcs.py) : schémas à l'échelle, repères numérotés."""
+    cartes = c.get("cartes")
+    if not cartes or not (cartes["planche_plan"] or cartes["planche_eau"]):
+        return []
+    blocs = []
+    if cartes["planche_plan"]:
+        blocs += [PageBreak(), _p("Carte 1 — Quartiers et lieux du plan", _H2), cartes["planche_plan"], Spacer(1, 2 * mm),
+                  _p("Trait fort : territoire de la commune. Traits fins : quartiers"
+                     + (f" ({', '.join(cartes['quartiers'])})" if cartes["quartiers"] else " (aucun n'est encore dessiné)")
+                     + ". Carrés verts : lieux d'accueil et points des dispositifs. Ronds orange : sites sensibles.", _NOTE)]
+    if cartes["planche_eau"]:
+        median, haut = cartes["niveaux"] if cartes["niveaux"] else (None, None)
+        legende = []
+        if haut is not None:
+            legende.append(f"Bleu clair : zone inondée simulée à {_niveau(haut)}"
+                           + (f" ; bleu soutenu : à {_niveau(median)}" if median != haut else "")
+                           + " (hypothèses, sans digues ni courant)")
+        if cartes["zonage_officiel"]:
+            legende.append(f"Tirets rouges : zone inondable officielle, {cartes['zonage_officiel']} (Géorisques)")
+        legende.append("Repères bleus : enjeux atteints par l'eau simulée ou situés en zone officielle")
+        blocs += [PageBreak(), _p("Carte 2 — Zones inondables et enjeux", _H2), cartes["planche_eau"], Spacer(1, 2 * mm),
+                  _p(". ".join(legende) + ".", _NOTE)]
+    if cartes["reperes"]:
+        lignes = []
+        for r in cartes["reperes"]:
+            eau = f"dès {_niveau(r['seuil_m'])}" if r["seuil_m"] is not None else ""
+            lignes.append((str(r["numero"]), r["nom"], r["nature"], eau, r["zone_officielle"]))
+        blocs += [Spacer(1, 3 * mm), _p("Repères des cartes", _H3),
+                  _tableau(("N°", "Désignation", "Nature", "Eau simulée", "Zone officielle"), lignes, (10, 70, 40, 25, 35))]
+    return blocs
+
+
 def generer_pdf(contenu: dict, *, edite_par: str, edite_le=None) -> bytes:
     """Le plan mis en page, en A4 portrait. `contenu` vient de `rassembler`."""
     edite_le = timezone.localtime(edite_le or timezone.now())
@@ -682,6 +765,7 @@ def generer_pdf(contenu: dict, *, edite_par: str, edite_le=None) -> bytes:
     blocs += _partie_moyens(contenu)
     blocs.append(PageBreak())
     blocs += _partie_annexes(contenu)
+    blocs += _partie_cartes(contenu)
 
     tampon = io.BytesIO()
     document = SimpleDocTemplate(

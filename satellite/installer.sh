@@ -250,6 +250,62 @@ reglages_mqtt() {
     fi
 }
 
+libelle_profil() {
+    # En clair, pour qu'on voie tout de suite si c'est le bon : « gw » ne dit rien à personne.
+    case "$1" in
+        full) echo "COMPLET : passerelle radio + site local, consultable sur cette machine sans Internet" ;;
+        gw|"") echo "PASSERELLE RADIO seule : relaie les radios vers le central, SANS site local (rien sur http://127.0.0.1)" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+phase_reinitialiser() {
+    # Remet la machine dans l'état « jamais enrôlée », pour repartir avec un nouveau jeton :
+    # autre profil, autre collectivité. Rien n'est détruit sans confirmation, et la
+    # configuration (dont les clés de chiffrement de la base locale) est mise de côté, pas effacée.
+    local sauvegarde="$HOME/sauvegarde-satellite/$(date +%Y%m%d-%H%M%S)"
+    if [ ! -f "$FICHIER_ENROLEMENT" ] && [ ! -f "$FICHIER_ENV" ]; then
+        log "Cette machine n'est pas enrôlée : rien à réinitialiser. Lancez : $0 installer <JETON>"
+        return 0
+    fi
+    echo
+    log "Cette machine est enrôlée :"
+    log "    satellite    : $(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM 2>/dev/null)"
+    log "    collectivité : $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION 2>/dev/null)"
+    log "    profil       : $(libelle_profil "$(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL 2>/dev/null)")"
+    log "Réinitialiser arrête ses conteneurs et met sa configuration de côté dans :"
+    log "    $sauvegarde"
+    [ "$(demander "Continuer ? (oui/non)" "non")" = "oui" ] || erreur "Abandon : rien n'a été modifié."
+
+    (cd "$REPERTOIRE_SCRIPT" && docker compose --profile gw --profile full down >/dev/null 2>&1) || true
+    mkdir -p "$sauvegarde" && chmod 700 "$sauvegarde"
+    local fichier
+    for fichier in "$FICHIER_ENV" "$FICHIER_ENROLEMENT" "$REPERTOIRE_SCRIPT/.profil" "$REPERTOIRE_SCRIPT/.satellite_id"; do
+        [ -f "$fichier" ] && mv "$fichier" "$sauvegarde/"
+    done
+    log "Configuration mise de côté."
+
+    # La base locale (profil complet) : ses données sont chiffrées avec les clés qu'on vient de
+    # mettre de côté. Une nouvelle installation en génère d'autres et ne saurait plus la lire.
+    local volume
+    volume="$(docker volume ls -q 2>/dev/null | grep -E '^satellite_postgres_data$' || true)"
+    if [ -n "$volume" ]; then
+        echo
+        log "Une base locale existe ($volume). La prochaine installation ne pourra pas la relire"
+        log "(nouvelles clés de chiffrement) : elle repartira d'une base neuve, remplie depuis le central."
+        log "Ce qui a été saisi ici sans jamais remonter au central serait perdu."
+        if [ "$(demander "Effacer cette base locale ? (oui/non)" "non")" = "oui" ]; then
+            docker volume rm "$volume" >/dev/null && log "Base locale effacée."
+        else
+            log "Base locale conservée. Pour la reprendre plus tard, il faudra remettre le .env gardé dans"
+            log "    $sauvegarde"
+        fi
+    fi
+    echo
+    log "Prêt pour un nouvel enrôlement : $0 installer <JETON>"
+    log "Sur le central, pensez à révoquer l'ancienne ligne de cette machine (page Satellites)."
+}
+
 aligner_mot_de_passe_db() {
     # La base locale garde le mot de passe de sa toute première création (volume
     # postgres_data) : une réinstallation qui régénère DB_PASS faisait échouer le backend
@@ -739,7 +795,22 @@ phase_installer() {
 
     # --- 1. Enrôlement (ou reprise d'une installation interrompue)
     if [ -f "$FICHIER_ENROLEMENT" ]; then
-        log "Reprise de l'installation du satellite « $(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM) »."
+        # Un enrôlement existe déjà : un NOUVEAU jeton serait ignoré sans un mot, et la machine
+        # repartirait sur l'ancien profil et l'ancienne collectivité (trois réinstallations
+        # perdues ainsi le 16/11/2026). On le dit, et on s'arrête.
+        if [ -n "$jeton" ]; then
+            echo
+            log "Cette machine est DÉJÀ enrôlée :"
+            log "    satellite    : $(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM)"
+            log "    collectivité : $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION)"
+            log "    profil       : $(libelle_profil "$(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL)")"
+            log "Le jeton que vous donnez ne serait pas utilisé. Deux possibilités :"
+            log "  - continuer cette installation-là :       $0 installer"
+            log "  - repartir de zéro avec le nouveau jeton : $0 reinitialiser   puis   $0 installer <JETON>"
+            erreur "Rien n'a été modifié."
+        fi
+        log "Reprise de l'installation du satellite « $(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM) »"
+        log "    pour $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION), profil $(libelle_profil "$(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL)")."
     else
         [ -n "$jeton" ] || erreur "Usage : $0 installer <JETON>  (jeton et commande complète : page Satellites du central)"
         local central_url="${CENTRAL_URL:-https://assista-crise.fr}"
@@ -774,6 +845,9 @@ BRANDING_RESERVE_ACTIVE=$(json_champ_imbrique "$corps" branding reserve_active)
 EOF
         echo "$satellite_id" > "$REPERTOIRE_SCRIPT/.satellite_id"
         log "Enrôlé : « $nom » pour $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION) (profil $(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL))."
+        log "    => $(libelle_profil "$(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL)")"
+        log "    Ce n'est pas ce que vous attendiez ? Ctrl+C maintenant, ne validez pas sur le central,"
+        log "    puis : $0 reinitialiser   et un nouveau jeton, du bon type, pour la bonne collectivité."
     fi
     local central_url satellite_id secret satellite_nom profil departement
     central_url="$(valeur_fichier "$FICHIER_ENROLEMENT" CENTRAL_URL)"
@@ -885,6 +959,10 @@ case "${1:-}" in
         verifier_prerequis
         phase_installer "${2:-}" "${3:-}"
         ;;
+    reinitialiser)
+        verifier_prerequis
+        phase_reinitialiser
+        ;;
     enroler)
         verifier_prerequis
         [ $# -eq 4 ] || erreur "Usage : $0 enroler <jeton> <nom> <gw|full>"
@@ -906,6 +984,7 @@ case "${1:-}" in
         echo "  $0 mettre-a-jour        # METTRE À JOUR : récupère le code et redémarre"
         echo "  $0 installer <JETON>    # installation complète, sans question (recommandé)"
         echo "  $0 installer            # reprendre une installation interrompue"
+        echo "  $0 reinitialiser        # repartir de zéro : autre profil ou autre collectivité (puis installer <JETON>)"
         echo "  $0 connecter-noeud      # radio branchée après l'installation"
         echo "  $0 demarrer             # redémarrer sans récupérer le code"
         echo "  $0 acces-web            # URL de l'application et compte admin local (profil full)"

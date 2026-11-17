@@ -59,6 +59,47 @@ describe('SatellitesComponent — mises à jour', () => {
     http.verify();
   });
 
+  describe('générer un jeton', () => {
+    it('ne génère rien tant que le type de satellite n’est pas choisi', () => {
+      expect(composant.profilJeton).toBe('');
+      composant.genererJeton();
+      http.expectNone(`${api}/satellites/generer-jeton/`);
+    });
+
+    it('le génère pour la collectivité choisie par l’administrateur, sinon pour la sienne', () => {
+      composant.profilJeton = 'FULL';
+      composant.genererJeton();
+      const sansChoix = http.expectOne(`${api}/satellites/generer-jeton/`);
+      expect(sansChoix.request.body).toEqual({ profil: 'FULL' });
+      sansChoix.flush({});
+
+      composant.institutionDuJeton = 'i42';
+      composant.genererJeton();
+      expect(http.expectOne(`${api}/satellites/generer-jeton/`).request.body).toEqual({ profil: 'FULL', institution: 'i42' });
+    });
+  });
+
+  describe('changer la collectivité d’un satellite', () => {
+    beforeEach(() => { composant.institutions = [{ id: 'i1', nom: 'Mairie' }, { id: 'i42', nom: 'Conseil départemental' }] as any; });
+
+    it('le rattache par le bouton, sans fenêtre du navigateur, et dit ce qui reste sur sa machine', () => {
+      const fenetre = spyOn(window, 'confirm');
+      composant.changerInstitution(SATELLITE, 'i42');
+      const requete = http.expectOne(`${api}/satellites/s1/changer-institution/`);
+      expect(requete.request.body).toEqual({ institution: 'i42' });
+      requete.flush({ ...SATELLITE, institution: 'i42', a_savoir: 'Ce que ce satellite avait déjà recopié reste sur sa machine.' });
+      expect(fenetre).not.toHaveBeenCalled();
+      expect(composant.information).toContain('Conseil départemental');
+      expect(composant.information).toContain('reste sur sa machine');
+    });
+
+    it('ne demande rien vers sa collectivité actuelle ni vers une collectivité inconnue', () => {
+      composant.changerInstitution(SATELLITE, 'i1');
+      composant.changerInstitution(SATELLITE, 'inconnue');
+      http.expectNone(`${api}/satellites/s1/changer-institution/`);
+    });
+  });
+
   describe('le bouton « Mettre à jour »', () => {
     it('est proposé à un satellite en retard qui a son agent', () => {
       expect(composant.peutMettreAJour(SATELLITE)).toBeTrue();

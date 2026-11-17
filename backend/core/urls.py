@@ -13,7 +13,8 @@ from .views_application import (
 )
 from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtteignableView
 from .views_pcs import (
-    AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
+    AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, ZonagesOfficielsView,
+    CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
@@ -57,7 +58,7 @@ from .views import (
     RequestEditionPublicView,
     InformationEditionPublicView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
-    DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
+    DossierViewSet, MissionViewSet, BienSinistreViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     DemandeMobilisationViewSet, VerifierDemandeMobilisationJsonView,
     VerifierDemandeMobilisationView,
     AuditLogViewSet,
@@ -269,6 +270,7 @@ router.register(r'competences',CompetenceViewSet)
 router.register(r'affectations',AffectationCompetenceViewSet)
 router.register(r'dossiers', DossierViewSet)
 router.register(r'missions', MissionViewSet)
+router.register(r'biens-sinistres', BienSinistreViewSet)
 router.register(r'besoins', BesoinViewSet)
 router.register(r'besoins-competences', BesoinCompetenceViewSet)
 router.register(r'besoins-materiels', BesoinMaterielViewSet)
@@ -484,6 +486,12 @@ urlpatterns = [
     path('dossier-pcs/revisions/', RevisionPCSView.as_view(), name='dossier_pcs_revisions'),
     path('dossier-pcs/document/', DocumentPCSView.as_view(), name='dossier_pcs_document'),
     path('dossier-pcs/dicrim/', DicrimView.as_view(), name='dossier_pcs_dicrim'),
+    path('dossier-pcs/enjeux-exposes/', EnjeuxExposesView.as_view(), name='dossier_pcs_enjeux_exposes'),
+    path('dossier-pcs/zonages-officiels/', ZonagesOfficielsView.as_view(), name='dossier_pcs_zonages_officiels'),
+    path('rapports/recevoir/<str:jeton>/', RecevoirRapportView.as_view(), name='rapport_recevoir'),
+    path('couches-carto/', CouchesCartoView.as_view(), name='couches_carto'),
+    path('couches-carto/quartiers/importer/', ImportQuartiersView.as_view(), name='couches_carto_importer_quartiers'),
+    path('couches-carto/<str:couche>/', CoucheCartoView.as_view(), name='couche_carto'),
     path('alertes-population/', AlertesPopulationView.as_view(), name='alertes_population'),
     path('alertes-population/abonnement/', AbonnementAlerteView.as_view(), name='alertes_population_abonnement'),
     path('alertes-population/collectivites/', CollectivitesAlerteView.as_view(), name='alertes_population_collectivites'),

@@ -19,6 +19,7 @@ import { NoeudUtilisateurMeshtasticService } from '../../../../services/noeud-ut
 import { PointOperationnelService } from '../../../../services/point-operationnel.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
+import { PersonneVulnerableService } from '../../../../services/vulnerabilite.service';
 import { InformationService } from '../../../../services/information.service';
 import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 import { VeilleService } from '../../../../services/veille.service';
@@ -63,6 +64,9 @@ interface LayerVisibility {
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
   zonesBrulees: boolean;
+  /** « Personne sensible dans les environs » : un cercle par fiche du registre, jamais un point.
+   * Proposé à tous les acteurs institutionnels (les cercles ne disent rien du registre) ; chargé à la demande. */
+  secteursVulnerables: boolean;
   /** Foyers actifs vus par satellite depuis 48 h (NASA FIRMS), sources fixes grisées. */
   foyersActifs: boolean;
   /** Massifs colorés par risque d'avalanche (bulletins de Météo-France). */
@@ -145,6 +149,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     hiver: false,
     vigilanceCrues: false,
     zonesBrulees: false,
+    secteursVulnerables: false,
     foyersActifs: false,
     avalanche: false,
     arretesCirculation: false,
@@ -187,7 +192,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
               private veilleService: VeilleService,
-              private authService: AuthService) {}
+              private authService: AuthService,
+              private personneVulnerableService: PersonneVulnerableService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
 
@@ -217,6 +223,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Ré-applique la visibilité des calques sans recharger, sauf l'annuaire bénévoles et les relais
    * MeshCore, chargés à la première activation (minimisation des données de position). */
   onLayerToggle(): void {
+    if (this.layerVisibility.secteursVulnerables && !this.secteursVulnerablesCharges) {
+      this.secteursVulnerablesCharges = true;
+      this.chargerSecteursVulnerables();
+    }
     if (this.layerVisibility.benevolesPompiers && !this.benevolesPompiersCharges) {
       this.benevolesPompiersCharges = true;
       this.loadBenevolesPompiers();
@@ -239,6 +249,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
+    this.applyLayerVisibility('secteurs-vulnerables-layer', this.layerVisibility.secteursVulnerables);
     this.applyLayerVisibility('foyers-actifs-layer', this.layerVisibility.foyersActifs);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
     this.applyLayerVisibility('arretes-circulation-layer', this.layerVisibility.arretesCirculation);
@@ -1039,6 +1050,34 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Comme `afficherCoucheVeille`, pour des lignes ou des surfaces : posées sous les noms de
    * lieux du fond de carte, pour ne pas les masquer. */
+  // ══ Personnes vulnérables : des secteurs, jamais des points ═══════════════════════════════
+  private secteursVulnerablesCharges = false;
+  /** Ce que la carte dit du calque une fois chargé (fiches non situées, relevé manquant). */
+  noteSecteursVulnerables = '';
+
+  /** Charge les cercles « personne sensible dans les environs ». Un cercle ne porte RIEN : le
+   * seul texte affiché au clic est le libellé fixe rendu par le serveur. Le centre n'est pas le
+   * domicile, et le cercle s'élargit en habitat isolé (core/secteurs_vulnerables.py). */
+  private chargerSecteursVulnerables(): void {
+    this.personneVulnerableService.secteurs().subscribe({
+      next: (reponse) => {
+        const libelle = this.echapper(reponse.libelle);
+        this.afficherTracesVeille('secteurs-vulnerables', 'fill', {
+          type: 'FeatureCollection',
+          features: reponse.features.map(f => ({ ...f, properties: { infobulle: `<strong>${libelle}</strong>` } })),
+        }, { 'fill-color': '#f97316', 'fill-opacity': 0.28, 'fill-outline-color': '#c2410c' },
+        this.layerVisibility.secteursVulnerables);
+        this.noteSecteursVulnerables = !reponse.releve_disponible
+          ? 'relevé des adresses manquant : lancez la simulation d’inondation de la commune'
+          : reponse.non_situees ? `${reponse.non_situees} fiche(s) non située(s)` : '';
+      },
+      error: () => {
+        this.secteursVulnerablesCharges = false;
+        this.noteSecteursVulnerables = 'secteurs indisponibles pour le moment';
+      },
+    });
+  }
+
   private afficherTracesVeille(sourceId: string, type: 'line' | 'fill', data: FeatureCollection<Geometry>,
                                paint: any, visible: boolean): void {
     this.runWhenMapReady(() => {

@@ -113,10 +113,17 @@ describe('DossierPcsComponent', () => {
 
     bouton('Éditer le plan').click();
 
-    const requete = http.expectOne(`${url}/document/`);
+    const requete = http.expectOne(r => r.url === `${url}/document/`);
     expect(requete.request.responseType).toBe('blob');
+    expect(requete.request.params.has('fond')).toBeFalse();      // schéma par défaut
     requete.flush(new Blob(['%PDF'], { type: 'application/pdf' }));
     expect(URL.createObjectURL).toHaveBeenCalled();
+
+    fixture.componentInstance.fondIgn = true;
+    fixture.componentInstance.editer();
+    const avecFond = http.expectOne(r => r.url === `${url}/document/`);
+    expect(avecFond.request.params.get('fond')).toBe('ign');
+    avecFond.flush(new Blob(['%PDF'], { type: 'application/pdf' }));
   });
 
   it('édite aussi le DICRIM, le document public des habitants', () => {

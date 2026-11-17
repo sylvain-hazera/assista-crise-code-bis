@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { SatelliteService } from '../../services/satellite.service';
+import { InstitutionService } from '../../services/institution.service';
+import { Institution } from '../../shared/models/institution.model';
 import { AuthService } from '../../auth/services/auth.service';
 import {
   Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, MiseAJourSatellite,
@@ -38,7 +40,9 @@ export class SatellitesComponent implements OnInit {
   dernierJeton: JetonEnrolementSatellite | null = null;
   /** `WINDOWS` : passerelle radio sur un PC Windows (application à lancer, 15/11/2026). Côté
    * serveur c'est un satellite de profil GW comme un autre ; seule l'installation diffère. */
-  profilJeton: 'GW' | 'FULL' | 'WINDOWS' = 'GW';
+  // Aucun choix par défaut : « Passerelle radio » pré-cochée a fait installer trois fois une
+  // machine qui devait être complète (16/11/2026). Le bouton attend qu'on ait choisi.
+  profilJeton: 'GW' | 'FULL' | 'WINDOWS' | '' = '';
   /** La cible choisie au moment où le jeton affiché a été généré. */
   jetonPourWindows = false;
   messageSucces = '';
@@ -115,14 +119,27 @@ export class SatellitesComponent implements OnInit {
   historiqueDe: Satellite | null = null;
   historique: MiseAJourSatellite[] = [];
 
+  /** Pour l'administrateur de la plateforme : la collectivité à qui le satellite appartiendra.
+   * Vide = la sienne. Le satellite reçoit les comptes, les équipes et les radios de CETTE
+   * institution : se tromper ici oblige à le réenrôler (constaté le 16/11/2026). */
+  institutions: Institution[] = [];
+  institutionDuJeton = '';
+
   constructor(
     private service: SatelliteService,
     private authService: AuthService,
+    private institutionService: InstitutionService,
   ) {}
 
   ngOnInit(): void {
     this.isDemo = this.authService.getEnvironment() === 'DEMO';
     this.estAdministrateur = this.authService.getCurrentUser()?.type === UserRole.ADMIN;
+    if (this.estAdministrateur) {
+      this.institutionService.getAll().subscribe({
+        next: (liste) => this.institutions = [...liste].sort((x, y) => x.nom.localeCompare(y.nom, 'fr')),
+        error: () => {},   // sans la liste, le jeton reste généré pour sa propre institution
+      });
+    }
     this.load();
     this.chargerVersions();
     this.chargerVersionASigner();
@@ -397,8 +414,9 @@ export class SatellitesComponent implements OnInit {
   genererJeton(): void {
     this.genererJetonEnCours = true;
     this.errorMessage = '';
+    if (!this.profilJeton) return;
     const pourWindows = this.profilJeton === 'WINDOWS';
-    this.service.genererJeton(pourWindows ? 'GW' : this.profilJeton as 'GW' | 'FULL').subscribe({
+    this.service.genererJeton(pourWindows ? 'GW' : this.profilJeton as 'GW' | 'FULL', this.institutionDuJeton || undefined).subscribe({
       next: (jeton) => {
         this.dernierJeton = jeton;
         this.jetonPourWindows = pourWindows;
@@ -446,6 +464,37 @@ export class SatellitesComponent implements OnInit {
       error: (err) => {
         this.actionEnCours = null;
         this.errorMessage = err.error?.error || 'Impossible de régénérer les identifiants.';
+      },
+    });
+  }
+
+  /** Message d'information après une action réussie (ce qu'il faut savoir ensuite). */
+  information = '';
+
+  /** Le jeton a été généré pour la mauvaise collectivité : on rattache le satellite à la bonne.
+   * Il recevra ses comptes, équipes et radios à la prochaine synchronisation. */
+  /** Collectivité choisie dans la liste d'une ligne, en attente du bouton « Rattacher ». */
+  choixInstitution: Record<string, string> = {};
+
+  /** Pas de fenêtre de confirmation du navigateur : sur téléphone elle ne s'ouvrait pas
+   * (16/11/2026). Le choix dans la liste fait apparaître un bouton, et c'est lui qui engage. */
+  changerInstitution(satellite: Satellite, institution: string): void {
+    const cible = this.institutions.find(i => i.id === institution);
+    if (!cible || institution === satellite.institution) return;
+    this.actionEnCours = satellite.id;
+    this.errorMessage = '';
+    this.information = '';
+    this.service.changerInstitution(satellite.id, institution).subscribe({
+      next: (reponse) => {
+        this.actionEnCours = null;
+        this.choixInstitution[satellite.id] = '';
+        this.information = `« ${satellite.nom} » est maintenant rattaché à « ${cible.nom} ». ${reponse.a_savoir || ''}`;
+        this.load();
+      },
+      error: (err) => {
+        this.actionEnCours = null;
+        this.errorMessage = err.error?.error || err.error?.detail || 'Impossible de changer la collectivité.';
+        this.load();
       },
     });
   }

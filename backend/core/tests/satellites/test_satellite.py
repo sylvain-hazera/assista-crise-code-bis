@@ -416,3 +416,38 @@ class TestInstallationAutomatique:
     def test_profil_par_defaut_passerelle(self, mairie_a_client):
         client, _ = mairie_a_client
         assert self._enroler(self._jeton(client)['jeton']).data['profil'] == 'GW'
+
+
+@pytest.mark.django_db
+class TestChangerDInstitution:
+    """Un jeton généré pour la mauvaise collectivité : l'administrateur rattache le satellite à
+    la bonne sans le réinstaller. Le compte de service suit, c'est lui qui borne ce que le
+    central sert au satellite."""
+
+    def _url(self, satellite):
+        return f"/api/satellites/{satellite.id}/changer-institution/"
+
+    def test_ladministrateur_rattache_le_satellite_et_son_compte_de_service(
+            self, create_user, mairie_a_client, satellite_en_attente, institution_b):
+        client_a, _ = mairie_a_client
+        client_a.post(f"/api/satellites/{satellite_en_attente.id}/valider/")
+        admin = APIClient()
+        admin.force_authenticate(user=create_user(username="admin-sat@test.fr", email="admin-sat@test.fr", type="ADMIN"))
+
+        reponse = admin.post(self._url(satellite_en_attente), {"institution": str(institution_b.id)}, format="json")
+
+        assert reponse.status_code == 200, reponse.data
+        satellite_en_attente.refresh_from_db()
+        assert satellite_en_attente.institution_id == institution_b.id
+        assert satellite_en_attente.compte_service.institution_id == institution_b.id
+        assert "reste sur sa machine" in reponse.data["a_savoir"]
+        # Une seconde fois vers la même : refusé, rien à faire.
+        assert admin.post(self._url(satellite_en_attente), {"institution": str(institution_b.id)}, format="json").status_code == 400
+
+    def test_une_mairie_ne_peut_pas_donner_son_satellite_a_une_autre(self, mairie_a_client, satellite_en_attente, institution_b):
+        client_a, _ = mairie_a_client
+        reponse = client_a.post(self._url(satellite_en_attente), {"institution": str(institution_b.id)}, format="json")
+
+        assert reponse.status_code == 403
+        satellite_en_attente.refresh_from_db()
+        assert satellite_en_attente.institution_id != institution_b.id

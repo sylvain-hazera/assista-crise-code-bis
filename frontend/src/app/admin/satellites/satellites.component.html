@@ -71,9 +71,27 @@
       </label>
     </div>
 
-    <button type="button" class="btn-primary" [disabled]="genererJetonEnCours" (click)="genererJeton()">
-      {{ genererJetonEnCours ? 'Génération…' : "Générer le jeton et les commandes" }}
+    @if (estAdministrateur && institutions.length) {
+      <label class="choix-institution">Collectivité à qui appartiendra le satellite
+        <select name="institutionDuJeton" [(ngModel)]="institutionDuJeton">
+          <option value="">La mienne</option>
+          @for (i of institutions; track i.id) { <option [value]="i.id">{{ i.nom }}</option> }
+        </select>
+        <small>Le satellite reçoit les comptes, les équipes et les radios de cette collectivité. On ne peut pas la changer ensuite sans le réinstaller.</small>
+      </label>
+    }
+
+    <button type="button" class="btn-primary" [disabled]="genererJetonEnCours || !profilJeton" (click)="genererJeton()">
+      {{ genererJetonEnCours ? 'Génération…' : (profilJeton ? "Générer le jeton et les commandes" : "Choisissez d'abord le type de satellite") }}
     </button>
+
+    @if (dernierJeton) {
+      <p class="recapitulatif-jeton" role="status">
+        Jeton généré pour <strong>{{ dernierJeton.institution_nom || 'votre collectivité' }}</strong>, type
+        <strong>{{ jetonPourWindows ? 'passerelle radio sur PC Windows' : (dernierJeton.profil === 'FULL' ? 'complet (avec site local)' : 'passerelle radio seule (sans site local)') }}</strong>.
+        Ce n'est pas ce que vous vouliez ? Générez-en un autre : celui-ci expirera sans servir.
+      </p>
+    }
 
     @if (dernierJeton && jetonPourWindows) {
       <div class="commandes-installation">
@@ -113,6 +131,7 @@
           Si <code>git</code> manque : <code>sudo apt install -y git</code> d'abord.
           Dépôt déjà présent sur la machine : remplacez la 1re ligne par <code>cd assista-crise-code-bis &amp;&amp; git pull</code>.
           Installation interrompue : relancez <code>./installer.sh installer</code> (sans le jeton).
+          Machine déjà enrôlée à réinstaller autrement (autre type, autre collectivité) : <code>./installer.sh reinitialiser</code> d'abord.
           Radio branchée plus tard : <code>./installer.sh connecter-noeud</code>.
         </p>
       </div>
@@ -129,7 +148,8 @@
 }
 
 <div class="table-wrapper">
-  <table class="data-table">
+  @if (information) { <p class="information-satellite" role="status">{{ information }}</p> }
+    <table class="data-table">
     <thead>
       <tr>
         <th>Nom</th>
@@ -151,7 +171,23 @@
         @for (satellite of satellites; track satellite.id) {
           <tr>
             <td>{{ satellite.nom }}</td>
-            <td>{{ satellite.institution_nom }}</td>
+            <td>
+              @if (estAdministrateur && institutions.length && satellite.statut_enrolement !== 'REVOQUE') {
+                <select class="collectivite-du-satellite" [attr.aria-label]="'Collectivité du satellite ' + satellite.nom"
+                        [disabled]="actionEnCours === satellite.id" [ngModel]="choixInstitution[satellite.id] || satellite.institution"
+                        (ngModelChange)="choixInstitution[satellite.id] = $event" [ngModelOptions]="{standalone: true}">
+                  @for (i of institutions; track i.id) { <option [value]="i.id">{{ i.nom }}</option> }
+                </select>
+                @if (choixInstitution[satellite.id] && choixInstitution[satellite.id] !== satellite.institution) {
+                  <div class="rattacher">
+                    <button type="button" class="btn-primary" [disabled]="actionEnCours === satellite.id"
+                            (click)="changerInstitution(satellite, choixInstitution[satellite.id])">Rattacher à cette collectivité</button>
+                    <button type="button" class="btn-secondary" (click)="choixInstitution[satellite.id] = ''">Annuler</button>
+                    <small>Il recevra ses comptes, équipes et radios. Ce qu'il a déjà recopié de « {{ satellite.institution_nom }} » restera sur sa machine.</small>
+                  </div>
+                }
+              } @else { {{ satellite.institution_nom }} }
+            </td>
             <td>{{ satellite.profil_libelle }}</td>
             <td>{{ satellite.statut_enrolement_libelle }}</td>
             <td><span class="statut" [ngClass]="etatClass(satellite)">{{ etatLabel(satellite) }}</span></td>

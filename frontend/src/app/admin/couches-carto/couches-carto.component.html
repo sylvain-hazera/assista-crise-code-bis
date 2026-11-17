@@ -1,0 +1,81 @@
+<div class="paragraphe-page">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › cartographie</p>
+    <h1><span class="material-icons">layers</span> Couches cartographiques</h1>
+  </header>
+
+  <p class="a-quoi-ca-sert">
+    <span class="material-icons">sync_alt</span>
+    <span><strong>À quoi cela sert.</strong> Ouvrir dans un logiciel de cartographie (QGIS, par exemple) ce que la commune a
+      saisi ici, et faire entrer les quartiers déjà dessinés par vos services ou un bureau d'études, sans les redessiner.
+      Les fichiers sont en GeoJSON, que ces logiciels lisent sans réglage.
+      <strong>Le registre des personnes vulnérables ne sort jamais par ici.</strong></span>
+  </p>
+
+  @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @if (!chargement && !sansCollectivite) {
+    <section class="bloc">
+      <h2>Exporter</h2>
+      <table class="exposition">
+        <thead><tr><th>Couche</th><th>Objets</th><th></th></tr></thead>
+        <tbody>
+          @for (couche of couches; track couche.couche) {
+            <tr>
+              <td><strong>{{ couche.libelle }}</strong></td>
+              <td>{{ couche.objets }}</td>
+              <td>
+                <button type="button" class="btn-secondary" [disabled]="!couche.objets || exportEnCours === couche.couche"
+                        (click)="exporter(couche)">
+                  {{ exportEnCours === couche.couche ? 'Export…' : (couche.objets ? 'Télécharger (.geojson)' : 'Rien à exporter') }}
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <p class="note">Chaque export est inscrit à la main courante. Les zones inondées simulées sont des hypothèses
+        (un niveau d'eau étendu sur le relief) : le fichier le rappelle dans chaque objet.</p>
+    </section>
+
+    <section class="bloc">
+      <h2>Importer des quartiers</h2>
+      <p class="note">Un fichier GeoJSON de surfaces, une par quartier, avec son nom dans un champ « nom » (ou « name »,
+        « libelle », « quartier »). Depuis QGIS : clic droit sur la couche, Exporter, Sauvegarder les entités sous, format
+        GeoJSON. Les fichiers en Lambert 93 sont convertis.</p>
+      <label>Fichier
+        <input type="file" accept=".geojson,.json,application/geo+json,application/json" (change)="choisirFichier($event)"></label>
+      <label class="case"><input type="checkbox" name="remplacer" [(ngModel)]="remplacer" (ngModelChange)="fichier && envoyer(false)">
+        Redessiner les quartiers qui existent déjà sous le même nom</label>
+
+      @if (importEnCours) { <p class="message">Lecture du fichier…</p> }
+      @if (erreurImport) { <p class="message erreur" role="alert">{{ erreurImport }}</p> }
+
+      @if (apercu; as a) {
+        <p class="message" role="status"><strong>Aperçu — rien n'est encore créé.</strong>
+          {{ a.crees }} à créer, {{ a.remplaces }} à redessiner, {{ a.laisses }} laissé{{ a.laisses > 1 ? 's' : '' }} tel{{ a.laisses > 1 ? 's' : '' }} quel{{ a.laisses > 1 ? 's' : '' }},
+          {{ a.ignores }} ignoré{{ a.ignores > 1 ? 's' : '' }}.</p>
+        <table class="exposition">
+          <thead><tr><th>Quartier</th><th>Ce qui se passera</th><th>Remarque</th></tr></thead>
+          <tbody>
+            @for (ligne of a.lignes; track $index) {
+              <tr [class.non-situe]="ligne.action === 'IGNORE' || ligne.action === 'EXISTE'">
+                <td><strong>{{ ligne.nom }}</strong></td><td>{{ actions[ligne.action] }}</td><td>{{ ligne.remarque }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        <button type="button" class="btn-primary" [disabled]="!aImporter || importEnCours" (click)="envoyer(true)">
+          {{ aImporter ? 'Importer ces quartiers' : 'Rien à importer' }}</button>
+      }
+
+      @if (resultat; as r) {
+        <p class="message" role="status"><strong>Import terminé :</strong> {{ r.crees }} quartier{{ r.crees > 1 ? 's' : '' }}
+          créé{{ r.crees > 1 ? 's' : '' }}, {{ r.remplaces }} redessiné{{ r.remplaces > 1 ? 's' : '' }}.
+          Retrouvez-les dans <a routerLink="/admin/zones">Zones</a>.</p>
+      }
+    </section>
+  }
+</div>

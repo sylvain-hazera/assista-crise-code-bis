@@ -663,3 +663,236 @@ class TestEditionPdfDuRegistre:
         vide = generer_pdf_registre([], commune="Essai (38185)", edite_par="Agent d'essai")
 
         assert pdf.startswith(b"%PDF") and vide.startswith(b"%PDF")
+
+
+URL_SECTEURS = "/api/personnes-vulnerables/secteurs/"
+
+
+@pytest.mark.django_db
+class TestSecteursSurLaCarte:
+    """« Une personne sensible dans les environs » : un cercle, jamais un point. Visible de tous
+    les acteurs institutionnels ; rien ne filtre au clic ; en habitat isolé le cercle s'élargit."""
+
+    def _client(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def _teneur(self, create_user, mairie, maire, nom="teneur-carte@test.fr"):
+        user = _agent(create_user, mairie, nom)
+        _designer(mairie, user, maire)
+        _signer(user)
+        return user
+
+    def _adresse(self, libelle, longitude, latitude):
+        from django.contrib.gis.geos import Point
+
+        from core.models import AdresseSimuleeInondation
+        return AdresseSimuleeInondation.objects.create(
+            commune_code=COMMUNE_CODE, adresse=libelle, location=Point(longitude, latitude, srid=4326))
+
+    def _bourg(self):
+        """Six adresses serrées (une dizaine de mètres d'écart) : le domicile et ses voisins."""
+        for i in range(6):
+            self._adresse(f"{i + 1} Rue du Bourg 38185 Grenoble", 5.7200 + i * 0.0001, 45.1800)
+
+    def _inscrire(self, mairie, adresse, nom="Dupont"):
+        return PersonneVulnerable.objects.create(
+            institution_declarante=mairie, commune_code=COMMUNE_CODE, nom=nom, prenom="Jeanne",
+            adresse=adresse, mode_consentement="VOLONTAIRE")
+
+    def test_tout_acteur_institutionnel_voit_les_secteurs_mais_pas_le_registre(self, create_user, mairie, maire):
+        """Les cercles ne disent rien du registre : toute l'équipe peut les voir. Le registre
+        lui-même reste fermé à qui n'est pas désigné, et rien n'est servi sans connexion."""
+        self._bourg()
+        self._inscrire(mairie, "1 rue du Bourg", nom="Nomtressecret")
+        non_designe = _agent(create_user, mairie, "carte-non-designe@test.fr")
+        admin = create_user(username="admin-carte@test.fr", email="admin-carte@test.fr", type="ADMIN")
+
+        reponse = self._client(non_designe).get(URL_SECTEURS)
+        assert reponse.status_code == 200 and reponse.data["situees"] == 1
+        assert "Nomtressecret" not in str(reponse.data)
+        assert self._client(non_designe).get("/api/personnes-vulnerables/").data in ([], {"results": []}) \
+            or self._client(non_designe).get("/api/personnes-vulnerables/").status_code == 403
+        assert self._client(admin).get(URL_SECTEURS, {"commune_code": COMMUNE_CODE}).status_code == 200
+        assert APIClient().get(URL_SECTEURS, {"commune_code": COMMUNE_CODE}).status_code in (401, 403)
+
+    def test_le_cercle_contient_le_domicile_sans_etre_centre_dessus_et_ne_porte_rien(self, create_user, mairie, maire):
+        from core.models import AuditLog
+        from core.secteurs_vulnerables import RAYON_M, _distance_m
+
+        self._bourg()
+        fiche = self._inscrire(mairie, "3, rue du Bourg — 38185 Grenoble", nom="Nomtressecret")
+        domicile = (5.7202, 45.1800)
+
+        reponse = self._client(self._teneur(create_user, mairie, maire)).get(URL_SECTEURS)
+
+        assert reponse.status_code == 200 and reponse.data["situees"] == 1 and reponse.data["non_situees"] == 0
+        assert reponse.data["libelle"] == "Personne sensible dans les environs"
+        cercle = reponse.data["features"][0]
+        assert cercle["properties"] == {}                       # rien ne filtre au clic
+        assert "Nomtressecret" not in str(reponse.data) and str(fiche.id) not in str(reponse.data)
+        contour = cercle["geometry"]["coordinates"][0]
+        centre = (sum(p[0] for p in contour[:-1]) / (len(contour) - 1), sum(p[1] for p in contour[:-1]) / (len(contour) - 1))
+        ecart = _distance_m(centre, domicile)
+        assert 0.5 < ecart < RAYON_M                            # ni centré sur la maison, ni à côté d'elle
+        assert abs(_distance_m(contour[0], centre) - RAYON_M) < 1   # 100 m en zone habitée
+        trace = AuditLog.objects.filter(objet_type="PersonneVulnerable", action__code="LECTURE").latest("date_action")
+        assert trace.objets_ids == [fiche.id] and "Nomtressecret" not in trace.commentaire
+
+    def test_le_decalage_est_le_meme_a_chaque_affichage(self, create_user, mairie, maire):
+        """Un décalage tiré au hasard à chaque fois se laisserait retrouver en superposant dix
+        affichages."""
+        self._bourg()
+        self._inscrire(mairie, "2 rue du Bourg")
+        client = self._client(self._teneur(create_user, mairie, maire))
+
+        premier = client.get(URL_SECTEURS).data["features"][0]["geometry"]
+        second = client.get(URL_SECTEURS).data["features"][0]["geometry"]
+
+        assert premier == second
+
+    def test_en_habitat_isole_le_cercle_selargit_jusqua_ne_plus_designer_une_maison(self, create_user, mairie, maire):
+        from core.secteurs_vulnerables import RAYON_M, _distance_m
+
+        # Une ferme seule ; ses premiers voisins sont à 300 m environ.
+        self._adresse("Lieu-dit Le Mas 38185 Grenoble", 5.8000, 45.2000)
+        for i in range(5):
+            self._adresse(f"{i + 1} Chemin des Voisins 38185 Grenoble", 5.8038 + i * 0.0001, 45.2000)
+        self._inscrire(mairie, "Lieu-dit Le Mas")
+
+        contour = self._client(self._teneur(create_user, mairie, maire)).get(URL_SECTEURS).data["features"][0]["geometry"]["coordinates"][0]
+
+        centre = (sum(p[0] for p in contour[:-1]) / (len(contour) - 1), sum(p[1] for p in contour[:-1]) / (len(contour) - 1))
+        rayon = _distance_m(contour[0], centre)
+        assert rayon > RAYON_M * 1.5                              # plus large que les 100 m ordinaires
+        assert _distance_m(centre, (5.8000, 45.2000)) < rayon     # et la ferme est toujours dedans
+
+    def test_une_fiche_quon_ne_sait_pas_situer_est_comptee_pas_devinee(self, create_user, mairie, maire):
+        self._bourg()
+        self._inscrire(mairie, "12 impasse Introuvable")
+
+        reponse = self._client(self._teneur(create_user, mairie, maire)).get(URL_SECTEURS)
+
+        assert reponse.data["features"] == [] and reponse.data["non_situees"] == 1 and reponse.data["releve_disponible"] is True
+
+    def test_la_meme_adresse_se_reconnait_ecrite_de_deux_facons(self):
+        from core.secteurs_vulnerables import cle_d_adresse
+
+        assert cle_d_adresse("12bis, rue de l'Église 42400 Saint-Chamond") == "12 bis rue de l eglise"
+        assert cle_d_adresse("12 BIS Rue de l'Eglise") == "12 bis rue de l eglise"
+
+
+@pytest.mark.django_db
+class TestRattachementAuxAdresses:
+    """Chaque fiche du registre se rattache à une adresse de la commune : le lien est enregistré
+    une fois (chiffré), la recherche se fait dans le relevé local, et il sert ensuite pour le
+    niveau d'eau, la carte et les dégâts constatés."""
+
+    def _client(self, create_user, mairie, maire, nom="teneur-adresses@test.fr"):
+        user = _agent(create_user, mairie, nom)
+        _designer(mairie, user, maire)
+        _signer(user)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def _releve(self):
+        from django.contrib.gis.geos import Point
+
+        from core.models import AdresseSimuleeInondation
+        lignes = (("38185_0001_00012", "12 Rue de l'Église 38185 Grenoble", 1.5),
+                  ("38185_0001_00112", "112 Rue de l'Église 38185 Grenoble", None),
+                  ("38185_0002_00003", "3 Chemin du Moulin 38185 Grenoble", 0.5))
+        for rang, (ban, libelle, seuil) in enumerate(lignes):
+            AdresseSimuleeInondation.objects.create(
+                commune_code=COMMUNE_CODE, ban_id=ban, adresse=libelle, seuil_inondation_metres=seuil, altitude_metres=212.0,
+                location=Point(5.72 + rang * 0.001, 45.18, srid=4326))
+
+    def _fiche(self, mairie, adresse, nom="Dupont", **champs):
+        return PersonneVulnerable.objects.create(
+            institution_declarante=mairie, commune_code=COMMUNE_CODE, nom=nom, prenom="Jeanne", adresse=adresse,
+            mode_consentement="VOLONTAIRE", **champs)
+
+    def test_la_recherche_dadresse_se_fait_dans_le_releve_local_et_reste_reservee(self, create_user, mairie, maire):
+        self._releve()
+        client = self._client(create_user, mairie, maire)
+
+        reponse = client.get("/api/personnes-vulnerables/adresses/", {"q": "12 eglise"})
+
+        assert reponse.status_code == 200 and reponse.data["releve_disponible"] is True
+        # Le numéro tapé en entier passe devant « 12 » trouvé dans « 112 ».
+        assert [a["ban_id"] for a in reponse.data["adresses"]] == ["38185_0001_00012", "38185_0001_00112"]
+        assert client.get("/api/personnes-vulnerables/adresses/", {"q": "mo"}).data["adresses"] == []
+        non_designe = APIClient()
+        non_designe.force_authenticate(user=_signer(_agent(create_user, mairie, "non-designe-adresses@test.fr")))
+        assert non_designe.get("/api/personnes-vulnerables/adresses/", {"q": "eglise"}).status_code == 403
+
+    def test_une_fiche_se_cree_rattachee_et_le_lien_est_chiffre_en_base(self, create_user, mairie, maire):
+        from django.db import connection
+
+        self._releve()
+        client = self._client(create_user, mairie, maire)
+
+        cree = client.post("/api/personnes-vulnerables/", {
+            "nom": "Martin", "prenom": "Paul", "adresse": "12 rue de l'église", "adresse_ban_id": "38185_0001_00012",
+            "mode_consentement": "VOLONTAIRE", "commune_code": COMMUNE_CODE}, format="json")
+
+        assert cree.status_code == 201, cree.data
+        assert cree.data["adresse_ban_id"] == "38185_0001_00012"
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT adresse_ban_id FROM core_personnevulnerable WHERE id = %s", [cree.data["id"]])
+            en_base = curseur.fetchone()[0]
+        assert en_base and "38185_0001_00012" not in en_base        # rien en clair
+        # Un identifiant qui ne désigne aucune adresse de la commune n'est pas gardé.
+        refus = client.post("/api/personnes-vulnerables/", {
+            "nom": "Martin", "prenom": "Luc", "adresse": "ailleurs", "adresse_ban_id": "75056_9999_00001",
+            "mode_consentement": "VOLONTAIRE", "commune_code": COMMUNE_CODE}, format="json")
+        assert refus.status_code == 400 and "adresse_ban_id" in refus.data
+
+    def test_letat_propose_ladresse_identique_ou_les_ressemblantes_et_on_rattache(self, create_user, mairie, maire):
+        self._releve()
+        exacte = self._fiche(mairie, "3, chemin du Moulin", nom="Exacte")
+        proche = self._fiche(mairie, "12 rue de l Eglize", nom="Proche")
+        perdue = self._fiche(mairie, "Lieu-dit Les Granges", nom="Perdue")
+        self._fiche(mairie, "peu importe", nom="Faite", adresse_ban_id="38185_0001_00112")
+        client = self._client(create_user, mairie, maire)
+
+        etat = client.get("/api/personnes-vulnerables/rattachement/").data
+
+        assert etat["fiches"] == 4 and etat["rattachees"] == 1 and etat["exactes"] == 1
+        par_id = {fiche["id"]: fiche for fiche in etat["a_rattacher"]}
+        assert par_id[str(exacte.id)]["propositions"] == [
+            {"ban_id": "38185_0002_00003", "adresse": "3 Chemin du Moulin 38185 Grenoble", "exacte": True}]
+        assert par_id[str(proche.id)]["propositions"][0]["ban_id"] == "38185_0001_00012"
+        assert par_id[str(proche.id)]["propositions"][0]["exacte"] is False
+        assert par_id[str(perdue.id)]["propositions"] == []
+        assert etat["a_rattacher"][-1]["id"] == str(perdue.id)        # sans proposition : en fin de liste
+
+        # Les correspondances exactes d'un coup ; les ressemblances, une à une.
+        apres = client.post("/api/personnes-vulnerables/rattacher-exactes/", {}, format="json").data
+        assert apres["rattachees_a_l_instant"] == 1 and apres["rattachees"] == 2
+        assert client.post(f"/api/personnes-vulnerables/{proche.id}/rattacher/", {"ban_id": "38185_0001_00012"},
+                           format="json").status_code == 200
+        proche.refresh_from_db()
+        assert proche.adresse_ban_id == "38185_0001_00012" and proche.adresse == "12 rue de l Eglize"   # texte non réécrit
+        assert client.post(f"/api/personnes-vulnerables/{proche.id}/rattacher/", {"ban_id": "inconnu"}, format="json").status_code == 400
+        client.post(f"/api/personnes-vulnerables/{proche.id}/rattacher/", {"ban_id": ""}, format="json")
+        proche.refresh_from_db()
+        assert proche.adresse_ban_id is None
+
+    def test_le_lien_sert_pour_le_niveau_deau_et_les_degats_meme_si_le_texte_ne_se_retrouve_pas(self, create_user, mairie, maire):
+        from core.models import Habitation, StatutEvaluationHabitation
+
+        self._releve()
+        # Un texte que la comparaison ne retrouverait jamais ; le lien, lui, tient.
+        fiche = self._fiche(mairie, "chez sa fille, près de l'église", adresse_ban_id="38185_0001_00012")
+        Habitation.objects.create(adresse="12 Rue de l'Église", commune_code=COMMUNE_CODE, ban_id="38185_0001_00012",
+                                  statut_evaluation=StatutEvaluationHabitation.DEGATS_FORTS)
+        client = self._client(create_user, mairie, maire)
+
+        reponse = client.get("/api/personnes-vulnerables/exposition/").data
+
+        assert reponse["seuils"] == {str(fiche.id): 1.5} and reponse["non_situees"] == 0
+        assert reponse["degats"] == {str(fiche.id): "Dégâts forts"}
+        assert client.get(URL_SECTEURS).data["situees"] == 1

@@ -8,7 +8,7 @@ from django.http import FileResponse, StreamingHttpResponse, HttpResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics, permissions, mixins
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
@@ -284,9 +284,12 @@ from .models import (
     PlanMissionModele,
     JournalCollectivite,
     Commune,
+    BienSinistre,
     Habitation,
     HabitationCommentaire,
     HabitationHistorique,
+    PointageTerrain,
+    StatutPointageTerrain,
     RattachementHabitation,
     StatutRattachementHabitation,
     TypeLienHabitation,
@@ -777,6 +780,7 @@ from .serializers import (
     SecteurRechercheSerializer,
     PlanSerializer,
     PlanMissionModeleSerializer,
+    BienSinistreSerializer,
     HabitationSerializer,
     HabitationCommentaireSerializer,
     HabitationHistoriqueSerializer,
@@ -1181,6 +1185,34 @@ def _notify_dossier_closure(dossier, request):
         print(f"Erreur envoi email clôture dossier : {e}")
 
 
+def _nommer_pour(request):
+    """`nommer(utilisateur)` pour les rapports : le nom affichable (pseudonymisé en zone de
+    démonstration), à défaut l'identifiant."""
+    return lambda utilisateur: (nom_affichable(utilisateur, request) or utilisateur.username) if utilisateur else ""
+
+
+def _garder_le_rapport(request, nature, objet_id, pdf, crise=None, institution=None):
+    """Garde la dernière édition du rapport, chiffrée, jusqu'à la clôture de la crise
+    (core/cloture_crise.py). Un échec de conservation ne doit pas priver la personne du PDF
+    qu'elle vient de demander : il est journalisé, le rapport part quand même."""
+    from . import cloture_crise
+    try:
+        cloture_crise.conserver(nature, objet_id, pdf, crise=crise, institution=institution, edite_par=request.user,
+                                toutes_les_photos=request.query_params.get("photos") == "toutes",
+                                environment=get_active_environment(request))
+    except Exception as exc:
+        logger.warning("Rapport %s non conservé (%s).", nature, type(exc).__name__)
+
+
+def _reponse_pdf(pdf: bytes, nom: str):
+    import re
+
+    from django.http import HttpResponse
+    reponse = HttpResponse(pdf, content_type="application/pdf")
+    reponse["Content-Disposition"] = f'attachment; filename="{re.sub(r"[^A-Za-z0-9_-]+", "-", nom).strip("-")}.pdf"'
+    return reponse
+
+
 class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # DossierSerializer déréférence crise/competence/equipe/mission/information/demande (FK)
     # pour chaque dossier — sans select_related, ~6 requêtes SQL par dossier rien que pour ça
@@ -1202,6 +1234,23 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if self.action in ("create", "update", "partial_update", "destroy", "vue_mairie"):
             return [IsInstitutionalActor()]
         return super().get_permissions()
+
+    @action(detail=True, methods=["get"], url_path="rapport")
+    def rapport(self, request, pk=None):
+        """GET /api/dossiers/<id>/rapport/ -- le rapport du dossier en PDF (core/rapports_pdf.py) :
+        demande d'origine, bien et dégâts relevés, chronologie, photos en annexe. Ouvert à qui
+        voit déjà le dossier (get_queryset) : la personne concernée peut le joindre à sa
+        déclaration de sinistre. Construit à la demande, jamais stocké, inscrit à la main courante."""
+        from . import rapports_pdf
+
+        dossier = self.get_object()
+        resume = rapports_pdf.dossier_resume(dossier, _nommer_pour(request))
+        pdf = rapports_pdf.generer("dossier", resume, edite_par=_nommer_pour(request)(request.user),
+                                   toutes_les_photos=request.query_params.get("photos") == "toutes")
+        _garder_le_rapport(request, "dossier", dossier.id, pdf, crise=dossier.crise)
+        audit_log(request=request, action_code="EXPORT", objet_type="Dossier", objet_id=dossier.id,
+                  commentaire=f"Rapport du dossier {dossier.numero} édité ({len(resume['photos'])} photo(s) en annexe)")
+        return _reponse_pdf(pdf, f"rapport-dossier-{dossier.numero}")
 
     @action(detail=False, methods=["get"])
     def vue_mairie(self, request):
@@ -3060,7 +3109,7 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return [IsInstitutionalActor()]
         if self.action == "destroy":
             return [IsAdministrator()]
-        if self.action == "cloturer":
+        if self.action in ("cloturer", "rapport", "proposer_fermeture", "annuler_fermeture"):
             return [IsInstitutionalActor()]
         if self.action == "reouvrir":
             return [IsAdministrator()]
@@ -3334,6 +3383,76 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(status=403)
         return FileResponse(open(crise.photo.path, "rb"))
 
+    def _peut_cloturer(self, request, crise) -> bool:
+        return (crise.implications.filter(responsable=request.user, actif=True).exists()
+                or get_effective_role(request) == UserRole.ADMINISTRATOR)
+
+    @action(detail=True, methods=["post"], url_path="proposer-fermeture")
+    def proposer_fermeture(self, request, pk=None):
+        """POST /api/crises/<id>/proposer-fermeture/ -- propose la clôture : la crise sera close
+        sept jours plus tard (core/cloture_crise.py). Les personnes qui ont bénéficié d'un
+        dossier ou y ont participé reçoivent un lien personnel pour se faire envoyer leur
+        rapport. Mêmes droits que la clôture ; jamais pour une crise d'essai."""
+        from . import cloture_crise
+        from .perimetre_admin import institution_regardee
+
+        crise = self.get_object()
+        if not self._peut_cloturer(request, crise):
+            return Response({"error": "Seul le responsable d'une institution impliquée sur cette crise peut en proposer la clôture."},
+                            status=status.HTTP_403_FORBIDDEN)
+        try:
+            bilan = cloture_crise.proposer(crise, request, institution=institution_regardee(request))
+        except cloture_crise.ClotureImpossible as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Crisis", objet_id=crise.id, crise=crise,
+                  commentaire=f"Clôture de la crise {crise.name} proposée pour le "
+                              f"{timezone.localtime(crise.fermeture_prevue_le):%d/%m/%Y} : {bilan['personnes_prevenues']} personne(s) "
+                              f"prévenue(s), {bilan['courriels_en_echec']} courriel(s) en échec")
+        _notifier_institutions_impliquees_crise(
+            request, crise, f"Clôture proposée : {crise.name}",
+            f"La clôture de la crise « {crise.name} » est proposée : elle sera close le "
+            f"{timezone.localtime(crise.fermeture_prevue_le):%d/%m/%Y}. Éditez vos rapports d'ici là.")
+        return Response({"fermeture_proposee_le": crise.fermeture_proposee_le, **bilan})
+
+    @action(detail=True, methods=["post"], url_path="annuler-fermeture")
+    def annuler_fermeture(self, request, pk=None):
+        """POST /api/crises/<id>/annuler-fermeture/ -- retire la proposition : la crise continue."""
+        from . import cloture_crise
+
+        crise = self.get_object()
+        if not self._peut_cloturer(request, crise):
+            return Response({"error": "Seul le responsable d'une institution impliquée sur cette crise peut annuler sa clôture."},
+                            status=status.HTTP_403_FORBIDDEN)
+        try:
+            cloture_crise.annuler(crise)
+        except cloture_crise.ClotureImpossible as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Crisis", objet_id=crise.id, crise=crise,
+                  commentaire=f"Proposition de clôture de la crise {crise.name} annulée")
+        return Response({"status": "ok"})
+
+    @action(detail=True, methods=["get"], url_path="rapport")
+    def rapport(self, request, pk=None):
+        """GET /api/crises/<id>/rapport/ -- le rapport de la crise POUR la collectivité de
+        l'appelant (ou celle que regarde l'administrateur) : chiffres, dégâts relevés, moyens
+        engagés, alertes, journal de bord ; missions, dossiers et photos en annexe. Réservé aux
+        acteurs institutionnels -- la consultation publique d'une crise n'y donne pas droit. À
+        éditer à la clôture : trente jours après, les demandes des habitants sont effacées."""
+        from . import rapports_pdf
+        from .perimetre_admin import institution_regardee
+
+        crise = self.get_object()
+        institution = institution_regardee(request)
+        if institution is None:
+            raise PermissionDenied("Aucune collectivité n'est rattachée à votre compte : il n'y a pas de rapport à éditer.")
+        resume = rapports_pdf.crise_resume(crise, institution, get_active_environment(request), _nommer_pour(request))
+        pdf = rapports_pdf.generer("crise", resume, edite_par=_nommer_pour(request)(request.user),
+                                   toutes_les_photos=request.query_params.get("photos") == "toutes")
+        _garder_le_rapport(request, "crise", crise.id, pdf, crise=crise, institution=institution)
+        audit_log(request=request, action_code="EXPORT", objet_type="Crisis", objet_id=crise.id,
+                  commentaire=f"Rapport de la crise « {crise.name} » édité pour {institution.nom}")
+        return _reponse_pdf(pdf, f"rapport-crise-{institution.commune_code or 'collectivite'}")
+
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def cloturer(self, request, pk=None):
         """Clôture une crise : bloque toute nouvelle implication/point/délégation dessus
@@ -3352,8 +3471,8 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if crise.end_date is not None:
             return Response({"error": "Cette crise est déjà clôturée."}, status=status.HTTP_400_BAD_REQUEST)
 
-        crise.end_date = timezone.now()
-        crise.save()
+        from . import cloture_crise
+        bilan = cloture_crise.cloturer(crise)
 
         audit_log(
             request=request,
@@ -3363,18 +3482,12 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             crise=crise,
             ancien_etat="OUVERTE",
             nouvel_etat="CLOTUREE",
-            commentaire=f"Crise {crise.name} clôturée par {user.email}",
+            commentaire=f"Crise {crise.name} clôturée par {user.email}"
+                        + (f" ; {bilan['rapports_effaces']} rapport(s) gardé(s) effacé(s)" if bilan["rapports_effaces"] else ""),
         )
-
-        # Purge définitive des offres/demandes/signalements de cette crise déjà désactivés
-        # (voir la politique de désactivation, perform_destroy des 3 ViewSets concernés) — les
-        # éléments toujours actifs restent en revanche comme archive permanente de la crise,
-        # jamais purgés automatiquement. Team/User ne sont pas rattachés à UNE crise unique
-        # (une équipe/un compte peut survivre à plusieurs crises) : ils ne sont donc jamais
-        # purgés ici, seulement désactivés indéfiniment.
-        Offer.objects.filter(crisis=crise, actif=False).delete()
-        Request.objects.filter(crisis=crise, actif=False).delete()
-        Information.objects.filter(crisis=crise, actif=False).delete()
+        # La purge des offres/demandes/signalements déjà désactivés et l'effacement des rapports
+        # gardés sont dans cloture_crise.cloturer : la même clôture, qu'on la décide sur l'instant
+        # ou qu'elle arrive à l'échéance d'une proposition.
 
         _notifier_institutions_impliquees_crise(
             request, crise, f"Crise clôturée : {crise.name}",
@@ -6325,15 +6438,33 @@ class SimulationInondationGeorisquesView(generics.GenericAPIView):
         if couche not in COUCHES_GEORISQUES:
             return Response({"error": "Scénario Géorisques inconnu."}, status=status.HTTP_400_BAD_REQUEST)
 
-        cle = f"georisques:{couche}:{commune_code}"
-        geojson = cache.get(cle)
-        if geojson is None:
-            zones = zones_georisques(commune_code, couche)
-            if zones["erreur"]:
-                return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
-            polygone = zones["polygone"]
-            geojson = json.loads(polygone.simplify(0.00005, preserve_topology=True).geojson) if polygone else False
-            cache.set(cle, geojson, 24 * 3600)
+        # Une seule mémoire pour ces zones : la base (core/zonages_officiels.py). La carte de
+        # simulation, le croisement avec les enjeux, l'export et le document du plan relisent
+        # tous la même ligne ; Géorisques n'est interrogé que si elle manque, en respectant
+        # l'espacement commun à tout le serveur, et le résultat y est gardé.
+        from . import zonages_officiels
+        from .models import ZonageOfficiel
+
+        environment = get_active_environment(request)
+        zonage = ZonageOfficiel.objects.filter(commune_code=commune_code, couche=couche, environment=environment).first()
+        if zonage is not None:
+            # Gardée en multi-surface ; rendue comme avant en surface simple quand il n'y en a qu'une.
+            polygone = zonage.polygone
+            if polygone is not None and len(polygone) == 1:
+                polygone = polygone[0]
+            geojson = json.loads(polygone.geojson) if polygone else False
+        else:
+            cle = f"georisques:{couche}:{commune_code}"
+            geojson = cache.get(cle)
+            if geojson is None:
+                zonages_officiels._attendre_son_tour()
+                zones = zones_georisques(commune_code, couche)
+                if zones["erreur"]:
+                    return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
+                polygone = zones["polygone"]
+                geojson = json.loads(polygone.simplify(0.00005, preserve_topology=True).geojson) if polygone else False
+                cache.set(cle, geojson, 24 * 3600)
+                zonages_officiels.garder(commune_code, couche, environment, polygone)
         return Response({
             "couche": couche,
             "libelle": COUCHES_GEORISQUES[couche],
@@ -6720,6 +6851,7 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         institution = self._institution_declarante_or_400()
         commune_code = serializer.validated_data.get('commune_code') or institution.commune_code
         self._refuser_si_non_accede(commune_code)
+        self._verifier_adresse_rattachee(serializer, commune_code)
         personne = serializer.save(
             environment=get_active_environment(self.request),
             institution_declarante=institution,
@@ -6731,8 +6863,113 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             objet_id=personne.id, commentaire="Recensement personne vulnérable",
         )
 
+    def _verifier_adresse_rattachee(self, serializer, commune_code):
+        """Un lien vers une adresse ne s'enregistre que s'il désigne une adresse du relevé de la
+        commune : on ne garde pas un identifiant qu'on ne saura jamais relire."""
+        ban_id = serializer.validated_data.get("adresse_ban_id")
+        if not ban_id:
+            return
+        from .models import AdresseSimuleeInondation
+        if not AdresseSimuleeInondation.objects.filter(
+                commune_code=commune_code, ban_id=ban_id, environment=get_active_environment(self.request)).exists():
+            raise ValidationError({"adresse_ban_id": "Cette adresse n'est pas dans le relevé de la commune."})
+
+    def _commune_demandee(self, request):
+        institution = getattr(request.user, "institution", None)
+        commune_code = (request.query_params.get("commune_code") or request.data.get("commune_code")
+                        or getattr(institution, "commune_code", None) or "").strip()
+        if not commune_code:
+            raise ValidationError({"commune_code": "Précisez la commune."})
+        return commune_code
+
+    @action(detail=False, methods=["get"], url_path="adresses")
+    def adresses(self, request):
+        """GET /api/personnes-vulnerables/adresses/?q= -- les adresses de la commune qui
+        correspondent à ce que l'agent tape, cherchées dans le relevé local (Base Adresse
+        Nationale rapatriée par la simulation d'inondation). Rien de ce qui est tapé ici ne
+        sort du serveur : c'est l'adresse d'une personne vulnérable."""
+        from .rattachement_adresses import Releve
+
+        commune_code = self._commune_demandee(request)
+        self._refuser_si_non_accede(commune_code)
+        releve = Releve(commune_code, get_active_environment(request))
+        return Response({
+            "releve_disponible": releve.disponible,
+            "adresses": [{"ban_id": a.ban_id, "adresse": a.adresse}
+                         for a in releve.chercher(request.query_params.get("q", "")) if a.ban_id],
+        })
+
+    @action(detail=False, methods=["post"], url_path="relever-adresses")
+    def relever_adresses(self, request):
+        """POST /api/personnes-vulnerables/relever-adresses/ -- demande le relevé des adresses de
+        la commune auprès de la Base Adresse Nationale, sans simulation d'inondation : pour
+        rattacher les fiches là où le risque n'est pas l'eau. En tâche de fond ; seul le code de
+        la commune part."""
+        from .tasks import relever_adresses_commune_task
+
+        commune_code = self._commune_demandee(request)
+        self._refuser_si_non_accede(commune_code)
+        relever_adresses_commune_task.delay(commune_code, get_active_environment(request))
+        return Response({"demande": True}, status=202)
+
+    @action(detail=False, methods=["get"], url_path="rattachement")
+    def rattachement(self, request):
+        """GET /api/personnes-vulnerables/rattachement/ -- où en est le rattachement des fiches
+        aux adresses de la commune, et ce qu'on propose pour celles qui ne le sont pas."""
+        from .rattachement_adresses import Releve, etat_du_rattachement
+
+        commune_code = self._commune_demandee(request)
+        self._refuser_si_non_accede(commune_code)
+        personnes = list(self.get_queryset().filter(commune_code=commune_code, actif=True))
+        return Response(etat_du_rattachement(personnes, Releve(commune_code, get_active_environment(request))))
+
+    @action(detail=True, methods=["post"], url_path="rattacher")
+    def rattacher(self, request, pk=None):
+        """POST /api/personnes-vulnerables/<id>/rattacher/ {ban_id} -- rattache la fiche à une
+        adresse du relevé de sa commune ; `ban_id` vide la détache. Le texte de l'adresse saisi
+        par l'agent n'est pas réécrit : c'est lui qui a parlé à la personne."""
+        from .models import AdresseSimuleeInondation
+
+        personne = self.get_object()
+        self._refuser_si_non_accede(personne.commune_code)
+        ban_id = (request.data.get("ban_id") or "").strip()
+        if ban_id and not AdresseSimuleeInondation.objects.filter(
+                commune_code=personne.commune_code, ban_id=ban_id, environment=personne.environment).exists():
+            raise ValidationError({"ban_id": "Cette adresse n'est pas dans le relevé de la commune."})
+        personne.adresse_ban_id = ban_id or None
+        personne.save(update_fields=["adresse_ban_id", "date_maj"])
+        audit_log(request=request, action_code="MODIFICATION", objet_type="PersonneVulnerable", objet_id=personne.id,
+                  commentaire="Fiche rattachée à une adresse de la commune" if ban_id else "Fiche détachée de son adresse")
+        return Response(self.get_serializer(personne).data)
+
+    @action(detail=False, methods=["post"], url_path="rattacher-exactes")
+    def rattacher_exactes(self, request):
+        """POST /api/personnes-vulnerables/rattacher-exactes/ -- rattache d'un coup toutes les
+        fiches dont l'adresse est, mot pour mot, une adresse du relevé. Les ressemblances, elles,
+        se valident une à une : c'est une personne qu'on situe."""
+        from .rattachement_adresses import Releve, etat_du_rattachement
+
+        commune_code = self._commune_demandee(request)
+        self._refuser_si_non_accede(commune_code)
+        releve = Releve(commune_code, get_active_environment(request))
+        personnes = {str(p.id): p for p in self.get_queryset().filter(commune_code=commune_code, actif=True)}
+        faites = []
+        for fiche in etat_du_rattachement(personnes.values(), releve)["a_rattacher"]:
+            if fiche["propositions"] and fiche["propositions"][0]["exacte"]:
+                personne = personnes[fiche["id"]]
+                personne.adresse_ban_id = fiche["propositions"][0]["ban_id"]
+                personne.save(update_fields=["adresse_ban_id", "date_maj"])
+                faites.append(personne.id)
+        if faites:
+            audit_log(request=request, action_code="MODIFICATION", objet_type="PersonneVulnerable", objet_id=None,
+                      exposition=AuditLog.Exposition.LISTE_SANS_COORDONNEES, objets_ids=faites,
+                      commentaire=f"{len(faites)} fiche(s) rattachée(s) à leur adresse (correspondance exacte), commune {commune_code}")
+        return Response(etat_du_rattachement(
+            list(self.get_queryset().filter(commune_code=commune_code, actif=True)), releve) | {"rattachees_a_l_instant": len(faites)})
+
     def perform_update(self, serializer):
         self._refuser_si_non_accede(serializer.instance.commune_code)
+        self._verifier_adresse_rattachee(serializer, serializer.instance.commune_code)
         serializer.save()
         audit_log(
             request=self.request, action_code="MODIFICATION", objet_type="PersonneVulnerable",
@@ -6750,6 +6987,69 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             objet_id=instance.id, commentaire="Radiation personne vulnérable",
         )
 
+
+    @action(detail=False, methods=["get"], url_path="exposition")
+    def exposition(self, request):
+        """GET /api/personnes-vulnerables/exposition/ -- pour chaque fiche de la commune, le
+        niveau d'eau qui atteint son adresse d'après la simulation d'inondation. Réservé aux
+        personnes habilitées, comme toute lecture nominative du registre. `seuils` : identifiant
+        de fiche -> niveau en mètres, ou `null` si l'adresse reste au sec ; une fiche absente
+        n'a pas pu être située."""
+        from .enjeux_exposes import seuils_du_registre
+
+        institution = getattr(request.user, "institution", None)
+        commune_code = (request.query_params.get("commune_code")
+                        or getattr(institution, "commune_code", None) or "").strip()
+        self._refuser_si_administrateur()
+        if not commune_code:
+            raise ValidationError({"commune_code": "Précisez la commune."})
+        self._refuser_si_non_accede(commune_code)
+        personnes = list(self.get_queryset().filter(commune_code=commune_code, actif=True))
+        seuils = seuils_du_registre(personnes, commune_code, get_active_environment(request))
+        from .rattachement_adresses import Releve, degats_constates
+        degats = degats_constates(personnes, Releve(commune_code, get_active_environment(request)), get_active_environment(request))
+        return Response({
+            "seuils": {str(identifiant): seuil for identifiant, seuil in seuils.items()},
+            # Ce qui a été constaté à l'adresse de la fiche pendant une crise (estimation des dégâts).
+            "degats": {str(identifiant): etat for identifiant, etat in degats.items()},
+            "non_situees": len(personnes) - len(seuils),
+        })
+
+    @action(detail=False, methods=["get"], url_path="secteurs")
+    def secteurs(self, request):
+        """GET /api/personnes-vulnerables/secteurs/ -- pour la carte : un cercle par personne
+        vulnérable, jamais un point (voir core/secteurs_vulnerables.py).
+
+        Ouvert à TOUS les acteurs institutionnels (décision de Sylvain, 16/11/2026) : une équipe
+        sur le terrain doit savoir qu'il y a quelqu'un à aller voir par ici, sans être habilitée
+        à lire le registre. C'est possible parce que la réponse ne contient rien du registre :
+        des cercles sans propriété, décalés du domicile, élargis en habitat isolé, et un libellé
+        fixe. Aucune lecture anonyme pour autant (permission de la vue). Le registre lui-même
+        -- noms, adresses, besoins -- reste réservé aux personnes désignées par le maire.
+
+        D'où le queryset pris à la source et non `get_queryset()`, qui ne rend les fiches qu'aux
+        personnes habilitées. Chaque consultation est inscrite à la main courante, avec les
+        identifiants des fiches montrées et rien de leur contenu."""
+        from . import secteurs_vulnerables
+
+        institution = getattr(request.user, "institution", None)
+        commune_code = (request.query_params.get("commune_code")
+                        or getattr(institution, "commune_code", None) or "").strip()
+        if not commune_code:
+            raise ValidationError({"commune_code": "Précisez la commune."})
+
+        environment = get_active_environment(request)
+        personnes = list(PersonneVulnerable.objects.filter(
+            commune_code=commune_code, actif=True, environment=environment))
+        resultat = secteurs_vulnerables.secteurs(personnes, commune_code, environment)
+        fiches = resultat.pop("_fiches")
+        audit_log(
+            request=request, action_code="LECTURE", objet_type="PersonneVulnerable", objet_id=None,
+            exposition=AuditLog.Exposition.LISTE_SANS_COORDONNEES, objets_ids=fiches,
+            commentaire=f"Carte : secteurs des personnes vulnérables, commune {commune_code} : "
+                        f"{resultat['situees']} cercle(s), {resultat['non_situees']} fiche(s) non située(s)",
+        )
+        return Response(resultat)
 
     @action(detail=False, methods=["get"], url_path="pdf")
     def pdf(self, request):
@@ -6775,6 +7075,12 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         self._refuser_si_non_accede(commune_code)
 
         personnes = list(self.get_queryset().filter(commune_code=commune_code, actif=True))
+        # Le niveau d'eau qui atteint chaque adresse, d'après la simulation (hypothèse) : qui
+        # tient le registre doit savoir chez qui aller en premier quand l'eau monte.
+        from .enjeux_exposes import seuils_du_registre
+        seuils = seuils_du_registre(personnes, commune_code, get_active_environment(request))
+        for personne in personnes:
+            personne.seuil_inondation = seuils.get(personne.id, "inconnu")
         groupes = lignes_du_registre(personnes)
         commune = Commune.objects.filter(code=commune_code).values_list("nom", flat=True).first()
         libelle = f"{commune} ({commune_code})" if commune else f"commune {commune_code}"
@@ -7475,6 +7781,84 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         instance.delete()
 
+    #: En deçà, un point posé sur le terrain désigne la maison déjà référencée, pas une nouvelle.
+    RAYON_MEME_MAISON_M = 15
+
+    @action(detail=False, methods=['post'], url_path='pointer')
+    def pointer(self, request):
+        """POST /api/habitations/pointer/ {crise, latitude, longitude[, adresse]} -- l'agent de
+        terrain pointe la maison devant laquelle il se trouve.
+
+        Si une habitation de cette crise est déjà référencée à cet endroit (même adresse, ou à
+        moins de quinze mètres), c'est elle qui est rendue : la tournée ne crée pas de doublon
+        des maisons déjà relevées par la Base Adresse Nationale. Sinon elle est créée, avec la
+        position du téléphone et l'adresse la plus proche (cherchée par NOTRE serveur ; la
+        position d'un bâtiment, pas celle d'une personne). L'adresse reste modifiable : un
+        hangar, une grange ou un lieu-dit n'ont pas toujours de numéro.
+
+        L'évaluation se fait ensuite par `evaluer`, sur la fiche rendue."""
+        from django.contrib.gis.geos import Point
+        from django.contrib.gis.measure import D
+
+        from .habitations import commune_dans_zone_module
+        from .views_adresses import _flottant, _interroger
+
+        crise = Crisis.objects.filter(pk=request.data.get('crise')).first()
+        if crise is None:
+            return Response({"error": "crise est obligatoire : le suivi des dégâts se fait crise par crise."}, status=status.HTTP_400_BAD_REQUEST)
+        latitude = _flottant(request.data.get('latitude'), -90, 90)
+        longitude = _flottant(request.data.get('longitude'), -180, 180)
+        if latitude is None or longitude is None:
+            return Response({"error": "Position attendue (latitude, longitude)."}, status=status.HTTP_400_BAD_REQUEST)
+        point = Point(longitude, latitude, srid=4326)
+        commune_code = commune_code_from_point(point)
+        from .habitations import institution_accede_commune
+        gere = institution_accede_commune(request, commune_code, crise=crise)
+        if gere:
+            modules = list(ModuleDegatsCrise.objects.filter(crise=crise, institution=request.user.institution, actif=True))
+        else:
+            # Un intervenant (équipe engagée sur la crise) peut pointer, mais son pointage reste
+            # une PROPOSITION tant que la commune ne l'a pas validé (voir PointageTerrain).
+            if not self._intervient_sur(request.user, crise):
+                self._refuser_si_non_accede(commune_code, crise=crise)
+            modules = list(ModuleDegatsCrise.objects.filter(crise=crise, actif=True))
+            if not modules:
+                raise PermissionDenied("Le suivi des dégâts n'est pas activé sur cette crise : demandez à la commune de l'activer.")
+        if modules and not any(commune_dans_zone_module(commune_code, point, module) for module in modules):
+            raise PermissionDenied("Ce point est hors de la zone définie pour le suivi des dégâts.")
+
+        environment = get_active_environment(request)
+        adresse = " ".join(str(request.data.get('adresse') or "").split())[:300]
+        ban_id = parcelle = commune_nom = None
+        if not adresse:
+            reponse = _interroger("reverse", {"lat": round(latitude, 5), "lon": round(longitude, 5), "limit": 1, "index": "address"})
+            trouve = ((reponse or {}).get("features") or [{}])[0].get("properties") or {}
+            # Au-delà de 60 m, « l'adresse la plus proche » est celle d'un voisin, pas la sienne.
+            if trouve and (trouve.get("distance") is None or trouve.get("distance") <= 60):
+                adresse = trouve.get("label") or ""
+                ban_id = trouve.get("id")
+                commune_nom = trouve.get("city")
+        deja = self.get_queryset().filter(crise=crise, environment=environment)
+        existante = (deja.filter(ban_id=ban_id).first() if ban_id else None) or (
+            deja.filter(location__distance_lte=(point, D(m=self.RAYON_MEME_MAISON_M))).first())
+        if not gere:
+            return self._proposer_un_pointage(request, crise, environment, point, existante, adresse, ban_id,
+                                              commune_code, commune_nom)
+        if existante is not None:
+            return Response({**HabitationSerializer(existante, context={'request': request}).data, "existante": True})
+
+        habitation = Habitation.objects.create(
+            crise=crise, environment=environment, location=point, commune_code=commune_code, commune_nom=commune_nom,
+            adresse=adresse or f"Sans adresse — {latitude:.5f}, {longitude:.5f}", ban_id=ban_id, parcelle_cadastrale=parcelle,
+        )
+        HabitationHistorique.objects.create(
+            habitation=habitation, auteur=request.user, evenement="Habitation pointée sur le terrain",
+            environment=environment)
+        audit_log(request=request, action_code="CREATION", objet_type="Habitation", objet_id=habitation.id,
+                  commentaire=f"Pointage terrain : {habitation.adresse}")
+        return Response({**HabitationSerializer(habitation, context={'request': request}).data, "existante": False},
+                        status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'])
     def evaluer(self, request, pk=None):
         """Pose statut_evaluation (obligatoire) et statut_chantier (optionnel, pertinent
@@ -7492,26 +7876,48 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "statut_chantier invalide."}, status=status.HTTP_400_BAD_REQUEST)
         if statut_evaluation in (StatutEvaluationHabitation.NON_EVALUEE, StatutEvaluationHabitation.PAS_DE_DEGATS):
             statut_chantier = None  # pas de chantier sans dégâts constatés
+        # La cause du dommage (eau, feu, vent…) : le suivi sert pour tout sinistre. À défaut de
+        # précision, celle que suggère le type de la crise ; aucune sans dégâts constatés.
+        from .models import NatureDegatsHabitation
+        nature = request.data.get('nature_degats')
+        if nature is None:
+            nature = habitation.nature_degats or NatureDegatsHabitation.pour_la_crise(habitation.crise)
+        if nature and nature not in NatureDegatsHabitation.values:
+            return Response({"error": "nature_degats invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if statut_evaluation not in StatutEvaluationHabitation.avec_degats():
+            nature = ""
 
+        self._appliquer_le_constat(habitation, statut_evaluation, statut_chantier, nature,
+                                   request.data.get('commentaire'))
+        return Response(HabitationSerializer(habitation, context={'request': request}).data)
+
+    def _appliquer_le_constat(self, habitation, statut_evaluation, statut_chantier, nature, commentaire,
+                              constate_par=None):
+        """Pose une évaluation DÉJÀ VÉRIFIÉE sur la fiche, avec sa trace. `constate_par` : l'
+        intervenant dont on valide le pointage -- la commune qui valide reste celle qui évalue
+        (`evalue_par`), l'historique dit de qui vient le constat."""
+        request = self.request
         habitation.statut_evaluation = statut_evaluation
         habitation.statut_chantier = statut_chantier
+        habitation.nature_degats = nature or ""
         habitation.evalue_par = request.user
         habitation.date_derniere_evaluation = timezone.now()
         habitation.save(update_fields=[
-            'statut_evaluation', 'statut_chantier', 'evalue_par', 'date_derniere_evaluation', 'modifie_le',
+            'statut_evaluation', 'statut_chantier', 'nature_degats', 'evalue_par', 'date_derniere_evaluation', 'modifie_le',
         ])
 
-        commentaire = request.data.get('commentaire')
         if commentaire:
             HabitationCommentaire.objects.create(
-                habitation=habitation, auteur=request.user, commentaire=commentaire,
+                habitation=habitation, auteur=constate_par or request.user, commentaire=commentaire,
                 environment=habitation.environment,
             )
 
         HabitationHistorique.objects.create(
             habitation=habitation, auteur=request.user,
-            evenement=f"Évaluation : {habitation.get_statut_evaluation_display()}"
-                      + (f" — {habitation.get_statut_chantier_display()}" if statut_chantier else ""),
+            evenement=(f"Évaluation : {habitation.get_statut_evaluation_display()}"
+                       + (f" ({habitation.get_nature_degats_display()})" if habitation.nature_degats else "")
+                       + (f" — {habitation.get_statut_chantier_display()}" if statut_chantier else "")
+                       + (f" — constat de terrain de {_nommer_pour(request)(constate_par)}, validé" if constate_par else ""))[:255],
             environment=habitation.environment,
         )
         audit_log(
@@ -7520,10 +7926,188 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Évaluation : {habitation.adresse} -> {statut_evaluation}",
         )
 
-        if statut_evaluation in (StatutEvaluationHabitation.DEGATS_FAIBLES, StatutEvaluationHabitation.DEGATS_FORTS):
+        if statut_evaluation in StatutEvaluationHabitation.avec_degats():
             _dossier_pour_habitation(habitation, request)
 
-        return Response(HabitationSerializer(habitation, context={'request': request}).data)
+    # ── Pointage des intervenants : une proposition que la commune valide ──────────────────
+
+    @staticmethod
+    def _intervient_sur(user, crise) -> bool:
+        """Membre, chef ou régulateur d'une équipe engagée sur cette crise (par une mission ou
+        par une affectation directe)."""
+        from .models import Team
+        return Team.objects.filter(
+            Q(members=user) | Q(leader=user) | Q(regulateur=user),
+        ).filter(Q(missions__crise=crise) | Q(assigned_crises=crise)).exists()
+
+    def _peut_valider(self, commune_code, crise) -> bool:
+        """« Validé par du personnel municipal ou élu » : un compte de la collectivité qui gère
+        la commune (ou l'administrateur). Une association délégataire pointe et évalue, par la
+        délégation qu'elle a reçue, mais ne valide pas le pointage d'autrui."""
+        from .habitations import institution_accede_commune
+        return (get_effective_role(self.request) in (UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY)
+                and institution_accede_commune(self.request, commune_code, crise=crise))
+
+    def _decrire_pointage(self, pointage, validable=None) -> dict:
+        nommer = _nommer_pour(self.request)
+        return {
+            "id": str(pointage.id), "a_valider": pointage.statut == StatutPointageTerrain.A_VALIDER,
+            "statut": pointage.statut, "statut_libelle": pointage.get_statut_display(),
+            "crise": str(pointage.crise_id), "adresse": pointage.adresse, "commune_nom": pointage.commune_nom,
+            "latitude": pointage.location.y, "longitude": pointage.location.x,
+            "statut_evaluation": pointage.statut_evaluation, "nature_degats": pointage.nature_degats,
+            "commentaire": pointage.commentaire, "auteur": nommer(pointage.auteur),
+            "le_mien": pointage.auteur_id == self.request.user.id,
+            "date_creation": pointage.date_creation, "existante": pointage.habitation_id is not None,
+            "habitation": str(pointage.habitation_id) if pointage.habitation_id else None,
+            "motif_refus": pointage.motif_refus,
+            "peut_valider": self._peut_valider(pointage.commune_code, pointage.crise) if validable is None else validable,
+        }
+
+    def _proposer_un_pointage(self, request, crise, environment, point, existante, adresse, ban_id, commune_code, commune_nom):
+        from django.contrib.gis.measure import D
+        # Revenir pointer la même maison complète sa proposition au lieu d'en empiler une autre.
+        pointage = PointageTerrain.objects.filter(
+            crise=crise, environment=environment, auteur=request.user, statut=StatutPointageTerrain.A_VALIDER,
+            location__distance_lte=(point, D(m=self.RAYON_MEME_MAISON_M))).first()
+        cree = pointage is None
+        if cree:
+            pointage = PointageTerrain.objects.create(
+                crise=crise, environment=environment, auteur=request.user, location=point, habitation=existante,
+                adresse=(existante.adresse if existante else adresse) or f"Sans adresse — {point.y:.5f}, {point.x:.5f}",
+                ban_id=ban_id, commune_code=commune_code, commune_nom=commune_nom,
+            )
+            audit_log(request=request, action_code="CREATION", objet_type="PointageTerrain", objet_id=pointage.id,
+                      commentaire="Pointage terrain proposé, à valider par la commune")
+        erreur = self._noter_le_constat(pointage, request.data)
+        if erreur:
+            return erreur
+        return Response(self._decrire_pointage(pointage, validable=False),
+                        status=status.HTTP_202_ACCEPTED if cree else status.HTTP_200_OK)
+
+    def _noter_le_constat(self, pointage, donnees):
+        """Le constat proposé (état, cause, commentaire), s'il est donné. Rend une réponse
+        d'erreur, ou None."""
+        from .models import NatureDegatsHabitation
+        champs = []
+        if 'statut_evaluation' in donnees:
+            if donnees['statut_evaluation'] not in StatutEvaluationHabitation.values:
+                return Response({"error": "statut_evaluation invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            pointage.statut_evaluation = donnees['statut_evaluation']
+            champs.append('statut_evaluation')
+        if 'nature_degats' in donnees:
+            nature = donnees['nature_degats'] or ""
+            if nature and nature not in NatureDegatsHabitation.values:
+                return Response({"error": "nature_degats invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            pointage.nature_degats = nature
+            champs.append('nature_degats')
+        if 'commentaire' in donnees:
+            pointage.commentaire = " ".join(str(donnees['commentaire'] or "").split())[:1000]
+            champs.append('commentaire')
+        if pointage.statut_evaluation not in StatutEvaluationHabitation.avec_degats():
+            pointage.nature_degats = ""
+        elif not pointage.nature_degats:
+            pointage.nature_degats = NatureDegatsHabitation.pour_la_crise(pointage.crise) or ""
+        if champs:
+            pointage.save(update_fields=list({*champs, 'nature_degats'}))
+        return None
+
+    def _pointage(self, pointage_id):
+        pointage = PointageTerrain.objects.select_related('crise', 'auteur', 'habitation').filter(
+            pk=pointage_id, environment=get_active_environment(self.request)).first()
+        if pointage is None:
+            raise NotFound("Pointage introuvable.")
+        return pointage
+
+    @action(detail=False, methods=['get'], url_path='pointages')
+    def pointages(self, request):
+        """GET /api/habitations/pointages/?crise=&statut= -- pour la commune : les pointages de
+        ses intervenants (à valider par défaut) ; pour un intervenant : les siens, pour savoir
+        ce qu'ils sont devenus."""
+        qs = PointageTerrain.objects.select_related('crise', 'auteur').filter(environment=get_active_environment(request))
+        if request.query_params.get('crise'):
+            qs = qs.filter(crise_id=request.query_params['crise'])
+        statut = request.query_params.get('statut')
+        if statut in StatutPointageTerrain.values:
+            qs = qs.filter(statut=statut)
+        droits, rendus = {}, []
+        for pointage in qs[:500]:
+            cle = (pointage.commune_code, pointage.crise_id)
+            if cle not in droits:
+                droits[cle] = self._peut_valider(pointage.commune_code, pointage.crise)
+            if droits[cle] and (statut or pointage.statut == StatutPointageTerrain.A_VALIDER):
+                rendus.append(self._decrire_pointage(pointage, validable=True))
+            elif pointage.auteur_id == request.user.id:
+                rendus.append(self._decrire_pointage(pointage, validable=droits[cle]))
+        return Response(rendus)
+
+    @action(detail=False, methods=['post'], url_path=r'pointages/(?P<pointage_id>[0-9a-f-]{36})/constater')
+    def constater(self, request, pointage_id=None):
+        """L'intervenant dit ce qu'il constate sur la maison qu'il vient de pointer."""
+        pointage = self._pointage(pointage_id)
+        if pointage.auteur_id != request.user.id:
+            raise PermissionDenied("Ce pointage n'est pas le vôtre.")
+        if pointage.statut != StatutPointageTerrain.A_VALIDER:
+            return Response({"error": "Ce pointage a déjà été traité par la commune."}, status=status.HTTP_409_CONFLICT)
+        erreur = self._noter_le_constat(pointage, request.data)
+        return erreur or Response(self._decrire_pointage(pointage, validable=False))
+
+    @action(detail=False, methods=['post'], url_path=r'pointages/(?P<pointage_id>[0-9a-f-]{36})/valider')
+    def valider_pointage(self, request, pointage_id=None):
+        """La commune valide : le pointage devient une habitation (ou complète celle qui existe
+        à cet endroit) et le constat devient son évaluation. Elle peut le corriger au passage
+        (statut_evaluation, nature_degats, adresse)."""
+        from django.contrib.gis.measure import D
+
+        pointage = self._pointage(pointage_id)
+        if not self._peut_valider(pointage.commune_code, pointage.crise):
+            raise PermissionDenied("La validation d'un pointage revient au personnel ou aux élus de la commune.")
+        if pointage.statut != StatutPointageTerrain.A_VALIDER:
+            return Response({"error": "Ce pointage a déjà été traité."}, status=status.HTTP_409_CONFLICT)
+        if 'adresse' in request.data and " ".join(str(request.data['adresse'] or "").split()):
+            pointage.adresse = " ".join(str(request.data['adresse']).split())[:300]
+        erreur = self._noter_le_constat(pointage, {c: request.data[c] for c in ('statut_evaluation', 'nature_degats') if c in request.data})
+        if erreur:
+            return erreur
+
+        deja = Habitation.objects.filter(crise=pointage.crise, environment=pointage.environment)
+        habitation = pointage.habitation or (deja.filter(ban_id=pointage.ban_id).first() if pointage.ban_id else None) or (
+            deja.filter(location__distance_lte=(pointage.location, D(m=self.RAYON_MEME_MAISON_M))).first())
+        if habitation is None:
+            habitation = Habitation.objects.create(
+                crise=pointage.crise, environment=pointage.environment, location=pointage.location,
+                commune_code=pointage.commune_code, commune_nom=pointage.commune_nom, adresse=pointage.adresse,
+                ban_id=pointage.ban_id)
+            HabitationHistorique.objects.create(
+                habitation=habitation, auteur=request.user, environment=pointage.environment,
+                evenement=f"Habitation pointée sur le terrain par {_nommer_pour(request)(pointage.auteur)}, validée"[:255])
+        if pointage.statut_evaluation != StatutEvaluationHabitation.NON_EVALUEE or pointage.commentaire:
+            self._appliquer_le_constat(
+                habitation, pointage.statut_evaluation, habitation.statut_chantier
+                if pointage.statut_evaluation in StatutEvaluationHabitation.avec_degats() else None,
+                pointage.nature_degats, pointage.commentaire, constate_par=pointage.auteur)
+        pointage.statut, pointage.habitation = StatutPointageTerrain.VALIDE, habitation
+        pointage.traite_par, pointage.traite_le = request.user, timezone.now()
+        pointage.save()
+        audit_log(request=request, action_code="MODIFICATION", objet_type="PointageTerrain", objet_id=pointage.id,
+                  commentaire=f"Pointage terrain validé : {habitation.adresse}")
+        return Response({"pointage": self._decrire_pointage(pointage, validable=True),
+                         "habitation": HabitationSerializer(habitation, context={'request': request}).data})
+
+    @action(detail=False, methods=['post'], url_path=r'pointages/(?P<pointage_id>[0-9a-f-]{36})/refuser')
+    def refuser_pointage(self, request, pointage_id=None):
+        pointage = self._pointage(pointage_id)
+        if not self._peut_valider(pointage.commune_code, pointage.crise):
+            raise PermissionDenied("Le refus d'un pointage revient au personnel ou aux élus de la commune.")
+        if pointage.statut != StatutPointageTerrain.A_VALIDER:
+            return Response({"error": "Ce pointage a déjà été traité."}, status=status.HTTP_409_CONFLICT)
+        pointage.statut = StatutPointageTerrain.REFUSE
+        pointage.motif_refus = " ".join(str(request.data.get('motif') or "").split())[:300]
+        pointage.traite_par, pointage.traite_le = request.user, timezone.now()
+        pointage.save()
+        audit_log(request=request, action_code="MODIFICATION", objet_type="PointageTerrain", objet_id=pointage.id,
+                  commentaire="Pointage terrain refusé")
+        return Response(self._decrire_pointage(pointage, validable=True))
 
     CHAMPS_RELEVE = (
         'surface_habitable_totale', 'surface_habitable_impactee',
@@ -7630,7 +8214,7 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             qs = qs.filter(commune_code=commune_code)
         if request.query_params.get('toutes') != '1':
             qs = qs.filter(
-                Q(statut_evaluation__in=[StatutEvaluationHabitation.DEGATS_FAIBLES, StatutEvaluationHabitation.DEGATS_FORTS])
+                Q(statut_evaluation__in=list(StatutEvaluationHabitation.avec_degats()))
                 | Q(surface_habitable_impactee__gt=0) | Q(surface_non_habitable_impactee__gt=0)
             )
 
@@ -10382,10 +10966,33 @@ class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
+    @action(detail=True, methods=["get"], url_path="rapport")
+    def rapport(self, request, pk=None):
+        """GET /api/missions/<id>/rapport/ -- le rapport de la mission en PDF : objectif, équipes,
+        dossiers traités, et en annexe le rapport de chaque dossier et leurs photos. Réservé aux
+        acteurs institutionnels qui voient la mission (get_queryset) et au chef (ou régulateur)
+        d'une équipe de la mission (décision de Sylvain du 17/11/2026) : les dossiers en annexe
+        portent des constats que tout membre d'équipe n'a pas à emporter."""
+        from . import rapports_pdf
+
+        mission = self.get_object()
+        if get_effective_role(request) not in INSTITUTIONAL_TYPES and not mission.equipes.filter(
+                Q(leader=request.user) | Q(regulateur=request.user)).exists():
+            raise PermissionDenied("Le rapport de mission est réservé à la collectivité et au chef de l'équipe.")
+        resume = rapports_pdf.mission_resume(mission, _nommer_pour(request))
+        pdf = rapports_pdf.generer("mission", resume, edite_par=_nommer_pour(request)(request.user),
+                                   toutes_les_photos=request.query_params.get("photos") == "toutes")
+        _garder_le_rapport(request, "mission", mission.id, pdf, crise=mission.crise)
+        audit_log(request=request, action_code="EXPORT", objet_type="Mission", objet_id=mission.id,
+                  commentaire=f"Rapport de la mission « {mission.titre} » édité ({len(resume['dossiers'])} dossier(s) en annexe)")
+        return _reponse_pdf(pdf, "rapport-mission")
+
     def get_queryset(self):
         qs = super().get_queryset()
         if get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
-            return qs.filter(equipes__members=self.request.user).distinct()
+            # Le chef et le régulateur ne sont pas toujours inscrits parmi les membres.
+            return qs.filter(Q(equipes__members=self.request.user) | Q(equipes__leader=self.request.user)
+                             | Q(equipes__regulateur=self.request.user)).distinct()
         # AVANT le 16/11/2026, tout acteur institutionnel listait TOUTES les missions de la
         # plateforme : une mairie voyait celles des équipes de n'importe quelle institution,
         # partout en France (signalé par Sylvain : « je vois des institutions qui ne sont pas
@@ -12953,11 +13560,117 @@ def _q_dossiers_ou_je_contribue(user, prefixe="dossier__"):
     )
 
 
+def _biens_visibles(request, queryset):
+    """Les biens sinistrés que l'appelant gère : ceux que sa collectivité a relevés, et ceux de
+    sa commune. L'administrateur voit ceux de l'institution qu'il regarde, ou tous."""
+    from .perimetre_admin import institutions_visibles
+
+    visibles = institutions_visibles(request)
+    if visibles is None:
+        return queryset
+    communes = [c for c in Institution.objects.filter(pk__in=visibles).values_list("commune_code", flat=True) if c]
+    return queryset.filter(Q(institution_id__in=visibles) | Q(commune_code__in=communes))
+
+
+def _voit_le_bien(request, bien) -> bool:
+    if get_effective_role(request) not in INSTITUTIONAL_TYPES:
+        return False
+    return _biens_visibles(request, BienSinistre.objects.filter(pk=bien.pk)).exists()
+
+
+class BienSinistreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Biens sinistrés autres que les habitations (voir BienSinistre.__doc__) : véhicules,
+    bateaux, hangars, matériel. Réservé aux acteurs institutionnels -- on y trouve des
+    immatriculations et des coordonnées de propriétaires. Chacun gère ceux de sa collectivité
+    et de sa commune."""
+
+    queryset = BienSinistre.objects.select_related("crise", "institution", "cree_par").all()
+    serializer_class = BienSinistreSerializer
+    permission_classes = [IsInstitutionalActor]
+    filterset_fields = ["crise", "type_bien", "statut_evaluation"]
+
+    def get_queryset(self):
+        return _biens_visibles(self.request, super().get_queryset())
+
+    def perform_create(self, serializer):
+        from .perimetre_admin import institution_regardee
+
+        crise = serializer.validated_data.get("crise")
+        if crise is not None and crise.end_date is not None:
+            raise ValidationError({"crise": "Cette crise est close : on n'y ajoute plus de bien sinistré."})
+        institution = institution_regardee(self.request)
+        bien = serializer.save(environment=get_active_environment(self.request), institution=institution, cree_par=self.request.user)
+        # La commune : celle du point relevé, à défaut celle de la collectivité qui relève.
+        commune = commune_code_from_point(bien.location) if bien.location else None
+        bien.commune_code = commune or getattr(institution, "commune_code", None)
+        if bien.statut_evaluation in StatutEvaluationHabitation.avec_degats() and not bien.nature_degats:
+            from .models import NatureDegatsHabitation
+            bien.nature_degats = NatureDegatsHabitation.pour_la_crise(bien.crise)
+        bien.save(update_fields=["commune_code", "nature_degats"])
+        audit_log(request=self.request, action_code="CREATION", objet_type="BienSinistre", objet_id=bien.id, crise=bien.crise,
+                  commentaire=f"Bien sinistré relevé : {bien.get_type_bien_display()} — {bien.designation}")
+
+    def perform_update(self, serializer):
+        bien = serializer.save()
+        audit_log(request=self.request, action_code="MODIFICATION", objet_type="BienSinistre", objet_id=bien.id, crise=bien.crise,
+                  commentaire=f"Bien sinistré modifié : {bien.designation}")
+
+    def perform_destroy(self, instance):
+        audit_log(request=self.request, action_code="SUPPRESSION", objet_type="BienSinistre", objet_id=instance.id, crise=instance.crise,
+                  commentaire=f"Bien sinistré supprimé : {instance.designation}")
+        for document in instance.documents.all():      # les fichiers, pas seulement les lignes
+            document.fichier.delete(save=False)
+        instance.delete()
+
+    def _rapport(self, request, bien):
+        from . import rapports_pdf
+
+        resume = rapports_pdf.bien_resume(bien, _nommer_pour(request))
+        pdf = rapports_pdf.generer("bien", resume, edite_par=_nommer_pour(request)(request.user),
+                                   toutes_les_photos=request.query_params.get("photos") == "toutes")
+        _garder_le_rapport(request, "bien", bien.id, pdf, crise=bien.crise)
+        return pdf, resume
+
+    @action(detail=True, methods=["get"], url_path="rapport")
+    def rapport(self, request, pk=None):
+        """GET /api/biens-sinistres/<id>/rapport/ -- le dossier du bien en PDF, à remettre à son
+        propriétaire : ce que c'est, où il était, la cause et l'état du dommage, les photos."""
+        bien = self.get_object()
+        pdf, resume = self._rapport(request, bien)
+        audit_log(request=request, action_code="EXPORT", objet_type="BienSinistre", objet_id=bien.id, crise=bien.crise,
+                  commentaire=f"Rapport du bien sinistré « {bien.designation} » édité ({len(resume['photos'])} photo(s))")
+        return _reponse_pdf(pdf, "rapport-bien-sinistre")
+
+    @action(detail=True, methods=["post"], url_path="envoyer-au-proprietaire")
+    def envoyer_au_proprietaire(self, request, pk=None):
+        """POST /api/biens-sinistres/<id>/envoyer-au-proprietaire/ -- envoie le rapport du bien,
+        en pièce jointe, à l'adresse du propriétaire enregistrée sur la fiche (et à aucune autre)."""
+        from . import cloture_crise
+        from .audit import send_mail_with_attachment_logged
+
+        bien = self.get_object()
+        adresse = (bien.proprietaire_email or "").strip()
+        if not adresse:
+            return Response({"error": "Renseignez d'abord le courriel du propriétaire sur la fiche."}, status=status.HTTP_400_BAD_REQUEST)
+        pdf, _resume = self._rapport(request, bien)
+        collectivite = bien.institution.nom if bien.institution_id else "la collectivité"
+        send_mail_with_attachment_logged(
+            request, f"Rapport de constat — {bien.designation}",
+            f"Bonjour,\n\nVous trouverez en pièce jointe le rapport établi par {collectivite} sur votre bien "
+            f"({bien.get_type_bien_display().lower()} : {bien.designation}), à la suite de « {bien.crise.name} ».\n\n"
+            "Il reprend ce qui a été constaté et les photos : vous pouvez le joindre à votre déclaration de sinistre. "
+            "Il ne vaut pas expertise.\n",
+            None, [adresse], "rapport-bien-sinistre.pdf", pdf, "application/pdf")
+        bien.rapport_envoye_le = timezone.now()
+        bien.save(update_fields=["rapport_envoye_le"])
+        return Response({**self.get_serializer(bien).data, "envoye_a": cloture_crise.masquer(adresse)})
+
+
 class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
-    filterset_fields = ['dossier', 'habitation', 'demande', 'offre']
+    filterset_fields = ['dossier', 'habitation', 'demande', 'offre', 'bien']
 
     def get_queryset(self):
 
@@ -13002,6 +13715,10 @@ class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             )
             if not accede:
                 raise PermissionDenied("Vous n'avez pas accès à cette habitation.")
+
+        bien = serializer.validated_data.get('bien')
+        if bien and not _voit_le_bien(self.request, bien):
+            raise PermissionDenied("Vous n'avez pas accès à ce bien sinistré.")
 
         document = serializer.save(auteur=user, environment=get_active_environment(self.request))
 
@@ -22192,6 +22909,49 @@ class SatelliteViewSet(
         return Response({
             **SatelliteSerializer(satellite).data,
             "identifiants_compte_service": {"email": compte.email, "password": mot_de_passe},
+        })
+
+    @action(detail=True, methods=['post'], url_path='changer-institution')
+    def changer_institution(self, request, pk=None):
+        """POST /api/satellites/<id>/changer-institution/ {institution} -- rattache un satellite
+        à une autre collectivité sans le réinstaller (jeton généré pour la mauvaise institution,
+        constaté le 16/11/2026). Réservé à l'administrateur de la plateforme : c'est le seul à
+        voir les deux collectivités.
+
+        Le satellite et son compte de service changent ensemble : c'est l'institution du compte
+        de service qui borne ce que le central lui sert (données, comptes, équipes, radios). À
+        sa prochaine synchronisation il reçoit donc ceux de la nouvelle collectivité. Ce qu'il
+        avait déjà recopié de l'ancienne RESTE sur sa machine (core/sync_comptes.py ne touche
+        jamais aux comptes d'une autre institution) : la réponse le rappelle."""
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied("Seul un administrateur de la plateforme peut changer la collectivité d'un satellite.")
+        satellite = Satellite.objects.select_related('institution', 'compte_service').filter(
+            pk=pk, environment=get_active_environment(request)).first()
+        if satellite is None:
+            raise NotFound()
+        nouvelle = Institution.objects.filter(pk=request.data.get('institution')).first()
+        if nouvelle is None:
+            return Response({"error": "Collectivité inconnue."}, status=status.HTTP_400_BAD_REQUEST)
+        if satellite.statut_enrolement == StatutEnrolementSatellite.REVOQUE:
+            return Response({"error": "Ce satellite est révoqué."}, status=status.HTTP_400_BAD_REQUEST)
+        ancienne = satellite.institution
+        if nouvelle.pk == ancienne.pk:
+            return Response({"error": "Ce satellite appartient déjà à cette collectivité."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            satellite.institution = nouvelle
+            satellite.save(update_fields=['institution'])
+            if satellite.compte_service:
+                satellite.compte_service.institution = nouvelle
+                satellite.compte_service.save(update_fields=['institution'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} : collectivité changée de « {ancienne.nom} » à « {nouvelle.nom} ».",
+        )
+        return Response({
+            **SatelliteSerializer(satellite).data,
+            "a_savoir": f"Ce que ce satellite avait déjà recopié de « {ancienne.nom} » (comptes, équipes, radios) "
+                        "reste sur sa machine : pour repartir d'une base propre, il faut le réinstaller.",
         })
 
     @action(detail=True, methods=['post'], url_path='revoquer')

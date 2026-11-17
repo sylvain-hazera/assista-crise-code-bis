@@ -184,6 +184,16 @@
         <span class="layer-dot brule-dot"></span>
         Surfaces brûlées (30 jours)
       </label>
+      <!-- Pour tous les acteurs institutionnels (pas le public) : des cercles, jamais des points.
+           On sait qu'il y a quelqu'un à aller voir par ici, pas qui ni à quelle porte. -->
+      @if (isInstitutional) {
+        <label class="layer-toggle-item" title="Un cercle par personne du registre des personnes vulnérables. Le centre n'est pas son domicile, et le cercle s'élargit là où l'habitat est isolé. Aucune information au clic.">
+          <input type="checkbox" [(ngModel)]="layerVisibility.secteursVulnerables" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot secteur-vulnerable-dot"></span>
+          Personnes sensibles (secteurs)
+          @if (layerVisibility.secteursVulnerables && noteSecteursVulnerables) { <small class="layer-note">{{ noteSecteursVulnerables }}</small> }
+        </label>
+      }
       <label class="layer-toggle-item" title="Température, vent, pluie mesurés par les stations Météo-France. Orange : rafale ou pluie forte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.stationsMeteo" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot meteo-dot"></span>

@@ -4,7 +4,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 
 import { PersonneVulnerableService, TypeVulnerabiliteService } from '../../../services/vulnerabilite.service';
 import { ZoneService } from '../../../services/zone.service';
-import { PersonneVulnerable, TypeVulnerabilite } from '../../../shared/models/vulnerabilite.model';
+import { AdresseDeLaCommune, PersonneVulnerable, TypeVulnerabilite } from '../../../shared/models/vulnerabilite.model';
 import { ZoneLibellee, libellerZones } from '../../../shared/models/zone.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte/qui-a-consulte.component';
@@ -34,6 +34,37 @@ export class PersonneVulnerableModalComponent implements OnInit, OnChanges {
   categories: TypeVulnerabilite[] = [];
   saving = false;
   errorMessage = '';
+
+  /** Adresses de la commune proposées pour ce qui est tapé (relevé local, voir le service). */
+  propositions: AdresseDeLaCommune[] = [];
+  /** Identifiant de l'adresse choisie ; vide tant que l'adresse est un texte libre. */
+  adresseBanId = '';
+  /** Faux : la commune n'a pas encore de relevé d'adresses, le rattachement n'est pas possible. */
+  releveDisponible = true;
+  private rechercheEnAttente: ReturnType<typeof setTimeout> | null = null;
+
+  /** À chaque frappe : le texte ne correspond plus à l'adresse choisie, donc le lien tombe, et
+   * l'on repropose. Un court délai évite une requête par lettre. */
+  surSaisieAdresse(): void {
+    this.adresseBanId = '';
+    if (this.rechercheEnAttente) clearTimeout(this.rechercheEnAttente);
+    const texte = (this.form.get('adresse')?.value || '').trim();
+    if (texte.length < 3) { this.propositions = []; return; }
+    this.rechercheEnAttente = setTimeout(() => this.chercherAdresses(texte), 250);
+  }
+
+  chercherAdresses(texte: string): void {
+    this.personneVulnerableService.chercherAdresses(texte, this.personne?.commune_code).subscribe({
+      next: (reponse) => { this.releveDisponible = reponse.releve_disponible; this.propositions = reponse.adresses; },
+      error: () => { this.propositions = []; },
+    });
+  }
+
+  choisirAdresse(adresse: AdresseDeLaCommune): void {
+    this.form.patchValue({ adresse: adresse.adresse });
+    this.adresseBanId = adresse.ban_id;
+    this.propositions = [];
+  }
 
   categorieSearchFn = (q: string) => this.typeVulnerabiliteService.search(q);
   categorieCreateFn = (nom: string) => this.typeVulnerabiliteService.create({ nom });
@@ -72,6 +103,8 @@ export class PersonneVulnerableModalComponent implements OnInit, OnChanges {
       date_consentement: [this.personne?.date_consentement ?? ''],
     });
     this.categories = [...(this.personne?.categories_detail ?? [])];
+    this.adresseBanId = this.personne?.adresse_ban_id ?? '';
+    this.propositions = [];
   }
 
   get isEdit(): boolean {
@@ -102,6 +135,7 @@ export class PersonneVulnerableModalComponent implements OnInit, OnChanges {
       contact_aidant_telephone: raw.contact_aidant_telephone || null,
       date_consentement: raw.date_consentement || null,
       categorie_ids: this.categories.map(c => c.id),
+      adresse_ban_id: this.adresseBanId || null,
     };
 
     this.saving = true;

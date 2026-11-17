@@ -342,6 +342,8 @@
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeModal()">Fermer</button>
+        <app-bouton-rapport nature="mission" [id]="selectedMission.id" [reference]="selectedMission.titre"
+                            [clos]="selectedMission.statut === 'TERMINEE'"></app-bouton-rapport>
         @if (selectedMission.statut === 'EN_PREPARATION') {
           <button class="btn-primary" (click)="demarrerMission(selectedMission); closeModal()">
             <span class="material-icons">play_circle</span> Démarrer

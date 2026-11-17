@@ -1,0 +1,128 @@
+<div class="biens-page">
+  <header>
+    <h1><span class="material-icons">directions_car</span> Biens sinistrés</h1>
+    <p class="chapeau">Tout ce qui n'est pas une habitation : voitures brûlées, bateaux, hangars, matériel, voirie. Pour chaque bien,
+      de quoi monter le dossier à remettre à son propriétaire pour son assurance. Les habitations se suivent dans
+      « Référencement des dégâts ».</p>
+  </header>
+
+  <div class="barre">
+    <label>Crise
+      <select name="crise" [(ngModel)]="criseId" (ngModelChange)="charger()">
+        <option value="">Toutes les crises ouvertes</option>
+        @for (c of crises; track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+      </select></label>
+    @if (!brouillon) { <button type="button" class="btn-primary" (click)="nouveau()"><span class="material-icons">add</span> Ajouter un bien</button> }
+  </div>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (brouillon; as b) {
+    <form class="fiche" (ngSubmit)="enregistrer()">
+      <h2>{{ b.id ? b.designation : 'Nouveau bien sinistré' }}</h2>
+      <div class="ligne">
+        <label>Type de bien
+          <select name="type_bien" [(ngModel)]="b.type_bien">
+            @for (t of types | keyvalue; track t.key) { <option [value]="t.key">{{ t.value }}</option> }
+          </select></label>
+        <label>Désignation <span class="obligatoire">*</span>
+          <input type="text" name="designation" [(ngModel)]="b.designation" placeholder="Renault Clio grise" maxlength="200"></label>
+        <label>Immatriculation, numéro de série
+          <input type="text" name="identification" [(ngModel)]="b.identification" placeholder="AB-123-CD" maxlength="100" autocomplete="off"></label>
+      </div>
+
+      <div class="ligne">
+        <label>État
+          <select name="statut_evaluation" [(ngModel)]="b.statut_evaluation">
+            @for (e of etats | keyvalue; track e.key) { <option [value]="e.key">{{ e.value }}</option> }
+          </select></label>
+        @if (degatsConstates) {
+          <label>Cause du dommage
+            <select name="nature_degats" [(ngModel)]="b.nature_degats">
+              <option value="">— D'après la crise —</option>
+              @for (n of natures | keyvalue; track n.key) { <option [value]="n.key">{{ n.value }}</option> }
+            </select></label>
+        }
+      </div>
+
+      <label>Description : ce qu'on constate
+        <textarea name="description" rows="3" [(ngModel)]="b.description" placeholder="Entièrement calcinée, stationnée devant le n° 14. Plaques illisibles, numéro relevé sur le châssis."></textarea></label>
+
+      <fieldset>
+        <legend>Où il se trouve</legend>
+        <div class="ligne">
+          <button type="button" class="btn-secondary" [disabled]="localisation" (click)="prendreMaPosition()">
+            <span class="material-icons">my_location</span> {{ localisation ? 'Localisation…' : 'Prendre ma position' }}</button>
+          <label>Latitude <input type="number" name="latitude" step="0.000001" [(ngModel)]="b.latitude"></label>
+          <label>Longitude <input type="number" name="longitude" step="0.000001" [(ngModel)]="b.longitude"></label>
+        </div>
+        <label>Adresse ou repère
+          <input type="text" name="adresse" [(ngModel)]="b.adresse" placeholder="Devant le 14 allée des Pins" maxlength="300"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Propriétaire, s'il est connu</legend>
+        <div class="ligne">
+          <label>Nom <input type="text" name="proprietaire_nom" [(ngModel)]="b.proprietaire_nom" maxlength="150" autocomplete="off"></label>
+          <label>Courriel <input type="email" name="proprietaire_email" [(ngModel)]="b.proprietaire_email" maxlength="254" autocomplete="off"></label>
+          <label>Téléphone <input type="tel" name="proprietaire_telephone" [(ngModel)]="b.proprietaire_telephone" maxlength="30" autocomplete="off"></label>
+        </div>
+        <p class="note">Ces coordonnées servent à lui remettre le rapport. Elles se complètent plus tard si on ne le connaît pas encore.</p>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="enregistrement">{{ enregistrement ? 'Enregistrement…' : 'Enregistrer' }}</button>
+        <button type="button" class="btn-secondary" (click)="fermer()">Fermer</button>
+        @if (b.id) { <button type="button" class="btn-secondary danger" (click)="supprimer()">Supprimer</button> }
+      </div>
+
+      @if (b.id) {
+        <fieldset>
+          <legend>Photos ({{ photos.length }})</legend>
+          <label class="depot">Ajouter des photos
+            <input type="file" accept="image/*" multiple [disabled]="depotEnCours" (change)="deposerPhotos($event)"></label>
+          @if (depotEnCours) { <p class="note">Dépôt en cours…</p> }
+          @if (photos.length) {
+            <ul class="photos">
+              @for (photo of photos; track photo.id) { <li>{{ photo.nom_fichier || 'Photo' }} — {{ photo.date_upload | date:'dd/MM/yyyy HH:mm' }}</li> }
+            </ul>
+          } @else { <p class="note">Aucune photo pour l'instant. Elles figureront dans le rapport.</p> }
+        </fieldset>
+
+        <fieldset>
+          <legend>Dossier à remettre au propriétaire</legend>
+          <div class="ligne">
+            <app-bouton-rapport nature="bien" [id]="b.id" [reference]="b.designation"></app-bouton-rapport>
+            <button type="button" class="btn-secondary" [disabled]="!b.proprietaire_email || envoiEnCours" (click)="envoyerAuProprietaire()"
+                    [title]="b.proprietaire_email ? 'Le rapport part en pièce jointe à son adresse.' : 'Renseignez d’abord le courriel du propriétaire, puis enregistrez.'">
+              <span class="material-icons">forward_to_inbox</span> {{ envoiEnCours ? 'Envoi…' : 'Envoyer au propriétaire' }}</button>
+          </div>
+          @if (b.rapport_envoye_le) { <p class="note">Dernier envoi au propriétaire : {{ b.rapport_envoye_le | date:'dd/MM/yyyy HH:mm' }}.</p> }
+        </fieldset>
+      }
+    </form>
+  }
+
+  @if (chargement) { <p class="message">Chargement…</p> }
+  @if (!chargement && !biens.length && !brouillon) { <p class="message">Aucun bien sinistré n'est enregistré{{ criseId ? ' pour cette crise' : '' }}.</p> }
+
+  @if (biens.length) {
+    <table class="liste">
+      <thead><tr><th>Bien</th><th>Type</th><th>État</th><th>Cause</th><th>Où</th><th>Photos</th><th>Propriétaire</th></tr></thead>
+      <tbody>
+        @for (bien of biens; track bien.id) {
+          <tr (click)="ouvrir(bien)" [class.ouvert]="brouillon?.id === bien.id">
+            <td><strong>{{ bien.designation }}</strong>@if (bien.identification) { <small>{{ bien.identification }}</small> }</td>
+            <td>{{ types[bien.type_bien] }}</td>
+            <td><span class="etat" [attr.data-statut]="bien.statut_evaluation">{{ etats[bien.statut_evaluation] }}</span></td>
+            <td>{{ bien.nature_degats ? natures[bien.nature_degats] : '' }}</td>
+            <td>{{ bien.adresse || (bien.latitude !== null ? 'position relevée' : 'non situé') }}</td>
+            <td>{{ bien.nb_photos ?? 0 }}</td>
+            <td>{{ bien.proprietaire_nom || (bien.proprietaire_email ? 'courriel connu' : 'inconnu') }}@if (bien.rapport_envoye_le) { <small>rapport envoyé</small> }</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>

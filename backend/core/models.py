@@ -366,6 +366,13 @@ class Crisis(EnvironmentScopedModel):
     # déclenche la purge RGPD à 30 jours, voir cleanup_crises).
     essai = models.BooleanField(default=False)
 
+    # Clôture en deux temps (core/cloture_crise.py) : proposée, puis effective sept jours plus
+    # tard, le temps que chacun récupère son rapport. Vides tant que rien n'est proposé.
+    fermeture_proposee_le = models.DateTimeField(null=True, blank=True)
+    fermeture_proposee_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="fermetures_proposees")
+    fermeture_prevue_le = models.DateTimeField(null=True, blank=True)
+
     author = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -2422,6 +2429,11 @@ class Document(EnvironmentScopedModel):
         related_name="documents"
     )
 
+    bien = models.ForeignKey(
+        "BienSinistre", on_delete=models.CASCADE, null=True, blank=True, related_name="documents",
+        help_text="Bien sinistré autre qu'une habitation (véhicule, bateau, hangar…).",
+    )
+
     habitation = models.ForeignKey(
         "Habitation",
         on_delete=models.CASCADE,
@@ -3406,6 +3418,34 @@ class StatutEvaluationHabitation(models.TextChoices):
     PAS_DE_DEGATS = "PAS_DE_DEGATS", "Pas de dégâts"
     DEGATS_FAIBLES = "DEGATS_FAIBLES", "Dégâts faibles"
     DEGATS_FORTS = "DEGATS_FORTS", "Dégâts forts"
+    #: Maison brûlée, effondrée, emportée : il n'y a plus rien à habiter. Distinct de « dégâts
+    #: forts », qui se répare (incendies de l'été 2026 : les deux se côtoyaient dans la même rue).
+    DETRUITE = "DETRUITE", "Détruite"
+
+    @classmethod
+    def avec_degats(cls):
+        """Les états qui constatent un dommage (ouvrent un dossier, comptent dans les exports)."""
+        return (cls.DEGATS_FAIBLES, cls.DEGATS_FORTS, cls.DETRUITE)
+
+
+class NatureDegatsHabitation(models.TextChoices):
+    """Ce qui a causé le dommage constaté sur un bâtiment. Le suivi des dégâts sert pour tout
+    sinistre, pas seulement l'eau : feu de forêt, tempête ou tornade, grêle, séisme… Posée
+    maison par maison, parce qu'une même crise en mêle souvent plusieurs (orage : eau ici, vent
+    là), et reprise dans les rapports pour l'assureur."""
+    EAU = "EAU", "Eau (inondation, coulée de boue, submersion)"
+    FEU = "FEU", "Feu (incendie, feu de forêt)"
+    VENT = "VENT", "Vent (tempête, tornade)"
+    GRELE = "GRELE", "Grêle"
+    NEIGE = "NEIGE", "Neige, glace"
+    TERRAIN = "TERRAIN", "Mouvement de terrain, séisme"
+    EXPLOSION = "EXPLOSION", "Explosion, accident"
+    AUTRE = "AUTRE", "Autre"
+
+    @classmethod
+    def pour_la_crise(cls, crise) -> str:
+        """La nature proposée d'office d'après le type de la crise ; vide quand il ne dit rien."""
+        return {"INCENDIE": cls.FEU, "INONDATION": cls.EAU, "ACCIDENT": cls.EXPLOSION}.get(getattr(crise, "type", ""), "")
 
 
 class StatutChantierHabitation(models.TextChoices):
@@ -3462,6 +3502,11 @@ class Habitation(EnvironmentScopedModel):
         choices=StatutChantierHabitation.choices,
         null=True, blank=True,
         help_text="Uniquement pertinent si statut_evaluation indique des dégâts.",
+    )
+
+    nature_degats = models.CharField(
+        max_length=20, choices=NatureDegatsHabitation.choices, blank=True, default="",
+        help_text="Cause du dommage constaté (eau, feu, vent…). Vide tant que rien n'est constaté.",
     )
 
     evalue_par = models.ForeignKey(
@@ -3524,6 +3569,49 @@ class HabitationHistorique(EnvironmentScopedModel):
 
     def __str__(self):
         return self.evenement
+
+
+class StatutPointageTerrain(models.TextChoices):
+    A_VALIDER = "A_VALIDER", "À valider"
+    VALIDE = "VALIDE", "Validé"
+    REFUSE = "REFUSE", "Refusé"
+
+
+class PointageTerrain(EnvironmentScopedModel):
+    """Ce qu'un intervenant (membre d'une équipe engagée sur la crise) a pointé sur le terrain,
+    en attente de validation par la commune.
+
+    Décision de Sylvain du 17/11/2026 : « ouvre le pointage aux intervenants mais le pointage
+    doit être validé par du personnel municipal ou élu ». Tant qu'il n'est pas validé, un
+    pointage n'est PAS une habitation : il n'apparaît ni sur la carte publique, ni dans les
+    décomptes, ni dans les rapports, et n'ouvre aucun dossier. À la validation il devient (ou
+    complète) une `Habitation`, et le constat proposé devient son évaluation."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="pointages_terrain")
+    location = gis_models.PointField(srid=4326)
+    adresse = EncryptedTextField()
+    ban_id = models.CharField(max_length=64, blank=True, null=True)
+    commune_code = models.CharField(max_length=10, blank=True, null=True)
+    commune_nom = models.CharField(max_length=255, blank=True, null=True)
+    #: Le constat proposé par l'intervenant ; la commune peut le corriger en validant.
+    statut_evaluation = models.CharField(
+        max_length=20, choices=StatutEvaluationHabitation.choices, default=StatutEvaluationHabitation.NON_EVALUEE)
+    nature_degats = models.CharField(max_length=20, choices=NatureDegatsHabitation.choices, blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="pointages_terrain")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    statut = models.CharField(max_length=12, choices=StatutPointageTerrain.choices, default=StatutPointageTerrain.A_VALIDER)
+    #: La maison déjà référencée à cet endroit, puis celle que la validation a créée ou complétée.
+    habitation = models.ForeignKey(Habitation, on_delete=models.SET_NULL, null=True, blank=True, related_name="pointages")
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    traite_le = models.DateTimeField(null=True, blank=True)
+    motif_refus = models.CharField(max_length=300, blank=True, default="")
+
+    class Meta:
+        ordering = ["-date_creation"]
+        indexes = [models.Index(fields=["crise", "statut"])]
 
 
 class TypeLienHabitation(models.TextChoices):
@@ -3823,6 +3911,34 @@ class PalierInondationSimule(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.commune_code} — {self.niveau_metres}m"
+
+
+class ZonageOfficiel(EnvironmentScopedModel):
+    """Une zone inondable officielle de l'État pour une commune (Géorisques), gardée en base.
+
+    Relevée une fois, à la demande d'un agent, puis relue d'ici : la carte, le croisement avec
+    les enjeux du plan, l'export et le document du plan n'interrogent jamais Géorisques
+    eux-mêmes (voir core/zonages_officiels.py, qui espace les requêtes). Une ligne par scénario,
+    même quand la commune n'a aucune zone pour lui : `polygone` vide veut alors dire « relevé,
+    et rien ici » -- ce qui n'est pas la même chose que « jamais relevé »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10)
+    #: Nom de la couche chez Géorisques (voir habitations.COUCHES_GEORISQUES).
+    couche = models.CharField(max_length=40)
+    polygone = gis_models.MultiPolygonField(srid=4326, null=True, blank=True)
+    releve_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["commune_code", "couche", "environment"],
+                name="uq_zonage_officiel_commune_couche_environment",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.commune_code} — {self.couche}"
 
 
 class AdresseSimuleeInondation(EnvironmentScopedModel):
@@ -6576,6 +6692,10 @@ class PersonneVulnerable(EnvironmentScopedModel):
     nom = EncryptedTextField()
     prenom = EncryptedTextField()
     adresse = EncryptedTextField()
+    #: Identifiant de cette adresse dans la Base Adresse Nationale, quand la fiche a été
+    #: rattachée à une adresse de la commune (core/rattachement_adresses.py). Chiffré comme
+    #: l'adresse : il la désigne aussi sûrement qu'elle. Vide = adresse libre, non rattachée.
+    adresse_ban_id = EncryptedTextField(null=True, blank=True)
     telephone = EncryptedTextField(null=True, blank=True)
 
     categories = models.ManyToManyField(
@@ -10795,3 +10915,108 @@ class AppareilConnu(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["utilisateur", "empreinte"], name="uq_appareil_connu"),
         ]
+
+
+class TypeBienSinistre(models.TextChoices):
+    VEHICULE = "VEHICULE", "Véhicule (voiture, utilitaire, camion)"
+    DEUX_ROUES = "DEUX_ROUES", "Deux-roues"
+    BATEAU = "BATEAU", "Bateau"
+    CARAVANE = "CARAVANE", "Caravane, camping-car, mobil-home"
+    ENGIN = "ENGIN", "Engin, matériel agricole ou de chantier"
+    BATIMENT_AGRICOLE = "BATIMENT_AGRICOLE", "Bâtiment agricole, hangar, annexe"
+    COMMERCE = "COMMERCE", "Commerce, local professionnel"
+    MOBILIER_URBAIN = "MOBILIER_URBAIN", "Voirie, mobilier urbain, réseau"
+    AUTRE = "AUTRE", "Autre bien"
+
+
+class BienSinistre(EnvironmentScopedModel):
+    """Un bien sinistré qui n'est pas une habitation : les voitures brûlées d'un feu de forêt,
+    un bateau, un hangar, du matériel, de la voirie.
+
+    `Habitation` suit les maisons, adresse par adresse. Tout le reste n'a pas d'adresse à soi,
+    se décrit autrement (une immatriculation, un numéro de série) et appartient souvent à
+    quelqu'un qu'on ne connaît pas sur le moment. On relève donc ce qu'on voit -- ce que c'est,
+    où c'est, ce qui l'a touché, les photos (`Document.bien`) -- et l'on complète le propriétaire
+    plus tard, pour lui remettre le dossier (core/rapports_pdf.py).
+
+    Chiffrés : l'identification (une immatriculation désigne une personne), le lieu saisi et les
+    coordonnées du propriétaire. Les mêmes états et causes de dommage que pour une habitation."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="biens_sinistres")
+    institution = models.ForeignKey("Institution", on_delete=models.PROTECT, null=True, blank=True, related_name="biens_sinistres",
+                                    help_text="La collectivité qui a relevé le bien.")
+    type_bien = models.CharField(max_length=30, choices=TypeBienSinistre.choices, default=TypeBienSinistre.VEHICULE)
+    designation = models.CharField(max_length=200, help_text="Ce que c'est, en clair : « Renault Clio grise ».")
+    identification = EncryptedTextField(blank=True, default="", help_text="Immatriculation, numéro de série, de coque…")
+    description = models.TextField(blank=True, default="")
+    adresse = EncryptedTextField(blank=True, default="", help_text="Adresse ou repère : « devant le 14 allée des Pins ».")
+    commune_code = models.CharField(max_length=10, blank=True, null=True)
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    nature_degats = models.CharField(max_length=20, choices=NatureDegatsHabitation.choices, blank=True, default="")
+    statut_evaluation = models.CharField(max_length=20, choices=StatutEvaluationHabitation.choices,
+                                         default=StatutEvaluationHabitation.DEGATS_FORTS)
+    proprietaire_nom = EncryptedTextField(blank=True, default="")
+    proprietaire_email = EncryptedTextField(blank=True, default="")
+    proprietaire_telephone = EncryptedTextField(blank=True, default="")
+    rapport_envoye_le = models.DateTimeField(null=True, blank=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="biens_sinistres_releves")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self):
+        return self.designation
+
+
+class RapportConserve(EnvironmentScopedModel):
+    """Un rapport PDF gardé sur le serveur jusqu'à la clôture de sa crise (core/cloture_crise.py).
+
+    Chiffré sur le disque, comme les autres fichiers sensibles : il porte des noms, des adresses
+    et des photos de biens privés. On garde la dernière édition de chaque rapport ; `effacer`
+    retire le fichier ET la ligne, parce que supprimer une ligne ne supprime pas son fichier."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: « dossier », « mission », « crise » ou « bien ».
+    nature = models.CharField(max_length=20)
+    objet_id = models.UUIDField()
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, null=True, blank=True, related_name="rapports_conserves")
+    #: Pour un rapport de crise : la collectivité dont c'est le point de vue.
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="rapports_conserves")
+    fichier = models.FileField(storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255)
+    sha256 = models.CharField(max_length=64)
+    taille = models.PositiveIntegerField(default=0)
+    toutes_les_photos = models.BooleanField(default=False)
+    edite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="rapports_edites")
+    date_edition = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_edition"]
+        indexes = [models.Index(fields=["nature", "objet_id"])]
+
+    def effacer(self):
+        if self.fichier:
+            self.fichier.delete(save=False)
+        self.delete()
+
+
+class DemandeRapport(EnvironmentScopedModel):
+    """Le lien personnel envoyé par courriel quand la clôture d'une crise est proposée : il
+    permet à la personne de se faire envoyer SON rapport, à l'adresse où le lien est parti.
+
+    Un lien par personne et par rapport. Il ne donne accès à rien d'autre, et disparaît avec la
+    clôture. L'adresse est chiffrée, comme partout."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="demandes_rapport")
+    nature = models.CharField(max_length=20)       # « dossier » ou « bien »
+    objet_id = models.UUIDField()
+    email = EncryptedTextField()
+    role = models.CharField(max_length=20, blank=True, default="")      # BENEFICIAIRE, PARTICIPANT, PROPRIETAIRE
+    jeton = models.CharField(max_length=64, unique=True)
+    nb_envois = models.PositiveIntegerField(default=0)
+    envois_du_jour = models.PositiveIntegerField(default=0)
+    dernier_envoi = models.DateTimeField(null=True, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)

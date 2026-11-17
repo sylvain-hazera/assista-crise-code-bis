@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { TypeVulnerabilite, PersonneVulnerable } from '../shared/models/vulnerabilite.model';
+import { TypeVulnerabilite, PersonneVulnerable, AdresseDeLaCommune, EtatRattachement, ExpositionRegistre } from '../shared/models/vulnerabilite.model';
 import {
   EtatRegistreVulnerables,
   HabilitationRegistre,
@@ -53,6 +53,40 @@ export class PersonneVulnerableService {
 
   radier(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
+  /** Les adresses de la commune qui correspondent à ce qu'on tape. La recherche se fait dans
+   * le relevé gardé sur notre serveur : l'adresse d'une personne vulnérable ne part nulle part. */
+  chercherAdresses(q: string, communeCode?: string): Observable<{ releve_disponible: boolean; adresses: AdresseDeLaCommune[] }> {
+    const params: Record<string, string> = communeCode ? { q, commune_code: communeCode } : { q };
+    return this.http.get<{ releve_disponible: boolean; adresses: AdresseDeLaCommune[] }>(`${this.url}/adresses/`, { params });
+  }
+
+  rattachement(communeCode?: string): Observable<EtatRattachement> {
+    const params: Record<string, string> = communeCode ? { commune_code: communeCode } : {};
+    return this.http.get<EtatRattachement>(`${this.url}/rattachement/`, { params });
+  }
+
+  /** Rattache la fiche à une adresse de la commune ; `banId` vide la détache. */
+  rattacher(id: string, banId: string): Observable<PersonneVulnerable> {
+    return this.http.post<PersonneVulnerable>(`${this.url}/${id}/rattacher/`, { ban_id: banId });
+  }
+
+  /** Rattache d'un coup les fiches dont l'adresse est mot pour mot une adresse du relevé. */
+  rattacherExactes(communeCode?: string): Observable<EtatRattachement> {
+    return this.http.post<EtatRattachement>(`${this.url}/rattacher-exactes/`, communeCode ? { commune_code: communeCode } : {});
+  }
+
+  exposition(communeCode?: string): Observable<ExpositionRegistre> {
+    const params: Record<string, string> = communeCode ? { commune_code: communeCode } : {};
+    return this.http.get<ExpositionRegistre>(`${this.url}/exposition/`, { params });
+  }
+
+  /** Pour la carte : un cercle par personne du registre, jamais un point. Réservé aux personnes
+   * habilitées. Les cercles ne portent aucune propriété ; `libelle` est le seul texte à montrer. */
+  secteurs(communeCode?: string): Observable<SecteursVulnerables> {
+    const params: Record<string, string> = communeCode ? { commune_code: communeCode } : {};
+    return this.http.get<SecteursVulnerables>(`${this.url}/secteurs/`, { params });
   }
 
   /** Le registre d'une commune, mis en page pour l'impression. Sans `communeCode`, le serveur
@@ -122,4 +156,14 @@ export interface CandidatHabilitation {
   email: string;
   deja_habilite: boolean;
   rcsc: boolean;
+}
+
+/** Les secteurs « personne sensible dans les environs » (core/secteurs_vulnerables.py). */
+export interface SecteursVulnerables {
+  type: 'FeatureCollection';
+  features: { type: 'Feature'; properties: Record<string, never>; geometry: { type: 'Polygon'; coordinates: number[][][] } }[];
+  libelle: string;
+  situees: number;
+  non_situees: number;
+  releve_disponible: boolean;
 }

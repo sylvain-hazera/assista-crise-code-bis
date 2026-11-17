@@ -149,3 +149,23 @@ def calibrer_radio_task(environment: str):
     from .relief_radio import calibrer
 
     return calibrer(environment)
+
+
+@shared_task(acks_late=True, time_limit=600, soft_time_limit=570)
+def relever_zonages_officiels_task(commune_code: str, environment: str, forcer: bool = False):
+    """Relève les zones inondables officielles d'une commune auprès de Géorisques, une requête
+    par scénario, espacées (voir core/zonages_officiels.py). En tâche de fond : cinq requêtes
+    et leurs pauses ne tiennent pas dans le délai d'une page."""
+    from .zonages_officiels import relever
+
+    return relever(commune_code, environment, forcer=forcer)
+
+
+@shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
+def relever_adresses_commune_task(commune_code: str, environment: str):
+    """Rapatrie les adresses d'une commune depuis la Base Adresse Nationale, sans simulation
+    (core/rattachement_adresses.py) : pour rattacher les personnes du registre à leur adresse là
+    où aucune simulation d'inondation n'a été lancée."""
+    from .rattachement_adresses import relever_les_adresses
+
+    return relever_les_adresses(commune_code, environment)

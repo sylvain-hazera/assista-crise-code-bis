@@ -71,9 +71,25 @@
                 <span class="material-icons">download</span> Exporter la main courante
               </button>
             }
+            @if (canExportCrisis) {
+              <app-bouton-rapport nature="crise" [id]="selectedCrisis.id" [reference]="selectedCrisis.name"
+                                  [clos]="selectedCrisis.is_open === false"></app-bouton-rapport>
+            }
+            @if (canCloturerCrisis && !selectedCrisis.fermeture_prevue_le) {
+              <button class="btn-secondary sm" (click)="proposerFermeture()"
+                      title="La crise sera close dans 7 jours ; les personnes concernées reçoivent un lien pour se faire envoyer leur rapport.">
+                <span class="material-icons">event_available</span> Proposer la clôture
+              </button>
+            }
+            @if (canCloturerCrisis && selectedCrisis.fermeture_prevue_le) {
+              <span class="cloture-prevue" role="status">
+                <span class="material-icons">event</span> Clôture prévue le {{ selectedCrisis.fermeture_prevue_le | date:'dd/MM/yyyy' }}
+              </span>
+              <button class="btn-secondary sm" (click)="annulerFermeture()">Annuler la proposition</button>
+            }
             @if (canCloturerCrisis) {
-              <button class="btn-secondary sm" (click)="cloturerCrisis()">
-                <span class="material-icons">lock</span> Clôturer la crise
+              <button class="btn-secondary sm" (click)="cloturerCrisis()" title="Sans attendre les 7 jours.">
+                <span class="material-icons">lock</span> Clôturer tout de suite
               </button>
             }
             @if (selectedCrisis.is_open !== false) {

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, ElementRef, AfterViewInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -13,6 +13,8 @@ import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
 
 import { Team } from '../../shared/models/team.model';
+import { AuthService } from '../../auth/services/auth.service';
+import { BoutonRapportComponent } from '../../shared/components/common/bouton-rapport/bouton-rapport.component';
 import {
   MatrixSalonChatComponent,
 } from '../../admin/teams/matrix-salon-chat/matrix-salon-chat.component';
@@ -33,7 +35,7 @@ const STATUT_LABELS: Record<string, string> = {
 @Component({
   selector: 'app-mon-equipe',
   standalone: true,
-  imports: [CommonModule, RouterLink, MatrixSalonChatComponent],
+  imports: [CommonModule, RouterLink, MatrixSalonChatComponent, BoutonRapportComponent],
   templateUrl: './mon-equipe.component.html',
   styleUrl: './mon-equipe.component.scss',
 })
@@ -44,6 +46,13 @@ export class MonEquipeComponent implements OnInit, AfterViewInit, OnDestroy {
   errorMessage = '';
 
   team: Team | null = null;
+  private authService = inject(AuthService);
+
+  /** Le rapport de mission s'ouvre à la collectivité et au chef (ou régulateur) de l'équipe. */
+  get peutEditerRapport(): boolean {
+    const moi = this.authService.getCurrentUser()?.id;
+    return this.authService.isInstitutionalEffective() || (!!moi && (moi === this.team?.leader || moi === this.team?.regulateur));
+  }
   missions: Mission[] = [];
   dossiers: Dossier[] = [];
   positions: DernierePosition[] = [];

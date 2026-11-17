@@ -48,6 +48,9 @@ export const ADMIN_ROUTES: Routes = [
   // Un écran par paragraphe du plan communal de sauvegarde : risques (1.1) et annuaire de crise
   // (2.4 / 4.1) se saisissaient au fond de la fiche Institution, sans entrée de menu.
   { path: 'pcs-risques', loadComponent: () => import('./pcs-risques/pcs-risques.component').then(m => m.PcsRisquesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'biens-sinistres', loadComponent: () => import('./biens-sinistres/biens-sinistres.component').then(m => m.BiensSinistresComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'couches-carto', loadComponent: () => import('./couches-carto/couches-carto.component').then(m => m.CouchesCartoComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'pcs-enjeux-exposes', loadComponent: () => import('./pcs-enjeux-exposes/pcs-enjeux-exposes.component').then(m => m.PcsEnjeuxExposesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'pcs-annuaire', loadComponent: () => import('./pcs-annuaire/pcs-annuaire.component').then(m => m.PcsAnnuaireComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'alerte-habitants', loadComponent: () => import('./alerte-habitants/alerte-habitants.component').then(m => m.AlerteHabitantsComponent), canActivate: [institutionalEffectiveGuard] },
   // Trois paragraphes tenus en liste, sur le même écran (pcs-liste/pcs-listes.config.ts).

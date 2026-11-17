@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { HabilitationRegistreService, PersonneVulnerableService } from '../../services/vulnerabilite.service';
-import { PersonneVulnerable } from '../../shared/models/vulnerabilite.model';
+import { PersonneVulnerable, EtatRattachement, ExpositionRegistre } from '../../shared/models/vulnerabilite.model';
 import { EtatRegistreVulnerables } from '../../shared/models/habilitation-registre.model';
 import { PersonneVulnerableModalComponent } from './personne-vulnerable-modal/personne-vulnerable-modal.component';
 import { EngagementSecretModalComponent } from './engagement-secret-modal/engagement-secret-modal.component';
@@ -95,12 +95,57 @@ export class PersonnesVulnerablesComponent implements OnInit {
       next: (personnes) => {
         this.personnes = personnes;
         this.isLoading = false;
+        if (this.peutEcrire) this.chargerRattachement();
       },
       error: () => {
         this.errorMessage = 'Impossible de charger le registre des personnes vulnérables.';
         this.isLoading = false;
       },
     });
+  }
+
+  /** Où en est le rattachement des fiches aux adresses de la commune (personnes habilitées). */
+  rattachement: EtatRattachement | null = null;
+  exposition: ExpositionRegistre | null = null;
+  rattachementOuvert = false;
+  rattachementEnCours = '';
+
+  private chargerRattachement(): void {
+    const commune = this.communes.length === 1 ? this.communes[0] : (this.communeAImprimer || undefined);
+    if (this.communes.length > 1 && !commune) return;      // plusieurs communes : attendre le choix
+    this.personneVulnerableService.rattachement(commune).subscribe({ next: (etat) => this.rattachement = etat, error: () => {} });
+    this.personneVulnerableService.exposition(commune).subscribe({ next: (e) => this.exposition = e, error: () => {} });
+  }
+
+  private apresRattachement(): void {
+    this.personneVulnerableService.getAll().subscribe({ next: (personnes) => { this.personnes = personnes; this.chargerRattachement(); } });
+  }
+
+  rattacher(ficheId: string, banId: string): void {
+    this.rattachementEnCours = ficheId;
+    this.personneVulnerableService.rattacher(ficheId, banId).subscribe({
+      next: () => { this.rattachementEnCours = ''; this.apresRattachement(); },
+      error: () => { this.rattachementEnCours = ''; this.errorMessage = "Cette fiche n'a pas pu être rattachée."; },
+    });
+  }
+
+  rattacherExactes(): void {
+    this.rattachementEnCours = 'toutes';
+    const commune = this.communes.length === 1 ? this.communes[0] : (this.communeAImprimer || undefined);
+    this.personneVulnerableService.rattacherExactes(commune).subscribe({
+      next: (etat) => { this.rattachementEnCours = ''; this.rattachement = etat; this.apresRattachement(); },
+      error: () => { this.rattachementEnCours = ''; this.errorMessage = 'Le rattachement n’a pas abouti.'; },
+    });
+  }
+
+  /** Ce que le lien dit d'une fiche : niveau d'eau qui atteint son adresse, dégâts constatés. */
+  situation(personne: PersonneVulnerable): string {
+    const morceaux: string[] = [];
+    const seuil = this.exposition?.seuils?.[personne.id];
+    if (seuil !== undefined) morceaux.push(seuil === null ? 'au sec (simulation)' : `eau dès ${String(seuil).replace('.', ',')} m (simulation)`);
+    const degats = this.exposition?.degats?.[personne.id];
+    if (degats) morceaux.push(degats.toLowerCase());
+    return morceaux.join(' — ');
   }
 
   /** Le disclaimer de première connexion : un titre d'accès, mais pas encore d'engagement. */

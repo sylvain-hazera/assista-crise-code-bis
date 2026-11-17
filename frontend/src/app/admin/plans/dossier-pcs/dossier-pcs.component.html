@@ -12,6 +12,9 @@
               title="Le plan mis en page selon la trame de l'État. Diffusion restreinte : il porte l'annuaire de crise.">
         <span class="material-icons">picture_as_pdf</span> {{ edition ? 'Édition…' : 'Éditer le plan (PDF)' }}
       </button>
+      <label class="option-fond" title="Les deux cartes en fin de plan sont par défaut des schémas à l'échelle, sans rues. Cochez pour les poser sur le Plan IGN : seule l'emprise de la commune est demandée à l'IGN.">
+        <input type="checkbox" name="fondIgn" [(ngModel)]="fondIgn"> Cartes sur fond de plan IGN
+      </label>
       <button type="button" class="btn-secondary" (click)="editerDicrim()" [disabled]="edition"
               title="Le document d'information des habitants sur les risques majeurs. Public : il ne contient aucun nom ni téléphone.">
         <span class="material-icons">groups</span> Éditer le DICRIM pour les habitants

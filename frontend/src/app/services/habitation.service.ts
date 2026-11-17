@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   Habitation, HabitationCommentaire, HabitationHistorique, RattachementHabitation,
-  StatutEvaluationHabitation, StatutChantierHabitation, ReleveHabitation, EstimationDvf,
+  StatutEvaluationHabitation, StatutChantierHabitation, ReleveHabitation, EstimationDvf, NatureDegatsHabitation, PointageTerrain,
 } from '../shared/models/habitation.model';
 
 export interface HabitationFiltres {
@@ -47,12 +47,43 @@ export class HabitationService {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
-  evaluer(id: string, statutEvaluation: StatutEvaluationHabitation, statutChantier: StatutChantierHabitation, commentaire?: string): Observable<Habitation> {
+  /** `nature` : la cause du dommage ; non précisée, le serveur garde celle de la fiche ou
+   * propose celle que suggère le type de la crise. */
+  evaluer(id: string, statutEvaluation: StatutEvaluationHabitation, statutChantier: StatutChantierHabitation,
+          commentaire?: string, nature?: NatureDegatsHabitation): Observable<Habitation> {
     return this.http.post<Habitation>(`${this.url}/${id}/evaluer/`, {
       statut_evaluation: statutEvaluation,
       statut_chantier: statutChantier,
       commentaire: commentaire || undefined,
+      ...(nature !== undefined ? { nature_degats: nature } : {}),
     });
+  }
+
+  /** L'agent de terrain pointe la maison devant laquelle il se trouve. Le serveur rend celle
+   * qui est déjà référencée à cet endroit (`existante`) plutôt que d'en créer un doublon, et
+   * cherche lui-même l'adresse la plus proche si on n'en donne pas. */
+  pointer(crise: string, latitude: number, longitude: number, adresse?: string): Observable<(Habitation & { existante: boolean }) | PointageTerrain> {
+    return this.http.post<(Habitation & { existante: boolean }) | PointageTerrain>(`${this.url}/pointer/`,
+      { crise, latitude, longitude, ...(adresse ? { adresse } : {}) });
+  }
+
+  /** Les pointages d'intervenants : ceux que je peux valider (commune), et les miens. */
+  pointages(crise?: string): Observable<PointageTerrain[]> {
+    return this.http.get<PointageTerrain[]>(`${this.url}/pointages/${crise ? '?crise=' + encodeURIComponent(crise) : ''}`);
+  }
+
+  /** L'intervenant dit ce qu'il constate sur la maison qu'il vient de pointer. */
+  constater(id: string, constat: { statut_evaluation: StatutEvaluationHabitation; nature_degats?: NatureDegatsHabitation; commentaire?: string }): Observable<PointageTerrain> {
+    return this.http.post<PointageTerrain>(`${this.url}/pointages/${id}/constater/`, constat);
+  }
+
+  /** La commune valide : le pointage devient une habitation, le constat son évaluation. */
+  validerPointage(id: string): Observable<{ pointage: PointageTerrain; habitation: Habitation }> {
+    return this.http.post<{ pointage: PointageTerrain; habitation: Habitation }>(`${this.url}/pointages/${id}/valider/`, {});
+  }
+
+  refuserPointage(id: string, motif: string): Observable<PointageTerrain> {
+    return this.http.post<PointageTerrain>(`${this.url}/pointages/${id}/refuser/`, { motif });
   }
 
   /** Relevé des surfaces / de la valeur : chaque appel ajoute une ligne d'historique. */

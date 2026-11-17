@@ -166,6 +166,12 @@
         </select>
       </div>
 
+      <!-- Le rapport du dossier, à tout moment : « de clôture » une fois le dossier clôturé. -->
+      <div class="detail-row">
+        <app-bouton-rapport nature="dossier" [id]="selectedDossier.id" [reference]="selectedDossier.numero"
+                            [clos]="selectedDossier.statut === 'CLOTURE'"></app-bouton-rapport>
+      </div>
+
       <div class="detail-row cloture-actions" *ngIf="selectedDossier.statut !== 'CLOTURE'">
         <button type="button" (click)="cloturerDossier('RESOLU')" *ngIf="selectedDossier.statut !== 'RESOLU'">
           Marquer résolu

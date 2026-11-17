@@ -1,0 +1,84 @@
+<div class="paragraphe-page">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphe 1.3</p>
+    <h1><span class="material-icons">flood</span> Enjeux exposés à l'inondation</h1>
+  </header>
+
+  <p class="a-quoi-ca-sert">
+    <span class="material-icons">sync_alt</span>
+    <span><strong>À quoi cela sert ensuite.</strong> Avant d'ouvrir un lieu d'accueil ou d'y envoyer une équipe, on sait si l'eau
+      l'atteindrait, et à partir de quel niveau. La liste entre au document du plan.
+      <strong>Ce sont des hypothèses, pas des prévisions</strong> : la simulation étend un niveau d'eau sur le relief ; elle ne
+      tient compte ni des digues, ni des réseaux, ni du courant. Elle dit où aller vérifier sur place.</span>
+  </p>
+
+  @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité.</p> }
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @if (donnees; as d) {
+    <section class="bloc zonages">
+      <h2>Zones inondables officielles de l'État</h2>
+      @if (!d.zonages_officiels.releve) {
+        <p class="note">Pas encore relevées pour la commune. Géorisques publie les zones cartographiées des territoires à
+          risque important d'inondation ; on les relève une fois, puis elles restent ici.</p>
+      } @else if (zonesOfficiellesPresentes.length) {
+        <p class="note">Relevées le {{ d.zonages_officiels.releve_le | date:'dd/MM/yyyy' }} : {{ zonesOfficiellesPresentes.join(' ; ') }}.
+          <strong>{{ d.en_zone_officielle }} enjeu{{ d.en_zone_officielle > 1 ? 'x' : '' }}</strong> en zone officielle de débordement.</p>
+      } @else {
+        <p class="note">Relevées le {{ d.zonages_officiels.releve_le | date:'dd/MM/yyyy' }} : Géorisques ne publie aucune zone
+          cartographiée pour cette commune. Cela ne veut pas dire qu'il n'y a pas de risque, seulement qu'elle est hors
+          territoire à risque important d'inondation.</p>
+      }
+      @if (!d.zonages_officiels.complet) {
+        <button type="button" class="btn-primary" [disabled]="releveDemande" (click)="releverZonages()">Relever auprès de Géorisques</button>
+      }
+      @if (releveDemande) { <button type="button" class="btn-secondary" (click)="charger()">Actualiser</button> }
+      @if (messageReleve) { <p class="message" role="status">{{ messageReleve }}</p> }
+    </section>
+
+    @if (!d.enjeux.length) {
+      <p class="message">Aucun site sensible ni lieu d'accueil n'est encore au plan : il n'y a rien à croiser.
+        Retenez des sites dans <a routerLink="/admin/sites-sensibles">Sites sensibles</a>, ou rattachez des points à un
+        dispositif dans <a routerLink="/admin/plans">Mon plan de sauvegarde</a>.</p>
+    } @else if (!d.simulation_disponible && !d.zonages_officiels.releve) {
+      <p class="message manquantes">La simulation d'inondation n'a pas été lancée pour la commune : on ne sait pas ce que l'eau
+        atteindrait. Lancez-la dans <a routerLink="/admin/simulation-inondation">Simulation inondation</a> ; elle se calcule une fois.</p>
+    } @else {
+      @if (!d.simulation_disponible) {
+        <p class="message manquantes">La simulation d'inondation n'a pas été lancée pour la commune : seule la zone officielle
+          est connue. Lancez-la dans <a routerLink="/admin/simulation-inondation">Simulation inondation</a>.</p>
+      }
+      @if (d.simulation_disponible) {
+      <section class="bloc">
+        <label>Niveau d'eau regardé
+          <select name="niveau" [(ngModel)]="niveau">
+            @for (n of d.niveaux_m; track n) { <option [ngValue]="n">{{ metres(n) }}</option> }
+          </select></label>
+        <p class="note"><strong>À {{ niveau !== null ? metres(niveau) : '—' }} : {{ nombreAtteints }} enjeu{{ nombreAtteints > 1 ? 'x' : '' }} dans l'eau</strong>
+          sur {{ d.enjeux.length }}@if (d.non_situes) {, dont {{ d.non_situes }} sans coordonnées qu'on ne peut pas croiser}.</p>
+      </section>
+      }
+
+      <section class="bloc">
+        <table class="exposition">
+          <thead><tr><th>Désignation</th><th>Nature</th><th>Catégorie</th><th>Effectif ou capacité</th><th>Niveau d'eau (simulation)</th><th>Zone officielle</th></tr></thead>
+          <tbody>
+            @for (enjeu of d.enjeux; track enjeu.nature + enjeu.nom) {
+              <tr [class.atteint]="atteint(enjeu)" [class.non-situe]="!enjeu.situe">
+                <td><strong>{{ enjeu.nom }}</strong></td>
+                <td>{{ enjeu.nature }}</td>
+                <td>{{ enjeu.categorie }}</td>
+                <td>{{ enjeu.effectif ?? '' }}</td>
+                <td>{{ d.simulation_disponible ? texteDuSeuil(enjeu) : (enjeu.situe ? '—' : 'non situé') }}</td>
+                <td>{{ enjeu.zone_officielle }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+      <p class="note">Les personnes vulnérables ne figurent pas ici : le niveau d'eau de leur adresse est indiqué aux seules
+        personnes habilitées, dans le registre qu'elles éditent.</p>
+    }
+  }
+</div>

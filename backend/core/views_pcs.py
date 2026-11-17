@@ -7,7 +7,9 @@ import datetime
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from . import document_pcs
@@ -57,6 +59,8 @@ def _etat(request, institution) -> dict:
         "fonctions": len(contenu["fonctions"]),
         "moyens_alerte": len(contenu["moyens_alerte"]),
         "exercices": len(contenu["exercices"]),
+        # « Renseigné » dès que la simulation existe pour la commune : c'est elle qui manque, pas une saisie.
+        "enjeux_exposes": int(contenu["exposition"]["simulation_disponible"]),
     }
     return {
         # L'équipe permanente que l'organigramme désigne pour chaque point proposé au démarrage
@@ -160,6 +164,10 @@ class DocumentPCSView(APIView):
     def get(self, request):
         institution = _institution(request)
         contenu = document_pcs.rassembler(institution, get_active_environment(request), _nommer(request))
+        from . import cartes_pcs
+        # `?fond=ign` : les planches sur le Plan IGN plutôt qu'en schéma (case de l'écran du plan).
+        fond = cartes_pcs.fond_ign if request.query_params.get("fond") == "ign" else None
+        contenu["cartes"] = cartes_pcs.planches(institution, get_active_environment(request), fond=fond)
         pdf = document_pcs.generer_pdf(contenu, edite_par=_nommer(request)(request.user))
         dossier = document_pcs.dossier_de(institution, get_active_environment(request))
         audit_log(request=request, action_code="EXPORT", objet_type="DossierPCS", objet_id=dossier.id,
@@ -169,6 +177,141 @@ class DocumentPCSView(APIView):
         code = institution.commune_code or "collectivite"
         reponse["Content-Disposition"] = f'attachment; filename="plan-communal-de-sauvegarde-{code}.pdf"'
         return reponse
+
+
+class EnjeuxExposesView(APIView):
+    """GET /api/dossier-pcs/enjeux-exposes/ -- les sites sensibles retenus et les lieux d'accueil
+    du plan, avec le niveau d'eau qui les atteint d'après la simulation d'inondation
+    (core/enjeux_exposes.py). Des hypothèses, à vérifier sur place."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        from .enjeux_exposes import exposes
+
+        return Response(exposes(_institution(request), get_active_environment(request)))
+
+
+class ZonagesOfficielsView(APIView):
+    """POST /api/dossier-pcs/zonages-officiels/ -- demande le relevé des zones inondables
+    officielles de la commune auprès de Géorisques. Le relevé se fait en tâche de fond, une
+    requête par scénario, espacées ; un relevé récent n'est pas refait (`forcer` pour passer
+    outre). La réponse dit où l'on en est ; l'écran relit ensuite les enjeux exposés."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        from . import zonages_officiels
+        from .tasks import relever_zonages_officiels_task
+
+        institution = _institution(request)
+        commune_code = institution.commune_code or ""
+        if not commune_code:
+            raise ValidationError({"commune": "Cette collectivité n'a pas de commune de rattachement : rien à relever."})
+        environment = get_active_environment(request)
+        relever_zonages_officiels_task.delay(commune_code, environment, bool(request.data.get("forcer")))
+        audit_log(request=request, action_code="MODIFICATION", objet_type="ZonageOfficiel", objet_id=None,
+                  commentaire=f"Relevé des zones inondables officielles demandé pour la commune {commune_code} (Géorisques).")
+        return Response({"demande": True, "pause_s": zonages_officiels.PAUSE_S,
+                         **zonages_officiels.etat(commune_code, environment)}, status=202)
+
+
+class CouchesCartoView(APIView):
+    """GET /api/couches-carto/ -- ce que la commune peut sortir vers un logiciel de cartographie,
+    couche par couche (core/couches_carto.py). Le registre des personnes vulnérables n'y est pas."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        from . import couches_carto
+
+        return Response(couches_carto.inventaire(_institution(request), get_active_environment(request)))
+
+
+class CoucheCartoView(APIView):
+    """GET /api/couches-carto/<couche>/ -- la couche en GeoJSON (WGS 84), à ouvrir dans QGIS.
+    Chaque sortie est inscrite à la main courante : un fichier de carte se copie."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request, couche):
+        import json
+
+        from . import couches_carto
+
+        if couche not in couches_carto.COUCHES:
+            raise ValidationError({"couche": "Couche inconnue."})
+        institution = _institution(request)
+        contenu = couches_carto.exporter(couche, institution, get_active_environment(request))
+        audit_log(request=request, action_code="EXPORT", objet_type="CoucheCarto", objet_id=None,
+                  commentaire=f"Couche « {couches_carto.COUCHES[couche]} » exportée en GeoJSON "
+                              f"({len(contenu['features'])} objet(s), {institution.nom}).")
+        reponse = HttpResponse(json.dumps(contenu, ensure_ascii=False), content_type="application/geo+json")
+        reponse["Content-Disposition"] = f'attachment; filename="{couche}.geojson"'
+        return reponse
+
+
+class ImportQuartiersView(APIView):
+    """POST /api/couches-carto/quartiers/importer/ -- fait entrer les quartiers d'un fichier
+    GeoJSON (champ `fichier`). Sans `enregistrer`, ne crée rien et dit ce qui se passerait :
+    l'écran montre toujours cet aperçu d'abord. `remplacer` autorise à redessiner un quartier
+    du même nom, qui est sinon laissé tel quel."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        from . import couches_carto
+
+        institution = _institution(request)
+        fichier = request.FILES.get("fichier")
+        if fichier is None:
+            raise ValidationError({"fichier": "Joignez le fichier GeoJSON de vos quartiers."})
+        if fichier.size > couches_carto.MAX_OCTETS:
+            raise ValidationError({"fichier": "Ce fichier dépasse 5 Mo : simplifiez les contours avant de l'importer."})
+        vrai = ("1", "true", "oui", "on")
+        enregistrer = str(request.data.get("enregistrer", "")).lower() in vrai
+        remplacer = str(request.data.get("remplacer", "")).lower() in vrai
+        try:
+            quartiers = couches_carto.lire_quartiers(fichier.read())
+        except couches_carto.FichierIllisible as exc:
+            raise ValidationError({"fichier": str(exc)}) from exc
+        bilan = couches_carto.importer_quartiers(
+            quartiers, institution, get_active_environment(request), remplacer=remplacer, enregistrer=enregistrer)
+        if enregistrer and (bilan["crees"] or bilan["remplaces"]):
+            audit_log(request=request, action_code="CREATION", objet_type="Zone", objet_id=None,
+                      commentaire=f"Import de quartiers depuis un fichier ({institution.nom}) : "
+                                  f"{bilan['crees']} créé(s), {bilan['remplaces']} redessiné(s).")
+        return Response(bilan)
+
+
+class DebitRemiseRapport(SimpleRateThrottle):
+    """Trente par heure et par adresse IP : large pour une personne qui suit son lien, court
+    pour qui essaierait des jetons au hasard (ils font 43 caractères tirés au sort)."""
+    scope = "remise_rapport"
+    rate = "30/hour"
+
+    def get_cache_key(self, request, view):
+        from .audit import get_client_ip
+        return self.cache_format % {"scope": self.scope, "ident": get_client_ip(request) or "inconnu"}
+
+
+class RecevoirRapportView(APIView):
+    """GET puis POST /api/rapports/recevoir/<jeton>/ -- la page du lien personnel envoyé quand
+    la clôture d'une crise est proposée (core/cloture_crise.py). Sans compte : le jeton désigne
+    UNE personne et UN rapport. GET dit de quel rapport il s'agit et à quelle adresse (masquée)
+    il partira ; POST l'envoie, à cette adresse et à aucune autre. Le PDF n'est jamais rendu ici."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [DebitRemiseRapport]
+
+    def get(self, request, jeton):
+        from . import cloture_crise
+        try:
+            return Response(cloture_crise.decrire(jeton))
+        except cloture_crise.ClotureImpossible as exc:
+            return Response({"error": str(exc)}, status=410)
+
+    def post(self, request, jeton):
+        from . import cloture_crise
+        try:
+            return Response(cloture_crise.remettre(jeton, request))
+        except cloture_crise.ClotureImpossible as exc:
+            return Response({"error": str(exc)}, status=410)
 
 
 class DicrimView(APIView):

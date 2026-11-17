@@ -64,6 +64,18 @@
 
             @if (degatsConstates) {
               <label>
+                Cause du dommage
+                <select [(ngModel)]="natureDegats">
+                  <option value="">— D'après la crise —</option>
+                  @for (option of labelsNature | keyvalue; track option.key) {
+                    <option [value]="option.key">{{ option.value }}</option>
+                  }
+                </select>
+              </label>
+            }
+
+            @if (degatsConstates) {
+              <label>
                 Avancement du chantier
                 <select [(ngModel)]="statutChantier">
                   <option [value]="null">— Non renseigné —</option>

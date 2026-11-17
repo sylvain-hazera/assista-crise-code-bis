@@ -2306,6 +2306,200 @@ plateforme lit le registre pour l'exploiter, il ne l'imprime pas. Le nom de qui 
 l'heure figurent au pied de chaque page ; la main courante garde les identifiants des fiches et
 leur nombre, jamais leur contenu.
 
+**Clôture d'une crise en deux temps** (16/11/2026, `core/cloture_crise.py`, migration `0310`).
+La clôture se **propose** (`POST /api/crises/<id>/proposer-fermeture/`) et n'intervient que
+sept jours plus tard, le temps que chacun récupère son rapport ; elle s'annule d'ici là
+(`…/annuler-fermeture/`). La clôture immédiate reste possible pour qui en a le droit.
+
+- **À la proposition**, un courriel part aux personnes qui ont bénéficié d'un dossier (le
+  demandeur), à celles qui y ont participé, et aux propriétaires des biens sinistrés dont on a
+  l'adresse. Il porte un lien personnel par rapport (`DemandeRapport`, page `/rapport/<jeton>`).
+- **Le lien n'affiche pas le rapport** : en le suivant, la personne se le fait envoyer en pièce
+  jointe à l'adresse où le lien est parti, et à aucune autre (`/api/rapports/recevoir/<jeton>/`,
+  sans compte, trois envois par jour au plus, débit limité par adresse IP). Il meurt à la clôture.
+- **Les rapports édités sont gardés jusqu'à la clôture** (`RapportConserve`), chiffrés sur le
+  disque comme les autres fichiers sensibles ; on garde la dernière édition de chacun. À la
+  clôture, immédiate ou à l'échéance, rapports et liens sont effacés, fichiers compris.
+- **À l'échéance**, `manage.py cloturer_crises_proposees` clôt la crise. Pas de celery-beat dans
+  ce projet : `scripts/114/cloturer-crises-proposees.sh`, lancé par cron toutes les heures.
+- **Une crise d'essai ne se propose pas à la clôture** et n'est jamais close par la commande.
+
+**Biens sinistrés autres que les habitations** (`BienSinistre`, `/api/biens-sinistres/`, écran
+`/admin/biens-sinistres`) : voitures brûlées, bateaux, hangars, matériel, voirie. Type,
+désignation, identification (immatriculation, numéro de série), description, position prise au
+téléphone, cause et état du dommage, photos (`Document.bien`), coordonnées du propriétaire quand
+on les connaît. Identification, lieu saisi et coordonnées du propriétaire sont chiffrés. Chaque
+bien a son rapport PDF (`…/<id>/rapport/`), qu'on envoie au propriétaire d'un clic
+(`…/<id>/envoyer-au-proprietaire/`, à l'adresse de la fiche seulement). Réservé aux acteurs
+institutionnels ; chacun gère les biens de sa collectivité et de sa commune.
+
+**Suivi des dégâts : tous les sinistres, et depuis le terrain** (16/11/2026, migration `0309`).
+Le référencement des dégâts par bâtiment (`Habitation`) n'a jamais été propre à l'inondation ;
+il lui manquait de quoi le dire et de quoi s'en servir dans la rue :
+
+- **état « Détruite »** (`StatutEvaluationHabitation.DETRUITE`), distinct de « dégâts forts » :
+  maison brûlée, effondrée, emportée. Compte avec les dégâts constatés (dossier ouvert, export) ;
+- **cause du dommage** (`Habitation.nature_degats` : eau, feu, vent — tempête ou tornade —,
+  grêle, neige, mouvement de terrain, explosion, autre), posée maison par maison, proposée
+  d'après le type de la crise, reprise dans l'historique et les rapports ;
+- **pointage terrain** (`POST /api/habitations/pointer/`, bouton « Pointer la maison où je
+  suis ») : l'agent référence la maison devant laquelle il se trouve, à la position de son
+  téléphone. Le serveur cherche l'adresse la plus proche (à 60 m au plus, sinon « sans
+  adresse ») et **rend la maison déjà référencée** à cette adresse ou à moins de quinze mètres
+  plutôt que d'en créer un doublon. La fiche s'ouvre pour noter état, cause, surfaces, photos.
+  Mêmes droits que le reste du module : la collectivité sur sa commune, ou une association
+  délégataire, module activé pour la crise.
+- **pointage des intervenants, validé par la commune** (17/11/2026, modèle `PointageTerrain`,
+  migration 0311). Un membre, chef ou régulateur d'une équipe engagée sur la crise (par une
+  mission ou une affectation) peut pointer lui aussi, si le suivi des dégâts est activé sur la
+  crise. Son pointage est alors une **proposition** (réponse 202, `a_valider`) : il y porte
+  son constat (`POST /api/habitations/pointages/<id>/constater/` — état, cause, commentaire),
+  mais tant que la commune ne l'a pas validé ce n'est **pas** une habitation : rien sur la
+  carte, rien dans les décomptes ni les rapports, aucun dossier ouvert. La validation
+  (`…/valider/`, `…/refuser/` avec motif) revient au **personnel ou aux élus de la collectivité
+  qui gère la commune** (ou à l'administrateur) — pas à une association délégataire, qui
+  pointe et évalue directement mais ne valide pas le pointage d'autrui. Valider crée
+  l'habitation, ou complète celle déjà référencée à cet endroit, et pose l'évaluation au nom
+  de celui qui valide ; l'historique dit de qui vient le constat. `GET
+  /api/habitations/pointages/` rend à la commune ce qu'elle a à valider, à l'intervenant ses
+  propres pointages et ce qu'ils sont devenus.
+
+Le rattachement des personnes à leur adresse ne dépend plus de la simulation d'inondation : les
+adresses de la commune viennent aussi des habitations référencées pour une crise, et à défaut
+d'un relevé simple (`POST /api/personnes-vulnerables/relever-adresses/`). Une adresse non
+simulée ne dit rien de l'eau — on n'affiche pas « au sec ».
+
+**Rapports en PDF pour les assurances** (16/11/2026, `core/rapports_pdf.py`,
+`GET /api/dossiers/<id>/rapport/`, `/api/missions/<id>/rapport/`, `/api/crises/<id>/rapport/`,
+bouton « Rapport (PDF) » des trois écrans, `app-bouton-rapport`). Le rapport de mission est
+ouvert aux acteurs institutionnels et, depuis le 17/11/2026, au chef ou au régulateur d'une
+équipe de la mission (bouton dans « Mon équipe ») — pas aux simples membres. Pour qu'une personne ou une
+commune n'ait pas à recopier ce qui est déjà dans l'application quand elle monte son dossier
+d'assurance ou de catastrophe naturelle :
+
+- **dossier** : demande ou signalement d'origine, bien concerné (adresse, parcelle, état des
+  dégâts relevé, surfaces touchées, valeur indicative), chronologie, observations, photos ;
+- **mission** : objectif, équipes, dossiers traités ; en annexe le rapport de chaque dossier
+  et les photos ;
+- **crise pour une collectivité** : chiffres, dégâts relevés sur les habitations, moyens
+  engagés, alertes aux habitants, journal de bord ; en annexe missions, dossiers, photos. Il ne
+  reprend que ce qui relève de la commune, des équipes et du journal de CETTE collectivité.
+
+Le rapport s'intitule « de clôture » une fois l'objet clos, mais s'édite à tout moment. Il porte
+en tête sa portée (il restitue des enregistrements, ne chiffre pas un préjudice, ne vaut pas
+expertise). La dernière édition est gardée, chiffrée, jusqu'à la clôture de la crise ; chaque
+édition est inscrite à la main courante et chaque page nomme qui l'a éditée. Photos réduites (1 400 points) et plafonnées par défaut (40, 60, 80) —
+la case « toutes les photos » (`?photos=toutes`) lève le plafond —, avec leur
+empreinte SHA-256 quand elle est connue ; une photo illisible est écartée sans empêcher
+l'édition. Accès : le dossier pour qui le voit déjà (la personne concernée comprise) ; la
+mission et la crise pour les acteurs institutionnels — la consultation publique d'une crise n'y
+donne pas droit. **À éditer à la clôture** : trente jours après, les demandes et signalements
+des habitants sont effacés ; la confirmation de clôture le rappelle.
+
+**Satellites : ne plus se tromper d'enrôlement** (16/11/2026, après trois réinstallations d'une
+même machine). La page ne pré-coche plus aucun type et rappelle, une fois le jeton généré, pour
+quelle collectivité et quel type il vaut ; l'administrateur choisit la collectivité, et peut la
+changer ensuite (`POST /api/satellites/<id>/changer-institution/`). `installer.sh` dit en clair
+le profil (« passerelle radio seule, sans site local » ou « complet ») et la collectivité à
+chaque lancement, **refuse un nouveau jeton sur une machine déjà enrôlée** au lieu de l'ignorer,
+et gagne `reinitialiser` (configuration mise de côté, base locale effacée seulement sur
+confirmation).
+
+**Enjeux exposés à l'inondation** (paragraphe 1.3, `core/enjeux_exposes.py`, écran
+`/admin/pcs-enjeux-exposes`, `GET /api/dossier-pcs/enjeux-exposes/`). C'est la première brique
+de ce qu'on demande d'ordinaire à un logiciel de cartographie : croiser les enjeux et l'aléa.
+La simulation d'inondation garde déjà, par commune, la zone inondée à chaque niveau d'eau
+(`PalierInondationSimule`) et le niveau qui atteint chaque adresse (`AdresseSimuleeInondation`) ;
+on y pose les sites sensibles retenus et les lieux d'accueil des dispositifs — leur seuil est le
+plus petit niveau dont la zone les contient. La liste entre au document du plan. **Ce sont des
+hypothèses** (ni digues, ni réseaux, ni courant) : l'écran et le document le disent en tête.
+Pour le registre des personnes vulnérables, le niveau d'eau de chaque adresse n'est rendu
+qu'aux personnes habilitées (`GET /api/personnes-vulnerables/exposition/`, et une colonne
+« Eau (simulation) » dans le registre imprimé).
+
+**Zones inondables officielles** (`core/zonages_officiels.py`, modèle `ZonageOfficiel`,
+migration `0307`, `POST /api/dossier-pcs/zonages-officiels/`). À côté de nos simulations, les
+zones cartographiées par l'État sur Géorisques (débordement fréquent, moyen, rare ; ruissellement ;
+submersion marine). **On ne presse pas leur service** : les zones sont relevées une fois, à la
+demande d'un agent, en tâche de fond, une requête par scénario espacées de `PAUSE_S` secondes
+(espacement valable pour tout le serveur), puis **gardées en base** ; un relevé de moins de
+trente jours n'est pas refait, et une panne de leur côté n'efface pas ce qu'on avait. La carte,
+le document et l'export relisent la base, jamais Géorisques. Une ligne sans polygone veut dire
+« relevé, et rien ici » : hors territoire à risque important d'inondation, Géorisques ne publie
+rien, ce que l'écran dit sans conclure à l'absence de risque. Chaque enjeu porte le scénario
+officiel le plus fréquent qui l'atteint.
+
+**Couches cartographiques** (`core/couches_carto.py`, écran `/admin/couches-carto`,
+`GET /api/couches-carto/[<couche>/]`, `POST /api/couches-carto/quartiers/importer/`). Tout sort
+en GeoJSON (WGS 84), que QGIS ouvre sans réglage : quartiers, sites sensibles retenus, lieux et
+points des dispositifs, zones inondées simulées par niveau, zones officielles relevées, enjeux
+avec le niveau d'eau qui les atteint. **Le registre des personnes vulnérables ne sort jamais**,
+ni en adresses ni en secteurs. Chaque export est inscrit à la main courante. Dans l'autre sens,
+les quartiers d'un fichier entrent après un **aperçu qui ne crée rien** ; un quartier du même nom
+est laissé tel quel sauf demande ; un fichier en Lambert 93 est reconnu (même s'il ne le dit pas)
+et converti ; un quartier en plusieurs morceaux garde le plus grand ; « Mon territoire » ne se
+redessine pas par fichier. Limites : 5 Mo, 300 objets. Pas de shapefile : le format demande
+quatre fichiers et une bibliothèque de plus, alors que tout logiciel réexporte en GeoJSON.
+
+**Cartes en annexe du plan** (`core/cartes_pcs.py`). Deux planches dessinées par le serveur dans
+le PDF du plan : quartiers et lieux du plan ; zones inondables (simulée au niveau médian et au
+plus haut, officielle en tirets) et enjeux, marqués quand l'eau les atteint. Repères numérotés,
+nommés dans un tableau ; la forme (carré, rond) distingue les natures pour l'impression en noir
+et blanc. **Ce sont des schémas à l'échelle, sans fond de plan** : ni rues ni bâtiments, pour ne
+dépendre d'aucun service de tuiles au moment d'imprimer. Les planches ne sont préparées qu'à
+l'édition du document, pas à chaque affichage de l'écran du plan.
+
+**Fond de plan en option** : à l'édition, la case « Cartes sur fond de plan IGN »
+(`?fond=ign`) pose les planches sur le Plan IGN — une image par planche, demandée à la
+Géoplateforme pour la seule emprise de la carte (`cartes_pcs.fond_ign`), aplats rendus
+translucides. Si l'IGN ne répond pas, le plan s'édite en schéma.
+
+**Une seule mémoire pour les zones de Géorisques** : la carte de simulation, qui affichait déjà
+ces zones depuis le 20/10/2026 en interrogeant Géorisques à la demande (cache de 24 h), relit
+maintenant `ZonageOfficiel` et y garde ce qu'elle relève, avec le même espacement.
+
+**Personnes rattachées à leur adresse** (`core/rattachement_adresses.py`, migration `0308`,
+champ chiffré `PersonneVulnerable.adresse_ban_id`). L'adresse d'une fiche n'est plus seulement
+un texte : elle se choisit dans le relevé d'adresses de la commune, celui que la simulation
+d'inondation rapatrie déjà de la Base Adresse Nationale (`AdresseSimuleeInondation`), et le lien
+est enregistré une fois. Il sert pour le niveau d'eau qui atteint l'adresse, le cercle sur la
+carte, et en crise les dégâts constatés sur l'habitation de cette adresse (`Habitation.ban_id`).
+Règles :
+
+- la recherche pendant la saisie se fait **dans le relevé local** (`…/adresses/?q=`) : ce que
+  l'agent tape ne part vers aucun service d'adresses ;
+- l'identifiant est **chiffré** comme l'adresse ; le rapprochement se fait en mémoire, pour les
+  seules personnes habilitées ;
+- le rattachement est **proposé, jamais exigé** : un lieu-dit absent du relevé reste une adresse
+  libre, et les fiches non rattachées sont encore retrouvées par leur texte quand il concorde ;
+- pour l'existant, `…/rattachement/` liste les fiches à rattacher avec l'adresse identique ou
+  les plus ressemblantes ; les identiques se rattachent d'un coup (`…/rattacher-exactes/`), les
+  ressemblances une à une (`…/<id>/rattacher/`) ; le texte saisi par l'agent n'est pas réécrit.
+
+Reste à faire dans ce chantier : les zonages réglementaires des plans de prévention (PPR), que
+Géorisques sert par un autre service.
+
+**Sur la carte : « personne sensible dans les environs », jamais un point** (16/11/2026,
+`core/secteurs_vulnerables.py`, `GET /api/personnes-vulnerables/secteurs/`, calque « Personnes
+sensibles (secteurs) » de la carte). Un cercle orange transparent par fiche du registre :
+
+- **visible de tous les acteurs institutionnels**, jamais du public (décision du 16/11/2026) :
+  une équipe doit savoir qu'il y a quelqu'un à aller voir, sans être habilitée au registre —
+  lequel (noms, adresses, besoins) reste réservé aux personnes désignées par le maire ;
+- **rien ne filtre au clic** : les cercles n'ont aucune propriété, la carte affiche le seul
+  libellé fixe rendu par le serveur ;
+- **le centre n'est pas le domicile** : il est décalé (60 % du rayon au plus) d'une distance et
+  d'une direction tirées d'une empreinte secrète de la fiche — toujours les mêmes, sinon dix
+  affichages superposés rendraient la position ;
+- **en habitat isolé le cercle s'élargit** (100, 200, 400, 800 m) jusqu'à contenir au moins
+  quatre adresses voisines, comptées dans le relevé local de la Base Adresse Nationale ;
+- **aucune adresse ne sort du serveur** : le registre n'a pas de coordonnées, la fiche est située
+  en rapprochant son adresse de celles que la simulation d'inondation a relevées pour la commune
+  (`AdresseSimuleeInondation`). Une fiche non retrouvée est comptée, pas devinée — et sans relevé
+  pour la commune, le calque le dit.
+
+Chaque consultation est inscrite à la main courante (identifiants des fiches, jamais leur contenu).
+
 **Journal de bord et messages des équipes.** Dans la cellule de crise, chaque message d'équipe
 porte un bouton « Porter au journal » : il devient une entrée du journal de bord
 (`JournalCollectivite`), signée de qui l'y porte, citant l'équipe, l'auteur et l'heure du message.

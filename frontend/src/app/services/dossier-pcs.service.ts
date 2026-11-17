@@ -62,8 +62,10 @@ export class DossierPcsService {
     return this.http.post<DossierPcs>(`${this.url}/revisions/`, date ? { objet, date } : { objet });
   }
 
-  document(): Observable<Blob> {
-    return this.http.get(`${this.url}/document/`, { responseType: 'blob' });
+  /** `fondIgn` : les cartes d'annexe posées sur le Plan IGN plutôt qu'en schéma. */
+  document(fondIgn = false): Observable<Blob> {
+    const params: Record<string, string> = fondIgn ? { fond: 'ign' } : {};
+    return this.http.get(`${this.url}/document/`, { responseType: 'blob', params });
   }
 
   /** Le document d'information des habitants sur les risques : public, sans donnée personnelle. */

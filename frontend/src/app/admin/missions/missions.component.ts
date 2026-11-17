@@ -20,10 +20,12 @@ type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type FilterCrisis = string | 'ALL';
 type FilterStatut = Mission['statut'] | 'ALL';
 
+import { BoutonRapportComponent } from '../../shared/components/common/bouton-rapport/bouton-rapport.component';
+
 @Component({
   selector: 'app-missions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MinimapComponent],
+  imports: [BoutonRapportComponent, CommonModule, FormsModule, ReactiveFormsModule, MinimapComponent],
   templateUrl: './missions.component.html',
   styleUrls: ['./missions.component.scss'],
 })

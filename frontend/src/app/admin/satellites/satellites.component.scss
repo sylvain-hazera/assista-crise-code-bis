@@ -280,3 +280,17 @@
   color: var(--brand-primary-lisible, var(--brand-primary));
   &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 }
+
+.choix-institution { display: grid; gap: .25rem; max-width: 34rem; margin: .75rem 0; font-weight: 600;
+  select { font: inherit; font-weight: 400; padding: .4rem .5rem; }
+  small { font-weight: 400; color: var(--ac-text-muted, #6b7280); }
+}
+
+.collectivite-du-satellite { font: inherit; max-width: 16rem; padding: .2rem .3rem; }
+.information-satellite { padding: .6rem .8rem; border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); }
+
+.rattacher { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .4rem;
+  small { flex-basis: 100%; color: var(--ac-text-muted, #6b7280); }
+}
+
+.recapitulatif-jeton { margin: .75rem 0; padding: .6rem .8rem; border-left: 4px solid #15803d; background: var(--ac-green-bg, #f0fdf4); }

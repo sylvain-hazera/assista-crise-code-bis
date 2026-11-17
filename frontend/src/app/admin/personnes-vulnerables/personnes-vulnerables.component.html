@@ -94,6 +94,48 @@
       </div>
     </div>
 
+    @if (rattachement; as r) {
+      <section class="rattachement">
+        @if (!r.releve_disponible) {
+          <p><span class="material-icons">link_off</span> La commune n'a pas encore de relevé d'adresses : lancez une fois la
+            simulation d'inondation pour pouvoir rattacher les fiches à leurs adresses.</p>
+        } @else if (!r.a_rattacher.length) {
+          <p><span class="material-icons">link</span> Les {{ r.fiches }} fiche{{ r.fiches > 1 ? 's sont rattachées' : ' est rattachée' }} à une adresse de la commune.</p>
+        } @else {
+          <p><span class="material-icons">link</span> <strong>{{ r.rattachees }} fiche{{ r.rattachees > 1 ? 's' : '' }} sur {{ r.fiches }}</strong>
+            rattachée{{ r.rattachees > 1 ? 's' : '' }} à une adresse de la commune. Le rattachement donne, pour chaque personne, le
+            niveau d'eau qui atteint son adresse et, en crise, les dégâts constatés chez elle.
+            <button type="button" class="btn-secondary" (click)="rattachementOuvert = !rattachementOuvert">
+              {{ rattachementOuvert ? 'Replier' : 'Rattacher les ' + r.a_rattacher.length + ' autre' + (r.a_rattacher.length > 1 ? 's' : '') }}</button></p>
+          @if (rattachementOuvert) {
+            @if (r.exactes) {
+              <button type="button" class="btn-primary" [disabled]="!!rattachementEnCours" (click)="rattacherExactes()">
+                Rattacher d'un coup les {{ r.exactes }} adresse{{ r.exactes > 1 ? 's' : '' }} identique{{ r.exactes > 1 ? 's' : '' }}</button>
+            }
+            <table class="data-table">
+              <thead><tr><th>Personne</th><th>Adresse saisie</th><th>Adresse de la commune proposée</th></tr></thead>
+              <tbody>
+                @for (fiche of r.a_rattacher; track fiche.id) {
+                  <tr>
+                    <td>{{ fiche.nom }}</td>
+                    <td>{{ fiche.adresse }} @if (fiche.lien_perdu) { <small>(son ancienne adresse n'est plus au relevé)</small> }</td>
+                    <td>
+                      @for (proposition of fiche.propositions; track proposition.ban_id) {
+                        <button type="button" class="btn-secondary proposition" [disabled]="!!rattachementEnCours"
+                                (click)="rattacher(fiche.id, proposition.ban_id)">{{ proposition.adresse }}@if (proposition.exacte) { — identique }</button>
+                      } @empty {
+                        <small>Aucune adresse ressemblante. Ouvrez la fiche pour la chercher, ou laissez-la en adresse libre.</small>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        }
+      </section>
+    }
+
     <table class="data-table">
       <thead>
         <tr>
@@ -108,7 +150,10 @@
         @for (personne of filteredPersonnes; track personne.id) {
           <tr (click)="openEditModal(personne)">
             <td>{{ personne.prenom }} {{ personne.nom }}</td>
-            <td>{{ personne.adresse }}</td>
+            <td>{{ personne.adresse }}
+              @if (personne.adresse_ban_id) { <span class="material-icons lien-adresse" title="Rattachée à une adresse de la commune">link</span> }
+              @if (situation(personne)) { <small class="situation">{{ situation(personne) }}</small> }
+            </td>
             <td>
               @for (cat of personne.categories_detail; track cat.id) {
                 <span class="badge">{{ cat.nom }}</span>

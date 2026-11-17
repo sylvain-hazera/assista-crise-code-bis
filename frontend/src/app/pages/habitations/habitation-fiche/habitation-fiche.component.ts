@@ -9,6 +9,7 @@ import {
   Habitation, HabitationCommentaire, HabitationHistorique, RattachementHabitation,
   StatutEvaluationHabitation, StatutChantierHabitation,
   LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, ReleveHabitation, EstimationDvf,
+  LABELS_NATURE_DEGATS, NatureDegatsHabitation, STATUTS_AVEC_DEGATS,
 } from '../../../shared/models/habitation.model';
 import { DossierDocument } from '../../../shared/models/dossier-document.model';
 import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte/qui-a-consulte.component';
@@ -34,6 +35,9 @@ export class HabitationFicheComponent implements OnChanges {
 
   statutEvaluation: StatutEvaluationHabitation = 'NON_EVALUEE';
   statutChantier: StatutChantierHabitation = null;
+  /** Cause du dommage (eau, feu, vent…) : le suivi sert pour tout sinistre. */
+  natureDegats: NatureDegatsHabitation = '';
+  labelsNature = LABELS_NATURE_DEGATS;
   commentaireEvaluation = '';
   enregistrementEnCours = false;
 
@@ -79,6 +83,7 @@ export class HabitationFicheComponent implements OnChanges {
   ngOnChanges(): void {
     this.statutEvaluation = this.habitation.statut_evaluation;
     this.statutChantier = this.habitation.statut_chantier;
+    this.natureDegats = this.habitation.nature_degats ?? '';
     this.initialiserReleve();
     this.dvf = null;
     this.chargerCommentaires();
@@ -92,7 +97,7 @@ export class HabitationFicheComponent implements OnChanges {
   }
 
   get degatsConstates(): boolean {
-    return this.statutEvaluation === 'DEGATS_FAIBLES' || this.statutEvaluation === 'DEGATS_FORTS';
+    return STATUTS_AVEC_DEGATS.includes(this.statutEvaluation);
   }
 
   enregistrerEvaluation(): void {
@@ -101,10 +106,13 @@ export class HabitationFicheComponent implements OnChanges {
       this.habitation.id, this.statutEvaluation,
       this.degatsConstates ? this.statutChantier : null,
       this.commentaireEvaluation || undefined,
+      // Vide = « à toi de proposer » : le serveur retient alors la cause que suggère la crise.
+      this.degatsConstates && this.natureDegats ? this.natureDegats : undefined,
     ).subscribe({
       next: (h) => {
         this.enregistrementEnCours = false;
         this.commentaireEvaluation = '';
+        this.natureDegats = h.nature_degats ?? '';
         this.misAJour.emit(h);
         this.chargerHistorique();
         this.chargerCommentaires();

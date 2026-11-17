@@ -1,4 +1,6 @@
-export type StatutEvaluationHabitation = 'NON_EVALUEE' | 'PAS_DE_DEGATS' | 'DEGATS_FAIBLES' | 'DEGATS_FORTS';
+export type StatutEvaluationHabitation = 'NON_EVALUEE' | 'PAS_DE_DEGATS' | 'DEGATS_FAIBLES' | 'DEGATS_FORTS' | 'DETRUITE';
+/** Ce qui a causé le dommage : le suivi sert pour tout sinistre, pas seulement l'eau. */
+export type NatureDegatsHabitation = '' | 'EAU' | 'FEU' | 'VENT' | 'GRELE' | 'NEIGE' | 'TERRAIN' | 'EXPLOSION' | 'AUTRE';
 export type StatutChantierHabitation = 'A_DEBLAYER' | 'NETTOYAGE_EN_COURS' | 'TERMINE' | null;
 export type TypeLienHabitation = 'PROPRIETAIRE' | 'LOCATAIRE';
 export type StatutRattachementHabitation = 'EN_ATTENTE' | 'ACCEPTE' | 'REFUSE';
@@ -17,6 +19,7 @@ export interface Habitation {
   ban_id: string | null;
   statut_evaluation: StatutEvaluationHabitation;
   statut_chantier: StatutChantierHabitation;
+  nature_degats?: NatureDegatsHabitation;
   evalue_par: string | null;
   date_derniere_evaluation: string | null;
   date_creation: string;
@@ -122,6 +125,21 @@ export const LABELS_STATUT_EVALUATION: Record<StatutEvaluationHabitation, string
   PAS_DE_DEGATS: 'Pas de dégâts',
   DEGATS_FAIBLES: 'Dégâts faibles',
   DEGATS_FORTS: 'Dégâts forts',
+  DETRUITE: 'Détruite',
+};
+
+/** États qui constatent un dommage (même liste que côté serveur). */
+export const STATUTS_AVEC_DEGATS: StatutEvaluationHabitation[] = ['DEGATS_FAIBLES', 'DEGATS_FORTS', 'DETRUITE'];
+
+export const LABELS_NATURE_DEGATS: Record<Exclude<NatureDegatsHabitation, ''>, string> = {
+  EAU: 'Eau (inondation, coulée de boue, submersion)',
+  FEU: 'Feu (incendie, feu de forêt)',
+  VENT: 'Vent (tempête, tornade)',
+  GRELE: 'Grêle',
+  NEIGE: 'Neige, glace',
+  TERRAIN: 'Mouvement de terrain, séisme',
+  EXPLOSION: 'Explosion, accident',
+  AUTRE: 'Autre',
 };
 
 export const LABELS_STATUT_CHANTIER: Record<string, string> = {
@@ -135,4 +153,31 @@ export const COULEURS_STATUT_EVALUATION: Record<StatutEvaluationHabitation, stri
   PAS_DE_DEGATS: '#22c55e',
   DEGATS_FAIBLES: '#f59e0b',
   DEGATS_FORTS: '#ef4444',
+  // Plus sombre que « dégâts forts » : se distingue aussi imprimé en noir et blanc.
+  DETRUITE: '#111827',
 };
+
+/** Ce qu'un intervenant a pointé sur le terrain, tant que la commune ne l'a pas validé : une
+ * proposition, pas encore une habitation. */
+export interface PointageTerrain {
+  id: string;
+  a_valider: boolean;
+  statut: 'A_VALIDER' | 'VALIDE' | 'REFUSE';
+  statut_libelle: string;
+  crise: string;
+  adresse: string;
+  commune_nom: string | null;
+  latitude: number;
+  longitude: number;
+  statut_evaluation: StatutEvaluationHabitation;
+  nature_degats: NatureDegatsHabitation;
+  commentaire: string;
+  auteur: string;
+  le_mien: boolean;
+  date_creation: string;
+  /** Une maison est déjà référencée à cet endroit : la validation la complétera. */
+  existante: boolean;
+  habitation: string | null;
+  motif_refus: string;
+  peut_valider: boolean;
+}

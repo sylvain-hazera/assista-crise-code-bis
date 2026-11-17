@@ -112,6 +112,17 @@ export class CrisisService {
     return this.http.post<{ status: string; end_date: string }>(`${this.apiUrl}/${id}/cloturer/`, {});
   }
 
+  /** POST /api/crises/<id>/proposer-fermeture/ — la crise sera close sept jours plus tard ; les
+   * personnes concernées reçoivent un lien pour se faire envoyer leur rapport. */
+  proposerFermeture(id: string): Observable<{ fermeture_proposee_le: string; fermeture_prevue_le: string; personnes_prevenues: number; courriels_en_echec: number }> {
+    return this.http.post<{ fermeture_proposee_le: string; fermeture_prevue_le: string; personnes_prevenues: number; courriels_en_echec: number }>(
+      `${this.apiUrl}/${id}/proposer-fermeture/`, {});
+  }
+
+  annulerFermeture(id: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${this.apiUrl}/${id}/annuler-fermeture/`, {});
+  }
+
   /** POST /api/crises/<id>/reouvrir/ — réservé aux admins. */
   reouvrir(id: string): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${this.apiUrl}/${id}/reouvrir/`, {});

@@ -35,6 +35,9 @@ export interface Crisis {
   is_open?: boolean;
   has_responsable_actif?: boolean;
   essai?: boolean;               // crise d'essai : ignorée par le monitoring
+  /** Clôture proposée : la crise reste ouverte jusqu'à `fermeture_prevue_le` (sept jours après). */
+  fermeture_proposee_le?: string | null;
+  fermeture_prevue_le?: string | null;
 }
 
 export interface CrisisPayload {

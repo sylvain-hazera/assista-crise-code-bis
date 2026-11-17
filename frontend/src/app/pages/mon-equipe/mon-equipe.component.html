@@ -85,6 +85,10 @@
               @if (mission.description) {
                 <p class="mission-description">{{ mission.description }}</p>
               }
+              @if (peutEditerRapport) {
+                <app-bouton-rapport nature="mission" [id]="mission.id" [reference]="mission.titre"
+                                    [clos]="mission.statut === 'TERMINEE'"></app-bouton-rapport>
+              }
             </li>
           }
         </ul>

@@ -30,10 +30,12 @@ const STATUT_LABELS: Record<string, string> = {
 // restent exclusivement gérés par cloturerDossier(), avec sa propre garde côté backend.
 const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_AFFECTATION', 'AFFECTE', 'EN_COURS'];
 
+import { BoutonRapportComponent } from '../../shared/components/common/bouton-rapport/bouton-rapport.component';
+
 @Component({
   selector: 'app-dossiers',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, MinimapComponent],
+  imports: [BoutonRapportComponent, CommonModule, FormsModule, DatePipe, MinimapComponent],
   templateUrl: './dossiers.component.html',
   styleUrls: ['./dossiers.component.scss']
 })

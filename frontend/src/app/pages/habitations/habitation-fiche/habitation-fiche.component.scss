@@ -121,6 +121,7 @@
   &[data-statut="PAS_DE_DEGATS"] { background: #22c55e; }
   &[data-statut="DEGATS_FAIBLES"] { background: #f59e0b; }
   &[data-statut="DEGATS_FORTS"] { background: #ef4444; }
+  &[data-statut="DETRUITE"] { background: #111827; color: #fff; }
 }
 
 .pastille-chantier {

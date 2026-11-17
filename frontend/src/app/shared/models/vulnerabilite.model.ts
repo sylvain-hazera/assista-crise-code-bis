@@ -23,6 +23,8 @@ export interface PersonneVulnerable {
   nom: string;
   prenom: string;
   adresse: string;
+  /** Identifiant de l'adresse de la commune à laquelle la fiche est rattachée ; vide = adresse libre. */
+  adresse_ban_id?: string | null;
   telephone?: string | null;
   categorie_ids: string[];
   categories_detail?: TypeVulnerabilite[];
@@ -35,4 +37,25 @@ export interface PersonneVulnerable {
   cree_par_nom?: string;
   date_creation: string;
   date_maj: string;
+}
+
+/** Une adresse du relevé de la commune (Base Adresse Nationale, gardée sur notre serveur). */
+export interface AdresseDeLaCommune { ban_id: string; adresse: string; exacte?: boolean; }
+
+/** Où en est le rattachement des fiches du registre aux adresses de la commune. */
+export interface EtatRattachement {
+  releve_disponible: boolean;
+  fiches: number;
+  rattachees: number;
+  /** Fiches dont l'adresse est, mot pour mot, une adresse du relevé : rattachables d'un coup. */
+  exactes: number;
+  a_rattacher: { id: string; nom: string; adresse: string; propositions: AdresseDeLaCommune[]; lien_perdu: boolean }[];
+  rattachees_a_l_instant?: number;
+}
+
+/** Ce que le rattachement apporte : niveau d'eau qui atteint l'adresse, dégâts constatés. */
+export interface ExpositionRegistre {
+  seuils: Record<string, number | null>;
+  degats: Record<string, string>;
+  non_situees: number;
 }

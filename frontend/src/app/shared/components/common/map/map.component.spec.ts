@@ -335,4 +335,70 @@ describe('MapComponent', () => {
       expect(fixture.nativeElement.querySelector('.vent-note')).toBeNull();
     });
   });
+
+  /** « Personne sensible dans les environs » : des cercles, jamais des points, pour les seules
+   * personnes qui tiennent le registre — et rien ne filtre au clic. */
+  describe('secteurs des personnes vulnérables', () => {
+    const api = environment.apiUrl;
+    let http: HttpTestingController;
+    const caseACocher = (): HTMLElement | null =>
+      Array.from(fixture.nativeElement.querySelectorAll('.layer-toggle-item') as NodeListOf<HTMLElement>)
+        .find(e => e.textContent!.includes('Personnes sensibles')) ?? null;
+
+    beforeEach(() => { http = TestBed.inject(HttpTestingController); });
+
+    it('ne propose pas le calque au public', () => {
+      component.isInstitutional = false;
+      component.layersPanelOpen = true;
+      fixture.detectChanges();
+      expect(caseACocher()).toBeNull();
+    });
+
+    it('charge les cercles à la première activation, et ne montre au clic que le libellé du serveur', () => {
+      component.isInstitutional = true;
+      component.layersPanelOpen = true;   // le panneau des calques est replié par défaut
+      fixture.detectChanges();
+      expect(caseACocher()).not.toBeNull();
+      const affiches: any[] = [];
+      spyOn<any>(component, 'afficherTracesVeille').and.callFake((...arguments_: any[]) => affiches.push(arguments_));
+
+      component.layerVisibility.secteursVulnerables = true;
+      component.onLayerToggle();
+      component.onLayerToggle();   // une seconde bascule ne redemande rien
+
+      const demandes = http.match(r => r.url === `${api}/personnes-vulnerables/secteurs/`);
+      expect(demandes.length).toBe(1);
+      demandes[0].flush({
+        type: 'FeatureCollection', libelle: 'Personne sensible dans les environs', situees: 1, non_situees: 2, releve_disponible: true,
+        features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[4.5, 45.4], [4.6, 45.4], [4.5, 45.5], [4.5, 45.4]]] } }],
+      });
+
+      const [source, type, donnees, peinture] = affiches[0];
+      expect(source).toBe('secteurs-vulnerables');
+      expect(type).toBe('fill');
+      // Rien d'autre que le libellé fixe : ni nom, ni besoin, ni identifiant.
+      expect(donnees.features[0].properties).toEqual({ infobulle: '<strong>Personne sensible dans les environs</strong>' });
+      expect(peinture['fill-color']).toBe('#f97316');
+      expect(peinture['fill-opacity']).toBeLessThan(0.5);
+      expect(component.noteSecteursVulnerables).toBe('2 fiche(s) non située(s)');
+    });
+
+    it('dit pourquoi rien ne s’affiche quand le relevé des adresses manque ou que le serveur ne répond pas', () => {
+      component.isInstitutional = true;
+      spyOn<any>(component, 'afficherTracesVeille');
+      component.layerVisibility.secteursVulnerables = true;
+      component.onLayerToggle();
+      http.expectOne(r => r.url === `${api}/personnes-vulnerables/secteurs/`)
+        .flush({ type: 'FeatureCollection', libelle: 'x', situees: 0, non_situees: 3, releve_disponible: false, features: [] });
+      expect(component.noteSecteursVulnerables).toContain('relevé des adresses manquant');
+
+      component.layerVisibility.secteursVulnerables = false;
+      component.onLayerToggle();
+      (component as any).secteursVulnerablesCharges = false;
+      component.layerVisibility.secteursVulnerables = true;
+      component.onLayerToggle();
+      http.expectOne(r => r.url === `${api}/personnes-vulnerables/secteurs/`).flush({ detail: 'refus' }, { status: 403, statusText: 'Forbidden' });
+      expect(component.noteSecteursVulnerables).toContain('secteurs indisponibles');
+    });
+  });
 });

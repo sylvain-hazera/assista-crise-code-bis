@@ -7,6 +7,12 @@
         <button [class.actif]="vue === 'carte'" (click)="changerVue('carte')">Carte</button>
         <button [class.actif]="vue === 'liste'" (click)="changerVue('liste')">Vue de suivi</button>
       </div>
+      @if (authService.getCurrentUser()) {
+        <button class="btn-secondaire pointer-ici" [disabled]="pointageEnCours" (click)="pointerIci()"
+                title="Sur le terrain : référence la maison devant laquelle vous êtes, à la position de votre téléphone, pour noter les dégâts. Le pointage d'un intervenant est validé par la commune.">
+          {{ pointageEnCours ? 'Localisation…' : 'Pointer la maison où je suis' }}
+        </button>
+      }
       @if (authService.isAutoriteLocaleCommunale()) {
         <button class="btn-secondaire" (click)="ouvrirModule()">Activation du module</button>
       }
@@ -16,6 +22,78 @@
       }
     </div>
   </div>
+
+  @if (messagePointage) { <p class="message-pointage" role="status">{{ messagePointage }}</p> }
+
+  @if (pointagePropose) {
+    <form class="constat-terrain" (ngSubmit)="envoyerConstat()">
+      <h2>Ce que vous constatez — {{ pointagePropose.adresse }}</h2>
+      <label>État de la maison
+        <select name="etat" [(ngModel)]="constat.statut_evaluation">
+          @for (option of labelsEvaluation | keyvalue; track option.key) {
+            <option [value]="option.key">{{ option.value }}</option>
+          }
+        </select>
+      </label>
+      @if (constatAvecDegats) {
+        <label>Cause du dommage
+          <select name="cause" [(ngModel)]="constat.nature_degats">
+            @for (option of labelsNature | keyvalue; track option.key) {
+              <option [value]="option.key">{{ option.value }}</option>
+            }
+          </select>
+        </label>
+      }
+      <label>Ce que vous voyez
+        <textarea name="commentaire" rows="3" maxlength="1000" [(ngModel)]="constat.commentaire"
+                  placeholder="Toiture effondrée, façade noircie, eau au rez-de-chaussée…"></textarea>
+      </label>
+      <div class="actions-constat">
+        <button type="submit" class="btn-primary" [disabled]="constatEnCours">{{ constatEnCours ? 'Envoi…' : 'Envoyer à la commune pour validation' }}</button>
+        <button type="button" class="btn-secondaire" (click)="pointagePropose = null">Plus tard</button>
+      </div>
+    </form>
+  }
+
+  @if (pointagesAValider.length) {
+    <section class="pointages-a-valider" aria-label="Pointages à valider">
+      <h2>Pointages de terrain à valider ({{ pointagesAValider.length }})</h2>
+      <p class="explication">Proposés par les intervenants. Tant que vous ne les avez pas validés, ils ne figurent ni sur la carte ni dans les décomptes.</p>
+      <ul>
+        @for (p of pointagesAValider; track p.id) {
+          <li>
+            <div class="pointage-texte">
+              <strong>{{ p.adresse }}</strong>
+              <span>{{ labelsEvaluation[p.statut_evaluation] }}@if (p.nature_degats) { — {{ labelsNature[p.nature_degats] }} }</span>
+              @if (p.commentaire) { <span class="pointage-commentaire">« {{ p.commentaire }} »</span> }
+              <span class="pointage-auteur">{{ p.auteur }}, le {{ p.date_creation | date:'dd/MM à HH:mm' }}@if (p.existante) { — maison déjà référencée }
+                · <a [href]="'https://www.openstreetmap.org/?mlat=' + p.latitude + '&mlon=' + p.longitude + '#map=19/' + p.latitude + '/' + p.longitude" target="_blank" rel="noopener">voir où</a></span>
+            </div>
+            <div class="pointage-actions">
+              <button class="btn-primary" [disabled]="pointageTraite === p.id" (click)="validerPointage(p)">Valider</button>
+              <input type="text" #motif maxlength="300" placeholder="Motif du refus" [attr.aria-label]="'Motif du refus pour ' + p.adresse">
+              <button class="btn-secondaire" [disabled]="pointageTraite === p.id" (click)="refuserPointage(p, motif.value)">Refuser</button>
+            </div>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (mesPointages.length) {
+    <section class="mes-pointages" aria-label="Mes pointages">
+      <h2>Mes pointages ({{ mesPointages.length }})</h2>
+      <ul>
+        @for (p of mesPointages; track p.id) {
+          <li>
+            <strong>{{ p.adresse }}</strong> — {{ labelsEvaluation[p.statut_evaluation] }}
+            <span class="etat-pointage" [attr.data-statut]="p.statut">{{ p.a_valider ? 'en attente de validation par la commune' : p.statut_libelle.toLowerCase() }}</span>
+            @if (p.motif_refus) { <span class="pointage-commentaire">— {{ p.motif_refus }}</span> }
+          </li>
+        }
+      </ul>
+    </section>
+  }
 
   @if (moduleActifPourCriseFiltree === false) {
     <p class="bandeau-module-inactif">

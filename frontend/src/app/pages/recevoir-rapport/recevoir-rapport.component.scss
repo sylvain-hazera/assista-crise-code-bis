@@ -1,0 +1,10 @@
+.recevoir-rapport { max-width: 36rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
+  h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 1rem 0; padding: 1rem;
+       border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; }
+  dt { font-weight: 600; color: var(--ac-text-muted, #6b7280); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .erreur { padding: .75rem 1rem; border-left: 4px solid #b91c1c; background: var(--ac-red-bg, #fef2f2); }
+  .succes { padding: .75rem 1rem; border-left: 4px solid #15803d; background: var(--ac-green-bg, #f0fdf4); }
+  button { margin-top: .5rem; }
+}

@@ -96,3 +96,5 @@ input, textarea {
 .etat { white-space: nowrap; font-size: .8rem; color: var(--ac-text-muted, #6b7280);
   &.ok { color: var(--ac-green-text, #166534); }
   &.vide { color: var(--ac-amber-text, #92400e); font-weight: 600; } }
+
+.option-fond { display: flex; gap: .35rem; align-items: center; font-size: .85rem; font-weight: 400; }

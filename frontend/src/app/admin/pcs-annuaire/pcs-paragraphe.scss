@@ -60,3 +60,15 @@ input, textarea, select {
   input { margin-top: .2rem; padding: 0; }
   &.indisponible { opacity: .65; } }
 .texte-alerte { white-space: pre-line; }
+
+.exposition { width: 100%; border-collapse: collapse; font-size: .88rem;
+  th, td { text-align: left; vertical-align: top; padding: .4rem .5rem; border-bottom: 1px solid var(--ac-border, #e5e7eb); }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--ac-text-muted, #6b7280); }
+  // Dans l'eau au niveau regardé : la ligne se détache, par un liseré et non par la seule couleur.
+  tr.atteint td { background: var(--ac-blue-bg, #eff6ff); }
+  tr.atteint td:first-child { box-shadow: inset 4px 0 0 #1d4ed8; }
+  tr.non-situe td { color: var(--ac-text-muted, #6b7280); font-style: italic; }
+}
+
+.case { display: flex; gap: .4rem; align-items: center; font-weight: 400; margin: .5rem 0; }
+.zonages button { margin-right: .5rem; }

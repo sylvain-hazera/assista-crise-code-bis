@@ -125,6 +125,7 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats', groupe: 'post-critique' },
   // Route publique ; les actions de gestion sont contrôlées côté backend (Habitation.peut_gerer).
   { icon: 'home_repair_service', label: 'Référencement des dégâts', route: '/referencement-degats', groupe: 'post-critique' },
+  { icon: 'directions_car', label: 'Biens sinistrés', route: '/admin/biens-sinistres', groupe: 'post-critique' },
 
   // ── Préparation ─────────────────────────────────────────────────────
   // Roster réutilisable, préparé à l'avance.
@@ -136,6 +137,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'fact_check', label: 'Mon plan de sauvegarde', route: '/admin/plans', groupe: 'preparation' },
   { icon: 'warning_amber', label: 'Risques de la commune', route: '/admin/pcs-risques', groupe: 'preparation' },
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
+  { icon: 'flood', label: 'Enjeux exposés', route: '/admin/pcs-enjeux-exposes', groupe: 'preparation' },
+  { icon: 'layers', label: 'Couches cartographiques', route: '/admin/couches-carto', groupe: 'preparation' },
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
   { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'account_tree', label: 'Poste de commandement', route: '/admin/pcs-organisation', groupe: 'preparation' },

@@ -6,7 +6,10 @@ import { ActivatedRoute } from '@angular/router';
 import { HabitationCarteComponent } from '../habitation-carte/habitation-carte.component';
 import { HabitationFicheComponent } from '../habitation-fiche/habitation-fiche.component';
 import { HabitationService, HabitationFiltres } from '../../../services/habitation.service';
-import { Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, EstimationDvf } from '../../../shared/models/habitation.model';
+import {
+  Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, EstimationDvf, PointageTerrain,
+  LABELS_NATURE_DEGATS, STATUTS_AVEC_DEGATS, StatutEvaluationHabitation, NatureDegatsHabitation,
+} from '../../../shared/models/habitation.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
@@ -105,8 +108,123 @@ export class HabitationsPageComponent implements OnInit {
     const criseId = this.route.snapshot.queryParamMap.get('crise');
     if (criseId) this.filtres.crise = criseId;
     // liste des crises pour filtrer / exporter (réservé aux comptes connectés)
-    if (this.authService.getCurrentUser()) this.crisisService.getAll().subscribe(c => this.crises = c);
+    if (this.authService.getCurrentUser()) {
+      this.crisisService.getAll().subscribe(c => this.crises = c);
+      this.chargerPointages();
+    }
     this.charger();
+  }
+
+  // ── Pointage terrain : la maison devant laquelle l'agent se trouve ────────────────────
+  pointageEnCours = false;
+  messagePointage = '';
+
+  /** Crise sur laquelle on pointe : celle du filtre, sinon la seule ouverte s'il n'y en a qu'une. */
+  get crisePourPointer(): string {
+    if (this.filtres.crise) return this.filtres.crise;
+    const ouvertes = this.crises.filter(c => c.is_open !== false);
+    return ouvertes.length === 1 ? ouvertes[0].id : '';
+  }
+
+  /** Prend la position du téléphone et demande au serveur la maison qui s'y trouve : celle déjà
+   * référencée, ou une nouvelle. La fiche s'ouvre aussitôt pour dire ce qu'on constate. */
+  pointerIci(): void {
+    this.messagePointage = '';
+    const crise = this.crisePourPointer;
+    if (!crise) { this.messagePointage = 'Choisissez d’abord la crise dans les filtres : le suivi des dégâts se fait crise par crise.'; return; }
+    if (!('geolocation' in navigator)) { this.messagePointage = 'Cet appareil ne donne pas sa position.'; return; }
+    this.pointageEnCours = true;
+    navigator.geolocation.getCurrentPosition(
+      (position) => this.pointer(crise, position.coords.latitude, position.coords.longitude, position.coords.accuracy),
+      () => { this.pointageEnCours = false; this.messagePointage = 'Position refusée ou indisponible. Autorisez la localisation, ou cliquez la maison sur la carte.'; },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
+  }
+
+  pointer(crise: string, latitude: number, longitude: number, precisionM?: number): void {
+    this.pointageEnCours = true;
+    this.habitationService.pointer(crise, latitude, longitude).subscribe({
+      next: (habitation) => {
+        this.pointageEnCours = false;
+        if ('a_valider' in habitation) { this.surPointagePropose(habitation, precisionM); return; }
+        this.messagePointage = (habitation.existante ? 'Maison déjà référencée ici : ' : 'Maison pointée : ') + habitation.adresse
+          + (precisionM && precisionM > 30 ? ` — position précise à ${Math.round(precisionM)} m seulement, vérifiez l’adresse.` : '');
+        if (!habitation.existante) this.habitations = [habitation, ...this.habitations];
+        this.carte?.recharger(this.filtres);
+        this.ouvrirFiche(habitation);
+      },
+      error: (e) => {
+        this.pointageEnCours = false;
+        this.messagePointage = e?.error?.error || e?.error?.detail || 'Cette maison n’a pas pu être pointée.';
+      },
+    });
+  }
+
+  // ── Pointage des intervenants : une proposition que la commune valide ─────────────────
+  labelsNature: Record<string, string> = LABELS_NATURE_DEGATS;
+  /** Pointages que je peux valider (commune), et les miens (intervenant). */
+  pointages: PointageTerrain[] = [];
+  /** Le pointage que je viens de proposer, et le constat que j'y porte. */
+  pointagePropose: PointageTerrain | null = null;
+  constat: { statut_evaluation: StatutEvaluationHabitation; nature_degats: NatureDegatsHabitation; commentaire: string } =
+    { statut_evaluation: 'NON_EVALUEE', nature_degats: '', commentaire: '' };
+  constatEnCours = false;
+  pointageTraite = '';
+
+  get constatAvecDegats(): boolean { return STATUTS_AVEC_DEGATS.includes(this.constat.statut_evaluation); }
+  get pointagesAValider(): PointageTerrain[] { return this.pointages.filter(p => p.a_valider && p.peut_valider); }
+  get mesPointages(): PointageTerrain[] { return this.pointages.filter(p => p.le_mien && !p.peut_valider); }
+
+  chargerPointages(): void {
+    this.habitationService.pointages(this.filtres.crise).subscribe({ next: (p) => this.pointages = p, error: () => {} });
+  }
+
+  private surPointagePropose(pointage: PointageTerrain, precisionM?: number): void {
+    this.pointagePropose = pointage;
+    this.constat = { statut_evaluation: pointage.statut_evaluation, nature_degats: pointage.nature_degats, commentaire: pointage.commentaire };
+    this.messagePointage = (pointage.existante ? 'Maison déjà référencée ici : ' : 'Maison pointée : ') + pointage.adresse
+      + ' — dites ce que vous constatez ; la commune validera votre pointage.'
+      + (precisionM && precisionM > 30 ? ` Position précise à ${Math.round(precisionM)} m seulement, vérifiez l’adresse.` : '');
+    this.chargerPointages();
+  }
+
+  envoyerConstat(): void {
+    if (!this.pointagePropose) return;
+    this.constatEnCours = true;
+    this.habitationService.constater(this.pointagePropose.id, {
+      statut_evaluation: this.constat.statut_evaluation,
+      nature_degats: this.constatAvecDegats ? this.constat.nature_degats : '',
+      commentaire: this.constat.commentaire,
+    }).subscribe({
+      next: () => {
+        this.constatEnCours = false;
+        this.pointagePropose = null;
+        this.messagePointage = 'Constat envoyé. Il apparaîtra sur la carte une fois validé par la commune.';
+        this.chargerPointages();
+      },
+      error: (e) => { this.constatEnCours = false; this.messagePointage = e?.error?.error || e?.error?.detail || 'Le constat n’a pas pu être envoyé.'; },
+    });
+  }
+
+  validerPointage(pointage: PointageTerrain): void {
+    this.pointageTraite = pointage.id;
+    this.habitationService.validerPointage(pointage.id).subscribe({
+      next: ({ habitation }) => {
+        this.pointageTraite = '';
+        this.pointages = this.pointages.filter(p => p.id !== pointage.id);
+        this.messagePointage = 'Pointage validé : ' + habitation.adresse;
+        this.charger();
+      },
+      error: (e) => { this.pointageTraite = ''; this.messagePointage = e?.error?.error || e?.error?.detail || 'Ce pointage n’a pas pu être validé.'; },
+    });
+  }
+
+  refuserPointage(pointage: PointageTerrain, motif: string): void {
+    this.pointageTraite = pointage.id;
+    this.habitationService.refuserPointage(pointage.id, motif).subscribe({
+      next: () => { this.pointageTraite = ''; this.pointages = this.pointages.filter(p => p.id !== pointage.id); this.messagePointage = 'Pointage refusé.'; },
+      error: (e) => { this.pointageTraite = ''; this.messagePointage = e?.error?.error || e?.error?.detail || 'Ce pointage n’a pas pu être refusé.'; },
+    });
   }
 
   changerVue(v: Vue): void {
@@ -186,6 +304,7 @@ export class HabitationsPageComponent implements OnInit {
 
   appliquerFiltres(): void {
     this.charger();
+    if (this.authService.getCurrentUser()) this.chargerPointages();
   }
 
   ouvrirFiche(h: Habitation): void {

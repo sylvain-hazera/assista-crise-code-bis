@@ -20,6 +20,7 @@ describe('PcsListeComponent', () => {
       providers: [...fournisseursDeTest(), { provide: ActivatedRoute, useValue: { snapshot: { data: { paragraphe } } } }],
     });
     http = TestBed.inject(HttpTestingController);
+    monte = true;
     fixture = TestBed.createComponent(PcsListeComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/${PARAGRAPHES_EN_LISTE[paragraphe].ressource}/`).flush(lignes);
@@ -29,7 +30,9 @@ describe('PcsListeComponent', () => {
   }
   const texte = () => (fixture.nativeElement as HTMLElement).textContent!;
 
-  afterEach(() => http.verify());
+  // Un test qui ne monte pas le composant n'a rien demandé au serveur : rien à vérifier alors.
+  let monte = false;
+  afterEach(() => { if (monte) http.verify(); monte = false; });
 
   it('chaque paragraphe dit à quoi il sert en crise et décrit des champs cohérents', () => {
     for (const [cle, p] of Object.entries(PARAGRAPHES_EN_LISTE)) {

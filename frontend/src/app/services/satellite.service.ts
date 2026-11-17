@@ -22,8 +22,10 @@ export class SatelliteService {
   /** POST /api/satellites/generer-jeton/ — jeton à usage unique (24h), pour l'institution de
    * l'appelant, à communiquer hors-bande au responsable du satellite (saisi lors de
    * l'installation du Pi). Voir SatelliteViewSet.generer_jeton. */
-  genererJeton(profil: 'GW' | 'FULL' = 'GW'): Observable<JetonEnrolementSatellite> {
-    return this.http.post<JetonEnrolementSatellite>(`${this.url}/generer-jeton/`, { profil });
+  genererJeton(profil: 'GW' | 'FULL' = 'GW', institution?: string): Observable<JetonEnrolementSatellite> {
+    // `institution` : réservé à l'administrateur de la plateforme, qui installe pour une autre
+    // collectivité que la sienne. Sans elle, le serveur retient l'institution de l'appelant.
+    return this.http.post<JetonEnrolementSatellite>(`${this.url}/generer-jeton/`, institution ? { profil, institution } : { profil });
   }
 
   /** POST /api/satellites/<id>/valider/ — approuve un satellite EN_ATTENTE et crée son compte
@@ -40,6 +42,12 @@ export class SatelliteService {
     return this.http.post<Satellite & { identifiants_compte_service: IdentifiantsCompteServiceSatellite }>(
       `${this.url}/${id}/regenerer-identifiants/`, {}
     );
+  }
+
+  /** Rattache le satellite à une autre collectivité sans le réinstaller (administrateur de la
+   * plateforme). `a_savoir` rappelle ce qui reste sur sa machine. */
+  changerInstitution(id: string, institution: string): Observable<Satellite & { a_savoir?: string }> {
+    return this.http.post<Satellite & { a_savoir?: string }>(`${this.url}/${id}/changer-institution/`, { institution });
   }
 
   revoquer(id: string): Observable<Satellite> {

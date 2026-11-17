@@ -57,8 +57,10 @@ _CELLULE_FORTE = ParagraphStyle("cellule_forte", parent=_CELLULE, fontName="Helv
 _ENTETE = ParagraphStyle("entete", fontName="Helvetica-Bold", fontSize=8, textColor=SOMBRE, leading=10)
 _VIDE = ParagraphStyle("vide", fontName="Helvetica-Oblique", fontSize=10, textColor=GRIS, leading=14)
 
-_COLONNES = ("Nom, prénom", "Adresse", "Téléphone", "Besoins particuliers", "Personne à prévenir", "Observations")
-_LARGEURS = (40 * mm, 62 * mm, 28 * mm, 48 * mm, 46 * mm, 43 * mm)
+# « Eau » : le niveau qui atteint l'adresse d'après la simulation d'inondation (hypothèse) ; vide
+# quand l'adresse n'a pas été retrouvée ou que la simulation n'existe pas pour la commune.
+_COLONNES = ("Nom, prénom", "Adresse", "Téléphone", "Besoins particuliers", "Personne à prévenir", "Eau (simulation)", "Observations")
+_LARGEURS = (38 * mm, 58 * mm, 27 * mm, 44 * mm, 44 * mm, 22 * mm, 34 * mm)
 
 
 def lignes_du_registre(personnes) -> list[tuple[str, list[dict]]]:
@@ -79,10 +81,21 @@ def lignes_du_registre(personnes) -> list[tuple[str, list[dict]]]:
             "telephone": (personne.telephone or "").strip(),
             "besoins": sorted(categorie.nom for categorie in personne.categories.all()),
             "aidant": aidant,
+            # Posé par la vue quand la simulation d'inondation existe (core/enjeux_exposes.py) :
+            # un niveau en mètres, None = au sec, "inconnu" = adresse non retrouvée.
+            "eau": _niveau_d_eau(getattr(personne, "seuil_inondation", "inconnu")),
         })
     for fiches in par_quartier.values():
         fiches.sort(key=lambda fiche: (fiche["nom"].casefold(), fiche["adresse"].casefold()))
     return sorted(par_quartier.items(), key=lambda paire: (paire[0] == SANS_QUARTIER, paire[0].casefold()))
+
+
+def _niveau_d_eau(seuil) -> str:
+    if seuil == "inconnu":
+        return ""
+    if seuil is None:
+        return "au sec"
+    return f"dès {seuil:g} m".replace(".", ",")
 
 
 def nombre_de_fiches(groupes) -> int:
@@ -131,6 +144,7 @@ def _tableau(fiches: list[dict]) -> Table:
             _paragraphe(fiche["telephone"]),
             _paragraphe(", ".join(fiche["besoins"])),
             _paragraphe(fiche["aidant"]),
+            _paragraphe(fiche.get("eau", "")),
             "",   # laissée vide : c'est la colonne où l'on écrit, sur le terrain
         ])
     tableau = Table(lignes, colWidths=_LARGEURS, repeatRows=1)

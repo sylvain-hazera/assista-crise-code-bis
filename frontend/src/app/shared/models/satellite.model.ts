@@ -66,6 +66,7 @@ export interface VersionsSatellite {
 export interface JetonEnrolementSatellite {
   id: string;
   institution: string;
+  institution_nom?: string;
   jeton: string;
   profil: 'GW' | 'FULL';
   expiration: string;

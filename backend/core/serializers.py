@@ -139,6 +139,8 @@ from .models import (
     Plan,
     PlanMissionModele,
     JournalCollectivite,
+    BienSinistre,
+    StatutEvaluationHabitation,
     Habitation,
     HabitationCommentaire,
     HabitationHistorique,
@@ -771,6 +773,9 @@ class CrisisSerializer(serializers.ModelSerializer):
         model = Crisis
         fields = '__all__'
         extra_kwargs = {'photo': {'write_only': True}}
+        # La clôture se propose par son action dédiée (courriels, échéance) : ces dates ne
+        # s'écrivent pas par une modification ordinaire de la crise.
+        read_only_fields = ['fermeture_proposee_le', 'fermeture_proposee_par', 'fermeture_prevue_le']
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
@@ -4691,9 +4696,12 @@ class SatelliteSerializer(serializers.ModelSerializer):
 
 
 class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):
+    # Pour que la page dise, à côté du jeton, à qui le satellite appartiendra.
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True)
+
     class Meta:
         model = JetonEnrolementSatellite
-        fields = ['id', 'institution', 'jeton', 'profil', 'expiration', 'utilise', 'date_creation']
+        fields = ['id', 'institution', 'institution_nom', 'jeton', 'profil', 'expiration', 'utilise', 'date_creation']
         read_only_fields = fields
 
 
@@ -4786,6 +4794,64 @@ class HabitationSerializer(serializers.ModelSerializer):
         if latitude is not None and longitude is not None:
             from django.contrib.gis.geos import Point
             validated_data['location'] = Point(float(longitude), float(latitude), srid=4326)
+        return super().update(instance, validated_data)
+
+
+class BienSinistreSerializer(serializers.ModelSerializer):
+    """Un bien sinistré autre qu'une habitation. latitude/longitude séparées, comme Habitation."""
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
+    cree_par_nom = serializers.SerializerMethodField()
+    nb_photos = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BienSinistre
+        exclude = ["location"]
+        read_only_fields = ['institution', 'commune_code', 'cree_par', 'rapport_envoye_le', 'date_creation', 'modifie_le']
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_cree_par_nom(self, obj):
+        return (nom_affichable(obj.cree_par, self.context.get("request")) or obj.cree_par.username) if obj.cree_par else None
+
+    def get_nb_photos(self, obj):
+        return obj.documents.count()
+
+    def validate_proprietaire_email(self, valeur):
+        valeur = (valeur or "").strip()
+        if valeur:
+            from django.core.validators import validate_email
+            validate_email(valeur)
+        return valeur
+
+    def validate(self, donnees):
+        # Pas de cause sans dégât constaté : même règle que pour une habitation.
+        statut = donnees.get("statut_evaluation", getattr(self.instance, "statut_evaluation", None))
+        if statut not in StatutEvaluationHabitation.avec_degats():
+            donnees["nature_degats"] = ""
+        return donnees
+
+    def _position(self, validated_data):
+        latitude, longitude = self.initial_data.get('latitude'), self.initial_data.get('longitude')
+        if latitude not in (None, "") and longitude not in (None, ""):
+            from django.contrib.gis.geos import Point
+            try:
+                validated_data['location'] = Point(float(longitude), float(latitude), srid=4326)
+            except (TypeError, ValueError) as exc:
+                raise serializers.ValidationError({"latitude": "Position illisible."}) from exc
+
+    def create(self, validated_data):
+        self._position(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        self._position(validated_data)
         return super().update(instance, validated_data)
 
 

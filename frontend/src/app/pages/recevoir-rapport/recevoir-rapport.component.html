@@ -1,0 +1,26 @@
+<main class="recevoir-rapport">
+  <h1>Recevoir mon rapport</h1>
+
+  @if (chargement) { <p>Vérification du lien…</p> }
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+
+  @if (remise; as r) {
+    <dl>
+      <dt>Rapport</dt><dd>{{ r.rapport }}</dd>
+      <dt>Crise</dt><dd>{{ r.crise }}</dd>
+      <dt>Envoyé à</dt><dd>{{ r.adresse }}</dd>
+      @if (r.disponible_jusqu_au) { <dt>Disponible jusqu'au</dt><dd>{{ r.disponible_jusqu_au | date:'dd/MM/yyyy' }}</dd> }
+    </dl>
+
+    @if (r.envoye) {
+      <p class="succes" role="status">Le rapport vient d'être envoyé à {{ r.adresse }}. Il arrive en pièce jointe d'ici quelques
+        minutes ; pensez à regarder dans les courriers indésirables.</p>
+    } @else {
+      <p>Le rapport reprend ce qui a été demandé, ce qui a été constaté et fait, et les photos. Il peut être joint à une
+        déclaration de sinistre. Il part à l'adresse ci-dessus, et à elle seule.</p>
+      <button type="button" class="btn-primary" [disabled]="envoi" (click)="envoyer()">
+        {{ envoi ? 'Envoi…' : (r.deja_envoye ? 'Me le renvoyer' : 'M’envoyer le rapport') }}
+      </button>
+    }
+  }
+</main>

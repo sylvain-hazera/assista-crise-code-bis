@@ -5,7 +5,7 @@ import { PersonnesVulnerablesComponent } from './personnes-vulnerables.component
 import { fournisseursDeTest } from '../../testing/test-providers';
 import { environment } from '../../../environments/environment';
 import { EtatRegistreVulnerables } from '../../shared/models/habilitation-registre.model';
-import { PersonneVulnerable } from '../../shared/models/vulnerabilite.model';
+import { EtatRattachement, ExpositionRegistre, PersonneVulnerable } from '../../shared/models/vulnerabilite.model';
 
 /**
  * Édition PDF du registre des personnes vulnérables : l'annexe nominative du plan communal de
@@ -37,8 +37,13 @@ describe('PersonnesVulnerablesComponent — édition du registre', () => {
     fixture.detectChanges();
     http.expectOne(`${api}/habilitations-registre-vulnerables/mon-etat/`).flush({ ...ETAT, ...etat });
     http.expectOne(`${api}/personnes-vulnerables/`).flush(fiches);
+    // Qui tient le registre voit aussi où en est le rattachement aux adresses (une seule commune).
+    http.match(r => r.url === `${api}/personnes-vulnerables/rattachement/`).forEach(r => r.flush(rattachement));
+    http.match(r => r.url === `${api}/personnes-vulnerables/exposition/`).forEach(r => r.flush(exposition));
     fixture.detectChanges();
   }
+  let rattachement: EtatRattachement = { releve_disponible: true, fiches: 1, rattachees: 1, exactes: 0, a_rattacher: [] };
+  let exposition: ExpositionRegistre = { seuils: {}, degats: {}, non_situees: 0 };
 
   const boutonEdition = (): HTMLButtonElement | null =>
     Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
@@ -99,5 +104,51 @@ describe('PersonnesVulnerablesComponent — édition du registre', () => {
     const requete = http.expectOne(r => r.url === `${api}/personnes-vulnerables/pdf/`);
     expect(requete.request.params.get('commune_code')).toBe('42218');
     requete.flush(new Blob(['%PDF'], { type: 'application/pdf' }));
+  });
+
+  describe('rattachement aux adresses de la commune', () => {
+    beforeEach(() => {
+      rattachement = { releve_disponible: true, fiches: 2, rattachees: 1, exactes: 1, a_rattacher: [
+        { id: 'p2', nom: 'Jeanne Exemple', adresse: '3 chemin du Moulin', lien_perdu: false,
+          propositions: [{ ban_id: 'b3', adresse: '3 Chemin du Moulin 42400 Saint-Chamond', exacte: true }] }] };
+      exposition = { seuils: { p1: 1.5 }, degats: { p1: 'Dégâts forts' }, non_situees: 1 };
+    });
+    afterEach(() => {
+      rattachement = { releve_disponible: true, fiches: 1, rattachees: 1, exactes: 0, a_rattacher: [] };
+      exposition = { seuils: {}, degats: {}, non_situees: 0 };
+    });
+
+    it('dit combien de fiches sont rattachées, et ce que le lien apprend de chacune', () => {
+      demarrer({}, [{ ...fiche('p1', '42207'), adresse_ban_id: 'b1' }, fiche('p2', '42207')]);
+      const page = (fixture.nativeElement as HTMLElement).textContent!;
+
+      expect(page).toContain('1 fiche sur 2');
+      expect(page).toContain('eau dès 1,5 m (simulation) — dégâts forts');
+      expect(fixture.nativeElement.querySelectorAll('.lien-adresse').length).toBe(1);
+    });
+
+    it('rattache une fiche à l’adresse proposée, ou toutes les identiques d’un coup', () => {
+      demarrer({}, [{ ...fiche('p1', '42207'), adresse_ban_id: 'b1' }, fiche('p2', '42207')]);
+      const composant = fixture.componentInstance;
+
+      composant.rattacher('p2', 'b3');
+      const requete = http.expectOne(`${api}/personnes-vulnerables/p2/rattacher/`);
+      expect(requete.request.body).toEqual({ ban_id: 'b3' });
+      requete.flush(fiche('p2', '42207'));
+      http.expectOne(`${api}/personnes-vulnerables/`).flush([fiche('p1', '42207'), fiche('p2', '42207')]);
+      http.expectOne(r => r.url === `${api}/personnes-vulnerables/rattachement/`).flush(rattachement);
+      http.expectOne(r => r.url === `${api}/personnes-vulnerables/exposition/`).flush(exposition);
+
+      composant.rattacherExactes();
+      http.expectOne(`${api}/personnes-vulnerables/rattacher-exactes/`).flush({ ...rattachement, rattachees: 2, a_rattacher: [] });
+      http.expectOne(`${api}/personnes-vulnerables/`).flush([fiche('p1', '42207'), fiche('p2', '42207')]);
+      http.match(() => true).forEach(r => r.flush(r.request.url.endsWith('exposition/') ? exposition : rattachement));
+    });
+
+    it('ne demande rien de tout cela pour la lecture d’exploitation de l’administrateur', () => {
+      demarrer({ lecture_seule_administrateur: true }, [fiche('p1', '42207')]);
+
+      expect(fixture.componentInstance.rattachement).toBeNull();
+    });
   });
 });
