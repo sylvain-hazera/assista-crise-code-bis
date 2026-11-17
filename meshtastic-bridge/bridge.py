@@ -90,7 +90,14 @@ POSITION_ANNONCE_CANAL = os.environ.get("POSITION_ANNONCE_CANAL", "Fr_Tech")
 # canaux connus — sans ça, aucun appareil réel ne nous a jamais "rencontrés" et peut ignorer nos
 # paquets comme venant d'un nœud jamais annoncé (voir doc de conception, remarque explicite :
 # un vrai client Meshtastic diffuse systématiquement son NodeInfo, jamais juste des messages).
-NODEINFO_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("NODEINFO_ANNONCE_INTERVAL_SECONDS", "300"))
+#
+# Trente minutes, et non plus cinq (17/11/2026). Essai sur un vrai nœud par Gaulix : les messages
+# du pont arrivaient tous, ses annonces d'identité une fois sur trois ou quatre — une toutes les
+# cinq minutes sur chacun des dix-sept canaux, c'est dix-sept annonces d'un coup, là où un
+# appareil en émet une toutes les trois heures. L'hypothèse (non prouvée) est que le broker en
+# limite la fréquence par nœud. Les correspondants reçoivent de toute façon une présentation
+# adressée (EchangeCles), et le pont répond à qui lui demande son identité.
+NODEINFO_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("NODEINFO_ANNONCE_INTERVAL_SECONDS", "1800"))
 
 # ── Échange des clés publiques (17/11/2026) ────────────────────────────────────────────────
 # Annoncer sa clé ne suffit pas à l'ÉCHANGER. Un appareil qui entend un nœud inconnu lui envoie
