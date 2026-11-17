@@ -202,24 +202,47 @@ def equipes_encadrees(utilisateur):
         Q(leader=utilisateur) | Q(regulateur=utilisateur) | Q(membres_encadrement=utilisateur)).distinct()
 
 
-def a_relire_par(utilisateur, environment):
-    """Les lignes que cette personne peut relire : celles de ses équipes — pas les siennes."""
+def institutions_relues_par(utilisateur, agent_de=None) -> set:
+    """Les institutions dont la personne relit TOUS les relevés : celles dont elle est membre
+    du bureau, et — `agent_de` — la collectivité dont elle est agent.
+
+    Décision du 17/11/2026, pour deux cas que l'encadrement d'équipe laissait sans relecteur :
+    une sortie déclarée sans équipe, et les heures d'un chef qui est le seul encadrant de la
+    sienne. « Le bureau ou la mairie valide. »"""
+    from .models import ContactInstitution
+
+    ids = set(
+        ContactInstitution.objects.filter(utilisateur=utilisateur, actif=True, membre_bureau=True)
+        .values_list("institution_id", flat=True)
+    )
+    if agent_de is not None:
+        ids.add(agent_de.id)
+    return ids
+
+
+def a_relire_par(utilisateur, environment, agent_de=None):
+    """Les lignes que cette personne peut relire — jamais les siennes : celles des équipes
+    qu'elle encadre, et toutes celles des institutions dont elle est bureau ou agent."""
+    institutions = institutions_relues_par(utilisateur, agent_de)
     return (
-        EngagementPersonnel.objects.filter(environment=environment, equipe__in=equipes_encadrees(utilisateur))
+        EngagementPersonnel.objects.filter(environment=environment)
+        .filter(Q(equipe__in=equipes_encadrees(utilisateur))
+                | Q(institution_id__in=institutions) | Q(equipe__institution_id__in=institutions))
         .exclude(utilisateur=utilisateur)
-        .select_related("utilisateur", "crise", "equipe", "valide_par")
+        .select_related("utilisateur", "crise", "equipe", "valide_par").distinct()
     )
 
 
-def _relisible(engagement, relecteur, environment):
+def _relisible(engagement, relecteur, environment, agent_de=None):
     if engagement.utilisateur_id == relecteur.id:
-        raise ErreurEngagement("On ne valide pas son propre relevé : c'est à un autre encadrant de le faire.")
-    if not a_relire_par(relecteur, environment).filter(id=engagement.id).exists():
-        raise ErreurEngagement("Cette ligne n'est pas celle d'une équipe que vous encadrez.")
+        raise ErreurEngagement(
+            "On ne valide pas son propre relevé : c'est à un autre encadrant, au bureau ou à la mairie de le faire.")
+    if not a_relire_par(relecteur, environment, agent_de).filter(id=engagement.id).exists():
+        raise ErreurEngagement("Cette ligne n'est ni d'une équipe que vous encadrez, ni de votre institution.")
 
 
-def valider(engagement, relecteur, environment) -> EngagementPersonnel:
-    _relisible(engagement, relecteur, environment)
+def valider(engagement, relecteur, environment, agent_de=None) -> EngagementPersonnel:
+    _relisible(engagement, relecteur, environment, agent_de)
     if engagement.rentre_le is None:
         raise ErreurEngagement("Cette sortie n'est pas terminée : il n'y a pas encore de durée à valider.")
     engagement.valide_par, engagement.valide_le, engagement.remarque_chef = relecteur, timezone.now(), ""
@@ -227,10 +250,10 @@ def valider(engagement, relecteur, environment) -> EngagementPersonnel:
     return engagement
 
 
-def renvoyer(engagement, relecteur, environment, remarque) -> EngagementPersonnel:
+def renvoyer(engagement, relecteur, environment, remarque, agent_de=None) -> EngagementPersonnel:
     """« À revoir » : la ligne retourne à la personne, avec ce qu'on lui demande de corriger.
     Lève aussi une validation déjà donnée."""
-    _relisible(engagement, relecteur, environment)
+    _relisible(engagement, relecteur, environment, agent_de)
     remarque = (remarque or "").strip()
     if not remarque:
         raise ErreurEngagement("Dites ce qui est à revoir : la personne ne peut pas le deviner.")

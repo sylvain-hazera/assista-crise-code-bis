@@ -486,3 +486,81 @@ class TestLeChefRelitEtValide:
             pytest.skip("La trace de connexion ne porte pas l'utilisateur dans cet environnement d'essai.")
         activite = clients["membre"].get(reverse("mon_releve")).data["activite"]
         assert "Connexion à l'application" in [a["quoi"] for a in activite]
+
+
+@pytest.mark.django_db
+class TestLeBureauOuLaMairieValide:
+    """Deux trous comblés : la sortie sans équipe, et les heures d'un chef seul encadrant."""
+
+    @pytest.fixture
+    def scene(self, create_user, mairie, crise):
+        from core.models import ImplicationInstitution, Team
+        institution, client_mairie = mairie
+        ImplicationInstitution.objects.create(crise=crise, institution=institution, type_implication="IMPLIQUE", actif=True)
+        chef = create_user(username="seulchef@std.fr", email="seulchef@std.fr", type="UTIL_SIMPLE")
+        equipe = Team.objects.create(name="Espaces verts", institution=institution, leader=chef)
+        equipe.members.add(chef)
+        isole = create_user(username="isole@std.fr", email="isole@std.fr", type="UTIL_SIMPLE")
+        isole.institution = institution
+        isole.save()
+        clients = {"mairie": client_mairie}
+        for nom, user in (("chef", chef), ("isole", isole)):
+            clients[nom] = APIClient()
+            clients[nom].force_authenticate(user=user)
+        return equipe, clients
+
+    def _sortie(self, client, crise, equipe=None, heures_avant=30):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        debut = timezone.now() - timedelta(hours=heures_avant)
+        corps = {"crise": str(crise.id), "parti_le": debut.isoformat(),
+                 "rentre_le": (debut + timedelta(hours=4)).isoformat()}
+        if equipe is not None:
+            corps["equipe"] = str(equipe.id)
+        reponse = client.post(reverse("mon_releve"), corps, format="json")
+        assert reponse.status_code == 201, reponse.data
+        return reponse.data
+
+    def _valider(self, client, ligne):
+        return client.post(reverse("releves_equipe"), {"ligne": ligne["id"], "geste": "valider"}, format="json")
+
+    def test_la_mairie_valide_les_heures_du_chef_seul_encadrant(self, scene, crise):
+        equipe, clients = scene
+        ligne = self._sortie(clients["chef"], crise, equipe)
+        assert self._valider(clients["chef"], ligne).status_code == 400          # pas les siennes
+        assert self._valider(clients["mairie"], ligne).data["validee"] is True
+
+    def test_la_mairie_valide_une_sortie_sans_equipe(self, scene, crise):
+        _, clients = scene
+        ligne = self._sortie(clients["isole"], crise)
+        fiches = clients["mairie"].get(reverse("releves_equipe")).data["fiches"]
+        assert sum(len(f["lignes"]) for f in fiches) == 1
+        assert self._valider(clients["mairie"], ligne).data["validee"] is True
+
+    def test_le_bureau_d_une_association_valide_pour_la_sienne(self, create_user, crise):
+        from core.models import ImplicationInstitution, Institution, InstitutionType
+        itype, _ = InstitutionType.objects.get_or_create(code="aasc", defaults={"libelle": "AASC"})
+        asso = Institution.objects.create(nom="Association du bureau", type=itype)
+        ImplicationInstitution.objects.create(crise=crise, institution=asso, type_implication="IMPLIQUE", actif=True)
+        clients = {}
+        for nom, bureau in (("benevole", False), ("tresoriere", True)):
+            user = create_user(username=f"{nom}@std.fr", email=f"{nom}@std.fr", type="UTIL_SIMPLE")
+            user.institution = asso
+            user.save()
+            ContactInstitution.objects.create(institution=asso, utilisateur=user, actif=True, membre_bureau=bureau)
+            clients[nom] = APIClient()
+            clients[nom].force_authenticate(user=user)
+        ligne = self._sortie(clients["benevole"], crise)
+        sienne = self._sortie(clients["tresoriere"], crise, heures_avant=20)
+
+        assert clients["tresoriere"].get(reverse("mon_releve")).data["encadre"] is True
+        assert self._valider(clients["tresoriere"], ligne).data["validee"] is True
+        assert self._valider(clients["benevole"], sienne).status_code == 400      # simple membre
+
+    def test_une_autre_mairie_ne_valide_rien_ici(self, scene, crise, create_user):
+        _, clients = scene
+        ligne = self._sortie(clients["isole"], crise)
+        _, voisine = _mairie(create_user, "Mairie d'à côté", "42199")
+        assert self._valider(voisine, ligne).status_code == 400
+        assert voisine.get(reverse("releves_equipe")).data["fiches"] == []

@@ -911,7 +911,11 @@ lève la validation. Corriger une ligne renvoyée efface la remarque : elle reto
 relecture. Personne ne valide son propre relevé, et une sortie sans retour ne se valide pas. Le
 point de situation distingue les heures déclarées de celles validées par l'encadrement.
 
-Limite : une ligne partie sans équipe n'a pas de relecteur.
+**Le bureau ou la mairie valide aussi** (`institutions_relues_par`). Deux cas restaient sans
+relecteur : une sortie déclarée sans équipe, et les heures d'un chef seul encadrant de la sienne.
+Un membre du bureau d'une association (`ContactInstitution.membre_bureau`) ou un agent de la
+collectivité relit donc toutes les sorties de son institution. Être simple membre d'une équipe de
+la mairie ne fait pas de quelqu'un son relecteur, et personne ne valide ses propres heures.
 
 #### Formulaires de terrain (17/11/2026)
 

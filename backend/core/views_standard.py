@@ -217,7 +217,8 @@ class MonReleveView(APIView):
             "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
             "lieux": [{"code": c, "libelle": l} for c, l in LieuDeDepart.choices],
             # Vrai si la personne encadre au moins une équipe : elle a alors un second onglet.
-            "encadre": ep.equipes_encadrees(request.user).exists(),
+            "encadre": (ep.equipes_encadrees(request.user).exists()
+                        or bool(ep.institutions_relues_par(request.user, _collectivite_de_l_agent(request)))),
         })
 
     def post(self, request):
@@ -285,6 +286,19 @@ class MonReleveLigneView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _collectivite_de_l_agent(request):
+    """L'institution dont l'appelant est AGENT (compte institutionnel rattaché) : il en relit
+    les relevés au même titre que le bureau d'une association. None pour un compte ordinaire —
+    être membre d'une équipe de la mairie ne fait pas de quelqu'un son relecteur."""
+    from .models import UserRole
+    from .perimetre_admin import institution_regardee
+    from .permissions import effective_role_or_none
+
+    if effective_role_or_none(request) not in (UserRole.LOCAL_AUTHORITY, UserRole.ADMINISTRATOR):
+        return None
+    return institution_regardee(request)
+
+
 class RelevesEquipeView(APIView):
     """Les relevés des équipes que l'appelant encadre : il les lit et les valide, il ne les
     corrige pas (décision du 17/11/2026 : seule la personne complète son relevé).
@@ -310,7 +324,7 @@ class RelevesEquipeView(APIView):
         fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
         nommer = _nommer_pour(request)
         personnes = {}
-        for ligne in ep.a_relire_par(request.user, environment).filter(
+        for ligne in ep.a_relire_par(request.user, environment, _collectivite_de_l_agent(request)).filter(
                 parti_le__gte=debut, parti_le__lte=fin).order_by("utilisateur_id", "-parti_le"):
             fiche = personnes.setdefault(ligne.utilisateur_id, {
                 "personne": nommer(ligne.utilisateur) or "Membre d'équipe", "lignes": [],
@@ -340,10 +354,11 @@ class RelevesEquipeView(APIView):
             EngagementPersonnel.objects.select_related("crise", "equipe"),
             id=request.data.get("ligne"), environment=environment)
         try:
+            agent_de = _collectivite_de_l_agent(request)
             if request.data.get("geste") == "valider":
-                ep.valider(ligne, request.user, environment)
+                ep.valider(ligne, request.user, environment, agent_de)
             elif request.data.get("geste") == "renvoyer":
-                ep.renvoyer(ligne, request.user, environment, request.data.get("remarque"))
+                ep.renvoyer(ligne, request.user, environment, request.data.get("remarque"), agent_de)
             else:
                 raise ValidationError({"detail": "Geste inconnu."})
         except ep.ErreurEngagement as erreur:
