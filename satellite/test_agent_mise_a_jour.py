@@ -360,3 +360,66 @@ class TestLaSauvegarde:
         assert len(restants) == agent.SAUVEGARDES_GARDEES
         assert "avant-ancien0-2026.sql.gz" not in restants
         assert "avant-ancien1-2026.sql.gz" not in restants
+
+
+class TestCompteRenduRefuseParLeCentral:
+    """17/11/2026 : le pare-feu du central répondait 403 à tout compte rendu qui portait un
+    journal. Le compte rendu final restait sur les bras, repartait à chaque passage, et l'agent
+    ne revenait plus jamais chercher d'ordre — pendant que trois refus par heure faisaient
+    bannir le satellite."""
+
+    def _central(self, reponses):
+        """Un vrai `Central`, dont le réseau rend successivement `reponses` (un code HTTP, ou
+        None pour un succès). Garde ce qui a été envoyé."""
+        envoyes = []
+
+        class Reponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *arguments):
+                return False
+
+            def read(self):
+                return b'{"access": "jeton", "statut": "EN_COURS"}'
+
+        def ouvrir(requete, timeout=None):
+            if requete.full_url.endswith("/api/token/"):
+                return Reponse()
+            envoyes.append(json.loads(requete.data.decode()))
+            code = reponses.pop(0)
+            if code is not None:
+                raise urllib.error.HTTPError(requete.full_url, code, "refus", {}, None)
+            return Reponse()
+
+        env = {"SATELLITE_ID": "s1", "SATELLITE_EMAIL": "s@x", "SATELLITE_PASSWORD": "p",
+               "CENTRAL_URL": "https://central.invalide"}
+        return agent.Central(env, ouvrir=ouvrir), envoyes
+
+    def test_un_refus_du_contenu_fait_repartir_le_compte_rendu_sans_son_journal(self):
+        central, envoyes = self._central([403, None])
+
+        assert central.rapport("o1", "ECHOUEE", "La construction a échoué.", "$ docker compose build\nERREUR") is True
+
+        assert "docker compose build" in envoyes[0]["journal"]
+        # Le second envoi porte l'essentiel, pas le journal — et ne cherche pas à le déguiser.
+        assert (envoyes[1]["statut"], envoyes[1]["etape"]) == ("ECHOUEE", "La construction a échoué.")
+        assert "docker" not in envoyes[1]["journal"] and "403" in envoyes[1]["journal"]
+
+    def test_un_ordre_annule_reste_un_arret(self):
+        central, _ = self._central([409])
+        assert central.rapport("o1", "EN_COURS", "Vérification") is False
+        central, _ = self._central([403, 409])
+        assert central.rapport("o1", "EN_COURS", "Vérification", "journal") is False
+
+    def test_une_panne_du_central_n_est_pas_prise_pour_un_refus(self):
+        central, envoyes = self._central([502])
+        with pytest.raises(urllib.error.HTTPError):
+            central.rapport("o1", "REUSSIE", "Mise à jour terminée.", "journal")
+        assert len(envoyes) == 1                       # pas de second envoi : on réessaiera
+
+    def test_si_meme_l_essentiel_est_refuse_on_le_sait(self):
+        central, envoyes = self._central([403, 403])
+        with pytest.raises(urllib.error.HTTPError):
+            central.rapport("o1", "REUSSIE", "Mise à jour terminée.", "journal")
+        assert len(envoyes) == 2

@@ -158,11 +158,31 @@ class Central:
     def rapport(self, ordre_id, statut, etape, journal="", version=""):
         """Vrai si le central a pris le rapport, faux s'il dit d'arrêter (ordre annulé).
         Lève en cas de panne réseau : l'appelant décide alors de garder le rapport."""
+        chemin = f"/api/satellites/{self.satellite}/rapport-mise-a-jour/"
+        corps = {"ordre": ordre_id, "statut": statut, "etape": etape, "version": version}
         try:
-            self._appel("POST", f"/api/satellites/{self.satellite}/rapport-mise-a-jour/", {
-                "ordre": ordre_id, "statut": statut, "etape": etape,
-                "journal": journal[-TAILLE_JOURNAL:], "version": version,
-            })
+            self._appel("POST", chemin, {**corps, "journal": journal[-TAILLE_JOURNAL:]})
+            return True
+        except urllib.error.HTTPError as erreur:
+            if erreur.code in (404, 409):
+                return False
+            if erreur.code not in (400, 403, 413):
+                raise
+            code = erreur.code
+        # REFUSÉ, pas injoignable : c'est le contenu qui ne passe pas. Constaté le 17/11/2026 :
+        # le pare-feu du central prenait le journal — des lignes de commande et des traces —
+        # pour une attaque, et répondait 403. Le compte rendu final restait donc sur les bras,
+        # repartait à chaque passage, et l'agent ne revenait plus jamais chercher d'ordre.
+        #
+        # On renvoie alors l'essentiel — le statut et l'étape — SANS le journal, qui reste
+        # lisible sur le satellite (`journalctl -u assista-satellite-maj`). On ne cherche pas à
+        # le faire passer autrement : c'est au central de décider ce que son pare-feu laisse
+        # entrer.
+        try:
+            self._appel("POST", chemin, {
+                **corps,
+                "journal": f"Journal non transmis : le central l'a refuse (code {code}). "
+                           "Il est reste sur le satellite."})
             return True
         except urllib.error.HTTPError as erreur:
             if erreur.code in (404, 409):
