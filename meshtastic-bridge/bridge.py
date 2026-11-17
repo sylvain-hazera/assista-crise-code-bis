@@ -596,6 +596,12 @@ class AnnuaireCles:
         self._canaux = {}
         self._demandes = {}
         self._reponses = {}
+        # Nœuds qui nous ont adressé leur identité : ils nous connaissent donc, plus besoin
+        # de se présenter à eux.
+        self._confirmes = set()
+
+    def confirmer(self, node_num):
+        self._confirmes.add(node_num)
 
     def charger(self, annuaire):
         for ligne in annuaire.get("cles") or []:
@@ -630,10 +636,18 @@ class AnnuaireCles:
         self._prioritaires.add(node_num)
         self._demandes.pop(node_num, None)
 
-    def prochain_a_demander(self):
+    def prochain_a_demander(self, seulement_sans_cle=False):
+        """Le prochain correspondant à qui se présenter en lui demandant son identité.
+
+        Avoir SA clé ne suffit pas : c'est la nôtre qui peut lui manquer. Sur un broker qui
+        ne route une annonce « à tous » que s'il sait où se trouve l'émetteur (constaté sur
+        Gaulix le 17/11/2026 : après vingt minutes d'annonces, un nœud abonné ne nous
+        connaissait toujours pas), seul un envoi adressé lui parvient. On s'arrête quand il
+        nous a répondu. `seulement_sans_cle` : pour un appareil réel, qui se présente déjà
+        tout seul sur la radio."""
         maintenant = self._horloge()
         for node_num in sorted(self._prioritaires):
-            if node_num in self._cles:
+            if node_num in self._cles and (seulement_sans_cle or node_num in self._confirmes):
                 continue
             derniere = self._demandes.get(node_num)
             if derniere is not None and maintenant - derniere < CLES_DEMANDE_PAR_NOEUD_S:
@@ -727,6 +741,9 @@ class EchangeCles:
                     "[%s] %08x annonce une AUTRE clé publique que celle connue : appareil "
                     "réinitialisé, ou usurpation.", self._nom, node_num,
                 )
+        if to_node == self.compagnon["node_num"]:
+            # Il nous écrit nommément : il nous connaît.
+            self.annuaire.confirmer(node_num)
         demandee = data.want_response or bool(data.bitfield & BITFIELD_WANT_RESPONSE)
         if not demandee or to_node != self.compagnon["node_num"]:
             return None
@@ -754,7 +771,8 @@ class EchangeCles:
             destinataire=node_num, demander_reponse=True,
         )
         await asyncio.to_thread(self.publier, canal_nom, paquet)
-        logger.info("[%s] Clé publique demandée à %08x (canal '%s').", self._nom, node_num, canal_nom)
+        logger.info("[%s] Identité présentée à %08x, la sienne demandée (canal '%s').",
+                    self._nom, node_num, canal_nom)
         return True
 
     async def boucle(self, django):
@@ -1427,7 +1445,7 @@ async def boucle_cles_locale(django, compagnon, iface, node_num, libelle_connexi
                 for contact in contacts:
                     annuaire.apprendre(contact["node_num"], contact.get("public_key_hex"))
                 annuaire.charger(await django.annuaire_cles(compagnon["id"]))
-            cible = annuaire.prochain_a_demander()
+            cible = annuaire.prochain_a_demander(seulement_sans_cle=True)
             if cible is not None:
                 await asyncio.to_thread(demander_identite_locale, iface, cible)
                 logger.info("[%s] Clé publique demandée à %08x par l'appareil (%s).",

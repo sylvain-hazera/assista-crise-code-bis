@@ -438,6 +438,13 @@ class TestEchangeDesCles(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bytes(identite.public_key).hex(), echange.cle_publique_hex)
             self.assertFalse(reponse.want_response)               # pas de ping-pong
 
+    async def test_une_identite_qui_nous_est_adressee_vaut_confirmation(self):
+        echange, _ = _echange()
+        echange.annuaire.charger({"cles": [], "prioritaires": [EMETTEUR]})
+        user, data = _identite_d_un_autre()
+        echange.identite_recue(EMETTEUR, NOUS, "Equipe", user, data, 42)
+        self.assertIsNone(echange.annuaire.prochain_a_demander())
+
     async def test_une_demande_adressee_a_un_autre_ne_nous_regarde_pas(self):
         echange, publies = _echange()
         user, data = _identite_d_un_autre(demande=True)
@@ -477,11 +484,28 @@ class TestAnnuaire(unittest.TestCase):
         temps[0] += bridge.CLES_DEMANDE_PAR_NOEUD_S + 1
         self.assertEqual(annuaire.prochain_a_demander(), EMETTEUR)
 
-    def test_une_cle_connue_ne_se_demande_plus(self):
+    def test_avoir_sa_cle_ne_dit_pas_qu_il_a_la_notre(self):
+        """Le constat du 17/11/2026 sur Gaulix : on avait la clé du nœud, lui n'avait pas la
+        nôtre, et rien ne se passait. On se présente jusqu'à ce qu'il réponde."""
         annuaire = bridge.AnnuaireCles()
         annuaire.charger({"cles": [{"node_num": EMETTEUR, "public_key_hex": "0a" * 32}], "prioritaires": [EMETTEUR]})
-        self.assertIsNone(annuaire.prochain_a_demander())
         self.assertEqual(annuaire.cle(EMETTEUR), "0a" * 32)
+        self.assertEqual(annuaire.prochain_a_demander(), EMETTEUR)
+
+    def test_un_correspondant_qui_a_repondu_n_est_plus_sollicite(self):
+        temps = [1000.0]
+        annuaire = bridge.AnnuaireCles(lambda: temps[0])
+        annuaire.charger({"cles": [{"node_num": EMETTEUR, "public_key_hex": "0a" * 32}], "prioritaires": [EMETTEUR]})
+        annuaire.confirmer(EMETTEUR)
+        temps[0] += bridge.CLES_DEMANDE_PAR_NOEUD_S + 1
+        self.assertIsNone(annuaire.prochain_a_demander())
+
+    def test_un_appareil_reel_ne_demande_que_les_cles_qui_manquent(self):
+        """Il se présente déjà tout seul sur la radio : inutile d'en rajouter."""
+        annuaire = bridge.AnnuaireCles()
+        annuaire.charger({"cles": [{"node_num": EMETTEUR, "public_key_hex": "0a" * 32}], "prioritaires": [EMETTEUR, 0x3333]})
+        self.assertEqual(annuaire.prochain_a_demander(seulement_sans_cle=True), 0x3333)
+        self.assertIsNone(annuaire.prochain_a_demander(seulement_sans_cle=True))
 
     def test_une_cle_qui_change_est_signalee(self):
         annuaire = bridge.AnnuaireCles()

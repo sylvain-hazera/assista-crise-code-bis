@@ -240,15 +240,19 @@ class TestAnnuaireDesCles:
     def _admin(self, create_user):
         return _client(create_user(username="pont-cles@x.fr", email="pont-cles@x.fr", type="ADMIN"))
 
-    def test_cles_connues_et_correspondants_sans_cle(self, create_user, compagnon_meshtastic):
+    def test_cles_connues_et_correspondants(self, create_user, compagnon_meshtastic):
         from core.models import ContactMeshtastic, MessageMeshtasticLog, NoeudUtilisateurMeshtastic
         ContactMeshtastic.objects.create(compagnon=compagnon_meshtastic, node_num=10, public_key_hex="0a" * 32)
         ContactMeshtastic.objects.create(compagnon=compagnon_meshtastic, node_num=11)
         agent = create_user(username="agent-cles@x.fr", email="agent-cles@x.fr", type="AUT_LOCALE")
-        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=11)     # sans clé : à demander
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=11)
         NoeudUtilisateurMeshtastic.objects.create(
             utilisateur=create_user(username="b-cles@x.fr", email="b-cles@x.fr", type="AUT_LOCALE"),
-            node_num=10,                                                              # clé connue : rien à faire
+            node_num=10,                # sa clé est connue, mais lui ne connaît peut-être pas la nôtre
+        )
+        NoeudUtilisateurMeshtastic.objects.create(
+            utilisateur=create_user(username="c-cles@x.fr", email="c-cles@x.fr", type="AUT_LOCALE"),
+            node_num=77,                # jamais entendu par CE companion : pas son affaire
         )
         MessageMeshtasticLog.objects.create(
             compagnon=compagnon_meshtastic, direction="ENTRANT", contact_node_num=12, contenu="bonjour",
@@ -259,7 +263,7 @@ class TestAnnuaireDesCles:
 
         assert reponse.status_code == 200, reponse.data
         assert reponse.data['cles'] == [{'node_num': 10, 'public_key_hex': "0a" * 32}]
-        assert reponse.data['prioritaires'] == [11, 12]
+        assert reponse.data['prioritaires'] == [10, 11, 12]
 
     def test_un_noeud_seulement_entendu_n_est_pas_sollicite(self, create_user, compagnon_meshtastic):
         """Chaque demande descend sur la radio : on ne la fait pas aux centaines de nœuds qu'un

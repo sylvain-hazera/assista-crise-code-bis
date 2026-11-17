@@ -21385,21 +21385,32 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         ne peut plus lire un message chiffré par clé publique tant que l'expéditeur n'a pas
         réannoncé son identité -- trois heures par défaut sur un appareil.
 
-        `prioritaires` : les nœuds dont la clé nous MANQUE et à qui on parle réellement --
-        nœuds rattachés à un compte, et correspondants d'un message des trente derniers jours.
-        Le pont leur demande leur identité. Il ne la demande pas à tous les nœuds entendus :
-        chaque demande descend sur la radio par les passerelles, et un broker régional en
-        voit passer des centaines.
+        `prioritaires` : les nœuds à qui on parle réellement PAR CE COMPANION -- ses
+        correspondants des trente derniers jours, et les nœuds rattachés à un compte qu'il a
+        déjà entendus. Le pont se présente à eux nommément et leur demande leur identité. Pas
+        à tous les nœuds entendus : chaque demande descend sur la radio par les passerelles,
+        et un broker régional en voit passer des centaines.
+
+        Deux corrections du 17/11/2026, constatées en production. La liste contenait tous
+        les nœuds rattachés à un compte, quel que soit le companion : celui de La Réunion
+        interrogeait des nœuds de métropole sur un broker où ils ne sont pas. Et elle
+        excluait les nœuds dont on a déjà la clé, alors que c'est la NÔTRE qui leur manque :
+        sur un broker qui ne route une annonce « à tous » que s'il sait où est l'émetteur,
+        seul un envoi adressé leur parvient.
 
         Réservé aux ponts : des clés publiques ne sont pas secrètes, mais la liste dit avec
         qui l'institution correspond."""
         compagnon = self.get_object()
-        cles = dict(
-            ContactMeshtastic.objects.filter(compagnon=compagnon).exclude(public_key_hex='')
+        contacts = dict(
+            ContactMeshtastic.objects.filter(compagnon=compagnon)
             .values_list('node_num', 'public_key_hex')
         )
+        cles = {n: c for n, c in contacts.items() if c}
         depuis = timezone.now() - datetime.timedelta(days=30)
-        suivis = set(NoeudUtilisateurMeshtastic.objects.values_list('node_num', flat=True))
+        suivis = set(
+            NoeudUtilisateurMeshtastic.objects.filter(node_num__in=list(contacts))
+            .values_list('node_num', flat=True)
+        )
         suivis.update(
             MessageMeshtasticLog.objects.filter(compagnon=compagnon, date_creation__gte=depuis)
             .values_list('contact_node_num', flat=True).distinct()
@@ -21407,7 +21418,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         suivis.discard(compagnon.node_num)
         return Response({
             'cles': [{'node_num': n, 'public_key_hex': c} for n, c in cles.items()],
-            'prioritaires': sorted(n for n in suivis if n not in cles),
+            'prioritaires': sorted(suivis),
         })
 
     @action(detail=False, methods=['post'], url_path='enregistrer-depuis-satellite')
