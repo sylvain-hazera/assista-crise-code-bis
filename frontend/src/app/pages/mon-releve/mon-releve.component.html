@@ -1,0 +1,131 @@
+<div class="releve-page">
+  <header>
+    <h1><span class="material-icons">schedule</span> Mon relevé d'heures</h1>
+    <p class="chapeau">Ce que vous avez déclaré par « Je pars » et « Je rentre », du domicile ou de votre hébergement si
+      vous êtes en déplacement sur site. Un oubli se complète ici, à la main ; votre activité et celle de vos équipes,
+      à droite, vous aident à retrouver les heures.</p>
+  </header>
+
+  <app-depart-retour [lienReleve]="false"></app-depart-retour>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  <div class="barre">
+    <label>Du <input type="date" [(ngModel)]="du" (change)="charger()"></label>
+    <label>au <input type="date" [(ngModel)]="au" (change)="charger()"></label>
+    @if (releve; as r) {
+      <strong>{{ r.total_heures | number:'1.0-2' }} h sur la période</strong>
+      @if (!brouillon && r.crises.length) {
+        <button type="button" class="btn-primary" (click)="ajouter()"><span class="material-icons">add</span> Ajouter une sortie oubliée</button>
+      }
+    }
+  </div>
+
+  @if (releve && !releve.crises.length && !releve.lignes.length) {
+    <p class="message">Cette page n'a rien à vous proposer pour le moment : on ne déclare des heures que sur une crise où
+      votre institution, ou l'une de vos équipes, est engagée. Si vous devriez y avoir accès, voyez votre encadrement.</p>
+  }
+
+  @if (releve; as r) {
+    <div class="colonnes">
+      <section>
+        <h2>Mes sorties</h2>
+        <div class="tableur">
+          <table>
+            <thead>
+              <tr><th>Crise</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th></th></tr>
+            </thead>
+            <tbody>
+              @if (brouillon && !brouillon.id) {
+                <ng-container *ngTemplateOutlet="edition; context: { b: brouillon }"></ng-container>
+              }
+              @for (l of r.lignes; track l.id) {
+                @if (brouillon?.id === l.id) {
+                  <ng-container *ngTemplateOutlet="edition; context: { b: brouillon }"></ng-container>
+                } @else {
+                  <tr [class.dehors]="!l.rentre_le">
+                    <td>{{ l.crise_nom }}</td>
+                    <td>{{ l.equipe_nom }}</td>
+                    <td>{{ l.parti_le | date:'dd/MM/yyyy HH:mm' }}</td>
+                    <td>{{ libelleLieu(l.depart_de) }}@if (l.depart_de === 'HEBERGEMENT' && l.hebergement) { <br><span class="note">{{ l.hebergement }}</span> }</td>
+                    <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td>
+                    <td>{{ libelleLieu(l.retour_a) }}</td>
+                    <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
+                    <td>
+                      @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main, après coup">à la main</span> }
+                      <button type="button" class="lien" (click)="modifier(l)">{{ l.rentre_le ? 'Corriger' : 'Compléter le retour' }}</button>
+                      @if (l.saisie_manuelle) { <button type="button" class="lien" (click)="supprimer(l)">Retirer</button> }
+                    </td>
+                  </tr>
+                }
+              } @empty {
+                @if (!brouillon) { <tr><td colspan="8" class="note">Aucune sortie déclarée sur cette période.</td></tr> }
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Une ligne par sortie, du départ au retour, 24 heures au plus. Les lignes ne peuvent pas se
+          recouvrir. Une ligne déclarée sur le moment se corrige mais ne se supprime pas.</p>
+      </section>
+
+      <section>
+        <h2>Activité sur la période</h2>
+        <div class="barre">
+          <label><input type="radio" name="filtre" [checked]="filtreActivite === 'tout'" (change)="filtreActivite = 'tout'"> Tout</label>
+          <label><input type="radio" name="filtre" [checked]="filtreActivite === 'moi'" (change)="filtreActivite = 'moi'"> La mienne</label>
+          <label><input type="radio" name="filtre" [checked]="filtreActivite === 'equipe'" (change)="filtreActivite = 'equipe'"> Celle de mes équipes</label>
+        </div>
+        @if (activite.length) {
+          <ul class="activite">
+            @for (a of activite; track $index) {
+              <li [class.equipe]="a.source === 'equipe'">
+                <time>{{ a.quand | date:(a.heure ? 'dd/MM HH:mm' : 'dd/MM') }}</time>
+                <span>{{ a.quoi }}@if (a.equipe) { <span class="note"> — {{ a.equipe }}</span> }</span>
+                @if (brouillon && a.heure) {
+                  <button type="button" class="lien" (click)="reprendre(a.quand)" title="Reprendre cette heure dans la ligne en cours">reprendre</button>
+                } @else { <span></span> }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="note">Rien de consigné sur cette période.</p>
+        }
+        <p class="note">Sans le détail des dossiers : seulement de quoi situer les heures.</p>
+      </section>
+    </div>
+
+    <ng-template #edition let-b="b">
+      <tr class="edition">
+        <td>
+          <select [(ngModel)]="b.crise" [disabled]="!!b.id">
+            @for (c of r.crises; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+          </select>
+        </td>
+        <td>
+          <select [(ngModel)]="b.equipe" [disabled]="!!b.id">
+            <option value="">—</option>
+            @for (q of r.equipes; track q.id) { <option [value]="q.id">{{ q.nom }}</option> }
+          </select>
+        </td>
+        <td><input type="datetime-local" [(ngModel)]="b.parti_le" aria-label="Départ"></td>
+        <td>
+          <select [(ngModel)]="b.depart_de" aria-label="Départ de">
+            @for (lieu of r.lieux; track lieu.code) { <option [value]="lieu.code">{{ lieu.libelle }}</option> }
+          </select>
+        </td>
+        <td><input type="datetime-local" [(ngModel)]="b.rentre_le" aria-label="Retour"></td>
+        <td>
+          <select [(ngModel)]="b.retour_a" aria-label="Retour à">
+            @for (lieu of r.lieux; track lieu.code) { <option [value]="lieu.code">{{ lieu.libelle }}</option> }
+          </select>
+        </td>
+        <td class="nombre">—</td>
+        <td>
+          <button type="button" class="btn-primary" [disabled]="envoi" (click)="enregistrer()">Enregistrer</button>
+          <button type="button" class="lien" (click)="brouillon = null">Annuler</button>
+        </td>
+      </tr>
+    </ng-template>
+  }
+</div>

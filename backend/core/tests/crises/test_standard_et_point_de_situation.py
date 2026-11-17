@@ -259,3 +259,123 @@ class TestJeParsJeRentreDuPersonnel:
 
     def test_anonyme_refuse(self):
         assert APIClient().get(reverse("mon_engagement")).status_code in (401, 403)
+
+
+@pytest.mark.django_db
+class TestReleveComplete:
+    """Départ du domicile ou de l'hébergement, et oublis complétés à la main (17/11/2026)."""
+
+    @pytest.fixture
+    def agent(self, create_user, mairie, crise):
+        from core.models import ImplicationInstitution, Team
+        institution, _ = mairie
+        ImplicationInstitution.objects.create(crise=crise, institution=institution, type_implication="IMPLIQUE", actif=True)
+        equipe = Team.objects.create(name="Renfort", institution=institution)
+        user = create_user(username="renfort@std.fr", email="renfort@std.fr", type="UTIL_SIMPLE")
+        equipe.members.add(user)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return user, client, equipe
+
+    def _instants(self, heures_avant, duree_h):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        debut = timezone.now() - timedelta(hours=heures_avant)
+        return debut.isoformat(), (debut + timedelta(hours=duree_h)).isoformat()
+
+    def _ajouter(self, client, crise, heures_avant=30, duree_h=6, **extra):
+        parti, rentre = self._instants(heures_avant, duree_h)
+        return client.post(reverse("mon_releve"), {"crise": str(crise.id), "parti_le": parti, "rentre_le": rentre, **extra}, format="json")
+
+    def test_qui_est_loge_sur_site_part_de_son_hebergement(self, agent, crise):
+        from core.models import AffectationLogementIntervenant, PointOperationnel, PointType
+        user, client, _ = agent
+        gite = PointOperationnel.objects.create(
+            nom="Gîte communal", crise=crise, location="POINT (4.6 45.5)",
+            type=PointType.objects.create(code="LOGEMENT_STD", libelle="Logement"))
+        AffectationLogementIntervenant.objects.create(intervenant=user, crise=crise, point=gite)
+
+        etat = client.get(reverse("mon_engagement")).data
+        assert etat["crises"][0]["hebergement"] == "Gîte communal"
+        parti = client.post(reverse("mon_engagement"), {"geste": "partir", "crise": str(crise.id)}, format="json").data
+        assert (parti["en_cours"]["depart_de"], parti["en_cours"]["hebergement"]) == ("HEBERGEMENT", "Gîte communal")
+        client.post(reverse("mon_engagement"), {"geste": "rentrer"}, format="json")
+        (ligne,) = client.get(reverse("mon_releve")).data["lignes"]
+        assert (ligne["retour_a"], ligne["saisie_manuelle"]) == ("HEBERGEMENT", False)
+
+    def test_sans_logement_on_part_du_domicile(self, agent, crise):
+        _, client, _ = agent
+        parti = client.post(reverse("mon_engagement"), {"geste": "partir", "crise": str(crise.id)}, format="json").data
+        assert parti["en_cours"]["depart_de"] == "DOMICILE"
+
+    def test_une_sortie_oubliee_s_ajoute_a_la_main_et_se_voit_comme_telle(self, agent, crise, mairie):
+        _, client, equipe = agent
+        reponse = self._ajouter(client, crise, equipe=str(equipe.id), depart_de="HEBERGEMENT")
+        assert reponse.status_code == 201, reponse.data
+        assert (reponse.data["heures"], reponse.data["saisie_manuelle"], reponse.data["retour_a"]) == (6.0, True, "HEBERGEMENT")
+        releve = client.get(reverse("mon_releve")).data
+        assert releve["total_heures"] == 6.0
+        # Et la mairie le lit dans son point de situation, signalé comme complété à la main.
+        ligne = mairie[1].get(reverse("point_de_situation"), {"crise": str(crise.id)}).data["releve_engagements"][0]
+        assert (ligne["heures"], ligne["saisie_manuelle"], ligne["equipe"]) == (6.0, True, "Renfort")
+
+    @pytest.mark.parametrize("heures_avant, duree_h, extrait", [
+        (2, 5, "heure à venir"),
+        (60, 30, "Plus de 24 heures"),
+        (30, -1, "doit suivre le départ"),
+    ])
+    def test_une_ligne_impossible_est_refusee_avec_sa_raison(self, agent, crise, heures_avant, duree_h, extrait):
+        reponse = self._ajouter(agent[1], crise, heures_avant=heures_avant, duree_h=duree_h)
+        assert reponse.status_code == 400
+        assert extrait in str(reponse.data)
+
+    def test_deux_lignes_ne_se_recouvrent_pas(self, agent, crise):
+        _, client, _ = agent
+        assert self._ajouter(client, crise, heures_avant=30, duree_h=6).status_code == 201
+        assert "recouvrent" in str(self._ajouter(client, crise, heures_avant=27, duree_h=6).data)
+        assert self._ajouter(client, crise, heures_avant=20, duree_h=3).status_code == 201
+
+    def test_le_retour_oublie_se_corrige_mais_la_declaration_ne_s_efface_pas(self, agent, crise):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.models import EngagementPersonnel
+        _, client, _ = agent
+        client.post(reverse("mon_engagement"), {"geste": "partir", "crise": str(crise.id)}, format="json")
+        EngagementPersonnel.objects.update(parti_le=timezone.now() - timedelta(hours=10))
+        ligne = client.get(reverse("mon_releve")).data["lignes"][0]
+        url = reverse("mon_releve_ligne", args=[ligne["id"]])
+
+        assert client.delete(url).status_code == 400                       # déclarée sur le moment
+        retour = (timezone.now() - timedelta(hours=3)).isoformat()
+        corrigee = client.patch(url, {"rentre_le": retour}, format="json")
+
+        assert corrigee.status_code == 200, corrigee.data
+        assert (corrigee.data["heures"], corrigee.data["saisie_manuelle"]) == (7.0, True)
+        assert client.get(reverse("mon_engagement")).data["en_cours"] is None
+
+    def test_on_ne_touche_pas_au_releve_d_un_autre(self, agent, crise, create_user):
+        ligne = self._ajouter(agent[1], crise).data
+        autre = APIClient()
+        autre.force_authenticate(user=create_user(username="autre@std.fr", email="autre@std.fr", type="UTIL_SIMPLE"))
+        assert autre.patch(reverse("mon_releve_ligne", args=[ligne["id"]]), {}, format="json").status_code == 404
+        assert autre.get(reverse("mon_releve")).data["lignes"] == []
+
+    def test_l_activite_de_la_personne_et_de_son_equipe_est_en_regard(self, agent, crise):
+        from django.utils import timezone
+
+        from core.models import CreneauEquipe, Dossier, DossierHistorique
+        user, client, equipe = agent
+        CreneauEquipe.objects.create(equipe=equipe, utilisateur=user, date=timezone.localdate(), creneau="MATIN", crise=crise)
+        dossier = Dossier.objects.create(numero="DOS-ESSAI01", crise=crise, equipe=equipe, titre="Pompage", description="x")
+        DossierHistorique.objects.create(dossier=dossier, auteur=None, evenement="Pris en charge",
+                                         commentaire="chez Madame Durand")
+
+        activite = client.get(reverse("mon_releve")).data["activite"]
+
+        quoi = " | ".join(a["quoi"] for a in activite)
+        assert "Planning : créneau matin" in quoi and "Dossier DOS-ESSAI01 : pris en charge" in quoi
+        assert "Durand" not in quoi                                          # jamais le détail
+        assert {a["source"] for a in activite} == {"moi", "equipe"}

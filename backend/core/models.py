@@ -4034,6 +4034,14 @@ class PalierInondationSimule(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.niveau_metres}m"
 
 
+class LieuDeDepart(models.TextChoices):
+    """D'où part et où rentre la personne. Quelqu'un « en déplacement sur site » — logé sur
+    place pour plusieurs jours — part de son hébergement et y rentre, pas de chez lui : c'est
+    ce trajet-là que compte sa journée."""
+    DOMICILE = "DOMICILE", "Domicile"
+    HEBERGEMENT = "HEBERGEMENT", "Point d'hébergement (en déplacement sur site)"
+
+
 class EngagementPersonnel(EnvironmentScopedModel):
     """« Je pars », « je rentre » pour le personnel municipal et les membres d'association
     (17/11/2026) : le temps qu'une personne a réellement passé sur une crise, d'après ce
@@ -4053,6 +4061,14 @@ class EngagementPersonnel(EnvironmentScopedModel):
         "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels")
     parti_le = models.DateTimeField()
     rentre_le = models.DateTimeField(null=True, blank=True)
+    depart_de = models.CharField(max_length=12, choices=LieuDeDepart.choices, default=LieuDeDepart.DOMICILE)
+    retour_a = models.CharField(max_length=12, choices=LieuDeDepart.choices, blank=True, default="")
+    #: Nom du logement quand la personne est hébergée sur site (centre ou offre de logement).
+    hebergement = models.CharField(max_length=200, blank=True, default="")
+    # Vrai dès qu'une heure a été saisie ou corrigée à la main par la personne, après coup :
+    # le relevé distingue ce qui a été déclaré sur le moment de ce qui a été complété.
+    saisie_manuelle = models.BooleanField(default=False)
+    modifie_le = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-parti_le"]

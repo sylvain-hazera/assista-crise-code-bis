@@ -162,6 +162,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.HebergementMatchingComponent)
       },
       {
+        path: 'mon-releve',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/mon-releve/mon-releve.component')
+          .then(m => m.MonReleveComponent)
+      },
+      {
         path: 'mes-interventions',
         canActivate: [authGuard],
         loadComponent: () => import('../pages/mes-interventions/mes-interventions.component')

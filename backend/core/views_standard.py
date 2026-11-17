@@ -117,9 +117,13 @@ class EngagementPersonnelView(APIView):
             "en_cours": None if ouvert is None else {
                 "crise": str(ouvert.crise_id), "crise_nom": ouvert.crise.name,
                 "equipe_nom": ouvert.equipe.name if ouvert.equipe_id else None,
-                "parti_le": ouvert.parti_le,
+                "parti_le": ouvert.parti_le, "depart_de": ouvert.depart_de,
+                "hebergement": ouvert.hebergement,
             },
-            "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_ouvertes_pour(request.user, environment)],
+            # `hebergement` : le logement de la personne sur cette crise si elle y est « en
+            # déplacement sur site » — c'est alors de là qu'elle part et là qu'elle rentre.
+            "crises": [{"id": str(c.id), "nom": c.name, "hebergement": ep.hebergement_de(request.user, c)}
+                       for c in ep.crises_ouvertes_pour(request.user, environment)],
             "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
         }
 
@@ -139,14 +143,140 @@ class EngagementPersonnelView(APIView):
                 if crise is None:
                     raise ValidationError({"detail": "Indiquez la crise sur laquelle vous partez."})
                 equipe = Team.objects.filter(id=request.data.get("equipe")).first() if request.data.get("equipe") else None
-                ep.partir(request.user, environment, crise, equipe)
+                ep.partir(request.user, environment, crise, equipe, depart_de=request.data.get("depart_de"))
             elif geste == "rentrer":
-                ep.rentrer(request.user, environment)
+                ep.rentrer(request.user, environment, retour_a=request.data.get("retour_a"))
             else:
                 raise ValidationError({"detail": "Geste inconnu."})
         except ep.ErreurEngagement as erreur:
             raise ValidationError({"detail": str(erreur)})
         return Response(self._etat(request))
+
+
+def _ligne_de_releve(engagement) -> dict:
+    duree = engagement.duree
+    return {
+        "id": str(engagement.id), "crise": str(engagement.crise_id), "crise_nom": engagement.crise.name,
+        "equipe": str(engagement.equipe_id) if engagement.equipe_id else None,
+        "equipe_nom": engagement.equipe.name if engagement.equipe_id else "",
+        "parti_le": engagement.parti_le, "rentre_le": engagement.rentre_le,
+        "depart_de": engagement.depart_de, "retour_a": engagement.retour_a,
+        "hebergement": engagement.hebergement, "saisie_manuelle": engagement.saisie_manuelle,
+        "heures": round(duree.total_seconds() / 3600, 2) if duree is not None else None,
+    }
+
+
+def _instant(valeur, champ):
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    instant = parse_datetime(str(valeur or ""))
+    if instant is None:
+        raise ValidationError({"detail": f"{champ} : date et heure attendues."})
+    return timezone.make_aware(instant) if timezone.is_naive(instant) else instant
+
+
+class MonReleveView(APIView):
+    """Le relevé d'heures de la personne, en forme de tableau, avec en regard son activité et
+    celle de ses équipes pour l'aider à retrouver ce qu'elle a oublié de déclarer.
+
+    GET ?du=AAAA-MM-JJ&au=AAAA-MM-JJ (30 derniers jours par défaut).
+    POST : ajoute une sortie oubliée (départ ET retour)."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        import datetime
+
+        from django.utils import timezone
+        from django.utils.dateparse import parse_date
+
+        from . import engagements_personnels as ep
+        from .models import EngagementPersonnel, LieuDeDepart
+
+        environment = get_active_environment(request)
+        aujourdhui = timezone.localdate()
+        au = parse_date(str(request.query_params.get("au") or "")) or aujourdhui
+        du = parse_date(str(request.query_params.get("du") or "")) or au - datetime.timedelta(days=30)
+        if du > au or (au - du).days > 366:
+            raise ValidationError({"detail": "Période invalide (un an au plus)."})
+        debut = timezone.make_aware(datetime.datetime.combine(du, datetime.time.min))
+        fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
+        lignes = (EngagementPersonnel.objects.filter(
+            utilisateur=request.user, environment=environment, parti_le__gte=debut, parti_le__lte=fin)
+            .select_related("crise", "equipe").order_by("-parti_le"))
+        lignes = [_ligne_de_releve(l) for l in lignes]
+        return Response({
+            "du": du, "au": au,
+            "lignes": lignes,
+            "total_heures": round(sum(l["heures"] or 0 for l in lignes), 2),
+            "activite": ep.activite(request.user, environment, debut, fin),
+            "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_declarables(request.user, environment)],
+            "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
+            "lieux": [{"code": c, "libelle": l} for c, l in LieuDeDepart.choices],
+        })
+
+    def post(self, request):
+        from . import engagements_personnels as ep
+        from .models import Team
+
+        environment = get_active_environment(request)
+        crise = Crisis.objects.filter(id=request.data.get("crise"), environment=environment).first() \
+            if request.data.get("crise") else None
+        if crise is None:
+            raise ValidationError({"detail": "Indiquez la crise."})
+        equipe = Team.objects.filter(id=request.data.get("equipe")).first() if request.data.get("equipe") else None
+        try:
+            ligne = ep.completer(
+                request.user, environment, crise=crise, equipe=equipe,
+                parti_le=_instant(request.data.get("parti_le"), "Départ"),
+                rentre_le=_instant(request.data.get("rentre_le"), "Retour"),
+                depart_de=request.data.get("depart_de"), retour_a=request.data.get("retour_a"),
+            )
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(_ligne_de_releve(ligne), status=status.HTTP_201_CREATED)
+
+
+class MonReleveLigneView(APIView):
+    """PATCH : corrige une de SES lignes (le retour oublié, une heure fausse). DELETE : retire
+    une ligne qu'on a soi-même ajoutée à la main — une déclaration faite sur le moment se
+    corrige, elle ne s'efface pas."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def _ligne(self, request, ligne_id):
+        from django.shortcuts import get_object_or_404
+
+        from .models import EngagementPersonnel
+        return get_object_or_404(
+            EngagementPersonnel.objects.select_related("crise", "equipe"),
+            id=ligne_id, utilisateur=request.user, environment=get_active_environment(request))
+
+    def patch(self, request, ligne_id):
+        from . import engagements_personnels as ep
+
+        ligne = self._ligne(request, ligne_id)
+        donnees = request.data
+        try:
+            ep.corriger(
+                ligne,
+                parti_le=_instant(donnees["parti_le"], "Départ") if donnees.get("parti_le") else None,
+                rentre_le=_instant(donnees["rentre_le"], "Retour") if donnees.get("rentre_le") else None,
+                depart_de=donnees.get("depart_de"), retour_a=donnees.get("retour_a"),
+            )
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(_ligne_de_releve(ligne))
+
+    def delete(self, request, ligne_id):
+        ligne = self._ligne(request, ligne_id)
+        if not ligne.saisie_manuelle:
+            raise ValidationError({"detail": (
+                "Cette ligne a été déclarée sur le moment : corrigez-la, elle ne se supprime pas."
+            )})
+        ligne.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PointDeSituationView(APIView):

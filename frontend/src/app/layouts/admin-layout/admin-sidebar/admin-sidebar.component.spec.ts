@@ -61,9 +61,13 @@ describe('AdminSidebarComponent', () => {
     // ce qui manque (« aucune radio ne vous est accessible, demandez à votre encadrement »),
     // donc il satisfait le critère ci-dessus. Le restreindre se fait en une ligne dans
     // admin-nav.config.ts si l'entrée s'avère du bruit pour les comptes citoyens.
+    //
+    // « Mon relevé d'heures » les rejoint le 17/11/2026 : un bénévole d'association est un
+    // compte ordinaire, et c'est là qu'il déclare « je pars », « je rentre ». À qui n'est
+    // membre d'aucune équipe engagée, la page dit pourquoi elle n'a rien à lui proposer.
     const visibles = NAV_ITEMS.filter(i => component.isNavItemVisible(i)).map(i => i.label);
     expect(visibles).toEqual([
-      'Mes interventions', 'Devenir passerelle', 'Hébergement', 'Accueil radio',
+      'Mes interventions', "Mon relevé d'heures", 'Devenir passerelle', 'Hébergement', 'Accueil radio',
     ]);
   });
 

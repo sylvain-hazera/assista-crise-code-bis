@@ -881,6 +881,26 @@ crise où sa propre institution, ou celle d'une de ses équipes, est engagée. C
 point de situation de l'institution donne ses heures, tenues à part de celles des ressources
 proposées, et les nomme dans le relevé.
 
+**Du domicile, ou de l'hébergement.** Quelqu'un « en déplacement sur site » — logé sur place
+pour plusieurs jours (`AffectationLogementIntervenant`) — part de son logement et y rentre : c'est
+ce trajet-là que compte sa journée. `depart_de` et `retour_a` le disent (`LieuDeDepart`) ; qui a
+un logement sur la crise part par défaut de son logement, et l'on rentre par défaut d'où l'on est
+parti.
+
+**Les oublis se complètent à la main**, sur la page « Mon relevé d'heures » (`/mon-releve`,
+`GET/POST /api/mon-releve/`, `PATCH/DELETE /api/mon-releve/<id>/`). Un tableau : une ligne par
+sortie, que la personne ajoute ou corrige elle-même. Règles tenues par le serveur : pas d'heure à
+venir, le retour suit le départ, 24 heures au plus, aucune ligne ne recouvre une autre. Une ligne
+ajoutée ou corrigée après coup est marquée `saisie_manuelle`, sur le relevé de la personne comme
+dans celui que lit l'institution ; une ligne déclarée sur le moment se corrige mais ne se
+supprime pas.
+
+En regard du tableau, **l'activité de la personne et de ses équipes** sur la période
+(`engagements_personnels.activite`) : créneaux de planning, événements des dossiers de ses
+équipes, entrées qu'elle a consignées, ouverture et clôture des missions. Sans le détail des
+commentaires — ils parlent de personnes aidées ; il ne s'agit que de situer des heures. Une
+heure de l'activité se reprend d'un clic dans la ligne en cours.
+
 #### Formulaires de terrain (17/11/2026)
 
 `core/formulaires_terrain.py`, page `/admin/formulaires-terrain`. La collecte de terrain à la

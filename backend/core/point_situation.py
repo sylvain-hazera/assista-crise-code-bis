@@ -98,6 +98,10 @@ def construire(crise, institution, environment, nommer=None) -> dict:
             "equipe": engagement.equipe.name if engagement.equipe_id else "",
             "parti_le": engagement.parti_le, "rentre_le": engagement.rentre_le,
             "heures": round(duree.total_seconds() / 3600, 2) if duree is not None else None,
+            # D'où la personne est partie (domicile, ou hébergement si elle est en déplacement
+            # sur site), et si la ligne a été complétée à la main après coup.
+            "depart_de": engagement.get_depart_de_display(), "hebergement": engagement.hebergement,
+            "saisie_manuelle": engagement.saisie_manuelle,
         })
     heures_personnel = round(secondes_personnel / 3600, 1)
 

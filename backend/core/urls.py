@@ -15,7 +15,9 @@ from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtte
 from .views_stocks import ArticleStockViewSet, DepotStockViewSet, EtatStockView, ImportStockView, InventaireStockView, MouvementStockViewSet, StockPointView
 from .views_dons import AppelAuxDonsViewSet, AvisDonsPublicsView, CatalogueDonsView, FoyerSinistreViewSet
 from .views_formulaires import FormulaireTerrainViewSet, TypesQuestionView
-from .views_standard import AppelStandardViewSet, EngagementPersonnelView, PointDeSituationView
+from .views_standard import (
+    AppelStandardViewSet, EngagementPersonnelView, MonReleveLigneView, MonReleveView, PointDeSituationView,
+)
 from .views_stocks_logistique import (
     AppareilStockViewSet, DemandeTransfertViewSet, DisponibiliteStockView, LotTypeViewSet, ReservationStockViewSet,
 )
@@ -517,6 +519,8 @@ urlpatterns = [
     path('formulaires-terrain-types/', TypesQuestionView.as_view(), name='formulaires_terrain_types'),
     path('point-de-situation/', PointDeSituationView.as_view(), name='point_de_situation'),
     path('mon-engagement/', EngagementPersonnelView.as_view(), name='mon_engagement'),
+    path('mon-releve/', MonReleveView.as_view(), name='mon_releve'),
+    path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
     path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
     path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),
     path('stocks/etat/', EtatStockView.as_view(), name='stocks_etat'),

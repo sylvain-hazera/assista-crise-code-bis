@@ -42,7 +42,7 @@ describe('DepartRetourComponent', () => {
     expect(texte()).toContain('Je pars');
     fixture.componentInstance.geste('partir');
     const requete = http.expectOne(r => r.method === 'POST');
-    expect(requete.request.body).toEqual({ geste: 'partir', crise: 'c1', equipe: 'e1' });
+    expect(requete.request.body).toEqual({ geste: 'partir', crise: 'c1', equipe: 'e1', depart_de: 'DOMICILE' });
     requete.flush(PARTI);
     fixture.detectChanges();
     expect(texte()).toContain('Je rentre');
@@ -54,8 +54,19 @@ describe('DepartRetourComponent', () => {
     expect(texte()).toContain('Je rentre');
     fixture.componentInstance.geste('rentrer');
     const requete = http.expectOne(r => r.method === 'POST');
-    expect(requete.request.body).toEqual({ geste: 'rentrer' });
+    expect(requete.request.body).toEqual({ geste: 'rentrer', retour_a: 'DOMICILE' });
     requete.flush({ en_cours: null, crises: [], equipes: [] });
+  });
+
+  it('logé sur site, on part de son hébergement et on y rentre', () => {
+    ouvrir({ ...LIBRE, crises: [{ id: 'c1', nom: 'Crue du Gier', hebergement: 'Gîte communal' }] });
+    expect(fixture.componentInstance.lieu).toBe('HEBERGEMENT');
+    expect(texte()).toContain('Gîte communal');
+    fixture.componentInstance.geste('partir');
+    const depart = http.expectOne(r => r.method === 'POST');
+    expect(depart.request.body.depart_de).toBe('HEBERGEMENT');
+    depart.flush({ ...PARTI, en_cours: { ...PARTI.en_cours!, depart_de: 'HEBERGEMENT', hebergement: 'Gîte communal' } });
+    expect(fixture.componentInstance.lieu).toBe('HEBERGEMENT');
   });
 
   it('montre le refus du serveur', () => {

@@ -82,6 +82,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'location_city', label: 'Vue Ma Collectivité', route: '/admin/vue-mairie', groupe: 'permanent' },
   // Route publique : un chef d'équipe peut être un simple citoyen.
   { icon: 'checklist', label: 'Mes interventions', route: '/mes-interventions', groupe: 'permanent', visibilite: 'tous' },
+  // « Je pars », « je rentre », et de quoi compléter ses oublis à la main — voir
+  // backend/core/engagements_personnels.py. Pour tout le monde : un bénévole d'association est
+  // un compte ordinaire.
+  { icon: 'schedule', label: "Mon relevé d'heures", route: '/mon-releve', groupe: 'permanent', visibilite: 'tous' },
   // Relais radio depuis un poste où l'on ne peut rien installer : la radio se branche en USB
   // et le navigateur relaie. Visible de tous — c'est un écran d'urgence, on ne le cherche pas
   // dans un sous-menu le jour où on en a besoin.
