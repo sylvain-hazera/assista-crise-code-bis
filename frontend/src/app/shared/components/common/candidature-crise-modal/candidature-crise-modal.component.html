@@ -1,0 +1,94 @@
+<div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="titre-candidature">
+  <div class="modal">
+
+    <header class="modal-header">
+      <h2 id="titre-candidature">{{ crise.name }}</h2>
+      <button type="button" class="fermer" (click)="fermee.emit()" aria-label="Fermer">×</button>
+    </header>
+
+    <div class="modal-body">
+      <p class="aide">
+        <span class="material-icons">flag</span>
+        Au nom de <strong>{{ institution.nom }}</strong>. Dites dans quelle situation vous êtes :
+        les deux ne donnent pas les mêmes droits ni les mêmes obligations.
+      </p>
+
+      <div class="choix">
+        @if (peutSeDireTouchee) {
+          <label class="ligne">
+            <input type="radio" name="situation" [checked]="situation === 'touchee'" (change)="situation = 'touchee'"/>
+            <span>
+              <strong>La crise touche notre territoire</strong>
+              <small>Votre commune entre dans la zone de la crise.</small>
+            </span>
+          </label>
+          @if (situation === 'touchee') {
+            <div class="sous-choix">
+              <label class="ligne">
+                <input type="radio" name="territoire" [checked]="territoire === 'entier'" (change)="territoire = 'entier'"/>
+                <span>Tout notre territoire</span>
+              </label>
+              <label class="ligne">
+                <input type="radio" name="territoire" [checked]="territoire === 'dessine'" (change)="territoire = 'dessine'"/>
+                <span>Seulement une partie, que nous dessinons
+                  <small>Vous serez conduit sur la carte de la crise pour la tracer.</small>
+                </span>
+              </label>
+            </div>
+          }
+        }
+
+        @if (peutProposerSonAide) {
+          <label class="ligne">
+            <input type="radio" name="situation" [checked]="situation === 'aide'" (change)="situation = 'aide'"/>
+            <span>
+              <strong>Nous pouvons aider</strong>
+              <small>Vous n'êtes pas sinistrés : la zone de la crise ne change pas, et chaque
+                commune d'accueil donne son accord.</small>
+            </span>
+          </label>
+          @if (situation === 'aide') {
+            <fieldset class="communes sous-choix">
+              <legend>Sur quoi pouvez-vous aider ?</legend>
+              @for (aide of aides; track aide.code) {
+                <label class="ligne">
+                  <input type="checkbox" [checked]="aidesCochees.has(aide.code)" (change)="basculerAide(aide.code)"/>
+                  <span>{{ aide.libelle }} <small>{{ aide.description }}</small></span>
+                </label>
+              }
+            </fieldset>
+          }
+        }
+
+        @if (!peutSeDireTouchee && !peutProposerSonAide) {
+          <p class="vide">Votre institution est déjà déclarée sur cette crise, des deux façons.</p>
+        }
+      </div>
+
+      @if (situation) {
+        <label>
+          Précisions (facultatif)
+          <textarea [(ngModel)]="message" maxlength="1000"
+                    [placeholder]="situation === 'aide' ? 'Ex. : gymnase de 80 places disponible dès ce soir, 4 agents techniques demain matin.' : 'Ex. : trois hameaux coupés par la crue.'"></textarea>
+        </label>
+      }
+
+      @if (errorMessage) {
+        <div class="toast toast-err">
+          <span class="material-icons">error_outline</span> {{ errorMessage }}
+        </div>
+      }
+    </div>
+
+    <footer class="modal-footer">
+      <p class="resume"></p>
+      <div class="actions">
+        <button type="button" class="btn-secondary" (click)="fermee.emit()">Annuler</button>
+        <button type="button" class="btn-primary" [disabled]="!peutEnvoyer" (click)="envoyer()">
+          {{ enregistrement ? 'Envoi…' : 'Envoyer' }}
+        </button>
+      </div>
+    </footer>
+
+  </div>
+</div>

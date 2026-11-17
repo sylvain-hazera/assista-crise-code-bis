@@ -759,6 +759,8 @@ class CrisisSerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     zone_geojson = serializers.SerializerMethodField()
     zone_secteurs_geojson = serializers.SerializerMethodField()
+    zones_ajoutees = serializers.SerializerMethodField()
+    zone_communes_partielles = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     author_nom = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
@@ -802,6 +804,34 @@ class CrisisSerializer(serializers.ModelSerializer):
 
     def get_zone_secteurs_geojson(self, obj):
         return json.loads(obj.zone_secteurs.geojson) if obj.zone_secteurs else None
+
+    def get_zones_ajoutees(self, obj):
+        """Les zones dessinées en plus de la zone initiale, avec qui peut les retirer."""
+        from . import zones_crise
+        from .permissions import effective_role_or_none
+        from .zone_scoping import _memo
+
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        connecte = bool(user and user.is_authenticated)
+        admin = connecte and effective_role_or_none(request) == UserRole.ADMINISTRATOR
+        siennes = _memo(request, 'institutions_de', lambda: zones_crise.institutions_de(user)) if connecte else set()
+        maitre = admin or (connecte and obj.author_id == user.id)
+        return [
+            {
+                'id': str(z.id), 'nom': z.nom,
+                'institution': str(z.institution_id) if z.institution_id else None,
+                'institution_nom': z.institution.nom if z.institution_id else None,
+                'geojson': json.loads(z.geometrie.geojson),
+                'date_creation': z.date_creation,
+                'peut_retirer': bool(maitre or (z.institution_id and z.institution_id in siennes)
+                                     or (connecte and z.auteur_id == user.id)),
+            }
+            for z in obj.zones_ajoutees.all()
+        ]
+
+    def get_zone_communes_partielles(self, obj):
+        return sorted(c.commune_code for c in obj.contributions_zone_communes.all() if c.partielle)
 
     def get_has_photo(self, obj):
         return bool(obj.photo)
@@ -3432,12 +3462,46 @@ class ImplicationInstitutionSerializer(
     # statut posé seulement par perform_create et valider/refuser (sinon auto-validation possible).
     statut = serializers.ChoiceField(choices=StatutImplication.choices, read_only=True)
     peut_valider = serializers.SerializerMethodField()
+    # Posées seulement par les décisions des collectivités (valider/refuser/decider). Tant
+    # qu'elles étaient modifiables, l'institution acceptée sur UNE commune pouvait s'accorder
+    # toute la crise d'un simple PATCH sur sa propre déclaration (17/11/2026).
+    communes = serializers.JSONField(read_only=True)
+    communes_refusees = serializers.JSONField(read_only=True)
+    accord = serializers.SerializerMethodField()
+    # Posées par « proposer son aide », qui les valide contre le catalogue.
+    aides_proposees = serializers.JSONField(read_only=True)
+    aides_libelles = serializers.SerializerMethodField()
+    # La commune n'entre dans la zone de la crise que par les zones qu'elle dessinera, au lieu
+    # d'y faire entrer tout son territoire (voir core/zones_crise.py). Lu à la création seule.
+    territoire_partiel = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
 
         model = ImplicationInstitution
 
         fields = "__all__"
+
+    def get_aides_libelles(self, obj):
+        from .aides_renfort import libelles
+        return libelles(obj.aides_proposees)
+
+    def get_accord(self, obj):
+        """Où en est l'accord commune par commune, et ce que l'APPELANT peut encore y décider.
+        None quand la déclaration ne dépend d'aucun accord (institution publique chez elle)."""
+        from . import accords_communes
+        if not accords_communes.soumise_a_accord(obj):
+            return None
+        etat = accords_communes.etat(obj)
+        request = self.context.get('request')
+        mien = accords_communes.a_decider_par(request, obj) if request is not None else None
+        return {
+            "toute_la_crise": etat["toute_la_crise"],
+            "acceptees": len(etat["acceptees"]),
+            "refusees": len(etat["refusees"]),
+            "en_attente": len(etat["en_attente"]),
+            "a_moi_en_attente": mien["en_attente"] if mien else [],
+            "a_moi_acceptees": mien["acceptees"] if mien else [],
+        }
 
     def get_responsable_nom(self, obj):
         if not obj.responsable:
@@ -3449,15 +3513,29 @@ class ImplicationInstitutionSerializer(
         return [t.nom for t in obj.themes.all()]
 
     def get_peut_valider(self, obj):
-        """True si l'utilisateur peut valider ou refuser cette déclaration (même calcul que
-        l'action)."""
+        """True si l'appelant a encore une réponse à donner sur cette déclaration.
+
+        Ce n'est plus « la déclaration est en attente » : sur une crise à plusieurs communes,
+        elle peut être acceptée chez la voisine et attendre toujours la réponse d'ici."""
+        from . import accords_communes
+        from .permissions import (
+            effective_role_or_none, is_regulateur_aut_locale_de_la_crise,
+        )
+        request = self.context.get('request')
+        if request is None or not accords_communes.soumise_a_accord(obj):
+            return False
+        if accords_communes.toute_la_crise(obj):
+            return False
+        regulateur = is_regulateur_aut_locale_de_la_crise(request, obj.crise)
+        role = effective_role_or_none(request)
+        if accords_communes.a_decider_par(request, obj)["en_attente"]:
+            return regulateur or role == UserRole.LOCAL_AUTHORITY
+        # Crise sans commune nommée, ou administrateur sans territoire : la règle d'origine.
         if obj.statut != StatutImplication.EN_ATTENTE:
             return False
-        request = self.context.get('request')
-        if request is None:
+        if accords_communes.communes_de_la_crise(obj.crise) and role != UserRole.ADMINISTRATOR:
             return False
-        from .permissions import is_regulateur_aut_locale_de_la_crise
-        return is_regulateur_aut_locale_de_la_crise(request, obj.crise)
+        return regulateur
 
     def validate(self, attrs):
         # Sans crise dans le PATCH, vérifier celle de l'instance.

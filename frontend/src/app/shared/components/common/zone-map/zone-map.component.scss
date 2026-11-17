@@ -34,7 +34,9 @@
 
 .zone-map-container {
   width: 100%;
-  height: 320px;
+  // Suit la hauteur de l'écran : 320 px fixes laissaient une carte en bandeau dans une fenêtre
+  // devenue large, et dessiner une zone demande de la place.
+  height: clamp(320px, 55vh, 680px);
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--ac-border, #e5e7eb);
@@ -56,4 +58,14 @@
   line-height: 1.55;
 
   .material-icons { font-size: 1.1rem; color: var(--ac-text-subtle, #9ca3af); margin-top: .1rem; }
+}
+
+.aimant {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  .material-icons { font-size: 1rem; }
 }

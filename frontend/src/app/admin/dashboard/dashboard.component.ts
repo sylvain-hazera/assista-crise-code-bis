@@ -1,9 +1,14 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { of, Subject, Subscription, takeUntil } from 'rxjs';
 import { DashboardStatsService, DashboardStats, DashboardFilter } from '../../services/dashboard-stats.service';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
+import { CrisisService } from '../../services/crisis.service';
+import { CandidaturesCrises, CriseACandidater } from '../../shared/models/crisis.model';
+import {
+  CandidatureCriseModalComponent, CandidatureEnvoyee,
+} from '../../shared/components/common/candidature-crise-modal/candidature-crise-modal.component';
 
 const INTERVALLE_POLLING_DASHBOARD_MS = 30_000;
 
@@ -65,7 +70,7 @@ enum FilterAction {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink, CommonModule],
+  imports: [RouterLink, CommonModule, CandidatureCriseModalComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss'],
 })
@@ -94,6 +99,45 @@ export class DashboardComponent implements OnInit, OnDestroy {
   nationalFigures:    NationalFigure[] = [];
   isZoneScoped        = false;
 
+  // ── Crises en cours en France, et candidature ──────────────
+  /** Toutes les crises ouvertes, pas seulement celles de la zone : c'est ce qui permet à une
+   * commune de dire « celle-ci nous touche » ou « sur celle-là nous pouvons aider ». */
+  candidatures: CandidaturesCrises | null = null;
+  criseACandidater: CriseACandidater | null = null;
+  messageCandidature = '';
+
+  private chargerCandidatures(): void {
+    this.crisisService.candidatures().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (reponse) => this.candidatures = reponse,
+      // Compte sans droit institutionnel : la carte ne s'affiche pas, rien d'autre ne casse.
+      error: () => this.candidatures = null,
+    });
+  }
+
+  /** Ce que l'institution est déjà sur cette crise, en clair. */
+  situationLisible(crise: CriseACandidater): string {
+    const morceaux: string[] = [];
+    if (crise.situation.impliquee) morceaux.push('territoire touché');
+    if (crise.situation.acteur === 'VALIDEE') morceaux.push('aide acceptée');
+    if (crise.situation.acteur === 'EN_ATTENTE') morceaux.push('aide proposée, en attente');
+    if (crise.situation.acteur === 'REFUSEE') morceaux.push('aide refusée');
+    return morceaux.join(' · ');
+  }
+
+  peutCandidater(crise: CriseACandidater): boolean {
+    return !!this.candidatures?.institution && (!crise.situation.impliquee || !crise.situation.acteur);
+  }
+
+  onCandidatureEnvoyee(resultat: CandidatureEnvoyee): void {
+    this.criseACandidater = null;
+    if (resultat.zoneADessiner) {
+      this.router.navigate(['/admin/crises'], { queryParams: { id: resultat.crise.id } });
+      return;
+    }
+    this.messageCandidature = `Candidature envoyée pour « ${resultat.crise.name} ».`;
+    this.chargerCandidatures();
+  }
+
   // ── Config ─────────────────────────────────────────────────
   readonly filterOptions = [
     { label: 'Tout',         action: FilterAction.All      },
@@ -112,12 +156,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   readonly CHART_X0 = 40;
   readonly CHART_Y0 = 10;
 
-  constructor(private dashboardStatsService: DashboardStatsService) {}
+  constructor(
+    private dashboardStatsService: DashboardStatsService,
+    private crisisService: CrisisService,
+    private router: Router,
+  ) {}
 
   ngOnInit(): void {
     // pollWhileVisible fait aussi le premier chargement (tick à t=0).
     this.pollingSub = pollWhileVisible(() => of(null), INTERVALLE_POLLING_DASHBOARD_MS).subscribe(() => {
       this.loadAll(!this.premierChargement);
+      // Sans rafraîchir sous une fenêtre ouverte : la crise choisie ne doit pas changer.
+      if (!this.criseACandidater) this.chargerCandidatures();
       this.premierChargement = false;
     });
   }

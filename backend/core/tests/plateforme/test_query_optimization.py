@@ -213,7 +213,12 @@ class TestCrisisHasResponsableActif:
         # ignorant le prefetch_related('implications') — une requête de plus par crise. Ici,
         # 2 requêtes fixes attendues (le SELECT des crises + le prefetch_related
         # ('implications')), jamais 2 + 1 par crise.
-        assert len(ctx) <= 2, f"{len(ctx)} requêtes pour 5 crises : has_responsable_actif ne doit pas requêter par crise"
+        #
+        # 17/11/2026 : le jeu de requêtes précharge aussi les zones ajoutées (et leur
+        # institution) et la provenance des communes, pour les mêmes raisons. Cela fait cinq
+        # requêtes FIXES au plus ; ce que l'essai garde, c'est qu'aucune ne dépend du nombre de
+        # crises.
+        assert len(ctx) <= 5, f"{len(ctx)} requêtes pour 5 crises : has_responsable_actif ne doit pas requêter par crise"
 
 
 @pytest.mark.django_db

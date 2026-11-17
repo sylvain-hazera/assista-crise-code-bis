@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Crisis, CrisisPayload } from '../shared/models/crisis.model';
+import { CandidaturesCrises, Crisis, CrisisPayload } from '../shared/models/crisis.model';
 import { StatsResponse, PageResponse } from '../shared/models/api.model';
 import { StocksComparaison } from '../shared/models/materiel-point.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
@@ -65,8 +65,14 @@ export class CrisisService {
    * jusqu'à ce qu'un régulateur de la collectivité l'accepte : c'est le mandat exigé d'une
    * association qui n'intervient pas sur délégation. Proposer deux fois renvoie 409 avec
    * l'état de la première. */
-  proposerAide(id: string, themes: string[], message?: string): Observable<unknown> {
-    return this.http.post(`${this.apiUrl}/${id}/proposer-aide/`, { themes, message });
+  proposerAide(id: string, themes: string[], message?: string, aides?: string[]): Observable<unknown> {
+    return this.http.post(`${this.apiUrl}/${id}/proposer-aide/`, { themes, message, aides });
+  }
+
+  /** GET /api/crises/candidatures/ — toutes les crises en cours en France, avec la situation
+   * de l'institution de l'appelant sur chacune et le catalogue des aides proposables. */
+  candidatures(): Observable<CandidaturesCrises> {
+    return this.http.get<CandidaturesCrises>(`${this.apiUrl}/candidatures/`);
   }
 
   preview(id: string): Observable<Blob> {
@@ -100,6 +106,23 @@ export class CrisisService {
    * ne se touchent pas. */
   fusionnerZone(id: string, wkt: string): Observable<Crisis> {
     return this.http.post<Crisis>(`${this.apiUrl}/${id}/fusionner-zone/`, { wkt });
+  }
+
+  /** POST /api/crises/<id>/ajouter-zone/ — une zone EN PLUS de l'existant, qui peut ne pas le
+   * toucher. Elle reste attachée à l'institution qui la dessine. */
+  ajouterZone(id: string, wkt: string, nom: string): Observable<Crisis> {
+    return this.http.post<Crisis>(`${this.apiUrl}/${id}/ajouter-zone/`, { wkt, nom });
+  }
+
+  /** DELETE /api/crises/<id>/zones-ajoutees/<zone>/ */
+  retirerZoneAjoutee(id: string, zoneId: string): Observable<Crisis> {
+    return this.http.delete<Crisis>(`${this.apiUrl}/${id}/zones-ajoutees/${zoneId}/`);
+  }
+
+  /** POST /api/crises/<id>/territoire-commune/ — une commune de la zone y entre en entier, ou
+   * seulement par ses zones dessinées. */
+  territoireCommune(id: string, code: string, partielle: boolean): Observable<Crisis> {
+    return this.http.post<Crisis>(`${this.apiUrl}/${id}/territoire-commune/`, { code, partielle });
   }
 
   /** DELETE /api/crises/<id>/ */

@@ -249,8 +249,7 @@ def _calculer_communes_accordees(request) -> list:
     from django.utils import timezone
 
     from .models import (
-        Crisis, DelegationCompetence, ImplicationInstitution, StatutImplication,
-        TypeImplication,
+        ImplicationInstitution, StatutImplication, TypeImplication,
     )
 
     user = getattr(request, 'user', None) if request is not None else None
@@ -261,7 +260,6 @@ def _calculer_communes_accordees(request) -> list:
         return []
 
     zones = set()
-    maintenant = timezone.now()
 
     # 1. Les crises en cours où l'institution est acteur VALIDÉ. `end_date__isnull=True` :
     #    une crise close ne doit plus rien ouvrir, l'acceptation ne valant que pour elle.
@@ -286,17 +284,28 @@ def _calculer_communes_accordees(request) -> list:
         zones.update(("departement", d) for d in (zone_departements or []) if d)
 
     # 2. Les conventions actives, indépendantes de toute crise.
+    zones.update(_zones_par_convention(institution))
+
+    return sorted(zones)
+
+
+def _zones_par_convention(institution) -> set:
+    """Zones tenues d'une convention active (DelegationCompetence), hors de toute crise."""
+    from django.utils import timezone
+
+    from .models import DelegationCompetence
+
+    zones = set()
     delegations = (
         DelegationCompetence.objects
         .filter(institution_cible=institution, active=True)
-        .filter(Q(date_fin__isnull=True) | Q(date_fin__gt=maintenant))
+        .filter(Q(date_fin__isnull=True) | Q(date_fin__gt=timezone.now()))
         .values_list("communes", "departements")
     )
     for communes, departements in delegations:
         zones.update(("commune", c) for c in (communes or []) if c)
         zones.update(("departement", d) for d in (departements or []) if d)
-
-    return sorted(zones)
+    return zones
 
 
 def viewer_perimetre(request):
@@ -502,8 +511,18 @@ def communes_delegables(request, crise) -> list:
     if not de_la_crise:
         return []
 
-    perimetre = viewer_perimetre(request)
-    if perimetre is None:
+    # Le territoire PERMANENT — le sien et celui de ses conventions — pas le périmètre
+    # (17/11/2026). Le périmètre contient aussi ce que l'appelant a lui-même reçu le temps
+    # d'une crise : une mairie acceptée chez sa voisine aurait pu y accepter une association à
+    # la place du maire, et « chaque mairie accepte chez elle » ne tenait plus.
+    perimetre = []
+    propre = viewer_zone_code(request)
+    if propre is not None:
+        perimetre.append(propre)
+    institution = _institution_regardee(request)
+    if institution is not None and propre != ("national", None):
+        perimetre.extend(z for z in sorted(_zones_par_convention(institution)) if z not in perimetre)
+    if not perimetre:
         return []
 
     autorisees = set()

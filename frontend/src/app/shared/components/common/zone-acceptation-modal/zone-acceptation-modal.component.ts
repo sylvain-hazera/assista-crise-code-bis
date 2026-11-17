@@ -90,15 +90,32 @@ export class ZoneAcceptationModalComponent implements OnInit {
     }
   }
 
+  /** Communes où l'appelant avait dit oui et qu'il vient de décocher : son accord s'y retire.
+   * Une mairie reste maîtresse chez elle pendant toute la crise. */
+  get retraits(): string[] {
+    if (this.touteLaCrise) return [];
+    return (this.zone?.deja_accordees ?? []).filter(c => !this.selection.has(c));
+  }
+
+  /** « acceptée », « refusée » ou rien : ce que l'appelant a déjà répondu pour cette commune. */
+  reponseDeja(code: string): string {
+    if (this.zone?.deja_accordees?.includes(code)) return 'acceptée';
+    if (this.zone?.refusees?.includes(code)) return 'refusée';
+    return '';
+  }
+
   get peutValider(): boolean {
-    return !this.enregistrement && (this.touteLaCrise || this.selection.size > 0);
+    return !this.enregistrement
+      && (this.touteLaCrise || this.selection.size > 0 || this.retraits.length > 0);
   }
 
   get resume(): string {
     if (this.touteLaCrise) return 'toute la zone de la crise';
     const n = this.selection.size;
-    if (n === 0) return 'aucune commune';
-    return n === 1 ? '1 commune' : `${n} communes`;
+    const retraits = this.retraits.length;
+    const suffixe = retraits ? ` (accord retiré sur ${retraits})` : '';
+    if (n === 0) return 'aucune commune' + suffixe;
+    return (n === 1 ? '1 commune' : `${n} communes`) + suffixe;
   }
 
   accepter(): void {
@@ -106,7 +123,11 @@ export class ZoneAcceptationModalComponent implements OnInit {
     this.enregistrement = true;
     this.errorMessage = '';
     const communes = this.touteLaCrise ? undefined : Array.from(this.selection);
-    this.implicationService.valider(this.implication.id, communes).subscribe({
+    const retraits = this.retraits;
+    const envoi = retraits.length
+      ? this.implicationService.decider(this.implication.id, communes ?? [], retraits)
+      : this.implicationService.valider(this.implication.id, communes);
+    envoi.subscribe({
       next: () => {
         this.enregistrement = false;
         this.acceptee.emit();

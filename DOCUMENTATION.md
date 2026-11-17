@@ -755,6 +755,95 @@ mobilisations. Les qualifications par personne avec échéance n'existent PAS au
 crise, pas à une personne. Les disponibilités, elles, ont déjà leur socle
 (`DisponibiliteOperationnelle`, pendue à `AffectationRoleOperationnel`).
 
+#### Accord commune par commune : associations, et réserves communales en renfort
+
+Sur une crise qui touche plusieurs communes, **chaque mairie décide chez elle**
+(`core/accords_communes.py`, 17/11/2026). La déclaration d'acteur d'une association n'avait
+qu'un statut : la première mairie qui répondait la faisait passer à « validée » et les autres
+ne pouvaient plus ni accepter ni refuser. L'état tient en deux listes sur
+`ImplicationInstitution`, sans second modèle :
+
+| | |
+|---|---|
+| `communes` | où l'institution est acceptée (vide + VALIDEE = toute la crise) |
+| `communes_refusees` | où une mairie a dit non |
+| ni l'une ni l'autre | la mairie de cette commune n'a pas encore répondu |
+
+Le statut s'en déduit : VALIDEE dès qu'une commune est accordée, REFUSEE quand toutes ont
+refusé, EN_ATTENTE sinon. Les droits de lecture ne changent pas de source
+(`zone_scoping.communes_accordees` lit `communes`).
+
+- `valider` et `refuser` valent **pour les communes de l'appelant**, et restent possibles après
+  la réponse d'une autre mairie. `refuser` retire aussi un accord déjà donné. `decider` fait
+  les deux en un envoi (c'est ce qu'utilise la fenêtre d'acceptation).
+- **Trois trous fermés.** « Valider » sans nommer de commune ouvrait TOUTE la crise, voisines
+  comprises : il n'accorde plus que le territoire de l'appelant (la crise entière seulement
+  s'il la couvre). `communes` était modifiable par le déclarant : une association acceptée sur
+  une commune s'accordait le reste d'un simple PATCH. Et ce qu'une collectivité peut accorder
+  était calculé sur son périmètre, qui contient ce qu'elle a elle-même reçu le temps d'une
+  crise : une mairie accueillie chez sa voisine pouvait y accepter une association à la place
+  du maire. `communes_delegables` ne compte plus que le territoire permanent (le sien et celui
+  de ses conventions).
+- Une mairie dont la commune est dans la zone décide **même sans s'être déclarée** sur la
+  crise.
+- Une institution publique sur son terrain reste acceptée d'office, et aucune mairie ne peut
+  la récuser (`soumise_a_accord`).
+
+**Réserve communale en renfort** (`ImplicationInstitution.renfort`). Une mairie qui se déclare
+acteur dit « ma commune est touchée » : la zone de la crise s'étend à son territoire et elle
+est acceptée partout. Ce n'est pas ce que fait une commune qui envoie sa réserve aider la
+voisine. Case « Intervient en renfort, hors de son territoire » à la déclaration : la zone ne
+bouge pas, et la déclaration suit le circuit des associations — accord de chaque commune
+d'accueil. Le marqueur se pose à la déclaration et ne se retire pas ensuite.
+
+Non tranché : une mairie qui se déclare acteur SANS cocher « renfort » voit toujours toute la
+crise, communes voisines comprises, sans l'accord de leurs maires. C'est le comportement
+d'origine, laissé tel quel.
+
+#### La zone d'une crise s'agrandit par deux chemins (17/11/2026)
+
+`core/zones_crise.py`. Une commune qui rejoint une crise y fait entrer **tout son territoire**
+(comportement d'origine : son contour officiel rejoint `zone_secteurs`), **ou dessine une zone
+en plus** de la zone initiale.
+
+- `ZoneAjouteeCrise` : une zone dessinée EN PLUS. Elle ne modifie pas `Crisis.zone`, peut ne pas
+  la toucher (ce que `fusionner-zone` refuse), et reste attachée à l'institution qui l'a
+  dessinée — elle seule, l'auteur de la crise ou un administrateur la retirent. Seule une
+  institution impliquée sur la crise peut en ajouter.
+- `ContributionZoneCommune.partielle` : la commune qui dessine au lieu d'entrer en entier est
+  inscrite quand même dans `zone_communes` — c'est son code qui porte les droits et l'accord de
+  son maire — mais son contour entier n'est pas composé dans la zone. `territoire-commune`
+  bascule une commune entre « entière » et « zones dessinées ».
+- Les calculs « ce point est-il dans la zone ? » passent par `zones_crise.contient` /
+  `dessinee`, pour que les zones ajoutées comptent partout où la zone compte (écoute des
+  besoins, recensement des habitations, disponibilité des équipes).
+- Un tracé qui se recoupe est refusé, pas réparé : la réparation n'en garde qu'un morceau.
+
+**Aimantation** (`shared/utils/aimantation.util.ts`, branchée dans `app-zone-map`) : le point
+en cours se colle au sommet, sinon au bord, le plus proche d'un contour existant — zone
+initiale, secteurs, zones ajoutées, contours communaux. Un sommet l'emporte sur un bord : deux
+zones qui partagent un sommet se touchent exactement. La portée est en pixels d'écran (12), pas
+en mètres. Débrayable dans la barre d'outils de la carte.
+
+Limite : les zones ajoutées ne sont pas synchronisées vers les satellites.
+
+#### Candidater sur une crise depuis le tableau de bord (17/11/2026)
+
+Le tableau de bord liste **toutes les crises en cours en France** (`GET /crises/candidatures/`,
+ligne légère sans géométrie, avec la situation de l'institution de l'appelant sur chacune). Le
+bouton « Candidater » pose la question que l'ancien formulaire confondait :
+
+- **la crise touche notre territoire** → déclaration « impliquée », tout le territoire ou une
+  zone à dessiner (voir ci-dessus) ;
+- **nous pouvons aider** → `proposer-aide` avec `aides`, le catalogue fermé de
+  `core/aides_renfort.py` (centre d'accueil des civils, point de regroupement des moyens,
+  personnel, matériel, restauration, stockage, autre) et un message libre pour le détail. Une
+  commune ou un EPCI qui nomme ses aides est en **renfort** : la zone de la crise ne bouge pas
+  et chaque commune d'accueil donne son accord (voir « Accord commune par commune »). Les
+  régulateurs de la crise reçoivent la liste dans la notification.
+
+`proposer-aide` sans `aides` (par besoins) garde son comportement d'origine.
+
 #### Bénévoles d'association : ni agents, ni citoyens anonymes
 
 Arbitrage du 11/11/2026, après le constat que les membres des Casques Jaunes étaient « bancals »
@@ -4128,6 +4217,50 @@ a entendu l'émetteur **directement** (`hop_start == hop_limit`). `rx_snr` est m
 saut : sur un paquet relayé il ne dit rien de la liaison d'origine, et l'enregistrer fabriquerait
 une liaison directe inexistante. L'observation est faite **avant** toute tentative de
 déchiffrement, ce qui cartographie aussi les canaux dont on n'a pas la clé.
+
+#### Échange des clés publiques Meshtastic (17/11/2026)
+
+Constat : le pont ne semblait pas échanger ses clés publiques avec les autres nœuds. Quatre
+défauts, vérifiés contre le firmware (`NodeInfoModule.cpp`, `MeshService.cpp`, `Router.cpp`,
+`MQTT.cpp`) et non contre la documentation :
+
+1. **L'identité partait chiffrée quand les messages partaient en clair.** `chiffrement_supporte`
+   décoché (cas de Gaulix, où seul le clair arrive) n'était respecté que par les messages ;
+   l'annonce d'identité — celle qui porte la clé publique — et la position étaient chiffrées
+   quand même. Nos messages arrivaient, notre clé jamais. Les deux suivent désormais la règle
+   du companion (`_poser_charge`).
+2. **Aucune réponse aux demandes.** Un appareil qui entend un nœud inconnu lui envoie son
+   identité en demandant la sienne ; le pont rangeait la clé reçue et ne répondait pas.
+   `EchangeCles.identite_recue` répond, une fois par demandeur et par dix minutes.
+3. **Aucune demande.** Le pont n'apprenait une clé qu'en surprenant l'annonce périodique du
+   nœud (trois heures par défaut) et perdait tout au redémarrage. Il lit maintenant l'annuaire
+   du serveur (`GET /compagnons-meshtastic/<id>/annuaire-cles/`, réservé aux ponts) et demande
+   les clés manquantes **aux seuls nœuds à qui l'institution parle** : nœuds rattachés à un
+   compte, et correspondants d'un message des trente derniers jours. Une demande toutes les
+   trente secondes au plus, et pas deux au même nœud en douze heures (le firmware ne répondrait
+   pas plus souvent). On ne sollicite pas tout nœud entendu : chaque demande redescend sur la
+   radio par les passerelles, et un broker régional en montre des centaines.
+4. **Les messages chiffrés par clé publique d'un vrai appareil n'étaient jamais lus.** Le pont
+   exigeait la clé de l'expéditeur DANS le paquet, qu'un appareil ne met pas : il compte que le
+   destinataire la connaisse. Elle vient maintenant de l'annuaire, et un message illisible
+   faute de clé déclenche la demande de celle-ci.
+
+Au passage : un paquet relayé par plusieurs passerelles n'est plus traité qu'une fois
+(`DejaVus`) — le même message de canal était journalisé deux ou trois fois.
+
+**En TCP, série et Bluetooth** c'est l'appareil qui échange les clés, et il le fait bien ; mais
+le pont ne lisait jamais son répertoire. `boucle_cles_locale` le remonte au serveur toutes les
+dix minutes (nœuds, clés, positions) et fait demander par l'appareil la clé des correspondants
+qui n'en ont pas.
+
+Ce qui reste hors de portée du code : un appareil qui a déjà rangé une AUTRE clé pour notre
+numéro de nœud refuse toute identité différente (`NodeDB::updateUser`, « Public Key
+mismatch ») jusqu'à ce qu'on supprime notre fiche de son répertoire. Et rien de tout cela n'a
+été essayé contre un vrai nœud : seulement contre de vrais messages protobuf et le code du
+firmware.
+
+Réglages (environnement du pont) : `CLES_ANNUAIRE_INTERVALLE_S` (600), `CLES_DEMANDE_CADENCE_S`
+(30), `CLES_DEMANDE_PAR_NOEUD_S` (43 200), `CLES_REPONSE_PAR_NOEUD_S` (600).
 
 ### 9.5.2 Administration à distance des nœuds Meshtastic
 

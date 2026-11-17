@@ -3,13 +3,29 @@
 Application de gestion de crise et d'entraide citoyenne.
 Plateforme web permettant la mise en relation entre citoyens et autorités locales lors de catastrophes (incendies, inondations), incluant une cartographie en temps réel.
 
-## Avertissement — un outil complémentaire, pas un substitut
+## Ce que l'outil couvre du plan communal de sauvegarde
 
-Assista-Crise est un outil d'appui à la gestion de crise. Il ne remplace **en aucun cas** le
-Plan Communal de Sauvegarde (PCS) ni le Plan Intercommunal de Sauvegarde (PICS) d'une
-collectivité. Une collectivité locale doit conserver ses procédures établies sur support
-papier et être en mesure de gérer une crise sans dépendre de la disponibilité du site —
-celui-ci vient en complément de ces procédures, jamais en substitution.
+Assista-Crise sert à **tenir** le plan communal ou intercommunal de sauvegarde (PCS, PICS), à
+l'activer et à conduire la crise. Volet par volet :
+
+| Volet du plan | Dans Assista-Crise |
+|---|---|
+| Rédaction du plan, trame de l'État, fiches réflexes | « Mon plan de sauvegarde », « Poste de commandement » ; document du plan et DICRIM édités en PDF |
+| Analyse des risques et des enjeux | « Risques de la commune » (Géorisques), « Sites sensibles », « Enjeux exposés », couches cartographiques, simulation d'inondation |
+| Annuaire de crise, moyens, lieux d'accueil | « Annuaire de crise », « Matériel », « Stocks », « Centres » |
+| Personnes vulnérables | Registre chiffré, réservé aux agents désignés par le maire — [base légale](BASE-LEGALE-REGISTRE-VULNERABLES.md) |
+| Alerte des habitants | « Alerte de la population », « Alerter les habitants » (courriel, SMS). FR-Alert relève du préfet et n'en fait pas partie |
+| Réserve communale, associations, bénévoles | Équipes, compétences, campagnes de disponibilité, planning, accord commune par commune des renforts |
+| Conduite de la crise | Cellule de crise, main courante, carte, missions, dossiers, hébergement, recherches de personnes |
+| Logistique | Stocks (froid, cuisson, prêts, transferts), appels aux dons |
+| Communication sans Internet | Matrix, radio maillée MeshCore et Meshtastic, satellites hors ligne |
+| Exercices et retours d'expérience | « Exercices », rapports de crise |
+| Après la crise | Référencement des dégâts, biens sinistrés, relogement |
+
+**Le papier reste la sauvegarde.** Une collectivité doit garder ses procédures imprimées et
+pouvoir conduire une crise si le site est injoignable : le plan s'édite en PDF pour cela, et
+aucun écran n'est obligatoire pour ouvrir une crise. L'outil ne dispense ni de l'arrêté du
+maire qui approuve le plan, ni des exercices.
 
 ## Fonctionnalités
 

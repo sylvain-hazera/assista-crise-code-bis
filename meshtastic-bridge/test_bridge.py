@@ -326,3 +326,278 @@ class CanalEntrantAppareilLocalTest(unittest.IsolatedAsyncioTestCase):
     async def test_un_message_direct_passe_toujours(self):
         django = await self._jouer([self._texte(0x1001, 0, "pour moi")])
         self.assertEqual(django.dm_entrants, [(0xBEEF, "pour moi")])
+
+
+# ── Échange des clés publiques (17/11/2026) ────────────────────────────────────────────────
+
+NOUS = 0x9999
+CLE_PRIVEE_NOUS = "11" * 32
+CLE_PRIVEE_AUTRE = "22" * 32
+PSK = bytes.fromhex("ab" * 16)
+
+
+def _compagnon(chiffrement=True):
+    return {"id": "c1", "nom": "Pont", "node_num": NOUS, "chiffrement_supporte": chiffrement}
+
+
+class FauxRegistre:
+    def __init__(self, canaux=None):
+        self._canaux = canaux if canaux is not None else {"Equipe": {"id": "k1", "psk": PSK, "principal": True}}
+
+    def get(self, nom):
+        return self._canaux.get(nom)
+
+    def nom_principal(self):
+        return next(iter(self._canaux), None)
+
+
+def _echange(horloge=None, **kw):
+    import crypto
+    publies = []
+    annuaire = bridge.AnnuaireCles(horloge or (lambda: 1000.0))
+    echange = bridge.EchangeCles(
+        _compagnon(**kw), FauxRegistre(), crypto.cle_publique_depuis_privee_hex(CLE_PRIVEE_NOUS),
+        annuaire=annuaire, publier=lambda canal, paquet: publies.append((canal, paquet)),
+    )
+    return echange, publies
+
+
+def _identite_d_un_autre(demande=False, par_bitfield=False, cle=b"\x07" * 32):
+    user = mesh_pb2.User(id="!00001111", long_name="Autre", short_name="AUT", public_key=cle)
+    data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.NODEINFO_APP, payload=user.SerializeToString())
+    if demande and par_bitfield:
+        data.bitfield = bridge.BITFIELD_WANT_RESPONSE
+    elif demande:
+        data.want_response = True
+    return user, data
+
+
+def _relire(paquet):
+    """Ce qu'un appareil lirait de ce paquet : (Data, User)."""
+    import crypto
+    if paquet.HasField("decoded"):
+        data = paquet.decoded
+    else:
+        data = mesh_pb2.Data()
+        data.ParseFromString(crypto.dechiffrer(PSK, paquet.id, getattr(paquet, "from"), bytes(paquet.encrypted)))
+    user = mesh_pb2.User()
+    user.ParseFromString(data.payload)
+    return data, user
+
+
+class TestIdentiteConstruite(unittest.TestCase):
+
+    def test_l_annonce_porte_la_cle_et_le_drapeau_du_firmware(self):
+        echange, _ = _echange()
+        paquet = bridge.construire_identite(_compagnon(), "Equipe", {"psk": PSK}, echange.cle_publique_hex)
+        data, user = _relire(paquet)
+        self.assertEqual(paquet.to, bridge.BROADCAST_NUM)
+        self.assertEqual(bytes(user.public_key).hex(), echange.cle_publique_hex)
+        self.assertEqual(data.bitfield, bridge.BITFIELD_OK_TO_MQTT)
+        self.assertFalse(data.want_response)
+        self.assertFalse(paquet.HasField("decoded"))             # chiffrée par la clé du canal
+
+    def test_un_companion_sans_chiffrement_annonce_en_clair(self):
+        """Le défaut du 17/11/2026 : les messages partaient en clair et l'identité chiffrée.
+        Sur un broker qui ne relaie que le clair, la clé publique n'arrivait à personne."""
+        echange, _ = _echange()
+        paquet = bridge.construire_identite(_compagnon(chiffrement=False), "Equipe", {"psk": PSK}, echange.cle_publique_hex)
+        self.assertTrue(paquet.HasField("decoded"))
+        self.assertEqual(paquet.decoded.portnum, portnums_pb2.PortNum.NODEINFO_APP)
+
+    def test_une_demande_est_adressee_et_marquee_des_deux_facons(self):
+        echange, _ = _echange()
+        paquet = bridge.construire_identite(
+            _compagnon(), "Equipe", {"psk": PSK}, echange.cle_publique_hex,
+            destinataire=EMETTEUR, demander_reponse=True,
+        )
+        data, _ = _relire(paquet)
+        self.assertEqual(paquet.to, EMETTEUR)
+        self.assertTrue(data.want_response)
+        self.assertTrue(data.bitfield & bridge.BITFIELD_WANT_RESPONSE)
+
+
+class TestEchangeDesCles(unittest.IsolatedAsyncioTestCase):
+
+    async def test_une_identite_entendue_est_rangee_sans_reponse(self):
+        echange, publies = _echange()
+        user, data = _identite_d_un_autre()
+        coro = echange.identite_recue(EMETTEUR, bridge.BROADCAST_NUM, "Equipe", user, data, 42)
+        self.assertIsNone(coro)
+        self.assertEqual(echange.annuaire.cle(EMETTEUR), "07" * 32)
+        self.assertEqual(publies, [])
+
+    async def test_une_demande_qui_nous_est_adressee_recoit_notre_identite(self):
+        for par_bitfield in (False, True):
+            echange, publies = _echange()
+            user, data = _identite_d_un_autre(demande=True, par_bitfield=par_bitfield)
+            await echange.identite_recue(EMETTEUR, NOUS, "Equipe", user, data, 42)
+            (canal, paquet), = publies
+            reponse, identite = _relire(paquet)
+            self.assertEqual((canal, paquet.to, reponse.request_id), ("Equipe", EMETTEUR, 42))
+            self.assertEqual(bytes(identite.public_key).hex(), echange.cle_publique_hex)
+            self.assertFalse(reponse.want_response)               # pas de ping-pong
+
+    async def test_une_demande_adressee_a_un_autre_ne_nous_regarde_pas(self):
+        echange, publies = _echange()
+        user, data = _identite_d_un_autre(demande=True)
+        self.assertIsNone(echange.identite_recue(EMETTEUR, 0x5555, "Equipe", user, data, 42))
+
+    async def test_un_demandeur_insistant_n_a_qu_une_reponse(self):
+        echange, publies = _echange()
+        user, data = _identite_d_un_autre(demande=True)
+        await echange.identite_recue(EMETTEUR, NOUS, "Equipe", user, data, 42)
+        self.assertIsNone(echange.identite_recue(EMETTEUR, NOUS, "Equipe", user, data, 43))
+        self.assertEqual(len(publies), 1)
+
+    async def test_notre_propre_annonce_revenue_du_broker_est_ignoree(self):
+        echange, publies = _echange()
+        user, data = _identite_d_un_autre(demande=True)
+        self.assertIsNone(echange.identite_recue(NOUS, NOUS, "Equipe", user, data, 42))
+        self.assertIsNone(echange.annuaire.cle(NOUS))
+
+    async def test_la_cle_manquante_d_un_correspondant_lui_est_demandee(self):
+        echange, publies = _echange()
+        echange.annuaire.charger({"cles": [], "prioritaires": [EMETTEUR]})
+        self.assertTrue(await echange.demander(echange.annuaire.prochain_a_demander()))
+        (canal, paquet), = publies
+        data, _ = _relire(paquet)
+        self.assertEqual((canal, paquet.to), ("Equipe", EMETTEUR))
+        self.assertTrue(data.want_response)
+
+
+class TestAnnuaire(unittest.TestCase):
+
+    def test_on_ne_redemande_pas_avant_la_fenetre_du_firmware(self):
+        temps = [1000.0]
+        annuaire = bridge.AnnuaireCles(lambda: temps[0])
+        annuaire.charger({"cles": [], "prioritaires": [EMETTEUR]})
+        self.assertEqual(annuaire.prochain_a_demander(), EMETTEUR)
+        self.assertIsNone(annuaire.prochain_a_demander())
+        temps[0] += bridge.CLES_DEMANDE_PAR_NOEUD_S + 1
+        self.assertEqual(annuaire.prochain_a_demander(), EMETTEUR)
+
+    def test_une_cle_connue_ne_se_demande_plus(self):
+        annuaire = bridge.AnnuaireCles()
+        annuaire.charger({"cles": [{"node_num": EMETTEUR, "public_key_hex": "0a" * 32}], "prioritaires": [EMETTEUR]})
+        self.assertIsNone(annuaire.prochain_a_demander())
+        self.assertEqual(annuaire.cle(EMETTEUR), "0a" * 32)
+
+    def test_une_cle_qui_change_est_signalee(self):
+        annuaire = bridge.AnnuaireCles()
+        self.assertEqual(annuaire.apprendre(EMETTEUR, "0a" * 32), "nouvelle")
+        self.assertIsNone(annuaire.apprendre(EMETTEUR, "0A" * 32))
+        self.assertEqual(annuaire.apprendre(EMETTEUR, "0b" * 32), "changee")
+
+    def test_un_noeud_qui_nous_ecrit_sans_cle_connue_passe_devant(self):
+        temps = [1000.0]
+        annuaire = bridge.AnnuaireCles(lambda: temps[0])
+        annuaire.charger({"cles": [], "prioritaires": [EMETTEUR]})
+        annuaire.prochain_a_demander()
+        annuaire.reclamer(EMETTEUR)                 # son message vient d'arriver, illisible
+        self.assertEqual(annuaire.prochain_a_demander(), EMETTEUR)
+
+
+class TestDejaVus(unittest.TestCase):
+
+    def test_le_meme_paquet_par_deux_passerelles_n_est_traite_qu_une_fois(self):
+        vus = bridge.DejaVus()
+        self.assertFalse(vus.deja_vu(EMETTEUR, 7))
+        self.assertTrue(vus.deja_vu(EMETTEUR, 7))
+        self.assertFalse(vus.deja_vu(EMETTEUR, 8))
+        self.assertFalse(vus.deja_vu(0x3333, 7))
+
+    def test_la_memoire_est_bornee_et_un_paquet_illisible_se_retente(self):
+        vus = bridge.DejaVus(taille=2)
+        for identifiant in (1, 2, 3):
+            vus.deja_vu(EMETTEUR, identifiant)
+        self.assertFalse(vus.deja_vu(EMETTEUR, 1))  # sorti de la mémoire
+        vus.oublier(EMETTEUR, 3)
+        self.assertFalse(vus.deja_vu(EMETTEUR, 3))
+
+
+class TestMessageChiffreParClePublique(unittest.TestCase):
+
+    def _paquet(self, avec_cle=False):
+        import crypto
+        data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.TEXT_MESSAGE_APP, payload=b"secret")
+        paquet = mesh_pb2.MeshPacket()
+        setattr(paquet, "from", EMETTEUR)
+        paquet.to, paquet.id = NOUS, 77
+        paquet.encrypted = crypto.chiffrer_pkc(
+            CLE_PRIVEE_AUTRE, crypto.cle_publique_depuis_privee_hex(CLE_PRIVEE_NOUS), 77, EMETTEUR,
+            data.SerializeToString(),
+        )
+        if avec_cle:
+            paquet.public_key = bytes.fromhex(crypto.cle_publique_depuis_privee_hex(CLE_PRIVEE_AUTRE))
+        return paquet
+
+    def test_un_appareil_ne_joint_pas_sa_cle_et_le_message_se_lit_quand_meme(self):
+        """Le défaut : le pont exigeait la clé DANS le paquet, qu'un vrai appareil ne met pas."""
+        import crypto
+        annuaire = bridge.AnnuaireCles()
+        annuaire.apprendre(EMETTEUR, crypto.cle_publique_depuis_privee_hex(CLE_PRIVEE_AUTRE))
+        clair = bridge._dechiffrer_message_pki(self._paquet(), EMETTEUR, 77, CLE_PRIVEE_NOUS, annuaire)
+        data = mesh_pb2.Data()
+        data.ParseFromString(clair)
+        self.assertEqual(data.payload, b"secret")
+
+    def test_sans_cle_connue_le_message_reste_illisible(self):
+        self.assertIsNone(
+            bridge._dechiffrer_message_pki(self._paquet(), EMETTEUR, 77, CLE_PRIVEE_NOUS, bridge.AnnuaireCles())
+        )
+
+    def test_une_cle_perimee_dans_l_annuaire_n_empeche_pas_de_lire_celle_du_paquet(self):
+        annuaire = bridge.AnnuaireCles()
+        annuaire.apprendre(EMETTEUR, "0c" * 32)
+        clair = bridge._dechiffrer_message_pki(self._paquet(avec_cle=True), EMETTEUR, 77, CLE_PRIVEE_NOUS, annuaire)
+        self.assertIsNotNone(clair)
+
+
+class FauxAppareilAvecRepertoire:
+    """Le répertoire tel que la lib officielle le rend (clés en base64, noms en camelCase)."""
+
+    def __init__(self):
+        import base64
+        self.envois = []
+        self._cle = base64.b64encode(b"\x05" * 32).decode()
+        self.nodes = {
+            "!00009999": {"num": NOUS, "user": {"longName": "Nous"}},
+            "!00001111": {
+                "num": EMETTEUR, "lastHeard": 1700000000,
+                "user": {"longName": "Autre", "shortName": "AUT", "hwModel": "HELTEC_V3",
+                         "publicKey": base64.b64encode(b"\x07" * 32).decode()},
+                "position": {"latitude": 45.5, "longitude": 4.2},
+            },
+            "!00003333": {"num": 0x3333, "user": {"longName": "Sans clé"}},
+        }
+
+    def getMyUser(self):
+        return {"id": "!00009999", "longName": "Nous", "shortName": "NOUS", "hwModel": "HELTEC_V3",
+                "role": "ROUTER"}
+
+    def getPublicKey(self):
+        return self._cle
+
+    def sendData(self, data, destinationId=None, portNum=None, wantResponse=False, **kw):
+        self.envois.append((data, destinationId, portNum, wantResponse))
+
+
+class TestRepertoireDeLAppareil(unittest.TestCase):
+
+    def test_le_repertoire_est_remonte_avec_les_cles_sans_nous_meme(self):
+        contacts = {c["node_num"]: c for c in bridge.contacts_depuis_appareil(FauxAppareilAvecRepertoire(), NOUS)}
+        self.assertEqual(set(contacts), {EMETTEUR, 0x3333})
+        self.assertEqual(contacts[EMETTEUR]["public_key_hex"], "07" * 32)
+        self.assertEqual(contacts[EMETTEUR]["latitude"], 45.5)
+        self.assertNotIn("public_key_hex", contacts[0x3333])
+
+    def test_la_demande_part_par_l_appareil_avec_notre_identite_complete(self):
+        appareil = FauxAppareilAvecRepertoire()
+        bridge.demander_identite_locale(appareil, 0x3333)
+        (user, destinataire, port, reponse), = appareil.envois
+        self.assertEqual((destinataire, port, reponse), (0x3333, portnums_pb2.PortNum.NODEINFO_APP, True))
+        self.assertEqual(bytes(user.public_key), b"\x05" * 32)
+        self.assertEqual(user.hw_model, mesh_pb2.HardwareModel.HELTEC_V3)
+        self.assertEqual(user.long_name, "Nous")
+        self.assertNotEqual(user.role, 0)                         # ROUTER, pas le défaut

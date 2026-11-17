@@ -217,6 +217,7 @@ from .models import (
     ImplicationInstitution,
     BesoinNature,
     ContributionZoneCommune,
+    ZoneAjouteeCrise,
     DemandeMobilisation, TypeDemandeMobilisation, StatutDemandeMobilisation,
     TypeImplication,
     StatutImplication,
@@ -3076,7 +3077,8 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # author_nom déréférence author (FK) ; has_responsable_actif touche implications (reverse
     # FK), prefetch + vérification en Python dans get_has_responsable_actif ci-dessous plutôt
     # qu'un .filter().exists() par crise.
-    queryset = Crisis.objects.select_related('author').prefetch_related('implications')
+    queryset = Crisis.objects.select_related('author').prefetch_related(
+        'implications', 'zones_ajoutees__institution', 'contributions_zone_communes')
     serializer_class = CrisisSerializer
     filterset_class = CrisisSearchFilter
     filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
@@ -3105,7 +3107,8 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # posées sur un @action ne s'appliquent jamais d'elles-mêmes — chaque action custom
         # doit être explicitement listée ici, sinon elle retombe sur AllowAny (cf. cloturer/
         # reouvrir, découvert en corrigeant ce bug).
-        if self.action in ("create", "update", "partial_update", "fusionner_zone"):
+        if self.action in ("create", "update", "partial_update", "fusionner_zone",
+                           "ajouter_zone", "retirer_zone_ajoutee", "territoire_commune"):
             return [IsInstitutionalActor()]
         if self.action == "destroy":
             return [IsAdministrator()]
@@ -3120,7 +3123,7 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if self.action == "commune":
             return [permissions.IsAuthenticated()]
         # Une crise est publique ; savoir QUI la gère et comment le joindre, non.
-        if self.action in ("referents", "proposer_aide"):
+        if self.action in ("referents", "proposer_aide", "candidatures"):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
@@ -3189,8 +3192,14 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                              "statut": existante.statut},
                             status=status.HTTP_409_CONFLICT)
 
+        from . import aides_renfort
+        try:
+            aides = aides_renfort.nettoyer(request.data.get("aides"))
+        except ValueError as erreur:
+            return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+
         themes = request.data.get("themes") or []
-        if not themes:
+        if not themes and not aides:
             return Response(
                 {"error": "Indiquez au moins un besoin sur lequel vous pouvez intervenir : "
                           "c'est ce qui permet à la collectivité de savoir ce que vous "
@@ -3200,11 +3209,22 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         statut = (StatutImplication.VALIDEE if _institution_est_publique(institution)
                   else StatutImplication.EN_ATTENTE)
+        # Une commune qui dit AVEC QUOI elle aide vient en renfort (17/11/2026) : elle n'est
+        # pas sinistrée, sa commune n'entre pas dans la zone, et chaque commune d'accueil donne
+        # son accord. Sans aides nommées, l'ancien geste garde son sens d'origine.
+        type_code = (getattr(institution.type, "code", "") or "").upper()
+        renfort = bool(aides) and type_code in ("MAIRIE", "EPCI")
+        communes = []
+        if renfort:
+            statut = StatutImplication.EN_ATTENTE
+            if institution.commune_code and institution.commune_code in (crise.zone_communes or []):
+                statut, communes = StatutImplication.VALIDEE, [institution.commune_code]
         implication = ImplicationInstitution.objects.create(
             crise=crise, institution=institution, utilisateur=request.user,
             type_implication=TypeImplication.ACTEUR, statut=statut,
             commentaire=(request.data.get("message") or "").strip() or None,
             environment=get_active_environment(request),
+            renfort=renfort, communes=communes, aides_proposees=aides,
         )
         implication.themes.set(Besoin.objects.filter(pk__in=themes))
         _etendre_zone_crise_pour_implication(implication)
@@ -3225,6 +3245,52 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 implication, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=False, methods=["get"])
+    def candidatures(self, request):
+        """Toutes les crises en cours en France, vues par une institution qui peut y candidater.
+
+        Pour le tableau de bord (17/11/2026) : une commune doit pouvoir dire, de n'importe quelle
+        crise, « elle nous touche » ou « nous pouvons aider ». La liste n'est donc filtrée par
+        aucune zone. Chaque ligne dit où en est déjà l'institution de l'appelant.
+
+        Une ligne légère, sans géométrie ni géocodage réseau : le tableau de bord se rafraîchit
+        toutes les trente secondes."""
+        from . import aides_renfort
+        from .geo_lookup import commune_from_point_cached
+        from .zone_scoping import _institution_regardee
+
+        institution = _institution_regardee(request) or getattr(request.user, "institution", None)
+        crises = list(
+            Crisis.objects.filter(end_date__isnull=True, environment=get_active_environment(request))
+            .order_by("-start_date")
+            .only("id", "name", "type", "location", "start_date", "zone_communes", "essai")
+        )
+        par_crise = {}
+        if institution is not None:
+            for crise_id, type_implication, statut in ImplicationInstitution.objects.filter(
+                institution=institution, actif=True, crise__in=crises,
+            ).values_list("crise_id", "type_implication", "statut"):
+                par_crise.setdefault(crise_id, {})[type_implication] = statut
+        commune_code = getattr(institution, "commune_code", None)
+        return Response({
+            "institution": {"id": str(institution.id), "nom": institution.nom} if institution else None,
+            "aides": aides_renfort.catalogue(),
+            "crises": [
+                {
+                    "id": str(c.id), "name": c.name, "type_display": c.get_type_display(),
+                    "commune": commune_from_point_cached(c.location),
+                    "start_date": c.start_date, "nb_communes": len(c.zone_communes or []),
+                    "essai": c.essai,
+                    "situation": {
+                        "impliquee": TypeImplication.IMPLIQUE in par_crise.get(c.id, {}),
+                        "acteur": par_crise.get(c.id, {}).get(TypeImplication.ACTEUR),
+                        "dans_la_zone": bool(commune_code and commune_code in (c.zone_communes or [])),
+                    },
+                }
+                for c in crises
+            ],
+        })
 
     @action(detail=True, methods=["get"])
     def commune(self, request, pk=None):
@@ -3275,6 +3341,128 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             crise=crise, commentaire=f"Zone fusionnée avec un nouveau tracé sur la crise {crise.name}.",
         )
         return Response(self.get_serializer(crise).data)
+
+    def _crise_ouverte_ou_400(self, crise):
+        if crise.end_date is not None:
+            raise ValidationError({"detail": "Cette crise est close : sa zone ne se modifie plus."})
+
+    @action(detail=True, methods=["post"], url_path="ajouter-zone")
+    def ajouter_zone(self, request, pk=None):
+        """Dessine une zone EN PLUS de la zone initiale (17/11/2026).
+
+        Le second chemin par lequel une commune entre dans une crise : au lieu d'y faire entrer
+        tout son territoire, elle dessine la partie concernée. Contrairement à `fusionner_zone`,
+        le tracé n'a pas à toucher l'existant, ne le modifie pas, et reste attaché à
+        l'institution qui le dessine.
+
+        Si cette institution est une commune absente de la zone, son code y est inscrit
+        « partielle » : il porte les droits et l'accord du maire, sans que le contour entier de
+        la commune n'entre dans la zone."""
+        from . import zones_crise
+
+        crise = self.get_object()
+        self._crise_ouverte_ou_400(crise)
+        if not zones_crise.peut_contribuer(request, crise):
+            raise PermissionDenied(
+                "Seule une institution impliquée sur cette crise peut y ajouter une zone."
+            )
+        wkt = request.data.get('wkt')
+        if not wkt:
+            return Response({'detail': "wkt requis."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            geometrie = GEOSGeometry(wkt, srid=4326)
+        except Exception:
+            return Response({'detail': "Tracé invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if geometrie.geom_type != 'Polygon' or geometrie.empty:
+            return Response({'detail': "Un polygone est attendu."}, status=status.HTTP_400_BAD_REQUEST)
+        if not geometrie.valid:
+            # Un tracé qui se recoupe (« nœud papillon »). Refusé, pas réparé : la réparation
+            # n'en garde qu'un morceau, sans le dire à celui qui a dessiné.
+            return Response(
+                {'detail': "Ce tracé se recoupe lui-même : redessinez-le sans croiser ses bords."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        institution = zones_crise.institution_contributrice(request, crise)
+        environment = get_active_environment(request)
+        zone = ZoneAjouteeCrise.objects.create(
+            crise=crise, institution=institution, auteur=request.user, geometrie=geometrie,
+            nom=str(request.data.get('nom') or '').strip()[:100], environment=environment,
+        )
+        if institution is not None and institution.commune_code:
+            zones_crise.marquer_commune(
+                crise, institution.commune_code, institution, environment, partielle=True,
+            )
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Crisis", objet_id=crise.id,
+            crise=crise,
+            commentaire=(
+                f"Zone « {zone.nom or 'sans nom'} » ajoutée à la crise {crise.name}"
+                + (f" par {institution.nom}." if institution else ".")
+            ),
+        )
+        return Response(self.get_serializer(self.get_object()).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["delete"], url_path=r"zones-ajoutees/(?P<zone_id>[^/.]+)")
+    def retirer_zone_ajoutee(self, request, pk=None, zone_id=None):
+        """Retire une zone ajoutée : l'institution qui l'a dessinée, l'auteur de la crise ou un
+        administrateur. La commune inscrite « partielle » avec elle reste dans la zone : elle
+        porte des droits, et son retrait est un geste distinct (la liste des communes)."""
+        from . import zones_crise
+
+        crise = self.get_object()
+        self._crise_ouverte_ou_400(crise)
+        zone = get_object_or_404(ZoneAjouteeCrise, id=zone_id, crise=crise)
+        maitre = (
+            get_effective_role(request) == UserRole.ADMINISTRATOR
+            or crise.author_id == request.user.id
+            or zone.auteur_id == request.user.id
+            or (zone.institution_id and zone.institution_id in zones_crise.institutions_de(request.user))
+        )
+        if not maitre:
+            raise PermissionDenied(
+                "Seule l'institution qui a dessiné cette zone, l'auteur de la crise ou un "
+                "administrateur peut la retirer."
+            )
+        nom = zone.nom or 'sans nom'
+        zone.delete()
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Crisis", objet_id=crise.id,
+            crise=crise, commentaire=f"Zone ajoutée « {nom} » retirée de la crise {crise.name}.",
+        )
+        return Response(self.get_serializer(self.get_object()).data)
+
+    @action(detail=True, methods=["post"], url_path="territoire-commune")
+    def territoire_commune(self, request, pk=None):
+        """Fait entrer une commune de la zone EN ENTIER, ou la ramène à ses zones dessinées.
+
+        Réservé à qui peut la retirer de la zone : l'institution qui l'y a inscrite, l'auteur
+        de la crise ou un administrateur. Le contour, lui, se recompose côté écran."""
+        from . import zones_crise
+
+        crise = self.get_object()
+        self._crise_ouverte_ou_400(crise)
+        code = str(request.data.get('code') or '').strip()
+        if code not in (crise.zone_communes or []):
+            return Response({'detail': "Cette commune n'est pas dans la zone de la crise."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        contribution, _ = ContributionZoneCommune.objects.get_or_create(
+            crise=crise, commune_code=code, defaults={'environment': get_active_environment(request)},
+        )
+        maitre = (
+            get_effective_role(request) == UserRole.ADMINISTRATOR
+            or crise.author_id == request.user.id
+            or contribution.institution_id is None
+            or contribution.institution_id in zones_crise.institutions_de(request.user)
+        )
+        if not maitre:
+            raise PermissionDenied(
+                "Seule l'institution qui a inscrit cette commune, l'auteur de la crise ou un "
+                "administrateur peut en changer le territoire."
+            )
+        contribution.partielle = bool(request.data.get('partielle'))
+        contribution.save(update_fields=['partielle'])
+        return Response(self.get_serializer(self.get_object()).data)
 
     def perform_create(self, serializer):
         # Garde-fou : un compte Autorité locale activé mais pas encore rattaché à son
@@ -3894,8 +4082,11 @@ def team_zone_specificity(team, demande):
     d'exclure silencieusement faute de données."""
     if not (team.departements or team.communes or team.zone_precise):
         crise = demande.crisis
-        if crise and crise.zone_secteurs and demande.location:
-            return 0 if crise.zone_secteurs.contains(demande.location) else None
+        if crise and demande.location:
+            from . import zones_crise
+            emprise = zones_crise.dessinee(crise)
+            if emprise is not None:
+                return 0 if emprise.contains(demande.location) else None
         return 0
 
     if team.zone_precise and demande.location and team.zone_precise.contains(demande.location):
@@ -17912,6 +18103,10 @@ def _notifier_demande_validation_implication(request, implication):
     ]
     if implication.commentaire:
         details.insert(5, {"libelle": "Ce qu'ils proposent", "valeur": implication.commentaire})
+    if implication.aides_proposees:
+        from .aides_renfort import libelles
+        details.insert(5, {"libelle": "Ce qu'ils mettent à disposition",
+                           "valeur": " · ".join(libelles(implication.aides_proposees))})
 
     for user in _regulateurs_aut_locale_de_la_crise(implication.crise):
         Notification.objects.create(
@@ -17930,7 +18125,13 @@ def _notifier_demande_validation_implication(request, implication):
                 print(f"Erreur envoi email validation implication : {e}")
 
 
-def _notifier_verdict_implication(request, implication, valide: bool):
+def _nommer_communes(codes) -> list:
+    """[{code, nom}] pour des codes INSEE — un code nu n'est pas lisible dans une trace."""
+    from .zone_scoping import _nommer
+    return _nommer(set(codes)) if codes else []
+
+
+def _notifier_verdict_implication(request, implication, valide: bool, resume: str = ""):
     """Angle mort relevé en audit : l'institution déclarante était notifiée à la soumission
     (_notifier_demande_validation_implication) mais jamais du verdict — elle devait revenir
     vérifier elle-même. Notifie chaque contact actif de l'institution déclarante."""
@@ -17940,6 +18141,12 @@ def _notifier_verdict_implication(request, implication, valide: bool):
         f"La déclaration acteur opérationnel de {implication.institution.nom} sur la crise "
         f"« {implication.crise.name} » a été {verbe} par un régulateur."
     )
+    if resume:
+        # Commune par commune : « validée » ne dit plus où, et c'est la seule chose utile.
+        message = (
+            f"Déclaration de {implication.institution.nom} sur la crise "
+            f"« {implication.crise.name} » : {resume}."
+        )
     destinataires = User.objects.filter(
         id__in=ContactInstitution.objects.filter(
             institution=implication.institution, actif=True,
@@ -17960,7 +18167,7 @@ def _notifier_verdict_implication(request, implication, valide: bool):
                 print(f"Erreur envoi email verdict implication : {e}")
 
 
-def _etendre_zone_crise_pour_implication(implication):
+def _etendre_zone_crise_pour_implication(implication, partielle=False):
     """Décision utilisateur du 2026-09-18 : une commune/EPCI qui se raccroche à une crise
     (IMPLIQUE ou ACTEUR, quel que soit le sens du changement — se déclarer directement, ou
     passer d'ACTEUR à IMPLIQUE) doit voir la zone de la crise s'étirer automatiquement sur son
@@ -17976,20 +18183,21 @@ def _etendre_zone_crise_pour_implication(implication):
     depuis perform_create/valider/perform_update, ne fait rien si déjà à jour."""
     if implication.statut != StatutImplication.VALIDEE:
         return
+    # En renfort, la collectivité vient aider AILLEURS : sa propre commune n'est pas touchée,
+    # et l'ajouter à la zone de la crise la déclarerait sinistrée (17/11/2026).
+    if implication.renfort:
+        return
     commune_code = implication.institution.commune_code
     if not commune_code:
         return
 
-    crise = implication.crise
-    if commune_code not in crise.zone_communes:
-        crise.zone_communes = [*crise.zone_communes, commune_code]
-        crise.save(update_fields=['zone_communes'])
-
-    # get_or_create, pas update_or_create : le premier contributeur fait foi, voir la docstring
-    # de ContributionZoneCommune — jamais réattribuer une provenance déjà tracée.
-    ContributionZoneCommune.objects.get_or_create(
-        crise=crise, commune_code=commune_code,
-        defaults={'institution': implication.institution, 'environment': implication.environment},
+    # `partielle` : la commune a choisi de n'entrer que par une zone qu'elle dessinera. Son
+    # code est inscrit quand même (il porte les droits), sans son contour entier. Le premier
+    # contributeur fait foi : une commune déjà présente n'est pas réattribuée.
+    from . import zones_crise
+    zones_crise.marquer_commune(
+        implication.crise, commune_code, implication.institution, implication.environment,
+        partielle=partielle,
     )
 
 
@@ -18007,7 +18215,7 @@ class ImplicationInstitutionViewSet(
     filterset_fields = ["crise", "institution", "type_implication", "actif"]
 
     def get_permissions(self):
-        if self.action in ("create", "valider", "refuser"):
+        if self.action in ("create", "valider", "refuser", "decider"):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
@@ -18041,15 +18249,27 @@ class ImplicationInstitutionViewSet(
         if type_implication == TypeImplication.ACTEUR and not serializer.validated_data.get("themes"):
             raise ValidationError({"themes": "Déclarez au moins un thème à l'écoute pour devenir acteur opérationnel sur cette crise."})
 
+        territoire_partiel = bool(serializer.validated_data.pop("territoire_partiel", False))
         statut = StatutImplication.VALIDEE
-        if type_implication == TypeImplication.ACTEUR and not _institution_est_publique(institution):
+        renfort = bool(serializer.validated_data.get("renfort")) and type_implication == TypeImplication.ACTEUR
+        communes = []
+        if type_implication == TypeImplication.ACTEUR and (
+            renfort or not _institution_est_publique(institution)
+        ):
             statut = StatutImplication.EN_ATTENTE
+            # Une collectivité en renfort n'a pas à s'accepter elle-même là où elle est chez
+            # elle : si sa commune fait déjà partie de la crise, elle y est acquise.
+            crise = serializer.validated_data.get("crise")
+            chez_elle = institution.commune_code if renfort else None
+            if chez_elle and chez_elle in (crise.zone_communes or []):
+                statut, communes = StatutImplication.VALIDEE, [chez_elle]
 
         implication = serializer.save(
             utilisateur=self.request.user, responsable=resolved_responsable,
             environment=get_active_environment(self.request), statut=statut,
+            renfort=renfort, communes=communes, communes_refusees=[],
         )
-        _etendre_zone_crise_pour_implication(implication)
+        _etendre_zone_crise_pour_implication(implication, partielle=territoire_partiel)
 
         if invited:
             send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
@@ -18082,9 +18302,16 @@ class ImplicationInstitutionViewSet(
         from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES  # noqa: F401  (lisibilité)
         from .zone_scoping import communes_delegables
 
+        from . import accords_communes
+
         implication = self.get_object()
         communes = communes_delegables(request, implication.crise)
+        mien = accords_communes.a_decider_par(request, implication)
         return Response({
+            # Commune par commune, ce qu'il en est déjà : la fenêtre montre à une mairie sa
+            # propre réponse, pas celle de ses voisines.
+            "en_attente": mien["en_attente"],
+            "refusees": mien["refusees"],
             "communes": communes,
             # « Toute la crise » n'est proposable qu'à qui la couvre entièrement — un conseil
             # départemental, typiquement. Une commune ne verra donc pas ce raccourci.
@@ -18092,87 +18319,163 @@ class ImplicationInstitutionViewSet(
                 len(communes) == len([c for c in (implication.crise.zone_communes or []) if c])
                 and len(communes) > 0
             ),
-            "deja_accordees": implication.communes or [],
+            "deja_accordees": mien["acceptees"],
         })
+
+    def _autorite_sur(self, request, implication):
+        """Les communes de la crise sur lesquelles l'appelant décide, ou PermissionDenied.
+
+        Deux portes : être régulateur d'une collectivité déjà impliquée sur la crise (la règle
+        d'origine), ou être une autorité locale dont le territoire est dans la zone — une
+        mairie touchée n'a pas à s'être déclarée pour dire qui intervient chez elle."""
+        from .zone_scoping import communes_delegables
+
+        siennes = [c["code"] for c in communes_delegables(request, implication.crise)]
+        regulateur = is_regulateur_aut_locale_de_la_crise(request, implication.crise)
+        chez_elle = bool(siennes) and get_effective_role(request) == UserRole.LOCAL_AUTHORITY
+        if not (regulateur or chez_elle):
+            raise PermissionDenied(
+                "Seul un régulateur d'une autorité locale concernée par cette crise peut "
+                "accepter ou refuser cette déclaration."
+            )
+        return siennes
+
+    def _lire_communes(self, request, cle, siennes):
+        """Liste de codes envoyée sous `cle`, vérifiée contre l'autorité de l'appelant."""
+        brutes = request.data.get(cle)
+        if brutes is None:
+            return None
+        if not isinstance(brutes, list):
+            raise ValidationError({cle: "Liste de codes commune attendue."})
+        codes = sorted({str(c).strip() for c in brutes if str(c).strip()})
+        hors = sorted(set(codes) - set(siennes))
+        if hors:
+            raise PermissionDenied(
+                "Vous ne pouvez pas décider pour " + ", ".join(hors)
+                + " : votre collectivité n'a pas de droits sur cette ou ces communes."
+            )
+        return codes
+
+    def _decider(self, request, implication, acceptees, refusees):
+        """Applique la décision d'une collectivité, la trace et prévient l'institution."""
+        from . import accords_communes
+
+        if not accords_communes.soumise_a_accord(implication):
+            raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
+        siennes = self._autorite_sur(request, implication)
+        de_la_crise = accords_communes.communes_de_la_crise(implication.crise)
+
+        tout = False
+        if acceptees is None and refusees is None:
+            raise ValidationError({"communes": "Aucune décision transmise."})
+        if acceptees == "miennes":
+            # Accepter sans nommer de commune. Qui couvre la crise entière l'accorde en bloc ;
+            # une crise sans commune nommée (déclarée au département) aussi, comme avant.
+            # Une commune, elle, n'accorde qu'elle-même : avant le 17/11/2026 ce chemin lui
+            # faisait accorder TOUTE la crise, voisines comprises.
+            tout = not de_la_crise or set(siennes) >= set(de_la_crise) or (
+                not siennes and get_effective_role(request) == UserRole.ADMINISTRATOR
+            )
+            acceptees = siennes
+        if refusees == "miennes":
+            refusees = siennes if de_la_crise else []
+            if not refusees and de_la_crise:
+                raise PermissionDenied(
+                    "Votre collectivité n'a de droits sur aucune commune de cette crise : "
+                    "c'est à la collectivité concernée de répondre."
+                )
+        if not tout and not acceptees and not refusees and de_la_crise:
+            raise PermissionDenied(
+                "Votre collectivité n'a de droits sur aucune commune de cette crise : "
+                "c'est à la collectivité concernée de répondre."
+            )
+
+        if not de_la_crise and not tout:
+            # Refus d'une crise sans commune nommée : il ne peut être qu'entier.
+            if implication.statut != StatutImplication.EN_ATTENTE:
+                raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
+            implication.statut = StatutImplication.REFUSEE
+            implication.save(update_fields=["statut"])
+            effet = {"acceptees": [], "retirees": [], "refus": ["toute la crise"], "tout": False}
+        else:
+            etait_tout = accords_communes.toute_la_crise(implication)
+            effet = accords_communes.decider(
+                implication, acceptees=acceptees or [], refusees=refusees or [], tout=tout,
+            )
+            if not (effet["acceptees"] or effet["retirees"] or effet.get("refus")) and (
+                not tout or etait_tout
+            ):
+                raise ValidationError({"statut": "Cette déclaration a déjà reçu cette réponse."})
+
+        _etendre_zone_crise_pour_implication(implication)
+        noms = {c["code"]: c["nom"] for c in _nommer_communes(
+            set(effet["acceptees"]) | set(effet["retirees"]) | set(effet.get("refus") or [])
+        )}
+        lisible = lambda codes: ", ".join(noms.get(c, c) for c in codes)  # noqa: E731
+        morceaux = []
+        if effet["tout"]:
+            morceaux.append("acceptée sur toute la zone de la crise")
+        elif effet["acceptees"]:
+            morceaux.append(f"acceptée sur {lisible(effet['acceptees'])}")
+        if effet["retirees"]:
+            morceaux.append(f"accord retiré sur {lisible(effet['retirees'])}")
+        if effet.get("refus"):
+            morceaux.append(f"refusée sur {lisible(effet['refus'])}")
+        resume = " ; ".join(morceaux)
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=implication.crise,
+            # La zone dans la trace : « qui a donné quoi, sur quel territoire » est la
+            # question qu'on se pose après coup, pas « qui a validé ».
+            commentaire=(
+                f"Déclaration acteur de {implication.institution.nom} {resume} "
+                f"par {request.user.email}."
+            ),
+        )
+        _notifier_verdict_implication(
+            request, implication, valide=bool(effet["tout"] or effet["acceptees"]), resume=resume,
+        )
+        return Response(self.get_serializer(implication).data)
 
     @action(detail=True, methods=['post'])
     def valider(self, request, pk=None):
-        """Accepte une institution comme acteur, **sur une zone choisie**.
+        """Accepte une institution comme acteur, **sur les communes de l'appelant**.
 
-        `communes` (facultatif) limite l'acceptation à certaines communes de la crise. Chaque
-        code est vérifié contre `communes_delegables` : on ne donne pas de droits sur une
-        commune dont on n'a pas soi-même les droits. Sans `communes`, l'acceptation vaut pour
-        toute la zone de la crise — comportement d'avant, conservé pour une crise mono-commune
-        où nommer la commune serait une formalité vide."""
-        from .zone_scoping import communes_delegables
+        `communes` (facultatif) en choisit une partie. Chaque code est vérifié contre
+        `communes_delegables` : on ne donne pas de droits sur une commune dont on n'a pas
+        soi-même les droits. Sans `communes`, l'acceptation vaut pour tout ce que l'appelant
+        peut accorder — la crise entière s'il la couvre, sa seule commune sinon.
 
+        Une autre mairie de la crise peut accepter à son tour, même après la première
+        (17/11/2026) : les accords s'ajoutent."""
         implication = self.get_object()
-        if implication.statut != StatutImplication.EN_ATTENTE:
-            raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
-        if not is_regulateur_aut_locale_de_la_crise(request, implication.crise):
-            raise PermissionDenied(
-                "Seul un régulateur d'une autorité locale impliquée sur cette crise peut valider cette déclaration."
-            )
-
-        champs = ['statut']
-        demandees = request.data.get('communes')
-        if demandees is not None:
-            if not isinstance(demandees, list):
-                raise ValidationError({"communes": "Liste de codes commune attendue."})
-            demandees = [str(c).strip() for c in demandees if str(c).strip()]
-            autorisees = {c["code"] for c in communes_delegables(request, implication.crise)}
-            refusees = sorted(set(demandees) - autorisees)
-            if refusees:
-                raise PermissionDenied(
-                    "Vous ne pouvez pas accorder de droits sur " + ", ".join(refusees)
-                    + " : votre collectivité n'a pas de droits sur cette ou ces communes."
-                )
-            implication.communes = sorted(set(demandees))
-            champs.append('communes')
-
-        implication.statut = StatutImplication.VALIDEE
-        implication.save(update_fields=champs)
-        _etendre_zone_crise_pour_implication(implication)
-        audit_log(
-            request=request,
-            action_code="MODIFICATION",
-            objet_type="ImplicationInstitution",
-            objet_id=implication.id,
-            crise=implication.crise,
-            commentaire=(
-                f"Déclaration acteur de {implication.institution.nom} validée par "
-                f"{request.user.email}"
-                # La zone accordée dans la trace : « qui a donné quoi, sur quel territoire »
-                # est la question qu'on se pose après coup, pas « qui a validé ».
-                + (f" sur {', '.join(implication.communes)}." if implication.communes
-                   else " sur toute la zone de la crise.")
-            ),
-        )
-        _notifier_verdict_implication(request, implication, valide=True)
-        return Response(self.get_serializer(implication).data)
+        siennes = self._autorite_sur(request, implication)
+        acceptees = self._lire_communes(request, 'communes', siennes)
+        return self._decider(request, implication, "miennes" if acceptees is None else acceptees, None)
 
     @action(detail=True, methods=['post'])
     def refuser(self, request, pk=None):
+        """Refuse l'institution **sur les communes de l'appelant** — ou sur celles nommées dans
+        `communes`. Retire aussi un accord déjà donné : une mairie reste maîtresse chez elle
+        pendant toute la crise. Le refus d'une mairie ne ferme rien chez ses voisines."""
         implication = self.get_object()
-        if implication.statut != StatutImplication.EN_ATTENTE:
-            raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
-        if not is_regulateur_aut_locale_de_la_crise(request, implication.crise):
-            raise PermissionDenied(
-                "Seul un régulateur d'une autorité locale impliquée sur cette crise peut refuser cette déclaration."
-            )
+        siennes = self._autorite_sur(request, implication)
+        refusees = self._lire_communes(request, 'communes', siennes)
+        return self._decider(request, implication, None, "miennes" if refusees is None else refusees)
 
-        implication.statut = StatutImplication.REFUSEE
-        implication.save(update_fields=['statut'])
-        audit_log(
-            request=request,
-            action_code="MODIFICATION",
-            objet_type="ImplicationInstitution",
-            objet_id=implication.id,
-            crise=implication.crise,
-            commentaire=f"Déclaration acteur de {implication.institution.nom} refusée par {request.user.email}.",
-        )
-        _notifier_verdict_implication(request, implication, valide=False)
-        return Response(self.get_serializer(implication).data)
+    @action(detail=True, methods=['post'])
+    def decider(self, request, pk=None):
+        """Les deux à la fois, pour la fenêtre d'acceptation : `acceptees` et `refusees`."""
+        implication = self.get_object()
+        siennes = self._autorite_sur(request, implication)
+        acceptees = self._lire_communes(request, 'acceptees', siennes) or []
+        refusees = self._lire_communes(request, 'refusees', siennes) or []
+        if not acceptees and not refusees:
+            raise ValidationError({"communes": "Aucune décision transmise."})
+        return self._decider(request, implication, acceptees, refusees)
 
     def perform_destroy(self, instance):
         if not self._can_manage(instance):
@@ -18185,6 +18488,11 @@ class ImplicationInstitutionViewSet(
         # déclarée par une institution tierce.
         if not self._can_manage(serializer.instance):
             raise PermissionDenied("Seul l'auteur de cette déclaration, un contact de l'institution ou un administrateur peut la modifier.")
+
+        # Dit à la déclaration, jamais après : c'est ce qui décide si l'accord des communes
+        # est requis.
+        serializer.validated_data.pop("renfort", None)
+        serializer.validated_data.pop("territoire_partiel", None)
 
         type_implication = serializer.validated_data.get("type_implication", serializer.instance.type_implication)
         if type_implication == TypeImplication.ACTEUR:
@@ -21065,9 +21373,42 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [IsInstitutionalActor()]
         # Ces deux actions livrent des SECRETS en clair (mot de passe MQTT, clé privée X25519) :
         # « authentifié » ne suffit pas, voir EstComptePont.
-        if self.action in ('avec_cle_privee', 'actifs_avec_identifiants'):
+        if self.action in ('avec_cle_privee', 'actifs_avec_identifiants', 'annuaire_cles'):
             return [EstComptePont()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=True, methods=['get'], url_path='annuaire-cles')
+    def annuaire_cles(self, request, pk=None):
+        """Ce que le pont doit savoir pour échanger les clés publiques (17/11/2026).
+
+        `cles` : les clés déjà captées pour ce companion. Sans elles, un pont qui redémarre
+        ne peut plus lire un message chiffré par clé publique tant que l'expéditeur n'a pas
+        réannoncé son identité -- trois heures par défaut sur un appareil.
+
+        `prioritaires` : les nœuds dont la clé nous MANQUE et à qui on parle réellement --
+        nœuds rattachés à un compte, et correspondants d'un message des trente derniers jours.
+        Le pont leur demande leur identité. Il ne la demande pas à tous les nœuds entendus :
+        chaque demande descend sur la radio par les passerelles, et un broker régional en
+        voit passer des centaines.
+
+        Réservé aux ponts : des clés publiques ne sont pas secrètes, mais la liste dit avec
+        qui l'institution correspond."""
+        compagnon = self.get_object()
+        cles = dict(
+            ContactMeshtastic.objects.filter(compagnon=compagnon).exclude(public_key_hex='')
+            .values_list('node_num', 'public_key_hex')
+        )
+        depuis = timezone.now() - datetime.timedelta(days=30)
+        suivis = set(NoeudUtilisateurMeshtastic.objects.values_list('node_num', flat=True))
+        suivis.update(
+            MessageMeshtasticLog.objects.filter(compagnon=compagnon, date_creation__gte=depuis)
+            .values_list('contact_node_num', flat=True).distinct()
+        )
+        suivis.discard(compagnon.node_num)
+        return Response({
+            'cles': [{'node_num': n, 'public_key_hex': c} for n, c in cles.items()],
+            'prioritaires': sorted(n for n in suivis if n not in cles),
+        })
 
     @action(detail=False, methods=['post'], url_path='enregistrer-depuis-satellite')
     def enregistrer_depuis_satellite(self, request):

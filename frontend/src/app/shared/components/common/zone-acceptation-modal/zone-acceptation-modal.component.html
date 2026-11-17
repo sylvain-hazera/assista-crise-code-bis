@@ -15,7 +15,9 @@
           <span class="material-icons">shield</span>
           Vous n'accordez que des communes sur lesquelles vous avez vous-même des droits.
           L'institution verra les demandes, offres, dossiers et équipes de la zone cochée,
-          pour cette crise, et l'accès se referme à la clôture.
+          pour cette crise, et l'accès se referme à la clôture. Les autres collectivités de la
+          crise répondent chacune pour leur territoire ; décocher une commune déjà accordée y
+          retire votre accord.
         </p>
 
         @if (zone?.couvre_toute_la_crise) {
@@ -35,7 +37,11 @@
               <label class="ligne">
                 <input type="checkbox" [checked]="estCochee(commune.code)"
                        (change)="basculer(commune.code)"/>
-                <span>{{ commune.nom }} <small>{{ commune.code }}</small></span>
+                <span>{{ commune.nom }} <small>{{ commune.code }}</small>
+                  @if (reponseDeja(commune.code)) {
+                    <small class="deja">déjà {{ reponseDeja(commune.code) }}</small>
+                  }
+                </span>
               </label>
             }
           </fieldset>
@@ -59,7 +65,7 @@
       <div class="actions">
         <button type="button" class="btn-secondary" (click)="fermee.emit()">Annuler</button>
         <button type="button" class="btn-primary" [disabled]="!peutValider" (click)="accepter()">
-          {{ enregistrement ? 'Enregistrement…' : 'Accepter' }}
+          {{ enregistrement ? 'Enregistrement…' : (selection.size || touteLaCrise ? 'Accepter' : 'Retirer mon accord') }}
         </button>
       </div>
     </footer>

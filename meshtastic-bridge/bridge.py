@@ -92,6 +92,23 @@ POSITION_ANNONCE_CANAL = os.environ.get("POSITION_ANNONCE_CANAL", "Fr_Tech")
 # un vrai client Meshtastic diffuse systématiquement son NodeInfo, jamais juste des messages).
 NODEINFO_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("NODEINFO_ANNONCE_INTERVAL_SECONDS", "300"))
 
+# ── Échange des clés publiques (17/11/2026) ────────────────────────────────────────────────
+# Annoncer sa clé ne suffit pas à l'ÉCHANGER. Un appareil qui entend un nœud inconnu lui envoie
+# son identité en demandant la sienne (MeshService.cpp : « Heard new node, send NodeInfo and ask
+# for response ») ; le pont ne répondait à aucune de ces demandes et n'en émettait aucune. Il ne
+# connaissait donc la clé d'un nœud qu'en surprenant son annonce périodique (trois heures par
+# défaut), et perdait tout à chaque redémarrage.
+#
+# Les valeurs sont celles du firmware quand il en a une : il ne répond pas deux fois au même
+# demandeur en moins de douze heures (NodeInfoModule.cpp), redemander plus tôt ne sert à rien.
+CLES_ANNUAIRE_INTERVALLE_S = int(os.environ.get("CLES_ANNUAIRE_INTERVALLE_S", "600"))
+CLES_DEMANDE_CADENCE_S = int(os.environ.get("CLES_DEMANDE_CADENCE_S", "30"))
+CLES_DEMANDE_PAR_NOEUD_S = int(os.environ.get("CLES_DEMANDE_PAR_NOEUD_S", str(12 * 3600)))
+CLES_REPONSE_PAR_NOEUD_S = int(os.environ.get("CLES_REPONSE_PAR_NOEUD_S", "600"))
+# Data.bitfield, tel que le firmware le pose sur tout paquet qu'il émet (Router.h).
+BITFIELD_OK_TO_MQTT = 1
+BITFIELD_WANT_RESPONSE = 2
+
 # Désactivé par défaut (13/09) : voir le commentaire détaillé dans boucle_envoi_dm. Un DM
 # chiffré par clé publique envoyé par nous n'a jamais été confirmé reçu en conditions réelles,
 # contrairement à un DM chiffré par PSK de canal, testé et confirmé à deux reprises vers deux
@@ -254,6 +271,11 @@ class DjangoClient:
         if not contacts:
             return
         await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/synchroniser-contacts/", json={"contacts": contacts})
+
+    async def annuaire_cles(self, compagnon_id):
+        """Clés déjà connues et nœuds à qui la demander (CompagnonMeshtasticViewSet.annuaire_cles)."""
+        response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/annuaire-cles/")
+        return response.json()
 
     async def rapporter_liaisons(self, compagnon_id, liaisons):
         if not liaisons:
@@ -533,11 +555,233 @@ async def boucle_flush_contacts(django, compagnon_id, tampon, nom_compagnon="?")
             logger.exception("Échec de synchronisation des contacts (%s).", nom_compagnon)
 
 
-def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, compagnon_id, boucle):
+class DejaVus:
+    """Les derniers paquets traités, par (émetteur, identifiant).
+
+    Un même paquet arrive autant de fois que de passerelles l'ont entendu : le même message
+    était journalisé deux ou trois fois, et une demande d'identité aurait reçu autant de
+    réponses. C'est la déduplication que fait le firmware avant tout traitement."""
+
+    def __init__(self, taille=2000):
+        self._taille = taille
+        self._vus = {}
+
+    def deja_vu(self, node_num, packet_id):
+        if not packet_id:
+            return False          # pas d'identifiant : rien pour reconnaître un doublon
+        cle = (node_num, packet_id)
+        if cle in self._vus:
+            return True
+        self._vus[cle] = None
+        if len(self._vus) > self._taille:
+            self._vus.pop(next(iter(self._vus)))
+        return False
+
+    def oublier(self, node_num, packet_id):
+        """Un paquet qu'on n'a pas su lire doit pouvoir être retenté quand il sera réémis."""
+        self._vus.pop((node_num, packet_id), None)
+
+
+class AnnuaireCles:
+    """Les clés publiques connues de ce companion, et à qui demander celles qui manquent.
+
+    On ne demande qu'aux nœuds « prioritaires » (ceux à qui l'institution parle, voir le
+    serveur) : chaque demande descend sur la radio par les passerelles, et un broker régional
+    voit passer des centaines de nœuds."""
+
+    def __init__(self, horloge=time.time):
+        self._horloge = horloge
+        self._cles = {}
+        self._prioritaires = set()
+        self._canaux = {}
+        self._demandes = {}
+        self._reponses = {}
+
+    def charger(self, annuaire):
+        for ligne in annuaire.get("cles") or []:
+            cle = (ligne.get("public_key_hex") or "").lower()
+            if len(cle) == 64:
+                # Ce qu'on a entendu en direct est plus récent que ce que le serveur a rangé.
+                self._cles.setdefault(int(ligne["node_num"]), cle)
+        self._prioritaires |= {int(n) for n in annuaire.get("prioritaires") or []}
+
+    def apprendre(self, node_num, cle_hex):
+        """« nouvelle », « changee » ou None si on la connaissait déjà."""
+        cle_hex = (cle_hex or "").lower()
+        if len(cle_hex) != 64:
+            return None
+        ancienne = self._cles.get(node_num)
+        if ancienne == cle_hex:
+            return None
+        self._cles[node_num] = cle_hex
+        return "changee" if ancienne else "nouvelle"
+
+    def cle(self, node_num):
+        return self._cles.get(node_num)
+
+    def entendu(self, node_num, canal_nom):
+        self._canaux[node_num] = canal_nom
+
+    def canal_de(self, node_num):
+        return self._canaux.get(node_num)
+
+    def reclamer(self, node_num):
+        """Ce nœud vient de nous écrire et sa clé nous manque : à demander au prochain tour."""
+        self._prioritaires.add(node_num)
+        self._demandes.pop(node_num, None)
+
+    def prochain_a_demander(self):
+        maintenant = self._horloge()
+        for node_num in sorted(self._prioritaires):
+            if node_num in self._cles:
+                continue
+            derniere = self._demandes.get(node_num)
+            if derniere is not None and maintenant - derniere < CLES_DEMANDE_PAR_NOEUD_S:
+                continue
+            self._demandes[node_num] = maintenant
+            return node_num
+        return None
+
+    def peut_repondre(self, node_num):
+        maintenant = self._horloge()
+        derniere = self._reponses.get(node_num)
+        if derniere is not None and maintenant - derniere < CLES_REPONSE_PAR_NOEUD_S:
+            return False
+        self._reponses[node_num] = maintenant
+        return True
+
+
+def _poser_charge(paquet, data, canal_nom, canal, compagnon):
+    """Chiffre `data` dans `paquet` selon la règle du companion.
+
+    `chiffrement_supporte` décoché = tout part en clair (voir le modèle côté serveur). Jusqu'au
+    17/11/2026 l'identité et la position étaient chiffrées quand même : sur un broker qui ne
+    relaie de façon fiable que le clair, nos messages arrivaient et notre clé publique jamais."""
+    psk = canal["psk"] if canal else b""
+    paquet.channel = crypto.hash_canal(canal_nom, psk)
+    chiffre = (
+        crypto.chiffrer(psk, paquet.id, getattr(paquet, "from"), data.SerializeToString())
+        if compagnon.get("chiffrement_supporte") else None
+    )
+    if chiffre is None:
+        paquet.decoded.CopyFrom(data)
+    else:
+        paquet.encrypted = chiffre
+
+
+def construire_identite(compagnon, canal_nom, canal, cle_publique_hex, destinataire=None,
+                        demander_reponse=False, en_reponse_a=0):
+    """Notre NodeInfo : diffusé à tous, adressé à un nœud en lui demandant le sien
+    (`demander_reponse`), ou renvoyé en réponse à sa demande (`en_reponse_a`)."""
+    user = mesh_pb2.User(
+        id=f"!{compagnon['node_num']:08x}",
+        long_name=compagnon.get("long_name") or compagnon["nom"],
+        short_name=(compagnon.get("short_name") or compagnon["nom"])[:4],
+        hw_model=mesh_pb2.HardwareModel.PRIVATE_HW,
+        public_key=bytes.fromhex(cle_publique_hex),
+    )
+    data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.NODEINFO_APP, payload=user.SerializeToString())
+    # Le firmware lit la demande de réponse dans le champ ET dans le bitfield (Router.cpp,
+    # perhapsDecode) ; il pose les deux, nous aussi.
+    data.want_response = bool(demander_reponse)
+    data.bitfield = BITFIELD_OK_TO_MQTT | (BITFIELD_WANT_RESPONSE if demander_reponse else 0)
+    if en_reponse_a:
+        data.request_id = en_reponse_a
+    paquet = mesh_pb2.MeshPacket()
+    setattr(paquet, "from", compagnon["node_num"])
+    paquet.to = BROADCAST_NUM if destinataire is None else destinataire
+    paquet.id = random.randint(1, 0xFFFFFFFF)
+    paquet.hop_limit = 7
+    paquet.hop_start = 7
+    _poser_charge(paquet, data, canal_nom, canal, compagnon)
+    return paquet
+
+
+class EchangeCles:
+    """Tient l'annuaire à jour, répond aux demandes d'identité et demande les clés manquantes."""
+
+    def __init__(self, compagnon, registre, cle_publique_hex, annuaire=None, publier=None):
+        self.compagnon = compagnon
+        self.registre = registre
+        self.cle_publique_hex = cle_publique_hex
+        self.annuaire = annuaire or AnnuaireCles()
+        self.publier = publier          # posé une fois le client MQTT ouvert
+
+    @property
+    def _nom(self):
+        return self.compagnon.get("nom", "?")
+
+    def identite_recue(self, node_num, to_node, canal_nom, user, data, packet_id):
+        """Range la clé annoncée. Rend la coroutine de réponse si on nous demande la nôtre."""
+        if node_num == self.compagnon["node_num"]:
+            return None             # notre propre annonce, revenue par le broker
+        if len(user.public_key) == 32:
+            effet = self.annuaire.apprendre(node_num, bytes(user.public_key).hex())
+            if effet == "nouvelle":
+                logger.info("[%s] Clé publique de %08x reçue.", self._nom, node_num)
+            elif effet == "changee":
+                # Un appareil refuserait cette identité (NodeDB::updateUser, « Public Key
+                # mismatch »). On l'accepte -- un nœud réinitialisé change de clé, et s'y
+                # refuser le rendrait muet pour nous à jamais -- mais on le dit.
+                logger.warning(
+                    "[%s] %08x annonce une AUTRE clé publique que celle connue : appareil "
+                    "réinitialisé, ou usurpation.", self._nom, node_num,
+                )
+        demandee = data.want_response or bool(data.bitfield & BITFIELD_WANT_RESPONSE)
+        if not demandee or to_node != self.compagnon["node_num"]:
+            return None
+        if self.registre.get(canal_nom) is None or not self.annuaire.peut_repondre(node_num):
+            return None
+        return self.repondre(node_num, canal_nom, packet_id)
+
+    async def repondre(self, node_num, canal_nom, packet_id):
+        paquet = construire_identite(
+            self.compagnon, canal_nom, self.registre.get(canal_nom), self.cle_publique_hex,
+            destinataire=node_num, en_reponse_a=packet_id,
+        )
+        await asyncio.to_thread(self.publier, canal_nom, paquet)
+        logger.info("[%s] Identité envoyée à %08x, qui la demandait (canal '%s').",
+                    self._nom, node_num, canal_nom)
+
+    async def demander(self, node_num):
+        canal_nom = self.annuaire.canal_de(node_num)
+        if canal_nom is None or self.registre.get(canal_nom) is None:
+            canal_nom = self.registre.nom_principal()
+        if canal_nom is None:
+            return False
+        paquet = construire_identite(
+            self.compagnon, canal_nom, self.registre.get(canal_nom), self.cle_publique_hex,
+            destinataire=node_num, demander_reponse=True,
+        )
+        await asyncio.to_thread(self.publier, canal_nom, paquet)
+        logger.info("[%s] Clé publique demandée à %08x (canal '%s').", self._nom, node_num, canal_nom)
+        return True
+
+    async def boucle(self, django):
+        """Recharge l'annuaire toutes les dix minutes ; une demande au plus par tour, pour ne
+        pas occuper la radio des passerelles qui redescendent nos paquets."""
+        prochain_chargement = 0
+        while True:
+            try:
+                if time.time() >= prochain_chargement:
+                    self.annuaire.charger(await django.annuaire_cles(self.compagnon["id"]))
+                    prochain_chargement = time.time() + CLES_ANNUAIRE_INTERVALLE_S
+                node_num = self.annuaire.prochain_a_demander()
+                if node_num is not None and self.publier is not None:
+                    await self.demander(node_num)
+            except Exception:
+                logger.exception("[%s] Échec du cycle d'échange des clés.", self._nom)
+            await asyncio.sleep(CLES_DEMANDE_CADENCE_S)
+
+
+def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, compagnon_id, boucle,
+                              echange=None, packet_id=0):
     """Décodage du Data protobuf déjà déchiffré — dispatch par portnum. Retourne une coroutine
     à planifier si un appel réseau est nécessaire (log message entrant), sinon None."""
     data = mesh_pb2.Data()
     data.ParseFromString(payload)
+    if echange is not None and canal_id is not None:
+        echange.annuaire.entendu(node_num, canal_nom)
 
     if data.portnum == portnums_pb2.PortNum.TEXT_MESSAGE_APP:
         contenu = data.payload.decode("utf-8", errors="replace")
@@ -587,6 +831,8 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
             hardware_model=_nom_hardware(user.hw_model),
             public_key_hex=bytes(user.public_key).hex() if user.public_key else None,
         )
+        if echange is not None:
+            return echange.identite_recue(node_num, to_node, canal_nom, user, data, packet_id)
         return None
 
     if data.portnum == portnums_pb2.PortNum.POSITION_APP:
@@ -616,6 +862,10 @@ class CompteursReception:
         self.canal_inconnu = 0
         self.illisibles = 0
         self.erreurs = 0
+        # Messages chiffrés par clé publique qui nous étaient adressés et qu'on n'a pas pu
+        # lire faute de connaître la clé de l'expéditeur. Hors du bilan périodique : chacun
+        # est journalisé sur le moment.
+        self.cle_inconnue = 0
 
     def extraire(self):
         valeurs = (self.recus, self.canal_inconnu, self.illisibles, self.erreurs)
@@ -664,7 +914,28 @@ def echec_abonnement(codes):
     return ", ".join(str(code) for code in refuses)
 
 
-def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex):
+def _dechiffrer_message_pki(paquet, node_num, packet_id, cle_privee_hex, annuaire):
+    """Clair d'un message chiffré par clé publique, ou None.
+
+    La clé de l'expéditeur vient d'abord de NOTRE annuaire : un appareil ne la met pas dans le
+    paquet (Router.cpp, perhapsEncode), il compte que le destinataire la connaisse. Exiger
+    `paquet.public_key`, comme avant le 17/11/2026, revenait à ne lire aucun message venu d'un
+    vrai appareil."""
+    candidates = []
+    if annuaire is not None and annuaire.cle(node_num):
+        candidates.append(annuaire.cle(node_num))
+    if len(paquet.public_key) == 32 and bytes(paquet.public_key).hex() not in candidates:
+        candidates.append(bytes(paquet.public_key).hex())
+    for cle in candidates:
+        try:
+            return crypto.dechiffrer_pkc(cle_privee_hex, cle, packet_id, node_num, bytes(paquet.encrypted))
+        except Exception:
+            continue
+    return None
+
+
+def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex,
+                  echange=None):
     """paho-mqtt tourne dans son propre thread (loop_start) — chaque callback poste les
     coroutines réseau à exécuter dans la boucle asyncio principale via
     call_soon_threadsafe, jamais d'appel réseau direct depuis le thread MQTT."""
@@ -725,6 +996,9 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "DECONNECTE"),
         )
 
+    deja_vus = DejaVus()
+    annuaire = echange.annuaire if echange is not None else None
+
     def on_message(client, userdata, msg):
         compteurs.recus += 1
         try:
@@ -743,20 +1017,28 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             # entendu. Un canal dont on n'a pas la clé reste ainsi cartographié.
             _observer_liaison_rf(tampon_liaisons, enveloppe, paquet, node_num)
 
+            # Après la liaison (chaque passerelle qui a entendu compte), avant tout le reste.
+            if deja_vus.deja_vu(node_num, packet_id):
+                return
+
             if paquet.HasField("decoded"):
                 payload = paquet.decoded.SerializeToString()
-            elif paquet.pki_encrypted:
+            elif paquet.pki_encrypted or canal_nom == "PKI":
                 # DM chiffré par clé publique (PKI, firmware 2.5+) — indépendant de tout canal,
                 # voir crypto.py. On ne peut de toute façon déchiffrer que ce qui nous est
                 # adressé (il faudrait NOTRE clé privée, jamais celle d'un tiers).
-                if to_node != compagnon["node_num"] or not paquet.encrypted or not paquet.public_key:
+                if to_node != compagnon["node_num"] or not paquet.encrypted:
                     return
-                try:
-                    payload = crypto.dechiffrer_pkc(
-                        cle_privee_hex, bytes(paquet.public_key).hex(), packet_id, node_num, bytes(paquet.encrypted),
+                payload = _dechiffrer_message_pki(paquet, node_num, packet_id, cle_privee_hex, annuaire)
+                if payload is None:
+                    deja_vus.oublier(node_num, packet_id)
+                    compteurs.cle_inconnue += 1
+                    if annuaire is not None:
+                        annuaire.reclamer(node_num)
+                    logger.warning(
+                        "[%s] Message chiffré de %08x illisible : sa clé publique nous manque "
+                        "ou a changé. Elle lui est redemandée.", compagnon.get("nom", "?"), node_num,
                     )
-                except Exception:
-                    logger.exception("Échec de déchiffrement PKI depuis %08x.", node_num)
                     return
             elif canal is not None and paquet.HasField("encrypted") and paquet.encrypted:
                 payload = crypto.dechiffrer(canal["psk"], packet_id, node_num, bytes(paquet.encrypted))
@@ -770,6 +1052,7 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             coro = _traiter_paquet_dechiffre(
                 payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django,
                 {"id": compagnon["id"], "node_num": compagnon["node_num"], "nom": compagnon.get("nom", "?")}, boucle,
+                echange=echange, packet_id=packet_id,
             )
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
@@ -971,15 +1254,9 @@ async def boucle_annonce_position(mqtt_client, compagnon, registre):
                 setattr(paquet, "from", compagnon["node_num"])
                 paquet.to = BROADCAST_NUM
                 paquet.id = packet_id
-                paquet.channel = crypto.hash_canal(POSITION_ANNONCE_CANAL, canal["psk"])
                 paquet.hop_limit = 7
                 paquet.hop_start = 7
-
-                chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
-                if chiffre is None:
-                    paquet.decoded.CopyFrom(data)
-                else:
-                    paquet.encrypted = chiffre
+                _poser_charge(paquet, data, POSITION_ANNONCE_CANAL, canal, compagnon)
 
                 _publier_paquet(mqtt_client, compagnon, POSITION_ANNONCE_CANAL, canal, paquet)
                 logger.info(
@@ -997,29 +1274,7 @@ async def boucle_annonce_identite(mqtt_client, compagnon, registre, cle_publique
     while True:
         try:
             for canal_nom, canal in registre.tous().items():
-                packet_id = random.randint(1, 0xFFFFFFFF)
-                user = mesh_pb2.User(
-                    id=f"!{compagnon['node_num']:08x}",
-                    long_name=compagnon.get("long_name") or compagnon["nom"],
-                    short_name=(compagnon.get("short_name") or compagnon["nom"])[:4],
-                    hw_model=mesh_pb2.HardwareModel.PRIVATE_HW,
-                    public_key=bytes.fromhex(cle_publique_hex),
-                )
-                data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.NODEINFO_APP, payload=user.SerializeToString())
-                paquet = mesh_pb2.MeshPacket()
-                setattr(paquet, "from", compagnon["node_num"])
-                paquet.to = BROADCAST_NUM
-                paquet.id = packet_id
-                paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
-                paquet.hop_limit = 7
-                paquet.hop_start = 7
-
-                chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
-                if chiffre is None:
-                    paquet.decoded.CopyFrom(data)
-                else:
-                    paquet.encrypted = chiffre
-
+                paquet = construire_identite(compagnon, canal_nom, canal, cle_publique_hex)
                 _publier_paquet(mqtt_client, compagnon, canal_nom, canal, paquet)
                 logger.info("NodeInfo annoncé sur '%s'.", canal_nom)
         except Exception:
@@ -1073,6 +1328,112 @@ def _cle_publique_appareil_hex(iface):
     # Une clé X25519 fait 32 octets. Un appareil sans PKI (firmware ancien) n'en a pas du tout :
     # on ne rapporte rien plutôt qu'une valeur que l'exploitant recopierait pour rien.
     return octets.hex() if len(octets) == 32 else None
+
+
+def _cle_base64_en_hex(valeur):
+    """La lib rend les clés en base64 (sortie de MessageToDict). None si ce n'en est pas une."""
+    if not valeur:
+        return None
+    try:
+        octets = bytes(valeur) if isinstance(valeur, (bytes, bytearray)) else base64.b64decode(valeur, validate=True)
+    except Exception:
+        return None
+    return octets.hex() if len(octets) == 32 else None
+
+
+def contacts_depuis_appareil(iface, node_num_propre):
+    """Le répertoire de l'APPAREIL, au format de synchroniser-contacts.
+
+    En TCP, série et Bluetooth c'est l'appareil qui échange les clés, et il le fait bien ; mais
+    jusqu'au 17/11/2026 le pont ne lisait jamais son répertoire. Le serveur ne connaissait donc
+    ni les nœuds entendus par une radio locale, ni leurs clés, ni leurs positions."""
+    contacts = []
+    # Copie d'abord : la lib met ce dictionnaire à jour depuis son propre fil d'exécution.
+    for noeud in list((getattr(iface, "nodes", None) or {}).values()):
+        node_num = noeud.get("num")
+        if not node_num or node_num == node_num_propre:
+            continue
+        user = noeud.get("user") or {}
+        contact = {"node_num": node_num}
+        if user.get("longName"):
+            contact["long_name"] = user["longName"]
+        if user.get("shortName"):
+            contact["short_name"] = user["shortName"]
+        if user.get("hwModel"):
+            contact["hardware_model"] = str(user["hwModel"])[:40]
+        cle = _cle_base64_en_hex(user.get("publicKey"))
+        if cle:
+            contact["public_key_hex"] = cle
+        position = noeud.get("position") or {}
+        if position.get("latitude") and position.get("longitude"):
+            contact["latitude"] = position["latitude"]
+            contact["longitude"] = position["longitude"]
+            if noeud.get("lastHeard"):
+                contact["dernier_advert"] = noeud["lastHeard"]
+        contacts.append(contact)
+    return contacts
+
+
+def demander_identite_locale(iface, node_num):
+    """Fait demander par l'appareil l'identité d'un nœud : notre NodeInfo, avec demande de
+    réponse — ce que fait l'application officielle par « échanger les informations »."""
+    moi = iface.getMyUser() or {}
+    user = mesh_pb2.User(
+        id=moi.get("id") or "", long_name=moi.get("longName") or "", short_name=moi.get("shortName") or "",
+        is_licensed=bool(moi.get("isLicensed")),
+    )
+    # Recopiés tels quels : le destinataire remplace ce qu'il sait de nous par ce paquet, un
+    # champ omis redeviendrait sa valeur par défaut chez lui.
+    try:
+        if moi.get("hwModel"):
+            user.hw_model = mesh_pb2.HardwareModel.Value(moi["hwModel"])
+        if moi.get("role"):
+            roles = mesh_pb2.User.DESCRIPTOR.fields_by_name["role"].enum_type
+            user.role = roles.values_by_name[moi["role"]].number
+    except (ValueError, KeyError):
+        logger.debug("Modèle ou rôle de l'appareil non repris (%r).", moi)
+    cle = _cle_publique_appareil_hex(iface)
+    if cle and not user.is_licensed:
+        # Sans notre clé, un nœud qui la connaît déjà refuserait le paquet entier
+        # (NodeDB::updateUser, « Public Key mismatch »).
+        user.public_key = bytes.fromhex(cle)
+    iface.sendData(
+        user, destinationId=node_num, portNum=portnums_pb2.PortNum.NODEINFO_APP, wantResponse=True,
+    )
+
+
+async def boucle_cles_locale(django, compagnon, iface, node_num, libelle_connexion):
+    """Remonte le répertoire de l'appareil au serveur, et fait demander les clés manquantes.
+
+    Seules les fiches qui ont changé depuis le dernier envoi partent : un appareil connaît
+    jusqu'à quelques centaines de nœuds, les réécrire tous à chaque tour ne servirait à rien."""
+    annuaire = AnnuaireCles()
+    envoyes = {}
+    prochain_releve = 0
+    while True:
+        await asyncio.sleep(CLES_DEMANDE_CADENCE_S)
+        try:
+            if time.time() >= prochain_releve:
+                prochain_releve = time.time() + CLES_ANNUAIRE_INTERVALLE_S
+                contacts = contacts_depuis_appareil(iface, node_num["valeur"])
+                changes = [c for c in contacts if envoyes.get(c["node_num"]) != c]
+                if changes:
+                    await django.synchroniser_contacts(compagnon["id"], changes)
+                    envoyes.update({c["node_num"]: c for c in changes})
+                    logger.info(
+                        "[%s] Répertoire de l'appareil remonté : %d nœud(s), dont %d avec clé publique.",
+                        compagnon["nom"], len(changes), sum(1 for c in changes if c.get("public_key_hex")),
+                    )
+                for contact in contacts:
+                    annuaire.apprendre(contact["node_num"], contact.get("public_key_hex"))
+                annuaire.charger(await django.annuaire_cles(compagnon["id"]))
+            cible = annuaire.prochain_a_demander()
+            if cible is not None:
+                await asyncio.to_thread(demander_identite_locale, iface, cible)
+                logger.info("[%s] Clé publique demandée à %08x par l'appareil (%s).",
+                            compagnon["nom"], cible, libelle_connexion)
+        except Exception:
+            logger.exception("Échec du cycle d'échange des clés (%s, %s).", libelle_connexion, compagnon["nom"])
 
 
 async def _executer_compagnon_interface_locale(django, compagnon, construire_interface, libelle_connexion):
@@ -1242,6 +1603,7 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
             boucle_envoi_dm(),
             boucle_envoi_canaux_locale(),
             boucle_taches_admin(),
+            boucle_cles_locale(django, compagnon, iface, node_num, libelle_connexion),
         )
     finally:
         pub.unsubscribe(on_receive, "meshtastic.receive")
@@ -1305,7 +1667,14 @@ async def _executer_compagnon_mqtt(django, compagnon):
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
 
-    mqtt_client, compteurs = demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex)
+    echange = EchangeCles(compagnon, registre, compagnon["x25519_public_key_hex"])
+    mqtt_client, compteurs = demarrer_mqtt(
+        compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex,
+        echange=echange,
+    )
+    echange.publier = lambda canal_nom, paquet: _publier_paquet(
+        mqtt_client, compagnon, canal_nom, registre.get(canal_nom), paquet,
+    )
 
     try:
         await asyncio.gather(
@@ -1321,6 +1690,7 @@ async def _executer_compagnon_mqtt(django, compagnon):
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
             boucle_annonce_position(mqtt_client, compagnon, registre),
             boucle_annonce_identite(mqtt_client, compagnon, registre, compagnon["x25519_public_key_hex"]),
+            echange.boucle(django),
         )
     finally:
         mqtt_client.loop_stop()

@@ -492,6 +492,30 @@ class ImplicationInstitution(EnvironmentScopedModel):
                   "acceptée. Liste vide = toutes les communes de la crise.",
     )
 
+    # Chaque mairie décide chez elle (17/11/2026). `communes` dit où l'institution est
+    # acceptée, `communes_refusees` où une mairie a dit non ; une commune de la crise absente
+    # des deux attend encore la réponse de sa mairie. Voir core/accords_communes.py.
+    communes_refusees = models.JSONField(
+        default=list, blank=True,
+        help_text="Codes INSEE des communes de la crise dont la collectivité a refusé "
+                  "l'intervention de cette institution.",
+    )
+
+    # Une collectivité qui envoie sa réserve communale AILLEURS que chez elle. Sans ce
+    # marqueur, une mairie qui se déclare acteur dit « ma commune est touchée » : la zone de
+    # la crise s'étend à son territoire et elle est acceptée d'office partout. En renfort,
+    # rien de cela : la zone ne bouge pas, et le maire de chaque commune d'accueil donne son
+    # accord, comme pour une association.
+    renfort = models.BooleanField(
+        default=False,
+        help_text="Intervient en renfort hors de son territoire : l'accord de chaque commune "
+                  "d'accueil est requis, et la zone de la crise n'est pas étendue.",
+    )
+
+    # Ce que l'institution met à disposition (codes de core/aides_renfort.py) : centre
+    # d'accueil, point de regroupement, personnel... Le détail va dans `commentaire`.
+    aides_proposees = models.JSONField(default=list, blank=True)
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -519,6 +543,10 @@ class ContributionZoneCommune(EnvironmentScopedModel):
         related_name="contributions_zone_crises",
     )
     date_ajout = models.DateTimeField(auto_now_add=True)
+    # La commune n'est concernée que sur les zones qu'elle a dessinées (ZoneAjouteeCrise) : son
+    # code reste dans zone_communes, parce qu'il porte les droits et l'accord de son maire, mais
+    # son contour entier n'entre pas dans la zone composée. Voir core/zones_crise.py.
+    partielle = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
@@ -527,6 +555,33 @@ class ContributionZoneCommune(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.commune_code} sur {self.crise} ({self.institution or 'sans propriétaire'})"
+
+
+class ZoneAjouteeCrise(EnvironmentScopedModel):
+    """Une zone dessinée EN PLUS de la zone initiale d'une crise (17/11/2026).
+
+    Elle ne modifie pas `Crisis.zone`, peut ne pas la toucher, et reste attachée à
+    l'institution qui l'a dessinée : elle seule, l'auteur de la crise ou un administrateur
+    peuvent la retirer. Même règle de provenance que ContributionZoneCommune."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey(Crisis, on_delete=models.CASCADE, related_name="zones_ajoutees")
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="zones_ajoutees_crises",
+    )
+    auteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="zones_ajoutees_crises",
+    )
+    nom = models.CharField(max_length=100, blank=True, default="")
+    geometrie = gis_models.PolygonField(srid=4326)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date_creation"]
+
+    def __str__(self):
+        return f"{self.nom or 'Zone'} sur {self.crise}"
 
 
 class DureeHebergement(models.TextChoices):

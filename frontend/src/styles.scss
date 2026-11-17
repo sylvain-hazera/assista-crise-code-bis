@@ -101,3 +101,22 @@ app-header, app-admin-header {
   display: block;
   z-index: 1000; 
 }
+
+// ── Fenêtres : larges sur un écran d'ordinateur (17/11/2026) ───────────────────────────────
+// Chaque fenêtre fixait sa propre largeur, de 480 à 800 px, pensée pour un formulaire de
+// trois champs : sur un écran de bureau, une carte ou un tableau y tenaient dans une bande
+// étroite au milieu d'un écran vide. La largeur suit maintenant celle de l'écran.
+//
+// Règle unique, ici et pas dans les quarante feuilles de style : toutes les fenêtres ont la
+// même structure (`.modal-overlay > .modal`). `!important` parce que les règles de chaque
+// composant portent l'attribut d'encapsulation d'Angular et l'emporteraient sinon.
+// `.modal-sm` reste étroite : une confirmation d'une phrase n'a rien à gagner à s'étaler.
+// En dessous de 900 px (téléphone, tablette droite), rien ne change.
+@media (min-width: 900px) {
+  .modal-overlay > .modal:not(.modal-sm),
+  .modal-overlay > .modal-content:not(.modal-sm) {
+    width: min(92vw, 1500px) !important;
+    max-width: none !important;
+    max-height: 92vh !important;
+  }
+}

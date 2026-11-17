@@ -18,7 +18,9 @@ import { DelegationCompetenceService } from '../../services/delegation-competenc
 import { LocationService, Commune, GeoContour } from '../../services/location.service';
 import { AuthService } from '../../auth/services/auth.service';
 
-import { Crisis } from '../../shared/models/crisis.model';
+import type { MultiPolygon, Polygon } from 'geojson';
+
+import { Crisis, ZoneAjoutee } from '../../shared/models/crisis.model';
 import { ImplicationInstitution } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { ContactInstitution, Institution, InstitutionType } from '../../shared/models/institution.model';
@@ -155,6 +157,9 @@ export class CrisesComponent implements OnInit {
     this.impliqueForm = this.fb.group({
       institution: [null, Validators.required],
       commentaire: [''],
+      // Deux chemins pour entrer dans la zone d'une crise : tout le territoire de la commune,
+      // ou seulement la zone qu'elle dessinera ensuite.
+      territoire_partiel: [false],
     });
   }
 
@@ -270,6 +275,7 @@ export class CrisesComponent implements OnInit {
     this.editingPoint = null;
     this.acteurDirectInstitutionId = null;
     this.acteurDirectThemes = [];
+    this.acteurDirectRenfort = false;
     this.acteurDirectContacts = [];
     this.chargerReferents(crisis);
     this.responsableMode = 'moi';
@@ -341,6 +347,94 @@ export class CrisesComponent implements OnInit {
     this.crisisService.patch(this.selectedCrisis.id, { zone: this.pendingZoneWkt }).subscribe({
       next: (updated) => this.onZoneSaved(updated),
       error: () => this.showError("Impossible d'enregistrer la zone."),
+    });
+  }
+
+  // ── Zones ajoutées (dessinées en plus de la zone initiale) ──────
+  showZoneAjoutEditor = false;
+  zoneAjoutWkt: string | null = null;
+  zoneAjoutNom = '';
+
+  /** Tout ce qui est déjà en place sur la crise, pour l'afficher sous le tracé et s'y
+   * aimanter. Mémorisé par crise : rendre un tableau neuf à chaque cycle d'affichage ferait
+   * recharger le calque sans fin. */
+  private reperesPour: Crisis | null = null;
+  private reperesCalcules: (Polygon | MultiPolygon)[] = [];
+
+  get zoneReperes(): (Polygon | MultiPolygon)[] {
+    const crise = this.selectedCrisis;
+    if (!crise) return [];
+    if (this.reperesPour !== crise) {
+      this.reperesPour = crise;
+      this.reperesCalcules = [
+        ...(crise.zone_geojson ? [crise.zone_geojson] : []),
+        ...(crise.zone_secteurs_geojson ? [crise.zone_secteurs_geojson] : []),
+        ...(crise.zones_ajoutees ?? []).map(z => z.geojson),
+      ];
+    }
+    return this.reperesCalcules;
+  }
+
+  ouvrirAjoutDeZone(): void {
+    this.zoneAjoutWkt = null;
+    this.zoneAjoutNom = '';
+    this.showZoneAjoutEditor = true;
+  }
+
+  enregistrerZoneAjoutee(): void {
+    if (!this.selectedCrisis) return;
+    if (!this.zoneAjoutWkt) { this.showError("Dessinez d'abord la zone à ajouter."); return; }
+    this.crisisService.ajouterZone(this.selectedCrisis.id, this.zoneAjoutWkt, this.zoneAjoutNom.trim()).subscribe({
+      next: (updated) => {
+        this.remplacerCrise(updated);
+        this.showZoneAjoutEditor = false;
+        this.showSuccess('Zone ajoutée à la crise.');
+      },
+      error: (err) => this.showError(err.error?.detail || "Impossible d'ajouter cette zone."),
+    });
+  }
+
+  retirerZoneAjoutee(zone: ZoneAjoutee): void {
+    if (!this.selectedCrisis) return;
+    if (!confirm(`Retirer la zone « ${zone.nom || 'sans nom'} » de cette crise ?`)) return;
+    this.crisisService.retirerZoneAjoutee(this.selectedCrisis.id, zone.id).subscribe({
+      next: (updated) => { this.remplacerCrise(updated); this.showSuccess('Zone retirée.'); },
+      error: (err) => this.showError(err.error?.detail || 'Impossible de retirer cette zone.'),
+    });
+  }
+
+  estPartielle(code: string): boolean {
+    return (this.selectedCrisis?.zone_communes_partielles ?? []).includes(code);
+  }
+
+  /** Fait entrer une commune en entier dans la zone, ou la ramène à ses seules zones
+   * dessinées — puis recompose le contour, qui en dépend. */
+  basculerTerritoireCommune(code: string): void {
+    const crise = this.selectedCrisis;
+    if (!crise) return;
+    this.crisisService.territoireCommune(crise.id, code, !this.estPartielle(code)).subscribe({
+      next: (updated) => {
+        this.remplacerCrise(updated);
+        this.recomputeAndSaveZoneSecteurs(updated.zone_communes ?? [], updated.zone_departements ?? []);
+      },
+      error: (err) => this.showError(err.error?.detail || 'Impossible de modifier le territoire de cette commune.'),
+    });
+  }
+
+  private remplacerCrise(updated: Crisis): void {
+    this.selectedCrisis = updated;
+    const idx = this.crises.findIndex(c => c.id === updated.id);
+    if (idx !== -1) this.crises[idx] = updated;
+  }
+
+  private rechargerCriseOuverte(id: string, ensuite: (crise: Crisis) => void): void {
+    this.crisisService.getById(id).subscribe({
+      next: (crise) => {
+        if (this.selectedCrisis?.id !== id) return;
+        this.remplacerCrise(crise);
+        ensuite(crise);
+      },
+      error: () => {},
     });
   }
 
@@ -440,8 +534,12 @@ export class CrisesComponent implements OnInit {
     if (!crisis) return;
     this.zoneSecteursLoading = true;
 
+    // Une commune entrée par une zone dessinée reste dans la liste (c'est elle qui porte les
+    // droits et l'accord de son maire), mais son contour entier ne fait pas partie de la zone.
+    const entieres = zone_communes.filter(code => !this.estPartielle(code));
+
     forkJoin({
-      communes: this.fetchContours(zone_communes, code => this.locationService.getCommuneContour(code)),
+      communes: this.fetchContours(entieres, code => this.locationService.getCommuneContour(code)),
       departements: this.fetchContours(zone_departements, code => this.locationService.getDepartementContour(code)),
     }).subscribe({
       next: ({ communes, departements }) => {
@@ -663,6 +761,10 @@ export class CrisesComponent implements OnInit {
     });
   }
 
+  /** La collectivité vient aider ailleurs que chez elle (sa réserve communale, typiquement) :
+   * sa commune n'entre pas dans la zone, et chaque mairie d'accueil donne son accord. */
+  acteurDirectRenfort = false;
+
   toggleActeurDirectTheme(besoinId: string, checked: boolean): void {
     this.acteurDirectThemes = checked
       ? [...this.acteurDirectThemes, besoinId]
@@ -679,6 +781,7 @@ export class CrisesComponent implements OnInit {
       institution: this.acteurDirectInstitutionId,
       type_implication: 'ACTEUR',
       themes: this.acteurDirectThemes,
+      renfort: this.acteurDirectRenfort,
     };
 
     const me = this.authService.getCurrentUser();
@@ -714,17 +817,31 @@ export class CrisesComponent implements OnInit {
   // ── Je suis impliqué ─────────────────────────────────────────
   submitImplique(): void {
     if (!this.selectedCrisis || this.impliqueForm.invalid) { this.impliqueForm.markAllAsTouched(); return; }
-    const { institution, commentaire } = this.impliqueForm.value;
+    const { institution, commentaire, territoire_partiel } = this.impliqueForm.value;
+    const criseId = this.selectedCrisis.id;
     this.implicationService.create({
-      crise: this.selectedCrisis.id,
+      crise: criseId,
       institution,
       type_implication: 'IMPLIQUE',
       commentaire: commentaire || undefined,
+      territoire_partiel: !!territoire_partiel,
     }).subscribe({
       next: () => {
         this.reloadImplications();
-        this.showSuccess('Institution déclarée impliquée.');
         this.showImpliqueForm = false;
+        this.impliqueForm.patchValue({ territoire_partiel: false });
+        if (territoire_partiel) {
+          this.showSuccess('Institution déclarée impliquée. Dessinez maintenant la zone concernée.');
+          this.rechargerCriseOuverte(criseId, () => this.ouvrirAjoutDeZone());
+        } else {
+          this.showSuccess('Institution déclarée impliquée.');
+          // Le serveur a ajouté la commune à la zone ; le contour, lui, se compose ici.
+          this.rechargerCriseOuverte(criseId, crise => {
+            if (crise.zone_communes?.length || crise.zone_departements?.length) {
+              this.recomputeAndSaveZoneSecteurs(crise.zone_communes ?? [], crise.zone_departements ?? []);
+            }
+          });
+        }
       },
       error: (err) => this.showError(this.implicationErrorMessage(err, "Impossible d'enregistrer cette déclaration.")),
     });
@@ -752,9 +869,23 @@ export class CrisesComponent implements OnInit {
     this.showSuccess(`Déclaration de ${nom} validée.`);
   }
 
+  /** « 2 communes acceptées · 1 en attente » — vide quand la déclaration ne dépend d'aucun
+   * accord, ou qu'elle vaut pour toute la crise. */
+  resumeAccord(implication: ImplicationInstitution): string {
+    const accord = implication.accord;
+    if (!accord || accord.toute_la_crise) return '';
+    if (accord.acceptees + accord.refusees + accord.en_attente <= 1) return '';
+    const morceaux: string[] = [];
+    const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+    if (accord.acceptees) morceaux.push(`${pluriel(accord.acceptees, 'commune')} d'accord`);
+    if (accord.en_attente) morceaux.push(`${accord.en_attente} en attente`);
+    if (accord.refusees) morceaux.push(`${accord.refusees} refus`);
+    return morceaux.join(' · ');
+  }
+
   refuserImplication(implication: ImplicationInstitution): void {
     this.implicationService.refuser(implication.id).subscribe({
-      next: () => { this.reloadImplications(); this.showSuccess(`Déclaration de ${implication.institution_nom} refusée.`); },
+      next: () => { this.reloadImplications(); this.showSuccess(`Déclaration de ${implication.institution_nom} refusée pour votre territoire.`); },
       error: () => this.showError('Impossible de refuser cette déclaration.'),
     });
   }

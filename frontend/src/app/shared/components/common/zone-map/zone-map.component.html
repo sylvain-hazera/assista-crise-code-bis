@@ -18,6 +18,12 @@
         <span class="material-icons">delete_outline</span> Effacer
       </button>
     }
+    @if (reperes.length || communesGeojson) {
+      <label class="aimant" title="Le point en cours se colle au sommet ou au bord le plus proche d'un contour existant.">
+        <input type="checkbox" [checked]="aimantation" (change)="aimantation = !aimantation">
+        <span class="material-icons">adjust</span> Aimanter sur les contours existants
+      </label>
+    }
     <span class="hint">Cliquez pour placer les sommets du polygone, double-cliquez pour terminer.</span>
   </div>
   <div #mapContainer class="zone-map-container"></div>

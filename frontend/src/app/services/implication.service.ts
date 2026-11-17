@@ -50,8 +50,14 @@ export class ImplicationService {
     return this.http.get<ZoneDelegable>(`${this.apiUrl}/${id}/zone-delegable/`);
   }
 
+  /** Refuse sur les communes de l'appelant, sans rien fermer chez les autres mairies. */
   refuser(id: string): Observable<ImplicationInstitution> {
     return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/refuser/`, {});
+  }
+
+  /** Accords et retraits en un seul envoi, chacun limité aux communes de l'appelant. */
+  decider(id: string, acceptees: string[], refusees: string[]): Observable<ImplicationInstitution> {
+    return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/decider/`, { acceptees, refusees });
   }
 }
 
@@ -61,5 +67,8 @@ export interface ZoneDelegable {
   /** Vrai seulement si l'appelant couvre toute la zone de la crise (un conseil départemental,
    * typiquement) — c'est ce qui autorise le raccourci « toute la crise ». */
   couvre_toute_la_crise: boolean;
+  /** Parmi les communes de l'appelant : où il a dit oui, où il a dit non, où il n'a rien dit. */
   deja_accordees: string[];
+  refusees?: string[];
+  en_attente?: string[];
 }

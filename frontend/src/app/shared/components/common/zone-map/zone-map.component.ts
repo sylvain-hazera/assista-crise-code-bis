@@ -4,9 +4,12 @@ import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import type { FeatureCollection, MultiPolygon, Polygon, Position } from 'geojson';
+
+import { aimanter, segmentsDe } from '../../../utils/aimantation.util';
 
 const COMMUNES_SOURCE_ID = 'zone-map-communes';
+const REPERES_SOURCE_ID = 'zone-map-reperes';
 
 /** Carte de dessin de zone (polygone), séparée de MapComponent. Émet du WKT
  * (`"POLYGON ((lng lat, ...))"`) consommable directement par l'API. */
@@ -31,6 +34,14 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
    * peut faire deux kilomètres comme quarante. On ajuste donc aux limites réelles. */
   @Input() cadrerSur: Polygon | MultiPolygon | null = null;
 
+  /** Zones déjà en place (zone initiale, secteurs, zones ajoutées par d'autres) : affichées
+   * sous le tracé, non modifiables, et le tracé s'y aimante. C'est ce qui permet de dessiner
+   * une zone EN PLUS, bord à bord avec l'existant, sans trou ni recouvrement. */
+  @Input() reperes: (Polygon | MultiPolygon)[] = [];
+  /** Aimantation sur les contours existants (repères et communes). Débrayable : on veut
+   * parfois passer volontairement près d'un contour sans s'y coller. */
+  aimantation = true;
+
   @Output() zoneChange = new EventEmitter<string | null>();
 
   hasZone = false;
@@ -51,6 +62,51 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (changes['cadrerSur'] && this.cadrerSur) {
       this.cadrer(this.cadrerSur);
     }
+    if (changes['reperes']) {
+      this.syncReperesLayer();
+    }
+    if (changes['reperes'] || changes['communesGeojson']) {
+      this.segmentsAimants = null;
+    }
+  }
+
+  /** Segments de tous les contours aimantés, calculés à la demande puis gardés : la fonction
+   * d'aimantation est appelée à chaque mouvement de souris. */
+  private segmentsAimants: [Position, Position][] | null = null;
+
+  private aimanterSurLExistant(lng: number, lat: number): Position | undefined {
+    if (!this.aimantation || !this.map) return undefined;
+    if (this.segmentsAimants === null) {
+      const communes = (this.communesGeojson?.features ?? []).map(f => f.geometry);
+      this.segmentsAimants = segmentsDe([...this.reperes, ...communes]);
+    }
+    if (!this.segmentsAimants.length) return undefined;
+    const carte = this.map;
+    return aimanter(lng, lat, this.segmentsAimants, (x, y) => carte.project([x, y]));
+  }
+
+  /** Les zones existantes, en calque de référence d'une couleur distincte du tracé. */
+  private syncReperesLayer(): void {
+    if (!this.map || !this.map.isStyleLoaded()) return;
+    const data: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: this.reperes.map(geometry => ({ type: 'Feature', properties: {}, geometry })),
+    };
+    const source = this.map.getSource(REPERES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data as any);
+      return;
+    }
+    if (!this.reperes.length) return;
+    this.map.addSource(REPERES_SOURCE_ID, { type: 'geojson', data: data as any });
+    this.map.addLayer({
+      id: `${REPERES_SOURCE_ID}-fill`, type: 'fill', source: REPERES_SOURCE_ID,
+      paint: { 'fill-color': '#b45309', 'fill-opacity': 0.12 },
+    });
+    this.map.addLayer({
+      id: `${REPERES_SOURCE_ID}-outline`, type: 'line', source: REPERES_SOURCE_ID,
+      paint: { 'line-color': '#b45309', 'line-width': 2, 'line-dasharray': [2, 1] },
+    });
   }
 
   /** Ajuste la vue aux limites d'une géométrie. Gère le MultiPolygon : une commune insulaire ou
@@ -100,10 +156,23 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.map.on('load', () => {
       // Calque de référence ajouté avant TerraDraw : reste dessous, sans capter les clics.
       this.syncCommunesLayer();
+      this.syncReperesLayer();
+      if (this.reperes.length && !this.initialZone && !this.cadrerSur) {
+        this.cadrer({ type: 'MultiPolygon', coordinates: this.reperes.flatMap(
+          g => g.type === 'Polygon' ? [g.coordinates] : g.coordinates) });
+      }
 
       this.draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map: this.map as any }),
-        modes: [new TerraDrawPolygonMode(), new TerraDrawSelectMode()],
+        modes: [
+          new TerraDrawPolygonMode({
+            // « Magnétisme » : le point en cours se colle au sommet ou au bord le plus proche
+            // d'un contour existant. `toCustom` et non `toLine`/`toCoordinate`, qui ne
+            // connaissent que les formes dessinées dans l'outil lui-même.
+            snapping: { toCustom: (event) => this.aimanterSurLExistant(event.lng, event.lat) },
+          }),
+          new TerraDrawSelectMode(),
+        ],
       });
       this.draw.start();
 

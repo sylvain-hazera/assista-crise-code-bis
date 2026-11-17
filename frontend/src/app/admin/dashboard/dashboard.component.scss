@@ -522,3 +522,16 @@
     align-items: flex-start;
   }
 }
+.candidature-ok {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 1rem 0.75rem;
+  color: #15803d;
+}
+
+.candidature-aide {
+  margin: 0.5rem 1rem 1rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}

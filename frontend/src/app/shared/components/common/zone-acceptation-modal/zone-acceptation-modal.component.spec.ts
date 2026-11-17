@@ -116,6 +116,31 @@ describe('ZoneAcceptationModalComponent', () => {
     expect(composant.estCochee('29026')).toBeTrue();
   });
 
+  it('décocher une commune déjà accordée y retire l\'accord, sans toucher aux autres', () => {
+    // Une mairie reste maîtresse chez elle pendant toute la crise.
+    composant.ngOnInit();
+    repondre({
+      communes: [{ code: '29026', nom: 'A' }, { code: '29027', nom: 'B' }],
+      deja_accordees: ['29026', '29027'],
+    });
+    composant.basculer('29027');
+
+    composant.accepter();
+
+    const requete = http.expectOne(r => r.url.includes('/decider/'));
+    expect(requete.request.body).toEqual({ acceptees: ['29026'], refusees: ['29027'] });
+    requete.flush({});
+  });
+
+  it('tout décocher reste un geste possible : c\'est retirer son accord', () => {
+    composant.ngOnInit();
+    repondre({ communes: [{ code: '29026', nom: 'A' }], deja_accordees: ['29026'] });
+    composant.basculer('29026');
+
+    expect(composant.peutValider).toBeTrue();
+    expect(composant.resume).toBe('aucune commune (accord retiré sur 1)');
+  });
+
   it('n\'accorde rien quand le donneur n\'a de droits sur aucune commune', () => {
     composant.ngOnInit();
     repondre({ communes: [] });

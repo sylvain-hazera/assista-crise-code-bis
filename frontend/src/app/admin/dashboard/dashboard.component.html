@@ -47,6 +47,67 @@
     </div>
   }
 
+  <!-- ══ CRISES EN COURS EN FRANCE ════════════════════════════════════════ -->
+  @if (candidatures) {
+    <section class="table-card">
+      <div class="table-head">
+        <h2>Crises en cours en France</h2>
+        <span class="badge-total">{{ candidatures.crises.length }}</span>
+      </div>
+      @if (messageCandidature) {
+        <p class="candidature-ok"><span class="material-icons">check_circle</span> {{ messageCandidature }}</p>
+      }
+      @if (candidatures.crises.length) {
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Crise</th><th>Type</th><th>Lieu</th><th>Depuis le</th><th>Votre institution</th><th></th></tr>
+            </thead>
+            <tbody>
+              @for (crise of candidatures.crises; track crise.id) {
+                <tr>
+                  <td class="title-cell">{{ crise.name }}</td>
+                  <td>{{ crise.type_display }}</td>
+                  <td>
+                    {{ crise.commune || '—' }}
+                    @if (crise.nb_communes > 1) { <small>({{ crise.nb_communes }} communes)</small> }
+                  </td>
+                  <td class="date-cell">{{ crise.start_date | date:'dd/MM/yyyy' }}</td>
+                  <td>
+                    @if (situationLisible(crise)) {
+                      <span class="status-chip">{{ situationLisible(crise) }}</span>
+                    } @else if (crise.situation.dans_la_zone) {
+                      <span class="status-chip">dans la zone, non déclarée</span>
+                    } @else { — }
+                  </td>
+                  <td>
+                    @if (peutCandidater(crise)) {
+                      <button class="btn-primary" (click)="criseACandidater = crise; messageCandidature = ''"
+                              title="Dire que la crise touche votre territoire, ou proposer votre aide">
+                        Candidater
+                      </button>
+                    }
+                    <button class="btn-icon sm" [routerLink]="['/admin/crises']" [queryParams]="{id: crise.id}" title="Voir la crise">
+                      <span class="material-icons">arrow_forward</span>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (!candidatures.institution) {
+          <p class="candidature-aide">Votre compte n'est rattaché à aucune institution : vous ne pouvez pas candidater.</p>
+        }
+      } @else {
+        <div class="empty-state">
+          <span class="material-icons">inbox</span>
+          <p>Aucune crise en cours</p>
+        </div>
+      }
+    </section>
+  }
+
   <!-- ══ STAT CARDS ═══════════════════════════════════════════════════════ -->
   <section class="stats-row">
     @for (s of stats; track s.title) {
@@ -250,4 +311,13 @@
 <!-- close dropdown on outside click -->
 @if (isDropdownOpen) {
   <div class="overlay" (click)="isDropdownOpen = false"></div>
+}
+@if (criseACandidater && candidatures?.institution; as institution) {
+  <app-candidature-crise-modal
+    [crise]="criseACandidater"
+    [institution]="institution"
+    [aides]="candidatures?.aides ?? []"
+    (envoyee)="onCandidatureEnvoyee($event)"
+    (fermee)="criseACandidater = null">
+  </app-candidature-crise-modal>
 }

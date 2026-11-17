@@ -27,9 +27,9 @@ def _commune_dans_zone_crise(crise, commune_code: str) -> bool:
     if commune and commune.centre_latitude is not None and commune.centre_longitude is not None:
         from django.contrib.gis.geos import Point
         point = Point(commune.centre_longitude, commune.centre_latitude, srid=4326)
-        if crise.zone_secteurs is not None and not crise.zone_secteurs.empty and crise.zone_secteurs.contains(point):
-            return True
-        if crise.zone is not None and not crise.zone.empty and crise.zone.contains(point):
+        # Zone initiale, secteurs et zones ajoutées : voir core/zones_crise.py.
+        from . import zones_crise
+        if zones_crise.contient(crise, point):
             return True
 
     # Repli : aucune zone composée (communes/départements/dessin) -- crise déclarée seulement

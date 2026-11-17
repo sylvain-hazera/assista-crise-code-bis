@@ -231,3 +231,48 @@ class TestCommandeDeMarquage:
         sortie = self._appeler("--lister")
         assert "poste-liste" in sortie
         assert "aucun marquage requis" in sortie
+
+
+@pytest.mark.django_db
+class TestAnnuaireDesCles:
+    """17/11/2026 : ce que le pont lit pour échanger les clés publiques avec les autres nœuds."""
+
+    def _admin(self, create_user):
+        return _client(create_user(username="pont-cles@x.fr", email="pont-cles@x.fr", type="ADMIN"))
+
+    def test_cles_connues_et_correspondants_sans_cle(self, create_user, compagnon_meshtastic):
+        from core.models import ContactMeshtastic, MessageMeshtasticLog, NoeudUtilisateurMeshtastic
+        ContactMeshtastic.objects.create(compagnon=compagnon_meshtastic, node_num=10, public_key_hex="0a" * 32)
+        ContactMeshtastic.objects.create(compagnon=compagnon_meshtastic, node_num=11)
+        agent = create_user(username="agent-cles@x.fr", email="agent-cles@x.fr", type="AUT_LOCALE")
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=11)     # sans clé : à demander
+        NoeudUtilisateurMeshtastic.objects.create(
+            utilisateur=create_user(username="b-cles@x.fr", email="b-cles@x.fr", type="AUT_LOCALE"),
+            node_num=10,                                                              # clé connue : rien à faire
+        )
+        MessageMeshtasticLog.objects.create(
+            compagnon=compagnon_meshtastic, direction="ENTRANT", contact_node_num=12, contenu="bonjour",
+        )
+
+        reponse = self._admin(create_user).get(
+            reverse('compagnonmeshtastic-annuaire-cles', args=[compagnon_meshtastic.id]))
+
+        assert reponse.status_code == 200, reponse.data
+        assert reponse.data['cles'] == [{'node_num': 10, 'public_key_hex': "0a" * 32}]
+        assert reponse.data['prioritaires'] == [11, 12]
+
+    def test_un_noeud_seulement_entendu_n_est_pas_sollicite(self, create_user, compagnon_meshtastic):
+        """Chaque demande descend sur la radio : on ne la fait pas aux centaines de nœuds qu'un
+        broker régional laisse voir."""
+        from core.models import ContactMeshtastic
+        ContactMeshtastic.objects.create(compagnon=compagnon_meshtastic, node_num=99)
+        reponse = self._admin(create_user).get(
+            reverse('compagnonmeshtastic-annuaire-cles', args=[compagnon_meshtastic.id]))
+        assert reponse.data['prioritaires'] == []
+
+    def test_reserve_aux_ponts(self, create_user, institution, compagnon_meshtastic):
+        agent = create_user(username="agent2-cles@x.fr", email="agent2-cles@x.fr",
+                            type="AUT_LOCALE", institution=institution)
+        url = reverse('compagnonmeshtastic-annuaire-cles', args=[compagnon_meshtastic.id])
+        assert _client(agent).get(url).status_code == 403
+        assert APIClient().get(url).status_code in (401, 403)

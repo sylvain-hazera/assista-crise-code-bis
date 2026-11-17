@@ -173,11 +173,51 @@
                 </button>
               }
             } @else {
-              <app-zone-map [initialZone]="selectedCrisis.zone_geojson ?? null" (zoneChange)="onZoneChange($event)"></app-zone-map>
+              <app-zone-map [initialZone]="selectedCrisis.zone_geojson ?? null" [reperes]="zoneReperes" (zoneChange)="onZoneChange($event)"></app-zone-map>
               <div class="inline-form">
                 <button class="btn-primary sm" (click)="saveZone()">Enregistrer la zone</button>
                 <button class="btn-secondary sm" (click)="showZoneEditor = false">Annuler</button>
               </div>
+            }
+          </section>
+
+          <!-- Zones ajoutées : dessinées EN PLUS de la zone initiale -->
+          <section class="section-block">
+            <h3><span class="material-icons">add_location_alt</span> Zones ajoutées</h3>
+            <p class="crisis-meta">
+              Une institution impliquée peut dessiner une zone en plus de la zone initiale, sans
+              la modifier. Le tracé s'aimante sur les contours déjà en place, pour que les
+              zones se touchent bord à bord.
+            </p>
+            <div class="chip-list">
+              @for (zone of (selectedCrisis.zones_ajoutees || []); track zone.id) {
+                <span class="chip">
+                  {{ zone.nom || 'Zone sans nom' }}
+                  @if (zone.institution_nom) { <span class="chip-sublabel">({{ zone.institution_nom }})</span> }
+                  @if (zone.peut_retirer && selectedCrisis.is_open !== false) {
+                    <button type="button" (click)="retirerZoneAjoutee(zone)" title="Retirer cette zone">×</button>
+                  }
+                </span>
+              } @empty {
+                <span class="chip-empty">Aucune zone ajoutée.</span>
+              }
+            </div>
+            @if (selectedCrisis.is_open !== false) {
+              @if (!showZoneAjoutEditor) {
+                <button class="btn-secondary sm" (click)="ouvrirAjoutDeZone()">
+                  <span class="material-icons">draw</span> Dessiner une zone en plus
+                </button>
+              } @else {
+                <app-zone-map [initialZone]="null" [reperes]="zoneReperes"
+                              [center]="[selectedCrisis.longitude ?? 2.2137, selectedCrisis.latitude ?? 46.2276]"
+                              (zoneChange)="zoneAjoutWkt = $event"></app-zone-map>
+                <div class="inline-form">
+                  <input type="text" maxlength="100" placeholder="Nom de la zone (ex. : quartier des Granges)"
+                         [(ngModel)]="zoneAjoutNom" [ngModelOptions]="{standalone: true}"/>
+                  <button class="btn-primary sm" (click)="enregistrerZoneAjoutee()">Ajouter cette zone</button>
+                  <button class="btn-secondary sm" (click)="showZoneAjoutEditor = false">Annuler</button>
+                </div>
+              }
             }
           </section>
 
@@ -203,7 +243,14 @@
                 <span class="chip">
                   {{ zoneCommuneNoms[code] || code }}
                   @if (zoneCommunePostaux[code]) { <span class="chip-sublabel">({{ zoneCommunePostaux[code] }})</span> }
+                  @if (estPartielle(code)) {
+                    <span class="chip-sublabel" title="Cette commune n'est concernée que sur les zones dessinées : son contour entier n'entre pas dans la zone.">zone dessinée</span>
+                  }
                   @if (selectedCrisis.is_open !== false) {
+                    <button type="button" (click)="basculerTerritoireCommune(code)"
+                            [title]="estPartielle(code) ? 'Faire entrer toute la commune dans la zone' : 'Ne garder que les zones dessinées de cette commune'">
+                      <span class="material-icons" style="font-size: 0.9rem">{{ estPartielle(code) ? 'open_in_full' : 'close_fullscreen' }}</span>
+                    </button>
                     <button type="button" (click)="removeZoneCommune(code)">×</button>
                   }
                 </span>
@@ -275,6 +322,12 @@
                               [class.badge-refusee]="implication.statut === 'REFUSEE'">
                           {{ implication.statut === 'EN_ATTENTE' ? 'En attente' : implication.statut === 'REFUSEE' ? 'Refusée' : 'Validée' }}
                         </span>
+                        @if (implication.renfort) {
+                          <span class="badge" title="Collectivité venue en renfort hors de son territoire : chaque commune d'accueil donne son accord.">Renfort</span>
+                        }
+                        @if (resumeAccord(implication); as resume) {
+                          <small class="hint-petit">{{ resume }}</small>
+                        }
                       } @else {
                         —
                       }
@@ -300,10 +353,13 @@
                     <td>{{ implication.responsable_nom || '—' }}</td>
                     <td>{{ implication.commentaire || '—' }}</td>
                     <td class="actions">
-                      @if (implication.peut_valider) {
-                        <button class="icon-btn" (click)="validerImplication(implication)" title="Valider cette déclaration">
+                      @if (implication.peut_valider || implication.accord?.a_moi_acceptees?.length) {
+                        <button class="icon-btn" (click)="validerImplication(implication)"
+                                [title]="implication.peut_valider ? 'Répondre pour mon territoire' : 'Modifier ma réponse pour mon territoire'">
                           <span class="material-icons">check_circle_outline</span>
                         </button>
+                      }
+                      @if (implication.peut_valider) {
                         <button class="icon-btn danger" (click)="refuserImplication(implication)" title="Refuser cette déclaration">
                           <span class="material-icons">cancel</span>
                         </button>
@@ -335,6 +391,11 @@
                     }
                   </select>
                   <input type="text" formControlName="commentaire" placeholder="Commentaire (optionnel)"/>
+                  <label class="checkbox-label"
+                         title="Par défaut, tout le territoire de la commune entre dans la zone de la crise. Cochez pour n'y faire entrer qu'une zone que vous dessinerez.">
+                    <input type="checkbox" formControlName="territoire_partiel"/>
+                    <span>Seulement une partie du territoire, que je dessine</span>
+                  </label>
                   <button class="btn-primary sm" type="submit">Confirmer</button>
                   <button class="btn-secondary sm" type="button" (click)="showImpliqueForm = false">Annuler</button>
                 </form>
@@ -457,6 +518,16 @@
                              [(ngModel)]="responsableEmail" [ngModelOptions]="{standalone: true}">
                     }
                   </div>
+
+                  <label class="checkbox-label"
+                         title="À cocher quand une collectivité envoie ses moyens, sa réserve communale par exemple, dans une commune qui n'est pas la sienne.">
+                    <input type="checkbox" [(ngModel)]="acteurDirectRenfort" [ngModelOptions]="{standalone: true}">
+                    <span>
+                      Intervient en renfort, hors de son territoire
+                      <small class="hint-petit">Sa commune n'est pas ajoutée à la zone de la crise, et
+                        chaque commune d'accueil donne son accord.</small>
+                    </span>
+                  </label>
 
                   <div class="inline-form">
                     <button class="btn-primary sm" (click)="submitActeurDirect()">Confirmer</button>

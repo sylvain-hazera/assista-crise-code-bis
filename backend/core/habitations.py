@@ -377,9 +377,9 @@ def _adresses_voie(voie_id: str) -> list[dict]:
 def perimetre_zone_crise(crise) -> "object | None":
     """Polygone (GEOSGeometry) restreignant le scan à la zone dessinée de la crise, si elle en a
     une -- None sinon (la commune entière fait alors foi, voir scanner_ban_commune)."""
-    if crise is not None and crise.zone_secteurs is not None and not crise.zone_secteurs.empty:
-        return crise.zone_secteurs
-    return None
+    # Les zones dessinées en plus comptent autant que les secteurs (core/zones_crise.py).
+    from . import zones_crise
+    return zones_crise.dessinee(crise)
 
 
 def perimetre_zone_nommee(zone) -> "object | None":

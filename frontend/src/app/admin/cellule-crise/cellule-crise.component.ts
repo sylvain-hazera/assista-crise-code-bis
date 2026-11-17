@@ -475,7 +475,10 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
       );
     });
     this.implicationService.getByCrise(this.criseId).subscribe(implications => {
-      this.implicationsEnAttente = implications.filter(i => i.statut === 'EN_ATTENTE' && i.type_implication === 'ACTEUR');
+      // `peut_valider` et pas seulement le statut : sur une crise à plusieurs communes, une
+      // déclaration acceptée chez la voisine attend toujours la réponse d'ici.
+      this.implicationsEnAttente = implications.filter(
+        i => i.type_implication === 'ACTEUR' && (i.statut === 'EN_ATTENTE' || !!i.peut_valider));
     });
     this.journalService.getAll(this.criseId).subscribe(entries => { this.journal = entries; });
   }

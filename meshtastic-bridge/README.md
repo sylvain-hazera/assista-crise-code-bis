@@ -61,6 +61,30 @@ loin dans ce diagnostic. Le correctif PKI reste dans le code (correct et réutil
 testé sur un autre relais MQTT), mais **le clair reste la seule voie confirmée fonctionnelle sur
 Gaulix**, DM comme canal.
 
+## Échange des clés publiques (17/11/2026)
+
+Annoncer sa clé ne suffit pas à l'échanger. Le pont, en mode MQTT :
+
+- annonce son identité **en clair quand le companion n'a pas `chiffrement_supporte`** — avant,
+  elle partait chiffrée même sur un broker où seul le clair arrive (voir ci-dessus), donc
+  personne ne recevait notre clé publique ;
+- **répond** à une demande d'identité qui lui est adressée (`want_response`, lu dans le champ
+  et dans `Data.bitfield` comme le fait le firmware) ;
+- **demande** leur clé aux nœuds à qui l'institution parle et dont la clé manque (annuaire
+  servi par `GET /compagnons-meshtastic/<id>/annuaire-cles/`), une demande par trente secondes
+  au plus, jamais deux au même nœud en douze heures ;
+- lit un message chiffré par clé publique avec la clé de **son annuaire** : un vrai appareil ne
+  joint pas la sienne au paquet ;
+- ne traite qu'une fois un paquet relayé par plusieurs passerelles.
+
+En TCP, série et Bluetooth, l'appareil échange lui-même ; le pont remonte son répertoire au
+serveur toutes les dix minutes et lui fait demander les clés manquantes
+(`demander_identite_locale`).
+
+Limite : un appareil qui a déjà rangé une autre clé pour notre numéro de nœud refusera notre
+identité tant qu'on n'a pas supprimé notre fiche de son répertoire. Rien de cette section n'a
+été essayé contre un vrai nœud.
+
 ## Connexion directe à un vrai appareil (TCP ou série) — pas de crypto.py ici
 
 Tout ce qui précède (chiffrement fait maison, PKI, hash de canal) ne concerne QUE le mode

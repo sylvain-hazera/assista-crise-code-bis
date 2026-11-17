@@ -9,6 +9,13 @@ export interface ImplicationInstitution {
   /** Communes de la crise sur lesquelles l'institution est acceptée. Vide = toute la zone de
    * la crise (voir ImplicationInstitution.communes cote backend). */
   communes?: string[];
+  /** Communes dont la collectivité a refusé l'intervention. Une commune de la crise absente
+   * des deux listes attend encore la réponse de sa mairie. */
+  communes_refusees?: string[];
+  /** Collectivité venue en renfort hors de son territoire : accord de chaque commune requis. */
+  renfort?: boolean;
+  /** Où en est l'accord commune par commune ; null si la déclaration n'en dépend pas. */
+  accord?: AccordCommunes | null;
   crise_nom?: string | null;
   utilisateur: string | null;
   type_implication: TypeImplication;
@@ -23,6 +30,17 @@ export interface ImplicationInstitution {
   responsable_nom?: string | null;
 }
 
+export interface AccordCommunes {
+  toute_la_crise: boolean;
+  acceptees: number;
+  refusees: number;
+  en_attente: number;
+  /** Les communes de l'appelant qui attendent SA réponse. */
+  a_moi_en_attente: string[];
+  /** Celles où il a déjà dit oui, et où il peut encore retirer son accord. */
+  a_moi_acceptees: string[];
+}
+
 export interface ImplicationInstitutionPayload {
   crise: string;
   institution: string;
@@ -31,4 +49,7 @@ export interface ImplicationInstitutionPayload {
   themes?: string[];
   responsable?: string;
   responsable_email?: string;
+  renfort?: boolean;
+  /** La commune n'entre dans la zone que par les zones qu'elle dessinera. */
+  territoire_partiel?: boolean;
 }
