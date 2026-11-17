@@ -561,6 +561,61 @@ class ContributionZoneCommune(EnvironmentScopedModel):
         return f"{self.commune_code} sur {self.crise} ({self.institution or 'sans propriétaire'})"
 
 
+class FormulaireTerrain(EnvironmentScopedModel):
+    """Un questionnaire de terrain composé par une collectivité (voir
+    core/formulaires_terrain.py) : évaluation de dégâts, recensement de besoins, visite de
+    site... `questions` est la liste validée par `nettoyer_questions`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="formulaires_terrain")
+    crise = models.ForeignKey(
+        Crisis, on_delete=models.SET_NULL, null=True, blank=True, related_name="formulaires_terrain")
+    titre = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default="")
+    questions = models.JSONField(default=list)
+    # Fermé : il reste lisible avec ses réponses, mais on n'y répond plus.
+    actif = models.BooleanField(default=True)
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="formulaires_terrain_crees")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self):
+        return self.titre
+
+
+class ReponseFormulaireTerrain(EnvironmentScopedModel):
+    """Une réponse à un questionnaire de terrain. Chiffrée ; seule la position reste lisible,
+    parce que PostGIS doit la lire.
+
+    `identifiant_client` est tiré sur l'appareil au moment de la saisie : une réponse renvoyée
+    après une coupure de réseau n'est enregistrée qu'une fois."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    formulaire = models.ForeignKey(FormulaireTerrain, on_delete=models.CASCADE, related_name="reponses")
+    auteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reponses_formulaires_terrain")
+    institution_auteur = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="reponses_formulaires_terrain")
+    identifiant_client = models.UUIDField()
+    donnees = EncryptedTextField()
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    saisie_le = models.DateTimeField(null=True, blank=True)
+    date_reception = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_reception"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["formulaire", "identifiant_client"], name="uq_reponse_formulaire_identifiant_client"),
+        ]
+
+
 class ZoneAjouteeCrise(EnvironmentScopedModel):
     """Une zone dessinée EN PLUS de la zone initiale d'une crise (17/11/2026).
 
@@ -8734,6 +8789,12 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     # Racine de topic du réseau relayé (Gaulix : « Traitement/msh/EU_868 », observé sur leur
     # broker).
     topic_racine = models.CharField(max_length=100, default="Traitement/msh/EU_868")
+    # Racine sur laquelle le pont PUBLIE en plus de `topic_racine`, quand le broker sépare ce
+    # qu'on écoute de ce qu'on émet. Constaté sur Gaulix le 17/11/2026 : les appareils y sont
+    # abonnés sur `msh/EU_868`, et `Traitement/msh/EU_868` n'est que la sortie du traitement du
+    # broker — un appareil a demandé son identité au pont, le pont a répondu sur
+    # `Traitement/…`, et la réponse ne lui est jamais parvenue. Vide = une seule racine.
+    topic_racine_emission = models.CharField(max_length=100, blank=True, default="")
 
     mqtt_username = models.CharField(max_length=100, blank=True)
     # write_only côté serializer (comme x25519_private_key_hex) — jamais renvoyé en clair par

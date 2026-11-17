@@ -21599,6 +21599,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 'connexion_type': c.connexion_type,
                 'broker_host': c.broker_host, 'broker_port': c.broker_port,
                 'topic_racine': c.topic_racine,
+                'topic_racine_emission': c.topic_racine_emission,
                 'mqtt_username': c.mqtt_username, 'mqtt_password': c.mqtt_password,
                 'mqtt_use_tls': c.mqtt_use_tls,
                 'tcp_host': c.tcp_host, 'tcp_port': c.tcp_port,

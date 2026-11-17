@@ -35,6 +35,9 @@ export interface CompagnonMeshtastic {
   /** Racine de topic MQTT Meshtastic (ex: "msh/EU_868") — dépend de la région radio du réseau
    * relayé (Gaulix...), pas d'un matériel qu'on ne possède pas. */
   topic_racine: string;
+  /** Racine sur laquelle le pont publie EN PLUS, quand le broker sépare l'écoute de
+   * l'émission (Gaulix : écoute sur Traitement/msh/EU_868, appareils abonnés sur msh/EU_868). */
+  topic_racine_emission?: string;
 
   /** Vide = pas d'authentification (certains brokers publics n'en demandent pas). */
   mqtt_username?: string;

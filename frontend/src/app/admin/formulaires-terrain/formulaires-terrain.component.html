@@ -1,0 +1,197 @@
+<div class="formulaires-page">
+  <header>
+    <h1><span class="material-icons">fact_check</span> Formulaires de terrain</h1>
+    <p class="chapeau">Composez un questionnaire (évaluation de dégâts, recensement de besoins, visite de site), faites-le
+      remplir sur place, relisez et exportez les réponses. Une réponse saisie sans réseau est gardée chiffrée sur
+      l'appareil et part dès que le réseau revient.</p>
+  </header>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+  @if (enAttente) {
+    <p class="message attente" role="status">
+      {{ enAttente }} réponse{{ enAttente > 1 ? 's' : '' }} en attente d'envoi sur cet appareil.
+      <button type="button" class="lien" (click)="viderLaFile()">Réessayer maintenant</button>
+    </p>
+  }
+
+  @if (vue === 'liste') {
+    @if (peutComposer) {
+      <div class="barre">
+        <button type="button" class="btn-primary" (click)="composer()"><span class="material-icons">add</span> Nouveau questionnaire</button>
+      </div>
+    }
+    @if (chargement) {
+      <p class="note">Chargement…</p>
+    } @else if (!formulaires.length) {
+      <p class="note">
+        Aucun questionnaire.
+        @if (!peutComposer) {
+          Ils sont composés par une collectivité ; une institution n'y accède que si cette collectivité lui a
+          délégué une compétence.
+        }
+      </p>
+    } @else {
+      <ul class="cartes">
+        @for (f of formulaires; track f.id) {
+          <li class="carte">
+            <strong>{{ f.titre }} @if (!f.actif) { <span class="pastille">fermé</span> }</strong>
+            <span class="note">{{ f.institution_nom }}@if (f.crise_nom) { · {{ f.crise_nom }} } · {{ f.questions.length }} question{{ f.questions.length > 1 ? 's' : '' }}</span>
+            @if (f.description) { <span>{{ f.description }}</span> }
+            <span class="note">{{ f.nb_reponses }} réponse{{ f.nb_reponses > 1 ? 's' : '' }}{{ f.peut_gerer ? '' : ' de votre part' }}</span>
+            <div class="actions">
+              @if (f.actif) { <button type="button" class="btn-primary" (click)="ouvrirSaisie(f)">Répondre</button> }
+              <button type="button" class="btn-secondary" (click)="ouvrirReponses(f)">Réponses</button>
+              @if (f.peut_gerer) {
+                <button type="button" class="btn-secondary" (click)="composer(f)">Modifier</button>
+                <button type="button" class="lien" (click)="basculerOuverture(f)">{{ f.actif ? 'Fermer' : 'Rouvrir' }}</button>
+                @if (!f.nb_reponses) { <button type="button" class="lien" (click)="supprimer(f)">Supprimer</button> }
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  @if (vue === 'composer' && brouillon; as b) {
+    <form class="fiche" (ngSubmit)="enregistrer()">
+      <h2>{{ b.id ? 'Modifier le questionnaire' : 'Nouveau questionnaire' }}</h2>
+      <div class="ligne">
+        <label class="large">Titre <span class="obligatoire">*</span>
+          <input type="text" name="titre" maxlength="150" [(ngModel)]="b.titre" placeholder="Évaluation des logements après la crue"></label>
+      </div>
+      <label>Consigne pour ceux qui le remplissent
+        <textarea name="description" [(ngModel)]="b.description" rows="2"></textarea></label>
+
+      @for (q of b.questions; track $index; let rang = $index) {
+        <div class="question">
+          <div class="ligne">
+            <label class="large">Question {{ rang + 1 }} <span class="obligatoire">*</span>
+              <input type="text" [name]="'libelle' + rang" maxlength="200" [(ngModel)]="q.libelle"></label>
+            <label>Type
+              <select [name]="'type' + rang" [(ngModel)]="q.type" [disabled]="!!q.cle && !!b.id">
+                @for (t of types; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+              </select></label>
+            <label><input type="checkbox" [name]="'obligatoire' + rang" [(ngModel)]="q.obligatoire"> Obligatoire</label>
+          </div>
+          @if (aDesChoix(q.type)) {
+            <label>Choix proposés, un par ligne
+              <textarea [name]="'options' + rang" rows="3" [ngModel]="optionsEnTexte(q)" (ngModelChange)="lireOptions(q, $event)"></textarea></label>
+          }
+          @if (q.type === 'NOMBRE') {
+            <div class="ligne">
+              <label>Minimum <input type="number" [name]="'min' + rang" [(ngModel)]="q.min"></label>
+              <label>Maximum <input type="number" [name]="'max' + rang" [(ngModel)]="q.max"></label>
+            </div>
+          }
+          @if (conditionsPossibles(rang).length) {
+            <div class="ligne">
+              <label>Poser seulement si
+                <select [name]="'si' + rang" [ngModel]="q.si?.cle ?? ''" (ngModelChange)="choisirCondition(q, $event)">
+                  <option value="">— toujours —</option>
+                  @for (c of conditionsPossibles(rang); track c.cle) { <option [value]="c.cle">{{ c.libelle }}</option> }
+                </select></label>
+              @if (q.si; as condition) {
+                <label>vaut
+                  <select [name]="'siValeur' + rang" [(ngModel)]="condition.valeur">
+                    @for (v of valeursPossibles(condition.cle); track v.libelle) { <option [ngValue]="v.valeur">{{ v.libelle }}</option> }
+                  </select></label>
+              }
+            </div>
+          }
+          <div class="actions">
+            @if (rang > 0) { <button type="button" class="lien" (click)="monter(rang)">Monter</button> }
+            @if (!(q.cle && b.id)) { <button type="button" class="lien" (click)="retirerQuestion(rang)">Retirer</button> }
+          </div>
+        </div>
+      }
+      <p class="note">Une condition (« poser seulement si… ») se règle après un premier enregistrement, sur une question
+        oui/non ou à choix unique placée avant. Une question qui a déjà des réponses ne change plus de type.</p>
+      <div class="actions">
+        <button type="button" class="btn-secondary" (click)="ajouterQuestion()"><span class="material-icons">add</span> Ajouter une question</button>
+        <button type="submit" class="btn-primary" [disabled]="envoi">{{ envoi ? 'Enregistrement…' : 'Enregistrer' }}</button>
+        <button type="button" class="btn-secondary" (click)="retour()">Annuler</button>
+      </div>
+    </form>
+  }
+
+  @if (vue === 'repondre' && courant; as f) {
+    <form class="fiche" (ngSubmit)="envoyerReponse()">
+      <h2>{{ f.titre }}</h2>
+      @if (f.description) { <p class="note">{{ f.description }}</p> }
+      @for (q of f.questions; track q.cle) {
+        @if (estPosee(q)) {
+          <div class="question-saisie">
+            <strong>{{ q.libelle }} @if (q.obligatoire) { <span class="obligatoire">*</span> }</strong>
+            @switch (q.type) {
+              @case ('TEXTE') { <input type="text" [name]="q.cle!" maxlength="200" [(ngModel)]="saisie[q.cle!]"> }
+              @case ('TEXTE_LONG') { <textarea [name]="q.cle!" [(ngModel)]="saisie[q.cle!]"></textarea> }
+              @case ('NOMBRE') { <input type="number" [name]="q.cle!" [min]="q.min ?? null" [max]="q.max ?? null" [(ngModel)]="saisie[q.cle!]"> }
+              @case ('DATE') { <input type="date" [name]="q.cle!" [(ngModel)]="saisie[q.cle!]"> }
+              @case ('OUI_NON') {
+                <div class="choix">
+                  <label><input type="radio" [name]="q.cle!" [value]="true" [(ngModel)]="saisie[q.cle!]"> Oui</label>
+                  <label><input type="radio" [name]="q.cle!" [value]="false" [(ngModel)]="saisie[q.cle!]"> Non</label>
+                </div>
+              }
+              @case ('CHOIX') {
+                <div class="choix">
+                  @for (o of q.options; track o) {
+                    <label><input type="radio" [name]="q.cle!" [value]="o" [(ngModel)]="saisie[q.cle!]"> {{ o }}</label>
+                  }
+                </div>
+              }
+              @case ('CHOIX_MULTIPLE') {
+                <div class="choix">
+                  @for (o of q.options; track o) {
+                    <label><input type="checkbox" [checked]="estCoche(q.cle!, o)" (change)="cocher(q.cle!, o)"> {{ o }}</label>
+                  }
+                </div>
+              }
+            }
+          </div>
+        }
+      }
+      <div class="actions">
+        <button type="button" class="btn-secondary" (click)="relevePosition()" [disabled]="positionEnCours">
+          <span class="material-icons">my_location</span>
+          {{ positionEnCours ? 'Relevé en cours…' : (position ? 'Position relevée' : 'Joindre ma position') }}
+        </button>
+        <button type="submit" class="btn-primary" [disabled]="envoi">{{ envoi ? 'Envoi…' : 'Enregistrer la réponse' }}</button>
+        <button type="button" class="btn-secondary" (click)="retour(); charger()">Terminer</button>
+      </div>
+    </form>
+  }
+
+  @if (vue === 'reponses' && courant; as f) {
+    <section class="fiche">
+      <h2>{{ f.titre }} — {{ reponses.length }} réponse{{ reponses.length > 1 ? 's' : '' }}</h2>
+      @if (!f.peut_gerer) { <p class="note">Vous ne voyez que vos propres réponses.</p> }
+      <div class="actions">
+        @if (f.peut_gerer) {
+          <button type="button" class="btn-secondary" (click)="exporter('csv')"><span class="material-icons">table_view</span> Exporter pour un tableur</button>
+          <button type="button" class="btn-secondary" (click)="exporter('geojson')"><span class="material-icons">map</span> Exporter pour une carte (GeoJSON)</button>
+        }
+        <button type="button" class="btn-secondary" (click)="retour()">Retour</button>
+      </div>
+      @if (reponses.length) {
+        <table class="liste">
+          <thead><tr><th>Saisie le</th><th>Par</th><th>Position</th>@for (q of f.questions; track q.cle) { <th>{{ q.libelle }}</th> }</tr></thead>
+          <tbody>
+            @for (r of reponses; track r.id) {
+              <tr>
+                <td>{{ r.saisie_le | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>{{ r.auteur }}@if (r.institution) { <span class="note"> ({{ r.institution }})</span> }</td>
+                <td>{{ r.latitude !== null ? (r.latitude | number:'1.4-4') + ', ' + (r.longitude | number:'1.4-4') : '—' }}</td>
+                @for (q of f.questions; track q.cle) { <td>{{ enTexte(r.donnees[q.cle!]) }}</td> }
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <p class="note">Aucune réponse pour l'instant.</p>
+      }
+    </section>
+  }
+</div>

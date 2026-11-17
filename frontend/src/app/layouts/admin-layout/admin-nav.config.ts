@@ -129,6 +129,10 @@ export const NAV_ITEMS: NavItem[] = [
   // Besoin des foyers sinistrés, à la pièce près, que les autres institutions couvrent ligne par ligne
   // (voir backend/core/appels_dons.py).
   { icon: 'volunteer_activism', label: 'Appels aux dons', route: '/admin/appels-dons', groupe: 'post-critique' },
+  // Questionnaires composés par la collectivité et remplis sur place, même sans réseau — voir
+  // backend/core/formulaires_terrain.py. Le serveur ne les montre qu'aux collectivités et à
+  // leurs délégués.
+  { icon: 'fact_check', label: 'Formulaires de terrain', route: '/admin/formulaires-terrain', groupe: 'crise' },
 
   // ── Préparation ─────────────────────────────────────────────────────
   // Roster réutilisable, préparé à l'avance.

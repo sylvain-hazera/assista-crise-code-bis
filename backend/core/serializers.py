@@ -4526,6 +4526,10 @@ class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
     # n'a de racine qui contienne le numéro de version du protocole.
     _SUFFIXES_D_ABONNEMENT = ('/#', '/2/e', '/2/e/#')
 
+    def validate_topic_racine_emission(self, valeur):
+        """Même normalisation que la racine d'écoute ; vide = on publie sur la seule racine."""
+        return self.validate_topic_racine(valeur) if (valeur or '').strip() else ''
+
     def validate_topic_racine(self, valeur):
         """Normalise la racine de topic, et refuse ce qui ne se devine pas.
 

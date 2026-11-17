@@ -155,6 +155,9 @@
               </td>
               <td colspan="2">
                 <input type="text" class="form-input form-input-sm" placeholder="Racine de topic" [(ngModel)]="editTopicRacine">
+                <input type="text" class="form-input form-input-sm" placeholder="Racine d'émission (si différente, ex: msh/EU_868)"
+                       title="Racine sur laquelle les appareils sont abonnés, quand elle diffère de celle qu'on écoute. Le pont publie alors sur les deux."
+                       [(ngModel)]="editTopicRacineEmission">
                 <label class="checkbox-row">
                   <input type="checkbox" [(ngModel)]="editActif">
                   Actif

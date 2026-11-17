@@ -78,6 +78,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
   editBrokerHost = '';
   editBrokerPort = 1883;
   editTopicRacine = '';
+  editTopicRacineEmission = '';
   editChiffrementSupporte = false;
   editActif = true;
   editRelaisReseau = false;
@@ -461,6 +462,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
     this.editBrokerHost = c.broker_host;
     this.editBrokerPort = c.broker_port;
     this.editTopicRacine = c.topic_racine;
+    this.editTopicRacineEmission = c.topic_racine_emission ?? '';
     this.editChiffrementSupporte = c.chiffrement_supporte;
     this.editActif = c.actif;
     this.editRelaisReseau = !!c.relais_reseau;
@@ -482,6 +484,7 @@ export class MeshtasticCompanionsComponent implements OnInit, OnDestroy {
       broker_host: this.editBrokerHost.trim(),
       broker_port: this.editBrokerPort,
       topic_racine: this.editTopicRacine.trim(),
+      topic_racine_emission: this.editTopicRacineEmission.trim(),
       chiffrement_supporte: this.editChiffrementSupporte,
       actif: this.editActif,
       relais_reseau: this.editRelaisReseau,

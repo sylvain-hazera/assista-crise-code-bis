@@ -625,3 +625,39 @@ class TestRepertoireDeLAppareil(unittest.TestCase):
         self.assertEqual(user.hw_model, mesh_pb2.HardwareModel.HELTEC_V3)
         self.assertEqual(user.long_name, "Nous")
         self.assertNotEqual(user.role, 0)                         # ROUTER, pas le défaut
+
+
+class FauxClientMqtt:
+    def __init__(self):
+        self.publies = []
+
+    def publish(self, topic, charge):
+        self.publies.append(topic)
+        return self
+
+    def wait_for_publish(self, timeout=None):
+        return True
+
+
+class TestRacinesDEmission(unittest.TestCase):
+    """Constaté sur Gaulix le 17/11/2026 : un appareil a demandé son identité au pont, le pont a
+    répondu sur la racine qu'il écoute (`Traitement/…`), et l'appareil — abonné sur
+    `msh/EU_868` — ne l'a jamais reçue."""
+
+    def _publier(self, **compagnon):
+        client = FauxClientMqtt()
+        base = {"node_num": NOUS, "topic_racine": "Traitement/msh/EU_868"}
+        bridge._publier(client, {**base, **compagnon}, "Fr_Balise", mesh_pb2.MeshPacket())
+        return client.publies
+
+    def test_sans_racine_d_emission_rien_ne_change(self):
+        self.assertEqual(self._publier(), ["Traitement/msh/EU_868/2/e/Fr_Balise/!00009999"])
+
+    def test_la_racine_que_les_appareils_ecoutent_s_ajoute_a_l_autre(self):
+        self.assertEqual(self._publier(topic_racine_emission="msh/EU_868/"), [
+            "Traitement/msh/EU_868/2/e/Fr_Balise/!00009999",
+            "msh/EU_868/2/e/Fr_Balise/!00009999",
+        ])
+
+    def test_la_meme_racine_n_est_pas_publiee_deux_fois(self):
+        self.assertEqual(len(self._publier(topic_racine_emission="Traitement/msh/EU_868")), 1)

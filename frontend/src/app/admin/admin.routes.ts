@@ -49,6 +49,7 @@ export const ADMIN_ROUTES: Routes = [
   // (2.4 / 4.1) se saisissaient au fond de la fiche Institution, sans entrée de menu.
   { path: 'pcs-risques', loadComponent: () => import('./pcs-risques/pcs-risques.component').then(m => m.PcsRisquesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'appels-dons', loadComponent: () => import('./appels-dons/appels-dons.component').then(m => m.AppelsDonsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'formulaires-terrain', loadComponent: () => import('./formulaires-terrain/formulaires-terrain.component').then(m => m.FormulairesTerrainComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'stocks', loadComponent: () => import('./stocks/stocks.component').then(m => m.StocksComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'biens-sinistres', loadComponent: () => import('./biens-sinistres/biens-sinistres.component').then(m => m.BiensSinistresComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'couches-carto', loadComponent: () => import('./couches-carto/couches-carto.component').then(m => m.CouchesCartoComponent), canActivate: [institutionalEffectiveGuard] },

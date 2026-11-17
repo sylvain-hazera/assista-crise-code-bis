@@ -844,6 +844,28 @@ bouton « Candidater » pose la question que l'ancien formulaire confondait :
 
 `proposer-aide` sans `aides` (par besoins) garde son comportement d'origine.
 
+#### Formulaires de terrain (17/11/2026)
+
+`core/formulaires_terrain.py`, page `/admin/formulaires-terrain`. La collecte de terrain à la
+manière de KoboToolbox, portée dans l'application plutôt que branchée dessus :
+
+- **un questionnaire composé par la collectivité** : questions typées (texte, nombre, oui/non,
+  choix, choix multiples, date), obligatoires ou non, bornées, avec une condition d'affichage
+  simple sur une question placée avant ;
+- **une saisie qui survit à l'absence de réseau** : la réponse est gardée dans le navigateur,
+  chiffrée par une clé non extractible (`services/file-attente-chiffree.ts`), et part au retour
+  du réseau. Chaque réponse porte un identifiant tiré sur l'appareil : la renvoyer ne la
+  double pas ;
+- **relecture et exports** : tableau, CSV pour un tableur, GeoJSON pour QGIS ou uMap.
+
+**Pas visible de tous.** La collectivité compose, lit et exporte. Une institution à qui elle a
+délégué une compétence (convention active) voit ses questionnaires ouverts et y répond, mais ne
+relit que ses propres réponses. Personne d'autre ne voit rien. Les réponses sont chiffrées en
+base ; seule la position reste lisible, pour PostGIS.
+
+Non repris : le standard XLSForm, les groupes répétés, les calculs, les photos. Une question
+qui a déjà des réponses ne change plus de type et ne se retire plus.
+
 #### Bénévoles d'association : ni agents, ni citoyens anonymes
 
 Arbitrage du 11/11/2026, après le constat que les membres des Casques Jaunes étaient « bancals »
@@ -4252,6 +4274,19 @@ Au passage : un paquet relayé par plusieurs passerelles n'est plus traité qu'u
 le pont ne lisait jamais son répertoire. `boucle_cles_locale` le remonte au serveur toutes les
 dix minutes (nœuds, clés, positions) et fait demander par l'appareil la clé des correspondants
 qui n'en ont pas.
+
+**Deux constats faits sur un vrai nœud le soir même**, par Gaulix :
+
+- Une annonce « à tous » n'y parvient pas aux appareils (le broker ne la route que s'il sait où
+  est l'émetteur), alors qu'un envoi adressé passe. Le pont **se présente donc nommément** à
+  chacun de ses correspondants en lui demandant son identité, même s'il a déjà sa clé, jusqu'à
+  ce qu'il réponde. L'annuaire ne liste que les correspondants de CE companion.
+- Le pont répondait sur la racine qu'il écoute, `Traitement/msh/EU_868`, qui est la SORTIE du
+  traitement du broker ; les appareils sont abonnés sur `msh/EU_868`. Un nœud a demandé son
+  identité au pont, le pont a répondu, et la réponse ne lui est jamais parvenue.
+  `CompagnonMeshtastic.topic_racine_emission` : le pont publie sur les deux racines (le même
+  paquet deux fois porte le même identifiant, un appareil n'en traite qu'un). La migration 0325
+  le renseigne pour les companions branchés sur Gaulix ; réglable sur la page des companions.
 
 Ce qui reste hors de portée du code : un appareil qui a déjà rangé une AUTRE clé pour notre
 numéro de nœud refuse toute identité différente (`NodeDB::updateUser`, « Public Key

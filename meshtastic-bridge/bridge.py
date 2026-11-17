@@ -1184,12 +1184,7 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                     canal_id_mqtt = canal_nom
                     mode = "PSK canal"
 
-                enveloppe = mqtt_pb2.ServiceEnvelope(
-                    packet=paquet, channel_id=canal_id_mqtt, gateway_id=f"!{compagnon['node_num']:08x}",
-                )
-                topic = f"{compagnon['topic_racine']}/2/e/{canal_id_mqtt}/!{compagnon['node_num']:08x}"
-                info = mqtt_client.publish(topic, enveloppe.SerializeToString())
-                info.wait_for_publish(timeout=10)
+                _publier(mqtt_client, compagnon, canal_id_mqtt, paquet)
 
                 await django.marquer_dm(message["id"], "ENVOYE")
                 logger.info("DM Meshtastic (%s) publié vers %08x sur '%s'.", mode, message["contact_node_num"], canal_id_mqtt)
@@ -1225,12 +1220,7 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
                     else:
                         paquet.encrypted = chiffre
 
-                    enveloppe = mqtt_pb2.ServiceEnvelope(
-                        packet=paquet, channel_id=canal_nom, gateway_id=f"!{compagnon['node_num']:08x}",
-                    )
-                    topic = f"{compagnon['topic_racine']}/2/e/{canal_nom}/!{compagnon['node_num']:08x}"
-                    info = mqtt_client.publish(topic, enveloppe.SerializeToString())
-                    info.wait_for_publish(timeout=10)
+                    _publier(mqtt_client, compagnon, canal_nom, paquet)
 
                     await django.marquer_message_canal(message["id"], "ENVOYE")
                     logger.info("Message de canal '%s' publié.", canal_nom)
@@ -1239,13 +1229,33 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
-def _publier_paquet(mqtt_client, compagnon, canal_nom, canal, paquet):
+def racines_d_emission(compagnon):
+    """Les racines sur lesquelles publier : celle qu'on écoute, puis celle d'émission si le
+    companion en a une autre.
+
+    Les deux, et pas seulement la seconde : le même paquet publié deux fois porte le même
+    identifiant, un appareil qui le recevrait par les deux chemins n'en traite qu'un. On ne
+    retire donc rien à ce qui marchait en ajoutant la racine que les appareils écoutent."""
+    racines = [compagnon["topic_racine"]]
+    emission = (compagnon.get("topic_racine_emission") or "").strip().strip("/")
+    if emission and emission not in racines:
+        racines.append(emission)
+    return racines
+
+
+def _publier(mqtt_client, compagnon, canal_id_mqtt, paquet):
+    """Publie un paquet sous `canal_id_mqtt` (un nom de canal, ou « PKI »), sur chaque racine
+    d'émission du companion."""
     enveloppe = mqtt_pb2.ServiceEnvelope(
-        packet=paquet, channel_id=canal_nom, gateway_id=f"!{compagnon['node_num']:08x}",
-    )
-    topic = f"{compagnon['topic_racine']}/2/e/{canal_nom}/!{compagnon['node_num']:08x}"
-    info = mqtt_client.publish(topic, enveloppe.SerializeToString())
-    info.wait_for_publish(timeout=10)
+        packet=paquet, channel_id=canal_id_mqtt, gateway_id=f"!{compagnon['node_num']:08x}",
+    ).SerializeToString()
+    for racine in racines_d_emission(compagnon):
+        info = mqtt_client.publish(f"{racine}/2/e/{canal_id_mqtt}/!{compagnon['node_num']:08x}", enveloppe)
+        info.wait_for_publish(timeout=10)
+
+
+def _publier_paquet(mqtt_client, compagnon, canal_nom, canal, paquet):
+    _publier(mqtt_client, compagnon, canal_nom, paquet)
 
 
 async def boucle_annonce_position(mqtt_client, compagnon, registre):
