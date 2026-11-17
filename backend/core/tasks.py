@@ -169,3 +169,15 @@ def relever_adresses_commune_task(commune_code: str, environment: str):
     from .rattachement_adresses import relever_les_adresses
 
     return relever_les_adresses(commune_code, environment)
+
+
+@shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
+def prevenir_le_reseau_des_dons_task(appel_id: str):
+    """Prévient les institutions du périmètre d'un appel aux dons qui vient de s'ouvrir ou de
+    s'élargir (core/notifications_dons.py). En tâche de fond : un appel national écrit à beaucoup
+    de monde, et l'ouverture ne doit pas attendre la fin des envois."""
+    from .models import AppelAuxDons
+    from .notifications_dons import prevenir_le_reseau
+
+    appel = AppelAuxDons.objects.select_related("institution", "crise").filter(pk=appel_id).first()
+    return prevenir_le_reseau(appel) if appel is not None else {"institutions": 0, "personnes": 0}

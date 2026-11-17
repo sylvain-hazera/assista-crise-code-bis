@@ -13,6 +13,14 @@ from core.tests.stocks.test_stocks import asso  # noqa: F401
 from core.tests.stocks.test_stocks_echanges import _institution
 
 
+@pytest.fixture(autouse=True)
+def reseau_prevenu(monkeypatch):
+    """La file des tâches de fond n'existe pas ici : on retient seulement qu'elle a été sollicitée."""
+    lances = []
+    monkeypatch.setattr("core.tasks.prevenir_le_reseau_des_dons_task.apply_async", lambda args=None, **k: lances.append(args[0]))
+    return lances
+
+
 @pytest.fixture
 def monde(asso, create_user):
     crise = Crisis.objects.create(name="Feu des essais", type="INCENDIE", location=Point(-1.14, 44.63, srid=4326))
@@ -402,3 +410,43 @@ class TestPerimetre:
 
         _nulle_part, _c, client = _institution(create_user, "Association sans commune connue", "sans-commune", "00000")
         assert client.get(carte["url"]).status_code == 200 and client.get(carte["url"]).data["distance_km"] is None
+
+
+@pytest.mark.django_db
+class TestReseauPrevenu:
+    def test_les_institutions_du_perimetre_sont_prevenues_une_fois_et_les_suivantes_a_lelargissement(self, monde, mailoutbox, reseau_prevenu):
+        from core import notifications_dons
+        from core.models import Commune, ContactInstitution, Notification
+
+        Commune.objects.update_or_create(code="69123", defaults={"nom": "Bordeaux (essai)", "centre_latitude": 44.84, "centre_longitude": -0.58})
+        Commune.objects.update_or_create(code="59350", defaults={"nom": "Lille", "centre_latitude": 50.63, "centre_longitude": 3.06})
+        ContactInstitution.objects.filter(utilisateur__username="lyon-dons@test.fr").update(contact_principal=True)
+        ContactInstitution.objects.filter(utilisateur__username="lille-dons@test.fr").update(membre_bureau=True)
+        _foyer(monde)
+        url = _appel(monde, ouvrir=False)
+        monde["client"].patch(url, {"portee_km": 100}, format="json")
+        appel = AppelAuxDons.objects.get()
+        assert notifications_dons.prevenir_le_reseau(appel) == {"institutions": 0, "personnes": 0}      # un brouillon ne prévient personne
+        monde["client"].post(url + "ouvrir/")
+        assert reseau_prevenu == [str(appel.id)]                                                         # l'ouverture lance la tâche de fond
+        mailoutbox.clear()
+        appel.refresh_from_db()
+
+        premier = notifications_dons.prevenir_le_reseau(appel)
+        encore = notifications_dons.prevenir_le_reseau(appel)
+
+        assert premier == {"institutions": 1, "personnes": 1} and encore["institutions"] == 0
+        assert [m.to for m in mailoutbox] == [["lyon-dons@test.fr"]]                                   # à portée ; Lille est trop loin
+        assert "dans un rayon de 100 km" in mailoutbox[0].body and "km de vous" in mailoutbox[0].body
+        assert Notification.objects.filter(utilisateur__username="lyon-dons@test.fr", titre__contains="Appel aux dons de Réserve des essais").exists()
+        assert not Notification.objects.filter(utilisateur__username="magasinier@test.fr", titre__contains="Appel aux dons de").exists()
+
+        # On élargit à toute la France : seule Lille, nouvelle venue, est prévenue.
+        monde["client"].patch(url, {"portee_km": None}, format="json")
+        assert reseau_prevenu == [str(appel.id)] * 2                                                      # l'élargissement aussi
+        appel.refresh_from_db()
+        mailoutbox.clear()
+        suite = notifications_dons.prevenir_le_reseau(appel)
+        assert suite["institutions"] >= 1 and ["lille-dons@test.fr"] in [m.to for m in mailoutbox]
+        assert ["lyon-dons@test.fr"] not in [m.to for m in mailoutbox]
+        assert "institutions_prevenues" not in monde["lyon"].get(url).data                                # ne se lit pas de l'extérieur

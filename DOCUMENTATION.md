@@ -2559,6 +2559,12 @@ qu'il faut, et ne pas laisser dix institutions collecter la même chose.
   l'appel et son courriel de contact. À la réception : ceux qui s'étaient engagés, avec l'écart
   compté. À l'ouverture : le salon de l'institution. On écrit à des personnes précises, jamais
   à un annuaire.
+- **Le réseau est prévenu** (migration 0320, `notifications_dons.prevenir_le_reseau`, tâche de fond
+  `prevenir_le_reseau_des_dons_task`) : à l'ouverture d'un appel, et quand son périmètre
+  s'élargit, les institutions à portée reçoivent l'avis (contacts principaux, à défaut bureau ;
+  salon Matrix). Une institution n'est prévenue qu'une fois par appel
+  (`AppelAuxDons.institutions_prevenues`). Celles qu'on ne sait pas situer ne reçoivent rien
+  d'un appel à portée limitée : elles le voient dans le réseau, on ne leur écrit pas.
 - **Rappel et relâchement** (`manage.py rappeler_engagements_dons`,
   `scripts/114/rappeler-engagements-dons.sh`, à planifier toutes les heures) : rappel deux
   jours avant qu'un engagement sans envoi soit rendu aux autres, puis avis quand il l'est.

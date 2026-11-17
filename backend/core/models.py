@@ -11420,6 +11420,9 @@ class AppelAuxDons(EnvironmentScopedModel):
     portee_km = models.PositiveIntegerField(null=True, blank=True)
     #: Le point d'où la distance se mesure : la crise, à défaut la commune de l'institution.
     centre = gis_models.PointField(srid=4326, null=True, blank=True)
+    #: Les institutions déjà prévenues de l'appel : quand on élargit le périmètre, seules les
+    #: nouvelles venues le sont (core/notifications_dons.prevenir_le_reseau).
+    institutions_prevenues = models.JSONField(default=list, blank=True)
     #: Jours laissés à un engagement pour annoncer son envoi avant d'être relâché.
     delai_engagement_jours = models.PositiveSmallIntegerField(default=7)
     date_ouverture = models.DateTimeField(null=True, blank=True)

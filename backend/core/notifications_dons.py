@@ -91,3 +91,49 @@ def contacts_de(appel) -> tuple[list, list]:
     """Qui prévenir chez l'institution qui a lancé l'appel : la personne qui l'a créé, et le
     courriel de contact qu'elle a publié."""
     return [appel.cree_par] if appel.cree_par_id else [], [appel.contact_email] if appel.contact_email else []
+
+
+def prevenir_le_reseau(appel) -> dict:
+    """Prévient les institutions du périmètre qu'un appel est ouvert (décision de Sylvain du
+    17/11/2026 : « oui, il faut prévenir les autres institutions »).
+
+    Dans chaque institution, on écrit à ses contacts principaux, à défaut à son bureau — pas à
+    tous ses membres — et à son salon Matrix. Une institution n'est prévenue qu'UNE fois par
+    appel : élargir le périmètre ne réécrit qu'aux nouvelles venues. Celles qu'on ne sait pas
+    situer ne reçoivent rien d'un appel à portée limitée : elles le voient dans le réseau, mais
+    on n'écrit pas à toute la France pour un appel lancé à cinquante kilomètres."""
+    from . import appels_dons
+    from .models import ContactInstitution, Institution, StatutAppelDons
+
+    bilan = {"institutions": 0, "personnes": 0}
+    if appel.statut != StatutAppelDons.OUVERT:
+        return bilan
+    deja = set(appel.institutions_prevenues or [])
+    membres = ContactInstitution.objects.filter(actif=True).exclude(institution_id=appel.institution_id).select_related("utilisateur")
+    par_institution: dict = {}
+    for contact in membres:
+        par_institution.setdefault(contact.institution_id, []).append(contact)
+    lignes = appel.besoins.count()
+    urgentes = sum(1 for b in appel.besoins.all() if b.quantite_urgente > b.quantite_recue)
+    for institution in Institution.objects.filter(pk__in=[i for i in par_institution if str(i) not in deja]):
+        distance = appels_dons.distance_a(appel, institution)
+        if appel.portee_km is not None and (distance is None or distance > appel.portee_km):
+            continue
+        contacts = par_institution[institution.id]
+        choisis = [c for c in contacts if c.contact_principal] or [c for c in contacts if c.membre_bureau]
+        personnes = [c.utilisateur for c in choisis if c.utilisateur.is_active]
+        prevenir(
+            de=appel.institution, vers=institution, personnes=personnes, crise=appel.crise, environment=appel.environment,
+            titre=f"Appel aux dons de {appel.institution.nom} : « {appel.titre} »",
+            corps=f"{appel.institution.nom} lance un appel aux dons {appels_dons.libelle_portee(appel)}"
+                  + (f", à {round(distance)} km de vous" if distance is not None else "") + ".\n"
+                  + f"{lignes} ligne(s) précise(s), à la pièce et à la taille près" + (f", dont {urgentes} urgente(s)" if urgentes else "") + ".\n"
+                  + (f"{appel.description}\n" if appel.description else "")
+                  + "Engagez-vous seulement sur ce que vous pouvez fournir : chaque ligne se ferme dès qu'elle est couverte, "
+                    "pour que personne ne collecte ce qui est déjà promis.")
+        deja.add(str(institution.id))
+        bilan["institutions"] += 1
+        bilan["personnes"] += len(personnes)
+    appel.institutions_prevenues = sorted(deja)
+    appel.save(update_fields=["institutions_prevenues"])
+    return bilan

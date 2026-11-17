@@ -183,7 +183,7 @@ class AppelAuxDonsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AppelAuxDons
-        exclude = ["environment", "centre"]
+        exclude = ["environment", "centre", "institutions_prevenues"]
         read_only_fields = ["institution", "statut", "date_ouverture", "date_cloture", "cree_par", "date_creation"]
 
     def validate_portee_km(self, valeur):
@@ -320,7 +320,23 @@ class AppelAuxDonsViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         self._le_mien(serializer.instance)
         self._lieu(serializer)
-        self._centrer(serializer.save())
+        avant = serializer.instance.portee_km
+        appel = serializer.save()
+        self._centrer(appel)
+        # Périmètre élargi sur un appel ouvert : les institutions nouvellement à portée sont prévenues.
+        if appel.statut == StatutAppelDons.OUVERT and appel.portee_km != avant:
+            self._prevenir_le_reseau(appel)
+
+    @staticmethod
+    def _prevenir_le_reseau(appel):
+        """En tâche de fond ; si la file n'est pas joignable, l'ouverture ne doit pas échouer pour autant."""
+        import logging
+        try:
+            from .tasks import prevenir_le_reseau_des_dons_task
+            # Sans nouvelle tentative : si la file d'attente est injoignable, on le sait tout de suite.
+            prevenir_le_reseau_des_dons_task.apply_async(args=[str(appel.id)], retry=False)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Réseau non prévenu de l'appel aux dons (%s).", type(exc).__name__)
 
     def perform_destroy(self, instance):
         self._le_mien(instance)
@@ -405,7 +421,8 @@ class AppelAuxDonsViewSet(viewsets.ModelViewSet):
             de=appel.institution, vers=appel.institution, request=request, crise=appel.crise, environment=appel.environment,
             titre=f"Appel ouvert : « {appel.titre} »",
             corps=f"{appel.besoins.count()} ligne(s), {sum(b.quantite_voulue for b in appel.besoins.all())} pièce(s) demandée(s). "
-                  "L'avis est public ; les institutions du réseau peuvent s'y engager.")
+                  "L'avis est public ; les institutions du périmètre sont prévenues et peuvent s'y engager.")
+        self._prevenir_le_reseau(appel)
         return self._rendre(appel)
 
     @action(detail=True, methods=["post"])
