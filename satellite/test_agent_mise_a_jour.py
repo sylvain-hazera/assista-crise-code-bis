@@ -675,3 +675,24 @@ class TestRevenirALaVersionPrecedente:
         statut, etape, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
         assert statut == "REUSSIE" and not [a for a in machine.appels if a.startswith("restauration")]
         assert machine.commit_installe() == poste["v2"]
+
+
+class TestAucunSecretDansLeJournal:
+    """17/11/2026 : `installer.sh demarrer` affichait le mot de passe de l'administrateur local,
+    et le journal l'emportait au central."""
+
+    def test_les_secrets_de_la_machine_sont_retires_du_journal(self, poste):
+        (poste["dossier"] / ".env").write_text(
+            "DJANGO_SUPERUSER_PASSWORD=MotDePasseInvente-42\nFIELD_ENCRYPTION_KEY=cleDeChiffrement123\n"
+            "CENTRAL_URL=https://central.exemple.invalide\nWEB_PORT=80\n", encoding="utf-8")
+        machine = agent.Machine(poste["dossier"])
+        machine.journal += ["mot de passe : MotDePasseInvente-42", "cle=cleDeChiffrement123",
+                            "central https://central.exemple.invalide port 80"]
+        journal = machine.texte_du_journal()
+        assert "MotDePasseInvente" not in journal and "cleDeChiffrement123" not in journal
+        assert "https://central.exemple.invalide port 80" in journal      # le reste est intact
+
+    def test_installer_ne_montre_le_mot_de_passe_que_dans_un_terminal(self):
+        script = (Path(agent.__file__).parent / "installer.sh").read_text(encoding="utf-8")
+        bloc = script[script.index("afficher_acces_web() {"):script.index("Réafficher ces informations")]
+        assert bloc.index("[ -t 1 ]") < bloc.index("${mot_de_passe:-")

@@ -240,8 +240,23 @@ class Machine:
             self.journal.append(sortie.strip()[-6000:])
         return code, sortie
 
+    #: Les clés de `.env` dont la valeur ne doit jamais partir dans un journal.
+    CLES_SECRETES = ("PASSWORD", "PASS", "SECRET", "KEY", "CLE", "TOKEN", "JETON", "MDP")
+
+    def secrets(self):
+        """Les valeurs secrètes de `.env`, les plus longues d'abord."""
+        valeurs = {v for c, v in lire_env(self.satellite / ".env").items()
+                   if len(v) >= 6 and any(m in c.upper() for m in self.CLES_SECRETES)}
+        return sorted(valeurs, key=len, reverse=True)
+
     def texte_du_journal(self):
-        return "\n".join(self.journal)[-TAILLE_JOURNAL:]
+        """Le journal tel qu'il part au central : sans aucun secret de la machine. Il contient
+        la sortie de commandes et les messages des services — le 17/11/2026 le mot de passe de
+        l'administrateur local s'y est retrouvé, affiché par `installer.sh`."""
+        texte = "\n".join(self.journal)
+        for secret in self.secrets():
+            texte = texte.replace(secret, "•••")
+        return texte[-TAILLE_JOURNAL:]
 
     # ── dépôt ──────────────────────────────────────────────────────────────────────────────
     def git(self, *arguments, delai=600):

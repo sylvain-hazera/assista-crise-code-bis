@@ -380,7 +380,14 @@ afficher_acces_web() {
     [ "$trouve" = 1 ] || echo "    http://<adresse IP de cette machine>$suffixe/   (aucune IP privée détectée)"
     echo "  Compte administrateur local :"
     echo "    identifiant  : ${email:-(non défini)}"
-    echo "    mot de passe : ${mot_de_passe:-(non défini)}"
+    # Le mot de passe ne s'affiche que devant quelqu'un (un terminal). Lancé par l'agent de
+    # mise à jour, la sortie part dans un journal envoyé au central : constaté le 17/11/2026,
+    # le mot de passe s'y retrouvait.
+    if [ -t 1 ]; then
+        echo "    mot de passe : ${mot_de_passe:-(non défini)}"
+    else
+        echo "    mot de passe : (affiché seulement dans un terminal : $0 acces-web)"
+    fi
     echo "  Les comptes de l'institution sont aussi recopiés ici (synchronisation toutes les"
     echo "  5 min tant qu'internet est disponible) : chacun garde son identifiant habituel."
     echo "  Réafficher ces informations : $0 acces-web"
