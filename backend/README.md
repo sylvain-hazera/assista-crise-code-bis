@@ -129,7 +129,7 @@ Les clés de chiffrement doivent être présentes dans `.env`, sinon une quinzai
 | `generate_crise_gier_pilat [--total N] [--delete]` | scénario de démonstration complet (zone DEMO) |
 | `generate_benevoles_pompiers 38 69 [--total N]` | simule des bénévoles par commune (DEMO, tests de volume) |
 | `generate_benevoles_pompiers_national [--total N]` | idem sur toute la France, sur de vraies adresses BAN |
-| `cleanup_crises [--dry-run]` | supprime les données des crises closes depuis plus de 30 jours (RGPD), avec archive CSV sans coordonnées |
+| `cleanup_crises [--dry-run]` | supprime les demandes, offres et signalements des habitants des crises closes depuis plus de 30 jours (RGPD), avec archive CSV sans coordonnées ; la crise, sa main courante et son suivi post-critique sont conservés. Planifiée chaque nuit (`scripts/114/purger-crises-closes.sh`) |
 | `purge_audit_logs` | supprime les entrées d'`AuditLog` plus anciennes que `AUDIT_LOG_RETENTION_DAYS` |
 | `purger_pieces_non_validees [--appliquer]` | détruit les justificatifs déposés depuis plus de 30 jours que personne n'a instruits, après un rappel à J-7 (simulation par défaut) |
 | `verifier_alertes_sismiques` | diffuse sur le mesh les séismes récents proches des institutions abonnées |

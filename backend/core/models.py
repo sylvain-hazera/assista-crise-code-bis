@@ -365,6 +365,10 @@ class Crisis(EnvironmentScopedModel):
     # alerte en permanence sur des crises de test que personne ne veut clôturer (la clôture
     # déclenche la purge RGPD à 30 jours, voir cleanup_crises).
     essai = models.BooleanField(default=False)
+    # Quand les demandes, offres et signalements des habitants ont été purgés (cleanup_crises).
+    # La crise elle-même reste : sa main courante, ses rapports, ses biens sinistrés et ses
+    # dossiers de relogement vivent bien au-delà de trente jours.
+    donnees_habitants_purgees_le = models.DateTimeField(null=True, blank=True)
 
     # Clôture en deux temps (core/cloture_crise.py) : proposée, puis effective sept jours plus
     # tard, le temps que chacun récupère son rapport. Vides tant que rien n'est proposé.

@@ -46,7 +46,10 @@ class TestCleanupCrises:
 
         call_command('cleanup_crises')
 
-        assert not Crisis.objects.filter(id=old_crisis.id).exists()
+        # La crise reste : la supprimer emporterait main courante, rapports, biens sinistrés et
+        # relogements (17/11/2026). Seules les données des habitants partent.
+        old_crisis.refresh_from_db()
+        assert old_crisis.donnees_habitants_purgees_le is not None
         assert not Request.objects.filter(crisis_id=old_crisis.id).exists()
         assert not Offer.objects.filter(crisis_id=old_crisis.id).exists()
         assert not Information.objects.filter(crisis_id=old_crisis.id).exists()
@@ -61,7 +64,25 @@ class TestCleanupCrises:
 
         call_command('cleanup_crises', '--dry-run')
 
-        assert Crisis.objects.filter(id=old_crisis.id).exists()
+        old_crisis.refresh_from_db()
+        assert old_crisis.donnees_habitants_purgees_le is None
+
+    def test_la_main_courante_survit_et_la_purge_ne_repasse_pas(self, capsys):
+        from core.models import JournalCollectivite
+        crise = Crisis.objects.create(
+            name="Crise à mémoire", type="INCENDIE", location=Point(5.72, 45.18, srid=4326),
+            end_date=timezone.now() - timedelta(days=45),
+        )
+        from core.models import Institution, InstitutionType
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
+        mairie = Institution.objects.create(nom="Mairie purge", type=itype)
+        JournalCollectivite.objects.create(crise=crise, institution=mairie, contenu="Fin d'intervention")
+
+        call_command('cleanup_crises')
+        call_command('cleanup_crises')
+
+        assert JournalCollectivite.objects.filter(crise=crise).exists()
+        assert "Aucune crise close à purger" in capsys.readouterr().out
 
     def test_no_expired_crisis_is_a_noop(self):
         call_command('cleanup_crises')  # ne doit pas lever d'exception
