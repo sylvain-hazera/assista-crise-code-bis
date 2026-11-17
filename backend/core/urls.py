@@ -15,6 +15,7 @@ from .views_adresses import GeocodageInverseView, RechercheAdresseView, ZoneAtte
 from .views_stocks import ArticleStockViewSet, DepotStockViewSet, EtatStockView, ImportStockView, InventaireStockView, MouvementStockViewSet, StockPointView
 from .views_dons import AppelAuxDonsViewSet, AvisDonsPublicsView, CatalogueDonsView, FoyerSinistreViewSet
 from .views_formulaires import FormulaireTerrainViewSet, TypesQuestionView
+from .views_standard import AppelStandardViewSet, PointDeSituationView
 from .views_stocks_logistique import (
     AppareilStockViewSet, DemandeTransfertViewSet, DisponibiliteStockView, LotTypeViewSet, ReservationStockViewSet,
 )
@@ -294,6 +295,7 @@ router.register(r'stocks/appareils', AppareilStockViewSet)
 router.register(r'dons/foyers', FoyerSinistreViewSet)
 router.register(r'dons/appels', AppelAuxDonsViewSet)
 router.register(r'formulaires-terrain', FormulaireTerrainViewSet)
+router.register(r'standard-crise/appels', AppelStandardViewSet)
 router.register(r'besoins', BesoinViewSet)
 router.register(r'besoins-competences', BesoinCompetenceViewSet)
 router.register(r'besoins-materiels', BesoinMaterielViewSet)
@@ -513,6 +515,7 @@ urlpatterns = [
     path('dossier-pcs/zonages-officiels/', ZonagesOfficielsView.as_view(), name='dossier_pcs_zonages_officiels'),
     path('rapports/recevoir/<str:jeton>/', RecevoirRapportView.as_view(), name='rapport_recevoir'),
     path('formulaires-terrain-types/', TypesQuestionView.as_view(), name='formulaires_terrain_types'),
+    path('point-de-situation/', PointDeSituationView.as_view(), name='point_de_situation'),
     path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
     path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),
     path('stocks/etat/', EtatStockView.as_view(), name='stocks_etat'),

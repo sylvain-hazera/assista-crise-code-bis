@@ -1,0 +1,129 @@
+<div class="standard-page">
+  <header>
+    <h1><span class="material-icons">support_agent</span> Standard de crise et point de situation</h1>
+    <p class="chapeau">Une fiche par appel reçu : qui a appelé, pour quoi, quelle suite. Et les chiffres de la crise,
+      rassemblés pour le point avec la préfecture.</p>
+  </header>
+
+  <div class="barre">
+    <label>Crise
+      <select [(ngModel)]="criseId" (ngModelChange)="charger()">
+        <option [ngValue]="null">— Hors crise —</option>
+        @for (c of crises; track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }
+      </select>
+    </label>
+  </div>
+
+  <nav class="onglets" aria-label="Standard et point de situation">
+    <button type="button" [class.actif]="onglet === 'appels'" (click)="ouvrir('appels')">
+      Appels @if (synthese?.a_traiter) { <span class="pastille" data-suite="A_TRAITER">{{ synthese?.a_traiter }} à traiter</span> }
+    </button>
+    <button type="button" [class.actif]="onglet === 'situation'" (click)="ouvrir('situation')">Point de situation</button>
+  </nav>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (onglet === 'appels') {
+    <form class="fiche" (ngSubmit)="enregistrer()">
+      <h2>Nouvel appel</h2>
+      <div class="ligne">
+        <label>Nature
+          <select name="nature" [(ngModel)]="saisie.nature">
+            @for (n of synthese?.natures ?? []; track n.code) { <option [value]="n.code">{{ n.libelle }}</option> }
+          </select></label>
+        <label class="large">Objet de l'appel <span class="obligatoire">*</span>
+          <input type="text" name="objet" maxlength="500" [(ngModel)]="saisie.objet" placeholder="Cave inondée, personne seule à l'étage"></label>
+      </div>
+      <div class="ligne">
+        <label>Qui appelle <input type="text" name="nom" maxlength="150" [(ngModel)]="saisie.appelant_nom"></label>
+        <label>Téléphone <input type="tel" name="telephone" maxlength="30" [(ngModel)]="saisie.appelant_telephone"></label>
+        <label class="large">Lieu concerné <input type="text" name="lieu" maxlength="250" [(ngModel)]="saisie.lieu"></label>
+      </div>
+      <p class="note">Ces informations sont chiffrées. Un appel qui demande une intervention s'ouvre ensuite en dossier,
+        qui n'en reprend aucune.</p>
+      <div class="actions">
+        <button type="submit" class="btn-primary" [disabled]="envoi">{{ envoi ? 'Enregistrement…' : 'Enregistrer la fiche' }}</button>
+      </div>
+    </form>
+
+    @if (appels.length) {
+      <table class="liste">
+        <thead><tr><th>N°</th><th>Reçu le</th><th>Nature</th><th>Objet</th><th>Appelant</th><th>Lieu</th><th>Suite</th><th></th></tr></thead>
+        <tbody>
+          @for (a of appels; track a.id) {
+            <tr>
+              <td>{{ a.numero }}</td>
+              <td>{{ a.date_appel | date:'dd/MM HH:mm' }}<br><span class="note">{{ a.recu_par_nom }}</span></td>
+              <td>{{ a.nature_libelle }}</td>
+              <td>{{ a.objet }}</td>
+              <td>{{ a.appelant_nom }}@if (a.appelant_telephone) { <br><span class="note">{{ a.appelant_telephone }}</span> }</td>
+              <td>{{ a.lieu }}</td>
+              <td>
+                <span class="pastille" [attr.data-suite]="a.suite">{{ a.suite_libelle }}</span>
+                @if (a.dossier_numero) { <br><a [routerLink]="['/admin/dossiers']" [queryParams]="{ id: a.dossier }">{{ a.dossier_numero }}</a> }
+                @if (a.suite_donnee) { <br><span class="note">{{ a.suite_donnee }}</span> }
+              </td>
+              <td>
+                @if (a.suite === 'A_TRAITER') {
+                  @if (a.crise) {
+                    <button type="button" class="lien" (click)="ouvrirDossier(a, 'NORMALE')">Ouvrir un dossier</button><br>
+                    <button type="button" class="lien" (click)="ouvrirDossier(a, 'URGENTE')">Dossier urgent</button><br>
+                  }
+                  <button type="button" class="lien" (click)="enCloture = a; suiteDonnee = ''">Donner la suite</button>
+                }
+              </td>
+            </tr>
+            @if (enCloture?.id === a.id) {
+              <tr>
+                <td colspan="8">
+                  <div class="ligne">
+                    <label class="large">Ce qui a été fait ou répondu
+                      <input type="text" maxlength="500" [(ngModel)]="suiteDonnee" [ngModelOptions]="{standalone: true}"></label>
+                    <button type="button" class="btn-primary" (click)="clore('TRAITE')">Traité</button>
+                    <button type="button" class="btn-secondary" (click)="clore('SANS_SUITE')">Sans suite</button>
+                    <button type="button" class="btn-secondary" (click)="enCloture = null">Annuler</button>
+                  </div>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    } @else {
+      <p class="note">Aucun appel enregistré{{ criseId ? ' pour cette crise' : '' }}.</p>
+    }
+  }
+
+  @if (onglet === 'situation') {
+    @if (!criseId) {
+      <p class="note">Choisissez la crise dont vous voulez le point de situation.</p>
+    } @else if (situation; as s) {
+      <p class="note">Établi le {{ s.etabli_le | date:'dd/MM/yyyy à HH:mm' }} pour {{ s.collectivite }}. Les chiffres portent
+        sur toute la crise, pas sur un écran filtré.</p>
+      <div class="chiffres">
+        @for (famille of ordreFamilles; track famille) {
+          @if (s.chiffres[famille]?.length) {
+            <section class="famille">
+              <h3>{{ titresFamilles[famille] }}</h3>
+              <dl>
+                @for (c of s.chiffres[famille]; track c.libelle) { <dt>{{ c.libelle }}</dt><dd>{{ c.valeur }}</dd> }
+              </dl>
+              @if (famille === 'population' && s.par_centre.length) {
+                <p class="note">@for (c of s.par_centre; track c.centre; let dernier = $last) {{{ c.centre }} : {{ c.personnes }}{{ dernier ? '' : ' · ' }}}</p>
+              }
+              @if (famille === 'moyens' && s.equipes.length) { <p class="note">{{ s.equipes.join(', ') }}</p> }
+            </section>
+          }
+        }
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="copier()"><span class="material-icons">content_copy</span> Copier le texte</button>
+        <button type="button" class="btn-secondary" (click)="charger()"><span class="material-icons">refresh</span> Actualiser</button>
+      </div>
+      <pre class="texte">{{ s.texte }}</pre>
+    } @else {
+      <p class="note">Calcul en cours…</p>
+    }
+  }
+</div>

@@ -133,6 +133,10 @@ export const NAV_ITEMS: NavItem[] = [
   // backend/core/formulaires_terrain.py. Le serveur ne les montre qu'aux collectivités et à
   // leurs délégués.
   { icon: 'fact_check', label: 'Formulaires de terrain', route: '/admin/formulaires-terrain', groupe: 'crise' },
+  // Une fiche par appel reçu au standard de la mairie, et les chiffres de la crise rassemblés
+  // pour le point avec la préfecture — voir backend/core/standard_crise.py et point_situation.py.
+  { icon: 'support_agent', label: 'Standard de crise', route: '/admin/standard-crise', groupe: 'crise' },
+  { icon: 'summarize', label: 'Point de situation', route: '/admin/point-de-situation', groupe: 'crise' },
 
   // ── Préparation ─────────────────────────────────────────────────────
   // Roster réutilisable, préparé à l'avance.

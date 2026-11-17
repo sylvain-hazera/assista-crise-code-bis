@@ -844,6 +844,26 @@ bouton « Candidater » pose la question que l'ancien formulaire confondait :
 
 `proposer-aide` sans `aides` (par besoins) garde son comportement d'origine.
 
+#### Standard de crise et point de situation (17/11/2026)
+
+**Standard** (`core/standard_crise.py`, `/admin/standard-crise`). Une fiche par appel reçu au
+numéro que la mairie ouvre en crise : nature (demande d'aide, offre d'aide, signalement,
+renseignement, autre), objet, appelant, lieu, suite donnée. Numérotée par collectivité, elle ne
+se modifie ni ne se supprime : c'est une trace. Tout ce qui parle de la personne est chiffré.
+
+Ce n'est pas une demande ou une offre déposée à la place de l'habitant : celles-ci exigent une
+adresse électronique et un jeton de suivi que quelqu'un qui téléphone n'a pas. Un appel qui
+demande une intervention **ouvre un dossier**, que les équipes traitent comme les autres ; le
+dossier ne recopie rien de la fiche (son titre et sa description ne sont pas chiffrés), il en
+porte le numéro.
+
+**Point de situation** (`core/point_situation.py`, `/admin/point-de-situation`). Les chiffres
+qu'une collectivité annonce à chaque point avec la préfecture, **sans rien saisir de plus** :
+personnes accueillies (par centre), recherches en cours, demandes et dossiers, appels au
+standard, relogement, et moyens engagés — équipes, missions, mobilisations, créneaux tenus.
+Calculés sur toute la crise, et rendus aussi en texte prêt à coller. Les moyens engagés servent
+après coup de base au dossier d'indemnisation, sans tenir de comptabilité.
+
 #### Formulaires de terrain (17/11/2026)
 
 `core/formulaires_terrain.py`, page `/admin/formulaires-terrain`. La collecte de terrain à la

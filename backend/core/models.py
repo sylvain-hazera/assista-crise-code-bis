@@ -4034,6 +4034,55 @@ class PalierInondationSimule(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.niveau_metres}m"
 
 
+class NatureAppelStandard(models.TextChoices):
+    DEMANDE_AIDE = "DEMANDE_AIDE", "Demande d'aide"
+    OFFRE_AIDE = "OFFRE_AIDE", "Offre d'aide"
+    SIGNALEMENT = "SIGNALEMENT", "Signalement"
+    RENSEIGNEMENT = "RENSEIGNEMENT", "Demande de renseignement"
+    AUTRE = "AUTRE", "Autre"
+
+
+class SuiteAppelStandard(models.TextChoices):
+    A_TRAITER = "A_TRAITER", "À traiter"
+    TRANSMIS = "TRANSMIS", "Transmis (dossier ouvert)"
+    TRAITE = "TRAITE", "Traité"
+    SANS_SUITE = "SANS_SUITE", "Sans suite"
+
+
+class AppelStandard(EnvironmentScopedModel):
+    """Une fiche d'appel du standard de crise d'une collectivité (17/11/2026) : qui a appelé,
+    pour quoi, et quelle suite a été donnée — voir core/standard_crise.py.
+
+    Tout ce qui parle de la personne est chiffré. Un appel qui demande une intervention ouvre
+    un dossier (`dossier`), qui ne reprend aucune de ces données : il renvoie à la fiche."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="appels_standard")
+    crise = models.ForeignKey(Crisis, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_standard")
+    #: Numéro lisible, par institution : c'est lui qu'on cite au téléphone et dans le dossier.
+    numero = models.PositiveIntegerField()
+    nature = models.CharField(max_length=20, choices=NatureAppelStandard.choices)
+    appelant_nom = EncryptedTextField(blank=True, default="")
+    appelant_telephone = EncryptedTextField(blank=True, default="")
+    lieu = EncryptedTextField(blank=True, default="")
+    objet = EncryptedTextField()
+    suite = models.CharField(max_length=15, choices=SuiteAppelStandard.choices, default=SuiteAppelStandard.A_TRAITER)
+    suite_donnee = EncryptedTextField(blank=True, default="")
+    dossier = models.ForeignKey(
+        "Dossier", on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_standard")
+    recu_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_standard_recus")
+    date_appel = models.DateTimeField(auto_now_add=True)
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_standard_traites")
+    traite_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date_appel"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "numero", "environment"], name="uq_appel_standard_institution_numero"),
+        ]
+
+
 class PhotoReponseTerrain(EnvironmentScopedModel):
     """Une photo jointe à une réponse de formulaire de terrain, pour une question de type
     PHOTO : la fissure, la toiture, la laisse de crue. Chiffrée sur le disque.
