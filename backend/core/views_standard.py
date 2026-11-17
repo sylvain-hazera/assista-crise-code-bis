@@ -163,6 +163,8 @@ def _ligne_de_releve(engagement) -> dict:
         "depart_de": engagement.depart_de, "retour_a": engagement.retour_a,
         "hebergement": engagement.hebergement, "saisie_manuelle": engagement.saisie_manuelle,
         "heures": round(duree.total_seconds() / 3600, 2) if duree is not None else None,
+        "validee": engagement.valide_le is not None, "validee_le": engagement.valide_le,
+        "remarque_chef": engagement.remarque_chef,
     }
 
 
@@ -214,6 +216,8 @@ class MonReleveView(APIView):
             "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_declarables(request.user, environment)],
             "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
             "lieux": [{"code": c, "libelle": l} for c, l in LieuDeDepart.choices],
+            # Vrai si la personne encadre au moins une équipe : elle a alors un second onglet.
+            "encadre": ep.equipes_encadrees(request.user).exists(),
         })
 
     def post(self, request):
@@ -271,12 +275,80 @@ class MonReleveLigneView(APIView):
 
     def delete(self, request, ligne_id):
         ligne = self._ligne(request, ligne_id)
+        if ligne.valide_le is not None:
+            raise ValidationError({"detail": "Cette ligne a été validée par votre encadrement."})
         if not ligne.saisie_manuelle:
             raise ValidationError({"detail": (
                 "Cette ligne a été déclarée sur le moment : corrigez-la, elle ne se supprime pas."
             )})
         ligne.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RelevesEquipeView(APIView):
+    """Les relevés des équipes que l'appelant encadre : il les lit et les valide, il ne les
+    corrige pas (décision du 17/11/2026 : seule la personne complète son relevé).
+
+    GET ?du=&au= : les lignes, personne par personne.
+    POST {ligne, geste: "valider" | "renvoyer", remarque?}."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        import datetime
+
+        from django.utils import timezone
+        from django.utils.dateparse import parse_date
+
+        from . import engagements_personnels as ep
+        from .views import _nommer_pour
+
+        environment = get_active_environment(request)
+        au = parse_date(str(request.query_params.get("au") or "")) or timezone.localdate()
+        du = parse_date(str(request.query_params.get("du") or "")) or au - datetime.timedelta(days=30)
+        debut = timezone.make_aware(datetime.datetime.combine(du, datetime.time.min))
+        fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
+        nommer = _nommer_pour(request)
+        personnes = {}
+        for ligne in ep.a_relire_par(request.user, environment).filter(
+                parti_le__gte=debut, parti_le__lte=fin).order_by("utilisateur_id", "-parti_le"):
+            fiche = personnes.setdefault(ligne.utilisateur_id, {
+                "personne": nommer(ligne.utilisateur) or "Membre d'équipe", "lignes": [],
+                "total_heures": 0, "heures_validees": 0, "a_valider": 0,
+            })
+            donnees = _ligne_de_releve(ligne)
+            fiche["lignes"].append(donnees)
+            heures = donnees["heures"] or 0
+            fiche["total_heures"] = round(fiche["total_heures"] + heures, 2)
+            if donnees["validee"]:
+                fiche["heures_validees"] = round(fiche["heures_validees"] + heures, 2)
+            elif donnees["heures"] is not None and not donnees["remarque_chef"]:
+                fiche["a_valider"] += 1
+        return Response({
+            "du": du, "au": au,
+            "fiches": sorted(personnes.values(), key=lambda f: f["personne"].casefold()),
+        })
+
+    def post(self, request):
+        from django.shortcuts import get_object_or_404
+
+        from . import engagements_personnels as ep
+        from .models import EngagementPersonnel
+
+        environment = get_active_environment(request)
+        ligne = get_object_or_404(
+            EngagementPersonnel.objects.select_related("crise", "equipe"),
+            id=request.data.get("ligne"), environment=environment)
+        try:
+            if request.data.get("geste") == "valider":
+                ep.valider(ligne, request.user, environment)
+            elif request.data.get("geste") == "renvoyer":
+                ep.renvoyer(ligne, request.user, environment, request.data.get("remarque"))
+            else:
+                raise ValidationError({"detail": "Geste inconnu."})
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(_ligne_de_releve(ligne))
 
 
 class PointDeSituationView(APIView):

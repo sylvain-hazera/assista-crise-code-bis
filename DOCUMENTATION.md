@@ -898,8 +898,20 @@ supprime pas.
 En regard du tableau, **l'activité de la personne et de ses équipes** sur la période
 (`engagements_personnels.activite`) : créneaux de planning, événements des dossiers de ses
 équipes, entrées qu'elle a consignées, ouverture et clôture des missions. Sans le détail des
-commentaires — ils parlent de personnes aidées ; il ne s'agit que de situer des heures. Une
-heure de l'activité se reprend d'un clic dans la ligne en cours.
+commentaires — ils parlent de personnes aidées ; il ne s'agit que de situer des heures. Les
+connexions à l'application y figurent aussi (« j'ai ouvert l'application à 6 h 50 »). Une heure
+de l'activité se reprend d'un clic dans la ligne en cours.
+
+**Seule la personne complète son relevé ; le chef d'équipe le voit et le valide** (décision du
+17/11/2026, `GET/POST /api/releves-equipe/`, onglet « Les heures de mon équipe »). Est
+relecteur qui est chef, régulateur ou membre de l'encadrement de l'équipe de la ligne. Il a deux
+gestes et pas un de plus : **valider**, ou **renvoyer** avec une remarque qui dit quoi revoir.
+Il ne corrige rien lui-même. Une ligne validée ne se modifie ni ne se retire plus ; la renvoyer
+lève la validation. Corriger une ligne renvoyée efface la remarque : elle retourne à la
+relecture. Personne ne valide son propre relevé, et une sortie sans retour ne se valide pas. Le
+point de situation distingue les heures déclarées de celles validées par l'encadrement.
+
+Limite : une ligne partie sans équipe n'a pas de relecteur.
 
 #### Formulaires de terrain (17/11/2026)
 

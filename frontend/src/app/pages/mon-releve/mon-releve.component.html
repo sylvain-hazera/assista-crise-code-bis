@@ -12,9 +12,9 @@
   @if (message) { <p class="message" role="status">{{ message }}</p> }
 
   <div class="barre">
-    <label>Du <input type="date" [(ngModel)]="du" (change)="charger()"></label>
-    <label>au <input type="date" [(ngModel)]="au" (change)="charger()"></label>
-    @if (releve; as r) {
+    <label>Du <input type="date" [(ngModel)]="du" (change)="rechargerPeriode()"></label>
+    <label>au <input type="date" [(ngModel)]="au" (change)="rechargerPeriode()"></label>
+    @if (onglet === 'moi' && releve; as r) {
       <strong>{{ r.total_heures | number:'1.0-2' }} h sur la période</strong>
       @if (!brouillon && r.crises.length) {
         <button type="button" class="btn-primary" (click)="ajouter()"><span class="material-icons">add</span> Ajouter une sortie oubliée</button>
@@ -22,12 +22,71 @@
     }
   </div>
 
-  @if (releve && !releve.crises.length && !releve.lignes.length) {
+  @if (releve?.encadre) {
+    <nav class="onglets" aria-label="Relevés">
+      <button type="button" [class.actif]="onglet === 'moi'" (click)="ouvrir('moi')">Mes heures</button>
+      <button type="button" [class.actif]="onglet === 'equipe'" (click)="ouvrir('equipe')">
+        Les heures de mon équipe @if (aValider) { <span class="pastille a-valider">{{ aValider }} à valider</span> }
+      </button>
+    </nav>
+  }
+
+  @if (onglet === 'equipe') {
+    <p class="note">Vous relisez et validez ; vous ne corrigez pas. Si une ligne est fausse, renvoyez-la avec une remarque :
+      seule la personne complète son relevé. Une ligne validée ne se modifie plus.</p>
+    @for (fiche of fiches; track fiche.personne) {
+      <section class="fiche-equipe">
+        <h2>{{ fiche.personne }}
+          <span class="note">— {{ fiche.total_heures | number:'1.0-2' }} h déclarées, {{ fiche.heures_validees | number:'1.0-2' }} h validées</span></h2>
+        <div class="tableur">
+          <table>
+            <thead><tr><th>Crise</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th></th></tr></thead>
+            <tbody>
+              @for (l of fiche.lignes; track l.id) {
+                <tr [class.dehors]="!l.rentre_le">
+                  <td>{{ l.crise_nom }}</td><td>{{ l.equipe_nom }}</td>
+                  <td>{{ l.parti_le | date:'dd/MM/yyyy HH:mm' }}</td><td>{{ libelleLieu(l.depart_de) }}</td>
+                  <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td><td>{{ libelleLieu(l.retour_a) }}</td>
+                  <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
+                  <td>
+                    @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main par la personne, après coup">à la main</span> }
+                    @if (l.validee) {
+                      <span class="pastille validee">validée</span>
+                      <button type="button" class="lien" (click)="aRenvoyer = l; remarque = ''">Lever et renvoyer</button>
+                    } @else if (l.remarque_chef) {
+                      <span class="pastille a-revoir">renvoyée</span> <span class="note">{{ l.remarque_chef }}</span>
+                    } @else if (l.rentre_le) {
+                      <button type="button" class="btn-primary" (click)="relire(l, 'valider')">Valider</button>
+                      <button type="button" class="lien" (click)="aRenvoyer = l; remarque = ''">À revoir</button>
+                    }
+                  </td>
+                </tr>
+                @if (aRenvoyer?.id === l.id) {
+                  <tr class="edition">
+                    <td colspan="8">
+                      <label>Ce qui est à revoir
+                        <input type="text" maxlength="500" [(ngModel)]="remarque" placeholder="Tu es rentrée à 17 h, pas 18 h"></label>
+                      <button type="button" class="btn-primary" (click)="relire(l, 'renvoyer')">Renvoyer à {{ fiche.personne }}</button>
+                      <button type="button" class="lien" (click)="aRenvoyer = null">Annuler</button>
+                    </td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    } @empty {
+      <p class="note">Aucune sortie déclarée par les membres de vos équipes sur cette période.</p>
+    }
+  }
+
+  @if (onglet === 'moi' && releve && !releve.crises.length && !releve.lignes.length) {
     <p class="message">Cette page n'a rien à vous proposer pour le moment : on ne déclare des heures que sur une crise où
       votre institution, ou l'une de vos équipes, est engagée. Si vous devriez y avoir accès, voyez votre encadrement.</p>
   }
 
-  @if (releve; as r) {
+  @if (onglet === 'moi' && releve; as r) {
     <div class="colonnes">
       <section>
         <h2>Mes sorties</h2>
@@ -54,8 +113,13 @@
                     <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
                     <td>
                       @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main, après coup">à la main</span> }
-                      <button type="button" class="lien" (click)="modifier(l)">{{ l.rentre_le ? 'Corriger' : 'Compléter le retour' }}</button>
-                      @if (l.saisie_manuelle) { <button type="button" class="lien" (click)="supprimer(l)">Retirer</button> }
+                      @if (l.validee) {
+                        <span class="pastille validee" title="Validée par votre encadrement : elle ne se modifie plus">validée</span>
+                      } @else {
+                        @if (l.remarque_chef) { <span class="pastille a-revoir">à revoir</span> <span class="note">{{ l.remarque_chef }}</span><br> }
+                        <button type="button" class="lien" (click)="modifier(l)">{{ l.rentre_le ? 'Corriger' : 'Compléter le retour' }}</button>
+                        @if (l.saisie_manuelle) { <button type="button" class="lien" (click)="supprimer(l)">Retirer</button> }
+                      }
                     </td>
                   </tr>
                 }

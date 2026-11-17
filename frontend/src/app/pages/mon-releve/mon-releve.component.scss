@@ -23,4 +23,10 @@
     li { display: grid; grid-template-columns: 7.5rem 1fr auto; gap: .5rem; padding: .4rem .6rem; border-bottom: 1px solid var(--ac-border, #f0f0f0); font-size: .88rem; align-items: baseline; }
     li.equipe { color: var(--ac-text-muted, #4b5563); }
     time { font-variant-numeric: tabular-nums; white-space: nowrap; } }
+  .pastille.validee { background: #15803d; }
+  .pastille.a-revoir, .pastille.a-valider { background: #b45309; }
+  .onglets { display: flex; flex-wrap: wrap; gap: .25rem; margin: 0 0 .8rem; border-bottom: 1px solid var(--ac-border, #e5e7eb);
+    button { font: inherit; padding: .5rem .9rem; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer; }
+    button.actif { border-bottom-color: #1d4ed8; font-weight: 600; } }
+  .fiche-equipe { margin: 0 0 1.5rem; }
 }

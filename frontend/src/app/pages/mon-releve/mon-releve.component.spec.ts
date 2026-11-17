@@ -12,7 +12,7 @@ describe('MonReleveComponent', () => {
   const LIGNE: LigneReleve = {
     id: 'l1', crise: 'c1', crise_nom: 'Crue', equipe: 'e1', equipe_nom: 'Renfort',
     parti_le: '2026-11-16T07:00:00Z', rentre_le: null, depart_de: 'HEBERGEMENT', retour_a: '',
-    hebergement: 'Gîte communal', saisie_manuelle: false, heures: null,
+    hebergement: 'Gîte communal', saisie_manuelle: false, heures: null, validee: false, remarque_chef: '',
   };
   const RELEVE: Releve = {
     du: '2026-10-18', au: '2026-11-17', lignes: [LIGNE], total_heures: 0,
@@ -22,6 +22,7 @@ describe('MonReleveComponent', () => {
     ],
     crises: [{ id: 'c1', nom: 'Crue' }], equipes: [{ id: 'e1', nom: 'Renfort' }],
     lieux: [{ code: 'DOMICILE', libelle: 'Domicile' }, { code: 'HEBERGEMENT', libelle: "Point d'hébergement (en déplacement sur site)" }],
+    encadre: true,
   };
 
   beforeEach(() => {
@@ -76,6 +77,27 @@ describe('MonReleveComponent', () => {
     const requete = http.expectOne(r => r.method === 'PATCH' && r.url.endsWith('/mon-releve/l1/'));
     expect(requete.request.body.rentre_le).toBe('2026-11-16T17:00:00.000Z');
     requete.flush({});
+  });
+
+  it('le chef valide une ligne de son équipe', () => {
+    composant.ouvrir('equipe');
+    http.expectOne(r => r.method === 'GET' && r.url.endsWith('/releves-equipe/')).flush({ fiches: [
+      { personne: 'Léa Petit', lignes: [{ ...LIGNE, rentre_le: '2026-11-16T12:00:00Z', heures: 5 }], total_heures: 5, heures_validees: 0, a_valider: 1 },
+    ] });
+    expect(composant.aValider).toBe(1);
+
+    composant.relire(composant.fiches[0].lignes[0], 'valider');
+
+    const requete = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/releves-equipe/'));
+    expect(requete.request.body).toEqual({ ligne: 'l1', geste: 'valider', remarque: '' });
+    requete.flush({});
+  });
+
+  it('le chef ne renvoie pas une ligne sans dire quoi revoir', () => {
+    composant.onglet = 'equipe';
+    composant.relire(LIGNE, 'renvoyer');
+    expect(composant.erreur).toContain('à revoir');
+    http.expectNone(r => r.method === 'POST');
   });
 
   it('filtre l\'activité : la mienne, ou celle de mes équipes', () => {

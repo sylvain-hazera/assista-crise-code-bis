@@ -4069,6 +4069,12 @@ class EngagementPersonnel(EnvironmentScopedModel):
     # le relevé distingue ce qui a été déclaré sur le moment de ce qui a été complété.
     saisie_manuelle = models.BooleanField(default=False)
     modifie_le = models.DateTimeField(null=True, blank=True)
+    # Le chef d'équipe relit et valide ; il ne corrige pas à la place de la personne. Une
+    # ligne validée ne se modifie plus. `remarque_chef` : ce qu'il demande de revoir.
+    valide_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels_valides")
+    valide_le = models.DateTimeField(null=True, blank=True)
+    remarque_chef = EncryptedTextField(blank=True, default="")
 
     class Meta:
         ordering = ["-parti_le"]

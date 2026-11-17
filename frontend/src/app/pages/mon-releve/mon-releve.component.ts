@@ -20,6 +20,19 @@ export interface LigneReleve {
   /** Complétée ou corrigée à la main, après coup. */
   saisie_manuelle: boolean;
   heures: number | null;
+  /** Validée par l'encadrement : elle ne se modifie plus. */
+  validee: boolean;
+  /** Ce que l'encadrement demande de revoir. */
+  remarque_chef: string;
+}
+
+/** Le relevé d'une personne, tel que son chef d'équipe le relit. */
+export interface FicheEquipe {
+  personne: string;
+  lignes: LigneReleve[];
+  total_heures: number;
+  heures_validees: number;
+  a_valider: number;
 }
 
 export interface Releve {
@@ -31,6 +44,8 @@ export interface Releve {
   crises: { id: string; nom: string }[];
   equipes: { id: string; nom: string }[];
   lieux: { code: string; libelle: string }[];
+  /** La personne encadre au moins une équipe : elle relit et valide les relevés des siens. */
+  encadre: boolean;
 }
 
 /** Une ligne en cours de saisie : les champs d'un tableur, en texte local (`AAAA-MM-JJTHH:MM`). */
@@ -71,12 +86,55 @@ export class MonReleveComponent implements OnInit {
   /** La ligne en cours d'édition : une nouvelle (sans `id`) ou une existante. */
   brouillon: Brouillon | null = null;
   filtreActivite: 'tout' | 'moi' | 'equipe' = 'tout';
+  /** « mes heures », ou — pour qui encadre une équipe — « les heures de mon équipe ». */
+  onglet: 'moi' | 'equipe' = 'moi';
+  fiches: FicheEquipe[] = [];
+  /** La ligne qu'on renvoie à son auteur, et ce qu'on lui demande de revoir. */
+  aRenvoyer: LigneReleve | null = null;
+  remarque = '';
 
   private readonly url = `${environment.apiUrl}/mon-releve/`;
 
   constructor(private http: HttpClient) {}
 
   ngOnInit(): void { this.charger(); }
+
+  ouvrir(onglet: 'moi' | 'equipe'): void {
+    this.onglet = onglet;
+    this.erreur = '';
+    this.message = '';
+    if (onglet === 'equipe') this.chargerEquipe(); else this.charger();
+  }
+
+  private periode(): Record<string, string> {
+    const params: Record<string, string> = {};
+    if (this.du) params['du'] = this.du;
+    if (this.au) params['au'] = this.au;
+    return params;
+  }
+
+  chargerEquipe(): void {
+    this.http.get<{ fiches: FicheEquipe[] }>(`${environment.apiUrl}/releves-equipe/`, { params: this.periode() }).subscribe({
+      next: (r) => this.fiches = r.fiches,
+      error: () => this.erreur = "Les relevés de l'équipe n'ont pas pu être chargés.",
+    });
+  }
+
+  get aValider(): number { return this.fiches.reduce((n, f) => n + f.a_valider, 0); }
+
+  /** Le chef valide ou renvoie ; il ne corrige pas : seule la personne complète son relevé. */
+  relire(ligne: LigneReleve, geste: 'valider' | 'renvoyer'): void {
+    if (geste === 'renvoyer' && !this.remarque.trim()) { this.erreur = 'Dites ce qui est à revoir.'; return; }
+    this.erreur = '';
+    this.http.post(`${environment.apiUrl}/releves-equipe/`, { ligne: ligne.id, geste, remarque: this.remarque.trim() }).subscribe({
+      next: () => { this.aRenvoyer = null; this.remarque = ''; this.chargerEquipe(); },
+      error: (err) => this.erreur = err?.error?.detail || "La relecture n'a pas pu être enregistrée.",
+    });
+  }
+
+  rechargerPeriode(): void {
+    if (this.onglet === 'equipe') this.chargerEquipe(); else this.charger();
+  }
 
   charger(): void {
     const params: Record<string, string> = {};

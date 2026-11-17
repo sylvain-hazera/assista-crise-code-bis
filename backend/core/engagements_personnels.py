@@ -173,7 +173,10 @@ def completer(utilisateur, environment, *, crise, parti_le, rentre_le, equipe=No
 def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retour_a=None) -> EngagementPersonnel:
     """Corrige une de SES lignes — typiquement le retour oublié. La ligne est marquée
     « complétée à la main » : le relevé ne fait pas passer une correction pour une déclaration
-    faite sur le moment."""
+    faite sur le moment. Une ligne validée par l'encadrement ne se corrige plus."""
+    if engagement.valide_le is not None:
+        raise ErreurEngagement(
+            "Cette ligne a été validée par votre encadrement : demandez-lui de lever sa validation.")
     parti = parti_le or engagement.parti_le
     rentre = rentre_le if rentre_le is not None else engagement.rentre_le
     _verifier(engagement.utilisateur, engagement.environment, parti, rentre, sauf=engagement)
@@ -182,7 +185,57 @@ def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retou
     engagement.retour_a = _lieu(retour_a, engagement.retour_a or engagement.depart_de) if rentre is not None else ""
     engagement.saisie_manuelle = True
     engagement.modifie_le = timezone.now()
+    # La remarque a été entendue : la ligne retourne à la relecture.
+    engagement.remarque_chef = ""
     engagement.save()
+    return engagement
+
+
+# ── La relecture par l'encadrement ─────────────────────────────────────────────────────────
+# Décision du 17/11/2026 : seule la personne complète son relevé ; le chef d'équipe en a la
+# vision et valide. Il ne corrige donc rien : il valide, ou renvoie la ligne avec une remarque.
+
+def equipes_encadrees(utilisateur):
+    """Les équipes dont la personne relit les relevés : elle en est chef, régulatrice, ou
+    membre de l'encadrement."""
+    return Team.objects.filter(
+        Q(leader=utilisateur) | Q(regulateur=utilisateur) | Q(membres_encadrement=utilisateur)).distinct()
+
+
+def a_relire_par(utilisateur, environment):
+    """Les lignes que cette personne peut relire : celles de ses équipes — pas les siennes."""
+    return (
+        EngagementPersonnel.objects.filter(environment=environment, equipe__in=equipes_encadrees(utilisateur))
+        .exclude(utilisateur=utilisateur)
+        .select_related("utilisateur", "crise", "equipe", "valide_par")
+    )
+
+
+def _relisible(engagement, relecteur, environment):
+    if engagement.utilisateur_id == relecteur.id:
+        raise ErreurEngagement("On ne valide pas son propre relevé : c'est à un autre encadrant de le faire.")
+    if not a_relire_par(relecteur, environment).filter(id=engagement.id).exists():
+        raise ErreurEngagement("Cette ligne n'est pas celle d'une équipe que vous encadrez.")
+
+
+def valider(engagement, relecteur, environment) -> EngagementPersonnel:
+    _relisible(engagement, relecteur, environment)
+    if engagement.rentre_le is None:
+        raise ErreurEngagement("Cette sortie n'est pas terminée : il n'y a pas encore de durée à valider.")
+    engagement.valide_par, engagement.valide_le, engagement.remarque_chef = relecteur, timezone.now(), ""
+    engagement.save(update_fields=["valide_par", "valide_le", "remarque_chef"])
+    return engagement
+
+
+def renvoyer(engagement, relecteur, environment, remarque) -> EngagementPersonnel:
+    """« À revoir » : la ligne retourne à la personne, avec ce qu'on lui demande de corriger.
+    Lève aussi une validation déjà donnée."""
+    _relisible(engagement, relecteur, environment)
+    remarque = (remarque or "").strip()
+    if not remarque:
+        raise ErreurEngagement("Dites ce qui est à revoir : la personne ne peut pas le deviner.")
+    engagement.valide_par, engagement.valide_le, engagement.remarque_chef = None, None, remarque[:500]
+    engagement.save(update_fields=["valide_par", "valide_le", "remarque_chef"])
     return engagement
 
 
@@ -223,6 +276,14 @@ def activite(utilisateur, environment, du, au) -> list:
             auteur=utilisateur, date_creation__gte=du, date_creation__lte=au, environment=environment):
         lignes.append({"quand": entree.date_creation, "heure": True, "source": "moi", "equipe": "",
                        "quoi": "Main courante : une entrée consignée"})
+
+    # Les connexions à l'application : un repère simple, « j'ai ouvert l'application à 6 h 50 ».
+    from .models import AuditLog
+    for connexion in AuditLog.objects.filter(
+            utilisateur=utilisateur, action__code="CONNEXION", succes=True,
+            date_action__gte=du, date_action__lte=au).only("date_action"):
+        lignes.append({"quand": connexion.date_action, "heure": True, "source": "moi", "equipe": "",
+                       "quoi": "Connexion à l'application"})
 
     for mission in Mission.objects.filter(equipes__in=equipes, environment=environment).filter(
             Q(date_creation__gte=du, date_creation__lte=au) | Q(date_cloture__gte=du, date_cloture__lte=au)).distinct():

@@ -17,6 +17,7 @@ from .views_dons import AppelAuxDonsViewSet, AvisDonsPublicsView, CatalogueDonsV
 from .views_formulaires import FormulaireTerrainViewSet, TypesQuestionView
 from .views_standard import (
     AppelStandardViewSet, EngagementPersonnelView, MonReleveLigneView, MonReleveView, PointDeSituationView,
+    RelevesEquipeView,
 )
 from .views_stocks_logistique import (
     AppareilStockViewSet, DemandeTransfertViewSet, DisponibiliteStockView, LotTypeViewSet, ReservationStockViewSet,
@@ -520,6 +521,7 @@ urlpatterns = [
     path('point-de-situation/', PointDeSituationView.as_view(), name='point_de_situation'),
     path('mon-engagement/', EngagementPersonnelView.as_view(), name='mon_engagement'),
     path('mon-releve/', MonReleveView.as_view(), name='mon_releve'),
+    path('releves-equipe/', RelevesEquipeView.as_view(), name='releves_equipe'),
     path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
     path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
     path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),

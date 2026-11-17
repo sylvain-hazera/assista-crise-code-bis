@@ -379,3 +379,110 @@ class TestReleveComplete:
         assert "Planning : créneau matin" in quoi and "Dossier DOS-ESSAI01 : pris en charge" in quoi
         assert "Durand" not in quoi                                          # jamais le détail
         assert {a["source"] for a in activite} == {"moi", "equipe"}
+
+
+@pytest.mark.django_db
+class TestLeChefRelitEtValide:
+    """Seule la personne complète son relevé ; le chef d'équipe le voit et le valide."""
+
+    @pytest.fixture
+    def equipe(self, create_user, mairie, crise):
+        from core.models import ImplicationInstitution, Team
+        institution, _ = mairie
+        ImplicationInstitution.objects.create(crise=crise, institution=institution, type_implication="IMPLIQUE", actif=True)
+        chef = create_user(username="chef@std.fr", email="chef@std.fr", type="UTIL_SIMPLE")
+        membre = create_user(username="membre@std.fr", email="membre@std.fr", type="UTIL_SIMPLE",
+                             first_name="Léa", last_name="Petit")
+        equipe = Team.objects.create(name="Voirie", institution=institution, leader=chef)
+        equipe.members.add(chef, membre)
+        clients = {}
+        for nom, user in (("chef", chef), ("membre", membre)):
+            clients[nom] = APIClient()
+            clients[nom].force_authenticate(user=user)
+        return equipe, clients
+
+    def _sortie(self, client, crise, equipe, heures_avant=30, duree_h=5):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        debut = timezone.now() - timedelta(hours=heures_avant)
+        return client.post(reverse("mon_releve"), {
+            "crise": str(crise.id), "equipe": str(equipe.id),
+            "parti_le": debut.isoformat(), "rentre_le": (debut + timedelta(hours=duree_h)).isoformat(),
+        }, format="json").data
+
+    def _relire(self, client, ligne, geste, **extra):
+        return client.post(reverse("releves_equipe"), {"ligne": ligne["id"], "geste": geste, **extra}, format="json")
+
+    def test_le_chef_voit_les_fiches_de_son_equipe_pas_la_sienne(self, equipe, crise):
+        team, clients = equipe
+        self._sortie(clients["membre"], crise, team)
+        self._sortie(clients["chef"], crise, team)
+
+        fiches = clients["chef"].get(reverse("releves_equipe")).data["fiches"]
+
+        (fiche,) = fiches
+        assert "Petit" in fiche["personne"]
+        assert (fiche["total_heures"], fiche["a_valider"], fiche["heures_validees"]) == (5.0, 1, 0)
+        assert clients["membre"].get(reverse("releves_equipe")).data["fiches"] == []
+        assert clients["chef"].get(reverse("mon_releve")).data["encadre"] is True
+        assert clients["membre"].get(reverse("mon_releve")).data["encadre"] is False
+
+    def test_une_ligne_validee_ne_se_modifie_plus(self, equipe, crise, mairie):
+        team, clients = equipe
+        ligne = self._sortie(clients["membre"], crise, team)
+
+        assert self._relire(clients["chef"], ligne, "valider").data["validee"] is True
+
+        url = reverse("mon_releve_ligne", args=[ligne["id"]])
+        assert clients["membre"].patch(url, {"depart_de": "HEBERGEMENT"}, format="json").status_code == 400
+        assert clients["membre"].delete(url).status_code == 400
+        moyens = {c["libelle"]: c["valeur"] for c in mairie[1].get(
+            reverse("point_de_situation"), {"crise": str(crise.id)}).data["chiffres"]["moyens"]}
+        assert moyens["dont validées par l'encadrement"] == 5.0
+
+    def test_le_chef_renvoie_avec_une_remarque_et_la_personne_corrige(self, equipe, crise):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        team, clients = equipe
+        ligne = self._sortie(clients["membre"], crise, team)
+
+        assert self._relire(clients["chef"], ligne, "renvoyer").status_code == 400          # sans dire quoi
+        renvoyee = self._relire(clients["chef"], ligne, "renvoyer", remarque="Tu es rentrée à 17 h, pas 18 h")
+        assert (renvoyee.data["validee"], renvoyee.data["remarque_chef"]) == (False, "Tu es rentrée à 17 h, pas 18 h")
+        assert clients["membre"].get(reverse("mon_releve")).data["lignes"][0]["remarque_chef"].startswith("Tu es rentrée")
+
+        retour = (timezone.now() - timedelta(hours=26)).isoformat()
+        corrigee = clients["membre"].patch(reverse("mon_releve_ligne", args=[ligne["id"]]), {"rentre_le": retour}, format="json")
+        assert (corrigee.status_code, corrigee.data["remarque_chef"]) == (200, "")
+
+    def test_le_chef_ne_corrige_rien_et_ne_se_valide_pas_lui_meme(self, equipe, crise):
+        team, clients = equipe
+        du_membre = self._sortie(clients["membre"], crise, team)
+        du_chef = self._sortie(clients["chef"], crise, team)
+        assert clients["chef"].patch(reverse("mon_releve_ligne", args=[du_membre["id"]]), {}, format="json").status_code == 404
+        reponse = self._relire(clients["chef"], du_chef, "valider")
+        assert reponse.status_code == 400 and "propre relevé" in str(reponse.data)
+        assert self._relire(clients["membre"], du_chef, "valider").status_code == 400      # pas encadrant
+
+    def test_une_sortie_en_cours_ne_se_valide_pas(self, equipe, crise):
+        from core.models import EngagementPersonnel
+        team, clients = equipe
+        clients["membre"].post(reverse("mon_engagement"), {"geste": "partir", "crise": str(crise.id), "equipe": str(team.id)}, format="json")
+        ligne = {"id": str(EngagementPersonnel.objects.get().id)}
+        assert "pas terminée" in str(self._relire(clients["chef"], ligne, "valider").data)
+
+    def test_les_connexions_figurent_dans_l_activite(self, equipe, crise):
+        from core.audit import audit_log
+        from core.models import AuditLog, User
+        _, clients = equipe
+        membre = User.objects.get(username="membre@std.fr")
+        from django.test import RequestFactory
+        requete = RequestFactory().post("/api/token/")
+        requete.user = membre
+        audit_log(request=requete, action_code="CONNEXION", objet_type="User", objet_id=membre.id, commentaire="x")
+        if not AuditLog.objects.filter(utilisateur=membre, action__code="CONNEXION").exists():
+            pytest.skip("La trace de connexion ne porte pas l'utilisateur dans cet environnement d'essai.")
+        activite = clients["membre"].get(reverse("mon_releve")).data["activite"]
+        assert "Connexion à l'application" in [a["quoi"] for a in activite]

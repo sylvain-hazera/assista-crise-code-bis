@@ -85,12 +85,14 @@ def construire(crise, institution, environment, nommer=None) -> dict:
     # Le personnel municipal et les membres d'association : mêmes deux gestes, tenus à part
     # (core/engagements_personnels.py). Le nom n'est rendu qu'à l'institution qui relit.
     from . import engagements_personnels
-    secondes_personnel, personnel_dehors, personnes = 0, 0, set()
+    secondes_personnel, secondes_validees, personnel_dehors, personnes = 0, 0, 0, set()
     for engagement in engagements_personnels.de_l_institution(crise, institution, environment):
         personnes.add(engagement.utilisateur_id)
         duree = engagement.duree
         if duree is not None:
             secondes_personnel += duree.total_seconds()
+            if engagement.valide_le is not None:
+                secondes_validees += duree.total_seconds()
         else:
             personnel_dehors += 1
         releve.append({
@@ -102,8 +104,10 @@ def construire(crise, institution, environment, nommer=None) -> dict:
             # sur site), et si la ligne a été complétée à la main après coup.
             "depart_de": engagement.get_depart_de_display(), "hebergement": engagement.hebergement,
             "saisie_manuelle": engagement.saisie_manuelle,
+            "validee": engagement.valide_le is not None,
         })
     heures_personnel = round(secondes_personnel / 3600, 1)
+    heures_validees = round(secondes_validees / 3600, 1)
 
     chiffres = {
         "population": [
@@ -127,6 +131,7 @@ def construire(crise, institution, environment, nommer=None) -> dict:
             ("Personnel et bénévoles partis sur la crise", len(personnes)),
             ("Personnel encore sur le terrain", personnel_dehors),
             ("Heures déclarées par le personnel", heures_personnel),
+            ("dont validées par l'encadrement", heures_validees),
             ("Ressources proposées parties sur la crise", len(engagements)),
             ("Ressources encore sur le terrain", dehors),
             ("Heures déclarées par les ressources proposées", heures),
