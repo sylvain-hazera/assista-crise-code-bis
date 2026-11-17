@@ -37,7 +37,11 @@ TYPES = {
     "CHOIX": "Un choix dans une liste",
     "CHOIX_MULTIPLE": "Plusieurs choix dans une liste",
     "DATE": "Date",
+    "PHOTO": "Photo",
 }
+#: Par question et par réponse : assez pour montrer un dégât sous trois angles, pas assez pour
+#: transformer une réponse en album.
+MAX_PHOTOS_PAR_QUESTION = 3
 MAX_QUESTIONS = 60
 MAX_OPTIONS = 40
 _CLE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -90,7 +94,9 @@ def nettoyer_questions(questions) -> list:
         prises.add(cle)
 
         question = {"cle": cle, "libelle": libelle, "type": type_question,
-                    "obligatoire": bool(brute.get("obligatoire"))}
+                    # Une photo part après la réponse, par un envoi à part : au moment où la
+                    # réponse arrive, on ne peut pas exiger ce qui n'est pas encore là.
+                    "obligatoire": bool(brute.get("obligatoire")) and type_question != "PHOTO"}
         aide = str(brute.get("aide") or "").strip()[:300]
         if aide:
             question["aide"] = aide
@@ -146,14 +152,15 @@ def nettoyer_reponses(questions, donnees) -> dict:
     écarté : on ne garde pas une réponse à une question qui n'a pas été posée."""
     if not isinstance(donnees, dict):
         raise ErreurFormulaire("Réponses illisibles.")
-    connues = {q["cle"] for q in questions}
+    # Les photos ne sont pas dans les réponses : elles ont leur propre envoi.
+    connues = {q["cle"] for q in questions if q["type"] != "PHOTO"}
     inconnues = sorted(set(donnees) - connues)
     if inconnues:
         raise ErreurFormulaire("Réponse à une question inconnue : " + ", ".join(inconnues))
 
     propres = {}
     for question in questions:
-        if not _visible(question, propres):
+        if question["type"] == "PHOTO" or not _visible(question, propres):
             continue
         cle, libelle, brute = question["cle"], question["libelle"], donnees.get(question["cle"])
         vide = brute is None or brute == "" or brute == []
@@ -194,6 +201,22 @@ def nettoyer_reponses(questions, donnees) -> dict:
     return propres
 
 
+def _photos_par_question(reponse) -> dict:
+    """`{cle de question: [identifiants de photo]}` — les images se demandent une à une."""
+    par_question = {}
+    for photo in reponse.photos.all():
+        par_question.setdefault(photo.question_cle, []).append(str(photo.id))
+    return par_question
+
+
+def _cellule(question, ligne) -> str:
+    """Ce qu'un export écrit pour cette question : la réponse, ou le nombre de photos."""
+    if question["type"] == "PHOTO":
+        nombre = len(ligne["photos"].get(question["cle"], []))
+        return f"{nombre} photo{'s' if nombre > 1 else ''}" if nombre else ""
+    return _en_texte(ligne["donnees"].get(question["cle"]))
+
+
 def _en_texte(valeur) -> str:
     if valeur is None:
         return ""
@@ -221,6 +244,7 @@ def lignes(formulaire, reponses, nommer) -> list:
             "latitude": reponse.location.y if reponse.location else None,
             "longitude": reponse.location.x if reponse.location else None,
             "donnees": donnees,
+            "photos": _photos_par_question(reponse),
         })
     return resultat
 
@@ -237,7 +261,7 @@ def en_csv(formulaire, tableau) -> str:
             [saisie.strftime("%d/%m/%Y %H:%M") if saisie else "", ligne["auteur"], ligne["institution"],
              ligne["latitude"] if ligne["latitude"] is not None else "",
              ligne["longitude"] if ligne["longitude"] is not None else ""]
-            + [_en_texte(ligne["donnees"].get(q["cle"])) for q in formulaire.questions]
+            + [_cellule(q, ligne) for q in formulaire.questions]
         )
     return "﻿" + sortie.getvalue()
 
@@ -253,7 +277,7 @@ def en_geojson(formulaire, tableau) -> dict:
                 "properties": {
                     "saisie_le": ligne["saisie_le"].isoformat() if ligne["saisie_le"] else None,
                     "par": ligne["auteur"],
-                    **{q["libelle"]: _en_texte(ligne["donnees"].get(q["cle"])) for q in formulaire.questions},
+                    **{q["libelle"]: _cellule(q, ligne) for q in formulaire.questions},
                 },
             }
             for ligne in tableau if ligne["latitude"] is not None

@@ -73,6 +73,47 @@ describe('FormulairesTerrainComponent', () => {
     expect(composant.saisie).toEqual({ habitable: false });
   });
 
+  it('envoie les photos après la réponse, sous le même identifiant', async () => {
+    const jointes: any[] = [];
+    spyOn(service, 'repondre').and.resolveTo('envoyee');
+    spyOn(service, 'enAttente').and.resolveTo(0);
+    spyOn(service, 'joindrePhoto').and.callFake(async (photo, enAttente) => { jointes.push({ photo, enAttente }); return 'envoyee'; });
+    composant.saisie = { habitable: true };
+    composant.photos = { facade: ['AAAA', 'BBBB'] };
+
+    await composant.envoyerReponse();
+
+    const identifiant = (service.repondre as jasmine.Spy).calls.mostRecent().args[0].identifiant_client;
+    expect(jointes.length).toBe(2);
+    expect(jointes.every(j => j.photo.identifiant_client === identifiant && j.photo.cle === 'facade' && !j.enAttente)).toBeTrue();
+    expect(composant.photos).toEqual({});
+  });
+
+  it('sans réseau, les photos attendent avec leur réponse', async () => {
+    spyOn(service, 'repondre').and.resolveTo('en_attente');
+    spyOn(service, 'enAttente').and.resolveTo(2);
+    const joindre = spyOn(service, 'joindrePhoto').and.resolveTo('en_attente');
+    composant.saisie = { habitable: true };
+    composant.photos = { facade: ['AAAA'] };
+
+    await composant.envoyerReponse();
+
+    expect(joindre.calls.mostRecent().args[1]).toBeTrue();
+  });
+
+  it('dit combien de photos ont été refusées, sans perdre la réponse', async () => {
+    spyOn(service, 'repondre').and.resolveTo('envoyee');
+    spyOn(service, 'enAttente').and.resolveTo(0);
+    spyOn(service, 'joindrePhoto').and.resolveTo('refusee');
+    composant.saisie = { habitable: true };
+    composant.photos = { facade: ['AAAA'] };
+
+    await composant.envoyerReponse();
+
+    expect(composant.message).toContain('Réponse enregistrée');
+    expect(composant.message).toContain("1 photo n'a pas été acceptée");
+  });
+
   it('coche et décoche dans une liste à choix multiples', () => {
     composant.cocher('degats', 'Eau');
     composant.cocher('degats', 'Toiture');

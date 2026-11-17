@@ -87,7 +87,7 @@ class TestQuestionnaire:
     @pytest.mark.parametrize("questions, extrait", [
         ([], "au moins une question"),
         ([{"libelle": "", "type": "TEXTE"}], "intitulé"),
-        ([{"libelle": "X", "type": "PHOTO"}], "type de question inconnu"),
+        ([{"libelle": "X", "type": "VIDEO"}], "type de question inconnu"),
         ([{"libelle": "X", "type": "CHOIX", "options": ["seul"]}], "au moins deux choix"),
         ([{"libelle": "X", "type": "NOMBRE", "min": 5, "max": 1}], "minimum dépasse"),
         ([{"libelle": "X", "type": "TEXTE", "si": {"cle": "apres", "valeur": True}},
@@ -200,3 +200,92 @@ class TestReponses:
         plus = formulaire.questions + [{"libelle": "Animaux ?", "type": "OUI_NON"}]
         assert agent.patch(url, {"questions": plus}, format="json").status_code == 200
         assert agent.delete(url).status_code == 400
+
+
+def _image(couleur=(200, 30, 30)):
+    """Une vraie image : le serveur refuse ce qui n'en est pas une."""
+    import io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+    tampon = io.BytesIO()
+    Image.new("RGB", (40, 30), couleur).save(tampon, format="JPEG")
+    return SimpleUploadedFile("degat.jpg", tampon.getvalue(), content_type="image/jpeg")
+
+
+@pytest.mark.django_db
+class TestPhotos:
+    """Une photo aide à répondre : la fissure, la toiture, la laisse de crue (17/11/2026)."""
+
+    @pytest.fixture
+    def avec_photo(self, agent):
+        questions = QUESTIONS + [{"libelle": "Photo des dégâts", "type": "PHOTO", "obligatoire": True}]
+        reponse = agent.post(reverse("formulaireterrain-list"),
+                             {"titre": "Dégâts en images", "questions": questions}, format="json")
+        assert reponse.status_code == 201, reponse.data
+        return FormulaireTerrain.objects.get(id=reponse.data["id"])
+
+    def _repondre(self, client, formulaire):
+        identifiant = str(uuid.uuid4())
+        reponse = client.post(reverse("formulaireterrain-repondre", args=[formulaire.id]),
+                              {"identifiant_client": identifiant, "donnees": {"logement_habitable": True}}, format="json")
+        assert reponse.status_code == 201, reponse.data
+        return identifiant
+
+    def _joindre(self, client, formulaire, identifiant, fichier=None, photo=None, cle="photo_des_degats"):
+        return client.post(reverse("formulaireterrain-photo", args=[formulaire.id]), {
+            "identifiant_client": identifiant, "cle": cle,
+            "identifiant_photo": photo or str(uuid.uuid4()), "fichier": fichier or _image(),
+        }, format="multipart")
+
+    def test_une_question_photo_n_est_jamais_bloquante(self, avec_photo):
+        """La photo part après la réponse : on ne peut pas l'exiger à l'arrivée de celle-ci."""
+        assert avec_photo.questions[-1]["obligatoire"] is False
+
+    def test_la_photo_rejoint_sa_reponse_et_se_relit(self, avec_photo, agent):
+        identifiant = self._repondre(agent, avec_photo)
+        assert self._joindre(agent, avec_photo, identifiant).status_code == 201
+
+        (ligne,) = agent.get(reverse("formulaireterrain-reponses", args=[avec_photo.id])).data
+        (photo_id,) = ligne["photos"]["photo_des_degats"]
+        image = agent.get(reverse("formulaireterrain-voir-photo", args=[avec_photo.id, photo_id]))
+        assert image.status_code == 200
+        assert b"".join(image.streaming_content)[:3] == b"\xff\xd8\xff"          # un JPEG, déchiffré
+
+    def test_la_photo_n_est_pas_en_clair_sur_le_disque(self, avec_photo, agent):
+        from core.models import PhotoReponseTerrain
+        self._joindre(agent, avec_photo, self._repondre(agent, avec_photo))
+        photo = PhotoReponseTerrain.objects.get()
+        with open(photo.fichier.path, "rb") as brut:
+            assert brut.read(3) != b"\xff\xd8\xff"
+
+    def test_un_renvoi_ne_double_pas_la_photo_et_trois_suffisent(self, avec_photo, agent):
+        from core.models import PhotoReponseTerrain
+        identifiant, photo = self._repondre(agent, avec_photo), str(uuid.uuid4())
+        assert self._joindre(agent, avec_photo, identifiant, photo=photo).status_code == 201
+        assert self._joindre(agent, avec_photo, identifiant, photo=photo).status_code == 200
+        self._joindre(agent, avec_photo, identifiant)
+        self._joindre(agent, avec_photo, identifiant)
+        assert self._joindre(agent, avec_photo, identifiant).status_code == 400
+        assert PhotoReponseTerrain.objects.count() == 3
+
+    def test_ce_qui_n_est_pas_une_image_est_refuse(self, avec_photo, agent):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        identifiant = self._repondre(agent, avec_photo)
+        faux = SimpleUploadedFile("degat.jpg", b"pas une image", content_type="image/jpeg")
+        assert self._joindre(agent, avec_photo, identifiant, fichier=faux).status_code == 400
+        assert self._joindre(agent, avec_photo, identifiant, cle="remarques").status_code == 400
+
+    def test_on_ne_joint_ni_ne_voit_la_photo_d_un_autre(self, avec_photo, agent, benevole, mairie, association):
+        _deleguer(mairie, association)
+        identifiant = self._repondre(agent, avec_photo)
+        assert self._joindre(benevole, avec_photo, identifiant).status_code == 404
+        photo_id = self._joindre(agent, avec_photo, identifiant).data["id"]
+        assert benevole.get(reverse("formulaireterrain-voir-photo", args=[avec_photo.id, photo_id])).status_code == 403
+
+    def test_l_export_compte_les_photos(self, avec_photo, agent):
+        identifiant = self._repondre(agent, avec_photo)
+        self._joindre(agent, avec_photo, identifiant)
+        self._joindre(agent, avec_photo, identifiant)
+        csv = agent.get(reverse("formulaireterrain-export", args=[avec_photo.id])).content.decode("utf-8")
+        assert "2 photos" in csv

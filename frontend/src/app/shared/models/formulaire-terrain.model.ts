@@ -1,4 +1,4 @@
-export type TypeQuestion = 'TEXTE' | 'TEXTE_LONG' | 'NOMBRE' | 'OUI_NON' | 'CHOIX' | 'CHOIX_MULTIPLE' | 'DATE';
+export type TypeQuestion = 'TEXTE' | 'TEXTE_LONG' | 'NOMBRE' | 'OUI_NON' | 'CHOIX' | 'CHOIX_MULTIPLE' | 'DATE' | 'PHOTO';
 
 /** Une question d'un questionnaire de terrain (voir core/formulaires_terrain.py). */
 export interface QuestionTerrain {
@@ -42,6 +42,18 @@ export interface ReponseTerrain {
   latitude: number | null;
   longitude: number | null;
   donnees: Record<string, ValeurReponse>;
+  /** Identifiants des photos jointes, par question ; les images se demandent une à une. */
+  photos: Record<string, string[]>;
+}
+
+/** Une photo jointe à une réponse, telle qu'elle part — ou attend le retour du réseau.
+ * En base64 : c'est ce que la file chiffrée sait ranger. */
+export interface PhotoAEnvoyer {
+  formulaire: string;
+  identifiant_client: string;
+  identifiant_photo: string;
+  cle: string;
+  image: string;
 }
 
 /** Une réponse saisie, telle qu'elle part au serveur — ou attend le retour du réseau. */

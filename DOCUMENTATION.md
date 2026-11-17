@@ -863,8 +863,15 @@ délégué une compétence (convention active) voit ses questionnaires ouverts e
 relit que ses propres réponses. Personne d'autre ne voit rien. Les réponses sont chiffrées en
 base ; seule la position reste lisible, pour PostGIS.
 
-Non repris : le standard XLSForm, les groupes répétés, les calculs, les photos. Une question
-qui a déjà des réponses ne change plus de type et ne se retire plus.
+**Photos** (question de type PHOTO, trois au plus par question) : prises ou choisies sur
+l'appareil, réduites à 1 600 px avant l'envoi — ce qui retire aussi les métadonnées, dont la
+position — puis envoyées APRÈS la réponse, une par une, chacune avec son identifiant
+(`PhotoReponseTerrain`, chiffrées sur le disque). Sans réseau, elles attendent dans la même
+file chiffrée que leur réponse. Une question photo n'est jamais obligatoire : on ne peut pas
+exiger à l'arrivée de la réponse ce qui part après elle.
+
+Non repris : le standard XLSForm, les groupes répétés, les calculs. Une question qui a déjà
+des réponses ne change plus de type et ne se retire plus.
 
 #### Bénévoles d'association : ni agents, ni citoyens anonymes
 

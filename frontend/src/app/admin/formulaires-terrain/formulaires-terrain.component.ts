@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { FormulaireTerrainService } from '../../services/formulaire-terrain.service';
+import { FormulaireTerrainService, reduirePhoto } from '../../services/formulaire-terrain.service';
 import {
   FormulaireTerrain, QuestionTerrain, ReponseTerrain, TypeQuestion, ValeurReponse,
 } from '../../shared/models/formulaire-terrain.model';
@@ -40,6 +40,11 @@ export class FormulairesTerrainComponent implements OnInit, OnDestroy {
   saisie: Record<string, ValeurReponse> = {};
   position: { latitude: number; longitude: number } | null = null;
   positionEnCours = false;
+  /** Photos prises pour la réponse en cours, par question, déjà réduites (base64). */
+  photos: Record<string, string[]> = {};
+  readonly maxPhotos = 3;
+  /** Photos d'une réponse relue, chargées à la demande : identifiant → adresse d'affichage. */
+  photosAffichees: Record<string, string> = {};
   reponses: ReponseTerrain[] = [];
   envoi = false;
 
@@ -86,6 +91,8 @@ export class FormulairesTerrainComponent implements OnInit, OnDestroy {
     this.courant = null;
     this.brouillon = null;
     this.erreur = '';
+    Object.values(this.photosAffichees).forEach(adresse => URL.revokeObjectURL(adresse));
+    this.photosAffichees = {};
   }
 
   // ── Composer ────────────────────────────────────────────────────────────────────────────
@@ -174,10 +181,27 @@ export class FormulairesTerrainComponent implements OnInit, OnDestroy {
     this.courant = formulaire;
     this.saisie = {};
     this.position = null;
+    this.photos = {};
     this.message = '';
     this.erreur = '';
     this.vue = 'repondre';
   }
+
+  async ajouterPhotos(cle: string, champ: HTMLInputElement): Promise<void> {
+    const prises = this.photos[cle] ?? [];
+    for (const fichier of Array.from(champ.files ?? [])) {
+      if (prises.length >= this.maxPhotos) break;
+      try {
+        prises.push(await reduirePhoto(fichier));
+      } catch {
+        this.erreur = "Cette image n'a pas pu être lue.";
+      }
+    }
+    this.photos[cle] = prises;
+    champ.value = '';                 // pour pouvoir reprendre la même photo après l'avoir retirée
+  }
+
+  retirerPhoto(cle: string, rang: number): void { this.photos[cle]?.splice(rang, 1); }
 
   /** Même règle que le serveur : une question conditionnelle ne se pose que si sa condition
    * est remplie. */
@@ -225,18 +249,32 @@ export class FormulairesTerrainComponent implements OnInit, OnDestroy {
     this.envoi = true;
     this.erreur = '';
     try {
+      const identifiant = crypto.randomUUID();
       const issue = await this.service.repondre({
         formulaire: this.courant.id,
-        identifiant_client: crypto.randomUUID(),
+        identifiant_client: identifiant,
         donnees: this.donneesAEnvoyer(),
         saisie_le: new Date().toISOString(),
         latitude: this.position?.latitude ?? null,
         longitude: this.position?.longitude ?? null,
       });
+      // Les photos suivent la réponse, une par une : si l'une échoue, la réponse est déjà sauvée.
+      let refusees = 0;
+      for (const [cle, images] of Object.entries(this.photos)) {
+        for (const image of images) {
+          const sort = await this.service.joindrePhoto(
+            { formulaire: this.courant.id, identifiant_client: identifiant,
+              identifiant_photo: crypto.randomUUID(), cle, image },
+            issue === 'en_attente');
+          if (sort === 'refusee') refusees++;
+        }
+      }
       this.message = issue === 'envoyee'
         ? 'Réponse enregistrée. Vous pouvez saisir la suivante.'
         : "Pas de réseau : la réponse est gardée sur cet appareil et partira dès qu'il reviendra.";
+      if (refusees) this.message += ` ${refusees} photo${refusees > 1 ? 's' : ''} n'${refusees > 1 ? 'ont' : 'a'} pas été acceptée${refusees > 1 ? 's' : ''}.`;
       this.saisie = {};
+      this.photos = {};
       this.position = null;
       this.enAttente = await this.service.enAttente();
     } catch (err) {
@@ -254,6 +292,18 @@ export class FormulairesTerrainComponent implements OnInit, OnDestroy {
       next: (r) => this.reponses = r,
       error: (err) => this.erreur = this.lisible(err, "Les réponses n'ont pas pu être chargées."),
     });
+  }
+
+  /** Charge les photos d'une réponse relue. À la demande : dix réponses de trois photos, ce
+   * sont trente images qu'on ne tire pas tant que personne ne veut les voir. */
+  voirPhotos(reponse: ReponseTerrain, cle: string): void {
+    for (const identifiant of reponse.photos?.[cle] ?? []) {
+      if (this.photosAffichees[identifiant] || !this.courant) continue;
+      this.service.photo(this.courant.id, identifiant).subscribe({
+        next: (image) => this.photosAffichees[identifiant] = URL.createObjectURL(image),
+        error: () => this.erreur = "Une photo n'a pas pu être chargée.",
+      });
+    }
   }
 
   enTexte(valeur: ValeurReponse | undefined): string {

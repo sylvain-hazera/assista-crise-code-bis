@@ -60,3 +60,10 @@
   .choix { display: flex; flex-wrap: wrap; gap: .4rem 1rem; }
   .attente { border-left-color: #b45309; background: var(--ac-orange-bg, #fffbeb); }
 }
+
+.formulaires-page {
+  .photos { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start;
+    figure { margin: 0; display: grid; gap: .2rem; justify-items: center; }
+    img { width: 7rem; height: 7rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--ac-border, #e5e7eb); } }
+  .prendre-photo { display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; width: fit-content; }
+}

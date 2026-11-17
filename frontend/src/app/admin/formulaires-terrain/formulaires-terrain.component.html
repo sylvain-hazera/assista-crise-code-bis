@@ -73,7 +73,9 @@
               <select [name]="'type' + rang" [(ngModel)]="q.type" [disabled]="!!q.cle && !!b.id">
                 @for (t of types; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
               </select></label>
-            <label><input type="checkbox" [name]="'obligatoire' + rang" [(ngModel)]="q.obligatoire"> Obligatoire</label>
+            @if (q.type !== 'PHOTO') {
+              <label><input type="checkbox" [name]="'obligatoire' + rang" [(ngModel)]="q.obligatoire"> Obligatoire</label>
+            }
           </div>
           @if (aDesChoix(q.type)) {
             <label>Choix proposés, un par ligne
@@ -129,6 +131,24 @@
               @case ('TEXTE_LONG') { <textarea [name]="q.cle!" [(ngModel)]="saisie[q.cle!]"></textarea> }
               @case ('NOMBRE') { <input type="number" [name]="q.cle!" [min]="q.min ?? null" [max]="q.max ?? null" [(ngModel)]="saisie[q.cle!]"> }
               @case ('DATE') { <input type="date" [name]="q.cle!" [(ngModel)]="saisie[q.cle!]"> }
+              @case ('PHOTO') {
+                <div class="photos">
+                  @for (image of photos[q.cle!] ?? []; track $index; let rang = $index) {
+                    <figure>
+                      <img [src]="'data:image/jpeg;base64,' + image" alt="Photo prise">
+                      <button type="button" class="lien" (click)="retirerPhoto(q.cle!, rang)">Retirer</button>
+                    </figure>
+                  }
+                </div>
+                @if ((photos[q.cle!]?.length ?? 0) < maxPhotos) {
+                  <label class="btn-secondary prendre-photo">
+                    <span class="material-icons">photo_camera</span> Prendre ou choisir une photo
+                    <input #champPhoto type="file" accept="image/*" capture="environment" multiple hidden
+                           (change)="ajouterPhotos(q.cle!, champPhoto)">
+                  </label>
+                }
+                <span class="note">{{ maxPhotos }} photos au plus. Elles sont réduites avant l'envoi et partent après la réponse.</span>
+              }
               @case ('OUI_NON') {
                 <div class="choix">
                   <label><input type="radio" [name]="q.cle!" [value]="true" [(ngModel)]="saisie[q.cle!]"> Oui</label>
@@ -184,7 +204,27 @@
                 <td>{{ r.saisie_le | date:'dd/MM/yyyy HH:mm' }}</td>
                 <td>{{ r.auteur }}@if (r.institution) { <span class="note"> ({{ r.institution }})</span> }</td>
                 <td>{{ r.latitude !== null ? (r.latitude | number:'1.4-4') + ', ' + (r.longitude | number:'1.4-4') : '—' }}</td>
-                @for (q of f.questions; track q.cle) { <td>{{ enTexte(r.donnees[q.cle!]) }}</td> }
+                @for (q of f.questions; track q.cle) {
+                  <td>
+                    @if (q.type === 'PHOTO') {
+                      @if (r.photos?.[q.cle!]?.length) {
+                        <button type="button" class="lien" (click)="voirPhotos(r, q.cle!)">
+                          {{ r.photos[q.cle!].length }} photo{{ r.photos[q.cle!].length > 1 ? 's' : '' }}
+                        </button>
+                        <div class="photos">
+                          @for (identifiant of r.photos[q.cle!]; track identifiant) {
+                            @if (photosAffichees[identifiant]) {
+                              <a [href]="photosAffichees[identifiant]" target="_blank" rel="noopener">
+                                <img [src]="photosAffichees[identifiant]" alt="Photo jointe à la réponse"></a>
+                            }
+                          }
+                        </div>
+                      }
+                    } @else {
+                      {{ enTexte(r.donnees[q.cle!]) }}
+                    }
+                  </td>
+                }
               </tr>
             }
           </tbody>

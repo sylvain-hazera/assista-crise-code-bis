@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from . import formulaires_terrain as ft
 from .audit import audit_log
-from .models import FormulaireTerrain, ReponseFormulaireTerrain
+from .models import FormulaireTerrain, PhotoReponseTerrain, ReponseFormulaireTerrain
 from .perimetre_admin import institution_regardee
 from .permissions import IsInstitutionalActor, get_active_environment
 from .zone_scoping import _memo
@@ -180,10 +180,72 @@ class FormulaireTerrainViewSet(viewsets.ModelViewSet):
     def _tableau(self, formulaire):
         from .views import _nommer_pour
 
-        reponses = formulaire.reponses.select_related("auteur", "institution_auteur")
+        reponses = formulaire.reponses.select_related("auteur", "institution_auteur").prefetch_related("photos")
         if formulaire.institution_id not in _gerees(self.request):
             reponses = reponses.filter(auteur=self.request.user)
         return ft.lignes(formulaire, reponses, _nommer_pour(self.request))
+
+    @action(detail=True, methods=["post"])
+    def photo(self, request, pk=None):
+        """Joint une photo à une réponse DÉJÀ enregistrée, pour une question de type PHOTO.
+
+        Envoi à part, en formulaire à fichier : `identifiant_client` (celui de la réponse),
+        `cle` (la question), `identifiant_photo` (tiré sur l'appareil), `fichier`. Rejouable
+        comme la réponse. Seul l'auteur de la réponse y joint des photos."""
+        formulaire = self.get_object()
+        question = next((q for q in formulaire.questions
+                         if q["cle"] == request.data.get("cle") and q["type"] == "PHOTO"), None)
+        if question is None:
+            raise ValidationError({"detail": "Cette question n'attend pas de photo."})
+        try:
+            identifiant_reponse = uuid.UUID(str(request.data.get("identifiant_client")))
+            identifiant_photo = uuid.UUID(str(request.data.get("identifiant_photo")))
+        except ValueError:
+            raise ValidationError({"detail": "Identifiants de saisie attendus."})
+        reponse = formulaire.reponses.filter(
+            identifiant_client=identifiant_reponse, auteur=request.user).first()
+        if reponse is None:
+            return Response({"detail": "La réponse à laquelle joindre cette photo n'est pas encore arrivée."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        existante = reponse.photos.filter(identifiant_client=identifiant_photo).first()
+        if existante is not None:
+            return Response({"id": str(existante.id), "deja_recue": True})
+        if reponse.photos.filter(question_cle=question["cle"]).count() >= ft.MAX_PHOTOS_PAR_QUESTION:
+            raise ValidationError({"detail": (
+                f"Pas plus de {ft.MAX_PHOTOS_PAR_QUESTION} photos par question."
+            )})
+        fichier = request.FILES.get("fichier")
+        if fichier is None:
+            raise ValidationError({"detail": "Fichier attendu."})
+        from django.core.exceptions import ValidationError as ErreurDeValidation
+
+        from .validators import validate_image_file
+        try:
+            validate_image_file(fichier)
+        except ErreurDeValidation as erreur:
+            raise ValidationError({"detail": " ".join(erreur.messages)})
+        fichier.seek(0)
+        photo = PhotoReponseTerrain.objects.create(
+            reponse=reponse, question_cle=question["cle"], identifiant_client=identifiant_photo,
+            fichier=fichier, environment=get_active_environment(request),
+        )
+        return Response({"id": str(photo.id), "deja_recue": False}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path=r"photos/(?P<photo_id>[^/.]+)")
+    def voir_photo(self, request, pk=None, photo_id=None):
+        """L'image, déchiffrée à la volée. La collectivité voit toutes celles du questionnaire ;
+        un délégué, celles de ses propres réponses."""
+        from django.http import FileResponse
+        from django.shortcuts import get_object_or_404
+
+        formulaire = self.get_object()
+        photo = get_object_or_404(
+            PhotoReponseTerrain.objects.select_related("reponse"), id=photo_id, reponse__formulaire=formulaire)
+        if formulaire.institution_id not in _gerees(request) and photo.reponse.auteur_id != request.user.id:
+            raise PermissionDenied("Cette photo appartient à la réponse de quelqu'un d'autre.")
+        # .open("rb") et non .path : c'est le passage par le stockage qui déchiffre.
+        return FileResponse(photo.fichier.open("rb"), content_type="image/jpeg")
 
     @action(detail=True, methods=["get"])
     def reponses(self, request, pk=None):

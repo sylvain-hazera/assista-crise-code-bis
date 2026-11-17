@@ -4034,6 +4034,33 @@ class PalierInondationSimule(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.niveau_metres}m"
 
 
+class PhotoReponseTerrain(EnvironmentScopedModel):
+    """Une photo jointe à une réponse de formulaire de terrain, pour une question de type
+    PHOTO : la fissure, la toiture, la laisse de crue. Chiffrée sur le disque.
+
+    Elle arrive APRÈS sa réponse, par un envoi à part (un fichier ne voyage pas dans un JSON),
+    et porte elle aussi un identifiant tiré sur l'appareil : renvoyée après une coupure de
+    réseau, elle n'est rangée qu'une fois."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    reponse = models.ForeignKey(
+        "ReponseFormulaireTerrain", on_delete=models.CASCADE, related_name="photos")
+    question_cle = models.CharField(max_length=40)
+    identifiant_client = models.UUIDField()
+    fichier = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        validators=[validate_image_file],
+    )
+    date_ajout = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date_ajout"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["reponse", "identifiant_client"], name="uq_photo_reponse_terrain_identifiant_client"),
+        ]
+
+
 class ProcedurePPR(EnvironmentScopedModel):
     """Un plan de prévention des risques qui couvre une commune (Géorisques, base Gaspar),
     gardé en base — voir core/plans_prevention.py. `zones` porte les types de zones de son
