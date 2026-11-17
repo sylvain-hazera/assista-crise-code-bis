@@ -281,7 +281,13 @@ class TestEngagementRessourcePublicView:
 
         r3 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'arrivee'}, format='json')
         assert r3.data['statut'] == 'ARRIVE'
-        assert r3.data['actions_possibles'] == []
+        # « Je rentre » (17/11/2026) : l'arrivée n'est plus la dernière étape, c'est le retour
+        # déclaré qui clôt l'engagement et donne le temps passé.
+        assert r3.data['actions_possibles'] == ['retour']
+
+        r4 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'retour'}, format='json')
+        assert r4.data['statut'] == 'RENTRE'
+        assert r4.data['actions_possibles'] == []
 
         engagement = EngagementRessource.objects.get(offer=offer)
         assert engagement.date_confirmation is not None

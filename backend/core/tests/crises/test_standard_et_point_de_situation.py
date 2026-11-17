@@ -133,3 +133,51 @@ class TestPointDeSituation:
 
     def test_sans_crise_on_le_dit(self, mairie):
         assert mairie[1].get(reverse("point_de_situation")).status_code == 400
+
+
+@pytest.mark.django_db
+class TestHeuresDeclarees:
+    """« Je pars », « je rentre » : le temps engagé vient de ce que la personne déclare."""
+
+    def _engagement(self, mairie, crise):
+        from core.models import EngagementRessource, Offer, OfferType, Team
+        institution, client = mairie
+        equipe = Team.objects.create(name="Équipe voirie", institution=institution)
+        type_offre, _ = OfferType.objects.get_or_create(type="Matériel", defaults={"description": ""})
+        offre = Offer.objects.create(
+            title="Tractopelle de M. Blanc", first_name_offer="A", last_name_offer="B",
+            email_offer="a@std.fr", offer_type=type_offre, crisis=crise)
+        return EngagementRessource.objects.create(
+            offer=offre, team=equipe, token_confirmation="jeton-" + str(offre.id), statut="CONFIRME")
+
+    def test_la_personne_declare_son_depart_puis_son_retour(self, mairie, crise):
+        engagement = self._engagement(mairie, crise)
+        public = APIClient()
+        url = reverse("engagement_ressource_public", args=[engagement.token_confirmation])
+
+        assert public.post(url, {"action": "transit"}, format="json").data["actions_possibles"] == ["arrivee", "retour"]
+        reponse = public.post(url, {"action": "retour"}, format="json")      # sans passer par « arrivé »
+
+        assert reponse.status_code == 200, reponse.data
+        assert (reponse.data["statut"], reponse.data["actions_possibles"]) == ("RENTRE", [])
+        engagement.refresh_from_db()
+        assert engagement.date_retour is not None and engagement.duree_engagee is not None
+
+    def test_le_point_de_situation_compte_les_heures_et_ceux_qui_ne_sont_pas_rentres(self, mairie, crise):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        rentre = self._engagement(mairie, crise)
+        debut = timezone.now() - timedelta(hours=5)
+        type(rentre).objects.filter(id=rentre.id).update(
+            statut="RENTRE", date_transit=debut, date_retour=debut + timedelta(hours=3, minutes=30))
+        dehors = self._engagement(mairie, crise)
+        type(dehors).objects.filter(id=dehors.id).update(statut="EN_TRANSIT", date_transit=debut)
+
+        donnees = mairie[1].get(reverse("point_de_situation"), {"crise": str(crise.id)}).data
+
+        moyens = {c["libelle"]: c["valeur"] for c in donnees["chiffres"]["moyens"]}
+        assert moyens["Heures engagées déclarées"] == 3.5
+        assert moyens["Encore sur le terrain (pas de « je rentre »)"] == 1
+        assert [l["heures"] for l in donnees["releve_engagements"]] == [3.5, None]
+        assert donnees["releve_engagements"][0]["ressource"] == "Tractopelle de M. Blanc"

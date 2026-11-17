@@ -79,7 +79,7 @@ export interface Offer {
   competences_libelles?: string[];
   commune?: string | null;
   distance_from_crisis_km?: number | null;
-  engagement_statut?: 'EN_ATTENTE' | 'CONFIRME' | 'DECLINE' | 'EN_TRANSIT' | 'ARRIVE' | null;
+  engagement_statut?: 'EN_ATTENTE' | 'CONFIRME' | 'DECLINE' | 'EN_TRANSIT' | 'ARRIVE' | 'RENTRE' | null;
   engagement_statut_libelle?: string | null;
   actif?: boolean;                    // false = désactivée (politique de désactivation)
 }

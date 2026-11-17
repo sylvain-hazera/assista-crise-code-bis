@@ -10210,6 +10210,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             engagement.date_transit = now
         elif statut == StatutEngagementRessource.ARRIVE and not engagement.date_arrivee:
             engagement.date_arrivee = now
+        elif statut == StatutEngagementRessource.RENTRE and not engagement.date_retour:
+            engagement.date_retour = now
         engagement.save()
 
         audit_log(
@@ -12439,9 +12441,12 @@ class EngagementRessourcePublicView(APIView):
     ACTIONS_PAR_STATUT = {
         StatutEngagementRessource.EN_ATTENTE: ["confirmer", "decliner"],
         StatutEngagementRessource.CONFIRME: ["transit"],
-        StatutEngagementRessource.EN_TRANSIT: ["arrivee"],
+        # « Je rentre » se déclare aussi sans être passé par « arrivé » : on ne perd pas un
+        # retour parce qu'une étape intermédiaire a été oubliée sur le terrain.
+        StatutEngagementRessource.EN_TRANSIT: ["arrivee", "retour"],
         StatutEngagementRessource.DECLINE: [],
-        StatutEngagementRessource.ARRIVE: [],
+        StatutEngagementRessource.ARRIVE: ["retour"],
+        StatutEngagementRessource.RENTRE: [],
     }
 
     def _serialize(self, engagement):
@@ -12479,6 +12484,9 @@ class EngagementRessourcePublicView(APIView):
         elif action_demandee == "arrivee":
             engagement.statut = StatutEngagementRessource.ARRIVE
             engagement.date_arrivee = now
+        elif action_demandee == "retour":
+            engagement.statut = StatutEngagementRessource.RENTRE
+            engagement.date_retour = now
         engagement.save()
 
         audit_log(

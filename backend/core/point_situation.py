@@ -59,6 +59,29 @@ def construire(crise, institution, environment) -> dict:
     creneaux = CreneauEquipe.objects.filter(crise=crise, equipe__institution=institution)
     tenus = creneaux.filter(statut=StatutCreneauEquipe.REALISE)
 
+    # Le temps réellement passé, d'après ce que chacun a déclaré : « je pars », « je rentre ».
+    from .models import EngagementRessource
+    engagements = list(
+        EngagementRessource.objects.filter(
+            offer__crisis=crise, team__institution=institution, environment=environment)
+        .exclude(date_transit__isnull=True, date_arrivee__isnull=True)
+        .select_related("offer", "team").order_by("date_transit", "date_arrivee")
+    )
+    releve, secondes, dehors = [], 0, 0
+    for engagement in engagements:
+        duree = engagement.duree_engagee
+        if duree is not None:
+            secondes += duree.total_seconds()
+        elif engagement.date_retour is None:
+            dehors += 1
+        releve.append({
+            "ressource": engagement.offer.title, "equipe": engagement.team.name,
+            "parti_le": engagement.date_transit or engagement.date_arrivee,
+            "rentre_le": engagement.date_retour,
+            "heures": round(duree.total_seconds() / 3600, 2) if duree is not None else None,
+        })
+    heures = round(secondes / 3600, 1)
+
     chiffres = {
         "population": [
             ("Personnes accueillies en ce moment", accueillis),
@@ -78,6 +101,9 @@ def construire(crise, institution, environment) -> dict:
             ("Missions conduites", missions.count()),
             ("Mobilisations demandées", mobilisations.count()),
             ("Mobilisations en cours", mobilisations.filter(statut=StatutDemandeMobilisation.ACTIVE).count()),
+            ("Engagements déclarés (« je pars »)", len(engagements)),
+            ("Encore sur le terrain (pas de « je rentre »)", dehors),
+            ("Heures engagées déclarées", heures),
             ("Créneaux d'équipe tenus", tenus.count()),
             ("Personnes ayant tenu un créneau", tenus.values("utilisateur").distinct().count()),
             ("Alertes diffusées aux habitants", AlertePopulation.objects.filter(
@@ -100,6 +126,8 @@ def construire(crise, institution, environment) -> dict:
         "chiffres": {famille: [{"libelle": l, "valeur": v} for l, v in lignes] for famille, lignes in chiffres.items()},
         "par_centre": par_centre,
         "equipes": sorted(equipes),
+        # Engagement par engagement, pour le dossier d'indemnisation : qui, quand, combien.
+        "releve_engagements": releve,
         "texte": _en_texte(crise, institution, maintenant, chiffres, par_centre, sorted(equipes)),
     }
 

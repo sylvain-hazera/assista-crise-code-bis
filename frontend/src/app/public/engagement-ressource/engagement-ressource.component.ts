@@ -7,8 +7,10 @@ import { EngagementRessourceService, EngagementRessourceStatut } from '../../ser
 const ACTION_LABELS: Record<string, string> = {
   confirmer: 'Je confirme ma venue',
   decliner: 'Je ne suis pas disponible',
-  transit: 'Je suis en route',
+  transit: 'Je pars',
   arrivee: 'Je suis arrivé(e)',
+  // La fin de l'engagement : avec « je pars », c'est ce qui donne le temps passé.
+  retour: 'Je rentre',
 };
 
 @Component({

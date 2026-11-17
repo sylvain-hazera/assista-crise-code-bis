@@ -4498,6 +4498,9 @@ class StatutEngagementRessource(models.TextChoices):
     DECLINE = "DECLINE", "Décliné"
     EN_TRANSIT = "EN_TRANSIT", "En transit"
     ARRIVE = "ARRIVE", "Arrivé / à disposition"
+    # « Je rentre » (17/11/2026) : la fin de l'engagement, déclarée par la personne elle-même.
+    # Avec « je pars » (EN_TRANSIT), c'est ce qui donne le temps réellement passé.
+    RENTRE = "RENTRE", "Rentré — engagement terminé"
 
 
 class EngagementRessource(EnvironmentScopedModel):
@@ -4515,6 +4518,17 @@ class EngagementRessource(EnvironmentScopedModel):
     date_confirmation = models.DateTimeField(null=True, blank=True)
     date_transit = models.DateTimeField(null=True, blank=True)
     date_arrivee = models.DateTimeField(null=True, blank=True)
+    date_retour = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def duree_engagee(self):
+        """Du départ déclaré (« je pars ») au retour déclaré (« je rentre »), ou None tant que
+        l'un des deux manque. À défaut de départ déclaré, l'arrivée fait foi : on ne compte pas
+        un trajet que personne n'a déclaré."""
+        debut = self.date_transit or self.date_arrivee
+        if debut is None or self.date_retour is None or self.date_retour < debut:
+            return None
+        return self.date_retour - debut
 
     def __str__(self) -> str:
         return f"{self.offer.title} → {self.team.name} ({self.get_statut_display()})"

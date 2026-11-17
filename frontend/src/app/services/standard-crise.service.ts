@@ -43,6 +43,8 @@ export interface PointDeSituation {
   chiffres: Record<string, { libelle: string; valeur: number }[]>;
   par_centre: { centre: string; personnes: number }[];
   equipes: string[];
+  /** Engagement par engagement, d'après « je pars » et « je rentre ». */
+  releve_engagements: { ressource: string; equipe: string; parti_le: string | null; rentre_le: string | null; heures: number | null }[];
   texte: string;
 }
 

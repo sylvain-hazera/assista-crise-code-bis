@@ -7,9 +7,9 @@ export interface EngagementRessourceStatut {
   offer_title: string;
   team_nom: string;
   mission_titre: string | null;
-  statut: 'EN_ATTENTE' | 'CONFIRME' | 'DECLINE' | 'EN_TRANSIT' | 'ARRIVE';
+  statut: 'EN_ATTENTE' | 'CONFIRME' | 'DECLINE' | 'EN_TRANSIT' | 'ARRIVE' | 'RENTRE';
   statut_libelle: string;
-  actions_possibles: ('confirmer' | 'decliner' | 'transit' | 'arrivee')[];
+  actions_possibles: ('confirmer' | 'decliner' | 'transit' | 'arrivee' | 'retour')[];
 }
 
 /** Page publique de confirmation d'une ressource affectée à une équipe — aucune

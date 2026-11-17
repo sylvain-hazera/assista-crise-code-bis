@@ -864,6 +864,13 @@ standard, relogement, et moyens engagés — équipes, missions, mobilisations, 
 Calculés sur toute la crise, et rendus aussi en texte prêt à coller. Les moyens engagés servent
 après coup de base au dossier d'indemnisation, sans tenir de comptabilité.
 
+**Les heures viennent de ce que la personne déclare.** Le suivi d'une ressource engagée
+(`EngagementRessource`) portait déjà « je confirme », « je pars » et « je suis arrivé » ; il
+porte maintenant « je rentre » (`RENTRE`, `date_retour`), déclarable par la personne depuis son
+lien ou par l'équipe. La durée va du départ déclaré au retour déclaré ; sans retour, aucune
+durée n'est comptée et la ressource figure comme « encore sur le terrain ». Le point de
+situation donne le total et le relevé engagement par engagement.
+
 #### Formulaires de terrain (17/11/2026)
 
 `core/formulaires_terrain.py`, page `/admin/formulaires-terrain`. La collecte de terrain à la

@@ -122,6 +122,26 @@
         <button type="button" class="btn-secondary" (click)="charger()"><span class="material-icons">refresh</span> Actualiser</button>
       </div>
       <pre class="texte">{{ s.texte }}</pre>
+
+      @if (s.releve_engagements?.length) {
+        <h2>Relevé des engagements</h2>
+        <p class="note">D'après ce que chacun a déclaré : « je pars », « je rentre ». Sans retour déclaré, aucune durée
+          n'est comptée.</p>
+        <table class="liste">
+          <thead><tr><th>Ressource</th><th>Équipe</th><th>Parti le</th><th>Rentré le</th><th>Heures</th></tr></thead>
+          <tbody>
+            @for (e of s.releve_engagements; track $index) {
+              <tr>
+                <td>{{ e.ressource }}</td>
+                <td>{{ e.equipe }}</td>
+                <td>{{ e.parti_le | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>{{ e.rentre_le ? (e.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td>
+                <td>{{ e.heures !== null ? (e.heures | number:'1.1-2') : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
     } @else {
       <p class="note">Calcul en cours…</p>
     }

@@ -1314,11 +1314,13 @@ export class TeamsComponent implements OnInit {
     EN_ATTENTE: 'CONFIRME',
     CONFIRME: 'EN_TRANSIT',
     EN_TRANSIT: 'ARRIVE',
+    ARRIVE: 'RENTRE',
   };
   private static readonly LIBELLE_ACTION: Record<string, string> = {
     EN_ATTENTE: 'Confirmer',
     CONFIRME: 'Marquer en transit',
     EN_TRANSIT: 'Marquer arrivée',
+    ARRIVE: 'Marquer rentrée',
   };
 
   /** Prochaine étape d'engagement ; null si aucun engagement ou statut terminal (ARRIVE/DECLINE). */
