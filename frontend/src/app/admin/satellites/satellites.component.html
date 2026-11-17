@@ -283,6 +283,10 @@
                       <p class="page-hint">Version avant : <span class="mono">{{ court(maj.version_avant) }}</span></p>
                     }
                     @if (maj.journal) {
+                      <button type="button" class="btn-secondary-sm" (click)="copierJournal(maj)"
+                              title="Copie tout le journal, pour le coller dans un message">
+                        {{ journalCopie === maj.id ? 'Copié' : 'Copier le journal' }}
+                      </button>
                       <pre class="maj-journal">{{ maj.journal }}</pre>
                     } @else {
                       <p class="page-hint">Pas de journal : le satellite n'a encore rien rapporté.</p>

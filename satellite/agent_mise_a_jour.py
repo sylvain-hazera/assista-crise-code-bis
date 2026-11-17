@@ -69,7 +69,7 @@ FICHIER_PRECEDENTE = ".maj-precedente.json"
 #: Par service, pour l'ordre « journaux » : tous les services, donc moins de lignes chacun.
 JOURNAUX_LIGNES = 40
 #: Ce qu'on garde de la sortie des commandes, par rapport envoyé. La FIN : l'erreur y est.
-TAILLE_JOURNAL = 30_000
+TAILLE_JOURNAL = 40_000
 
 
 class Echec(Exception):
@@ -746,9 +746,30 @@ def action_restauration(machine, env):
         else f"Revenu à la version {commit[:10]}."
 
 
+def action_bilan(machine, env):
+    """Tout ce qu'il y a à regarder, en un seul ordre et un seul journal : pour quelqu'un qui
+    dépanne à distance, six allers-retours de deux minutes sont six de trop.
+
+    Du plus général au plus précis, parce que c'est la FIN du journal qui est gardée si la
+    place manque : la machine, le réseau, le code, les migrations, puis les journaux des
+    services et le diagnostic. Un relevé qui échoue n'empêche pas les suivants."""
+    for titre, releve in (("MACHINE", action_systeme), ("RÉSEAU", action_reseau),
+                          ("CODE INSTALLÉ", action_depot), ("MIGRATIONS", action_migrations),
+                          ("JOURNAUX", action_journaux), ("DIAGNOSTIC", action_diagnostic)):
+        machine.journal.append(f"════════ {titre} ════════")
+        try:
+            releve(machine, env)
+        except Echec as echec:
+            machine.journal.append(f"(relevé incomplet : {echec})")
+        except Exception as erreur:  # noqa: BLE001
+            machine.journal.append(f"(relevé interrompu : {erreur!r})")
+    return "Bilan complet relevé : voir le journal."
+
+
 #: LA liste. Tout autre mot est refusé. Doit rester identique à `ActionSatellite` côté central.
 ACTIONS = {
     # regarder
+    "BILAN": action_bilan,
     "DIAGNOSTIC": action_diagnostic,
     "JOURNAUX": action_journaux,
     "MIGRATIONS": action_migrations,

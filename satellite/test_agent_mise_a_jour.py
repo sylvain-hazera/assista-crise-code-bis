@@ -499,15 +499,32 @@ class TestDiagnosticEtRedemarrage:
         assert statut == "ECHOUEE" and "le site local ne répond pas" in etape
 
     def test_la_liste_est_fermee_et_connue(self):
-        """Ce que le central peut faire faire à un satellite tient en douze mots. En ajouter un
+        """Ce que le central peut faire faire à un satellite tient en treize mots. En ajouter un
         est une décision : cet essai oblige à la prendre en connaissance de cause."""
         assert sorted(agent.ACTIONS) == sorted([
-            "DIAGNOSTIC", "JOURNAUX", "MIGRATIONS", "SYSTEME", "RESEAU", "DEPOT",
+            "BILAN", "DIAGNOSTIC", "JOURNAUX", "MIGRATIONS", "SYSTEME", "RESEAU", "DEPOT",
             "REDEMARRAGE", "MIGRER", "RECONSTRUCTION", "NETTOYAGE", "SAUVEGARDE", "RESTAURATION",
         ])
 
+    def test_le_bilan_releve_tout_en_une_fois_et_finit_par_le_diagnostic(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "BILAN"}, CentralFactice(), machine, {"CENTRAL_URL": "http://127.0.0.1:9"})
+        assert statut == "REUSSIE" and "Bilan complet" in etape
+        journal = machine.texte_du_journal()
+        titres = [l for l in journal.splitlines() if l.startswith("════════")]
+        assert [t.strip("═ ") for t in titres] == ["MACHINE", "RÉSEAU", "CODE INSTALLÉ", "MIGRATIONS", "JOURNAUX", "DIAGNOSTIC"]
+        assert "ProgrammingError dans backend" in journal
+        assert not [a for a in machine.appels if a.startswith("installer.sh") or a == "sauvegarde"]
+
+    def test_un_releve_qui_echoue_n_arrete_pas_le_bilan(self, poste):
+        (poste["dossier"] / ".profil").write_text("gw", encoding="utf-8")     # pas de base : MIGRATIONS échoue
+        machine = MachineBavarde(poste["dossier"])
+        statut, _, _ = agent.agir({"id": "o", "action": "BILAN"}, CentralFactice(), machine, {"CENTRAL_URL": "http://127.0.0.1:9"})
+        journal = machine.texte_du_journal()
+        assert statut == "REUSSIE" and "relevé incomplet" in journal and "════════ DIAGNOSTIC" in journal
+
     def test_les_releves_ne_touchent_a_rien(self, poste):
-        for mot in ("DIAGNOSTIC", "JOURNAUX", "SYSTEME", "RESEAU", "DEPOT"):
+        for mot in ("BILAN", "DIAGNOSTIC", "JOURNAUX", "SYSTEME", "RESEAU", "DEPOT"):
             machine = MachineBavarde(poste["dossier"])
             avant = machine.commit_installe()
             statut, _, _ = agent.agir({"id": "o", "action": mot}, CentralFactice(), machine, {"CENTRAL_URL": "http://127.0.0.1:9"})

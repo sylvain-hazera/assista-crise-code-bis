@@ -127,7 +127,7 @@ export interface VersionASigner {
 /** Ce que le central peut demander à l'agent d'un satellite, hors mise à jour : une liste
  * fermée, sans paramètre, que l'agent connaît d'avance (satellite/agent_mise_a_jour.py). */
 export type ActionSatellite =
-  | 'DIAGNOSTIC' | 'JOURNAUX' | 'MIGRATIONS' | 'SYSTEME' | 'RESEAU' | 'DEPOT'
+  | 'BILAN' | 'DIAGNOSTIC' | 'JOURNAUX' | 'MIGRATIONS' | 'SYSTEME' | 'RESEAU' | 'DEPOT'
   | 'REDEMARRAGE' | 'MIGRER' | 'RECONSTRUCTION' | 'NETTOYAGE' | 'SAUVEGARDE' | 'RESTAURATION';
 
 export interface DescriptionActionSatellite {
@@ -141,6 +141,7 @@ export interface DescriptionActionSatellite {
 
 /** Regarder : rien de cela ne change la machine. */
 export const ACTIONS_REGARDER: DescriptionActionSatellite[] = [
+  { code: 'BILAN', libelle: 'Bilan complet (tout en une fois)', aide: "Les six relevés ci-dessous dans un seul journal, à copier d'un clic." },
   { code: 'DIAGNOSTIC', libelle: 'Diagnostic', aide: "État de chaque service et derniers messages de ceux qui sont en panne." },
   { code: 'JOURNAUX', libelle: 'Journaux de tous les services', aide: "Les derniers messages de chaque service, en panne ou non." },
   { code: 'MIGRATIONS', libelle: 'État des migrations', aide: "Ce qui est appliqué à la base, ce qui attend, et si le code démarre." },

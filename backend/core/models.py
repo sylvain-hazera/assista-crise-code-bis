@@ -10431,6 +10431,7 @@ class ActionSatellite(models.TextChoices):
     paramètre : l'agent refuse tout mot qu'il ne connaît pas (satellite/agent_mise_a_jour.py)."""
     MISE_A_JOUR = "MISE_A_JOUR", "Mise à jour"
     # Regarder : rien de cela ne change la machine.
+    BILAN = "BILAN", "Bilan complet"
     DIAGNOSTIC = "DIAGNOSTIC", "Diagnostic"
     JOURNAUX = "JOURNAUX", "Journaux de tous les services"
     MIGRATIONS = "MIGRATIONS", "État des migrations"

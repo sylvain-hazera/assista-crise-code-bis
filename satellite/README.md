@@ -139,11 +139,12 @@ sont sorties :
 - **Tout échec au redémarrage emporte son diagnostic.** À la fin du journal : la version du
   code, la place libre, l'état de chaque service, et les soixante derniers messages de ceux qui
   sont en panne — toujours ceux du serveur local, puisque c'est lui qui applique les migrations.
-- **Une liste « Demander au satellite… »**, sur la page Satellites. Douze ordres, que l'agent
+- **Une liste « Demander au satellite… »**, sur la page Satellites. Treize ordres, que l'agent
   connaît d'avance (`ACTIONS` dans `agent_mise_a_jour.py`) :
 
   | Regarder — ne change rien | Agir — ce que ferait quelqu'un sur place |
   |---|---|
+  | **Bilan complet** : les six relevés ci-dessous en un seul journal, avec un bouton « Copier le journal » | |
   | Diagnostic | Redémarrer les services |
   | Journaux de tous les services | Appliquer les migrations (base sauvegardée d'abord, une par une) |
   | État des migrations | Reconstruire et redémarrer |

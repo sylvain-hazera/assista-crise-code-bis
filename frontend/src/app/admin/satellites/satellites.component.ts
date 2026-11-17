@@ -260,6 +260,19 @@ export class SatellitesComponent implements OnInit {
       && !(satellite.actions_agent ?? []).length;
   }
 
+  /** L'ordre dont le journal vient d'être copié, pour le dire sur son bouton. */
+  journalCopie: string | null = null;
+
+  /** Copie le journal entier, avec de quoi le situer : c'est fait pour être collé tel quel à
+   * quelqu'un qui dépanne. */
+  copierJournal(maj: MiseAJourSatellite): void {
+    const entete = `${maj.action_libelle ?? 'Mise à jour'} — ${maj.statut_libelle} — ${maj.etape ?? ''}\n`;
+    navigator.clipboard?.writeText(entete + (maj.journal ?? '')).then(
+      () => { this.journalCopie = maj.id; },
+      () => { this.errorMessage = "La copie n'a pas fonctionné : sélectionnez le texte à la main."; },
+    );
+  }
+
   /** Depuis la liste déroulante : donne l'ordre, puis remet la liste sur son intitulé. */
   choisirAction(satellite: Satellite, liste: HTMLSelectElement): void {
     const description = [...ACTIONS_REGARDER, ...ACTIONS_AGIR].find(a => a.code === liste.value);
