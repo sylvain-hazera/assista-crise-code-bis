@@ -6,6 +6,7 @@ import { environment } from '../../environments/environment';
 import {
   Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, LigneSupervision,
   MiseAJourSatellite, VersionASigner, VersionSatellite, VersionsSatellite,
+  ActionSatellite,
 } from '../shared/models/satellite.model';
 
 @Injectable({ providedIn: 'root' })
@@ -62,6 +63,12 @@ export class SatelliteService {
   mettreAJour(id: string, malgreCrise = false): Observable<Satellite> {
     return this.http.post<Satellite>(
       `${this.url}/${id}/mettre-a-jour/`, malgreCrise ? { malgre_crise: true } : {});
+  }
+
+  /** Demande au satellite l'un des ordres de la liste fermée (regarder ou agir). Rien n'est
+   * exécuté ici : l'agent le prend à son prochain passage ; le résultat se lit dans l'historique. */
+  demanderAction(id: string, action: ActionSatellite): Observable<Satellite> {
+    return this.http.post<Satellite>(`${this.url}/${id}/demander-action/`, { action });
   }
 
   /** Annule un ordre que le satellite n'a pas encore pris. */

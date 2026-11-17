@@ -216,6 +216,23 @@
                   Annuler la mise à jour
                 </button>
               }
+              @if (peutDemanderAction(satellite)) {
+                <select #listeActions class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id"
+                        (change)="choisirAction(satellite, listeActions)"
+                        aria-label="Demander au satellite"
+                        title="Ordres que l'agent du satellite connaît d'avance. Aucune commande n'est transmise.">
+                  <option value="">Demander au satellite…</option>
+                  <optgroup label="Regarder (ne change rien)">
+                    @for (a of actionsRegarder(satellite); track a.code) { <option [value]="a.code" [title]="a.aide">{{ a.libelle }}</option> }
+                  </optgroup>
+                  <optgroup label="Agir">
+                    @for (a of actionsAgir(satellite); track a.code) { <option [value]="a.code" [title]="a.aide">{{ a.libelle }}</option> }
+                  </optgroup>
+                </select>
+              }
+              @if (agentTropAncien(satellite)) {
+                <div class="page-hint">Diagnostic et dépannage à distance : mettez d'abord ce satellite à jour, son agent ne les connaît pas encore.</div>
+              }
               @if (satellite.mise_a_jour) {
                 <button type="button" class="btn-secondary-sm" (click)="voirHistorique(satellite)">
                   {{ historiqueDe?.id === satellite.id ? "Fermer l'historique" : 'Historique' }}
@@ -246,15 +263,19 @@
           @if (historiqueDe?.id === satellite.id) {
             <tr class="ligne-historique">
               <td colspan="8">
-                <strong>Mises à jour de « {{ satellite.nom }} »</strong>
+                <strong>Mises à jour, diagnostics et redémarrages de « {{ satellite.nom }} »</strong>
                 @for (maj of historique; track maj.id) {
                   <details class="maj-historique">
                     <summary>
                       <span class="statut" [ngClass]="miseAJourClass(maj)">{{ maj.statut_libelle }}</span>
                       {{ maj.date_demande | date:'dd/MM/yyyy HH:mm' }} —
-                      vers <span class="mono">{{ court(maj.commit) }}</span>
-                      @if (maj.version_libelle) { ({{ maj.version_libelle }}) }
-                      @if (maj.demandee_par_nom) { , demandée par {{ maj.demandee_par_nom }} }
+                      @if (maj.commit) {
+                        vers <span class="mono">{{ court(maj.commit) }}</span>
+                        @if (maj.version_libelle) { ({{ maj.version_libelle }}) }
+                      } @else {
+                        <strong>{{ maj.action_libelle }}</strong>
+                      }
+                      @if (maj.demandee_par_nom) { , demandé par {{ maj.demandee_par_nom }} }
                       @if (maj.malgre_crise) { <em>— pendant une crise</em> }
                     </summary>
                     @if (maj.etape) { <p>{{ maj.etape }}</p> }

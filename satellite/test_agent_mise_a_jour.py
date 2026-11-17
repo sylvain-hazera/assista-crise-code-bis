@@ -115,6 +115,12 @@ class MachineFactice(agent.Machine):
     def espace_libre_go(self):
         return 50
 
+    def restaurer_la_base(self, env, sauvegarde, horodatage=None):
+        # La vraie est essayée contre un PostgreSQL réel, hors de cette suite (elle demande
+        # Docker) : voir satellite/README.md.
+        self.appels.append("restauration " + Path(sauvegarde).name)
+        return "assista-db_avant_essai"
+
 
 @pytest.fixture
 def poste(depots, cles, tmp_path):
@@ -423,3 +429,232 @@ class TestCompteRenduRefuseParLeCentral:
         with pytest.raises(urllib.error.HTTPError):
             central.rapport("o1", "REUSSIE", "Mise à jour terminée.", "journal")
         assert len(envoyes) == 2
+
+
+class MachineBavarde(MachineFactice):
+    """Comme MachineFactice, mais `docker compose ps` et `logs` rendent quelque chose de lisible."""
+
+    ETAT = ("backend\trunning\tunhealthy\tUp 2 minutes (unhealthy)\n"
+            "db\trunning\thealthy\tUp 2 minutes (healthy)\n"
+            "telecharger-tuiles\texited\t\tExited (0) 2 minutes ago\n"
+            "sync-entrant\tcreated\t\tCreated\n")
+
+    def lancer(self, commande, cwd=None, delai=600, entree=None):
+        commande = [str(c) for c in commande]
+        if commande[0] == "docker" and "ps" in commande:
+            self.journal.append(self.ETAT)
+            return 0, self.ETAT
+        if commande[0] == "docker" and "logs" in commande:
+            self.appels.append("journaux " + commande[-1])
+            sortie = f"django.db.utils.ProgrammingError dans {commande[-1]}"
+            self.journal.append(sortie)
+            return 0, sortie
+        return super().lancer(commande, cwd, delai, entree)
+
+
+class TestDiagnosticEtRedemarrage:
+    """17/11/2026 : un satellite « à jour et en échec », et il a fallu téléphoner pour savoir
+    pourquoi son serveur ne redémarrait pas."""
+
+    def test_le_diagnostic_lit_les_services_en_panne_et_toujours_le_serveur(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        machine.diagnostiquer()
+        # Le serveur, et le service resté « créé » ; pas la base (saine) ni le service à
+        # exécution unique terminé normalement.
+        assert machine.appels == ["journaux backend", "journaux sync-entrant"]
+        assert "ProgrammingError dans backend" in machine.texte_du_journal()
+
+    def test_un_diagnostic_qui_echoue_ne_leve_pas(self, poste):
+        class Cassee(MachineFactice):
+            def compose(self, *arguments, delai=600):
+                raise OSError("docker absent")
+        machine = Cassee(poste["dossier"])
+        machine.diagnostiquer()
+        assert "diagnostic interrompu" in machine.texte_du_journal()
+
+    def test_une_mise_a_jour_qui_ne_redemarre_pas_dit_pourquoi(self, poste):
+        central = CentralFactice()
+        machine = MachineBavarde(poste["dossier"], demarrage=1)
+        statut, etape, _ = agent.appliquer(poste["ordre"](poste["v3"]), central, machine, {}, poste["cle"])
+        assert statut == "ECHOUEE" and "diagnostic est à la fin" in etape
+        assert "ProgrammingError dans backend" in machine.texte_du_journal()
+
+    def test_l_ordre_de_diagnostic_ne_touche_a_rien(self, poste):
+        central, machine = CentralFactice(), MachineBavarde(poste["dossier"])
+        avant = machine.commit_installe()
+        statut, etape, version = agent.agir({"id": "o", "action": "DIAGNOSTIC"}, central, machine, {})
+        assert (statut, version) == ("REUSSIE", avant)
+        assert not [a for a in machine.appels if a.startswith("installer.sh") or a == "sauvegarde"]
+        assert machine.commit_installe() == avant
+
+    def test_l_ordre_de_redemarrage_relance_puis_diagnostique(self, poste):
+        central, machine = CentralFactice(), MachineBavarde(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "REDEMARRAGE"}, central, machine, {})
+        assert (statut, etape) == ("REUSSIE", "Services redémarrés.")
+        assert machine.appels[0] == "installer.sh demarrer" and "journaux backend" in machine.appels
+
+    def test_un_redemarrage_qui_echoue_le_dit_avec_son_diagnostic(self, poste):
+        machine = MachineBavarde(poste["dossier"], sante=(False, "le site local ne répond pas"))
+        statut, etape, _ = agent.agir({"id": "o", "action": "REDEMARRAGE"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "le site local ne répond pas" in etape
+
+    def test_la_liste_est_fermee_et_connue(self):
+        """Ce que le central peut faire faire à un satellite tient en douze mots. En ajouter un
+        est une décision : cet essai oblige à la prendre en connaissance de cause."""
+        assert sorted(agent.ACTIONS) == sorted([
+            "DIAGNOSTIC", "JOURNAUX", "MIGRATIONS", "SYSTEME", "RESEAU", "DEPOT",
+            "REDEMARRAGE", "MIGRER", "RECONSTRUCTION", "NETTOYAGE", "SAUVEGARDE", "RESTAURATION",
+        ])
+
+    def test_les_releves_ne_touchent_a_rien(self, poste):
+        for mot in ("DIAGNOSTIC", "JOURNAUX", "SYSTEME", "RESEAU", "DEPOT"):
+            machine = MachineBavarde(poste["dossier"])
+            avant = machine.commit_installe()
+            statut, _, _ = agent.agir({"id": "o", "action": mot}, CentralFactice(), machine, {"CENTRAL_URL": "http://127.0.0.1:9"})
+            assert statut == "REUSSIE", mot
+            assert machine.commit_installe() == avant
+            assert not [a for a in machine.appels if a.startswith("installer.sh") or a == "sauvegarde"], mot
+
+    def test_l_etat_des_migrations_se_lit_sans_lancer_le_serveur(self, poste):
+        """Sans son point d'entrée, qui les appliquerait : demander l'état ne doit rien changer."""
+        vues = []
+
+        class Espionne(MachineFactice):
+            def compose(self, *arguments, delai=600):
+                vues.append(arguments)
+                return 0, "[X] core.0320\n[ ] core.0321"
+
+        statut, etape, _ = agent.agir({"id": "o", "action": "MIGRATIONS"}, CentralFactice(), Espionne(poste["dossier"]), {})
+        assert statut == "REUSSIE" and "[ ]" in etape
+        assert all(a[:6] == ("run", "--rm", "--no-deps", "-T", "--entrypoint", "python") for a in vues)
+        assert [a[-1] for a in vues] == ["--plan", "check"]
+
+    def test_migrer_sauvegarde_d_abord_et_dit_quelle_migration_echoue(self, poste):
+        class Cassee(MachineFactice):
+            def compose(self, *arguments, delai=600):
+                self.appels.append("compose " + arguments[-3])
+                self.journal.append("Applying core.0324_formulaires_terrain... ERREUR")
+                return 1, ""
+
+        machine = Cassee(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "MIGRER"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "sauvegardée avant" in etape
+        assert machine.appels[0] == "sauvegarde"                      # avant toute migration
+        assert "core.0324" in machine.texte_du_journal()
+
+    def test_une_passerelle_n_a_pas_de_base(self, poste):
+        (poste["dossier"] / ".profil").write_text("gw", encoding="utf-8")
+        for mot in ("MIGRATIONS", "MIGRER", "SAUVEGARDE"):
+            machine = MachineBavarde(poste["dossier"])
+            statut, etape, _ = agent.agir({"id": "o", "action": mot}, CentralFactice(), machine, {})
+            assert statut == "ECHOUEE" and "passerelle" in etape, mot
+            assert machine.appels == []
+
+    def test_la_reconstruction_ratee_ne_redemarre_rien(self, poste):
+        machine = MachineBavarde(poste["dossier"], construction=1)
+        statut, etape, _ = agent.agir({"id": "o", "action": "RECONSTRUCTION"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "n'ont pas été touchés" in etape
+        assert not [a for a in machine.appels if a.startswith("installer.sh")]
+
+    def test_le_nettoyage_ne_retire_ni_conteneur_ni_volume(self, poste):
+        lancees = []
+
+        class Espionne(MachineFactice):
+            def lancer(self, commande, cwd=None, delai=600, entree=None):
+                lancees.append(" ".join(str(c) for c in commande))
+                return 0, ""
+
+        statut, _, _ = agent.agir({"id": "o", "action": "NETTOYAGE"}, CentralFactice(), Espionne(poste["dossier"]), {})
+        assert statut == "REUSSIE"
+        assert lancees == ["docker builder prune -f --filter until=24h", "docker image prune -f"]
+
+    def test_un_mot_inconnu_est_refuse_sans_rien_lancer(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "EFFACER_LE_DISQUE"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "Ordre inconnu" in etape
+        assert machine.appels == []
+
+    def test_un_ordre_annule_n_est_pas_execute(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        assert agent.agir({"id": "o", "action": "REDEMARRAGE"}, CentralFactice(accepte=False), machine, {}) is None
+        assert machine.appels == []
+
+    def test_le_passage_aiguille_selon_l_action(self, poste, tmp_path):
+        central = CentralFactice()
+        central.ordre_a_rendre = {"id": "o", "action": "DIAGNOSTIC"}
+        mot = agent.passage(central, MachineBavarde(poste["dossier"]), {}, poste["cle"], tmp_path / "r.json")
+        assert mot.startswith("REUSSIE")
+        assert central.rapports[-1][0] == "REUSSIE"
+
+
+class TestRevenirALaVersionPrecedente:
+    """17/11/2026. Vers quoi on revient est noté par l'agent au moment de la mise à jour ;
+    l'ordre du central ne porte aucun paramètre."""
+
+    def _mis_a_jour(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        statut, _, _ = agent.appliquer(poste["ordre"](poste["v3"]), CentralFactice(), machine, {}, poste["cle"])
+        assert statut == "REUSSIE"
+        return machine
+
+    def test_la_mise_a_jour_note_de_quoi_revenir(self, poste):
+        self._mis_a_jour(poste)
+        note = json.loads((poste["dossier"] / agent.FICHIER_PRECEDENTE).read_text())
+        assert (note["commit"], note["vers"]) == (poste["v2"], poste["v3"])
+        assert note["sauvegarde"].endswith("essai.sql.gz")
+
+    def test_le_retour_restaure_la_base_puis_ramene_le_code(self, poste):
+        self._mis_a_jour(poste)
+        machine = MachineBavarde(poste["dossier"])
+
+        statut, etape, version = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+
+        assert statut == "REUSSIE", etape
+        assert version == poste["v2"] and machine.commit_installe() == poste["v2"]
+        # La base d'abord, le code ensuite, puis seulement le redémarrage.
+        ordre = [a for a in machine.appels if a.startswith(("restauration", "installer.sh"))]
+        assert ordre == ["restauration essai.sql.gz", "installer.sh demarrer"]
+        assert "gardée sous le nom : assista-db_avant_essai" in machine.texte_du_journal()
+        # On ne revient pas deux fois d'une même mise à jour.
+        assert not (poste["dossier"] / agent.FICHIER_PRECEDENTE).exists()
+        statut, etape, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "aucune mise à jour dont revenir" in etape
+
+    def test_sans_note_de_l_agent_rien_n_est_touche(self, poste):
+        machine = MachineBavarde(poste["dossier"])
+        avant = machine.commit_installe()
+        statut, etape, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "Rien n'a été modifié" in etape
+        assert machine.appels == [] and machine.commit_installe() == avant
+
+    def test_une_note_trafiquee_ne_fait_pas_revenir_n_importe_ou(self, poste):
+        """Le fichier est sur le satellite, mais on ne lui fait pas dire n'importe quoi."""
+        (poste["dossier"] / agent.FICHIER_PRECEDENTE).write_text(
+            json.dumps({"commit": "main; rm -rf /", "sauvegarde": "x"}), encoding="utf-8")
+        machine = MachineBavarde(poste["dossier"])
+        statut, _, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and machine.appels == []
+
+    def test_une_restauration_qui_echoue_laisse_le_code_ou_il_est(self, poste):
+        self._mis_a_jour(poste)
+
+        class BaseCassee(MachineBavarde):
+            def restaurer_la_base(self, env, sauvegarde, horodatage=None):
+                raise agent.Echec("La sauvegarde n'a pas pu être rechargée : la base en service n'a pas été touchée.")
+
+        machine = BaseCassee(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+        assert statut == "ECHOUEE" and "n'a pas été touchée" in etape
+        assert machine.commit_installe() == poste["v3"]                # le code n'a pas bougé
+        assert (poste["dossier"] / agent.FICHIER_PRECEDENTE).exists()  # on pourra réessayer
+
+    def test_une_passerelle_revient_sans_base(self, poste):
+        self._mis_a_jour(poste)
+        (poste["dossier"] / ".profil").write_text("gw", encoding="utf-8")
+        # Sur une passerelle la mise à jour ne sauvegarde rien : on rejoue cette situation.
+        note = json.loads((poste["dossier"] / agent.FICHIER_PRECEDENTE).read_text())
+        (poste["dossier"] / agent.FICHIER_PRECEDENTE).write_text(json.dumps({**note, "sauvegarde": ""}), encoding="utf-8")
+        machine = MachineBavarde(poste["dossier"])
+        statut, etape, _ = agent.agir({"id": "o", "action": "RESTAURATION"}, CentralFactice(), machine, {})
+        assert statut == "REUSSIE" and not [a for a in machine.appels if a.startswith("restauration")]
+        assert machine.commit_installe() == poste["v2"]

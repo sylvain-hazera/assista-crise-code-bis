@@ -182,6 +182,45 @@ def demander(satellite, utilisateur, version=None, malgre_crise=False):
             "Une mise à jour est déjà demandée ou en cours sur ce satellite.") from None
 
 
+def demander_action(satellite, utilisateur, action):
+    """Demande à l'agent l'un des ordres de la liste fermée `ActionSatellite` (17/11/2026) :
+    regarder (diagnostic, journaux, migrations, machine, réseau, dépôt) ou agir (redémarrer,
+    migrer, reconstruire, libérer de la place, sauvegarder).
+
+    Pas de version, pas de signature : ces ordres ne font entrer aucun code, et l'agent refuse
+    tout mot qu'il ne connaît pas. Pas de refus pendant une crise non plus — c'est précisément
+    là qu'on a besoin de savoir pourquoi un satellite ne répond plus."""
+    from .models import ActionSatellite, MiseAJourSatellite, StatutEnrolementSatellite
+
+    if action not in ActionSatellite.values or action == ActionSatellite.MISE_A_JOUR:
+        raise MiseAJourRefusee("ACTION_INCONNUE", "Action inconnue.")
+    if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE:
+        raise MiseAJourRefusee("NON_VALIDE", "Ce satellite n'est pas validé.")
+    if not agent_present(satellite):
+        raise MiseAJourRefusee(
+            "SANS_AGENT", "Ce satellite n'a pas d'agent en service : rien ne peut lui être demandé d'ici.")
+    if action not in (satellite.actions_agent or []):
+        # Un agent ancien prendrait ce mot pour une mise à jour sans numéro de version et
+        # répondrait « numéro de version invalide » : on le dit ici, clairement.
+        raise MiseAJourRefusee(
+            "AGENT_TROP_ANCIEN",
+            "L'agent de ce satellite ne connaît pas encore cet ordre : mettez d'abord le "
+            "satellite à jour. Son agent se met à jour avec le code, même si le redémarrage "
+            "échoue.")
+    if ordre_ouvert(satellite) is not None:
+        raise MiseAJourRefusee(
+            "DEJA_DEMANDEE", "Un ordre est déjà demandé ou en cours sur ce satellite.")
+    try:
+        with transaction.atomic():
+            return MiseAJourSatellite.objects.create(
+                satellite=satellite, action=action, demandee_par=utilisateur,
+                version_avant=satellite.version_logicielle or "",
+            )
+    except IntegrityError:
+        raise MiseAJourRefusee(
+            "DEJA_DEMANDEE", "Un ordre est déjà demandé ou en cours sur ce satellite.") from None
+
+
 def annuler(satellite):
     """Annule un ordre que le satellite n'a pas encore pris. Renvoie l'ordre, ou lève.
 
@@ -237,7 +276,11 @@ def enregistrer_rapport(ordre, statut, etape="", journal="", version=""):
     ordre.save(update_fields=champs)
 
     if statut == StatutMiseAJour.REUSSIE:
-        satellite = ordre.satellite
-        satellite.version_logicielle = (version or ordre.version.commit)[:50]
-        satellite.save(update_fields=["version_logicielle"])
+        # Un diagnostic ou un redémarrage n'a pas de version cible : on prend ce que l'agent
+        # rapporte, et rien s'il ne rapporte rien.
+        installee = version or (ordre.version.commit if ordre.version_id else "")
+        if installee:
+            satellite = ordre.satellite
+            satellite.version_logicielle = installee[:50]
+            satellite.save(update_fields=["version_logicielle"])
     return True

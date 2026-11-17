@@ -44,6 +44,8 @@ satellite/.cle-signature.pub
 satellite/.maj-verrou
 satellite/.maj-rapport.json
 satellite/.maj-rapport.json.tmp
+satellite/.maj-precedente.json
+satellite/.maj-precedente.json.tmp
 satellite/sauvegardes/
 *.pyo
 *.pyd

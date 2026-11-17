@@ -9,6 +9,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import {
   Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, MiseAJourSatellite,
   VersionASigner, VersionSatellite,
+  ACTIONS_AGIR, ACTIONS_REGARDER, DescriptionActionSatellite,
 } from '../../shared/models/satellite.model';
 import { UserRole } from '../../shared/models/user.model';
 
@@ -231,6 +232,61 @@ export class SatellitesComponent implements OnInit {
           return;
         }
         this.errorMessage = err.error?.error || 'Impossible de demander la mise à jour.';
+      },
+    });
+  }
+
+  /** Diagnostic ou redémarrage : possible sur un satellite validé, dont l'agent est en
+   * service, et qui n'a pas déjà un ordre en attente. */
+  peutDemanderAction(satellite: Satellite): boolean {
+    const ouvert = ['DEMANDEE', 'EN_COURS'].includes(satellite.mise_a_jour?.statut ?? '');
+    return !this.isDemo && satellite.statut_enrolement === 'APPROUVE' && !!satellite.agent_present && !ouvert
+      && !!(satellite.actions_agent ?? []).length;
+  }
+
+  /** Seulement ce que l'agent de CE satellite dit connaître : un agent ancien prendrait un
+   * ordre inconnu pour une mise à jour sans numéro de version. */
+  actionsRegarder(satellite: Satellite): DescriptionActionSatellite[] {
+    return ACTIONS_REGARDER.filter(a => (satellite.actions_agent ?? []).includes(a.code));
+  }
+
+  actionsAgir(satellite: Satellite): DescriptionActionSatellite[] {
+    return ACTIONS_AGIR.filter(a => (satellite.actions_agent ?? []).includes(a.code));
+  }
+
+  /** L'agent tourne, mais ne connaît aucun des ordres : il date d'avant eux. */
+  agentTropAncien(satellite: Satellite): boolean {
+    return !this.isDemo && satellite.statut_enrolement === 'APPROUVE' && !!satellite.agent_present
+      && !(satellite.actions_agent ?? []).length;
+  }
+
+  /** Depuis la liste déroulante : donne l'ordre, puis remet la liste sur son intitulé. */
+  choisirAction(satellite: Satellite, liste: HTMLSelectElement): void {
+    const description = [...ACTIONS_REGARDER, ...ACTIONS_AGIR].find(a => a.code === liste.value);
+    liste.value = '';
+    if (description) this.demanderAction(satellite, description);
+  }
+
+  demanderAction(satellite: Satellite, description: DescriptionActionSatellite): void {
+    const action = description.code;
+    // Un ordre qui change quelque chose se confirme, en disant quoi.
+    if (description.confirmer && !confirm(
+      `${description.libelle} sur « ${satellite.nom} » ?\n\n${description.confirmer}`)) {
+      return;
+    }
+    this.actionEnCours = satellite.id;
+    this.errorMessage = '';
+    this.messageSucces = '';
+    this.service.demanderAction(satellite.id, action).subscribe({
+      next: (maj) => {
+        this.actionEnCours = null;
+        this.remplacer(maj);
+        this.messageSucces = `« ${description.libelle} » demandé à « ${satellite.nom} » : il le prendra à son `
+          + "prochain contact (deux minutes environ). Le résultat se lit dans l'historique.";
+      },
+      error: (err) => {
+        this.actionEnCours = null;
+        this.errorMessage = err.error?.error || "L'ordre n'a pas pu être donné.";
       },
     });
   }

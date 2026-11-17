@@ -10368,6 +10368,9 @@ class Satellite(EnvironmentScopedModel):
     # ou passerelle Windows) : lui adresser un ordre serait parler à personne, et l'écran ne
     # le propose donc pas.
     agent_mise_a_jour_vu = models.DateTimeField(null=True, blank=True)
+    #: Les ordres que l'agent de ce satellite dit connaitre, tels qu'il les annonce a chaque
+    #: passage. Vide = agent d'avant le 17/11/2026, qui ne sait que se mettre a jour.
+    actions_agent = models.JSONField(default=list, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -10423,6 +10426,26 @@ class StatutMiseAJour(models.TextChoices):
     EXPIREE = "EXPIREE", "Expirée"
 
 
+class ActionSatellite(models.TextChoices):
+    """Ce que le central peut demander à l'agent d'un satellite. Une liste fermée, sans
+    paramètre : l'agent refuse tout mot qu'il ne connaît pas (satellite/agent_mise_a_jour.py)."""
+    MISE_A_JOUR = "MISE_A_JOUR", "Mise à jour"
+    # Regarder : rien de cela ne change la machine.
+    DIAGNOSTIC = "DIAGNOSTIC", "Diagnostic"
+    JOURNAUX = "JOURNAUX", "Journaux de tous les services"
+    MIGRATIONS = "MIGRATIONS", "État des migrations"
+    SYSTEME = "SYSTEME", "État de la machine"
+    RESEAU = "RESEAU", "État du réseau"
+    DEPOT = "DEPOT", "État du code installé"
+    # Agir : ce que ferait quelqu'un sur place, et rien d'autre.
+    REDEMARRAGE = "REDEMARRAGE", "Redémarrage des services"
+    MIGRER = "MIGRER", "Application des migrations"
+    RECONSTRUCTION = "RECONSTRUCTION", "Reconstruction et redémarrage"
+    NETTOYAGE = "NETTOYAGE", "Libération de place"
+    SAUVEGARDE = "SAUVEGARDE", "Sauvegarde de la base"
+    RESTAURATION = "RESTAURATION", "Retour à la version précédente"
+
+
 class MiseAJourSatellite(models.Model):
     """Un ordre de mise à jour adressé à un satellite, et ce qu'il en est advenu.
 
@@ -10436,8 +10459,13 @@ class MiseAJourSatellite(models.Model):
     satellite = models.ForeignKey(
         Satellite, on_delete=models.CASCADE, related_name="mises_a_jour",
     )
+    #: Vide pour un diagnostic ou un redémarrage : ils ne font entrer aucune version.
     version = models.ForeignKey(
         VersionSatellite, on_delete=models.PROTECT, related_name="mises_a_jour",
+        null=True, blank=True,
+    )
+    action = models.CharField(
+        max_length=20, choices=ActionSatellite.choices, default=ActionSatellite.MISE_A_JOUR,
     )
     demandee_par = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
@@ -10474,7 +10502,8 @@ class MiseAJourSatellite(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.satellite.nom} → {self.version.commit[:10]} ({self.statut})"
+        cible = self.version.commit[:10] if self.version_id else self.get_action_display().lower()
+        return f"{self.satellite.nom} → {cible} ({self.statut})"
 
 
 class ModeleSynchronisable(models.TextChoices):

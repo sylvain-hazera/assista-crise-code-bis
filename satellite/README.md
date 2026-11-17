@@ -129,6 +129,59 @@ signature. C'est le prix, accepté, d'une signature en un geste. Pour y renoncer
 - **Ce que la signature ne couvre pas** : les images de base téléchargées pendant la
   construction (Python, Node, PostGIS) et les paquets qu'elles installent.
 
+
+### Diagnostic et redémarrage depuis le central (17/11/2026)
+
+Un satellite a fini une mise à jour « à jour et en échec » : le code avait avancé, son serveur
+local ne redémarrait pas, et il a fallu téléphoner pour apprendre pourquoi. Trois choses en
+sont sorties :
+
+- **Tout échec au redémarrage emporte son diagnostic.** À la fin du journal : la version du
+  code, la place libre, l'état de chaque service, et les soixante derniers messages de ceux qui
+  sont en panne — toujours ceux du serveur local, puisque c'est lui qui applique les migrations.
+- **Une liste « Demander au satellite… »**, sur la page Satellites. Douze ordres, que l'agent
+  connaît d'avance (`ACTIONS` dans `agent_mise_a_jour.py`) :
+
+  | Regarder — ne change rien | Agir — ce que ferait quelqu'un sur place |
+  |---|---|
+  | Diagnostic | Redémarrer les services |
+  | Journaux de tous les services | Appliquer les migrations (base sauvegardée d'abord, une par une) |
+  | État des migrations | Reconstruire et redémarrer |
+  | État de la machine | Libérer de la place |
+  | État du réseau | Sauvegarder la base |
+  | État du code installé | Revenir à la version précédente |
+
+Ce sont des mots d'une **liste fermée, sans paramètre** : le central ne transmet toujours aucune
+commande, et l'agent refuse tout mot qu'il ne connaît pas. Ils ne sont pas signés, parce qu'ils
+ne font entrer aucun code ; la mise à jour, elle, reste signée. Le résultat se lit dans
+l'historique du satellite, comme une mise à jour. Un essai vérifie que la liste du central et
+celle de l'agent sont les mêmes.
+
+« État des migrations » et « Appliquer les migrations » lancent `manage.py` dans l'image du
+serveur **sans son point d'entrée** (qui applique les migrations) et sans que le serveur
+tourne : c'est quand il ne démarre pas qu'on en a besoin.
+
+**Revenir à la version précédente.** Avant chaque mise à jour l'agent note de quoi revenir
+(`.maj-precedente.json` : la version d'avant, et la sauvegarde de la base). L'ordre ne porte
+aucun paramètre : le central ne choisit jamais vers quoi un satellite revient. La sauvegarde est
+rechargée dans une base **neuve, à côté** ; tant que ce chargement n'a pas réussi, la base en
+service n'est pas touchée. Les deux sont ensuite échangées par renommage, et la base d'avant le
+retour est gardée (`assista-db_avant_<date>`) : rien n'est détruit, ce qui a été saisi depuis
+est seulement mis de côté. Essayé contre un vrai PostgreSQL avec PostGIS — base revenue à la
+sauvegarde, base d'avant intacte, sauvegarde abîmée refusée sans rien toucher. Ce qui n'a pas
+été essayé : le parcours complet sur une vraie machine de satellite (arrêt des services,
+reconstruction de l'ancienne version, redémarrage).
+
+**Le pare-feu du central.** Le journal d'une mise à jour est fait de lignes de commande : le
+pare-feu applicatif y voyait une attaque et répondait 403 à tout compte rendu qui en portait.
+Le compte rendu final restait en attente, l'agent ne revenait plus chercher d'ordre, et trois
+refus par heure faisaient bannir le satellite. La règle `900206` de
+`proxy/modsecurity-override.conf` cesse de lire le corps sur ce seul chemin. Côté agent, un
+compte rendu refusé pour son contenu repart sans son journal : il ne bloque plus rien.
+
+Pas fait : le retour en arrière n'est jamais automatique — c'est quelqu'un qui le décide — et
+le redémarrage de la machine elle-même n'est pas dans la liste.
+
 ### Mise en place, une fois
 
 Sur le poste du responsable de la plateforme :

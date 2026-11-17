@@ -3,6 +3,8 @@ export type StatutEnrolementSatellite = 'EN_ATTENTE' | 'APPROUVE' | 'REVOQUE';
 export type EtatSatellite = 'ACTIF' | 'INACTIF' | 'PERDU' | null;
 
 export interface Satellite {
+  /** Les ordres que l'agent de ce satellite dit connaître ; vide pour un agent ancien. */
+  actions_agent?: ActionSatellite[];
   id: string;
   institution: string;
   institution_nom: string;
@@ -30,10 +32,14 @@ export type StatutMiseAJour = 'DEMANDEE' | 'EN_COURS' | 'REUSSIE' | 'ECHOUEE' | 
 
 export interface MiseAJourSatellite {
   id: string;
+  /** Mise à jour, ou l'un des deux ordres sans version : diagnostic, redémarrage. */
+  action?: 'MISE_A_JOUR' | ActionSatellite;
+  action_libelle?: string;
   statut: StatutMiseAJour;
   statut_libelle: string;
-  commit: string;
-  version_libelle: string;
+  /** Absents pour un diagnostic ou un redémarrage. */
+  commit: string | null;
+  version_libelle: string | null;
   /** Où en est le satellite, ou pourquoi il s'est arrêté. */
   etape: string;
   date_demande: string;
@@ -117,3 +123,44 @@ export interface VersionASigner {
   /** Clé de signature chiffrée par la phrase de passe, ou null si elle n'a pas été préparée. */
   cle: import('../../services/signature-satellite').CleEmballee | null;
 }
+
+/** Ce que le central peut demander à l'agent d'un satellite, hors mise à jour : une liste
+ * fermée, sans paramètre, que l'agent connaît d'avance (satellite/agent_mise_a_jour.py). */
+export type ActionSatellite =
+  | 'DIAGNOSTIC' | 'JOURNAUX' | 'MIGRATIONS' | 'SYSTEME' | 'RESEAU' | 'DEPOT'
+  | 'REDEMARRAGE' | 'MIGRER' | 'RECONSTRUCTION' | 'NETTOYAGE' | 'SAUVEGARDE' | 'RESTAURATION';
+
+export interface DescriptionActionSatellite {
+  code: ActionSatellite;
+  libelle: string;
+  /** Ce que l'ordre fait sur le satellite, dit avant de le donner. */
+  aide: string;
+  /** Présent pour un ordre qui change quelque chose : le texte de la confirmation. */
+  confirmer?: string;
+}
+
+/** Regarder : rien de cela ne change la machine. */
+export const ACTIONS_REGARDER: DescriptionActionSatellite[] = [
+  { code: 'DIAGNOSTIC', libelle: 'Diagnostic', aide: "État de chaque service et derniers messages de ceux qui sont en panne." },
+  { code: 'JOURNAUX', libelle: 'Journaux de tous les services', aide: "Les derniers messages de chaque service, en panne ou non." },
+  { code: 'MIGRATIONS', libelle: 'État des migrations', aide: "Ce qui est appliqué à la base, ce qui attend, et si le code démarre." },
+  { code: 'SYSTEME', libelle: 'État de la machine', aide: "Place, mémoire, charge, température, ce que Docker occupe." },
+  { code: 'RESEAU', libelle: 'État du réseau', aide: "Heure, adresses, et si le satellite joint le central." },
+  { code: 'DEPOT', libelle: 'État du code installé', aide: "Version sur place et fichiers modifiés à la main." },
+];
+
+/** Agir : ce que ferait quelqu'un sur place, et rien d'autre. */
+export const ACTIONS_AGIR: DescriptionActionSatellite[] = [
+  { code: 'REDEMARRAGE', libelle: 'Redémarrer les services', aide: "Relance les services. Rien n'est reconstruit.",
+    confirmer: "S'il sert un site local, celui-ci est coupé quelques instants. Rien n'est reconstruit." },
+  { code: 'MIGRER', libelle: 'Appliquer les migrations', aide: "Sauvegarde la base, puis applique les migrations une par une.",
+    confirmer: "La base est sauvegardée d'abord, puis modifiée. Le journal dira laquelle a échoué, s'il y en a une." },
+  { code: 'RECONSTRUCTION', libelle: 'Reconstruire et redémarrer', aide: "Reconstruit les images depuis le code installé, puis redémarre.",
+    confirmer: "La construction peut durer longtemps sur un Raspberry Pi ; le site local est coupé au redémarrage." },
+  { code: 'NETTOYAGE', libelle: 'Libérer de la place', aide: "Retire le cache de construction ancien et les images orphelines. Ni conteneur, ni volume, ni sauvegarde." },
+  { code: 'SAUVEGARDE', libelle: 'Sauvegarder la base', aide: "Une sauvegarde de la base, gardée sur le satellite." },
+  { code: 'RESTAURATION', libelle: 'Revenir à la version précédente',
+    aide: "Ramène le code et la base à ce qu'ils étaient avant la dernière mise à jour.",
+    confirmer: "Le code et la base reviennent à l'état d'avant la dernière mise à jour. La base actuelle n'est pas "
+      + "détruite : elle est gardée sur le satellite sous un autre nom. Ce qui a été saisi depuis n'apparaîtra plus." },
+];

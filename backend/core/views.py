@@ -23447,6 +23447,29 @@ class SatelliteViewSet(
         return Response(SatelliteSerializer(satellite, context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='demander-action')
+    def demander_action(self, request, pk=None):
+        """Demande à ce satellite un DIAGNOSTIC ou un REDEMARRAGE de ses services (17/11/2026).
+
+        Mêmes personnes que pour le mettre à jour. Rien n'est exécuté ici : l'ordre attend le
+        prochain passage de l'agent, qui ne connaît que ces deux mots et ne reçoit aucune
+        commande. Le résultat se lit dans l'historique du satellite, comme une mise à jour."""
+        from .mises_a_jour_satellites import MiseAJourRefusee
+        from .mises_a_jour_satellites import demander_action as demander
+
+        satellite = self.get_object()
+        try:
+            ordre = demander(satellite, request.user, str(request.data.get('action') or ''))
+        except MiseAJourRefusee as refus:
+            return Response({"error": refus.message, "code": refus.code},
+                            status=status.HTTP_400_BAD_REQUEST)
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"{ordre.get_action_display()} demandé au satellite {satellite.nom}.",
+        )
+        return Response(SatelliteSerializer(satellite, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='annuler-mise-a-jour')
     def annuler_mise_a_jour(self, request, pk=None):
         """Annule un ordre que le satellite n'a pas encore pris."""
@@ -23489,6 +23512,15 @@ class SatelliteViewSet(
         satellite.agent_mise_a_jour_vu = timezone.now()
         satellite.dernier_contact = satellite.agent_mise_a_jour_vu
         champs = ['agent_mise_a_jour_vu', 'dernier_contact']
+        # Ce que l'agent dit savoir faire. On ne retient que des mots de NOTRE liste : ce
+        # champ décide de ce que l'écran propose, il ne doit rien contenir d'autre.
+        from .models import ActionSatellite
+        annoncees = sorted(
+            {a for a in str(request.query_params.get('actions') or '').split(',') if a}
+            & (set(ActionSatellite.values) - {ActionSatellite.MISE_A_JOUR}))
+        if annoncees != (satellite.actions_agent or []):
+            satellite.actions_agent = annoncees
+            champs.append('actions_agent')
         # L'agent connaît le commit exact installé : plus fiable que la valeur figée dans
         # l'environnement du conteneur au dernier démarrage.
         version = request.query_params.get('version')
@@ -23501,8 +23533,10 @@ class SatelliteViewSet(
         if ordre is None:
             return Response({"ordre": None})
         return Response({"ordre": {
-            "id": str(ordre.id), "statut": ordre.statut,
-            "commit": ordre.version.commit, "signature": ordre.version.signature,
+            "id": str(ordre.id), "statut": ordre.statut, "action": ordre.action,
+            # Vides pour un diagnostic ou un redémarrage : ils ne font entrer aucune version.
+            "commit": ordre.version.commit if ordre.version_id else "",
+            "signature": ordre.version.signature if ordre.version_id else "",
         }})
 
     @action(detail=True, methods=['post'], url_path='rapport-mise-a-jour')
@@ -23534,8 +23568,10 @@ class SatelliteViewSet(
         if ordre.date_fin is not None and not etait_fini:
             audit_log(
                 request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
-                commentaire=f"Mise à jour du satellite {satellite.nom} vers {ordre.version.commit[:10]} : "
-                            f"{ordre.get_statut_display().lower()} ({ordre.etape}).",
+                commentaire=(
+                    f"Mise à jour du satellite {satellite.nom} vers {ordre.version.commit[:10]}"
+                    if ordre.version_id else f"{ordre.get_action_display()} du satellite {satellite.nom}"
+                ) + f" : {ordre.get_statut_display().lower()} ({ordre.etape}).",
             )
         return Response({"statut": ordre.statut})
 

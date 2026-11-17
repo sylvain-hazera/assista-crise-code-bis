@@ -6,9 +6,22 @@ Demande de Sylvain du 14/11/2026. Lancé toutes les deux minutes par systemd
 conteneur : une mise à jour reconstruit et remplace les conteneurs, et un conteneur qui se
 mettrait à jour lui-même se couperait au milieu du travail.
 
-**Il ne sait faire qu'une chose** : amener le dépôt à un commit précis, reconstruire,
-redémarrer. Le central ne lui transmet aucune commande — seulement un numéro de commit et sa
-signature. Avant de toucher à quoi que ce soit, il vérifie que :
+**Il ne sait faire que trois choses**, et le central ne lui transmet jamais de commande :
+
+- **mettre à jour** : amener le dépôt à un commit précis, reconstruire, redémarrer — sur un
+  numéro de commit et sa signature ;
+- **regarder** : diagnostic, journaux de tous les services, état des migrations, état de la
+  machine, du réseau et du dépôt. Rien de cela ne change la machine ;
+- **agir** : redémarrer les services, appliquer les migrations, reconstruire, libérer de la
+  place, sauvegarder la base — ce que ferait quelqu'un sur place, et rien d'autre.
+
+Regarder et agir (17/11/2026) sont des mots d'une liste fermée (`ACTIONS`), sans paramètre : un
+satellite a fini une mise à jour « à jour et en échec », son serveur local ne redémarrait pas,
+et il a fallu téléphoner pour apprendre pourquoi. Elles ne sont pas signées : elles ne font
+entrer aucun code, et ce qu'elles renvoient va au central, qui reçoit déjà les données du
+satellite.
+
+Avant une mise à jour, et avant de toucher à quoi que ce soit, il vérifie que :
 
 1. la signature est bien celle de ce commit, par la clé publique gardée ICI à l'installation
    (`.cle-signature.pub`) — jamais par une clé venue du central ou du dépôt mis à jour ;
@@ -48,6 +61,13 @@ DUREE_MAX_CONSTRUCTION_S = 3 * 3600
 DUREE_MAX_DEMARRAGE_S = 3600
 ATTENTE_SANTE_S = 600
 SAUVEGARDES_GARDEES = 3
+#: Ce que le diagnostic relève : les derniers messages de chaque service en panne.
+DIAGNOSTIC_LIGNES = 60
+DIAGNOSTIC_SERVICES_MAX = 6
+#: Ce que l'agent note avant chaque mise à jour, pour pouvoir en revenir.
+FICHIER_PRECEDENTE = ".maj-precedente.json"
+#: Par service, pour l'ordre « journaux » : tous les services, donc moins de lignes chacun.
+JOURNAUX_LIGNES = 40
 #: Ce qu'on garde de la sortie des commandes, par rapport envoyé. La FIN : l'erreur y est.
 TAILLE_JOURNAL = 30_000
 
@@ -150,9 +170,12 @@ class Central:
         return self._jeton
 
     def ordre(self, version_installee):
-        chemin = f"/api/satellites/{self.satellite}/ordre-mise-a-jour/"
+        """L'ordre en attente, s'il y en a un. Au passage l'agent dit ce qu'il sait faire :
+        sans cela le central proposerait à un agent ancien un ordre qu'il ne connaît pas, et
+        celui-ci le prendrait pour une mise à jour sans numéro de version (17/11/2026)."""
+        chemin = f"/api/satellites/{self.satellite}/ordre-mise-a-jour/?actions=" + ",".join(sorted(ACTIONS))
         if version_installee:
-            chemin += f"?version={version_installee}"
+            chemin += f"&version={version_installee}"
         return self._appel("GET", chemin).get("ordre")
 
     def rapport(self, ordre_id, statut, etape, journal="", version=""):
@@ -283,6 +306,72 @@ class Machine:
             fichier.unlink(missing_ok=True)
         return cible
 
+    # ── restauration ───────────────────────────────────────────────────────────────────────
+    BASE = "assista-db"
+
+    def dans_la_base(self, *commande):
+        """Le début d'une commande lancée DANS le conteneur de la base. À part pour être
+        remplacé dans les essais, qui parlent à un vrai PostgreSQL jetable."""
+        return ["docker", "compose", "--profile", "full", "exec", "-T", "db", *commande]
+
+    def _sql(self, env, base, requete):
+        return self.lancer(self.dans_la_base(
+            "psql", "-U", env.get("DB_USER", "assista"), "-d", base, "-v", "ON_ERROR_STOP=1",
+            "-q", "-c", requete), delai=600)
+
+    def restaurer_la_base(self, env, sauvegarde, horodatage=None):
+        """Remet la base dans l'état de `sauvegarde`, sans rien perdre en route.
+
+        La sauvegarde est chargée dans une base NEUVE, à côté. Tant que ce chargement n'est pas
+        fini et réussi, la base en service n'est pas touchée : une restauration interrompue ne
+        laisse donc jamais une base à moitié écrite. Ensuite seulement les deux sont échangées
+        par renommage, et la base d'avant l'échange est gardée sous un autre nom — c'est ce qui
+        permet de revenir sur un retour en arrière. Renvoie le nom sous lequel elle est gardée."""
+        utilisateur = env.get("DB_USER", "assista")
+        neuve = f"{self.BASE}_restauration"
+        gardee = f"{self.BASE}_avant_{horodatage or time.strftime('%Y%m%d_%H%M%S')}"
+        sauvegarde = Path(sauvegarde)
+        if not sauvegarde.is_file():
+            raise Echec(f"La sauvegarde {sauvegarde.name} n'est plus sur le satellite. Rien n'a été modifié.")
+
+        self._sql(env, "postgres", f'DROP DATABASE IF EXISTS "{neuve}"')
+        if self._sql(env, "postgres", f'CREATE DATABASE "{neuve}" OWNER "{utilisateur}"')[0] != 0:
+            raise Echec("La base de restauration n'a pas pu être créée. Rien n'a été modifié.")
+
+        self.journal.append(f"$ chargement de {sauvegarde.name} dans {neuve}")
+        try:
+            processus = subprocess.Popen(
+                self.dans_la_base("psql", "-U", utilisateur, "-d", neuve, "-v", "ON_ERROR_STOP=1", "-q"),
+                cwd=str(self.satellite), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE)
+            with gzip.open(str(sauvegarde), "rb") as entree:
+                shutil.copyfileobj(entree, processus.stdin, 1 << 20)
+            processus.stdin.close()
+            erreurs = processus.stderr.read().decode(errors="replace")
+            code = processus.wait()
+        except (OSError, EOFError) as erreur:
+            erreurs, code = str(erreur), 1
+        if code != 0:
+            self.journal.append(erreurs.strip()[-2000:])
+            self._sql(env, "postgres", f'DROP DATABASE IF EXISTS "{neuve}"')
+            raise Echec("La sauvegarde n'a pas pu être rechargée : la base en service n'a pas "
+                        "été touchée.")
+
+        # L'échange. Plus personne ne doit être connecté à la base en service : les services
+        # sont arrêtés par l'appelant, on coupe ce qui resterait.
+        self._sql(env, "postgres",
+                  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                  f"WHERE datname IN ('{self.BASE}', '{neuve}') AND pid <> pg_backend_pid()")
+        if self._sql(env, "postgres", f'ALTER DATABASE "{self.BASE}" RENAME TO "{gardee}"')[0] != 0:
+            self._sql(env, "postgres", f'DROP DATABASE IF EXISTS "{neuve}"')
+            raise Echec("La base en service n'a pas pu être mise de côté (encore utilisée ?). "
+                        "Elle n'a pas été modifiée.")
+        if self._sql(env, "postgres", f'ALTER DATABASE "{neuve}" RENAME TO "{self.BASE}"')[0] != 0:
+            # On défait : la base d'origine reprend son nom.
+            self._sql(env, "postgres", f'ALTER DATABASE "{gardee}" RENAME TO "{self.BASE}"')
+            raise Echec("L'échange des bases a échoué : la base d'origine a été remise en place.")
+        return gardee
+
     # ── santé ──────────────────────────────────────────────────────────────────────────────
     def services_en_boucle(self):
         """Les conteneurs qui redémarrent sans arrêt. Hors journal : appelé toutes les quinze
@@ -308,6 +397,37 @@ class Machine:
             return erreur.code < 500, f"le site local répond {erreur.code}"
         except (urllib.error.URLError, OSError) as erreur:
             return False, f"le site local ne répond pas ({erreur})"
+
+    # ── diagnostic ─────────────────────────────────────────────────────────────────────────
+    def diagnostiquer(self):
+        """Ajoute au journal de quoi comprendre une panne sans se déplacer : l'état de chaque
+        service, la place libre, et les derniers messages de ceux qui ne vont pas bien — et
+        toujours ceux du serveur local, parce que c'est lui qui applique les migrations.
+
+        Ne change rien à la machine. Ne lève jamais : un diagnostic qui échoue ne doit pas
+        masquer la panne qu'il venait décrire."""
+        try:
+            self.journal.append("── Diagnostic")
+            self.journal.append(f"Version du code : {self.commit_installe() or 'inconnue'}")
+            self.journal.append(f"Place libre : {self.espace_libre_go():.1f} Go")
+            code, sortie = self.compose(
+                "ps", "--all", "--format", "{{.Service}}\t{{.State}}\t{{.Health}}\t{{.Status}}", delai=120)
+            a_lire = ["backend"]
+            if code == 0:
+                for ligne in sortie.splitlines():
+                    champs = ligne.split("\t")
+                    if len(champs) < 3:
+                        continue
+                    service, etat, sante = champs[0], champs[1], champs[2]
+                    # Un service à exécution unique qui s'est terminé normalement n'est pas en panne.
+                    en_panne = etat in ("restarting", "dead", "created") or sante == "unhealthy" \
+                        or (etat == "exited" and "Exited (0)" not in ligne)
+                    if en_panne and service not in a_lire:
+                        a_lire.append(service)
+            for service in a_lire[:DIAGNOSTIC_SERVICES_MAX]:
+                self.compose("logs", "--no-color", "--tail", str(DIAGNOSTIC_LIGNES), service, delai=120)
+        except Exception as erreur:  # noqa: BLE001
+            self.journal.append(f"(diagnostic interrompu : {erreur!r})")
 
     def en_bonne_sante(self, env, attente=ATTENTE_SANTE_S, pause=time.sleep):
         """Après le redémarrage : aucun service en boucle de redémarrage, et — profil complet —
@@ -374,10 +494,17 @@ def appliquer(ordre, central, machine, env, fichier_cle):
             raise Echec("Cette version n'est pas une suite de celle installée : retour en "
                         "arrière refusé. Rien n'a été modifié.")
 
+        sauvegarde = None
         if machine.profil() == "full":
             etape("Sauvegarde de la base")
             sauvegarde = machine.sauvegarder_la_base(env, commit)
             machine.journal.append(f"Sauvegarde : {sauvegarde}")
+        # De quoi revenir en arrière : la version d'avant, et la sauvegarde qui va avec. Écrit
+        # par l'agent, ici, au moment où il le fait — le central ne choisit jamais vers quoi
+        # un satellite revient.
+        _ecrire_json(machine.satellite / FICHIER_PRECEDENTE, {
+            "commit": avant, "vers": commit, "sauvegarde": str(sauvegarde) if sauvegarde else "",
+            "date": time.strftime("%Y-%m-%d %H:%M:%S")})
 
         if machine.git("merge", "--ff-only", commit)[0] != 0:
             raise Echec("Le code n'a pas pu être avancé (git merge --ff-only). "
@@ -394,17 +521,20 @@ def appliquer(ordre, central, machine, env, fichier_cle):
         code, _ = machine.lancer([machine.satellite / "installer.sh", "demarrer"],
                                  delai=DUREE_MAX_DEMARRAGE_S)
         if code != 0:
+            # Le pourquoi part avec l'échec : sans lui, le central ne sait que « ça n'a pas
+            # redémarré », et il faut téléphoner.
+            machine.diagnostiquer()
             raise Echec("Le redémarrage a échoué APRÈS la construction : le satellite peut "
-                        "être en partie sur la nouvelle version. À voir sur place "
-                        "(./installer.sh demarrer). La sauvegarde de la base est dans "
-                        "satellite/sauvegardes/.")
+                        "être en partie sur la nouvelle version. Le diagnostic est à la fin "
+                        "du journal. La sauvegarde de la base est dans satellite/sauvegardes/.")
 
         etape("Vérification du redémarrage")
         ok, explication = machine.en_bonne_sante(lire_env(machine.satellite / ".env"))
         if not ok:
+            machine.diagnostiquer()
             raise Echec(f"Le satellite a redémarré mais ne va pas bien : {explication}. "
-                        "À voir sur place. La sauvegarde de la base est dans "
-                        "satellite/sauvegardes/.")
+                        "Le diagnostic est à la fin du journal. La sauvegarde de la base est "
+                        "dans satellite/sauvegardes/.")
         return "REUSSIE", "Mise à jour terminée.", commit
     except Echec as echec:
         machine.journal.append(f"ÉCHEC : {echec}")
@@ -413,6 +543,246 @@ def appliquer(ordre, central, machine, env, fichier_cle):
         machine.journal.append(f"ERREUR INATTENDUE : {erreur!r}")
         return "ECHOUEE", f"Erreur inattendue de l'agent : {erreur}", \
             machine.commit_installe() or avant
+
+
+# ── Les ordres autres qu'une mise à jour ───────────────────────────────────────────────────
+# Chacun rend le mot de la fin, ou lève `Echec`. Aucun ne prend de paramètre : ce que le
+# central peut faire faire à un satellite se lit en entier dans ce fichier.
+
+def _django(machine, *arguments, delai=1800):
+    """Une commande `manage.py` dans l'image du serveur, SANS son point d'entrée — celui-ci
+    applique les migrations, ce qu'on ne veut pas déclencher en demandant leur état — et sans
+    dépendre de ce que le serveur tourne : c'est justement quand il ne démarre pas qu'on en a
+    besoin."""
+    if machine.profil() != "full":
+        raise Echec("Ce satellite est une passerelle : il n'a ni base ni serveur local.")
+    return machine.compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "python",
+                           "backend", "manage.py", *arguments, delai=delai)
+
+
+def _redemarrer(machine, env):
+    code, _ = machine.lancer([machine.satellite / "installer.sh", "demarrer"],
+                             delai=DUREE_MAX_DEMARRAGE_S)
+    ok, explication = (False, "le démarrage a rendu une erreur") if code != 0 \
+        else machine.en_bonne_sante(lire_env(machine.satellite / ".env"))
+    machine.diagnostiquer()
+    if not ok:
+        raise Echec(f"Les services ne sont pas repartis : {explication}. "
+                    "Le diagnostic est à la fin du journal.")
+
+
+def action_diagnostic(machine, env):
+    machine.diagnostiquer()
+    return "Diagnostic relevé : voir le journal."
+
+
+def action_journaux(machine, env):
+    """Les derniers messages de TOUS les services, pas seulement de ceux qui sont en panne :
+    un service « en marche » peut tourner à vide."""
+    code, sortie = machine.compose("ps", "--all", "--format", "{{.Service}}", delai=120)
+    services = sorted({s.strip() for s in sortie.splitlines() if s.strip()}) if code == 0 else []
+    if not services:
+        raise Echec("Aucun service à lire (docker compose ps ne rend rien).")
+    for service in services:
+        machine.compose("logs", "--no-color", "--tail", str(JOURNAUX_LIGNES), service, delai=120)
+    return f"Journaux de {len(services)} services relevés : voir le journal."
+
+
+def action_migrations(machine, env):
+    """Où en est la base : ce qui est appliqué, ce qui attend, et si le code démarre."""
+    machine.journal.append("── Migrations en attente")
+    code, _ = _django(machine, "showmigrations", "--plan", delai=600)
+    machine.journal.append("── Vérification du code")
+    _django(machine, "check", delai=600)
+    if code != 0:
+        raise Echec("L'état des migrations n'a pas pu être lu : voir le journal.")
+    return "État des migrations relevé : « [ ] » marque celles qui attendent."
+
+
+def action_migrer(machine, env):
+    """Applique les migrations en attente, une par une, après avoir sauvegardé la base. Le
+    journal montre chacune : c'est là qu'on lit laquelle a échoué, et pourquoi."""
+    if machine.profil() != "full":
+        raise Echec("Ce satellite est une passerelle : il n'a ni base ni serveur local.")
+    machine.journal.append("── Sauvegarde de la base")
+    sauvegarde = machine.sauvegarder_la_base(env, machine.commit_installe() or "inconnu")
+    machine.journal.append(f"Sauvegarde : {sauvegarde}")
+    machine.journal.append("── Migrations")
+    code, _ = _django(machine, "migrate", "--noinput", "-v", "1")
+    if code != 0:
+        raise Echec("Une migration a échoué : la dernière ligne « Applying » du journal dit "
+                    "laquelle. La base a été sauvegardée avant, dans satellite/sauvegardes/.")
+    return "Migrations appliquées. Redémarrez les services pour qu'ils les prennent."
+
+
+def action_redemarrage(machine, env):
+    machine.journal.append("── Redémarrage des services")
+    _redemarrer(machine, env)
+    return "Services redémarrés."
+
+
+def action_reconstruction(machine, env):
+    """Reconstruit les images depuis le code installé, puis redémarre : pour une image abîmée
+    ou une construction interrompue."""
+    if machine.espace_libre_go() < ESPACE_LIBRE_MIN_GO:
+        raise Echec(f"Moins de {ESPACE_LIBRE_MIN_GO} Go libres : libérez d'abord de la place.")
+    machine.journal.append("── Construction")
+    if machine.compose("build", delai=DUREE_MAX_CONSTRUCTION_S)[0] != 0:
+        raise Echec("La construction a échoué : voir le journal. Les services en place n'ont pas été touchés.")
+    machine.journal.append("── Redémarrage des services")
+    _redemarrer(machine, env)
+    return "Images reconstruites, services redémarrés."
+
+
+def action_systeme(machine, env):
+    """La machine elle-même : place, mémoire, charge, température, ce que Docker occupe."""
+    machine.journal.append("── Machine")
+    for commande in (["uptime"], ["df", "-h", "/"], ["free", "-m"], ["docker", "system", "df"],
+                     ["vcgencmd", "measure_temp"], ["vcgencmd", "get_throttled"],
+                     ["systemctl", "is-active", "assista-satellite-maj.timer"]):
+        machine.lancer(commande, delai=60)
+    return "État de la machine relevé : voir le journal."
+
+
+def action_reseau(machine, env):
+    """Ce que le satellite voit du réseau : son heure, ses adresses, et s'il joint le central."""
+    machine.journal.append("── Réseau")
+    for commande in (["date", "-u"], ["timedatectl", "show", "-p", "NTPSynchronized"],
+                     ["ip", "-brief", "addr"], ["ip", "route"]):
+        machine.lancer(commande, delai=60)
+    central = (env.get("CENTRAL_URL") or "https://assista-crise.fr").rstrip("/")
+    debut = time.time()
+    try:
+        with urllib.request.urlopen(central + "/api/sonde/", timeout=20) as reponse:
+            verdict = f"répond {reponse.status}"
+    except urllib.error.HTTPError as erreur:
+        verdict = f"répond {erreur.code}"
+    except (urllib.error.URLError, OSError) as erreur:
+        verdict = f"injoignable ({erreur})"
+    machine.journal.append(f"Central {central} : {verdict} en {time.time() - debut:.1f} s")
+    return "État du réseau relevé : voir le journal."
+
+
+def action_depot(machine, env):
+    """Le code sur place : sa version, et ce qui y aurait été modifié à la main — la première
+    cause d'une mise à jour refusée."""
+    machine.journal.append("── Dépôt")
+    machine.git("log", "-5", "--format=%h %ad %s", "--date=short")
+    machine.git("status", "--short", "--branch")
+    machine.git("diff", "--stat")
+    return "État du dépôt relevé : voir le journal."
+
+
+def action_nettoyage(machine, env):
+    """Libère de la place sans rien retirer de ce qui sert : le cache de construction de plus
+    d'un jour et les images orphelines. Ni conteneur, ni volume, ni sauvegarde."""
+    avant = machine.espace_libre_go()
+    machine.journal.append("── Nettoyage")
+    machine.lancer(["docker", "builder", "prune", "-f", "--filter", "until=24h"], delai=1800)
+    machine.lancer(["docker", "image", "prune", "-f"], delai=1800)
+    apres = machine.espace_libre_go()
+    machine.journal.append(f"Place libre : {avant:.1f} Go → {apres:.1f} Go")
+    return f"{max(0.0, apres - avant):.1f} Go libérés ; {apres:.1f} Go libres."
+
+
+def action_sauvegarde(machine, env):
+    if machine.profil() != "full":
+        raise Echec("Ce satellite est une passerelle : il n'a pas de base à sauvegarder.")
+    sauvegarde = machine.sauvegarder_la_base(env, machine.commit_installe() or "inconnu")
+    machine.journal.append(f"Sauvegarde : {sauvegarde}")
+    return f"Base sauvegardée sur le satellite ({sauvegarde.name})."
+
+
+def action_restauration(machine, env):
+    """Revient à la version d'avant la dernière mise à jour : le code, et la base telle qu'elle
+    était sauvegardée juste avant.
+
+    Vers quoi on revient est noté par l'agent lui-même au moment de la mise à jour
+    (`.maj-precedente.json`) ; l'ordre ne porte aucun paramètre. La base en service au moment
+    du retour est gardée sous un autre nom : ce qui aurait été saisi depuis n'est pas détruit,
+    seulement mis de côté."""
+    precedente = _lire_json(machine.satellite / FICHIER_PRECEDENTE)
+    if not precedente or not commit_valide(precedente.get("commit", "")):
+        raise Echec("Cet agent n'a noté aucune mise à jour dont revenir (il ne le fait que "
+                    "depuis sa version du 17/11/2026). Rien n'a été modifié.")
+    commit = precedente["commit"]
+    if machine.commit_installe() == commit:
+        raise Echec("Le satellite est déjà sur la version d'avant la dernière mise à jour.")
+    code, modifies = machine.git("status", "--porcelain", "--untracked-files=no")
+    if code != 0 or modifies.strip():
+        raise Echec("Des fichiers du dépôt ont été modifiés sur place : le retour les "
+                    "écraserait. Rien n'a été modifié.")
+    if machine.git("cat-file", "-e", f"{commit}^{{commit}}")[0] != 0:
+        raise Echec("La version d'avant n'est plus dans le dépôt. Rien n'a été modifié.")
+    if machine.espace_libre_go() < ESPACE_LIBRE_MIN_GO:
+        raise Echec(f"Moins de {ESPACE_LIBRE_MIN_GO} Go libres : libérez d'abord de la place.")
+
+    complet = machine.profil() == "full"
+    if complet:
+        if not precedente.get("sauvegarde"):
+            raise Echec("Aucune sauvegarde n'accompagne cette mise à jour. Rien n'a été modifié.")
+        # Tout sauf la base : plus personne ne doit y écrire pendant l'échange.
+        machine.journal.append("── Arrêt des services")
+        code, sortie = machine.compose("ps", "--services", delai=120)
+        services = [s.strip() for s in sortie.splitlines() if s.strip() and s.strip() != "db"]
+        if code == 0 and services:
+            machine.compose("stop", *services, delai=600)
+        machine.journal.append("── Restauration de la base")
+        gardee = machine.restaurer_la_base(env, precedente["sauvegarde"])
+        machine.journal.append(f"Base d'avant le retour gardée sous le nom : {gardee}")
+
+    machine.journal.append("── Retour du code")
+    if machine.git("reset", "--hard", commit)[0] != 0:
+        raise Echec("Le code n'a pas pu être ramené à la version d'avant. La base, elle, a été "
+                    "restaurée : relancez « Revenir à la version précédente ».")
+    machine.journal.append("── Construction")
+    if machine.compose("build", delai=DUREE_MAX_CONSTRUCTION_S)[0] != 0:
+        raise Echec("La construction de la version d'avant a échoué : voir le journal.")
+    machine.journal.append("── Redémarrage des services")
+    _redemarrer(machine, env)
+    # Ce retour est fait : on ne revient pas deux fois d'une même mise à jour.
+    (machine.satellite / FICHIER_PRECEDENTE).unlink(missing_ok=True)
+    return f"Revenu à la version {commit[:10]}, base restaurée." if complet \
+        else f"Revenu à la version {commit[:10]}."
+
+
+#: LA liste. Tout autre mot est refusé. Doit rester identique à `ActionSatellite` côté central.
+ACTIONS = {
+    # regarder
+    "DIAGNOSTIC": action_diagnostic,
+    "JOURNAUX": action_journaux,
+    "MIGRATIONS": action_migrations,
+    "SYSTEME": action_systeme,
+    "RESEAU": action_reseau,
+    "DEPOT": action_depot,
+    # agir
+    "REDEMARRAGE": action_redemarrage,
+    "MIGRER": action_migrer,
+    "RECONSTRUCTION": action_reconstruction,
+    "NETTOYAGE": action_nettoyage,
+    "SAUVEGARDE": action_sauvegarde,
+    "RESTAURATION": action_restauration,
+}
+
+
+def agir(ordre, central, machine, env):
+    """Exécute un ordre qui n'est pas une mise à jour. Renvoie `(statut, etape, version)`, ou
+    `None` si le central l'a annulé entre-temps. Ne lève jamais."""
+    action, identifiant = ordre.get("action", ""), ordre.get("id", "")
+    version = machine.commit_installe()
+    try:
+        if not central.rapport(identifiant, "EN_COURS", "Vérification"):
+            return None
+        if action not in ACTIONS:
+            # Un mot que cet agent ne connaît pas : il ne devine pas, il refuse.
+            return "ECHOUEE", f"Ordre inconnu de cet agent : {action!r}. Mettez d'abord le satellite à jour.", version
+        return "REUSSIE", ACTIONS[action](machine, env), machine.commit_installe() or version
+    except Echec as echec:
+        machine.journal.append(f"ÉCHEC : {echec}")
+        return "ECHOUEE", str(echec), version
+    except Exception as erreur:  # noqa: BLE001 — un agent qui meurt sans rien dire est pire
+        machine.journal.append(f"ERREUR INATTENDUE : {erreur!r}")
+        return "ECHOUEE", f"Erreur inattendue de l'agent : {erreur}", version
 
 
 def _lire_json(fichier):
@@ -444,7 +814,10 @@ def passage(central, machine, env, fichier_cle, fichier_rapport):
     ordre = central.ordre(machine.commit_installe())
     if not ordre:
         return "rien à faire"
-    resultat = appliquer(ordre, central, machine, env, fichier_cle)
+    if ordre.get("action") and ordre.get("action") != "MISE_A_JOUR":
+        resultat = agir(ordre, central, machine, env)
+    else:
+        resultat = appliquer(ordre, central, machine, env, fichier_cle)
     if resultat is None:
         return "ordre annulé"
     statut, etape, version = resultat

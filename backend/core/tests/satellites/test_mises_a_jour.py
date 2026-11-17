@@ -79,6 +79,16 @@ def satellite(create_user, mairie):
     )
 
 
+@pytest.fixture(autouse=True)
+def agent_recent(request):
+    """Par défaut le satellite d'essai a un agent qui connaît tous les ordres."""
+    if "satellite" in request.fixturenames:
+        from core.models import ActionSatellite
+        satellite = request.getfixturevalue("satellite")
+        satellite.actions_agent = sorted(set(ActionSatellite.values) - {"MISE_A_JOUR"})
+        satellite.save(update_fields=["actions_agent"])
+
+
 @pytest.fixture
 def version_a(admin):
     return VersionSatellite.objects.create(
@@ -393,3 +403,101 @@ class TestLAgentDuSatellite:
         assert tardif.status_code == 200
         ordre.refresh_from_db()
         assert ordre.statut == StatutMiseAJour.REUSSIE
+
+
+@pytest.mark.django_db
+class TestDiagnosticEtRedemarrageDepuisLeCentral:
+    """17/11/2026 : deux ordres de plus que la mise à jour, des mots d'une liste fermée."""
+
+    def _service(self, satellite):
+        return _client(satellite.compte_service)
+
+    def test_le_diagnostic_part_sans_version_et_revient_dans_l_historique(self, agent_mairie, satellite):
+        client = _client(agent_mairie)
+        reponse = client.post(_url(satellite, "demander-action"), {"action": "DIAGNOSTIC"}, format="json")
+        assert reponse.status_code == 201, reponse.data
+
+        ordre = self._service(satellite).get(_url(satellite, "ordre-mise-a-jour")).data["ordre"]
+        assert (ordre["action"], ordre["commit"], ordre["signature"]) == ("DIAGNOSTIC", "", "")
+
+        self._service(satellite).post(_url(satellite, "rapport-mise-a-jour"), {
+            "ordre": ordre["id"], "statut": "REUSSIE", "etape": "Diagnostic relevé : voir le journal.",
+            "journal": "backend running unhealthy\nProgrammingError", "version": "abc1234def",
+        }, format="json")
+
+        (ligne,) = client.get(_url(satellite, "mises-a-jour")).data
+        assert (ligne["action"], ligne["action_libelle"], ligne["commit"]) == ("DIAGNOSTIC", "Diagnostic", None)
+        assert "ProgrammingError" in ligne["journal"]
+        satellite.refresh_from_db()
+        assert satellite.version_logicielle == "abc1234def"        # ce que l'agent rapporte
+
+    def test_un_redemarrage_ne_change_pas_la_version_si_l_agent_n_en_dit_rien(self, agent_mairie, satellite):
+        _client(agent_mairie).post(_url(satellite, "demander-action"), {"action": "REDEMARRAGE"}, format="json")
+        ordre = self._service(satellite).get(_url(satellite, "ordre-mise-a-jour")).data["ordre"]
+        self._service(satellite).post(_url(satellite, "rapport-mise-a-jour"),
+                                      {"ordre": ordre["id"], "statut": "REUSSIE", "etape": "Services redémarrés."}, format="json")
+        satellite.refresh_from_db()
+        assert satellite.version_logicielle == "0000000"
+
+    def test_la_liste_du_central_est_celle_de_l_agent(self):
+        """Un mot que le central propose et que l'agent ignore ne servirait à rien ; l'inverse
+        serait un ordre que personne ne peut donner. Les deux listes se lisent ici."""
+        import importlib.util
+        import pathlib
+
+        from core.models import ActionSatellite
+
+        chemin = pathlib.Path(__file__).resolve().parents[4] / "satellite" / "agent_mise_a_jour.py"
+        if not chemin.exists():
+            pytest.skip("Le dossier satellite/ n'est pas visible d'ici (image du serveur seule).")
+        spec = importlib.util.spec_from_file_location("agent_mise_a_jour", chemin)
+        agent = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(agent)
+        assert set(agent.ACTIONS) == set(ActionSatellite.values) - {"MISE_A_JOUR"}
+
+    def test_chaque_mot_de_la_liste_est_accepte(self, agent_mairie, satellite):
+        from core.models import ActionSatellite
+        client = _client(agent_mairie)
+        for mot in sorted(set(ActionSatellite.values) - {"MISE_A_JOUR"}):
+            reponse = client.post(_url(satellite, "demander-action"), {"action": mot}, format="json")
+            assert reponse.status_code == 201, (mot, reponse.data)
+            MiseAJourSatellite.objects.all().delete()
+
+    def test_tout_autre_mot_est_refuse(self, agent_mairie, satellite):
+        client = _client(agent_mairie)
+        for mot in ("", "MISE_A_JOUR", "rm -rf /", "REINITIALISATION"):
+            reponse = client.post(_url(satellite, "demander-action"), {"action": mot}, format="json")
+            assert reponse.status_code == 400, mot
+        assert not MiseAJourSatellite.objects.exists()
+
+    def test_un_seul_ordre_ouvert_a_la_fois(self, agent_mairie, satellite):
+        client = _client(agent_mairie)
+        client.post(_url(satellite, "demander-action"), {"action": "DIAGNOSTIC"}, format="json")
+        reponse = client.post(_url(satellite, "demander-action"), {"action": "REDEMARRAGE"}, format="json")
+        assert reponse.status_code == 400 and reponse.data["code"] == "DEJA_DEMANDEE"
+
+    def test_une_autre_institution_ne_demande_rien_a_ce_satellite(self, create_user, satellite):
+        etranger = create_user(username="autre@maj.test", email="autre@maj.test", type="AUT_LOCALE")
+        reponse = _client(etranger).post(_url(satellite, "demander-action"), {"action": "DIAGNOSTIC"}, format="json")
+        assert reponse.status_code in (403, 404)
+
+    def test_un_agent_ancien_n_en_recoit_pas(self, agent_mairie, satellite):
+        """Constaté en production : un agent d'avant le 17/11 a pris « Diagnostic » pour une
+        mise à jour sans numéro de version, et répondu « numéro de version invalide »."""
+        Satellite.objects.filter(id=satellite.id).update(actions_agent=[])
+        reponse = _client(agent_mairie).post(_url(satellite, "demander-action"), {"action": "DIAGNOSTIC"}, format="json")
+        assert reponse.status_code == 400 and reponse.data["code"] == "AGENT_TROP_ANCIEN"
+        assert "mettez d'abord le satellite à jour" in reponse.data["error"]
+        assert not MiseAJourSatellite.objects.exists()
+
+    def test_l_agent_annonce_ce_qu_il_sait_faire_et_rien_d_autre_n_est_retenu(self, satellite):
+        Satellite.objects.filter(id=satellite.id).update(actions_agent=[])
+        _client(satellite.compte_service).get(
+            _url(satellite, "ordre-mise-a-jour") + "?actions=DIAGNOSTIC,MIGRER,EFFACER_TOUT,MISE_A_JOUR&version=abc1234")
+        satellite.refresh_from_db()
+        assert satellite.actions_agent == ["DIAGNOSTIC", "MIGRER"]
+
+    def test_sans_agent_on_le_dit(self, agent_mairie, satellite):
+        Satellite.objects.filter(id=satellite.id).update(agent_mise_a_jour_vu=None)
+        reponse = _client(agent_mairie).post(_url(satellite, "demander-action"), {"action": "DIAGNOSTIC"}, format="json")
+        assert reponse.data["code"] == "SANS_AGENT"

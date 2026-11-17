@@ -4711,14 +4711,16 @@ class MiseAJourSatelliteSerializer(serializers.ModelSerializer):
     peut faire quarante mille caractères, et la liste des satellites n'en a pas l'usage."""
 
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
-    commit = serializers.CharField(source='version.commit', read_only=True)
-    version_libelle = serializers.CharField(source='version.libelle', read_only=True)
+    # `default=None` : un diagnostic ou un redémarrage n'a pas de version.
+    commit = serializers.CharField(source='version.commit', read_only=True, default=None)
+    version_libelle = serializers.CharField(source='version.libelle', read_only=True, default=None)
+    action_libelle = serializers.CharField(source='get_action_display', read_only=True)
     demandee_par_nom = serializers.SerializerMethodField()
     journal = serializers.SerializerMethodField()
 
     class Meta:
         model = MiseAJourSatellite
-        fields = ['id', 'statut', 'statut_libelle', 'commit', 'version_libelle', 'etape',
+        fields = ['id', 'action', 'action_libelle', 'statut', 'statut_libelle', 'commit', 'version_libelle', 'etape',
                   'date_demande', 'date_debut', 'date_fin', 'version_avant', 'malgre_crise',
                   'demandee_par_nom', 'journal']
         read_only_fields = fields
@@ -4746,8 +4748,10 @@ class SatelliteSerializer(serializers.ModelSerializer):
         # Jamais le hash du secret de récupération des identifiants ; compte_service posé
         # seulement par SatelliteViewSet.valider.
         exclude = ['secret_recuperation_hash']
+        # `actions_agent` : ce que l'agent annonce savoir faire. Lu par l'écran, écrit par le
+        # seul passage de l'agent.
         read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact',
-                            'agent_mise_a_jour_vu', 'version_logicielle']
+                            'agent_mise_a_jour_vu', 'version_logicielle', 'actions_agent']
 
     def get_etat(self, obj):
         # Dérivé de dernier_contact et des seuils SATELLITE_* ; None avant le premier contact.
