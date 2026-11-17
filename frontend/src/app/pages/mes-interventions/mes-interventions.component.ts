@@ -40,10 +40,12 @@ const PRIORITE_COULEUR: Record<string, string> = { URGENTE: '#dc2626', NORMALE: 
 
 import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 
+import { DepartRetourComponent } from '../../shared/components/common/depart-retour/depart-retour.component';
+
 @Component({
   selector: 'app-mes-interventions',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, FormsModule, RouterLink],
+  imports: [TelephonePipe, CommonModule, FormsModule, RouterLink, DepartRetourComponent],
   templateUrl: './mes-interventions.component.html',
   styleUrl: './mes-interventions.component.scss',
 })

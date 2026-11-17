@@ -95,6 +95,60 @@ class AppelStandardViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixin
         })
 
 
+class EngagementPersonnelView(APIView):
+    """« Je pars », « je rentre » pour le personnel et les membres d'association — voir
+    core/engagements_personnels.py.
+
+    GET : où j'en suis, et sur quelles crises et avec quelles équipes je peux partir.
+    POST {geste: "partir", crise, equipe?} ou {geste: "rentrer"}.
+
+    Ouvert à tout compte connecté : c'est l'appartenance à une équipe ou à une institution
+    engagée sur la crise qui autorise le départ, pas le rôle sur la plateforme — un bénévole
+    d'association est un compte ordinaire."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def _etat(self, request):
+        from . import engagements_personnels as ep
+
+        environment = get_active_environment(request)
+        ouvert = ep.en_cours(request.user, environment)
+        return {
+            "en_cours": None if ouvert is None else {
+                "crise": str(ouvert.crise_id), "crise_nom": ouvert.crise.name,
+                "equipe_nom": ouvert.equipe.name if ouvert.equipe_id else None,
+                "parti_le": ouvert.parti_le,
+            },
+            "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_ouvertes_pour(request.user, environment)],
+            "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
+        }
+
+    def get(self, request):
+        return Response(self._etat(request))
+
+    def post(self, request):
+        from . import engagements_personnels as ep
+        from .models import Team
+
+        environment = get_active_environment(request)
+        geste = request.data.get("geste")
+        try:
+            if geste == "partir":
+                crise = Crisis.objects.filter(id=request.data.get("crise"), environment=environment).first() \
+                    if request.data.get("crise") else None
+                if crise is None:
+                    raise ValidationError({"detail": "Indiquez la crise sur laquelle vous partez."})
+                equipe = Team.objects.filter(id=request.data.get("equipe")).first() if request.data.get("equipe") else None
+                ep.partir(request.user, environment, crise, equipe)
+            elif geste == "rentrer":
+                ep.rentrer(request.user, environment)
+            else:
+                raise ValidationError({"detail": "Geste inconnu."})
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(self._etat(request))
+
+
 class PointDeSituationView(APIView):
     """GET /api/point-de-situation/?crise=<id> — les chiffres de la crise pour la collectivité
     de l'appelant, rassemblés et en texte prêt à coller."""
@@ -106,5 +160,7 @@ class PointDeSituationView(APIView):
             if request.query_params.get("crise") else None
         if crise is None:
             raise ValidationError({"crise": "Indiquez la crise."})
+        from .views import _nommer_pour
         return Response(point_situation.construire(
-            crise, _institution_ou_refus(request), get_active_environment(request)))
+            crise, _institution_ou_refus(request), get_active_environment(request),
+            nommer=_nommer_pour(request)))

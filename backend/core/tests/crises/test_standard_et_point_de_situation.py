@@ -177,7 +177,85 @@ class TestHeuresDeclarees:
         donnees = mairie[1].get(reverse("point_de_situation"), {"crise": str(crise.id)}).data
 
         moyens = {c["libelle"]: c["valeur"] for c in donnees["chiffres"]["moyens"]}
-        assert moyens["Heures engagées déclarées"] == 3.5
-        assert moyens["Encore sur le terrain (pas de « je rentre »)"] == 1
+        assert moyens["Heures déclarées par les ressources proposées"] == 3.5
+        assert moyens["Ressources encore sur le terrain"] == 1
         assert [l["heures"] for l in donnees["releve_engagements"]] == [3.5, None]
         assert donnees["releve_engagements"][0]["ressource"] == "Tractopelle de M. Blanc"
+
+
+@pytest.mark.django_db
+class TestJeParsJeRentreDuPersonnel:
+    """Les mêmes deux gestes pour un agent de la mairie ou un bénévole d'association."""
+
+    @pytest.fixture
+    def agent(self, create_user, mairie, crise):
+        from core.models import ImplicationInstitution, Team
+        institution, _ = mairie
+        ImplicationInstitution.objects.create(crise=crise, institution=institution, type_implication="IMPLIQUE", actif=True)
+        equipe = Team.objects.create(name="Services techniques", institution=institution)
+        # Un compte ordinaire : c'est l'appartenance à l'équipe qui compte, pas le rôle.
+        user = create_user(username="agent@std.fr", email="agent@std.fr", type="UTIL_SIMPLE",
+                           first_name="Paul", last_name="Martin")
+        equipe.members.add(user)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return user, client, equipe
+
+    def _geste(self, client, **corps):
+        return client.post(reverse("mon_engagement"), corps, format="json")
+
+    def test_l_agent_voit_ou_il_peut_partir_puis_part_et_rentre(self, agent, crise):
+        _, client, equipe = agent
+        etat = client.get(reverse("mon_engagement")).data
+        assert etat["en_cours"] is None
+        assert [c["nom"] for c in etat["crises"]] == ["Crue du Gier"]
+        assert [e["nom"] for e in etat["equipes"]] == ["Services techniques"]
+
+        parti = self._geste(client, geste="partir", crise=str(crise.id), equipe=str(equipe.id))
+        assert parti.status_code == 200, parti.data
+        assert parti.data["en_cours"]["equipe_nom"] == "Services techniques"
+
+        rentre = self._geste(client, geste="rentrer")
+        assert rentre.data["en_cours"] is None
+
+    def test_on_ne_part_pas_deux_fois_ni_ne_rentre_sans_etre_parti(self, agent, crise):
+        from core.models import EngagementPersonnel
+        _, client, _ = agent
+        assert self._geste(client, geste="rentrer").status_code == 400
+        self._geste(client, geste="partir", crise=str(crise.id))
+        assert self._geste(client, geste="partir", crise=str(crise.id)).status_code == 200      # rejouable
+        assert EngagementPersonnel.objects.count() == 1
+        autre = Crisis.objects.create(name="Autre crise", type="AUTRE", location="POINT (4 45)")
+        assert self._geste(client, geste="partir", crise=str(autre.id)).status_code == 400
+
+    def test_on_ne_part_pas_sur_une_crise_qui_ne_concerne_pas_son_institution(self, agent):
+        _, client, _ = agent
+        ailleurs = Crisis.objects.create(name="Crise d'ailleurs", type="AUTRE", location="POINT (2 48)")
+        reponse = self._geste(client, geste="partir", crise=str(ailleurs.id))
+        assert reponse.status_code == 400
+        assert "engagées sur cette crise" in str(reponse.data)
+
+    def test_la_mairie_relit_les_heures_de_son_personnel(self, agent, mairie, crise):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.models import EngagementPersonnel
+        user, client, equipe = agent
+        self._geste(client, geste="partir", crise=str(crise.id), equipe=str(equipe.id))
+        debut = timezone.now() - timedelta(hours=4)
+        EngagementPersonnel.objects.update(parti_le=debut, rentre_le=debut + timedelta(hours=2, minutes=15))
+        self._geste(client, geste="partir", crise=str(crise.id), equipe=str(equipe.id))            # reparti
+
+        donnees = mairie[1].get(reverse("point_de_situation"), {"crise": str(crise.id)}).data
+
+        moyens = {c["libelle"]: c["valeur"] for c in donnees["chiffres"]["moyens"]}
+        assert moyens["Personnel et bénévoles partis sur la crise"] == 1
+        assert moyens["Heures déclarées par le personnel"] == 2.2
+        assert moyens["Personnel encore sur le terrain"] == 1
+        lignes = donnees["releve_engagements"]
+        assert [l["heures"] for l in lignes] == [2.25, None]
+        assert "Martin" in lignes[0]["ressource"] and lignes[0]["equipe"] == "Services techniques"
+
+    def test_anonyme_refuse(self):
+        assert APIClient().get(reverse("mon_engagement")).status_code in (401, 403)

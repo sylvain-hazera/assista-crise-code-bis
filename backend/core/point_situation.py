@@ -13,7 +13,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 
-def construire(crise, institution, environment) -> dict:
+def construire(crise, institution, environment, nommer=None) -> dict:
     from . import relogement, standard_crise
     from .models import (
         AlertePopulation, CreneauEquipe, DemandeMobilisation, Dossier, Habitation, Information,
@@ -82,6 +82,25 @@ def construire(crise, institution, environment) -> dict:
         })
     heures = round(secondes / 3600, 1)
 
+    # Le personnel municipal et les membres d'association : mêmes deux gestes, tenus à part
+    # (core/engagements_personnels.py). Le nom n'est rendu qu'à l'institution qui relit.
+    from . import engagements_personnels
+    secondes_personnel, personnel_dehors, personnes = 0, 0, set()
+    for engagement in engagements_personnels.de_l_institution(crise, institution, environment):
+        personnes.add(engagement.utilisateur_id)
+        duree = engagement.duree
+        if duree is not None:
+            secondes_personnel += duree.total_seconds()
+        else:
+            personnel_dehors += 1
+        releve.append({
+            "ressource": (nommer(engagement.utilisateur) if nommer else "") or "Membre d'équipe",
+            "equipe": engagement.equipe.name if engagement.equipe_id else "",
+            "parti_le": engagement.parti_le, "rentre_le": engagement.rentre_le,
+            "heures": round(duree.total_seconds() / 3600, 2) if duree is not None else None,
+        })
+    heures_personnel = round(secondes_personnel / 3600, 1)
+
     chiffres = {
         "population": [
             ("Personnes accueillies en ce moment", accueillis),
@@ -101,9 +120,12 @@ def construire(crise, institution, environment) -> dict:
             ("Missions conduites", missions.count()),
             ("Mobilisations demandées", mobilisations.count()),
             ("Mobilisations en cours", mobilisations.filter(statut=StatutDemandeMobilisation.ACTIVE).count()),
-            ("Engagements déclarés (« je pars »)", len(engagements)),
-            ("Encore sur le terrain (pas de « je rentre »)", dehors),
-            ("Heures engagées déclarées", heures),
+            ("Personnel et bénévoles partis sur la crise", len(personnes)),
+            ("Personnel encore sur le terrain", personnel_dehors),
+            ("Heures déclarées par le personnel", heures_personnel),
+            ("Ressources proposées parties sur la crise", len(engagements)),
+            ("Ressources encore sur le terrain", dehors),
+            ("Heures déclarées par les ressources proposées", heures),
             ("Créneaux d'équipe tenus", tenus.count()),
             ("Personnes ayant tenu un créneau", tenus.values("utilisateur").distinct().count()),
             ("Alertes diffusées aux habitants", AlertePopulation.objects.filter(

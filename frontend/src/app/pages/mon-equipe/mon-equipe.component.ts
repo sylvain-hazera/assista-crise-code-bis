@@ -32,10 +32,12 @@ const STATUT_LABELS: Record<string, string> = {
   CLOTURE: 'Clôturé',
 };
 
+import { DepartRetourComponent } from '../../shared/components/common/depart-retour/depart-retour.component';
+
 @Component({
   selector: 'app-mon-equipe',
   standalone: true,
-  imports: [CommonModule, RouterLink, MatrixSalonChatComponent, BoutonRapportComponent],
+  imports: [CommonModule, RouterLink, MatrixSalonChatComponent, BoutonRapportComponent, DepartRetourComponent],
   templateUrl: './mon-equipe.component.html',
   styleUrl: './mon-equipe.component.scss',
 })

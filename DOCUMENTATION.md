@@ -871,6 +871,16 @@ lien ou par l'équipe. La durée va du départ déclaré au retour déclaré ; s
 durée n'est comptée et la ressource figure comme « encore sur le terrain ». Le point de
 situation donne le total et le relevé engagement par engagement.
 
+**Le personnel municipal et les membres d'association ont les mêmes deux gestes**
+(`core/engagements_personnels.py`, modèle `EngagementPersonnel`, `GET/POST /api/mon-engagement/`,
+bloc `app-depart-retour` posé sur « Mes interventions » et « Mon équipe »). La personne part sur
+une crise — avec son équipe si elle en a une — puis rentre ; un seul départ ouvert à la fois ;
+l'heure est celle du serveur au moment du geste, jamais une heure saisie. On ne part que sur une
+crise où sa propre institution, ou celle d'une de ses équipes, est engagée. C'est l'appartenance
+à l'équipe qui autorise, pas le rôle : un bénévole d'association est un compte ordinaire. Le
+point de situation de l'institution donne ses heures, tenues à part de celles des ressources
+proposées, et les nomme dans le relevé.
+
 #### Formulaires de terrain (17/11/2026)
 
 `core/formulaires_terrain.py`, page `/admin/formulaires-terrain`. La collecte de terrain à la

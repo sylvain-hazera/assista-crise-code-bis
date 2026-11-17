@@ -4034,6 +4034,41 @@ class PalierInondationSimule(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.niveau_metres}m"
 
 
+class EngagementPersonnel(EnvironmentScopedModel):
+    """« Je pars », « je rentre » pour le personnel municipal et les membres d'association
+    (17/11/2026) : le temps qu'une personne a réellement passé sur une crise, d'après ce
+    qu'elle déclare elle-même. Le pendant, pour les membres d'équipe, de ce que
+    `EngagementRessource` fait pour une ressource proposée par une offre.
+
+    Une personne n'a qu'un engagement ouvert à la fois : on ne part pas deux fois sans être
+    rentré. `institution` dit au nom de qui elle est partie — celle de son équipe, sinon la
+    sienne — et c'est elle qui relit le relevé."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="engagements_personnels")
+    crise = models.ForeignKey(Crisis, on_delete=models.CASCADE, related_name="engagements_personnels")
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels")
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels")
+    parti_le = models.DateTimeField()
+    rentre_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-parti_le"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["utilisateur", "environment"], condition=models.Q(rentre_le__isnull=True),
+                name="uq_engagement_personnel_un_seul_ouvert"),
+        ]
+
+    @property
+    def duree(self):
+        if self.rentre_le is None or self.rentre_le < self.parti_le:
+            return None
+        return self.rentre_le - self.parti_le
+
+
 class NatureAppelStandard(models.TextChoices):
     DEMANDE_AIDE = "DEMANDE_AIDE", "Demande d'aide"
     OFFRE_AIDE = "OFFRE_AIDE", "Offre d'aide"
