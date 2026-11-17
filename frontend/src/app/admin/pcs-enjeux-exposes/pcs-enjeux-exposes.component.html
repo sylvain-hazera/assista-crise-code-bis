@@ -30,7 +30,33 @@
           cartographiée pour cette commune. Cela ne veut pas dire qu'il n'y a pas de risque, seulement qu'elle est hors
           territoire à risque important d'inondation.</p>
       }
-      @if (!d.zonages_officiels.complet) {
+      <h2>Plans de prévention des risques</h2>
+      @if (!d.plans_prevention?.releve) {
+        <p class="note">Pas encore relevés. Le même relevé auprès de Géorisques rapporte les plans de prévention
+          (naturels, technologiques, miniers) qui couvrent la commune.</p>
+      } @else if (d.plans_prevention?.plans?.length) {
+        <ul class="plans-prevention">
+          @for (plan of d.plans_prevention?.plans; track plan.id_gaspar) {
+            <li>
+              <strong>{{ plan.libelle }}</strong>
+              <span class="note"> — {{ plan.famille }}@if (plan.modele) { ({{ plan.modele }}) }@if (plan.en_revision) { · en révision }</span>
+              @if (plan.zones.length) {
+                <br><span class="note">Zones de son règlement :
+                  @for (zone of plan.zones; track zone.nom; let dernier = $last) {
+                    {{ zone.nom }}@if (zone.regle) { ({{ zone.regle.toLowerCase() }}) }{{ dernier ? '' : ' ; ' }}
+                  }
+                </span>
+              }
+            </li>
+          }
+        </ul>
+        <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }}. Le tracé des zones n'est pas
+          publié par Géorisques : il se consulte dans le dossier du plan, en préfecture ou sur le Géoportail de l'urbanisme.</p>
+      } @else {
+        <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }} : aucun plan de prévention ne
+          couvre cette commune dans la base de l'État.</p>
+      }
+      @if (!d.zonages_officiels.complet || !d.plans_prevention?.complet) {
         <button type="button" class="btn-primary" [disabled]="releveDemande" (click)="releverZonages()">Relever auprès de Géorisques</button>
       }
       @if (releveDemande) { <button type="button" class="btn-secondary" (click)="charger()">Actualiser</button> }

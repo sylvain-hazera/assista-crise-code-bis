@@ -4034,6 +4034,51 @@ class PalierInondationSimule(EnvironmentScopedModel):
         return f"{self.commune_code} — {self.niveau_metres}m"
 
 
+class ProcedurePPR(EnvironmentScopedModel):
+    """Un plan de prévention des risques qui couvre une commune (Géorisques, base Gaspar),
+    gardé en base — voir core/plans_prevention.py. `zones` porte les types de zones de son
+    règlement (nom et règle), pas leur tracé, que Géorisques ne sert pas."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10)
+    #: pprn (naturels), pprt (technologiques) ou pprm (miniers).
+    famille = models.CharField(max_length=10)
+    id_gaspar = models.CharField(max_length=40)
+    libelle = models.CharField(max_length=255, blank=True, default="")
+    modele = models.CharField(max_length=40, blank=True, default="")
+    bassin = models.CharField(max_length=255, blank=True, default="")
+    en_revision = models.BooleanField(default=False)
+    zonage_existe = models.BooleanField(default=False)
+    zones = models.JSONField(default=list, blank=True)
+    modifie_le = models.DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["commune_code", "id_gaspar", "environment"],
+                name="uq_procedure_ppr_commune_gaspar_environment",
+            )
+        ]
+
+
+class RelevePPR(EnvironmentScopedModel):
+    """Trace qu'une famille de plans a été relevée pour une commune, même s'il n'y en a aucun :
+    « relevé, et rien ici » n'est pas « jamais relevé »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10)
+    famille = models.CharField(max_length=10)
+    releve_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["commune_code", "famille", "environment"],
+                name="uq_releve_ppr_commune_famille_environment",
+            )
+        ]
+
+
 class ZonageOfficiel(EnvironmentScopedModel):
     """Une zone inondable officielle de l'État pour une commune (Géorisques), gardée en base.
 

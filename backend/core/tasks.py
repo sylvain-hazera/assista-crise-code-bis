@@ -156,9 +156,13 @@ def relever_zonages_officiels_task(commune_code: str, environment: str, forcer: 
     """Relève les zones inondables officielles d'une commune auprès de Géorisques, une requête
     par scénario, espacées (voir core/zonages_officiels.py). En tâche de fond : cinq requêtes
     et leurs pauses ne tiennent pas dans le délai d'une page."""
+    from . import plans_prevention
     from .zonages_officiels import relever
 
-    return relever(commune_code, environment, forcer=forcer)
+    bilan = relever(commune_code, environment, forcer=forcer)
+    # Dans le même geste, les plans de prévention de la commune : même service, mêmes pauses.
+    bilan["plans_prevention"] = plans_prevention.relever(commune_code, environment, forcer=forcer)
+    return bilan
 
 
 @shared_task(acks_late=True, time_limit=900, soft_time_limit=870)

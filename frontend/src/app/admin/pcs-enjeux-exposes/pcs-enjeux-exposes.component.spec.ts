@@ -78,9 +78,18 @@ describe('PcsEnjeuxExposesComponent', () => {
       enjeux: [{ ...DONNEES.enjeux[0], zone_officielle: 'débordement moyen (centennal, réf. PPRI)' }],
       zonages_officiels: { releve: true, releve_le: '2026-11-16T21:00:00Z', complet: true,
         couches: [{ couche: 'c', libelle: 'débordement moyen (centennal, réf. PPRI)', relevee: true, presente: true }] },
+      // Le même relevé rapporte les plans de prévention (17/11/2026) : le bouton ne disparaît
+      // que quand les deux sont là.
+      plans_prevention: { releve: true, releve_le: '2026-11-16T21:00:00Z', complet: true, plans: [{
+        id_gaspar: '33DREAL20170013', famille: 'Risques naturels', libelle: 'PPR Bordeaux (revision)', modele: 'PPRN-I',
+        bassin: '', en_revision: true, zonage_existe: true, modifie_le: null,
+        zones: [{ nom: 'Rouge non urbanisé', regle: 'Interdiction' }],
+      }] },
     });
     fixture.detectChanges();
     expect(texte()).toContain('1 enjeu en zone officielle');
+    expect(texte()).toContain('PPR Bordeaux (revision)');
+    expect(texte()).toContain('Rouge non urbanisé (interdiction)');
     expect(texte()).not.toContain('Relever auprès de Géorisques');
   });
 

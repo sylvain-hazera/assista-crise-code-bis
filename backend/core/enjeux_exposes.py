@@ -46,7 +46,7 @@ def seuil_d_un_point(point, paliers):
 def exposes(institution, environment) -> dict:
     """Les sites sensibles retenus et les lieux d'accueil du plan, avec le niveau d'eau qui les
     atteint. Triés du plus exposé au moins exposé ; ce qui n'a pas de coordonnées est dit."""
-    from . import zonages_officiels
+    from . import plans_prevention, zonages_officiels
 
     commune_code = institution.commune_code or ""
     paliers = paliers_de(commune_code, environment) if commune_code else []
@@ -89,6 +89,7 @@ def exposes(institution, environment) -> dict:
         "enjeux": enjeux,
         # Les zones inondables officielles de l'État, relevées une fois (core/zonages_officiels.py).
         "zonages_officiels": zonages_officiels.etat(commune_code, environment),
+        "plans_prevention": plans_prevention.etat(commune_code, environment),
         "en_zone_officielle": sum(1 for e in enjeux if e["zone_officielle"]),
         "atteints": sum(1 for e in enjeux if e["seuil_m"] is not None),
         "non_situes": sum(1 for e in enjeux if not e["situe"]),

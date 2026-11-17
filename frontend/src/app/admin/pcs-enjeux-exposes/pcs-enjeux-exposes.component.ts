@@ -35,6 +35,20 @@ export interface EnjeuxExposes {
   non_situes: number;
   zonages_officiels: ZonagesOfficiels;
   en_zone_officielle: number;
+  plans_prevention?: PlansPrevention;
+}
+
+/** Les plans de prévention des risques qui couvrent la commune (Géorisques), gardés en base.
+ * Les zones sont celles du règlement, nommées : leur tracé n'est pas servi par Géorisques. */
+export interface PlansPrevention {
+  releve: boolean;
+  releve_le: string | null;
+  complet: boolean;
+  plans: {
+    id_gaspar: string; famille: string; libelle: string; modele: string; bassin: string;
+    en_revision: boolean; zonage_existe: boolean; zones: { nom: string; regle: string }[];
+    modifie_le: string | null;
+  }[];
 }
 
 /**
@@ -96,7 +110,7 @@ export class PcsEnjeuxExposesComponent implements OnInit {
       next: (donnees) => {
         this.donnees = donnees;
         if (this.niveau === null) this.niveau = donnees.niveau_max_m;
-        if (donnees.zonages_officiels?.complet) { this.releveDemande = false; this.messageReleve = ''; }
+        if (donnees.zonages_officiels?.complet && donnees.plans_prevention?.complet !== false) { this.releveDemande = false; this.messageReleve = ''; }
         this.chargement = false;
       },
       error: (e) => {

@@ -2787,8 +2787,16 @@ Règles :
   les plus ressemblantes ; les identiques se rattachent d'un coup (`…/rattacher-exactes/`), les
   ressemblances une à une (`…/<id>/rattacher/`) ; le texte saisi par l'agent n'est pas réécrit.
 
-Reste à faire dans ce chantier : les zonages réglementaires des plans de prévention (PPR), que
-Géorisques sert par un autre service.
+**Plans de prévention des risques** (`core/plans_prevention.py`, modèles `ProcedurePPR` et
+`RelevePPR`, 17/11/2026). Le même bouton « Relever auprès de Géorisques » rapporte les plans
+naturels, technologiques et miniers qui couvrent la commune (base Gaspar, `/api/v1/gaspar/pprn`,
+`pprt`, `pprm`), avec leur état de révision et les types de zones de leur règlement. Même
+discipline : gardés en base, requêtes espacées, pas refaits avant trente jours.
+
+Vérifié sur la description officielle de l'API et sur une réponse réelle : Géorisques **ne sert
+pas le tracé** des zones réglementaires, seulement leurs noms et leurs règles. L'écran le dit et
+renvoie au dossier du plan. On ne dessine donc aucune zone PPR sur la carte. Les plans
+n'entrent pas encore dans le document PDF du plan de sauvegarde.
 
 **Sur la carte : « personne sensible dans les environs », jamais un point** (16/11/2026,
 `core/secteurs_vulnerables.py`, `GET /api/personnes-vulnerables/secteurs/`, calque « Personnes
