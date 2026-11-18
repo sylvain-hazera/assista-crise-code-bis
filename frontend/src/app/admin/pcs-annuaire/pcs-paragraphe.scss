@@ -72,3 +72,20 @@ input, textarea, select {
 
 .case { display: flex; gap: .4rem; align-items: center; font-weight: 400; margin: .5rem 0; }
 .zonages button { margin-right: .5rem; }
+
+// Les fichiers joints d'une ligne occupent toute sa largeur, sous le nom et les boutons.
+.liste li { flex-wrap: wrap; }
+.pieces-ligne { flex: 1 1 100%; }
+
+// « Alerter les habitants » : les moyens de terrain du plan, et la fiche qui sort quand on en coche un.
+.moyen-terrain { padding: .2rem 0; &.retenu { background: var(--ac-blue-bg, #eff6ff); border-radius: 6px; padding: .4rem .6rem; margin: .2rem 0; } }
+.fiche-terrain { margin: .2rem 0 .4rem 1.8rem; display: grid; gap: .3rem; p { margin: 0; } }
+.terrain-fait { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .9rem; }
+
+// « Alerte de la population » : les moyens numériques et leur état.
+.canaux-numeriques { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem;
+  li { display: block; }
+  .pastille-canal { display: inline-block; min-width: 6.2rem; text-align: center; padding: .05rem .5rem; margin-right: .4rem; border-radius: 999px;
+    font-size: .75rem; background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text-muted, #6b7280);
+    &.pret { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #166534); } }
+}

@@ -62,7 +62,7 @@ describe('AlerteHabitantsComponent', () => {
     expect(confirmer.calls.mostRecent().args[0]).toContain('3 personnes');
     const requete = http.expectOne(r => r.url === `${api}/alertes-population/` && r.method === 'POST');
     expect(requete.request.body).toEqual({ titre: 'Crue du Gier', message: 'Évacuez le quartier bas.',
-                                           canaux: ['MATRIX', 'APPLICATION'], urgent: true });
+                                           canaux: ['MATRIX', 'APPLICATION'], urgent: true, terrain: [], relayer: [] });
     requete.flush({ id: 'a1', titre: 'Crue du Gier', message: 'Évacuez le quartier bas.', urgent: true, crise: null, crise_nom: null,
                     canaux: ['MATRIX', 'APPLICATION'], destinataires: 3, auteur: 'Agent', date: '2026-11-16T18:00:00Z',
                     bilan: { MATRIX: { partis: 3, echecs: 0, note: '' }, APPLICATION: { partis: 1, echecs: 0, note: '' } } });

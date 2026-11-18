@@ -12,15 +12,29 @@ export interface CanalAlerte {
 
 export interface BilanCanal { partis: number; echecs: number; note: string; }
 
+/** Un moyen d'alerte de terrain, décrit dans « Alerte de la population » : sirène, véhicule,
+ * personne relais, porte-à-porte. Ici on le DÉCLENCHE ; là-bas on le décrit. */
+export interface MoyenTerrain {
+  id: string; type: string; type_libelle: string; description: string; zone_nom: string;
+  personne: string; personne_telephone: string;
+  /** Vrai : le message peut lui être envoyé par SMS pour qu'il le relaie. */
+  peut_relayer: boolean; motif_relais: string;
+  pieces: number;
+}
+
+/** Ce qu'une alerte a demandé sur le terrain, et ce qu'il en est advenu. */
+export interface ActionTerrain { type_libelle: string; description: string; personne: string; relais: string; note: string; }
+
 export interface AlerteHabitants {
   id: string; titre: string; message: string; urgent: boolean;
   crise: string | null; crise_nom: string | null;
   canaux: string[]; bilan: Record<string, BilanCanal>; destinataires: number;
+  terrain?: ActionTerrain[];
   auteur: string; date: string;
 }
 
 export interface EtatAlertes {
-  apercu: { destinataires: number; canaux: CanalAlerte[] };
+  apercu: { destinataires: number; canaux: CanalAlerte[]; terrain?: MoyenTerrain[] };
   par_defaut: string[];
   alertes: AlerteHabitants[];
 }
@@ -37,7 +51,8 @@ export class AlerteHabitantsService {
     return this.http.get<EtatAlertes>(this.url, { params: crise ? { crise } : {} });
   }
 
-  envoyer(alerte: { titre: string; message: string; canaux: string[]; urgent: boolean; crise?: string }): Observable<AlerteHabitants> {
+  envoyer(alerte: { titre: string; message: string; canaux: string[]; urgent: boolean; crise?: string;
+                    terrain?: string[]; relayer?: string[] }): Observable<AlerteHabitants> {
     return this.http.post<AlerteHabitants>(this.url, alerte);
   }
 

@@ -564,6 +564,7 @@ def _alerte_en_clair(alerte, request) -> dict:
         "crise": str(alerte.crise_id) if alerte.crise_id else None,
         "crise_nom": alerte.crise.name if alerte.crise_id else None,
         "canaux": alerte.canaux, "bilan": alerte.bilan, "destinataires": alerte.destinataires,
+        "terrain": alerte.terrain or [],
         "auteur": _nommer(request)(alerte.auteur) if alerte.auteur_id else "", "date": alerte.date_creation,
     }
 
@@ -602,12 +603,17 @@ class AlertesPopulationView(APIView):
             raise ValidationError({"message": "Une alerte a un titre et un message."})
         if len(titre) > 150:
             raise ValidationError({"titre": "150 caractères au plus."})
-        canaux = request.data.get("canaux")
-        if not isinstance(canaux, list) or not [c for c in canaux if c in alerte_population.CODES]:
-            raise ValidationError({"canaux": "Choisissez au moins un canal."})
+        canaux = request.data.get("canaux") or []
+        terrain = request.data.get("terrain") or []
+        relayer = request.data.get("relayer") or []
+        if not isinstance(canaux, list) or not isinstance(terrain, list) or not isinstance(relayer, list):
+            raise ValidationError({"canaux": "Choisissez au moins un canal ou un moyen de terrain."})
+        # Une alerte peut ne passer QUE par le terrain : la sirène n'a pas besoin d'Internet.
+        if not [c for c in canaux if c in alerte_population.CODES] and not terrain:
+            raise ValidationError({"canaux": "Choisissez au moins un canal ou un moyen de terrain."})
         crise = _crise_demandee(request, request.data.get("crise"))
         alerte = alerte_population.envoyer(request, institution, crise, titre, message, canaux,
-                                           urgent=bool(request.data.get("urgent", True)))
+                                           urgent=bool(request.data.get("urgent", True)), terrain=terrain, relayer=relayer)
         return Response(_alerte_en_clair(alerte, request), status=201)
 
 

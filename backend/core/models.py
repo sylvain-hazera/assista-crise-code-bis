@@ -6061,6 +6061,9 @@ class AlertePopulation(EnvironmentScopedModel):
     urgent = models.BooleanField(default=True)
     canaux = models.JSONField(default=list)
     bilan = models.JSONField(default=dict)
+    #: Ce que l'alerte a demandé SUR LE TERRAIN : sirène, véhicule, relais, porte-à-porte — les
+    #: moyens décrits dans « Alerte de la population » (18/11/2026). Une ligne par moyen coché.
+    terrain = models.JSONField(default=list, blank=True)
     destinataires = models.PositiveIntegerField(default=0)
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_population")
     date_creation = models.DateTimeField(auto_now_add=True)

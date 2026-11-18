@@ -58,6 +58,22 @@
       </form>
     }
 
+    @if (canauxNumeriques.length) {
+      <section class="bloc">
+        <h2>Moyens numériques</h2>
+        <p class="note">Ce sont les canaux que <a routerLink="/admin/alerte-habitants">Alerter les habitants</a> propose. Le courriel et le SMS
+          passent par le compte de la collectivité (Brevo, par exemple) : sa clé se renseigne une seule fois, dans la fiche de
+          l'institution, onglet <a routerLink="/admin/institutions">Envois</a>.</p>
+        <ul class="canaux-numeriques">
+          @for (canal of canauxNumeriques; track canal.code) {
+            <li><span class="pastille-canal" [class.pret]="canal.disponible">{{ canal.disponible ? 'Prêt' : 'À configurer' }}</span>
+              <strong>{{ canal.libelle }}</strong> <span class="coordonnees">{{ canal.disponible ? canal.detail : canal.motif }}</span></li>
+          }
+        </ul>
+      </section>
+      <h2 class="categorie">Moyens de terrain</h2>
+    }
+
     @if (lignes.length) {
       <section class="bloc liste">
         <ul>

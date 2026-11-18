@@ -255,3 +255,77 @@ class TestDroits:
         assert agent.post(URL, {"titre": "", "message": "y", "canaux": ["MATRIX"]}, format="json").status_code == 400
         assert agent.post(URL, {"titre": "x", "message": "y", "canaux": []}, format="json").status_code == 400
         assert agent.post(URL, {"titre": "x", "message": "y", "canaux": ["PIGEON"]}, format="json").status_code == 400
+
+
+@pytest.mark.django_db
+class TestMoyensDeTerrain:
+    """18/11/2026, Sylvain : « Alerte de la population » décrit les moyens ; « Alerter les
+    habitants » lance la procédure avec eux. « Tu dois pouvoir cocher porte-à-porte ou sirène :
+    ça te sort la fiche pour déclencher la sirène ; pour le porte-à-porte, les contacts, et ça te
+    propose de leur envoyer le message à relayer. Chaque action doit être tracée dans la main
+    courante / journal de bord de la crise. »"""
+
+    @pytest.fixture
+    def moyens(self, agent):
+        agent.post("/api/pcs-moyens-alerte/", {"type": "SIRENE", "description": "Toit de la mairie",
+                                               "personne": "Paul Garde", "personne_telephone": "+33600000010"}, format="json")
+        agent.post("/api/pcs-moyens-alerte/", {"type": "PORTE_A_PORTE", "description": "Quartier de la Rivière",
+                                               "personne": "Lina Relais", "personne_telephone": "+33600000011"}, format="json")
+        agent.post("/api/pcs-moyens-alerte/", {"type": "VEHICULE", "description": "Fourgon des services techniques"}, format="json")
+        return {m["type"]: m for m in agent.get(URL).data["apercu"]["terrain"]}
+
+    @pytest.fixture
+    def crise(self, db):
+        return Crisis.objects.create(name="Crue du Gier", type="INONDATION", location=Point(4.6, 45.5, srid=4326))
+
+    def test_les_moyens_du_plan_sont_proposes_avec_leur_fiche(self, moyens):
+        assert set(moyens) == {"SIRENE", "PORTE_A_PORTE", "VEHICULE"}
+        sirene = moyens["SIRENE"]
+        assert (sirene["type_libelle"], sirene["description"], sirene["personne"]) == ("Sirène", "Toit de la mairie", "Paul Garde")
+        # Pas de fournisseur SMS : on ne promet pas un relais qu'on ne peut pas faire, et on dit pourquoi.
+        assert sirene["peut_relayer"] is False and "fournisseur" in sirene["motif_relais"]
+        assert "numéro" in moyens["VEHICULE"]["motif_relais"]
+
+    def test_une_alerte_peut_ne_passer_que_par_le_terrain_et_laisse_sa_trace(self, agent, mairie, moyens, crise, envois):
+        from core.models import JournalCollectivite
+        reponse = agent.post(URL, {"titre": "Évacuation", "message": "Quittez le quartier bas.", "canaux": [],
+                                   "terrain": [moyens["SIRENE"]["id"]], "crise": str(crise.id)}, format="json")
+        assert reponse.status_code == 201, reponse.data
+        (action,) = reponse.data["terrain"]
+        assert (action["type_libelle"], action["personne"], action["relais"]) == ("Sirène", "Paul Garde", "")
+        # Main courante : le fait et le moyen, jamais le texte de l'alerte ni un numéro.
+        (ligne,) = AuditLog.objects.filter(objet_type="MoyenAlertePCS", crise=crise)
+        assert "Sirène (Toit de la mairie) — déclenchement demandé" in ligne.commentaire
+        assert "Quittez" not in ligne.commentaire and "0600" not in ligne.commentaire
+        # Journal de bord de la crise.
+        (note,) = JournalCollectivite.objects.filter(crise=crise)
+        assert "Sirène" in note.contenu and "Paul Garde" in note.contenu
+        assert envois["sms"] == []
+
+    def test_le_message_a_relayer_part_au_porte_a_porte(self, agent, mairie, moyens, crise, envois):
+        ConfigurationEnvoiInstitution.objects.create(institution=mairie, fournisseur_sms="brevo", sms_cle_api="cle-de-test", sms_expediteur="Mairie")
+        moyens = {m["type"]: m for m in agent.get(URL).data["apercu"]["terrain"]}
+        assert moyens["PORTE_A_PORTE"]["peut_relayer"] is True and moyens["VEHICULE"]["peut_relayer"] is False
+        ids = [moyens["PORTE_A_PORTE"]["id"], moyens["VEHICULE"]["id"]]
+        reponse = agent.post(URL, {"titre": "Évacuation", "message": "Quittez le quartier bas.", "canaux": [],
+                                   "terrain": ids, "relayer": ids, "crise": str(crise.id)}, format="json")
+        actions = {a["type_libelle"]: a for a in reponse.data["terrain"]}
+        assert actions["Porte-à-porte"]["relais"] == "message envoyé par SMS"
+        assert envois["sms"] == [("+33600000011", "Évacuation — Quittez le quartier bas.")]
+        # Le véhicule n'a pas de numéro : rien ne part, et on le dit.
+        assert actions["Véhicule avec haut-parleur"]["relais"] == "" and "numéro" in actions["Véhicule avec haut-parleur"]["note"]
+
+    def test_on_ne_declenche_pas_le_moyen_d_une_autre_commune(self, agent, moyens, create_user, envois):
+        itype = InstitutionType.objects.get(code="MAIRIE")
+        voisine = Institution.objects.create(nom="Mairie voisine", type=itype, commune_code="42186")
+        voisin = create_user(username="voisin@test.fr", email="voisin@test.fr", type="AUT_LOCALE")
+        voisin.institution = voisine
+        voisin.save()
+        client = APIClient()
+        client.force_authenticate(user=voisin)
+        reponse = client.post(URL, {"titre": "Essai", "message": "Texte", "canaux": ["MATRIX"], "terrain": [moyens["SIRENE"]["id"]]}, format="json")
+        assert reponse.status_code == 201 and reponse.data["terrain"] == []
+        assert not AuditLog.objects.filter(objet_type="MoyenAlertePCS", commentaire__contains="déclenchement").exists()
+
+    def test_sans_canal_ni_moyen_rien_ne_part(self, agent):
+        assert agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": []}, format="json").status_code == 400

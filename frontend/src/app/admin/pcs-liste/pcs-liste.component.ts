@@ -1,3 +1,4 @@
+import { CanalAlerte, EtatAlertes } from '../../services/alerte-habitants.service';
 import { PiecesPlanComponent } from '../../shared/components/common/pieces-plan/pieces-plan.component';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
@@ -32,6 +33,9 @@ const ZONE_AUTOMATIQUE = 'Mon territoire';
 })
 export class PcsListeComponent implements OnInit {
   paragraphe!: ParagrapheListe;
+  /** Page « Alerte de la population » seulement : les moyens numériques de la collectivité
+   * (messagerie, application, courriel, SMS, radio), avec ce qui manque à chacun. */
+  canauxNumeriques: CanalAlerte[] = [];
   lignes: Ligne[] = [];
   zones: Zone[] = [];
   equipes: Team[] = [];
@@ -53,6 +57,11 @@ export class PcsListeComponent implements OnInit {
 
   ngOnInit(): void {
     this.paragraphe = PARAGRAPHES_EN_LISTE[this.route.snapshot.data['paragraphe']];
+    if (this.paragraphe.ressource === 'pcs-moyens-alerte') {
+      this.http.get<EtatAlertes>(`${environment.apiUrl}/alertes-population/`).subscribe({
+        next: (etat) => { this.canauxNumeriques = etat.apercu.canaux; }, error: () => {},
+      });
+    }
     this.charger();
     if (this.paragraphe.champs.some(c => c.type === 'zone')) {
       // Les quartiers sont facultatifs : s'ils ne se chargent pas, le champ reste vide et c'est tout.

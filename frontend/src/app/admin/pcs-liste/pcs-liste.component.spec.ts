@@ -34,7 +34,11 @@ describe('PcsListeComponent', () => {
   let monte = false;
   afterEach(() => {
     // Chaque fiche réflexe et chaque moyen d'alerte demande ses fichiers joints (18/11/2026).
-    if (monte) { http.match(r => r.url.includes('/pcs-pieces/')).forEach(r => r.flush([])); http.verify(); }
+    if (monte) {
+      http.match(r => r.url.includes('/pcs-pieces/')).forEach(r => r.flush([]));
+      http.match(r => r.url.endsWith('/alertes-population/')).forEach(r => r.flush({ apercu: { destinataires: 0, canaux: [] }, par_defaut: [], alertes: [] }));
+      http.verify();
+    }
     monte = false;
   });
 

@@ -8,7 +8,7 @@
     <span class="material-icons">info</span>
     <span><strong>Ce n'est pas FR-Alert</strong>, qui relève du préfet. Cette alerte ne touche que les personnes qui se sont
       abonnées aux alertes de la commune et, pour une crise, celles qui s'y sont déclarées touchées. Les moyens de
-      terrain (sirène, véhicule, personnes relais) sont dans
+      terrain (sirène, véhicule, personnes relais, porte-à-porte) se déclenchent plus bas ; ils se décrivent dans
       <a routerLink="/admin/pcs-alerte">Alerte de la population</a>.</span>
   </p>
 
@@ -59,6 +59,44 @@
         }
       </fieldset>
 
+      <fieldset class="canaux">
+        <legend>Sur le terrain</legend>
+        @for (moyen of terrain; track moyen.id) {
+          <div class="moyen-terrain" [class.retenu]="terrainChoisi[moyen.id]">
+            <label class="canal">
+              <input type="checkbox" [name]="'terrain-' + moyen.id" [checked]="!!terrainChoisi[moyen.id]" (change)="cocherTerrain(moyen, $any($event.target).checked)">
+              <span>
+                <strong>{{ moyen.type_libelle }}</strong>@if (moyen.zone_nom) { — {{ moyen.zone_nom }} }
+                @if (moyen.description) { <br><span class="note">{{ moyen.description }}</span> }
+              </span>
+            </label>
+            @if (terrainChoisi[moyen.id]) {
+              <div class="fiche-terrain">
+                @if (moyen.personne || moyen.personne_telephone) {
+                  <p><strong>Qui le déclenche ou le relaie :</strong> {{ moyen.personne || 'non renseigné' }}@if (moyen.personne_telephone) { — <a [href]="'tel:' + moyen.personne_telephone">{{ moyen.personne_telephone }}</a> }</p>
+                } @else {
+                  <p class="note">Personne n'est désigné pour ce moyen dans « Alerte de la population ».</p>
+                }
+                @if (moyen.peut_relayer) {
+                  <label class="canal"><input type="checkbox" [name]="'relayer-' + moyen.id" [(ngModel)]="relayer[moyen.id]">
+                    <span>Lui envoyer ce message par SMS, pour qu'il le relaie</span></label>
+                } @else if (moyen.motif_relais) {
+                  <p class="note">{{ moyen.motif_relais }}</p>
+                }
+                <app-pieces-plan [moyenAlerte]="moyen.id" [modifiable]="false" intitule="Fiche et procédure"></app-pieces-plan>
+              </div>
+            }
+          </div>
+        } @empty {
+          <p class="note">Aucun moyen de terrain n'est décrit. Sirène, véhicule, personnes relais et porte-à-porte se décrivent dans
+            <a routerLink="/admin/pcs-alerte">Alerte de la population</a> ; ils apparaîtront ici, prêts à être déclenchés.</p>
+        }
+        @if (terrain.length) {
+          <p class="note">Cocher un moyen inscrit sa demande de déclenchement à la main courante et au journal de bord de la crise.
+            Les moyens se décrivent et se complètent dans <a routerLink="/admin/pcs-alerte">Alerte de la population</a>.</p>
+        }
+      </fieldset>
+
       <label class="canal"><input type="checkbox" name="urgent" [(ngModel)]="urgent"> <span>Urgent : la notification de l'application sonne et reste en tête.</span></label>
 
       <div class="actions">
@@ -79,6 +117,13 @@
             {{ libelle(code) }} : {{ alerte.bilan[code].partis }}@if (alerte.bilan[code].note) { ({{ alerte.bilan[code].note }})}{{ dernier ? '' : ', ' }}
           }
         </p>
+        @if (alerte.terrain?.length) {
+          <ul class="terrain-fait">
+            @for (action of alerte.terrain; track $index) {
+              <li><strong>{{ action.type_libelle }}</strong>@if (action.description) { ({{ action.description }}) } : déclenchement demandé@if (action.personne) { à {{ action.personne }} }@if (action.relais) { — {{ action.relais }} }@if (action.note) { <span class="note">{{ action.note }}</span> }</li>
+            }
+          </ul>
+        }
       </section>
     } @empty {
       <p class="message">Aucune alerte n'a encore été envoyée.</p>

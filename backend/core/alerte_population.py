@@ -119,6 +119,81 @@ def disponibilite(institution, crise=None, environment=None) -> dict:
     return etat
 
 
+def moyens_de_terrain(institution, environment) -> list:
+    """Les moyens d'alerte de terrain que la commune a décrits dans son plan (« Alerte de la
+    population ») : c'est ICI qu'on les déclenche, c'est LÀ-BAS qu'on les décrit.
+
+    Pour chacun : qui le déclenche ou le relaie, et si le message peut lui être envoyé par SMS
+    (il faut son numéro, et un fournisseur SMS configuré pour la collectivité)."""
+    from .models import DossierPCS, MoyenAlertePCS
+
+    dossier = DossierPCS.objects.filter(institution=institution, environment=environment).first()
+    if dossier is None:
+        return []
+    config = _configuration(institution)
+    sms_pret = bool(config is not None and getattr(config, "sms_configure", False))
+    moyens = []
+    for moyen in MoyenAlertePCS.objects.filter(dossier=dossier).select_related("zone").prefetch_related("pieces"):
+        telephone = (moyen.personne_telephone or "").strip()
+        if not telephone:
+            motif = "Aucun numéro n'est noté pour ce moyen : appelez la personne, ou complétez sa fiche."
+        elif not sms_pret:
+            motif = "Aucun fournisseur SMS n'est configuré pour la collectivité : appelez-la."
+        else:
+            motif = ""
+        moyens.append({
+            "id": str(moyen.id), "type": moyen.type, "type_libelle": moyen.get_type_display(),
+            "description": moyen.description, "zone_nom": moyen.zone.nom if moyen.zone_id else "",
+            "personne": moyen.personne or "", "personne_telephone": telephone,
+            "peut_relayer": bool(telephone and sms_pret), "motif_relais": motif,
+            "pieces": len(moyen.pieces.all()),
+        })
+    return moyens
+
+
+def declencher_sur_le_terrain(request, institution, crise, titre, message, identifiants, relayer, environment) -> list:
+    """Inscrit la demande de déclenchement de chaque moyen coché, et envoie le message à relayer
+    à ceux pour qui on l'a demandé.
+
+    On ne déclenche pas une sirène depuis un écran : on DEMANDE son déclenchement à quelqu'un,
+    et on en garde la trace. Chaque demande va à la main courante et, s'il y a une crise, à son
+    journal de bord — c'est ce qu'on relira pour savoir qui a été prévenu, et quand."""
+    from .audit import audit_log
+    from .envoi_sms import envoyer_sms_pour_institution
+    from .models import JournalCollectivite
+
+    demonstration = environment == Environment.DEMO
+    choisis = {m["id"]: m for m in moyens_de_terrain(institution, environment)}
+    actions = []
+    for identifiant in [str(i) for i in (identifiants or [])]:
+        moyen = choisis.get(identifiant)
+        if moyen is None:
+            continue                        # un moyen d'une autre commune, ou retiré entre-temps
+        action = {"moyen": identifiant, "type": moyen["type"], "type_libelle": moyen["type_libelle"],
+                  "description": moyen["description"], "personne": moyen["personne"], "relais": "", "note": ""}
+        if identifiant in {str(r) for r in (relayer or [])}:
+            if demonstration:
+                action["note"] = "Zone de démonstration : aucun SMS n'est parti."
+            elif not moyen["peut_relayer"]:
+                action["note"] = moyen["motif_relais"]
+            else:
+                reussi, detail = envoyer_sms_pour_institution(institution, moyen["personne_telephone"], f"{titre} — {message}"[:160])
+                action["relais"] = "message envoyé par SMS" if reussi else ""
+                if not reussi:
+                    action["note"] = f"Le SMS n'est pas parti ({detail}) : appelez la personne."
+        actions.append(action)
+        # Ni le texte de l'alerte ni un numéro : le fait, le moyen, et s'il a été relayé.
+        fait = f"Alerte « {titre} » : {moyen['type_libelle']}" + (f" ({moyen['description']})" if moyen["description"] else "") \
+            + " — déclenchement demandé" + (f", {action['relais']}" if action["relais"] else "")
+        audit_log(request=request, action_code="MODIFICATION", objet_type="MoyenAlertePCS", objet_id=identifiant,
+                  crise=crise, commentaire=fait)
+        if crise is not None:
+            JournalCollectivite.objects.create(
+                institution=institution, crise=crise, auteur=request.user, environment=environment,
+                contenu=fait + (f" à {moyen['personne']}" if moyen["personne"] else "") + ".")
+    return actions
+
+
 def apercu(institution, crise, environment) -> dict:
     """Ce que l'écran montre AVANT d'envoyer : combien de personnes, et combien par canal."""
     from .notifications_application import joignables_par_application
@@ -144,6 +219,7 @@ def apercu(institution, crise, environment) -> dict:
              "joignables": joignables[canal["code"]]}
             for canal in CANAUX
         ],
+        "terrain": moyens_de_terrain(institution, environment),
     }
 
 
@@ -153,7 +229,7 @@ def _envoyer_intramuros(cle_api, titre, message):
     raise NotImplementedError(INTRAMUROS_PAS_BRANCHE)
 
 
-def envoyer(request, institution, crise, titre, message, canaux, urgent=True) -> AlertePopulation:
+def envoyer(request, institution, crise, titre, message, canaux, urgent=True, terrain=None, relayer=None) -> AlertePopulation:
     """Envoie l'alerte sur les canaux retenus et enregistre ce qu'elle est devenue.
 
     Un canal qui échoue pour une personne n'arrête ni les autres canaux ni les autres
@@ -202,10 +278,18 @@ def envoyer(request, institution, crise, titre, message, canaux, urgent=True) ->
         for code in [c for c in actifs if c not in (MESHCORE, MESHTASTIC)]:
             bilan[code]["note"] = "Zone de démonstration : envoyé à vous seul, pour constater le fonctionnement."
 
+    actions = declencher_sur_le_terrain(request, institution, crise, titre, message, terrain, relayer, environment)
     alerte = AlertePopulation.objects.create(
         institution=institution, crise=crise, titre=titre, message=message, urgent=urgent, canaux=canaux,
-        bilan=bilan, destinataires=len(personnes), auteur=request.user, environment=environment,
+        bilan=bilan, destinataires=len(personnes), auteur=request.user, environment=environment, terrain=actions,
     )
+    if crise is not None and canaux:
+        # Le journal de bord de la crise garde aussi l'envoi lui-même, pas seulement le terrain.
+        from .models import JournalCollectivite
+        JournalCollectivite.objects.create(
+            institution=institution, crise=crise, auteur=request.user, environment=environment,
+            contenu=f"Alerte « {titre} » envoyée à {len(personnes)} destinataire(s) par : "
+                    + ", ".join(f"{code} ({bilan[code]['partis']})" for code in canaux) + ".")
     from .audit import audit_log
     audit_log(
         request=request, action_code="ENVOI_MASSE", objet_type="AlertePopulation", objet_id=alerte.id, crise=crise,
