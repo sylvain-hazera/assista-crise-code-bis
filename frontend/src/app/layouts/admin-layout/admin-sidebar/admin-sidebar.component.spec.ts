@@ -7,7 +7,7 @@ import { UserRole } from '../../../shared/models/user.model';
 import { GROUPES_NAV, NAV_ITEMS, SOUS_GROUPES_NAV } from '../admin-nav.config';
 import { ADMIN_ROUTES } from '../../../admin/admin.routes';
 import {
-  accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
+  accountValidationGuard, adminPlateformeGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
   membresAssociationGuard, campagnesGuard, radioGuard,
 } from '../../../core/guards/admin.guard';
 
@@ -20,9 +20,10 @@ describe('AdminSidebarComponent', () => {
 
   beforeEach(async () => {
     auth = jasmine.createSpyObj<AuthService>('AuthService', [
-      'isSysAdmin', 'getEffectiveRole', 'isAutoriteLocaleCommunale', 'getCurrentUser', 'isInstitutionalEffective',
+      'isSysAdmin', 'isAdminPlateforme', 'getEffectiveRole', 'isAutoriteLocaleCommunale', 'getCurrentUser', 'isInstitutionalEffective',
     ]);
     auth.isSysAdmin.and.returnValue(false);
+    auth.isAdminPlateforme.and.returnValue(false);
     auth.getEffectiveRole.and.returnValue(UserRole.SIMPLE_USER);
     auth.isAutoriteLocaleCommunale.and.returnValue(false);
     auth.getCurrentUser.and.returnValue(null);
@@ -151,10 +152,23 @@ describe('AdminSidebarComponent', () => {
     expect(component.isNavItemVisible(item('Personnes vulnérables'))).toBeFalse();
   });
 
+  it("la supervision technique et les comptes MQTT ne sont au menu que de l'administrateur de la plateforme", () => {
+    // 18/11/2026 : `sysadmin` accepte les quatre rôles institutionnels ; toutes les mairies
+    // voyaient ces deux entrées et n'y lisaient qu'un refus.
+    auth.isSysAdmin.and.returnValue(true);
+    auth.getEffectiveRole.and.returnValue(UserRole.LOCAL_AUTH);
+    expect(component.isNavItemVisible(item('Supervision technique'))).toBeFalse();
+    expect(component.isNavItemVisible(item('Comptes MQTT'))).toBeFalse();
+    auth.isAdminPlateforme.and.returnValue(true);
+    expect(component.isNavItemVisible(item('Supervision technique'))).toBeTrue();
+    expect(component.isNavItemVisible(item('Comptes MQTT'))).toBeTrue();
+  });
+
   describe('alignement avec admin.routes.ts', () => {
     const gardeAttendue: Record<string, CanActivateFn> = {
       institutionnel: institutionalEffectiveGuard,
       sysadmin: sysAdminGuard,
+      'admin-plateforme': adminPlateformeGuard,
       'validation-comptes': accountValidationGuard,
       'autorite-locale': autoriteLocaleGuard,
       'registre-vulnerables': vulnerabilitesGuard,

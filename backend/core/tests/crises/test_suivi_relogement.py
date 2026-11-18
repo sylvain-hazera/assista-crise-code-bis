@@ -93,6 +93,12 @@ def _synthese(utilisateur, crise):
 
 
 class TestLeBilanNeConfondPasHebergeEtReloge:
+    def test_sans_aucun_foyer_le_bilan_est_a_zero_et_non_un_refus(self, create_user, mairie, crise):
+        """18/11/2026 : la page s'ouvrait sur une erreur tant que le premier foyer n'existait pas."""
+        reponse = _synthese(_agent(create_user, mairie, "AGENT0"), crise)
+        assert reponse.status_code == 200, reponse.data
+        assert reponse.data["sans_solution"] == 0
+
     def test_une_solution_definitive_compte_comme_perenne(
             self, create_user, mairie, crise):
         agent = _agent(create_user, mairie, "AGENT1")

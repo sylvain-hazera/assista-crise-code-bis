@@ -8,7 +8,8 @@ export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation
 /** Qui voit l'entrée (les gardes de route protègent aussi l'URL) :
  * - `institutionnel` (défaut) : rôle effectif institutionnel ;
  * - `tous` : toujours visible ;
- * - `sysadmin` : administrateur PROD réel ;
+ * - `sysadmin` : les quatre rôles institutionnels en PROD (AuthService.isSysAdmin) ;
+ * - `admin-plateforme` : l'administrateur de la plateforme seul (type réel ADMIN) ;
  * - `validation-comptes` : rôle effectif admin ou autorité locale ;
  * - `autorite-locale` : collectivités territoriales (isAutoriteLocaleCommunale) ;
  * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables` ;
@@ -18,7 +19,7 @@ export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation
  *   droit accordé — voir backend/core/acces_radio.py). L'entrée « Accueil radio » reste en
  *   `tous` : c'est elle qui explique ce qu'il faut et permet de le demander. */
 export type VisibiliteNav =
-  'institutionnel' | 'tous' | 'sysadmin' | 'validation-comptes' | 'autorite-locale'
+  'institutionnel' | 'tous' | 'sysadmin' | 'admin-plateforme' | 'validation-comptes' | 'autorite-locale'
   | 'registre-vulnerables' | 'membres-association' | 'campagnes' | 'radio';
 
 /** Second niveau de replis, à l'intérieur d'un cadre. N'existe que là où un même cadre
@@ -238,7 +239,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Comptes Secours en attente de validation (voir accountValidationGuard).
   { icon: 'how_to_reg', label: 'Validations de comptes', route: '/admin/validations-comptes', groupe: 'administration', visibilite: 'validation-comptes' },
   // Tableaux Grafana ; le jeton n'est délivré qu'aux administrateurs (backend/core/grafana.py).
-  { icon: 'monitor_heart', label: 'Supervision technique', route: '/admin/monitoring', groupe: 'administration', visibilite: 'sysadmin' },
+  { icon: 'monitor_heart', label: 'Supervision technique', route: '/admin/monitoring', groupe: 'administration', visibilite: 'admin-plateforme' },
   // Un compte par passerelle radio du site (backend/core/models.py:CompteMqtt).
-  { icon: 'router', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'sysadmin' },
+  { icon: 'router', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'admin-plateforme' },
 ];

@@ -5,7 +5,7 @@
       Approuver ou rejeter les demandes de création de comptes Secours organisés
     </p>
     <p class="subtitle" *ngIf="isInstitution">
-      Valider les comptes Secours organisés de votre territoire (code postal {{ currentUserPostalCode }})
+      Valider les comptes Secours organisés de votre territoire<ng-container *ngIf="currentUserPostalCode"> (code postal {{ currentUserPostalCode }})</ng-container>
     </p>
   </div>
 

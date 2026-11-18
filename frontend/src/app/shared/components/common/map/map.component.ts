@@ -1173,6 +1173,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     storedLocation.subscribe((location: any) => {
       if (location) {
         // Center the map on the stored location
+        this.aRecentre = true;
         this.center = [location.longitude, location.latitude];
         this.zoom = 9;
         
@@ -1202,6 +1203,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             this.centerOnUserPostalCodeIfAvailable();
             return;
           }
+          this.aRecentre = true;
           this.center = [coords.longitude, coords.latitude];
           this.zoom = 11;
           
@@ -1231,6 +1233,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         const coordinates = feature?.geometry?.coordinates;
         if (!coordinates) return;
 
+        this.aRecentre = true;
         this.center = [coordinates[0], coordinates[1]];
         this.zoom = 10;
         if (this.map) {
@@ -1263,6 +1266,23 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.map) this.map.remove();
   }
 
+  /** Vrai dès que la carte a été centrée sur la personne (GPS ou code postal du profil). */
+  private aRecentre = false;
+
+  /** Dernier repli, pour un compte institutionnel : s'ouvrir sur la crise en cours.
+   *
+   * Sur le poste fixe d'une mairie il n'y a ni GPS ni code postal au profil : la carte restait
+   * sur l'Europe entière, la crise réduite à un point (vu le 18/11/2026). Ne prend jamais le
+   * pas sur une position connue, et ne s'applique pas à la carte publique. */
+  private centrerSurLaCriseEnCours(): void {
+    if (this.aRecentre || !this.authService.isInstitutionalEffective?.()) return;
+    const crise = this.crises.find(c => c.is_open !== false && c.latitude != null && c.longitude != null);
+    if (!crise) return;
+    this.center = [crise.longitude as number, crise.latitude as number];
+    this.zoom = 11;
+    this.map?.flyTo({ center: this.center, zoom: this.zoom, duration: 1500 });
+  }
+
   loadCrises() {
     this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
@@ -1271,6 +1291,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         if (this.map) {
           this.addCrisisMarkers();
         }
+        this.centrerSurLaCriseEnCours();
       },
       error: (error) => console.error('Erreur API:', error)
     });

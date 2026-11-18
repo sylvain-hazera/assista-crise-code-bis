@@ -30,6 +30,20 @@ export const sysAdminGuard: CanActivateFn = (route, state) => {
   return withFreshProfile(authService, router, () => authService.isSysAdmin());
 };
 
+/** Réservé à l'administrateur de la plateforme : supervision technique, comptes MQTT. */
+export const adminPlateformeGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.isAdminPlateforme() ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/accueil'))),
+  );
+};
+
 /** Redirige vers une page « droits insuffisants » dans l'admin quand le rôle effectif n'est
  * pas institutionnel (au lieu d'erreurs dans chaque page). */
 export const institutionalEffectiveGuard: CanActivateFn = (route, state) => {

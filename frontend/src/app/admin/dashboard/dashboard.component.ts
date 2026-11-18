@@ -118,13 +118,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   situationLisible(crise: CriseACandidater): string {
     const morceaux: string[] = [];
     if (crise.situation.impliquee) morceaux.push('territoire touché');
-    if (crise.situation.acteur === 'VALIDEE') morceaux.push('aide acceptée');
+    // Actrice dans SA zone : c'est elle qui conduit, ce n'est pas une aide qu'on lui a acceptée.
+    if (crise.situation.acteur === 'VALIDEE') morceaux.push(crise.situation.dans_la_zone ? 'vous conduisez cette crise' : 'aide acceptée');
     if (crise.situation.acteur === 'EN_ATTENTE') morceaux.push('aide proposée, en attente');
     if (crise.situation.acteur === 'REFUSEE') morceaux.push('aide refusée');
     return morceaux.join(' · ');
   }
 
   peutCandidater(crise: CriseACandidater): boolean {
+    if (crise.situation.acteur === 'VALIDEE' && crise.situation.dans_la_zone) return false;
     return !!this.candidatures?.institution && (!crise.situation.impliquee || !crise.situation.acteur);
   }
 

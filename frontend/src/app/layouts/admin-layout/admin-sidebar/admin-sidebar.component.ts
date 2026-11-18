@@ -116,6 +116,8 @@ export class AdminSidebarComponent {
         return true;
       case 'sysadmin':
         return this.authService.isSysAdmin();
+      case 'admin-plateforme':
+        return this.authService.isAdminPlateforme();
       case 'validation-comptes': {
         const role = this.authService.getEffectiveRole();
         return role === UserRole.ADMIN || role === UserRole.LOCAL_AUTH;

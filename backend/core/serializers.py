@@ -282,6 +282,37 @@ class InformationTypeBesoinSerializer(serializers.ModelSerializer):
         model = InformationTypeBesoin
         fields = "__all__"
 
+class PositionValideeMixin:
+    """Refuse proprement une position illisible.
+
+    `location` est un champ de géométrie rendu tel quel par `fields = '__all__'` : DRF ne le
+    valide pas. Un objet GeoJSON envoyé à la place du texte attendu arrivait donc jusqu'à la
+    création, et le serveur répondait par une erreur 500 (vu le 18/11/2026). On accepte ce que
+    le site envoie déjà (texte « POINT(lon lat) »), un GeoJSON en texte ou en objet, et on
+    refuse le reste par une erreur de saisie."""
+
+    def validate_location(self, valeur):
+        from django.contrib.gis.gdal import GDALException
+        from django.contrib.gis.geos import GEOSException, GEOSGeometry
+
+        if valeur in (None, ""):
+            return None
+        if isinstance(valeur, GEOSGeometry):
+            return valeur
+        try:
+            geometrie = GEOSGeometry(json.dumps(valeur) if isinstance(valeur, dict) else str(valeur))
+        except (GEOSException, GDALException, ValueError, TypeError):
+            raise serializers.ValidationError(
+                "Position illisible : attendu « POINT(longitude latitude) » ou un point GeoJSON.")
+        if geometrie.geom_type != "Point":
+            raise serializers.ValidationError("La position doit être un point.")
+        if geometrie.srid is None:
+            geometrie.srid = 4326
+        if not (-180 <= geometrie.x <= 180 and -90 <= geometrie.y <= 90):
+            raise serializers.ValidationError("Position hors du globe : longitude puis latitude, en degrés.")
+        return geometrie
+
+
 class SansIndexAveugleMixin:
     """Retire les index aveugles (`*_bidx`) de toute sortie d'API (26/10/2026).
 
@@ -846,7 +877,7 @@ class CrisisSerializer(serializers.ModelSerializer):
         # .filter().exists() qui ignorerait le cache et relancerait une requête par crise.
         return any(i.responsable_id and i.actif for i in obj.implications.all())
 
-class RequestSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
+class RequestSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Demande d'aide. La localisation n'est visible que de la mairie, des secours et des
     bénévoles affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -989,7 +1020,7 @@ class RequestPhotoSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class OfferSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
+class OfferSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Offre d'aide. La localisation n'est visible que des acteurs institutionnels de la zone ;
     null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -1399,7 +1430,7 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
         return full_name or obj.benevole.email
 
 
-class InformationSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
+class InformationSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Signalement. La localisation n'est visible que de la mairie, des secours et des bénévoles
     affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()

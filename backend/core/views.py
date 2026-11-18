@@ -26096,6 +26096,13 @@ class DossierRelogementViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         # lire ligne à ligne.
         if not self.get_queryset().filter(crise=crise).exists() \
                 and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            # Aucun foyer encore suivi sur cette crise, par personne : ce n'est pas une erreur,
+            # c'est un bilan à zéro, et il n'y a rien à cacher. La page s'ouvrait sur un refus
+            # tant que le premier foyer n'était pas créé (vu le 18/11/2026).
+            from .models import DossierRelogement
+            if not DossierRelogement.objects.filter(
+                    crise=crise, environment=get_active_environment(request)).exists():
+                return Response(construire_synthese(crise, get_active_environment(request)))
             return Response({"error": "Aucun dossier de relogement accessible sur cette "
                                       "crise."}, status=status.HTTP_404_NOT_FOUND)
         return Response(construire_synthese(crise, get_active_environment(request)))

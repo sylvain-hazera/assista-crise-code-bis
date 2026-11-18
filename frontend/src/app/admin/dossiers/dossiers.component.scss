@@ -356,3 +356,7 @@
 }
 
 .badge-generique { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); }
+
+// 18/11/2026 : la carte ne montrait qu'un numéro. Le titre dit de quoi il s'agit.
+.titre-dossier { font-weight: 600; margin: .35rem 0 .5rem; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

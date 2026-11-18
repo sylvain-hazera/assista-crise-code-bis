@@ -64,11 +64,13 @@
           </span>
 
           <span class="badge">
-            {{ d.statut }}
+            {{ statutLabel(d.statut) }}
           </span>
         </div>
 
       </div>
+
+      <div class="titre-dossier" *ngIf="d.titre">{{ d.titre }}</div>
 
       <div class="meta">
 
@@ -79,7 +81,7 @@
 
         <div class="meta-row">
           <strong>Compétence :</strong>
-          {{ d.competence_nom }}
+          {{ d.competence_nom || 'à préciser' }}
         </div>
 
         <div class="meta-row">

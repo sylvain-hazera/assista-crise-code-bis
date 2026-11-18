@@ -64,7 +64,7 @@
                 @if (a.dossier_numero) { <br><a [routerLink]="['/admin/dossiers']" [queryParams]="{ id: a.dossier }">{{ a.dossier_numero }}</a> }
                 @if (a.suite_donnee) { <br><span class="note">{{ a.suite_donnee }}</span> }
               </td>
-              <td>
+              <td class="gestes">
                 @if (a.suite === 'A_TRAITER') {
                   @if (a.crise) {
                     <button type="button" class="lien" (click)="ouvrirDossier(a, 'NORMALE')">Ouvrir un dossier</button><br>

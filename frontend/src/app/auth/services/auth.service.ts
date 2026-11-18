@@ -382,6 +382,13 @@ export class AuthService {
     return this.isAdmin();
   }
 
+  /** L'administrateur de la plateforme, et lui seul (type réel ADMIN). `isSysAdmin` accepte en
+   * fait les quatre rôles institutionnels : la supervision technique et les comptes MQTT
+   * étaient donc au menu de toutes les mairies, pour n'y lire qu'un refus (18/11/2026). */
+  isAdminPlateforme(): boolean {
+    return this.getCurrentUser()?.type === UserRole.ADMIN;
+  }
+
   /** Rôle effectif de la requête en cours (miroir de get_effective_role) : pilote la barre latérale. */
   getEffectiveRole(): UserRole | null {
     if (this.getEnvironment() === 'DEMO') {
