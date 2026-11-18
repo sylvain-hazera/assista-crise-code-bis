@@ -16618,6 +16618,8 @@ class PointOperationnelViewSet(
     def perform_update(self, serializer):
         self._valider_responsable(serializer)
         point = serializer.save()
+        from . import stocks_points
+        stocks_points.adopter_le_lieu(point, point.environment)
         audit_log(
             request=self.request,
             action_code="MODIFICATION",
@@ -16711,6 +16713,9 @@ class PointOperationnelViewSet(
                 )
 
         point = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
+        # Installé dans un lieu de la commune qui tient déjà un stock : il devient le sien.
+        from . import stocks_points
+        stocks_points.adopter_le_lieu(point, point.environment)
 
         audit_log(
             request=self.request,

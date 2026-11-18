@@ -84,6 +84,19 @@
         <input type="text" formControlName="nom" placeholder="Ex: Gymnase municipal">
       </div>
 
+      @if (lieuxDeStock.length) {
+        <div class="form-group">
+          <label>Installé dans un lieu de la commune</label>
+          <select formControlName="lieu_de_stock">
+            <option [ngValue]="null">— Aucun : le point aura son propre stock —</option>
+            @for (lieu of lieuxDeStock; track lieu.id) { <option [ngValue]="lieu.id">{{ lieu.nom }}</option> }
+          </select>
+          <p class="field-hint">Si ce point s'installe dans un lieu où vous tenez déjà un stock (gymnase, atelier municipal…),
+            il reprend ce stock tel quel : tatamis, lits, tables. Rien à transférer, et rien à rapatrier à la fermeture.
+            Le même lieu peut servir à plusieurs points à la fois.</p>
+        </div>
+      }
+
       <div class="form-group">
         <label>Description</label>
         <textarea formControlName="description" rows="3" placeholder="Description du point (optionnel)"></textarea>

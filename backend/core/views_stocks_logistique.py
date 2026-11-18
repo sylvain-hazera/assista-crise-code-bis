@@ -30,7 +30,8 @@ def _tient(request, point) -> bool:
         return True
     visibles = institutions_visibles(request)
     return get_effective_role(request) in INSTITUTIONAL_TYPES and (
-        visibles is None or DepotStock.objects.filter(point=point, institution_id__in=visibles).exists())
+        visibles is None or DepotStock.objects.filter(point=point, institution_id__in=visibles).exists()
+        or (point.lieu_de_stock_id and point.lieu_de_stock.institution_id in visibles))
 
 
 # ── Demandes de transfert ────────────────────────────────────────────────────────────────────

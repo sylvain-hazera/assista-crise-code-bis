@@ -45,6 +45,9 @@ export interface PointOperationnel {
   competences_requises_libelles?: string[];
   equipe?: string | null;
   equipe_nom?: string | null;
+  /** Le lieu de la commune où le point est installé : son stock est celui du lieu. */
+  lieu_de_stock?: string | null;
+  lieu_de_stock_nom?: string | null;
   personnes_presentes?: number;
   civils_accueillis?: number;
   responsables_ids?: string[];

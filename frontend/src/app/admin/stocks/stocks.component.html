@@ -262,8 +262,11 @@
     @if (depot; as d) {
       <form class="fiche" (ngSubmit)="enregistrerDepot()">
         <h2>{{ d.id ? 'Modifier le dépôt' : 'Nouveau dépôt' }}</h2>
+        <p class="note">Un dépôt peut être un lieu qui sert aussi à autre chose : le gymnase, l'atelier municipal. Le jour où
+          vous y ouvrez un centre d'accueil ou un point de regroupement, choisissez ce lieu dans la fiche du point : il
+          reprendra ce stock tel quel.</p>
         <div class="ligne">
-          <label>Nom <span class="obligatoire">*</span> <input type="text" name="nom" maxlength="120" [(ngModel)]="d.nom" placeholder="Local de la rue du Stade"></label>
+          <label>Nom <span class="obligatoire">*</span> <input type="text" name="nom" maxlength="120" [(ngModel)]="d.nom" placeholder="Gymnase municipal, local de la rue du Stade…"></label>
           <label class="large">Adresse <input type="text" name="adresse" maxlength="300" [(ngModel)]="d.adresse"></label>
         </div>
         <label>Précisions <input type="text" name="commentaire" [(ngModel)]="d.commentaire" placeholder="Clés chez le président, accès par la cour"></label>

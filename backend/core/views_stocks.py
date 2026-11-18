@@ -222,9 +222,10 @@ class MouvementStockViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         except stocks.ErreurStock as erreur:
             raise ValidationError({"detail": str(erreur)})
         # Un mouvement saisi ici sur le dépôt d'un point d'accueil met aussi à jour sa ligne de stock.
+        # ... et celle de tout point installé dans ce lieu (le gymnase qui sert de centre d'accueil).
         for mouvement in rendus:
-            if mouvement.depot.point_id:
-                stocks_points.synchroniser(mouvement.depot.point, stocks_points.item_de(article), mouvement.environment)
+            if stocks_points.points_du_depot(mouvement.depot):
+                stocks_points.synchroniser_les_points(mouvement.depot, stocks_points.item_de(article), mouvement.environment)
         audit_log(request=request, action_code="CREATION", objet_type="MouvementStock", objet_id=rendus[0].id,
                   crise=rendus[0].crise, commentaire=f"Stock : {article.reference} — {resume}")
         arrivee = next((m.depot for m in rendus if m.quantite > 0), None)
@@ -307,8 +308,8 @@ class InventaireStockView(APIView):
         except stocks.ErreurStock as erreur:
             raise ValidationError({"detail": str(erreur)})
         for mouvement in bilan["corrections"]:
-            if depot.point_id:
-                stocks_points.synchroniser(depot.point, stocks_points.item_de(mouvement.article), depot.environment)
+            if stocks_points.points_du_depot(depot):
+                stocks_points.synchroniser_les_points(depot, stocks_points.item_de(mouvement.article), depot.environment)
         audit_log(request=request, action_code="MODIFICATION", objet_type="DepotStock", objet_id=depot.id,
                   commentaire=f"Inventaire de « {depot.nom} » : {bilan['comptees']} ligne(s) comptée(s), {len(bilan['corrections'])} correction(s)")
         return Response({"comptees": bilan["comptees"], "corrections": MouvementStockSerializer(
@@ -374,12 +375,15 @@ class StockPointView(APIView):
         totaux = stocks_points.quantites(point)
         lignes = {l.item_id: l for l in MaterielPoint.objects.filter(point=point).select_related("item")}
         items = {i.id: i for i in MaterielCatalogue.objects.filter(pk__in=set(totaux) | set(lignes))}
-        mouvements = MouvementStock.objects.filter(depot__point=point, environment=environment).select_related(
+        mouvements = MouvementStock.objects.filter(stocks_points._du_point(point), environment=environment).select_related(
             "article", "depot", "crise", "mission", "equipe", "auteur").order_by("-date_mouvement", "-date_creation")[:60]
         mon_institution = institution_regardee(request) if institutionnel else None
         denrees = stocks_points.denrees(point)
         return {
             "point": str(point.id), "point_nom": point.nom, "peut_distribuer": tient or institutionnel,
+            # Installé dans un lieu de la commune : son stock est celui du lieu, il y reste.
+            "lieu_de_stock": str(point.lieu_de_stock_id) if point.lieu_de_stock_id else None,
+            "lieu_de_stock_nom": point.lieu_de_stock.nom if point.lieu_de_stock_id else "",
             "peut_doter": bool(mon_institution), "institution_nom": mon_institution.nom if mon_institution else "",
             "a_rapatrier": bool(mon_institution) and MouvementStock.objects.filter(
                 depot__point=point, depot__institution=mon_institution).values("depot").annotate(t=Sum("quantite")).filter(t__gt=0).exists(),

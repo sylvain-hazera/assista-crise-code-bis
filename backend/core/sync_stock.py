@@ -79,8 +79,8 @@ def apres(nom_modele, objet_id) -> None:
     from . import stocks_points
     from .models import MouvementStock
     mouvement = MouvementStock.objects.select_related("depot__point", "article__catalogue").filter(pk=objet_id).first()
-    if mouvement is not None and mouvement.depot.point_id and mouvement.article.catalogue_id:
-        stocks_points.synchroniser(mouvement.depot.point, mouvement.article.catalogue, mouvement.environment)
+    if mouvement is not None and mouvement.article.catalogue_id:
+        stocks_points.synchroniser_les_points(mouvement.depot, mouvement.article.catalogue, mouvement.environment)
 
 
 # ── Descendant : ce que le central donne au satellite ────────────────────────────────────────

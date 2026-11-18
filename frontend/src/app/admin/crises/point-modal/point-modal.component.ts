@@ -1,3 +1,5 @@
+import { StockService } from '../../../services/stock.service';
+import { DepotStock } from '../../../shared/models/stock.model';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -71,6 +73,9 @@ export class PointModalComponent implements OnChanges {
   selectedEquipesRavitaillement: string[] = [];
   selectedResponsables: string[] = [];
 
+  /** Lieux de la commune où un point peut s'installer en reprenant leur stock. */
+  lieuxDeStock: DepotStock[] = [];
+
   constructor(
     private fb: FormBuilder,
     private pointService: PointOperationnelService,
@@ -80,8 +85,14 @@ export class PointModalComponent implements OnChanges {
     private crisisService: CrisisService,
     private authService: AuthService,
     private router: Router,
+    private stockService: StockService,
   ) {
     this.buildForm();
+    // Les lieux de stock de l'institution ; les stocks de crise d'autres points n'en sont pas.
+    this.stockService.etat().subscribe({
+      next: (etat) => { this.lieuxDeStock = etat.depots.filter(d => !d.point && d.actif !== false); },
+      error: () => { this.lieuxDeStock = []; },   // pas de stock tenu : le choix n'apparaît pas
+    });
     this.myInstitutionId = this.authService.getCurrentUser()?.institution_id ?? null;
     this.teamService.getAll().subscribe(teams => {
       this.teams = teams;
@@ -227,6 +238,9 @@ export class PointModalComponent implements OnChanges {
       accepte_animaux: [this.point?.accepte_animaux ?? false],
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
+      // Un lieu de la commune qui tient déjà un stock (gymnase, atelier) : le point y travaille
+      // directement, sans transfert.
+      lieu_de_stock: [this.point?.lieu_de_stock ?? null],
       equipe: [this.point?.equipe ?? this.defaultEquipeId ?? null],
       responsable: [this.point?.responsable ?? null],
       // Création seulement : crée une équipe en même temps que le point.

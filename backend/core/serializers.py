@@ -1317,7 +1317,8 @@ class MaterielPointSerializer(serializers.ModelSerializer):
         # qui fait foi : il compte aussi ce qui est sorti. Sinon, comme avant : la somme des
         # apports actifs, ou None si aucun apport tracé (utiliser quantite).
         from .models import MouvementStock
-        journal = MouvementStock.objects.filter(depot__point_id=obj.point_id, article__catalogue_id=obj.item_id)
+        from .stocks_points import _du_point
+        journal = MouvementStock.objects.filter(_du_point(obj.point), article__catalogue_id=obj.item_id)
         if journal.exists():
             return max(int(journal.aggregate(total=Sum('quantite'))['total'] or 0), 0)
         result = obj.contributions.exclude(statut=StatutMateriel.RETIRE).aggregate(total=Sum('quantite'))
@@ -3317,11 +3318,27 @@ class PointOperationnelSerializer(
     # Distance à la crise du point (annotation du queryset) ; None sans coordonnées.
     distance_from_crisis_km = serializers.SerializerMethodField()
 
+    lieu_de_stock_nom = serializers.CharField(source="lieu_de_stock.nom", read_only=True, default=None)
+
     class Meta:
 
         model = PointOperationnel
 
         fields = "__all__"
+
+    def validate_lieu_de_stock(self, depot):
+        """Le lieu de la commune où le point s'installe : un vrai dépôt (pas le stock de crise
+        d'un autre point), d'une institution que l'appelant peut voir."""
+        if depot is None:
+            return None
+        from .perimetre_admin import institutions_visibles
+        requete = self.context.get("request")
+        if depot.point_id:
+            raise serializers.ValidationError("Ce stock est celui d'un autre point : choisissez un lieu de la commune.")
+        visibles = institutions_visibles(requete) if requete is not None else None
+        if visibles is not None and depot.institution_id not in visibles:
+            raise serializers.ValidationError("Ce lieu n'appartient pas à une de vos institutions.")
+        return depot
 
     def get_commune_nom(self, obj):
         # Même mécanisme de reverse-géocodage que le scoping zone (_filter_points_to_viewer_zone) —

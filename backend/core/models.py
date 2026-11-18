@@ -5544,6 +5544,14 @@ class PointOperationnel(EnvironmentScopedModel):
         related_name="points"
     )
 
+    #: Le lieu de la commune où ce point est installé, quand ce lieu tient déjà un stock : le
+    #: gymnase, l'atelier municipal. Demande de Sylvain du 18/11/2026 — « je fais mon stock au
+    #: dépôt "gymnase" et quand je fais mon "centre d'accueil gymnase" je récupère son stock ».
+    #: Un même lieu a plusieurs usages : dépôt en temps normal, centre d'accueil ET point de
+    #: regroupement pendant une crise, tous sur le même stock (voir core/stocks_points.py).
+    lieu_de_stock = models.ForeignKey(
+        "DepotStock", on_delete=models.SET_NULL, null=True, blank=True, related_name="points_installes")
+
     crise = models.ForeignKey(
         Crisis,
         on_delete=models.CASCADE,
@@ -11437,7 +11445,10 @@ class DemandeRapport(EnvironmentScopedModel):
 
 class DepotStock(EnvironmentScopedModel):
     """Un lieu où une institution range son stock permanent : local, garage, armoire, véhicule
-    (voir core/stocks.py). Distinct d'un point opérationnel, qui n'existe que le temps d'une crise."""
+    — ou un site de la commune qui sert aussi à autre chose : le gymnase, l'atelier municipal
+    (voir core/stocks.py). Distinct d'un point opérationnel, qui n'existe que le temps d'une
+    crise ; mais un point peut s'INSTALLER dans ce lieu (`PointOperationnel.lieu_de_stock`) et
+    travailler alors directement sur son stock."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="depots_stock")

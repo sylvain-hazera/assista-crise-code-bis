@@ -19,7 +19,7 @@ import re
 import unicodedata
 
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import F, Sum, Q
 
 from . import stocks
 from .models import (
@@ -42,7 +42,45 @@ def institution_du_point(point, a_defaut=None):
     return a_defaut
 
 
+def _du_point(point, prefixe="depot"):
+    """Le filtre des mouvements qui font le stock de ce point : ceux de ses propres dépôts de
+    crise, et ceux du lieu de la commune où il est installé, s'il y en a un."""
+    filtre = Q(**{f"{prefixe}__point": point})
+    if point.lieu_de_stock_id:
+        filtre |= Q(**{f"{prefixe}_id": point.lieu_de_stock_id})
+    return filtre
+
+
+def points_du_depot(depot) -> list:
+    """Les points dont ce dépôt fait le stock : celui dont il est le dépôt de crise, et tous
+    ceux qui sont installés dans ce lieu (accueil ET regroupement, par exemple)."""
+    points = [depot.point] if depot.point_id else []
+    return points + list(depot.points_installes.all())
+
+
+def synchroniser_les_points(depot, item, environment):
+    """Après un mouvement sur un dépôt : reporte le total sur chaque point qu'il alimente."""
+    for point in points_du_depot(depot):
+        synchroniser(point, item, environment)
+
+
+def adopter_le_lieu(point, environment):
+    """Le point vient de s'installer dans un lieu : tout ce qui y est en stock devient son
+    stock, sans aucun transfert. Rend le nombre de lignes reprises."""
+    if not point.lieu_de_stock_id:
+        return 0
+    presents = [l["article_id"] for l in MouvementStock.objects.filter(depot_id=point.lieu_de_stock_id).values(
+        "article_id").annotate(total=Sum("quantite")) if l["total"] > 0]
+    for article in ArticleStock.objects.filter(pk__in=presents):
+        synchroniser(point, item_de(article), environment)
+    return len(presents)
+
+
 def depot_du_point(point, institution, environment):
+    # Installé dans un lieu de CETTE institution : ce qui arrive au point et ce qu'on y
+    # distribue touche le stock du lieu lui-même.
+    if point.lieu_de_stock_id and point.lieu_de_stock.institution_id == institution.id:
+        return point.lieu_de_stock
     depot, _ = DepotStock.objects.get_or_create(
         institution=institution, point=point, environment=environment, defaults={"nom": f"Point — {point.nom}"[:120]})
     return depot
@@ -80,7 +118,7 @@ def item_de(article):
 
 def quantites(point) -> dict:
     """`{identifiant du besoin: quantité}` d'après le journal, pour les besoins qui y figurent."""
-    lignes = MouvementStock.objects.filter(depot__point=point, article__catalogue__isnull=False).values(
+    lignes = MouvementStock.objects.filter(_du_point(point), article__catalogue__isnull=False).values(
         item=F("article__catalogue_id")).annotate(total=Sum("quantite"))
     return {ligne["item"]: ligne["total"] or ZERO for ligne in lignes}
 
@@ -88,9 +126,9 @@ def quantites(point) -> dict:
 def synchroniser(point, item, environment):
     """Reporte la quantité du journal sur la ligne de stock du point, et corrige la jauge quand
     elle contredit l'évidence."""
-    total = MouvementStock.objects.filter(depot__point=point, article__catalogue=item).aggregate(t=Sum("quantite"))["t"] or ZERO
+    total = MouvementStock.objects.filter(_du_point(point), article__catalogue=item).aggregate(t=Sum("quantite"))["t"] or ZERO
     ligne, _ = MaterielPoint.objects.get_or_create(point=point, item=item, defaults={"environment": environment})
-    article = ArticleStock.objects.filter(mouvements__depot__point=point, catalogue=item).first()
+    article = ArticleStock.objects.filter(_du_point(point, "mouvements__depot"), catalogue=item).first()
     ligne.quantite = max(int(total), 0)
     if article is not None:
         ligne.unite = article.unite
@@ -105,7 +143,7 @@ def synchroniser(point, item, environment):
 def _reprendre_les_apports(point, item, institution, environment, auteur, sauf=None):
     """Avant le premier mouvement d'une ligne : les apports déjà tracés (comptés à l'entrée
     seulement, avant le 17/11/2026) entrent au journal, pour que le total ne retombe pas."""
-    if MouvementStock.objects.filter(depot__point=point, article__catalogue=item).exists():
+    if MouvementStock.objects.filter(_du_point(point), article__catalogue=item).exists():
         return
     apports = ContributionMateriel.objects.filter(materiel_point__point=point, materiel_point__item=item).exclude(statut=StatutMateriel.RETIRE)
     if sauf is not None:
@@ -148,7 +186,7 @@ def distribuer(*, point, item, quantite, environment, auteur=None, motif="", tie
     quantite = stocks.decimal(quantite)
     if quantite <= 0:
         raise stocks.ErreurStock("Quantité distribuée : indiquez un nombre supérieur à zéro.")
-    lignes = [l for l in MouvementStock.objects.filter(depot__point=point, article__catalogue=item).values(
+    lignes = [l for l in MouvementStock.objects.filter(_du_point(point), article__catalogue=item).values(
         "article_id", "depot_id", "lot", "date_peremption").annotate(total=Sum("quantite")) if l["total"] > 0]
     disponible = sum((l["total"] for l in lignes), ZERO)
     if quantite > disponible:
@@ -218,7 +256,7 @@ def denrees(point) -> dict:
     """`{identifiant du besoin: {conservation, preparation, manques}}` pour ce qui est en stock au
     point : ce qu'il faut pour le garder et le servir, et ce qui manque au point pour cela."""
     resultat = {}
-    lignes = MouvementStock.objects.filter(depot__point=point, article__catalogue__isnull=False).values("article_id", "depot_id").annotate(
+    lignes = MouvementStock.objects.filter(_du_point(point), article__catalogue__isnull=False).values("article_id", "depot_id").annotate(
         total=Sum("quantite"))
     presents = [(l["article_id"], l["depot_id"]) for l in lignes if l["total"] > 0]
     articles = {a.id: a for a in ArticleStock.objects.filter(pk__in={a for a, _ in presents})}
