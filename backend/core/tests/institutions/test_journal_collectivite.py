@@ -1,6 +1,7 @@
 """Journal de bord de la Vue Ma Collectivité : texte libre par institution ET par crise (une
 institution peut être impliquée sur plusieurs crises actives simultanément), immuable (pas de
 route update/delete), journalisé dans AuditLog — voir JournalCollectiviteViewSet."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from django.urls import reverse
@@ -177,7 +178,7 @@ class TestJournalCollectiviteCreation:
 
         assert response.status_code == 400
         assert "crise" in response.data
-        assert not JournalCollectivite.objects.filter(contenu="Test.").exists()
+        assert not filtrer_chiffre(JournalCollectivite.objects.filter(), contenu="Test.").exists()
 
     def test_create_rejects_inactive_implication(self, create_user, institution, crisis):
         _impliquer(institution, crisis, actif=False)

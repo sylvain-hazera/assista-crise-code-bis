@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from django.core import mail
@@ -290,7 +291,7 @@ class TestBulkAssignMissionRequests:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert not Mission.objects.filter(titre='Mission impossible').exists()
+        assert not filtrer_chiffre(Mission.objects.filter(), titre='Mission impossible').exists()
 
     def test_bulk_assign_is_noop_for_already_assigned_requests(self, authenticated_client, request_type):
         client, _ = _make_admin(authenticated_client)

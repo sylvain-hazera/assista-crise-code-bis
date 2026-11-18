@@ -2,6 +2,7 @@
 ImportPersonnelCommunalView) : parsing des deux formats, mapping de colonnes, création/
 rattachement de comptes complets, et surtout la garantie qu'aucune colonne au-delà de
 prénom/nom/email/téléphone/fonction ne peut jamais être lue (pas de donnée de santé)."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import io
 
 import openpyxl
@@ -141,7 +142,7 @@ class TestImporterPersonnelCommunal:
         assert user.type == "AUT_LOCALE"
         assert user.enabled is True
         assert user.is_active is False
-        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user, fonction="Maire").exists()
+        assert filtrer_chiffre(ContactInstitution.objects.filter(institution=institution, utilisateur=user), fonction="Maire").exists()
 
     def test_existing_email_is_attached_not_recreated(self, rf, create_user):
         institution = _make_institution()

@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 from unittest.mock import patch
 
 import pytest
@@ -116,7 +117,7 @@ class TestRcscAttachment:
             response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
 
         assert response.status_code == status.HTTP_200_OK
-        assert ContactInstitution.objects.filter(institution=mairie, utilisateur=pending, fonction="Réserviste RCSC").exists()
+        assert filtrer_chiffre(ContactInstitution.objects.filter(institution=mairie, utilisateur=pending), fonction="Réserviste RCSC").exists()
         # Pas de notification "rattachement manuel" puisqu'une mairie a bien été trouvée.
         manual_attach_calls = [
             c for c in mock_send_mail.call_args_list

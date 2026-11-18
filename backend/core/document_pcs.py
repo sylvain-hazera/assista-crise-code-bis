@@ -193,8 +193,10 @@ def rassembler(institution, environment, nommer=None) -> dict:
     organisation = [
         {"nom": nommer(c.utilisateur), "fonction": _texte(c.fonction), "principal": c.contact_principal,
          "telephone": _texte(c.utilisateur.phone_number) if zone_reelle else ""}
-        for c in ContactInstitution.objects.filter(institution=institution, environment=environment, actif=True)
-        .select_related("utilisateur").order_by("-contact_principal", "fonction")
+        # La fonction est chiffrée : triée ici, pas par la base.
+        for c in sorted(ContactInstitution.objects.filter(institution=institution, environment=environment, actif=True)
+                        .select_related("utilisateur"),
+                        key=lambda c: (not c.contact_principal, (c.fonction or "").casefold()))
         if c.utilisateur_id
     ]
 

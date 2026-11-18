@@ -174,7 +174,7 @@ def extract_exif_metadata(filepath):
     return metadata_publiques, metadata_privees
 
 
-from .crypto_fields import blind_index
+from .crypto_fields import blind_index, empreinte_jeton
 from .models import (
     AffectationRotation,
     CampagneDisponibilite,
@@ -2282,7 +2282,9 @@ class UserViewSet(viewsets.ModelViewSet):
         if role == UserRole.ADMINISTRATOR:
             pending_users = User.objects.filter(en_attente)
         else:
-            pending_users = User.objects.filter(en_attente, postal_code=user.postal_code)
+            # Le code postal est chiffré : comparé en Python (le filtre SQL ne trouvait rien).
+            pending_users = [u for u in User.objects.filter(en_attente)
+                             if user.postal_code and (u.postal_code or "").strip() == user.postal_code.strip()]
         
         serializer = self.get_serializer(pending_users, many=True)
         return Response(serializer.data)
@@ -4731,7 +4733,7 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # distance_from_crisis : annotation inconditionnelle (annotate_distance_from_crisis),
     # toujours présente, donc triable sans risque -- contrairement à distance_ma_zone
     # (_apply_rayon_km), annotée seulement en mode rayon, volontairement absente d'ici.
-    ordering_fields = ['created_at', 'title', 'status', 'commune_code', 'distance_from_crisis']
+    ordering_fields = ['created_at', 'status', 'commune_code', 'distance_from_crisis']  # titre chiffré : pas de tri SQL
     ordering = ['-created_at']
     pagination_class = OptionalPageNumberPagination
 
@@ -5989,10 +5991,12 @@ def _signaler_sos_mesh(
 
     notification_recente = False
     if expediteur_identifiant:
-        notification_recente = AlerteMeshSOS.objects.filter(
-            protocole=protocole, expediteur_identifiant=expediteur_identifiant,
-            date_creation__gte=timezone.now() - timedelta(minutes=10),
-        ).exists()
+        # L'identifiant est chiffré : comparé en Python, sur les dix dernières minutes seulement.
+        notification_recente = any(
+            a.expediteur_identifiant == expediteur_identifiant
+            for a in AlerteMeshSOS.objects.filter(
+                protocole=protocole, date_creation__gte=timezone.now() - timedelta(minutes=10)).only('expediteur_identifiant')
+        )
 
     alerte = AlerteMeshSOS.objects.create(
         environment=get_active_environment(request), protocole=protocole, institution=institution,
@@ -7499,9 +7503,9 @@ class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, view
             .values_list('utilisateur_id', flat=True)
         )
         lignes = []
-        for user in User.objects.filter(institution=institution, is_active=True).order_by(
-            'last_name', 'first_name', 'username',
-        ):
+        from .recherche_chiffree import trier
+        for user in trier(User.objects.filter(institution=institution, is_active=True),
+                          'last_name', 'first_name', 'username'):
             lignes.append({
                 "id": str(user.id),
                 "nom": nom_affichable(user, request) or user.username,
@@ -11379,7 +11383,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = OfferSearchFilter
     filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
-    ordering_fields = ['created_at', 'title', 'status', 'commune_code', 'distance_from_crisis']
+    ordering_fields = ['created_at', 'status', 'commune_code', 'distance_from_crisis']  # titre chiffré : pas de tri SQL
     ordering = ['-created_at']
     pagination_class = OptionalPageNumberPagination
 
@@ -12014,7 +12018,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = InformationSearchFilter
     filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
-    ordering_fields = ['created_at', 'title', 'status', 'commune_code', 'distance_from_crisis']
+    ordering_fields = ['created_at', 'status', 'commune_code', 'distance_from_crisis']  # titre chiffré : pas de tri SQL
     ordering = ['-created_at']
     pagination_class = OptionalPageNumberPagination
 
@@ -12368,7 +12372,7 @@ class DeleteRequestView(View):
     retourné dit "désactivée" (pas "supprimée", corrigé le 2026-10-03 -- l'ancien texte laissait
     croire à tort à une suppression réelle)."""
     def get(self, request, token):
-        demande = get_object_or_404(Request, deletion_token=token)
+        demande = get_object_or_404(Request, deletion_token_empreinte=empreinte_jeton(token))
         titre = demande.title
         demande.actif = False
         demande.save(update_fields=['actif'])
@@ -12383,7 +12387,7 @@ class DeleteOfferView(View):
     """Vue pour désactiver une offre via token -- voir le commentaire équivalent sur
     DeleteRequestView."""
     def get(self, request, token):
-        offre = get_object_or_404(Offer, deletion_token=token)
+        offre = get_object_or_404(Offer, deletion_token_empreinte=empreinte_jeton(token))
         titre = offre.title
         offre.actif = False
         offre.save(update_fields=['actif'])
@@ -12398,7 +12402,7 @@ class ConfirmerAffectationBenevoleView(View):
     """Confirmation par lien (oui/non) de l'affectation d'un bénévole individuel sur un point
     — pas de compte requis, jeton opaque comme les autres liens de désinscription anonymes."""
     def get(self, request, token, reponse):
-        affectation = get_object_or_404(AffectationPointBenevole, token_confirmation=token)
+        affectation = get_object_or_404(AffectationPointBenevole, token_confirmation_empreinte=empreinte_jeton(token))
 
         if reponse not in ("oui", "non"):
             return HttpResponse("<h1>Lien invalide</h1>", status=400)
@@ -12472,11 +12476,11 @@ class EngagementRessourcePublicView(APIView):
         }
 
     def get(self, request, token):
-        engagement = get_object_or_404(EngagementRessource, token_confirmation=token)
+        engagement = get_object_or_404(EngagementRessource, token_confirmation_empreinte=empreinte_jeton(token))
         return Response(self._serialize(engagement))
 
     def post(self, request, token):
-        engagement = get_object_or_404(EngagementRessource, token_confirmation=token)
+        engagement = get_object_or_404(EngagementRessource, token_confirmation_empreinte=empreinte_jeton(token))
         action_demandee = request.data.get('action')
         if action_demandee not in self.ACTIONS_PAR_STATUT.get(engagement.statut, []):
             return Response(
@@ -12537,11 +12541,11 @@ class AccuserReceptionAlertePCSPublicView(APIView):
         }
 
     def get(self, request, token):
-        notification = get_object_or_404(NotificationAlertePCS, token_confirmation=token)
+        notification = get_object_or_404(NotificationAlertePCS, token_confirmation_empreinte=empreinte_jeton(token))
         return Response(self._serialize(notification))
 
     def post(self, request, token):
-        notification = get_object_or_404(NotificationAlertePCS, token_confirmation=token)
+        notification = get_object_or_404(NotificationAlertePCS, token_confirmation_empreinte=empreinte_jeton(token))
         if notification.statut in (StatutNotificationPCS.CONFIRME_PAR_CONTACT, StatutNotificationPCS.CONFIRME_MANUEL):
             return Response({"detail": "Cette alerte a déjà été accusée réception."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -12586,14 +12590,14 @@ class OfferReponsePublicView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, token):
-        offre = get_object_or_404(Offer, reponse_token=token)
+        offre = get_object_or_404(Offer, reponse_token_empreinte=empreinte_jeton(token))
         return Response({
             "offer": OfferSerializer(offre, context={'request': request}).data,
             "messages": OfferMessageSerializer(offre.messages.all(), many=True, context={'request': request}).data,
         })
 
     def post(self, request, token):
-        offre = get_object_or_404(Offer, reponse_token=token)
+        offre = get_object_or_404(Offer, reponse_token_empreinte=empreinte_jeton(token))
         contenu = (request.data.get('contenu') or '').strip()
         if not contenu:
             return Response({"error": "Le message ne peut pas être vide."}, status=status.HTTP_400_BAD_REQUEST)
@@ -12613,7 +12617,7 @@ class OfferReponsePublicView(APIView):
         # -- ce lien est désormais envoyé dès le mail de confirmation initial (plus seulement
         # sur réponse d'équipe), donc plus largement diffusé : on resserre l'écriture à ce que
         # le formulaire public envoie réellement (voir son docstring).
-        offre = get_object_or_404(Offer, reponse_token=token)
+        offre = get_object_or_404(Offer, reponse_token_empreinte=empreinte_jeton(token))
         serializer = OfferPublicEditSerializer(offre, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -12633,11 +12637,11 @@ class RequestEditionPublicView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, token):
-        demande = get_object_or_404(Request, edition_token=token)
+        demande = get_object_or_404(Request, edition_token_empreinte=empreinte_jeton(token))
         return Response(RequestSerializer(demande, context={'request': request}).data)
 
     def patch(self, request, token):
-        demande = get_object_or_404(Request, edition_token=token)
+        demande = get_object_or_404(Request, edition_token_empreinte=empreinte_jeton(token))
         serializer = RequestPublicEditSerializer(demande, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -12656,11 +12660,11 @@ class InformationEditionPublicView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, token):
-        info = get_object_or_404(Information, edition_token=token)
+        info = get_object_or_404(Information, edition_token_empreinte=empreinte_jeton(token))
         return Response(InformationSerializer(info, context={'request': request}).data)
 
     def patch(self, request, token):
-        info = get_object_or_404(Information, edition_token=token)
+        info = get_object_or_404(Information, edition_token_empreinte=empreinte_jeton(token))
         serializer = InformationPublicEditSerializer(info, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -12676,7 +12680,7 @@ class DeleteInformationView(View):
     """Vue pour désactiver une information via token -- voir le commentaire équivalent sur
     DeleteRequestView."""
     def get(self, request, token):
-        info = get_object_or_404(Information, deletion_token=token)
+        info = get_object_or_404(Information, deletion_token_empreinte=empreinte_jeton(token))
         titre = info.title
         info.actif = False
         info.save(update_fields=['actif'])
@@ -14819,7 +14823,7 @@ class VerifierDemandeMobilisationView(APIView):
 
         demande = DemandeMobilisation.objects.select_related(
             'crise', 'institution_emettrice', 'point_operationnel',
-        ).filter(jeton_verification=jeton).first()
+        ).filter(jeton_verification_empreinte=empreinte_jeton(jeton)).first()
 
         if demande is None:
             html = (
@@ -14913,7 +14917,7 @@ class VerifierDemandeMobilisationJsonView(APIView):
 
         demande = DemandeMobilisation.objects.select_related(
             'crise', 'institution_emettrice', 'point_operationnel',
-        ).filter(jeton_verification=jeton).first()
+        ).filter(jeton_verification_empreinte=empreinte_jeton(jeton)).first()
 
         if demande is None:
             return Response({
@@ -17647,7 +17651,9 @@ class FicheIntervenantView(generics.GenericAPIView):
         # perform_update : "Membres — ajouté(s) : Prénom Nom / retiré(s) : ...").
         historique_equipe_evenements = (
             _serialiser_audit(
-                AuditLog.objects.filter(objet_type='Team', objet_id=equipe_id, commentaire__icontains=nom_complet).order_by('-date_action')
+                # Commentaire chiffré : rapproché en Python.
+                [a for a in AuditLog.objects.filter(objet_type='Team', objet_id=equipe_id).order_by('-date_action')
+                 if nom_complet.lower() in (a.commentaire or '').lower()]
             ) if equipe_id and nom_complet else []
         )
 
@@ -18601,12 +18607,20 @@ class ContactInstitutionViewSet(
     # d'avoir déjà tout chargé, ce qu'on cherche précisément à éviter.
     pagination_class = OptionalPageNumberPagination
     filter_backends = [filters.DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = [
-        "utilisateur__last_name", "utilisateur__first_name", "utilisateur__email",
-        "institution__nom", "fonction",
-    ]
-    ordering_fields = ["institution__nom", "utilisateur__last_name", "date_creation"]
-    ordering = ["institution__nom", "utilisateur__last_name"]
+    #
+    # Nom, adresse de la personne et fonction sont chiffrés (18/11/2026) : la recherche passe
+    # par `filter_queryset` ci-dessous, en Python pour eux, en base pour le nom d'institution.
+    # (`utilisateur__email` était déjà chiffré : cette recherche ne trouvait rien depuis.)
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ["institution__nom", "date_creation"]
+    ordering = ["institution__nom", "date_creation"]
+
+    def filter_queryset(self, queryset):
+        from .recherche_chiffree import filtrer
+        queryset = super().filter_queryset(queryset)
+        return filtrer(queryset, self.request.query_params.get("search"),
+                       ("utilisateur__last_name", "utilisateur__first_name", "utilisateur__email", "fonction"),
+                       chemins_sql=("institution__nom",))
 
     def get_queryset(self):
         """Qui voit quels contacts.
@@ -23214,7 +23228,7 @@ class SatelliteViewSet(
         if not jeton_valeur or not nom:
             return Response({"error": "jeton et nom sont requis."}, status=status.HTTP_400_BAD_REQUEST)
 
-        jeton = JetonEnrolementSatellite.objects.filter(jeton=jeton_valeur, utilise=False).first()
+        jeton = JetonEnrolementSatellite.objects.filter(jeton_empreinte=empreinte_jeton(jeton_valeur), utilise=False).first()
         if not jeton or jeton.expiration < timezone.now():
             return Response({"error": "Jeton invalide, déjà utilisé ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -24721,7 +24735,16 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         pubkey = self.request.query_params.get('pubkey_hex')
         if pubkey:
             qs = qs.filter(pubkey_hex=pubkey.strip().lower())
-        return qs.order_by('libelle', 'node_num', 'pubkey_hex')
+        return qs.order_by('node_num', 'pubkey_hex')
+
+    def list(self, request, *args, **kwargs):
+        # Le libellé est chiffré (18/11/2026) : trié ici, après déchiffrement.
+        from .recherche_chiffree import trier
+        objets = trier(self.filter_queryset(self.get_queryset()), 'libelle')
+        page = self.paginate_queryset(objets)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
+        return Response(self.get_serializer(objets, many=True).data)
 
     def _verifier_cible(self, serializer):
         from .acces_radio import institutions_de

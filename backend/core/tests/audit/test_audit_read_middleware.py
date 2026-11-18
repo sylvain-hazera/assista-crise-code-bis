@@ -3,6 +3,7 @@
 user-agent, horodatage — RGPD registre des accès), qu'une vue l'ait explicitement journalisée
 ou non. Vérifie aussi que RegisterView journalise la création de compte, et que l'envoi
 d'email est lui-même tracé (send_mail_logged)."""
+from core.tests.outils_chiffre import filtrer_chiffre
 from unittest.mock import patch
 
 import pytest
@@ -174,7 +175,7 @@ class TestSendMailLogged:
             with pytest.raises(RuntimeError):
                 send_mail_logged(request, "Sujet échec", "Corps", None, ["dest@test.fr"])
 
-        entry = AuditLog.objects.filter(action__code="ENVOI_EMAIL", commentaire__icontains="Sujet échec").first()
+        entry = filtrer_chiffre(AuditLog.objects.filter(action__code="ENVOI_EMAIL"), commentaire__icontains="Sujet échec").first()
         assert entry is not None
         assert entry.succes is False
 

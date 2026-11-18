@@ -15,6 +15,7 @@ La séparation retenue :
 | où j'interviens | l'équipe départementale |
 | mon niveau dans l'association | `Team.membres_encadrement` |
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.core import mail
 
@@ -83,7 +84,7 @@ class TestTypeDeCompte:
         faire sur la PLATEFORME avec ce qu'on est dans l'ASSOCIATION."""
         importer_benevoles_association(requete, asso, [ligne("b1@essai.invalide")], MAPPING)
 
-        u = User.objects.get(username="b1@essai.invalide")
+        u = filtrer_chiffre(User.objects.filter(), username="b1@essai.invalide").get()
         assert u.type == UserRole.SIMPLE_USER
         assert u.is_active is False  # en attente d'activation par son lien magique
 
@@ -101,13 +102,13 @@ class TestTypeDeCompte:
         from core.models import AffectationRoleOperationnel
 
         importer_benevoles_association(requete, asso, [ligne("b2@essai.invalide")], MAPPING)
-        u = User.objects.get(username="b2@essai.invalide")
+        u = filtrer_chiffre(User.objects.filter(), username="b2@essai.invalide").get()
         affectations = AffectationRoleOperationnel.objects.filter(utilisateur=u)
         assert [a.role.code for a in affectations] == ["INTERVENANT"]
 
     def test_aucun_acces_a_la_zone_de_demonstration(self, requete, asso, equipes):
         importer_benevoles_association(requete, asso, [ligne("b3@essai.invalide")], MAPPING)
-        assert not User.objects.get(username="b3@essai.invalide").demo_role
+        assert not filtrer_chiffre(User.objects.filter(), username="b3@essai.invalide").get().demo_role
 
     def test_un_compte_deja_institutionnel_n_est_JAMAIS_retrograde(self, requete, asso,
                                                                     equipes, create_user):
@@ -130,9 +131,9 @@ class TestEquipeDepartementale:
             [ligne("g@essai.invalide", cp="33950"), ligne("s@essai.invalide", cp="74600")],
             MAPPING)
 
-        assert gironde.members.filter(username="g@essai.invalide").exists()
-        assert savoie.members.filter(username="s@essai.invalide").exists()
-        assert not gironde.members.filter(username="s@essai.invalide").exists()
+        assert filtrer_chiffre(gironde.members.filter(), username="g@essai.invalide").exists()
+        assert filtrer_chiffre(savoie.members.filter(), username="s@essai.invalide").exists()
+        assert not filtrer_chiffre(gironde.members.filter(), username="s@essai.invalide").exists()
 
     def test_le_zero_initial_supprime_par_excel_est_rattrape(self, requete, asso):
         """Un tableur rend « 1000 » pour « 01000 » (Ain). Refuser ferait échouer tout un
@@ -141,7 +142,7 @@ class TestEquipeDepartementale:
                                   echelon=EchelonEquipe.DEPARTEMENTAL, territoire_code="01")
         importer_benevoles_association(requete, asso, [ligne("a@essai.invalide", cp="1000")],
                                        MAPPING)
-        assert ain.members.filter(username="a@essai.invalide").exists()
+        assert filtrer_chiffre(ain.members.filter(), username="a@essai.invalide").exists()
 
     def test_un_departement_indeterminable_cree_le_compte_mais_le_signale(self, requete, asso,
                                                                           equipes):
@@ -155,7 +156,7 @@ class TestEquipeDepartementale:
         bilan = importer_benevoles_association(
             requete, asso, [ligne("corse@essai.invalide", cp="20000")], MAPPING)
 
-        assert User.objects.filter(username="corse@essai.invalide").exists()
+        assert filtrer_chiffre(User.objects.filter(), username="corse@essai.invalide").exists()
         assert bilan["sans_equipe"] == 1
         # Sur TOUS les signalements et non le premier : une ligne en produit plusieurs
         # (l'adresse non géolocalisée, puis le département indéterminable), et leur ordre
@@ -174,7 +175,7 @@ class TestAppartenanceEtInvitation:
 
     def test_le_rattachement_a_l_association_est_pose(self, requete, asso, equipes):
         importer_benevoles_association(requete, asso, [ligne("c@essai.invalide")], MAPPING)
-        contact = ContactInstitution.objects.get(utilisateur__username="c@essai.invalide")
+        contact = filtrer_chiffre(ContactInstitution.objects.filter(), utilisateur__username="c@essai.invalide").get()
         assert contact.institution == asso
         assert contact.actif is True
         assert contact.membre_bureau is False
@@ -184,8 +185,7 @@ class TestAppartenanceEtInvitation:
     def test_sans_metier_la_fonction_vaut_Benevole(self, requete, asso, equipes):
         importer_benevoles_association(requete, asso,
                                        [ligne("d@essai.invalide", metier="")], MAPPING)
-        assert ContactInstitution.objects.get(
-            utilisateur__username="d@essai.invalide").fonction == "Bénévole"
+        assert filtrer_chiffre(ContactInstitution.objects.filter(), utilisateur__username="d@essai.invalide").get().fonction == "Bénévole"
 
     def test_le_mail_d_activation_part(self, requete, asso, equipes):
         importer_benevoles_association(requete, asso, [ligne("e@essai.invalide")], MAPPING)
@@ -210,7 +210,7 @@ class TestAppartenanceEtInvitation:
         bilan = importer_benevoles_association(requete, asso, [ligne("r@essai.invalide")],
                                                MAPPING)
         assert bilan["crees"] == 0 and bilan["rattaches"] == 1
-        assert User.objects.filter(username="r@essai.invalide").count() == 1
+        assert filtrer_chiffre(User.objects.filter(), username="r@essai.invalide").count() == 1
 
 
 @pytest.mark.django_db
@@ -242,7 +242,7 @@ class TestPromotionALEncadrement:
 
         gironde, _ = equipes
         importer_benevoles_association(requete, asso, [ligne("promu@essai.invalide")], MAPPING)
-        benevole = User.objects.get(username="promu@essai.invalide")
+        benevole = filtrer_chiffre(User.objects.filter(), username="promu@essai.invalide").get()
         assert benevole.type == UserRole.SIMPLE_USER
 
         reponse = client_bureau.post(
@@ -261,7 +261,7 @@ class TestPromotionALEncadrement:
 
         gironde, _ = equipes
         importer_benevoles_association(requete, asso, [ligne("trace@essai.invalide")], MAPPING)
-        benevole = User.objects.get(username="trace@essai.invalide")
+        benevole = filtrer_chiffre(User.objects.filter(), username="trace@essai.invalide").get()
 
         client_bureau.post(reverse('team-definir-encadrement', args=[gironde.id]),
                            {'membres_encadrement': [str(benevole.id)]}, format='json')
@@ -275,7 +275,7 @@ class TestPromotionALEncadrement:
 
         gironde, _ = equipes
         importer_benevoles_association(requete, asso, [ligne("garde@essai.invalide")], MAPPING)
-        benevole = User.objects.get(username="garde@essai.invalide")
+        benevole = filtrer_chiffre(User.objects.filter(), username="garde@essai.invalide").get()
         url = reverse('team-definir-encadrement', args=[gironde.id])
 
         client_bureau.post(url, {'membres_encadrement': [str(benevole.id)]}, format='json')

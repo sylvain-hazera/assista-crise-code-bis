@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -52,7 +53,7 @@ class TestTransformerDemandeEnOffre:
         assert response.data['email_offer'] == 'jeanine@test.fr'
         assert response.data['description'] == 'Une cuve de 500L disponible'
         assert not Request.objects.filter(id=demande.id).exists()
-        assert Offer.objects.filter(title='Je propose une cuve').exists()
+        assert filtrer_chiffre(Offer.objects.filter(), title='Je propose une cuve').exists()
 
     def test_photo_is_copied(self, authenticated_client, crisis, request_type, offer_type_autre):
         client, _ = _make_admin(authenticated_client)
@@ -68,7 +69,7 @@ class TestTransformerDemandeEnOffre:
         response = client.post(reverse('request-transformer', args=[demande.id]), {'cible': 'OFFER'})
 
         assert response.status_code == status.HTTP_201_CREATED
-        nouvelle_offre = Offer.objects.get(title='Cuve avec photo')
+        nouvelle_offre = filtrer_chiffre(Offer.objects.filter(), title='Cuve avec photo').get()
         assert nouvelle_offre.photo
         nouvelle_offre.photo.open('rb')
         assert nouvelle_offre.photo.read() == b'contenu-image-factice'
@@ -136,7 +137,7 @@ class TestTransformerDemandeEnSignalement:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['title'] == 'Arbre sur la route'
-        assert Information.objects.filter(title='Arbre sur la route').exists()
+        assert filtrer_chiffre(Information.objects.filter(), title='Arbre sur la route').exists()
 
 
 @pytest.mark.django_db

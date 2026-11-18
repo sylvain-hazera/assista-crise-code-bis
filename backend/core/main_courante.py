@@ -16,8 +16,7 @@ reste rapide sur plusieurs millions de lignes -- y compris les plages d'adresses
 import datetime
 import uuid
 
-from django.db.models import GenericIPAddressField, Lookup, Q, TextField
-from django.db.models.functions import Cast
+from django.db.models import GenericIPAddressField, Lookup, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import ValidationError
@@ -189,16 +188,19 @@ def appliquer_filtres(queryset, params):
 
     termes_inclus, termes_exclus = _valeurs(params, 'recherche'), _valeurs(params, 'recherche_exclu')
     if termes_inclus or termes_exclus:
-        # Les termes sont dans un JSON ({"search": "dupont", "commune": "42218"}) : recherche
-        # dans sa forme texte, limitée aux seules lignes qui en ont (index partiel).
-        queryset = queryset.annotate(recherche_texte=Cast('recherche', TextField()))
+        # Les termes sont dans un JSON ({"search": "dupont", "commune": "42218"}), chiffré depuis
+        # le 18/11/2026 (ce qu'on a cherché dit qui l'on cherchait) : comparé en Python, sur les
+        # seules lignes qui ont une recherche (index partiel).
+        import json
+        lignes = list(queryset.filter(recherche__isnull=False).select_related(None).only('pk', 'recherche'))
+
+        def contient(ligne, termes):
+            texte = json.dumps(ligne.recherche, ensure_ascii=False).lower()
+            return any(t.lower() in texte for t in termes)
         if termes_inclus:
-            condition = Q()
-            for terme in termes_inclus:
-                condition |= Q(recherche_texte__icontains=terme)
-            queryset = queryset.filter(recherche__isnull=False).filter(condition)
-        for terme in termes_exclus:
-            queryset = queryset.exclude(recherche_texte__icontains=terme)
+            queryset = queryset.filter(pk__in=[l.pk for l in lignes if contient(l, termes_inclus)])
+        if termes_exclus:
+            queryset = queryset.exclude(pk__in=[l.pk for l in lignes if contient(l, termes_exclus)])
 
     return queryset
 
@@ -278,6 +280,12 @@ def rechercher_fiches(terme, types=None, environnement=None):
     for nom_type in types:
         type_libelle, _, champs_sql, champs_chiffres = TYPES_FICHES[nom_type]
         modele = _modele(nom_type)
+        # Ce qui est chiffré se cherche en Python, quoi qu'en dise la table (18/11/2026 : les
+        # titres et les noms sont passés chiffrés) -- décidé d'après le champ lui-même.
+        from .crypto_fields import EncryptedTextField
+        chiffre = lambda c: isinstance(modele._meta.get_field(c), EncryptedTextField)
+        champs_chiffres = tuple(champs_chiffres) + tuple(c for c in champs_sql if chiffre(c))
+        champs_sql = tuple(c for c in champs_sql if not chiffre(c))
         qs = modele.objects.all()
         if environnement and any(f.name == 'environment' for f in modele._meta.concrete_fields):
             qs = qs.filter(environment=environnement)

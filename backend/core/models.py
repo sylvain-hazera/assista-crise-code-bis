@@ -210,9 +210,9 @@ class User(AbstractUser):
 
     # Renseignements institutionnels de l'inscription, appliqués seulement après confirmation de
     # l'email.
-    pending_institution_name = models.CharField(max_length=255, null=True, blank=True)
+    pending_institution_name = EncryptedTextField(max_length=255, null=True, blank=True)
     pending_institution_type = models.CharField(max_length=100, null=True, blank=True)
-    pending_commune_name = models.CharField(max_length=255, null=True, blank=True)
+    pending_commune_name = EncryptedTextField(max_length=255, null=True, blank=True)
     pending_commune_code = models.CharField(max_length=20, null=True, blank=True)
 
     # ── CE CHAMP N'EST PAS L'APPARTENANCE ────────────────────────────────────────────────
@@ -249,6 +249,13 @@ class User(AbstractUser):
 
     # Chiffré ; l'unicité porte sur email_bidx.
     email = EncryptedEmailField()
+    # Chiffrés aussi (18/11/2026, « tout doit être chiffré en base ») : l'identifiant reçoit le
+    # plus souvent l'adresse elle-même, il annulait le chiffrement de `email`. Plus d'unicité
+    # sur l'identifiant : la connexion et l'unicité passent par email_bidx. Les recherches par
+    # nom se font en Python, après déchiffrement (décision du 06/10/2026).
+    username = EncryptedTextField(max_length=150, blank=True, default="")
+    first_name = EncryptedTextField(max_length=150, blank=True, default="")
+    last_name = EncryptedTextField(max_length=150, blank=True, default="")
     # Index aveugle de email (unique), rempli par save(). Migrations 0182 (remplissage) et 0183
     # (contrainte).
     email_bidx = models.CharField(max_length=64, unique=True, editable=False, db_index=True)
@@ -337,7 +344,7 @@ class Crisis(EnvironmentScopedModel):
         choices=TypeCrise.choices,
         default=TypeCrise.AUTRE,
     )
-    description = models.TextField(null=True, blank=True)
+    description = EncryptedTextField(null=True, blank=True)
     photo = models.ImageField(upload_to=secure_crisis_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
@@ -462,7 +469,7 @@ class ImplicationInstitution(EnvironmentScopedModel):
         choices=TypeImplication.choices
     )
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     actif = models.BooleanField(default=True)
 
@@ -571,8 +578,8 @@ class FormulaireTerrain(EnvironmentScopedModel):
         "Institution", on_delete=models.CASCADE, related_name="formulaires_terrain")
     crise = models.ForeignKey(
         Crisis, on_delete=models.SET_NULL, null=True, blank=True, related_name="formulaires_terrain")
-    titre = models.CharField(max_length=150)
-    description = models.TextField(blank=True, default="")
+    titre = EncryptedTextField(max_length=150)
+    description = EncryptedTextField(blank=True, default="")
     questions = models.JSONField(default=list)
     # Fermé : il reste lisible avec ses réponses, mais on n'y répond plus.
     actif = models.BooleanField(default=True)
@@ -722,7 +729,7 @@ class RequestType(models.Model):
 class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     """Demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=150)
+    title = EncryptedTextField(max_length=150)
     description = EncryptedTextField(null=True, blank=True)
     photo = models.ImageField(upload_to=secure_demande_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     # Nullable : une demande d'hébergement n'a qu'une zone de recherche.
@@ -754,9 +761,15 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     phone_request = EncryptedTextField()
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
-    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`deletion_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    deletion_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    deletion_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     # Lien de modification seule (deletion_token permet de désactiver).
-    edition_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`edition_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    edition_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    edition_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -832,7 +845,7 @@ class InformationType(models.Model):
 class Information(EnvironmentScopedModel):
     """Informations partagées"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=150)
+    title = EncryptedTextField(max_length=150)
     photo = models.ImageField(upload_to=secure_information_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     first_name_information = EncryptedTextField()
     last_name_information = EncryptedTextField()
@@ -860,9 +873,15 @@ class Information(EnvironmentScopedModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
-    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`deletion_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    deletion_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    deletion_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     # Lien de modification seule (deletion_token permet de désactiver).
-    edition_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`edition_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    edition_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    edition_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -973,7 +992,7 @@ class VisibiliteOffre(models.TextChoices):
 class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=150)
+    title = EncryptedTextField(max_length=150)
     description = EncryptedTextField(null=True, blank=True)
     photo = models.ImageField(upload_to=secure_offre_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326, null=True, blank=True)
@@ -997,9 +1016,15 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     phone_offer = EncryptedTextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
-    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`deletion_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    deletion_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    deletion_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     # Lien limité au fil de messages et à l'édition de l'offre (OfferReponsePublicView).
-    reponse_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`reponse_token_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    reponse_token = EncryptedTextField(max_length=64, null=True, blank=True)
+    reponse_token_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -1080,7 +1105,7 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     cuve_contenu = models.CharField(max_length=20, choices=CuveContenu.choices, null=True, blank=True)
     # Posé uniquement quand transport_type == ANIMAUX : le type d'animal (chiens, chevaux,
     # bétail...) change radicalement les moyens requis, pas de liste fermée pertinente ici.
-    transport_animaux_precision = models.CharField(max_length=255, null=True, blank=True)
+    transport_animaux_precision = EncryptedTextField(max_length=255, null=True, blank=True)
     quantite = models.PositiveIntegerField(null=True, blank=True)
     unite = models.CharField(max_length=20, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
@@ -1168,7 +1193,7 @@ class OfferMessage(EnvironmentScopedModel):
     auteur_equipe = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_offres_envoyes",
     )
-    contenu = models.TextField()
+    contenu = EncryptedTextField()
     date_creation = models.DateTimeField(auto_now_add=True)
 
     # False pour un message du propriétaire : alimente les « Retours externes » de la cellule de
@@ -1421,23 +1446,23 @@ class Institution(EnvironmentScopedModel):
         related_name="institutions"
     )
 
-    description = models.TextField(
+    description = EncryptedTextField(
         blank=True,
         null=True
     )
 
-    telephone = models.CharField(
+    telephone = EncryptedTextField(
         max_length=30,
         blank=True,
         null=True
     )
 
-    email = models.EmailField(
+    email = EncryptedEmailField(
         blank=True,
         null=True
     )
 
-    adresse = models.TextField(
+    adresse = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -1601,7 +1626,7 @@ class Institution(EnvironmentScopedModel):
     couleur_secondaire = models.CharField(max_length=7, blank=True, help_text="Couleur hex, ex: #2ea3f2.")
     police_titre = models.CharField(max_length=100, blank=True, help_text="Police Google Fonts pour les titres, ex: Quicksand.")
     police_texte = models.CharField(max_length=100, blank=True, help_text="Police Google Fonts pour le texte courant, ex: Open Sans.")
-    email_reply_to = models.EmailField(blank=True, help_text="Reply-To des emails envoyés au nom de cette institution.")
+    email_reply_to = EncryptedEmailField(blank=True, help_text="Reply-To des emails envoyés au nom de cette institution.")
 
     # Adresse de serveur Matrix à SAISIR dans Element X, pour les membres de cette institution.
     # Vide = MATRIX_SERVER_NAME, l'adresse partagée.
@@ -1667,7 +1692,7 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
         blank=True,
         help_text="Clé API Brevo (commence par « xkeysib- »). Jamais relue par l'API.",
     )
-    brevo_expediteur_email = models.EmailField(
+    brevo_expediteur_email = EncryptedEmailField(
         blank=True,
         help_text="Adresse expéditrice. Doit être un « sender » VÉRIFIÉ dans le compte Brevo, "
                    "sinon l'API refuse l'envoi.",
@@ -1736,7 +1761,7 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
 
     #: Qui gère le compte Brevo et doit être prévenu — souvent pas celui qui envoie. Adresse
     #: de fonction ; écrite par le bureau, jamais devinée.
-    brevo_admin_email = models.EmailField(blank=True)
+    brevo_admin_email = EncryptedEmailField(blank=True)
     #: Dernière alerte envoyée, et à quel niveau : sans cette mémoire, chaque envoi sous le
     #: seuil renverrait un message, et l'alerte deviendrait le bruit qu'on apprend à ignorer.
     brevo_alerte_envoyee_le = models.DateTimeField(null=True, blank=True)
@@ -1746,9 +1771,9 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
     # une clé acceptée à la saisie peut être révoquée ensuite, et sans cette trace personne ne
     # le verrait avant qu'un destinataire ne signale l'absence de message.
     dernier_envoi_email_le = models.DateTimeField(null=True, blank=True)
-    derniere_erreur_email = models.TextField(blank=True)
+    derniere_erreur_email = EncryptedTextField(blank=True)
     dernier_envoi_sms_le = models.DateTimeField(null=True, blank=True)
-    derniere_erreur_sms = models.TextField(blank=True)
+    derniere_erreur_sms = EncryptedTextField(blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)
@@ -1800,8 +1825,8 @@ class ModeleMessage(EnvironmentScopedModel):
 
     # Vide = garder le défaut du catalogue pour ce champ seulement. Une institution qui veut
     # changer le corps sans toucher au sujet ne doit pas avoir à recopier le sujet.
-    sujet = models.TextField(blank=True)
-    corps = models.TextField(blank=True)
+    sujet = EncryptedTextField(blank=True)
+    corps = EncryptedTextField(blank=True)
 
     actif = models.BooleanField(
         default=True,
@@ -1900,7 +1925,7 @@ class BrouillonEnvoi(EnvironmentScopedModel):
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="brouillons_envoi_traites",
     )
-    erreur = models.TextField(blank=True)
+    erreur = EncryptedTextField(blank=True)
 
     class Meta:
         ordering = ["-date_creation"]
@@ -2008,7 +2033,7 @@ class InstitutionCompetence(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -2131,7 +2156,7 @@ class AffectationCompetence(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -2261,11 +2286,11 @@ class Dossier(EnvironmentScopedModel):
         help_text="Institution à la demande de laquelle ce dossier générique a été ouvert.",
     )
 
-    titre = models.CharField(
+    titre = EncryptedTextField(
         max_length=255
     )
 
-    description = models.TextField()
+    description = EncryptedTextField()
 
     statut = models.CharField(
         max_length=50,
@@ -2333,11 +2358,11 @@ class Mission(EnvironmentScopedModel):
         editable=False
     )
 
-    titre = models.CharField(
+    titre = EncryptedTextField(
         max_length=255
     )
 
-    description = models.TextField(
+    description = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -2427,7 +2452,7 @@ class DossierCommentaire(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.TextField()
+    commentaire = EncryptedTextField()
 
     date_creation = models.DateTimeField(
         auto_now_add=True
@@ -2461,7 +2486,7 @@ class DossierHistorique(EnvironmentScopedModel):
         max_length=255
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -2510,7 +2535,7 @@ class Document(EnvironmentScopedModel):
         auto_now_add=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -2526,7 +2551,7 @@ class Document(EnvironmentScopedModel):
         blank=True
     )
 
-    metadata_privees = models.JSONField(
+    metadata_privees = EncryptedJSONField(
         default=dict,
         blank=True
     )
@@ -3465,11 +3490,14 @@ class NotificationAlertePCS(EnvironmentScopedModel):
     canal_tente = models.CharField(max_length=20, choices=ModeAlertePCS.choices)
 
     statut = models.CharField(max_length=20, choices=StatutNotificationPCS.choices, default=StatutNotificationPCS.EN_ATTENTE)
-    detail_erreur = models.TextField(null=True, blank=True)
+    detail_erreur = EncryptedTextField(null=True, blank=True)
 
-    token_confirmation = models.CharField(max_length=64, unique=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`token_confirmation_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    token_confirmation = EncryptedTextField(max_length=64)
+    token_confirmation_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     # Texte réellement envoyé, conservé pour trace.
-    message_envoye = models.TextField(null=True, blank=True)
+    message_envoye = EncryptedTextField(null=True, blank=True)
 
     reponse_contact = models.CharField(max_length=20, choices=ReponseContactPCS.choices, null=True, blank=True)
     commentaire_contact = EncryptedTextField(null=True, blank=True)
@@ -3541,7 +3569,7 @@ class Zone(EnvironmentScopedModel):
 
     nom = models.CharField(max_length=255)
 
-    description = models.TextField(blank=True, null=True)
+    description = EncryptedTextField(blank=True, null=True)
 
     communes = models.JSONField(
         default=list, blank=True,
@@ -3630,7 +3658,7 @@ class Habitation(EnvironmentScopedModel):
 
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
-    parcelle_cadastrale = models.CharField(
+    parcelle_cadastrale = EncryptedTextField(
         max_length=20, blank=True, null=True,
         help_text="Identifiant cadastral (ex: 33333000BK0034) -- IGN APICarto cadastre si absent de la BAN.",
     )
@@ -3694,7 +3722,7 @@ class HabitationCommentaire(EnvironmentScopedModel):
 
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 
-    commentaire = models.TextField()
+    commentaire = EncryptedTextField()
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -3712,7 +3740,7 @@ class HabitationHistorique(EnvironmentScopedModel):
 
     evenement = models.CharField(max_length=255)
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -3756,7 +3784,7 @@ class PointageTerrain(EnvironmentScopedModel):
     habitation = models.ForeignKey(Habitation, on_delete=models.SET_NULL, null=True, blank=True, related_name="pointages")
     traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     traite_le = models.DateTimeField(null=True, blank=True)
-    motif_refus = models.CharField(max_length=300, blank=True, default="")
+    motif_refus = EncryptedTextField(max_length=300, blank=True, default="")
 
     class Meta:
         ordering = ["-date_creation"]
@@ -3933,7 +3961,7 @@ class PieceIdentiteReserve(EnvironmentScopedModel):
         help_text="Date de fin de validité relevée sur la pièce au moment du contrôle. "
                   "Permet de redemander une pièce à jour sans en avoir gardé la copie.",
     )
-    motif_refus = models.TextField(
+    motif_refus = EncryptedTextField(
         blank=True,
         help_text="Obligatoire au refus : la personne doit savoir quoi corriger.",
     )
@@ -4092,7 +4120,7 @@ class EngagementPersonnel(EnvironmentScopedModel):
     depart_de = models.CharField(max_length=12, choices=LieuDeDepart.choices, default=LieuDeDepart.DOMICILE)
     retour_a = models.CharField(max_length=12, choices=LieuDeDepart.choices, blank=True, default="")
     #: Nom du logement quand la personne est hébergée sur site (centre ou offre de logement).
-    hebergement = models.CharField(max_length=200, blank=True, default="")
+    hebergement = EncryptedTextField(max_length=200, blank=True, default="")
     # Vrai dès qu'une heure a été saisie ou corrigée à la main par la personne, après coup :
     # le relevé distingue ce qui a été déclaré sur le moment de ce qui a été complété.
     saisie_manuelle = models.BooleanField(default=False)
@@ -4428,7 +4456,7 @@ class Team(EnvironmentScopedModel):
     """Équipes de gestion de crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
-    description = models.TextField(null=True, blank=True)
+    description = EncryptedTextField(null=True, blank=True)
     color = models.CharField(max_length=7, default='#3b82f6')  # hex color
     created_at = models.DateTimeField(auto_now_add=True)
     actif = models.BooleanField(
@@ -4621,7 +4649,7 @@ class TeamDelegation(EnvironmentScopedModel):
     active = models.BooleanField(default=True)
     date_debut = models.DateTimeField(auto_now_add=True)
     date_fin = models.DateTimeField(null=True, blank=True)
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     class Meta:
         ordering = ["-date_debut"]
@@ -4651,7 +4679,10 @@ class EngagementRessource(EnvironmentScopedModel):
     statut = models.CharField(
         max_length=20, choices=StatutEngagementRessource.choices, default=StatutEngagementRessource.EN_ATTENTE,
     )
-    token_confirmation = models.CharField(max_length=64, unique=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`token_confirmation_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    token_confirmation = EncryptedTextField(max_length=64)
+    token_confirmation_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_confirmation = models.DateTimeField(null=True, blank=True)
     date_transit = models.DateTimeField(null=True, blank=True)
@@ -4767,11 +4798,11 @@ class Notification(EnvironmentScopedModel):
         blank=True
     )
 
-    titre = models.CharField(
+    titre = EncryptedTextField(
         max_length=255
     )
 
-    message = models.TextField()
+    message = EncryptedTextField()
 
     # ── La fiche derrière le résumé ─────────────────────────────────────────────────────
     # Ajouté le 12/11/2026 : « le régulateur en voit un résumé, clique dessus, et ouvre la
@@ -4786,7 +4817,7 @@ class Notification(EnvironmentScopedModel):
     # base : des noms d'institutions, des dates, des libellés de besoin. Jamais le nom, le
     # téléphone ou l'adresse d'une personne — ces informations vivent dans leur modèle, et la
     # fiche renvoie vers lui par `lien`.
-    details = models.JSONField(
+    details = EncryptedJSONField(
         default=list, blank=True,
         help_text="Liste de {\"libelle\": ..., \"valeur\": ...} affichée dans la fiche. "
                    "Aucune donnée personnelle : ce champ n'est pas chiffré.",
@@ -4858,9 +4889,9 @@ class DemandeMobilisation(EnvironmentScopedModel):
         "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="demandes_mobilisation",
     )
-    lieu_texte = models.CharField(max_length=255, blank=True)
+    lieu_texte = EncryptedTextField(max_length=255, blank=True)
 
-    motif = models.TextField(blank=True)
+    motif = EncryptedTextField(blank=True)
 
     statut = models.CharField(
         max_length=15, choices=StatutDemandeMobilisation.choices, default=StatutDemandeMobilisation.ACTIVE,
@@ -4869,7 +4900,10 @@ class DemandeMobilisation(EnvironmentScopedModel):
     date_creation = models.DateTimeField(auto_now_add=True)
     date_revocation = models.DateTimeField(null=True, blank=True)
 
-    jeton_verification = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`jeton_verification_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    jeton_verification = EncryptedTextField(max_length=64, null=True, blank=True)
+    jeton_verification_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
 
     def __str__(self):
         return f"Demande {self.get_type_demande_display()} — {self.institution_emettrice.nom}"
@@ -4931,7 +4965,7 @@ class RecherchePersonne(EnvironmentScopedModel):
         choices=Source.choices
     )
 
-    ville = models.CharField(
+    ville = EncryptedTextField(
         max_length=255
     )
 
@@ -5033,7 +5067,7 @@ class RecherchePersonneCommentaire(
         on_delete=models.CASCADE
     )
 
-    commentaire = models.TextField()
+    commentaire = EncryptedTextField()
 
     date_creation = models.DateTimeField(
         auto_now_add=True
@@ -5064,7 +5098,7 @@ class RecherchePersonneHistorique(EnvironmentScopedModel):
         max_length=255
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -5103,7 +5137,7 @@ class RecherchePersonnePhoto(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.CharField(
+    commentaire = EncryptedTextField(
         max_length=255,
         blank=True
     )
@@ -5224,7 +5258,7 @@ class SecteurRecherche(EnvironmentScopedModel):
         RecherchePersonne, on_delete=models.CASCADE, related_name="secteurs_recherche",
     )
 
-    nom = models.CharField(max_length=100)
+    nom = EncryptedTextField(max_length=100)
 
     polygone = gis_models.PolygonField(srid=4326)
 
@@ -5294,7 +5328,7 @@ class AffectationRoleOperationnel(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -5308,7 +5342,7 @@ class AffectationRoleOperationnel(EnvironmentScopedModel):
         help_text="Dessin optionnel, propre à cette affectation — indépendant de Zone.zone_precise "
                    "si `zone` est aussi renseignée (ex: un périmètre plus fin que la zone cataloguée).",
     )
-    responsabilite = models.CharField(
+    responsabilite = EncryptedTextField(
         max_length=255, blank=True, null=True,
         help_text="Intitulé libre du périmètre de responsabilité (ex: \"Coordination hébergement "
                    "secteur nord\") — distinct du rôle (fonction) et du thème (compétence).",
@@ -5387,7 +5421,7 @@ class DisponibiliteOperationnelle(
     # inventer.
     date_creation = models.DateTimeField(auto_now_add=True, null=True)
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -5467,7 +5501,7 @@ class DelegationCompetence(EnvironmentScopedModel):
         blank=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -5619,7 +5653,7 @@ class PointOperationnel(EnvironmentScopedModel):
         related_name="points_geres"
     )
 
-    adresse = models.TextField(
+    adresse = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -5645,12 +5679,12 @@ class PointOperationnel(EnvironmentScopedModel):
         default=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
 
-    description = models.TextField(
+    description = EncryptedTextField(
         blank=True,
         null=True,
         help_text="Description du point (distincte de `commentaire`, qui reste des notes de suivi)."
@@ -5806,7 +5840,7 @@ class Plan(EnvironmentScopedModel):
 
     nom = models.CharField(max_length=255)
 
-    description = models.TextField(blank=True, null=True)
+    description = EncryptedTextField(blank=True, null=True)
 
     zones = models.ManyToManyField(Zone, blank=True, related_name="plans")
 
@@ -5861,7 +5895,7 @@ class PlanMissionModele(EnvironmentScopedModel):
 
     titre = models.CharField(max_length=255)
 
-    description = models.TextField(blank=True, null=True)
+    description = EncryptedTextField(blank=True, null=True)
 
     # Référent (pas forcément membre) seul rattaché au dossier instancié.
     referent = models.ForeignKey(
@@ -5896,15 +5930,15 @@ class DossierPCS(EnvironmentScopedModel):
 
     arrete_numero = models.CharField(max_length=60, blank=True)
     arrete_date = models.DateField(null=True, blank=True)
-    lieu_pcc = models.CharField(
+    lieu_pcc = EncryptedTextField(
         max_length=255, blank=True,
         help_text="Où se réunit le poste de commandement communal (salle, adresse).",
     )
-    lieu_pcc_repli = models.CharField(
+    lieu_pcc_repli = EncryptedTextField(
         max_length=255, blank=True,
         help_text="Lieu de repli si le premier est inaccessible (inondé, sans courant).",
     )
-    modalites_activation = models.TextField(
+    modalites_activation = EncryptedTextField(
         blank=True,
         help_text="Qui déclenche le plan, sur quels signaux, et comment l'équipe est prévenue.",
     )
@@ -5926,7 +5960,7 @@ class RevisionPCS(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="revisions")
     date = models.DateField()
-    objet = models.CharField(max_length=500)
+    objet = EncryptedTextField(max_length=500)
     auteur = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="revisions_pcs",
     )
@@ -5977,7 +6011,7 @@ class FonctionPCS(EnvironmentScopedModel):
     titulaire_telephone = EncryptedTextField(blank=True, default="")
     suppleant = EncryptedTextField(blank=True, default="")
     suppleant_telephone = EncryptedTextField(blank=True, default="")
-    consignes = models.TextField(blank=True, help_text="Fiche réflexe propre à la commune ; vide = la fiche type.")
+    consignes = EncryptedTextField(blank=True, help_text="Fiche réflexe propre à la commune ; vide = la fiche type.")
     date_maj = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -6003,12 +6037,12 @@ class MoyenAlertePCS(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="moyens_alerte")
     type = models.CharField(max_length=20, choices=Type.choices)
-    description = models.CharField(max_length=500, blank=True, help_text="Lieu, circuit, liste de diffusion…")
+    description = EncryptedTextField(max_length=500, blank=True, help_text="Lieu, circuit, liste de diffusion…")
     zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name="moyens_alerte")
     personne = EncryptedTextField(blank=True, default="")
     personne_telephone = EncryptedTextField(blank=True, default="")
     #: Fiche de déclenchement propre à la commune ; vide = la fiche type du moyen (core/pcs_fiches.py).
-    consignes = models.TextField(blank=True, default="")
+    consignes = EncryptedTextField(blank=True, default="")
     date_maj = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -6035,20 +6069,20 @@ class PieceJointePCS(EnvironmentScopedModel):
     dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="pieces")
     fonction = models.ForeignKey(FonctionPCS, on_delete=models.CASCADE, null=True, blank=True, related_name="pieces")
     moyen_alerte = models.ForeignKey(MoyenAlertePCS, on_delete=models.CASCADE, null=True, blank=True, related_name="pieces")
-    titre = models.CharField(max_length=200)
+    titre = EncryptedTextField(max_length=200)
     fichier = models.FileField(
         storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
         validators=[validate_identity_document_file],
     )
     #: Nom d'origine, pour le rendre au téléchargement ; le nom sur le disque est un identifiant.
-    nom_fichier = models.CharField(max_length=200, blank=True, default="")
+    nom_fichier = EncryptedTextField(max_length=200, blank=True, default="")
     type_mime = models.CharField(max_length=60, blank=True, default="")
     taille = models.PositiveIntegerField(default=0)
     depose_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_depot = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["titre", "date_depot"]
+        ordering = ["date_depot"]   # le titre est chiffré : trié en Python à l'affichage
         verbose_name = "pièce jointe du plan"
 
 class ExercicePCS(EnvironmentScopedModel):
@@ -6058,10 +6092,10 @@ class ExercicePCS(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="exercices")
     date = models.DateField()
-    theme = models.CharField(max_length=255)
-    deroulement = models.TextField(blank=True)
-    enseignements = models.TextField(blank=True)
-    actions = models.TextField(blank=True, help_text="Ce qui doit changer dans le plan à la suite de l'exercice.")
+    theme = EncryptedTextField(max_length=255)
+    deroulement = EncryptedTextField(blank=True)
+    enseignements = EncryptedTextField(blank=True)
+    actions = EncryptedTextField(blank=True, help_text="Ce qui doit changer dans le plan à la suite de l'exercice.")
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="exercices_pcs")
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -6109,14 +6143,14 @@ class AlertePopulation(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey("Institution", on_delete=models.PROTECT, related_name="alertes_population")
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_population")
-    titre = models.CharField(max_length=150)
+    titre = EncryptedTextField(max_length=150)
     message = EncryptedTextField()
     urgent = models.BooleanField(default=True)
     canaux = models.JSONField(default=list)
-    bilan = models.JSONField(default=dict)
+    bilan = EncryptedJSONField(default=dict)
     #: Ce que l'alerte a demandé SUR LE TERRAIN : sirène, véhicule, relais, porte-à-porte — les
     #: moyens décrits dans « Alerte de la population » (18/11/2026). Une ligne par moyen coché.
-    terrain = models.JSONField(default=list, blank=True)
+    terrain = EncryptedJSONField(default=list, blank=True)
     destinataires = models.PositiveIntegerField(default=0)
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_population")
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -6223,7 +6257,7 @@ class MaterielPoint(EnvironmentScopedModel):
     # Véhicule : places en plus du conducteur.
     nombre_places_assises = models.PositiveIntegerField(null=True, blank=True)
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     date_maj = models.DateTimeField(auto_now=True)
 
@@ -6278,7 +6312,7 @@ class ContributionMateriel(EnvironmentScopedModel):
         related_name="contributions_enregistrees",
     )
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     date_reception = models.DateTimeField(auto_now_add=True)
 
@@ -6320,7 +6354,7 @@ class RegistrePresence(EnvironmentScopedModel):
 
     date_depart = models.DateTimeField(null=True, blank=True)
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     enregistre_par = models.ForeignKey(
         User,
@@ -6578,7 +6612,7 @@ class SolutionRelogement(EnvironmentScopedModel):
     #: jour où la famille appelle.
     date_fin_prevue = models.DateField(null=True, blank=True)
     date_fin_effective = models.DateField(null=True, blank=True)
-    motif_fin = models.CharField(max_length=255, blank=True, default="")
+    motif_fin = EncryptedTextField(max_length=255, blank=True, default="")
 
     # ── Combien ─────────────────────────────────────────────────────────────────────────
     loyer_mensuel = models.PositiveIntegerField(
@@ -6587,7 +6621,7 @@ class SolutionRelogement(EnvironmentScopedModel):
     reste_a_charge = models.PositiveIntegerField(
         null=True, blank=True,
         help_text="Ce que paie réellement la famille, une fois les aides déduites.")
-    prise_en_charge_par = models.CharField(
+    prise_en_charge_par = EncryptedTextField(
         max_length=255, blank=True, default="",
         help_text="Qui paie le reste : commune, CCAS, assurance, association…")
 
@@ -6635,12 +6669,12 @@ class SuiviMaterielEvenement(EnvironmentScopedModel):
 
     etat = models.CharField(max_length=20, choices=EtatMateriel.choices)
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     # Texte libre (pas d'annuaire de réparateurs).
     reparateur_nom = EncryptedTextField(max_length=255, blank=True, null=True)
     reparateur_contact = EncryptedTextField(max_length=255, blank=True, null=True)
-    lieu_reparation = models.CharField(max_length=255, blank=True, null=True)
+    lieu_reparation = EncryptedTextField(max_length=255, blank=True, null=True)
     date_reparation = models.DateField(null=True, blank=True)
     cout_reparation = models.PositiveIntegerField(
         null=True, blank=True, help_text="Coût en euros, montant entier (même convention que HebergementDetailsMixin.loyer_montant_*).",
@@ -6770,8 +6804,8 @@ class RisqueCommunal(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="risques_communaux")
     risque_type = models.ForeignKey(RisqueMajeurType, on_delete=models.PROTECT, related_name="declarations_communales")
-    etat_des_lieux = models.TextField(blank=True)
-    enjeux = models.TextField(blank=True)
+    etat_des_lieux = EncryptedTextField(blank=True)
+    enjeux = EncryptedTextField(blank=True)
     actif = models.BooleanField(default=True)
     date_maj = models.DateTimeField(auto_now=True)
 
@@ -6927,7 +6961,7 @@ class SiteSensible(EnvironmentScopedModel):
     # l'adresse. Les siennes vivent dans `donnees_personnelles`, chiffrées.
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
-    telephone = models.CharField(max_length=30, blank=True, null=True)
+    telephone = EncryptedTextField(max_length=30, blank=True, null=True)
 
     # Vrai quand la source désigne une personne physique et non une société (SIRENE : nature
     # juridique 1000, entrepreneur individuel). Ce qui change alors : l'adresse et les
@@ -7016,7 +7050,7 @@ class SuiviSiteSensible(EnvironmentScopedModel):
         max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,
     )
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     valide_par = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -7179,7 +7213,7 @@ class PersonneVulnerable(EnvironmentScopedModel):
     mode_consentement = models.CharField(
         max_length=30, choices=ModeConsentementVulnerabilite.choices,
     )
-    demandeur_consentement = models.CharField(
+    demandeur_consentement = EncryptedTextField(
         max_length=255, blank=True,
         help_text="Texte libre (pas de FK) : souvent un tiers non-institutionnel (voisin, CCAS "
                    "cité par son nom) -- une FK obligerait à créer un faux contact institutionnel.",
@@ -7262,7 +7296,7 @@ class HabilitationRegistreVulnerables(EnvironmentScopedModel):
                   "permet de désigner que des agents de la commune, du CCAS ou du CIAS.",
     )
 
-    fonction = models.CharField(
+    fonction = EncryptedTextField(
         max_length=150, blank=True,
         help_text="Fonction au titre de laquelle la personne est désignée (ex: « agent "
                   "d'accueil du CCAS ») -- trace le besoin d'en connaître de R. 121-8.",
@@ -7296,7 +7330,7 @@ class HabilitationRegistreVulnerables(EnvironmentScopedModel):
         related_name="habilitations_registre_retirees",
     )
     date_retrait = models.DateTimeField(null=True, blank=True)
-    motif_retrait = models.TextField(blank=True)
+    motif_retrait = EncryptedTextField(blank=True)
 
     class Meta:
         ordering = ["-date_octroi"]
@@ -7372,7 +7406,10 @@ class AffectationPointBenevole(EnvironmentScopedModel):
         help_text="Point de transit obligatoire à indiquer au bénévole (route fermée, contrôle d'accès...).",
     )
 
-    token_confirmation = models.CharField(max_length=64, unique=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`token_confirmation_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    token_confirmation = EncryptedTextField(max_length=64)
+    token_confirmation_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
 
     date_reponse = models.DateTimeField(null=True, blank=True)
 
@@ -7455,7 +7492,7 @@ class AuditLog(EnvironmentScopedModel):
         blank=True
     )
 
-    user_agent = models.TextField(
+    user_agent = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -7484,17 +7521,17 @@ class AuditLog(EnvironmentScopedModel):
         related_name="audit_logs"
     )
 
-    ancien_etat = models.JSONField(
+    ancien_etat = EncryptedJSONField(
         null=True,
         blank=True
     )
 
-    nouvel_etat = models.JSONField(
+    nouvel_etat = EncryptedJSONField(
         null=True,
         blank=True
     )
 
-    commentaire = models.TextField(
+    commentaire = EncryptedTextField(
         blank=True,
         null=True
     )
@@ -7542,7 +7579,7 @@ class AuditLog(EnvironmentScopedModel):
     # l'écriture pour que la case « Masquer les comptes système » reste servie par un index.
     compte_systeme = models.BooleanField(default=False)
     # Termes et filtres de recherche de la requête (sans secrets ni pagination).
-    recherche = models.JSONField(null=True, blank=True)
+    recherche = EncryptedJSONField(null=True, blank=True)
 
     class Meta:
 
@@ -7615,7 +7652,7 @@ class ContactInstitution(EnvironmentScopedModel):
         related_name="institutions"
     )
 
-    fonction = models.CharField(
+    fonction = EncryptedTextField(
         max_length=255,
         blank=True
     )
@@ -7894,7 +7931,7 @@ class FicheBenevole(EnvironmentScopedModel):
     # ── Adresse, alignée sur Habitation/Offer ────────────────────────────────────────────
     adresse = EncryptedTextField(blank=True)
     code_postal = EncryptedTextField(blank=True)
-    ville = models.CharField(max_length=255, blank=True)
+    ville = EncryptedTextField(max_length=255, blank=True)
 
     location = gis_models.PointField(srid=4326, null=True, blank=True)
     ban_id = models.CharField(
@@ -8001,12 +8038,12 @@ class QualificationMembre(EnvironmentScopedModel):
     # Qualification.validite_mois).
     date_expiration = models.DateField(null=True, blank=True)
 
-    organisme = models.CharField(
+    organisme = EncryptedTextField(
         max_length=160, blank=True, null=True,
         help_text="Organisme ayant délivré le titre.",
     )
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     # Qui l'a saisie : une qualification affirmée par le bureau n'a pas le même poids qu'une
     # ligne déclarée par l'intéressé, et il faut pouvoir le distinguer sans interroger les logs.
@@ -8028,7 +8065,7 @@ class QualificationMembre(EnvironmentScopedModel):
         help_text="Attestation, diplôme ou permis. Chiffré au repos, jamais accessible par "
                    "URL directe.",
     )
-    justificatif_nom = models.CharField(
+    justificatif_nom = EncryptedTextField(
         max_length=255, blank=True,
         help_text="Nom du fichier tel que déposé. Le nom réel est un UUID : sans cela, "
                    "l'écran afficherait « a3f2…pdf » au lieu de « PSC1-2024.pdf ».",
@@ -8053,7 +8090,7 @@ class QualificationMembre(EnvironmentScopedModel):
         related_name="qualifications_verifiees",
     )
     verifie_le = models.DateTimeField(null=True, blank=True)
-    motif_refus = models.TextField(
+    motif_refus = EncryptedTextField(
         blank=True,
         help_text="Obligatoire au refus : le membre doit savoir quoi corriger pour redéposer.",
     )
@@ -8124,10 +8161,12 @@ class InvitationAssociation(EnvironmentScopedModel):
         "Institution", on_delete=models.CASCADE, related_name="invitations",
     )
 
-    jeton = models.CharField(max_length=64, unique=True, default=_jeton_invitation,
-                             editable=False)
+    # Chiffré ; retrouvé par son empreinte exacte (`jeton_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    jeton = EncryptedTextField(max_length=64, default=_jeton_invitation, editable=False)
+    jeton_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
 
-    libelle = models.CharField(
+    libelle = EncryptedTextField(
         max_length=160, blank=True, null=True,
         help_text="À quoi sert ce lien (ex: « Forum des associations 2026 ») — permet de "
                   "savoir d'où viennent les candidatures.",
@@ -8215,15 +8254,15 @@ class CandidatureAssociation(EnvironmentScopedModel):
         related_name="candidatures_instruites",
     )
 
-    message_candidat = models.TextField(
+    message_candidat = EncryptedTextField(
         blank=True, null=True,
         help_text="Ce que la personne a écrit en demandant à rejoindre l'association.",
     )
 
-    commentaire_bureau = models.TextField(blank=True, null=True)
+    commentaire_bureau = EncryptedTextField(blank=True, null=True)
 
     # Dire pourquoi : un refus sans motif se represente à l'identique six mois plus tard.
-    motif_refus = models.TextField(blank=True, null=True)
+    motif_refus = EncryptedTextField(blank=True, null=True)
 
     date_demande = models.DateTimeField(auto_now_add=True)
     date_prise_en_charge = models.DateTimeField(null=True, blank=True)
@@ -8402,7 +8441,7 @@ class AlerteMeshSOS(EnvironmentScopedModel):
     canal_nom = models.CharField(max_length=100, null=True, blank=True)
 
     # Clé d'anti-rafale (pas une FK : l'expéditeur n'est pas toujours connu).
-    expediteur_identifiant = models.CharField(max_length=64, null=True, blank=True)
+    expediteur_identifiant = EncryptedTextField(max_length=64, null=True, blank=True)
     # Chiffrés : un message peut contenir nom, position ou blessure.
     expediteur_nom = EncryptedTextField(max_length=100, blank=True)
     contenu = EncryptedTextField()
@@ -8532,7 +8571,7 @@ class RelaisMeshCore(EnvironmentScopedModel):
 
     actif = models.BooleanField(default=True)
 
-    commentaire = models.TextField(null=True, blank=True)
+    commentaire = EncryptedTextField(null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -8935,11 +8974,11 @@ class SessionRelaisNavigateur(EnvironmentScopedModel):
     dernier_contact = models.DateTimeField(auto_now_add=True, db_index=True)
 
     fermee_le = models.DateTimeField(null=True, blank=True)
-    motif_fermeture = models.CharField(max_length=120, blank=True)
+    motif_fermeture = EncryptedTextField(max_length=120, blank=True)
 
     # Pour diagnostiquer un relais qui ne marche pas : « Chrome 141 sur Windows » explique
     # beaucoup de choses qu'un identifiant de session n'explique pas.
-    user_agent = models.CharField(max_length=255, blank=True)
+    user_agent = EncryptedTextField(max_length=255, blank=True)
 
     # Compteurs de trafic, pour voir d'un coup d'oeil si le relais fait quelque chose.
     trames_recues = models.PositiveIntegerField(default=0)
@@ -10242,12 +10281,12 @@ class RattachementNoeudRadio(EnvironmentScopedModel):
                   "posé un chez lui) et non à une collectivité.",
     )
 
-    libelle = models.CharField(
+    libelle = EncryptedTextField(
         max_length=100, blank=True,
         help_text="Comment on l'appelle sur le terrain, ex. « répéteur du château d'eau » — "
                   "le nom annoncé par le firmware ne dit pas toujours où il est.",
     )
-    note = models.TextField(blank=True)
+    note = EncryptedTextField(blank=True)
 
     # ── Comment on administre ce nœud, et la preuve qu'on le peut ──────────────
     moyen_admin = models.CharField(
@@ -10383,7 +10422,7 @@ class DemandeAccesRadio(models.Model):
 
     # Ce que le demandeur déclare : matériel détenu, rattachement, usage prévu. C'est la seule
     # information dont dispose l'instructeur, elle est donc obligatoire à la création.
-    motif = models.TextField(
+    motif = EncryptedTextField(
         help_text="Ce que le demandeur détient ou exploite comme matériel radio, et pour quoi "
                   "faire -- la seule pièce du dossier.",
     )
@@ -10406,7 +10445,7 @@ class DemandeAccesRadio(models.Model):
         help_text="SET_NULL et non PROTECT : le droit reste valide si le compte instructeur "
                   "est supprimé, contrairement à une désignation nominative.",
     )
-    commentaire_decision = models.TextField(blank=True)
+    commentaire_decision = EncryptedTextField(blank=True)
 
     date_demande = models.DateTimeField(auto_now_add=True)
     date_decision = models.DateTimeField(null=True, blank=True)
@@ -10442,7 +10481,10 @@ class JetonEnrolementSatellite(EnvironmentScopedModel):
         Institution, on_delete=models.CASCADE, related_name="jetons_enrolement_satellite",
     )
 
-    jeton = models.CharField(max_length=64, unique=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`jeton_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    jeton = EncryptedTextField(max_length=64)
+    jeton_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
 
     # Profil choisi par l'administrateur en générant le jeton (installation en une commande,
     # 20/10/2026) : le satellite n'a plus à le connaître ni à le ressaisir.
@@ -10689,15 +10731,15 @@ class EvenementSynchronisation(EnvironmentScopedModel):
     action = models.CharField(max_length=15, choices=ActionSynchronisation.choices)
 
     # Instantané des champs, construit par core/sync_outbox.py.
-    payload = models.JSONField()
+    payload = EncryptedJSONField()
 
     # modifie_le connu avant la première écriture hors ligne : détection de conflit côté central.
     # Null pour les modèles en ajout seul.
     version_de_base = models.DateTimeField(null=True, blank=True)
 
     # Auteur local réel (l'auteur apparent côté central est le compte du satellite).
-    auteur_local_email = models.CharField(max_length=255, blank=True)
-    auteur_local_nom = models.CharField(max_length=255, blank=True)
+    auteur_local_email = EncryptedEmailField(max_length=255, blank=True)
+    auteur_local_nom = EncryptedTextField(max_length=255, blank=True)
 
     cree_le = models.DateTimeField(auto_now_add=True)
 
@@ -10732,8 +10774,8 @@ class ConflitSynchronisation(EnvironmentScopedModel):
     modele = models.CharField(max_length=30, choices=ModeleSynchronisable.choices)
     objet_id = models.UUIDField()
 
-    payload_local = models.JSONField(help_text="Ce que le satellite tentait d'appliquer.")
-    etat_central_au_conflit = models.JSONField(
+    payload_local = EncryptedJSONField(help_text="Ce que le satellite tentait d'appliquer.")
+    etat_central_au_conflit = EncryptedJSONField(
         help_text="Instantané de l'état central au moment du conflit, pour comparaison.",
     )
 
@@ -10823,7 +10865,7 @@ class CampagneDisponibilite(EnvironmentScopedModel):
         related_name="campagnes_disponibilite_creees",
     )
 
-    intitule = models.CharField(
+    intitule = EncryptedTextField(
         max_length=200,
         help_text="Ce que l'association verra dans sa liste de campagnes. Jamais envoyé tel "
                    "quel au bénévole : le message a son propre texte.",
@@ -11015,7 +11057,7 @@ class CibleCampagne(EnvironmentScopedModel):
     #: Zéro est une réponse : « je ne suis pas disponible » n'est pas un silence, et les
     #: confondre ferait relancer quelqu'un qui a déjà répondu non.
     creneaux_declares = models.PositiveSmallIntegerField(default=0)
-    erreur = models.CharField(max_length=255, blank=True)
+    erreur = EncryptedTextField(max_length=255, blank=True)
 
     class Meta:
         constraints = [
@@ -11023,7 +11065,7 @@ class CibleCampagne(EnvironmentScopedModel):
                 fields=["campagne", "utilisateur"], name="uq_cible_campagne_utilisateur",
             ),
         ]
-        ordering = ["utilisateur__last_name", "utilisateur__first_name"]
+        ordering = ["utilisateur_id"]   # les noms sont chiffrés : triés en Python à l'affichage
 
     def __str__(self):
         return f"{self.utilisateur.email} — {self.campagne.intitule} ({self.etat})"
@@ -11122,7 +11164,7 @@ class CreneauEquipe(EnvironmentScopedModel):
     #: Ce que la personne fait sur ce créneau, quand ce n'est pas évident. Texte libre : les
     #: rôles opérationnels (`RoleOperationnel`) décrivent une qualité durable, pas ce qu'on
     #: tient un samedi soir.
-    role = models.CharField(max_length=100, blank=True, default="")
+    role = EncryptedTextField(max_length=100, blank=True, default="")
 
     #: Où. Un planning sans lieu laisse appeler pour demander où se présenter.
     point = models.ForeignKey(
@@ -11140,7 +11182,7 @@ class CreneauEquipe(EnvironmentScopedModel):
         related_name="creneaux_equipe",
     )
 
-    commentaire = models.TextField(blank=True, null=True)
+    commentaire = EncryptedTextField(blank=True, null=True)
 
     cree_par = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
@@ -11202,7 +11244,7 @@ class AffectationRotation(EnvironmentScopedModel):
     )
     #: Pourquoi le planificateur a retenu cette personne. Affiché tel quel : une proposition
     #: qu'on ne peut pas expliquer ne se relit pas, elle se subit.
-    motif = models.CharField(max_length=255, blank=True)
+    motif = EncryptedTextField(max_length=255, blank=True)
 
     class Meta:
         constraints = [
@@ -11457,9 +11499,9 @@ class BienSinistre(EnvironmentScopedModel):
     institution = models.ForeignKey("Institution", on_delete=models.PROTECT, null=True, blank=True, related_name="biens_sinistres",
                                     help_text="La collectivité qui a relevé le bien.")
     type_bien = models.CharField(max_length=30, choices=TypeBienSinistre.choices, default=TypeBienSinistre.VEHICULE)
-    designation = models.CharField(max_length=200, help_text="Ce que c'est, en clair : « Renault Clio grise ».")
+    designation = EncryptedTextField(max_length=200, help_text="Ce que c'est, en clair : « Renault Clio grise ».")
     identification = EncryptedTextField(blank=True, default="", help_text="Immatriculation, numéro de série, de coque…")
-    description = models.TextField(blank=True, default="")
+    description = EncryptedTextField(blank=True, default="")
     adresse = EncryptedTextField(blank=True, default="", help_text="Adresse ou repère : « devant le 14 allée des Pins ».")
     commune_code = models.CharField(max_length=10, blank=True, null=True)
     location = gis_models.PointField(srid=4326, null=True, blank=True)
@@ -11525,7 +11567,10 @@ class DemandeRapport(EnvironmentScopedModel):
     objet_id = models.UUIDField()
     email = EncryptedTextField()
     role = models.CharField(max_length=20, blank=True, default="")      # BENEFICIAIRE, PARTICIPANT, PROPRIETAIRE
-    jeton = models.CharField(max_length=64, unique=True)
+    # Chiffré ; retrouvé par son empreinte exacte (`jeton_empreinte`, remplie avant
+    # chaque enregistrement) : un jeton en clair en base vaut le lien lui-même.
+    jeton = EncryptedTextField(max_length=64)
+    jeton_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
     nb_envois = models.PositiveIntegerField(default=0)
     envois_du_jour = models.PositiveIntegerField(default=0)
     dernier_envoi = models.DateTimeField(null=True, blank=True)
@@ -11630,7 +11675,7 @@ class MouvementStock(EnvironmentScopedModel):
     lot = models.CharField(max_length=60, blank=True, default="")
     date_peremption = models.DateField(null=True, blank=True)
     prix_unitaire = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
-    motif = models.CharField(max_length=300, blank=True, default="")
+    motif = EncryptedTextField(max_length=300, blank=True, default="")
     #: Fournisseur, donateur ou personne à qui c'est remis : un nom, donc chiffré.
     tiers = EncryptedTextField(blank=True, default="")
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
@@ -11697,7 +11742,7 @@ class CommandeStock(EnvironmentScopedModel):
                               help_text="Où la commande sera rangée à réception.")
     date_commande = models.DateField(null=True, blank=True)
     livraison_prevue = models.DateField(null=True, blank=True)
-    commentaire = models.TextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
     cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -11731,7 +11776,7 @@ class FactureStock(EnvironmentScopedModel):
     echeance = models.DateField(null=True, blank=True)
     payee_le = models.DateField(null=True, blank=True)
     fichier = models.FileField(storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255, null=True, blank=True)
-    commentaire = models.TextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
     cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -11786,7 +11831,7 @@ class PretMateriel(EnvironmentScopedModel):
     constat_retour = EncryptedTextField(blank=True, default="")
     statut = models.CharField(max_length=10, choices=StatutPret.choices, default=StatutPret.EN_COURS)
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="prets_materiel")
-    conditions = models.TextField(blank=True, default="")
+    conditions = EncryptedTextField(blank=True, default="")
     cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     rendu_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -11831,9 +11876,9 @@ class PersonneFoyer(models.Model):
     foyer = models.ForeignKey(FoyerSinistre, on_delete=models.CASCADE, related_name="personnes")
     public = models.CharField(max_length=6, choices=PublicDon.choices)
     age = models.PositiveSmallIntegerField(null=True, blank=True)
-    taille_haut = models.CharField(max_length=12, blank=True, default="")
-    taille_bas = models.CharField(max_length=12, blank=True, default="")
-    pointure = models.CharField(max_length=6, blank=True, default="")
+    taille_haut = EncryptedTextField(max_length=12, blank=True, default="")
+    taille_bas = EncryptedTextField(max_length=12, blank=True, default="")
+    pointure = EncryptedTextField(max_length=6, blank=True, default="")
 
 
 class BesoinFoyer(models.Model):
@@ -11842,9 +11887,9 @@ class BesoinFoyer(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     foyer = models.ForeignKey(FoyerSinistre, on_delete=models.CASCADE, related_name="besoins")
     famille = models.CharField(max_length=30)
-    designation = models.CharField(max_length=120)
+    designation = EncryptedTextField(max_length=120)
     public = models.CharField(max_length=6, choices=PublicDon.choices, blank=True, default="")
-    taille = models.CharField(max_length=20, blank=True, default="")
+    taille = EncryptedTextField(max_length=20, blank=True, default="")
     neuf_exige = models.BooleanField(default=False)
     #: `quantite` : ce qu'il faut pour tenir dans la durée. `quantite_urgence` : ce qu'il faut pour
     #: passer les premiers jours. Trois T-shirts dépannent, ils ne couvrent pas le besoin.
@@ -11879,14 +11924,14 @@ class AppelAuxDons(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="appels_aux_dons")
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
-    titre = models.CharField(max_length=200)
-    description = models.TextField(blank=True, default="")
+    titre = EncryptedTextField(max_length=200)
+    description = EncryptedTextField(blank=True, default="")
     statut = models.CharField(max_length=10, choices=StatutAppelDons.choices, default=StatutAppelDons.BROUILLON)
     #: Où livrer : un point de regroupement de la crise, ou un dépôt de l'institution.
     point = models.ForeignKey("PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
     depot = models.ForeignKey(DepotStock, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_aux_dons")
     livraison_adresse = EncryptedTextField(blank=True, default="")
-    livraison_horaires = models.CharField(max_length=200, blank=True, default="")
+    livraison_horaires = EncryptedTextField(max_length=200, blank=True, default="")
     contact_nom = EncryptedTextField(blank=True, default="")
     contact_telephone = EncryptedTextField(blank=True, default="")
     contact_email = EncryptedTextField(blank=True, default="")
@@ -11921,10 +11966,10 @@ class BesoinDon(models.Model):
     public = models.CharField(max_length=6, choices=PublicDon.choices, blank=True, default="")
     taille = models.CharField(max_length=20, blank=True, default="")
     neuf_exige = models.BooleanField(default=False)
-    precision = models.CharField(max_length=200, blank=True, default="")
+    precision = EncryptedTextField(max_length=200, blank=True, default="")
     #: Le mot personnel d'une demande (« son vélo rose ») : une telle ligne ne se fond pas dans
     #: les autres. Lu de tous, avis public compris : jamais de nom.
-    message = models.CharField(max_length=300, blank=True, default="")
+    message = EncryptedTextField(max_length=300, blank=True, default="")
     #: Pour combien de personnes (ou de foyers, sans public) : on demande « des T-shirts L pour
     #: 14 personnes », pas « 56 T-shirts ».
     nb_beneficiaires = models.PositiveIntegerField(default=1)
@@ -11953,9 +11998,9 @@ class EnvoiDon(EnvironmentScopedModel):
     statut = models.CharField(max_length=8, choices=StatutEnvoiDon.choices, default=StatutEnvoiDon.ANNONCE)
     date_expedition = models.DateField()
     arrivee_prevue = models.DateField(null=True, blank=True)
-    transporteur = models.CharField(max_length=200, blank=True, default="")
+    transporteur = EncryptedTextField(max_length=200, blank=True, default="")
     contact = EncryptedTextField(blank=True, default="")
-    commentaire = models.TextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
     recu_le = models.DateTimeField(null=True, blank=True)
     cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -12028,9 +12073,9 @@ class DemandeTransfertStock(EnvironmentScopedModel):
     item = models.ForeignKey(MaterielCatalogue, on_delete=models.PROTECT, related_name="+")
     quantite = models.PositiveIntegerField()
     quantite_accordee = models.PositiveIntegerField(null=True, blank=True)
-    message = models.CharField(max_length=300, blank=True, default="")
+    message = EncryptedTextField(max_length=300, blank=True, default="")
     statut = models.CharField(max_length=9, choices=StatutDemandeTransfert.choices, default=StatutDemandeTransfert.DEMANDEE)
-    reponse = models.CharField(max_length=300, blank=True, default="")
+    reponse = EncryptedTextField(max_length=300, blank=True, default="")
     demande_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     decide_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -12113,7 +12158,7 @@ class AppareilStock(EnvironmentScopedModel):
     controle_libelle = models.CharField(max_length=120, blank=True, default="")
     controle_periodicite_mois = models.PositiveSmallIntegerField(null=True, blank=True)
     controle_dernier_le = models.DateField(null=True, blank=True)
-    commentaire = models.TextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -12140,9 +12185,39 @@ class ControleAppareilStock(models.Model):
     appareil = models.ForeignKey(AppareilStock, on_delete=models.CASCADE, related_name="controles")
     date = models.DateField()
     conforme = models.BooleanField(default=True)
-    commentaire = models.TextField(blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-date", "-date_creation"]
+
+
+
+# ── Jetons chiffrés : leur empreinte, avant chaque enregistrement (18/11/2026) ─────────────────
+#: Modèle -> jetons. Un lien envoyé par courriel (modifier sa demande, confirmer une alerte,
+#: rejoindre une association…) est retrouvé par l'empreinte du jeton, jamais par le jeton.
+JETONS_CHIFFRES = {
+    "Request": ("deletion_token", "edition_token"),
+    "Information": ("deletion_token", "edition_token"),
+    "Offer": ("deletion_token", "reponse_token"),
+    "NotificationAlertePCS": ("token_confirmation",),
+    "EngagementRessource": ("token_confirmation",),
+    "DemandeMobilisation": ("jeton_verification",),
+    "AffectationPointBenevole": ("token_confirmation",),
+    "InvitationAssociation": ("jeton",),
+    "JetonEnrolementSatellite": ("jeton",),
+    "DemandeRapport": ("jeton",),
+}
+
+
+def _poser_empreintes(sender, instance, **kwargs):
+    from .crypto_fields import empreinte_jeton
+    for champ in JETONS_CHIFFRES.get(sender.__name__, ()):
+        valeur = getattr(instance, champ)
+        setattr(instance, f"{champ}_empreinte", empreinte_jeton(valeur) if valeur else None)
+
+
+for _nom in JETONS_CHIFFRES:
+    models.signals.pre_save.connect(_poser_empreintes, sender=globals()[_nom],
+                                    dispatch_uid=f"empreinte-jeton-{_nom}")

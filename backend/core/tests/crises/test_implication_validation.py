@@ -3,6 +3,7 @@
 par un régulateur AUT_LOCALE de la crise (ImplicationInstitutionViewSet.valider/refuser). Les
 déclarations IMPLIQUE et les déclarations ACTEUR d'une institution AUT_LOCALE (mairie/EPCI)
 restent auto-validées comme avant ce chantier."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -76,7 +77,7 @@ class TestDeclarationActeurNonAutLocale:
         assert response.data["statut"] == "EN_ATTENTE"
         implication = ImplicationInstitution.objects.get(id=response.data["id"])
         assert implication.statut == "EN_ATTENTE"
-        assert Notification.objects.filter(utilisateur=regulateur_mairie, titre__icontains=association.nom).exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=regulateur_mairie), titre__icontains=association.nom).exists()
 
     def test_association_declarant_implique_est_validee_immediatement(self, membre_association, association, crisis):
         client = APIClient()

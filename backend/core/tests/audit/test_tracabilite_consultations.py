@@ -2,6 +2,7 @@
 fiche et retrouver qui l'a vue, quand, depuis quelle IP et comment ; filtres cumulables avec
 inclusion et exclusion ; rattachement crise / fonctionnement général ; case « Masquer les
 comptes système ». Voir core/tracabilite.py, core/main_courante.py et AuditTraceMiddleware."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import datetime
 import uuid
 
@@ -331,7 +332,7 @@ class TestVerificationDeFonctionnement:
         ligne = AuditLog.objects.filter(action__code="VERIFICATION").latest('date_action')
         assert ligne.succes and ligne.compte_systeme and ligne.objet_id == satellite.id
         assert "gmc-poste-2" in ligne.commentaire
-        assert not AuditLog.objects.filter(commentaire__icontains="api-root").exists()
+        assert not filtrer_chiffre(AuditLog.objects.filter(), commentaire__icontains="api-root").exists()
 
     def test_ancien_satellite_sur_la_racine(self):
         APIClient().get("/api/")

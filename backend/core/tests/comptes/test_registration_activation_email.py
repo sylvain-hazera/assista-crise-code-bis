@@ -4,6 +4,7 @@ laissait auparavant aucune trace — juste un print() perdu dans les logs du con
 visible depuis l'app — repéré en direct (compte créé, personne n'a jamais reçu son lien
 d'activation, aucun admin ne pouvait le savoir). Corrigé en journalisant aussi cet échec dans
 la main courante (AuditLog, action ENVOI_EMAIL, succes=False)."""
+from core.tests.outils_chiffre import filtrer_chiffre
 from unittest.mock import patch
 
 import pytest
@@ -37,9 +38,7 @@ class TestActivationEmailAutoriteLocale:
         assert "activation" in mail.outbox[0].body.lower()
 
         user = User.objects.get(email_bidx=blind_index("contact@collectivite-register-test.fr"))
-        log = AuditLog.objects.filter(
-            action__code="ENVOI_EMAIL", commentaire__icontains=user.email,
-        ).first()
+        log = filtrer_chiffre(AuditLog.objects.filter(action__code="ENVOI_EMAIL"), commentaire__icontains=user.email).first()
         assert log is not None
         assert log.succes is True
 
@@ -62,9 +61,7 @@ class TestActivationEmailAutoriteLocale:
         assert response.status_code == status.HTTP_201_CREATED
         user = User.objects.get(email_bidx=blind_index("contact@collectivite-echec-mail-test.fr"))
 
-        log = AuditLog.objects.filter(
-            action__code="ENVOI_EMAIL", commentaire__icontains=user.email,
-        ).first()
+        log = filtrer_chiffre(AuditLog.objects.filter(action__code="ENVOI_EMAIL"), commentaire__icontains=user.email).first()
         assert log is not None
         assert log.succes is False
         assert "SMTP down" in log.commentaire
@@ -124,8 +121,7 @@ class TestRenvoiDuLienActivation:
         assert reponse.status_code == status.HTTP_200_OK, reponse.data
         assert [m.to for m in mail.outbox] == [["muet@mairie-test.fr"]]
         assert "activation" in mail.outbox[0].body.lower()
-        assert AuditLog.objects.filter(
-            objet_id=cible.id, commentaire__icontains="renvoyé").exists()
+        assert filtrer_chiffre(AuditLog.objects.filter(objet_id=cible.id), commentaire__icontains="renvoyé").exists()
 
     def test_refus_si_le_compte_est_deja_active(self, create_user):
         cible = self._compte(create_user, enabled=True, username="actif@mairie-test.fr",

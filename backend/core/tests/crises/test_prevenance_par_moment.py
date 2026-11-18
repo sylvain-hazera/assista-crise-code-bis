@@ -3,6 +3,7 @@
 Demande de Sylvain : sur l'annuaire, « prévenir à l'ouverture de la crise », « prévenir à
 l'ouverture d'un centre d'accueil ». Et sa décision : « préparation de la liste et clic pour
 confirmer » — rien ne part tout seul."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from rest_framework.test import APIClient
@@ -65,21 +66,21 @@ class TestOuvertureDUnCentreDAccueil:
         _interlocuteur(mairie[0], "Préfecture")                       # à l'ouverture de la crise seulement
         reponse = self._ouvrir(mairie[1], crise)
         assert reponse.status_code == 201, reponse.data
-        (ligne,) = NotificationAlertePCS.objects.filter(motif="CENTRE")
+        (ligne,) = filtrer_chiffre(NotificationAlertePCS.objects.filter(), motif="CENTRE")
         assert (ligne.nom_snapshot, ligne.point_nom_snapshot, ligne.preselectionne) == ("Croix-Rouge locale", "Gymnase municipal", True)
         assert ligne.statut == StatutNotificationPCS.EN_ATTENTE       # préparée, pas envoyée
 
     def test_un_point_qui_n_est_pas_un_centre_d_accueil_ne_prepare_rien(self, mairie, crise):
         _interlocuteur(mairie[0], "Croix-Rouge locale", centre=True)
         assert self._ouvrir(mairie[1], crise, code="CARBURANT", nom="Station").status_code == 201
-        assert not NotificationAlertePCS.objects.filter(motif="CENTRE").exists()
+        assert not filtrer_chiffre(NotificationAlertePCS.objects.filter(), motif="CENTRE").exists()
 
     def test_la_meme_ouverture_ne_prepare_pas_deux_fois_la_meme_ligne(self, mairie, crise):
         _interlocuteur(mairie[0], "Croix-Rouge locale", centre=True)
         self._ouvrir(mairie[1], crise)
         point = PointOperationnel.objects.get()
         assert preparer_checklist_centre(point, mairie[0]) == 0
-        assert NotificationAlertePCS.objects.filter(motif="CENTRE").count() == 1
+        assert filtrer_chiffre(NotificationAlertePCS.objects.filter(), motif="CENTRE").count() == 1
 
     def test_la_liste_dit_pourquoi_chaque_ligne_est_la(self, mairie, crise):
         _interlocuteur(mairie[0], "Croix-Rouge locale", centre=True)

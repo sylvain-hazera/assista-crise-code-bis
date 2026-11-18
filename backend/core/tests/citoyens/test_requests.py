@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.core import mail
 from django.urls import reverse
@@ -101,7 +102,7 @@ class TestAssignRequestToTeam:
         )
 
         assert response.data["regulateurs_notifies"] == 1
-        assert Notification.objects.filter(utilisateur=regulateur, titre__icontains="affectée").exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=regulateur), titre__icontains="affectée").exists()
 
     def test_reassigning_same_team_is_noop(self, local_authority_client, request_obj, team):
         client, _ = local_authority_client

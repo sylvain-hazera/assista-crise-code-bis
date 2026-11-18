@@ -8,6 +8,7 @@
 5. mutualisation : le canal de crise est celui de la CRISE, partagé par les communes impliquées,
    et chaque passerelle locale l'émet de son côté.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from django.utils import timezone
@@ -242,8 +243,7 @@ class TestRienNeRemonteVersLesAutresPasserelles:
             contact_node_num=0xBEEF, environment="PROD")
 
         assert _file(_client_pont(), gw_voisine) == []
-        assert not MessageCanalMeshtastic.objects.filter(
-            direction=DirectionMessageMesh.SORTANT, contenu__contains="Entendu").exists()
+        assert not filtrer_chiffre(MessageCanalMeshtastic.objects.filter(direction=DirectionMessageMesh.SORTANT), contenu__contains="Entendu").exists()
 
 
 class TestPlanDeCanaux:

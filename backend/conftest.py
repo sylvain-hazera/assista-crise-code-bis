@@ -95,3 +95,38 @@ def information_type(db):
         type='Info utile',
         description='Information utile'
     )
+
+
+# ── Garde-fou : aucun tri SQL sur une colonne chiffrée ───────────────────────────────────────
+# Le tri porterait sur le texte chiffré, donc dans un ordre aléatoire, sans erreur. Les filtres
+# et recherches sont gardés par EncryptedTextField.get_lookup ; le tri ne passe pas par là,
+# d'où ce contrôle au moment où la requête est compilée (essais seulement).
+def _colonnes(expression):
+    from django.db.models.expressions import Col
+    if isinstance(expression, Col):
+        yield expression
+    for enfant in getattr(expression, "get_source_expressions", lambda: [])():
+        if enfant is not None:
+            yield from _colonnes(enfant)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _pas_de_tri_sur_colonne_chiffree():
+    from django.db.models.sql.compiler import SQLCompiler
+    from core.crypto_fields import EncryptedTextField, RequeteSurChampChiffre
+
+    origine = SQLCompiler.get_order_by
+
+    def get_order_by(self):
+        resultat = origine(self)
+        for expression, _ in resultat:
+            for colonne in _colonnes(expression):
+                if isinstance(colonne.target, EncryptedTextField):
+                    raise RequeteSurChampChiffre(
+                        f"Tri SQL sur la colonne chiffrée {colonne.target.model.__name__}.{colonne.target.name} : "
+                        "trier en Python après déchiffrement.")
+        return resultat
+
+    SQLCompiler.get_order_by = get_order_by
+    yield
+    SQLCompiler.get_order_by = origine

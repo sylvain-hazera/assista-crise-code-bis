@@ -1,6 +1,7 @@
 """Le document du plan communal de sauvegarde : construit depuis ce qui existe déjà, il reprend
 les textes de la commune tels quels, dit ce qui manque, et ne porte jamais le registre des
 personnes vulnérables."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import datetime
 
 import pytest
@@ -375,7 +376,7 @@ class TestDicrim:
 
         assert reponse.status_code == 200 and reponse.content.startswith(b"%PDF")
         assert "dicrim-42207" in reponse["Content-Disposition"]
-        assert AuditLog.objects.filter(objet_type="DossierPCS", action__code="EXPORT", commentaire__contains="DICRIM").exists()
+        assert filtrer_chiffre(AuditLog.objects.filter(objet_type="DossierPCS", action__code="EXPORT"), commentaire__contains="DICRIM").exists()
 
 
 @pytest.mark.django_db

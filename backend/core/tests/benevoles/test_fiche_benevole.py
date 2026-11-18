@@ -13,6 +13,7 @@ Les valeurs testées sont celles du vrai export d'adhésion des Casques Jaunes :
 texte (`['2 - Régulière (env. 10 jours par an)']`), dates en JJ-MM-AAAA, « NO » pour un
 booléen, et des virgules remplacées par des barres verticales.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 from unittest.mock import patch
 
 import pytest
@@ -153,7 +154,7 @@ class TestFicheCreeeParLImport:
         assert "je veux juste aider" in fiche.message
         assert fiche.diplome_premier_secours is False
         # Et l'utilisateur garde ce qui lui revient.
-        u = User.objects.get(username=fiche.utilisateur.username)
+        u = filtrer_chiffre(User.objects.filter(), username=fiche.utilisateur.username).get()
         assert u.first_name == "Virginie" and u.last_name == "du Parc Locmaria"
 
     def test_le_geocodage_pose_le_secteur_complet(self, requete, asso, gironde):

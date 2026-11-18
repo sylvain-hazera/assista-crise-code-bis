@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -194,7 +195,7 @@ class TestCreationDemandeMobilisation:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert Notification.objects.filter(utilisateur=cible, titre='Demande de mobilisation').exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=cible), titre='Demande de mobilisation').exists()
 
     def test_requires_institutional_actor(self, api_client, crisis, institution_a):
         response = api_client.post(

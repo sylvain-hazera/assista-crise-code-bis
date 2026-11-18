@@ -106,9 +106,11 @@ class TestLesFiltresNeCassentPas:
         CanalMeshCore.objects.create(
             nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,
         )
-        assert not CanalMeshCore.objects.filter(
-            cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT
-        ).exists()
+        # Depuis le 18/11/2026, le piège ne se referme plus en silence : la requête est arrêtée
+        # (sous pytest ; en service, elle est signalée dans le journal).
+        from core.crypto_fields import RequeteSurChampChiffre
+        with pytest.raises(RequeteSurChampChiffre):
+            CanalMeshCore.objects.filter(cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT).exists()
 
     def test_deux_canaux_de_meme_cle_ont_deux_chiffres_differents(self):
         a = CanalMeshCore.objects.create(nom='A', cle_partagee_hex='ff' * 16)

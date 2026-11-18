@@ -714,7 +714,9 @@ def importer_interlocuteurs_pcs(request, institution, lignes, mapping):
 
         existant = None
         if organisme:
-            existant = InterlocuteurAlertePCS.objects.filter(nom__iexact=nom, organisme__iexact=organisme).first()
+            # Le nom est chiffré : comparé en Python (le filtre SQL ne trouvait jamais rien).
+            existant = next((i for i in InterlocuteurAlertePCS.objects.filter(organisme__iexact=organisme)
+                             if (i.nom or "").strip().lower() == nom.strip().lower()), None)
         if existant:
             existant.institutions.add(institution)
             rattaches.append(nom)

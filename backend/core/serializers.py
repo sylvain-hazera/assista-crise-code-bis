@@ -703,9 +703,8 @@ class UserSerializer(serializers.ModelSerializer):
             # distingue du précédent que pour un compte créé à la main avec un identifiant
             # choisi. On le signale quand même sur `email` : c'est le seul champ que
             # l'inscription expose, et laisser remonter une IntegrityError serait un 500.
-            username = attrs.get('username')
-            if username and User.objects.filter(username=username).exists():
-                raise serializers.ValidationError({'email': deja_pris})
+            # (L'identifiant est chiffré et n'est plus unique depuis le 18/11/2026 : seule
+            # l'adresse, par son index aveugle, dit si le compte existe.)
 
             if user_type == UserRole.ADMINISTRATOR:
                 # ADMIN ne représente pas une institution : pas de domaine email à prouver. Seul un

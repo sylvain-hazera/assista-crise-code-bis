@@ -1,5 +1,6 @@
 """Standard de crise (une fiche par appel) et point de situation (les chiffres déjà tenus,
 rassemblés) — 17/11/2026."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.db import connection
 from django.urls import reverse
@@ -477,7 +478,7 @@ class TestLeChefRelitEtValide:
         from core.audit import audit_log
         from core.models import AuditLog, User
         _, clients = equipe
-        membre = User.objects.get(username="membre@std.fr")
+        membre = filtrer_chiffre(User.objects.filter(), username="membre@std.fr").get()
         from django.test import RequestFactory
         requete = RequestFactory().post("/api/token/")
         requete.user = membre

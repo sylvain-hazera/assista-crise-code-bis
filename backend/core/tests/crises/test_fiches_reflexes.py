@@ -1,5 +1,6 @@
 """Fiches réflexes types : celles des fonctions du poste de commandement, et celles des moyens
 d'alerte (18/11/2026)."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from rest_framework.test import APIClient
 
@@ -102,14 +103,14 @@ class TestReprendreDansLePlan:
         from core.models import FonctionPCS
         reponse = mairie.post("/api/pcs-fiches-conseil/", {"fiche": "accueil-regroupement"}, format="json")
         assert reponse.status_code == 201 and reponse.data["fonction"] == "SOUTIEN"
-        assert "Ouvre le centre d'accueil" in FonctionPCS.objects.get(fonction="SOUTIEN").consignes
+        assert "Ouvre le centre d'accueil" in filtrer_chiffre(FonctionPCS.objects.filter(), fonction="SOUTIEN").get().consignes
 
     def test_on_ne_remplace_pas_en_silence_une_fiche_ecrite_par_la_commune(self, mairie):
         from core.models import FonctionPCS
         mairie.post("/api/pcs-fonctions/", {"fonction": "SOUTIEN", "consignes": "Notre fiche à nous."}, format="json")
         reponse = mairie.post("/api/pcs-fiches-conseil/", {"fiche": "accueil-regroupement"}, format="json")
         assert reponse.status_code == 409 and reponse.data["deja_ecrite"] is True
-        assert FonctionPCS.objects.get(fonction="SOUTIEN").consignes == "Notre fiche à nous."
+        assert filtrer_chiffre(FonctionPCS.objects.filter(), fonction="SOUTIEN").get().consignes == "Notre fiche à nous."
         assert mairie.post("/api/pcs-fiches-conseil/", {"fiche": "accueil-regroupement", "remplacer": True}, format="json").status_code == 201
 
     def test_une_fiche_sans_fonction_demande_laquelle(self, mairie):

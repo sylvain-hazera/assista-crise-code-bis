@@ -15,6 +15,7 @@ Deux choses sont vérifiées ici :
 2. **Les deux invitations qui manquaient** : une institution, et un contact dans l'annuaire
    d'une institution.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 import io
 
 import pytest
@@ -215,7 +216,7 @@ class TestInvitationDInstitution:
 
         assert response.status_code == 400
         assert "inconnu" in response.data["error"]
-        assert not InstitutionType.objects.filter(libelle="Confrérie du cassoulet").exists()
+        assert not filtrer_chiffre(InstitutionType.objects.filter(), libelle="Confrérie du cassoulet").exists()
 
     def test_refuse_une_institution_qui_existe_deja(self, agent, mairie):
         """Il n'y a personne à inviter : c'est un CONTACT qu'il faut inviter dans cette

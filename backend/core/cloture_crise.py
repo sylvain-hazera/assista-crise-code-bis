@@ -29,6 +29,7 @@ import hashlib
 import logging
 import secrets
 
+from .crypto_fields import empreinte_jeton
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils import timezone
@@ -213,7 +214,7 @@ def _objet_de(demande):
 
 def decrire(jeton: str) -> dict:
     """Ce que la page du lien affiche avant l'envoi. Lève `ClotureImpossible` si le lien est mort."""
-    demande = DemandeRapport.objects.filter(jeton=jeton).select_related("crise").first()
+    demande = DemandeRapport.objects.filter(jeton_empreinte=empreinte_jeton(jeton)).select_related("crise").first()
     if demande is None or demande.crise.end_date is not None:
         raise ClotureImpossible("Ce lien n'est plus valable : la crise est close, ou le lien n'existe pas.")
     objet = _objet_de(demande)
@@ -229,7 +230,7 @@ def remettre(jeton: str, request) -> dict:
     from .audit import send_mail_with_attachment_logged
 
     description = decrire(jeton)
-    demande = DemandeRapport.objects.select_related("crise").get(jeton=jeton)
+    demande = DemandeRapport.objects.select_related("crise").get(jeton_empreinte=empreinte_jeton(jeton))
     aujourd_hui = timezone.localdate()
     if demande.dernier_envoi and timezone.localtime(demande.dernier_envoi).date() == aujourd_hui \
             and demande.envois_du_jour >= ENVOIS_MAX_PAR_JOUR:

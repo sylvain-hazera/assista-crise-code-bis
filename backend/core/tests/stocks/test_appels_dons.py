@@ -1,5 +1,6 @@
 """Appels aux dons : un besoin précis, à la pièce près, que les engagements des autres
 institutions ferment ligne par ligne — pour qu'on ne collecte pas dix fois le chauffe-biberon."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import datetime
 from decimal import Decimal
 
@@ -180,7 +181,7 @@ class TestEnvoiReceptionRemise:
         assert recu.status_code == 200 and recu.data["entre_en_stock"] is True and recu.data["depot_nom"] == "Local"
         ligne = _ligne(recu, "T-shirt")
         assert ligne["quantite_recue"] == 3 and ligne["reste"] == 1 and ligne["engagements"][0]["statut"] == "RECU"
-        article = ArticleStock.objects.get(designation="T-shirt, homme, L")
+        article = filtrer_chiffre(ArticleStock.objects.filter(), designation="T-shirt, homme, L").get()
         assert stocks.quantite_en_stock(article, monde["local"]) == Decimal("3")
         assert article.mouvements.get().tiers == "Secours de Lyon"
         assert monde["client"].post(url + "recevoir-envoi/", {"envoi": envoi}, format="json").status_code == 400  # déjà compté
@@ -194,7 +195,7 @@ class TestEnvoiReceptionRemise:
         # sans passer sous ce qui est déjà reçu.
         assert next(b for b in remis.data["besoins"] if b["designation"] == "T-shirt")["etat"] == "DEPANNE"
         monde["client"].post(url + "reprendre-foyers/")
-        assert BesoinDon.objects.get(designation="T-shirt").quantite_voulue == 3
+        assert filtrer_chiffre(BesoinDon.objects.filter(), designation="T-shirt").get().quantite_voulue == 3
 
     def test_lignes_a_la_main_cloture_et_suppression(self, monde):
         _foyer(monde)
@@ -328,7 +329,7 @@ class TestCourrielsEtNotifications:
 
         engage = monde["lyon"].post(url + "engager/", {"besoin": tshirt, "quantite": 4}, format="json")
         # L'auteur de l'appel et son adresse de contact sont prévenus de l'engagement.
-        assert Notification.objects.filter(utilisateur__username="magasinier@test.fr", titre__contains="Secours de Lyon s'engage").exists()
+        assert filtrer_chiffre(filtrer_chiffre(Notification.objects.filter(), utilisateur__username="magasinier@test.fr"), titre__contains="Secours de Lyon s'engage").exists()
         destinataires = {a for m in mailoutbox for a in m.to}
         assert {"dons@mairie.test", "magasinier@test.fr"} <= destinataires and "lyon-dons@test.fr" not in destinataires
         assert "4 pièce(s)" in mailoutbox[-1].body and "/admin/appels-dons" in mailoutbox[-1].body
@@ -341,7 +342,7 @@ class TestCourrielsEtNotifications:
         mailoutbox.clear()
         monde["client"].post(url + "recevoir-envoi/", {"envoi": annonce.data["envois"][0]["id"], "comptes": {engagement: 3}}, format="json")
         # Le donateur apprend que c'est arrivé, et l'écart.
-        assert Notification.objects.filter(utilisateur__username="lyon-dons@test.fr", titre__contains="est bien arrivé").exists()
+        assert filtrer_chiffre(filtrer_chiffre(Notification.objects.filter(), utilisateur__username="lyon-dons@test.fr"), titre__contains="est bien arrivé").exists()
         assert mailoutbox[-1].to == ["lyon-dons@test.fr"] and "(annoncé : 4)" in mailoutbox[-1].body
 
     def test_le_rappel_part_une_fois_puis_lengagement_en_retard_est_relache(self, monde, mailoutbox):
@@ -420,8 +421,8 @@ class TestReseauPrevenu:
 
         Commune.objects.update_or_create(code="69123", defaults={"nom": "Bordeaux (essai)", "centre_latitude": 44.84, "centre_longitude": -0.58})
         Commune.objects.update_or_create(code="59350", defaults={"nom": "Lille", "centre_latitude": 50.63, "centre_longitude": 3.06})
-        ContactInstitution.objects.filter(utilisateur__username="lyon-dons@test.fr").update(contact_principal=True)
-        ContactInstitution.objects.filter(utilisateur__username="lille-dons@test.fr").update(membre_bureau=True)
+        filtrer_chiffre(ContactInstitution.objects.filter(), utilisateur__username="lyon-dons@test.fr").update(contact_principal=True)
+        filtrer_chiffre(ContactInstitution.objects.filter(), utilisateur__username="lille-dons@test.fr").update(membre_bureau=True)
         _foyer(monde)
         url = _appel(monde, ouvrir=False)
         monde["client"].patch(url, {"portee_km": 100}, format="json")
@@ -438,8 +439,8 @@ class TestReseauPrevenu:
         assert premier == {"institutions": 1, "personnes": 1} and encore["institutions"] == 0
         assert [m.to for m in mailoutbox] == [["lyon-dons@test.fr"]]                                   # à portée ; Lille est trop loin
         assert "dans un rayon de 100 km" in mailoutbox[0].body and "km de vous" in mailoutbox[0].body
-        assert Notification.objects.filter(utilisateur__username="lyon-dons@test.fr", titre__contains="Appel aux dons de Réserve des essais").exists()
-        assert not Notification.objects.filter(utilisateur__username="magasinier@test.fr", titre__contains="Appel aux dons de").exists()
+        assert filtrer_chiffre(filtrer_chiffre(Notification.objects.filter(), utilisateur__username="lyon-dons@test.fr"), titre__contains="Appel aux dons de Réserve des essais").exists()
+        assert not filtrer_chiffre(filtrer_chiffre(Notification.objects.filter(), utilisateur__username="magasinier@test.fr"), titre__contains="Appel aux dons de").exists()
 
         # On élargit à toute la France : seule Lille, nouvelle venue, est prévenue.
         monde["client"].patch(url, {"portee_km": None}, format="json")

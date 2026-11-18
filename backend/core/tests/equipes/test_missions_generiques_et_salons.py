@@ -10,6 +10,7 @@
 
 Aucun test ne parle au serveur Matrix : seules les lignes côté Django sont en jeu.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 from io import StringIO
 
 import pytest
@@ -210,8 +211,8 @@ class TestSalonDeMissionPourLePont:
 
     def test_une_mission_terminee_n_est_plus_servie_au_pont(self, cadre, equipe):
         Mission.objects.create(titre="Close", environment="PROD", statut=Mission.Statut.EN_COURS).equipes.add(equipe)
-        assert SalonMatrixMission.objects.filter(mission__titre="Close").exists()
-        Mission.objects.filter(titre="Close").update(statut=Mission.Statut.TERMINEE)
+        assert filtrer_chiffre(SalonMatrixMission.objects.filter(), mission__titre="Close").exists()
+        filtrer_chiffre(Mission.objects.filter(), titre="Close").update(statut=Mission.Statut.TERMINEE)
 
         salons = _client(cadre).get(reverse("salonmatrixmission-list"), **PROD).data
         titres = [s["mission_titre"] for s in (salons["results"] if isinstance(salons, dict) else salons)]

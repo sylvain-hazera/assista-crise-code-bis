@@ -5,12 +5,14 @@ Périmètre, clés et index aveugles : DOCUMENTATION.md, § 10.1.
 import hashlib
 import hmac
 import json
+import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import FieldError, ImproperlyConfigured
 from django.core.validators import EmailValidator
 from django.db import models
+from django.db.models.lookups import Exact, In
 
 _fernet_instance = None
 
@@ -41,9 +43,68 @@ def blind_index(valeur: str) -> str:
     ).hexdigest()
 
 
+def empreinte_jeton(valeur: str) -> str:
+    """HMAC EXACT d'un jeton (lien de modification, de confirmation…), sans normalisation :
+    contrairement à `blind_index`, la casse compte, un jeton n'est pas une adresse."""
+    if not settings.FIELD_BLIND_INDEX_KEY:
+        raise ImproperlyConfigured("FIELD_BLIND_INDEX_KEY n'est pas configurée.")
+    return hmac.new(settings.FIELD_BLIND_INDEX_KEY.encode(), (valeur or "").encode(), hashlib.sha256).hexdigest()
+
+
+class RequeteSurChampChiffre(FieldError):
+    """Un filtre, une recherche ou un tri SQL sur une colonne chiffrée : Fernet n'étant pas
+    déterministe, la base ne compare que des textes chiffrés, et la requête rendrait un
+    résultat faux SANS erreur. Chercher par l'index aveugle (`*_bidx`), ou filtrer en Python
+    après déchiffrement (décision du 06/10/2026)."""
+
+
+def _signaler(message):
+    """Sous pytest : une erreur, pour que la suite trouve chaque requête fautive. En service :
+    une trace dans le journal, la requête continue — mieux vaut un résultat incomplet qu'une
+    page en erreur au milieu d'une crise."""
+    import sys
+    if "pytest" in sys.modules:
+        raise RequeteSurChampChiffre(message)
+    logging.getLogger("core.crypto_fields").error(message)
+
+
+class _ExactSurChiffre(Exact):
+    """Seule comparaison possible : à la valeur vide (« champ non rempli »)."""
+
+    def __init__(self, lhs, rhs):
+        if rhs not in ("", None):
+            _signaler(f"Comparaison à une valeur sur la colonne chiffrée {getattr(lhs, 'target', lhs)}.")
+        super().__init__(lhs, rhs)
+
+
+class _InSurChiffre(In):
+    def __init__(self, lhs, rhs):
+        try:
+            vide = all(v in ("", None) for v in rhs)
+        except TypeError:          # une sous-requête
+            vide = False
+        if not vide:
+            _signaler(f"Recherche « parmi » sur la colonne chiffrée {getattr(lhs, 'target', lhs)}.")
+        super().__init__(lhs, rhs)
+
+
 class EncryptedTextField(models.TextField):
     """Texte chiffré Fernet dans une colonne TEXT ; la validation du texte en clair reste
     faite par le serializer."""
+
+    def get_lookup(self, lookup_name):
+        if lookup_name == "isnull":
+            return super().get_lookup(lookup_name)
+        if lookup_name == "exact":
+            return _ExactSurChiffre
+        if lookup_name == "in":
+            return _InSurChiffre
+        _signaler(f"Recherche « {lookup_name} » impossible sur la colonne chiffrée {self.model.__name__}.{self.name}.")
+        return super().get_lookup(lookup_name)
+
+    def get_transform(self, lookup_name):
+        _signaler(f"Transformation « {lookup_name} » impossible sur la colonne chiffrée {self.model.__name__}.{self.name}.")
+        return super().get_transform(lookup_name)
 
     def get_prep_value(self, value):
         if value is None or value == "":

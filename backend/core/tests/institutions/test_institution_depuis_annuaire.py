@@ -15,6 +15,7 @@ Les lectures qui gouvernent l'accès aux fonctions PCS normalisent la casse, mai
 
 Une commune n'a qu'une mairie : c'est le couple (commune, type) qui l'identifie, pas son nom.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 
 from core.institution_attachment import find_or_create_institution_from_annuaire
@@ -173,5 +174,4 @@ class TestTracabilite:
         find_or_create_institution_from_annuaire(
             candidat, _annuaire(nom="Mairie - Quimper"), request=requete)
 
-        assert not AuditLog.objects.filter(
-            objet_type="Institution", commentaire__icontains="aucune seconde").exists()
+        assert not filtrer_chiffre(AuditLog.objects.filter(objet_type="Institution"), commentaire__icontains="aucune seconde").exists()

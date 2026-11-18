@@ -1,5 +1,6 @@
 """L'alerte de la commune à ses habitants : elle ne part qu'à ceux qui l'ont demandée ou que la
 crise touche, par les canaux retenus, et elle dit ce qu'elle est devenue."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from rest_framework.test import APIClient
@@ -325,7 +326,7 @@ class TestMoyensDeTerrain:
         client.force_authenticate(user=voisin)
         reponse = client.post(URL, {"titre": "Essai", "message": "Texte", "canaux": ["MATRIX"], "terrain": [moyens["SIRENE"]["id"]]}, format="json")
         assert reponse.status_code == 201 and reponse.data["terrain"] == []
-        assert not AuditLog.objects.filter(objet_type="MoyenAlertePCS", commentaire__contains="déclenchement").exists()
+        assert not filtrer_chiffre(AuditLog.objects.filter(objet_type="MoyenAlertePCS"), commentaire__contains="déclenchement").exists()
 
     def test_sans_canal_ni_moyen_rien_ne_part(self, agent):
         assert agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": []}, format="json").status_code == 400

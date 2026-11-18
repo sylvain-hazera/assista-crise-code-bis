@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -219,7 +220,7 @@ class TestChangerInstitutionResponsable:
         client, _ = responsable_client
         client.patch(reverse('team-detail', args=[team.id]), {'institution': str(institution_tierce.id)}, format='json')
 
-        assert AuditLog.objects.filter(objet_type='Team', objet_id=team.id, commentaire__icontains='Institution responsable').exists()
+        assert filtrer_chiffre(AuditLog.objects.filter(objet_type='Team', objet_id=team.id), commentaire__icontains='Institution responsable').exists()
 
     def test_unrelated_patch_does_not_require_institution_check(self, responsable_client, team):
         # Changer la couleur ne touche pas à l'institution : ne doit pas exiger d'appartenance.

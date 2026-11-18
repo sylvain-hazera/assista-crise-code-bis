@@ -1,5 +1,6 @@
 """Second volet des stocks : denrées (froid, préparation), commandes et factures, prêts dans les
 deux sens avec fiche d'état, et don qui change de mains entre deux points."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import datetime
 from decimal import Decimal
 
@@ -301,7 +302,7 @@ class TestAlertesPoussees:
         assert premier == {"institution": "Réserve des essais", "alertes": 2, "envoye": True, "destinataires": 1}
         assert second["envoye"] is False and len(mailoutbox) == 1 and mailoutbox[0].to == ["magasinier@test.fr"]
         assert "Seuil franchi — Couverture de survie" in mailoutbox[0].body and "Prêt en retard — Remorque, prêté à M. Bernard" in mailoutbox[0].body
-        assert Notification.objects.filter(utilisateur=asso["agent"], titre__contains="2 point(s) à voir").exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=asso["agent"]), titre__contains="2 point(s) à voir").exists()
         # Le stock remonte : le relevé change, il repart.
         _mouvement(asso, "ENTREE", 50)
         assert alertes_stock.envoyer(asso["institution"], Environment.PROD)["alertes"] == 1 and len(mailoutbox) == 2
@@ -342,7 +343,7 @@ class TestReservations:
 
         servie = asso["client"].post(f"/api/stocks/reservations/{reserve.data['id']}/servir/")
         assert servie.data["statut"] == "SERVIE" and stocks.quantite_en_stock(asso["couvertures"]) == Decimal("0")
-        assert MouvementStock.objects.get(motif="Réservation servie").tiers == "Mme Durand, rue du Gier"    # chiffré : se lit, ne se filtre pas
+        assert filtrer_chiffre(MouvementStock.objects.filter(), motif="Réservation servie").get().tiers == "Mme Durand, rue du Gier"    # chiffré : se lit, ne se filtre pas
         assert asso["client"].post(f"/api/stocks/reservations/{reserve.data['id']}/liberer/").status_code == 400
 
     def test_on_sait_ou_on_en_a_et_liberer_rend_le_stock(self, asso):

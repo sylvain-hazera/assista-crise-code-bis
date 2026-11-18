@@ -3,6 +3,7 @@ core/sync_outbox.py (peuplement de la file, actif seulement si
 settings.INSTANCE_SATELLITE_LOCALE) et SatelliteViewSet.synchroniser (application côté
 central, upsert pour les modèles append-only, détection de conflit pour les modèles mutables
 Dossier/Mission via `modifie_le`)."""
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.apps import apps as django_apps
 from django.contrib.gis.geos import Point
@@ -149,7 +150,7 @@ class TestEndpointSynchroniser:
         response = satellite_client.post(self._url(satellite), {"evenements": [evenement]}, format='json')
         assert response.status_code == status.HTTP_200_OK
         assert response.data["resultats"][0]["resultat"] == "applique"
-        assert DossierCommentaire.objects.filter(id=commentaire_id, commentaire="vu depuis le terrain").exists()
+        assert filtrer_chiffre(DossierCommentaire.objects.filter(id=commentaire_id), commentaire="vu depuis le terrain").exists()
 
         # Repoussé une seconde fois (le satellite n'a pas encore reçu l'accusé de réception) :
         # jamais recréé/écrasé, jamais une erreur non plus.
@@ -615,5 +616,5 @@ class TestConstruireEtAppliquerPayloadPull:
         monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.get", fake_get)
         call_command("synchroniser_entrant")
 
-        assert Request.objects.filter(id=demande_id, title="T").exists()
+        assert filtrer_chiffre(Request.objects.filter(id=demande_id), title="T").exists()
         assert RequestType.objects.filter(type="Aide urgente Commande").exists()

@@ -3,6 +3,7 @@ mandat des institutions privées sur une crise (InstitutionType.est_public), syn
 équipe<->crise via une mission, cohérence Dossier.crise/Dossier.mission.crise, et notifications
 manquantes (verdict d'implication, changement de statut de dossier, personne retrouvée)."""
 
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -113,7 +114,7 @@ class TestMandatInstitutionActeur:
         response = client_reg.post(reverse('implicationinstitution-valider', args=[implication.id]))
 
         assert response.status_code == status.HTTP_200_OK
-        assert Notification.objects.filter(utilisateur=contact, titre__icontains="validée").exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=contact), titre__icontains="validée").exists()
 
     def test_refuser_notifie_les_contacts_institution(self, create_user, association, crisis, regulateur_client):
         client_reg, _ = regulateur_client
@@ -127,7 +128,7 @@ class TestMandatInstitutionActeur:
         response = client_reg.post(reverse('implicationinstitution-refuser', args=[implication.id]))
 
         assert response.status_code == status.HTTP_200_OK
-        assert Notification.objects.filter(utilisateur=contact, titre__icontains="refusée").exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=contact), titre__icontains="refusée").exists()
 
 
 @pytest.mark.django_db

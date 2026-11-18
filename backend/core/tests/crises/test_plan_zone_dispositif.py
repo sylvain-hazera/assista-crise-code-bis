@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.contrib.gis.geos import Point
 from django.core import mail
@@ -282,7 +283,7 @@ class TestPlanActiverNotifications:
 
         assert response.status_code == status.HTTP_200_OK
         for user in (leader, regulateur):
-            assert Notification.objects.filter(utilisateur=user, crise=crise, titre__icontains='Plan activé').exists()
+            assert filtrer_chiffre(Notification.objects.filter(utilisateur=user, crise=crise), titre__icontains='Plan activé').exists()
             assert any(user.email in m.to for m in mail.outbox)
 
     def test_notifies_point_responsable_and_responsables(self, client_a, institution_a, point_type, create_user):
@@ -302,7 +303,7 @@ class TestPlanActiverNotifications:
 
         assert response.status_code == status.HTTP_200_OK
         for user in (responsable, autre_responsable):
-            assert Notification.objects.filter(utilisateur=user, crise=crise, titre__icontains='Plan activé').exists()
+            assert filtrer_chiffre(Notification.objects.filter(utilisateur=user, crise=crise), titre__icontains='Plan activé').exists()
             assert any(user.email in m.to for m in mail.outbox)
 
     def test_no_notification_for_teams_or_points_not_activated(self, client_a, institution_a, create_user):
@@ -467,4 +468,4 @@ class TestPlanActiverInstancieMissions:
 
         assert len(first.data['dossiers_crees']) == 1
         assert second.data['dossiers_crees'] == []
-        assert Dossier.objects.filter(crise=crise, titre='Mission répétée').count() == 1
+        assert filtrer_chiffre(Dossier.objects.filter(crise=crise), titre='Mission répétée').count() == 1

@@ -22,6 +22,7 @@ Ce que ces tests verrouillent :
 5. **Le moteur à la journée, lui, était grand ouvert** : `objects.all()` sans permission. On
    pouvait déclarer un inconnu indisponible la veille d'une garde. Corrigé, et vérifié ici.
 """
+from core.tests.outils_chiffre import filtrer_chiffre
 import datetime
 
 import pytest
@@ -249,7 +250,7 @@ class TestLaRessourceEstInterne:
             institution=asso, request=requete, inviter=False, geolocaliser=False,
         )
 
-        nouveau = User.objects.get(username="nouveau@dispo.test")
+        nouveau = filtrer_chiffre(User.objects.filter(), username="nouveau@dispo.test").get()
         offre = Offer.objects.get(author=nouveau)
         assert offre.visibilite == VisibiliteOffre.INTERNE
         assert offre.institution == asso

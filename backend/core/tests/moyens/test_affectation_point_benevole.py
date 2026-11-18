@@ -1,3 +1,4 @@
+from core.tests.outils_chiffre import filtrer_chiffre
 import pytest
 from django.core import mail
 from django.urls import reverse
@@ -259,7 +260,7 @@ class TestConfirmationLien:
         affectation.refresh_from_db()
         assert affectation.statut == "EN_VALIDATION"
         assert affectation.date_reponse is not None
-        assert Notification.objects.filter(utilisateur=responsable, titre="Créneau bénévole à valider").exists()
+        assert filtrer_chiffre(Notification.objects.filter(utilisateur=responsable), titre="Créneau bénévole à valider").exists()
         assert any(responsable.email in m.to for m in mail.outbox)
 
     def test_confirm_non_sets_decline_and_removes_creneaux(self, point, offer, create_user):

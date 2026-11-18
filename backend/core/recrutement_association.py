@@ -18,6 +18,7 @@ Deux principes qui expliquent la forme de ce module :
 """
 import logging
 
+from .crypto_fields import empreinte_jeton
 from django.db import transaction
 from django.utils import timezone
 
@@ -50,7 +51,7 @@ def candidature_depuis_invitation(jeton, utilisateur, message=None):
     Rend (None, False) si le jeton ne correspond à rien d'utilisable : expiré, désactivé, ou
     association retirée du service. Volontairement muet sur la raison côté appelant — un
     message qui distinguerait « jeton inconnu » de « jeton expiré » aiderait à en deviner."""
-    invitation = InvitationAssociation.objects.filter(jeton=jeton).select_related(
+    invitation = InvitationAssociation.objects.filter(jeton_empreinte=empreinte_jeton(jeton)).select_related(
         "institution").first()
     if invitation is None or not invitation.utilisable:
         return None, False
