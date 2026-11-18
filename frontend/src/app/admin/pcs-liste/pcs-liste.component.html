@@ -68,6 +68,12 @@
                 <button type="button" class="btn-secondary" (click)="modifier(ligne)">Modifier</button>
                 <button type="button" class="btn-lien" (click)="retirer(ligne)">Retirer</button>
               </span>
+              <!-- Les fichiers de CETTE fiche : la procédure en PDF, le plan des lieux. -->
+              @if (paragraphe.ressource === 'pcs-fonctions') {
+                <app-pieces-plan class="pieces-ligne" [fonction]="ligne.id" intitule="Fichiers de cette fiche réflexe"></app-pieces-plan>
+              } @else if (paragraphe.ressource === 'pcs-moyens-alerte') {
+                <app-pieces-plan class="pieces-ligne" [moyenAlerte]="ligne.id" intitule="Fiche et procédure de ce moyen d'alerte"></app-pieces-plan>
+              }
             </li>
           }
         </ul>

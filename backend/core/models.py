@@ -5965,6 +5965,39 @@ class MoyenAlertePCS(EnvironmentScopedModel):
         return f"{self.get_type_display()} — {self.description[:60]}"
 
 
+class PieceJointePCS(EnvironmentScopedModel):
+    """Un fichier déposé par la commune sur son plan : la procédure de déclenchement de la
+    sirène, le plan du gymnase, la fiche réflexe maison en PDF (18/11/2026).
+
+    Rattaché au plan tout entier, ou à UNE fiche réflexe (`fonction`), ou à UN moyen d'alerte
+    (`moyen_alerte`) — c'est ce dernier que la page « Alerter les habitants » ressort quand on
+    coche la sirène.
+
+    Même sécurité que le reste : chiffré sur le disque (`get_encrypted_file_storage`), rangé
+    sous `documents/` que le serveur web refuse de servir, et lu seulement par la vue du plan,
+    qui vérifie que l'appelant tient le plan de CETTE collectivité et inscrit chaque
+    téléchargement à la main courante."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dossier = models.ForeignKey(DossierPCS, on_delete=models.CASCADE, related_name="pieces")
+    fonction = models.ForeignKey(FonctionPCS, on_delete=models.CASCADE, null=True, blank=True, related_name="pieces")
+    moyen_alerte = models.ForeignKey(MoyenAlertePCS, on_delete=models.CASCADE, null=True, blank=True, related_name="pieces")
+    titre = models.CharField(max_length=200)
+    fichier = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        validators=[validate_identity_document_file],
+    )
+    #: Nom d'origine, pour le rendre au téléchargement ; le nom sur le disque est un identifiant.
+    nom_fichier = models.CharField(max_length=200, blank=True, default="")
+    type_mime = models.CharField(max_length=60, blank=True, default="")
+    taille = models.PositiveIntegerField(default=0)
+    depose_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_depot = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["titre", "date_depot"]
+        verbose_name = "pièce jointe du plan"
+
 class ExercicePCS(EnvironmentScopedModel):
     """Un exercice du plan et ce qu'on en a tiré. `crise` relie, quand il y en a une, la crise
     d'exercice qui a servi à le jouer dans l'application."""

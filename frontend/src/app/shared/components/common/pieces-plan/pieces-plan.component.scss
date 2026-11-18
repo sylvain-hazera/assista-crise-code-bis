@@ -1,0 +1,13 @@
+.pieces { margin: .6rem 0 0; padding: .6rem .8rem; border: 1px dashed var(--ac-border-strong, #d1d5db); border-radius: 6px; background: var(--ac-surface-2, #f9fafb);
+  .intitule { display: flex; align-items: center; gap: .3rem; margin: 0 0 .3rem; font-weight: 600; font-size: .9rem; .material-icons { font-size: 1.1rem; } }
+  .nombre { padding: 0 .45rem; border-radius: 999px; background: var(--ac-border, #e5e7eb); font-size: .75rem; }
+  ul { list-style: none; margin: 0 0 .4rem; padding: 0; display: grid; gap: .25rem; }
+  li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
+  .lien { font: inherit; background: none; border: 0; padding: 0; color: var(--ac-blue-text, #1d4ed8); text-decoration: underline; cursor: pointer; text-align: left; }
+  .detail { margin: 0; font-size: .8rem; color: var(--ac-text-muted, #6b7280); }
+  .retirer { font: inherit; font-size: .8rem; background: none; border: 0; padding: 0; color: var(--ac-red-text, #b91c1c); cursor: pointer; text-decoration: underline; }
+  .depot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .2rem 0; input[type=text] { flex: 1 1 14rem; font: inherit; padding: .35rem .5rem; } }
+  .deposer { font: inherit; padding: .35rem .9rem; border-radius: 6px; border: 1px solid #2563eb; background: #2563eb; color: #fff; cursor: pointer; &:disabled { opacity: .5; } }
+  .erreur { margin: .3rem 0 0; color: var(--ac-red-text, #b91c1c); font-size: .85rem; }
+  button:focus-visible, input:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+}

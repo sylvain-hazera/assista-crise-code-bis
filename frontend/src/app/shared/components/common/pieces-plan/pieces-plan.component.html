@@ -1,0 +1,30 @@
+<div class="pieces">
+  <p class="intitule"><span class="material-icons" aria-hidden="true">attach_file</span> {{ intitule }}
+    @if (pieces.length) { <span class="nombre">{{ pieces.length }}</span> }</p>
+
+  @if (pieces.length) {
+    <ul>
+      @for (p of pieces; track p.id) {
+        <li>
+          <button type="button" class="lien" (click)="ouvrir(p)" [title]="'Télécharger ' + p.nom_fichier">{{ p.titre }}</button>
+          <span class="detail">{{ poids(p.taille) }} · déposé le {{ p.date_depot | date:'dd/MM/yyyy' }}@if (p.depose_par_nom) { par {{ p.depose_par_nom }} }</span>
+          @if (modifiable) { <button type="button" class="retirer" (click)="retirer(p)" [attr.aria-label]="'Retirer ' + p.titre">Retirer</button> }
+        </li>
+      }
+    </ul>
+  } @else if (!modifiable) {
+    <p class="detail">Aucun fichier joint.</p>
+  }
+
+  @if (modifiable) {
+    <div class="depot">
+      <input type="file" accept="application/pdf,image/jpeg,image/png" (change)="choisir($event)" [attr.aria-label]="'Choisir un fichier pour ' + intitule">
+      @if (fichier) {
+        <input type="text" maxlength="200" [(ngModel)]="titre" placeholder="Titre (facultatif) : Déclenchement de la sirène">
+        <button type="button" class="deposer" [disabled]="envoi" (click)="deposer()">{{ envoi ? 'Dépôt…' : 'Déposer' }}</button>
+      }
+    </div>
+    <p class="detail">PDF ou photo, 10 Mo au plus. Chiffré sur le serveur, lisible seulement par ceux qui tiennent ce plan ; chaque lecture est tracée.</p>
+  }
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+</div>

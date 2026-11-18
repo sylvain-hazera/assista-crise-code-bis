@@ -341,7 +341,9 @@ class DicrimView(APIView):
 
 from rest_framework import serializers, viewsets  # noqa: E402
 
-from .models import ExercicePCS, FonctionPCS, MoyenAlertePCS, Zone  # noqa: E402
+from rest_framework.decorators import action  # noqa: E402
+
+from .models import ExercicePCS, FonctionPCS, MoyenAlertePCS, PieceJointePCS, Zone  # noqa: E402
 from .pcs_fiches import fiche_type  # noqa: E402
 
 
@@ -459,6 +461,93 @@ class ExercicePCSViewSet(_ListeDuDossierPCS):
     queryset = ExercicePCS.objects.select_related("crise")
     serializer_class = ExercicePCSSerializer
     objet = "ExercicePCS"
+
+
+class PieceJointePCSSerializer(serializers.ModelSerializer):
+    depose_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PieceJointePCS
+        fields = ["id", "titre", "fonction", "moyen_alerte", "nom_fichier", "type_mime", "taille", "depose_par_nom", "date_depot"]
+        read_only_fields = ["nom_fichier", "type_mime", "taille", "date_depot"]
+
+    def get_depose_par_nom(self, obj):
+        return _nommer(self.context.get("request"))(obj.depose_par) if obj.depose_par_id else ""
+
+
+class PieceJointePCSViewSet(_ListeDuDossierPCS):
+    """/api/pcs-pieces/ -- les fichiers que la commune joint à son plan, à une fiche réflexe ou à
+    un moyen d'alerte. On dépose, on lit, on retire ; un fichier ne se remplace pas, il se
+    redépose. Le fichier lui-même ne sort que par `fichier/`, jamais par une adresse directe."""
+    queryset = PieceJointePCS.objects.select_related("depose_par")
+    serializer_class = PieceJointePCSSerializer
+    objet = "PieceJointePCS"
+    http_method_names = ["get", "post", "delete", "head", "options"]
+    MAX_PAR_DOSSIER = 200
+
+    def get_queryset(self):
+        pieces = super().get_queryset()
+        for champ in ("fonction", "moyen_alerte"):
+            valeur = self.request.query_params.get(champ)
+            if valeur:
+                pieces = pieces.filter(**{f"{champ}_id": valeur})
+        return pieces
+
+    def create(self, request, *args, **kwargs):
+        from django.core.exceptions import ValidationError as ErreurDeValidation
+
+        from .validators import validate_identity_document_file
+
+        dossier = self._dossier()
+        fichier = request.FILES.get("fichier")
+        if fichier is None:
+            raise ValidationError({"fichier": "Joignez un fichier (PDF, ou photo JPEG/PNG)."})
+        try:
+            validate_identity_document_file(fichier)
+        except ErreurDeValidation as erreur:
+            raise ValidationError({"fichier": erreur.messages})
+        if dossier.pieces.count() >= self.MAX_PAR_DOSSIER:
+            raise ValidationError({"fichier": f"Pas plus de {self.MAX_PAR_DOSSIER} fichiers par plan."})
+        # La fiche ou le moyen désignés sont ceux de CE plan : on ne rattache rien chez le voisin.
+        fonction = FonctionPCS.objects.filter(pk=request.data.get("fonction") or None, dossier=dossier).first() \
+            if request.data.get("fonction") else None
+        moyen = MoyenAlertePCS.objects.filter(pk=request.data.get("moyen_alerte") or None, dossier=dossier).first() \
+            if request.data.get("moyen_alerte") else None
+        if (request.data.get("fonction") and fonction is None) or (request.data.get("moyen_alerte") and moyen is None):
+            raise ValidationError({"detail": "Cette fiche n'appartient pas à votre plan."})
+        nom = (getattr(fichier, "name", "") or "fichier")[:200]
+        titre = (str(request.data.get("titre") or "").strip() or nom)[:200]
+        piece = PieceJointePCS.objects.create(
+            dossier=dossier, environment=dossier.environment, fonction=fonction, moyen_alerte=moyen, titre=titre,
+            fichier=fichier, nom_fichier=nom, taille=fichier.size, depose_par=request.user,
+            type_mime="application/pdf" if nom.lower().endswith(".pdf") else (getattr(fichier, "content_type", "") or "")[:60],
+        )
+        audit_log(request=request, action_code="CREATION", objet_type=self.objet, objet_id=piece.id,
+                  commentaire="Plan communal de sauvegarde : fichier joint")
+        return Response(self.get_serializer(piece).data, status=201)
+
+    def perform_destroy(self, instance):
+        fichier = instance.fichier
+        super().perform_destroy(instance)
+        try:
+            fichier.delete(save=False)          # le fichier chiffré quitte le disque avec sa ligne
+        except Exception:  # noqa: BLE001
+            pass
+
+    @action(detail=True, methods=["get"])
+    def fichier(self, request, pk=None):
+        """Le fichier, déchiffré à la volée pour qui tient ce plan. Chaque lecture est tracée."""
+        from django.http import FileResponse
+
+        piece = self.get_object()
+        audit_log(request=request, action_code="TELECHARGEMENT", objet_type=self.objet, objet_id=piece.id,
+                  commentaire="Plan communal de sauvegarde : fichier joint téléchargé")
+        reponse = FileResponse(piece.fichier.open("rb"), content_type=piece.type_mime or "application/octet-stream",
+                               as_attachment=request.query_params.get("voir") != "1",
+                               filename=piece.nom_fichier or "fichier")
+        reponse["Cache-Control"] = "private, no-store"
+        reponse["X-Content-Type-Options"] = "nosniff"
+        return reponse
 
 
 # ───────────────────────────── L'alerte aux habitants ─────────────────────────────

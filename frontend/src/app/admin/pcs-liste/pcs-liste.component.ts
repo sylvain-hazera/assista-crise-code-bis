@@ -1,3 +1,4 @@
+import { PiecesPlanComponent } from '../../shared/components/common/pieces-plan/pieces-plan.component';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
@@ -25,7 +26,7 @@ const ZONE_AUTOMATIQUE = 'Mon territoire';
 @Component({
   selector: 'app-pcs-liste',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, PiecesPlanComponent],
   templateUrl: './pcs-liste.component.html',
   styleUrl: '../pcs-annuaire/pcs-paragraphe.scss',
 })

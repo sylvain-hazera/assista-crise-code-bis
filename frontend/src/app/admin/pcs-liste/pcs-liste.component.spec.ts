@@ -32,7 +32,11 @@ describe('PcsListeComponent', () => {
 
   // Un test qui ne monte pas le composant n'a rien demandé au serveur : rien à vérifier alors.
   let monte = false;
-  afterEach(() => { if (monte) http.verify(); monte = false; });
+  afterEach(() => {
+    // Chaque fiche réflexe et chaque moyen d'alerte demande ses fichiers joints (18/11/2026).
+    if (monte) { http.match(r => r.url.includes('/pcs-pieces/')).forEach(r => r.flush([])); http.verify(); }
+    monte = false;
+  });
 
   it('chaque paragraphe dit à quoi il sert en crise et décrit des champs cohérents', () => {
     for (const [cle, p] of Object.entries(PARAGRAPHES_EN_LISTE)) {

@@ -25,7 +25,7 @@ from .views_stocks_logistique import (
 from .views_stocks import CommandeStockViewSet, FactureStockViewSet, PretMaterielViewSet, TiersStockViewSet
 from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, ZonagesOfficielsView,
-    CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, RevisionPCSView,
+    CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
@@ -334,6 +334,7 @@ router.register(r'plans', PlanViewSet)
 router.register(r'pcs-fonctions', FonctionPCSViewSet, basename='pcs-fonctions')
 router.register(r'pcs-moyens-alerte', MoyenAlertePCSViewSet, basename='pcs-moyens-alerte')
 router.register(r'pcs-exercices', ExercicePCSViewSet, basename='pcs-exercices')
+router.register(r'pcs-pieces', PieceJointePCSViewSet, basename='pcs-pieces')
 router.register(r'habitations', HabitationViewSet)
 router.register(r'habitations-commentaires', HabitationCommentaireViewSet)
 router.register(r'habitations-historique', HabitationHistoriqueViewSet)

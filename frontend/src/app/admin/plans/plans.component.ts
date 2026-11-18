@@ -1,3 +1,4 @@
+import { PiecesPlanComponent } from '../../shared/components/common/pieces-plan/pieces-plan.component';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,7 +17,7 @@ import { PlanActivationModalComponent } from './plan-activation-modal/plan-activ
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule, FormsModule, PlanModalComponent, PlanActivationModalComponent, DossierPcsComponent],
+  imports: [CommonModule, FormsModule, PlanModalComponent, PlanActivationModalComponent, DossierPcsComponent, PiecesPlanComponent],
   templateUrl: './plans.component.html',
   styleUrl: './plans.component.scss',
 })
