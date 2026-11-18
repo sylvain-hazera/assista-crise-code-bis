@@ -115,12 +115,124 @@ groups:
           summary: "Less than 10% memory available on {{ $labels.instance }}"
           description: "The host may start killing processes (OOM). Check which container uses the memory in Grafana."
 
+      - alert: HighLoad
+        expr: node_load15 / on(instance) count by (instance) (node_cpu_seconds_total{mode="idle"}) > 1.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Load on {{ $labels.instance }} is {{ $value | printf \"%.1f\" }} times its CPU count"
+          description: "The machine has more work than processors for 15 minutes: everything slows down. Look for the container using the CPU in Grafana (Infrastructure)."
+
+      - alert: HostOutOfMemoryKill
+        expr: increase(node_vmstat_oom_kill[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "The kernel killed a process for lack of memory on {{ $labels.instance }}"
+          description: "A process (often a container) was killed by the out-of-memory killer in the last 15 minutes. Find it: journalctl -k | grep -i 'killed process'."
+
+      - alert: InodesAlmostFull
+        expr: |
+          node_filesystem_files_free{fstype!~"tmpfs|overlay|squashfs|vfat"}
+            / node_filesystem_files{fstype!~"tmpfs|overlay|squashfs|vfat"} < 0.05
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} has less than 5% free inodes"
+          description: "No new file can be created when inodes run out, even with free space left. Usually millions of small files: old Docker layers or logs."
+
+      - alert: FilesystemReadOnly
+        expr: node_filesystem_readonly{fstype!~"tmpfs|overlay|squashfs|vfat|iso9660"} == 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} is mounted read-only"
+          description: "The kernel remounts a disk read-only after an I/O error. The database can no longer write. Check dmesg and the disk health now."
+
+      - alert: ClockNotSynchronised
+        expr: node_timex_sync_status == 0 or abs(node_timex_offset_seconds) > 2
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "The clock of {{ $labels.instance }} is not synchronised"
+          description: "Sign-in tokens, TLS, signed satellite updates and radio timestamps all depend on the clock. Check: timedatectl status."
+
+      - alert: HostRebooted
+        expr: time() - node_boot_time_seconds < 600
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.instance }} restarted less than 10 minutes ago"
+          description: "If nobody restarted it on purpose: power cut, kernel panic or automatic update. Check that every container came back (docker ps)."
+
+      - alert: HighTemperature
+        expr: max by (instance) (node_hwmon_temp_celsius) > 90
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.instance }} is at {{ $value | printf \"%.0f\" }} °C"
+          description: "Above 90 °C for 15 minutes the processor slows itself down and hardware ages fast. Check the fan and the room."
+
+      # --- containers -------------------------------------------------------------------------
+      # 18/11/2026: cAdvisor 0.49 could not read containers after the move to Docker 29 (image
+      # store in containerd). Every series lost its `name`, so ContainerRestarting below could
+      # not fire, silently, for weeks. This rule is the alarm on the alarm.
+      - alert: ContainerMetricsBlind
+        expr: absent(container_last_seen{name=~"ac_.+"})
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "The container probe no longer sees any container"
+          description: "cAdvisor answers but names no container: every container alert is blind. Check: docker logs ac_cadvisor (an incompatibility after a Docker upgrade is the usual cause)."
+
+      # « Was there during the last 6 hours, is not there now » : names the container, and
+      # needs no list to maintain. `for: 5m` lets a redeployment recreate it in peace.
+      - alert: ContainerDown
+        expr: |
+          group by (name) (last_over_time(container_last_seen{name=~"ac_.+", name!="ac_mig_db"}[6h]))
+            unless group by (name) (container_last_seen{name=~"ac_.+"})
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Container {{ $labels.name }} is no longer running"
+          description: "It was running in the last 6 hours and has been gone for 5 minutes. Check: docker ps -a --filter name={{ $labels.name }} then docker logs {{ $labels.name }}."
+
+      - alert: ContainerOutOfMemoryKill
+        expr: increase(container_oom_events_total{name=~"ac_.+"}[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Container {{ $labels.name }} was killed for lack of memory"
+          description: "It hit its memory limit, or the machine ran out. It restarts, but what it was doing is lost."
+
+      - alert: ContainerMemoryNearLimit
+        expr: |
+          container_memory_working_set_bytes{name=~"ac_.+"}
+            / (container_spec_memory_limit_bytes{name=~"ac_.+"} > 0) > 0.9
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Container {{ $labels.name }} uses {{ $value | humanizePercentage }} of its memory limit"
+          description: "It will be killed when it reaches the limit."
+
       - alert: ContainerRestarting
         expr: changes(container_start_time_seconds{name!=""}[15m]) > 2
         labels: { severity: warning }
         annotations:
           summary: "Container {{ $labels.name }} restarted {{ $value }} times in 15 minutes"
           description: "Probably a crash loop: check docker logs {{ $labels.name }}."
+
+      - alert: DatabaseDeadlocks
+        expr: sum(increase(pg_stat_database_deadlocks[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "PostgreSQL had to break a deadlock in the last 15 minutes"
+          description: "Two operations blocked each other and one was cancelled: somebody got an error. Details: docker logs ac_db | grep -i deadlock."
+
+      - alert: DatabaseLongTransaction
+        expr: max(pg_stat_activity_max_tx_duration{state=~"active|idle in transaction"}) > 900
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "A database transaction has been open for {{ $value | humanizeDuration }}"
+          description: "A transaction open for more than 15 minutes holds locks and blocks maintenance. Often a forgotten shell or a stuck job."
 
       - alert: DatabaseConnectionsHigh
         expr: sum(pg_stat_activity_count) / scalar(max(pg_settings_max_connections)) > 0.8
@@ -231,9 +343,113 @@ groups:
           description: "See /admin/meshtastic-administration: usually the gateway public key is not in the target node's security.admin_key."
 
 
+  # ------------------------------------------------------------------ sauvegardes
+  # Mesurées par scripts/114/mesurer-sauvegardes.sh (cron, fichier lu par node-exporter). Une
+  # sauvegarde qui s'arrête ne fait aucun bruit : c'est le jour où l'on en a besoin qu'on le
+  # découvre.
+  - name: backups
+    rules:
+      - alert: BackupMetricsMissing
+        expr: absent(assista_sauvegarde_age_secondes)
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Backups are not being measured"
+          description: "scripts/114/mesurer-sauvegardes.sh is not running (cron), or node-exporter does not read its file: nobody would notice a backup that stops."
+
+      - alert: BackupDatabaseTooOld
+        expr: assista_sauvegarde_age_secondes{type="base"} > 26 * 3600
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "The last database backup is {{ $value | humanizeDuration }} old"
+          description: "The nightly dump (03:00) did not produce a file. Check ~/backups/assista-db/backup.log."
+
+      - alert: BackupDatabaseTooSmall
+        expr: assista_sauvegarde_octets{type="base"} < 1e6
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "The last database backup is only {{ $value | humanize1024 }}B"
+          description: "A dump this small is empty or truncated: it would not restore anything."
+
+      - alert: BackupContinuousTooOld
+        expr: assista_sauvegarde_age_secondes{type=~"media|wal"} > 3 * 3600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "The {{ $labels.type }} backup has not succeeded for {{ $value | humanizeDuration }}"
+          description: "It runs every 15 minutes. Check ~/scripts/backup-snapshot.log."
+
+      - alert: DockerBuildCacheHuge
+        expr: assista_docker_cache_construction_octets > 40e9
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Docker build cache uses {{ $value | humanize1024 }}B"
+          description: "It filled the disk to 95% on 17/11/2026. Free it: docker builder prune -f --filter until=72h"
+
+  # ------------------------------------------------------------------ satellites
+  # Counted, never named: a label ends up in an unencrypted metrics file.
+  - name: satellites
+    rules:
+      - alert: SatelliteLost
+        expr: sum by (environment) (assista_satellites{etat="PERDU"}) > 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} satellite(s) have stopped calling the central"
+          description: "An approved satellite has been silent past the 'lost' threshold: power, network, or a crashed machine. See the Satellites page."
+
+      - alert: SatelliteUpdateFailed
+        expr: sum by (environment) (assista_satellites_mise_a_jour_echouee) > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} satellite(s) are left on a failed update"
+          description: "Their last update failed and nothing succeeded since: the local server may be down. On the Satellites page, ask for 'Bilan complet' and read the journal."
+
+      - alert: SatelliteOrderStuck
+        expr: max by (environment) (assista_satellites_ordre_en_attente_secondes) > 3600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "An order to a satellite has been waiting for {{ $value | humanizeDuration }}"
+          description: "The agent of that satellite did not take or finish it: agent stopped, machine off, or reports refused by the firewall."
+
   # ------------------------------------------------------------------ meta-monitoring
   - name: meta
     rules:
+      - alert: PrometheusRuleFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Prometheus cannot evaluate some alert rules"
+          description: "A rule that fails to evaluate never fires: part of the alerting is blind. Check: docker logs ac_prometheus."
+
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0 or alertmanager_config_last_reload_successful == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }} is running on an old configuration"
+          description: "Its last configuration reload failed: recent changes to rules or routes are not applied."
+
+      - alert: AlertNotificationsFailing
+        expr: sum by (integration) (increase(alertmanager_notifications_failed_total[30m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Alert notifications by {{ $labels.integration }} are failing"
+          description: "Alerts fire but do not reach anybody. Check: docker logs ac_alertmanager."
+
+      - alert: SiteSlow
+        expr: probe_duration_seconds{job="blackbox-https"} > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.instance }} takes {{ $value | printf \"%.1f\" }} s to answer"
+          description: "The home page takes more than 5 seconds for 10 minutes, as a visitor would see it."
+
       # Dead man's switch : toujours active, alerte quand le battement S'ARRÊTE (healthchecks.io).
       - alert: Watchdog
         expr: vector(1)

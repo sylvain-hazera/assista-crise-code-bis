@@ -297,10 +297,95 @@ class VeilleCollector(Collector):
             yield jours
 
 
+class SatelliteCollector(Collector):
+    """État du parc de satellites (18/11/2026).
+
+    Le 17/11/2026 un satellite est resté toute une journée « à jour et échoué », son serveur
+    local en boucle de redémarrage, sans qu'aucune alerte ne le dise : il fallait ouvrir la
+    page Satellites pour le voir. Trois mesures, comptées et jamais nommées (une étiquette
+    finit dans un fichier de métriques non chiffré) :
+
+    - combien de satellites approuvés sont actifs, inactifs, perdus, jamais vus ;
+    - combien sont restés sur une mise à jour échouée ;
+    - depuis combien de temps le plus vieil ordre attend."""
+
+    def describe(self):
+        return []
+
+    def collect(self):
+        try:
+            yield from self._parc()
+        except Exception:
+            logger.exception("Could not collect satellite metrics")
+
+    @staticmethod
+    def _parc():
+        from django.conf import settings
+
+        from .models import (
+            ActionSatellite, MiseAJourSatellite, Satellite, StatutEnrolementSatellite,
+            StatutMiseAJour,
+        )
+
+        maintenant = timezone.now()
+        satellites = list(Satellite.objects.filter(
+            statut_enrolement=StatutEnrolementSatellite.APPROUVE,
+        ).values("id", "environment", "dernier_contact"))
+
+        etats = {}
+        for s in satellites:
+            if s["dernier_contact"] is None:
+                etat = "JAMAIS_VU"
+            else:
+                silence = (maintenant - s["dernier_contact"]).total_seconds() / 60
+                etat = ("PERDU" if silence > settings.SATELLITE_SEUIL_PERDU_MINUTES
+                        else "INACTIF" if silence > settings.SATELLITE_SEUIL_INACTIF_MINUTES
+                        else "ACTIF")
+            etats[(etat, s["environment"])] = etats.get((etat, s["environment"]), 0) + 1
+        parc = GaugeMetricFamily("assista_satellites", "Approved satellites by state",
+                                 labels=["etat", "environment"])
+        for (etat, environnement), n in sorted(etats.items()):
+            parc.add_metric([etat, environnement], n)
+        yield parc
+
+        # Restés sur un échec : la DERNIÈRE mise à jour finie est un échec. Une réussite
+        # ensuite l'efface ; un diagnostic réussi, non — il ne répare rien.
+        environnements = {s["id"]: s["environment"] for s in satellites}
+        dernieres = {}
+        for ordre in (MiseAJourSatellite.objects
+                      .filter(satellite_id__in=environnements, action=ActionSatellite.MISE_A_JOUR,
+                              statut__in=[StatutMiseAJour.REUSSIE, StatutMiseAJour.ECHOUEE])
+                      .order_by("date_fin").values("satellite_id", "statut")):
+            dernieres[ordre["satellite_id"]] = ordre["statut"]
+        echecs = {e: 0 for e in set(environnements.values())}
+        for satellite, statut in dernieres.items():
+            if statut == StatutMiseAJour.ECHOUEE:
+                echecs[environnements[satellite]] += 1
+        echouees = GaugeMetricFamily("assista_satellites_mise_a_jour_echouee",
+                                     "Satellites left on a failed update", labels=["environment"])
+        for environnement, n in sorted(echecs.items()):
+            echouees.add_metric([environnement], n)
+        yield echouees
+
+        attente = GaugeMetricFamily("assista_satellites_ordre_en_attente_secondes",
+                                    "Age of the oldest open order to a satellite", labels=["environment"])
+        plus_vieux = {e: 0 for e in set(environnements.values())}
+        for ordre in MiseAJourSatellite.objects.filter(
+                satellite_id__in=environnements,
+                statut__in=[StatutMiseAJour.DEMANDEE, StatutMiseAJour.EN_COURS],
+        ).values("satellite_id", "date_demande"):
+            environnement = environnements[ordre["satellite_id"]]
+            age = (maintenant - ordre["date_demande"]).total_seconds()
+            plus_vieux[environnement] = max(plus_vieux[environnement], age)
+        for environnement, age in sorted(plus_vieux.items()):
+            attente.add_metric([environnement], age)
+        yield attente
+
+
 # Source unique des collecteurs personnalisés : `register()` les met dans le registre global, et
 # `metrics_view` dans le registre neuf du mode multi-processus. Les deux DOIVENT lire la même
 # liste — voir le commentaire de metrics_view.
-COLLECTEURS = (BusinessStateCollector, MeshStateCollector, VeilleCollector)
+COLLECTEURS = (BusinessStateCollector, MeshStateCollector, VeilleCollector, SatelliteCollector)
 
 
 def register():

@@ -23441,6 +23441,7 @@ class SatelliteViewSet(
                             status=code)
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            institution=satellite.institution,
             commentaire=f"Mise à jour du satellite {satellite.nom} demandée vers {ordre.version.commit[:10]}"
                         + (" (malgré une crise en cours)" if ordre.malgre_crise else "") + ".",
         )
@@ -23465,6 +23466,7 @@ class SatelliteViewSet(
                             status=status.HTTP_400_BAD_REQUEST)
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            institution=satellite.institution,
             commentaire=f"{ordre.get_action_display()} demandé au satellite {satellite.nom}.",
         )
         return Response(SatelliteSerializer(satellite, context={'request': request}).data,
@@ -23483,6 +23485,7 @@ class SatelliteViewSet(
                             status=status.HTTP_400_BAD_REQUEST)
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            institution=satellite.institution,
             commentaire=f"Mise à jour du satellite {satellite.nom} annulée avant son démarrage.",
         )
         return Response(SatelliteSerializer(satellite, context={'request': request}).data)
@@ -23566,8 +23569,12 @@ class SatelliteViewSet(
             return Response({"error": "Cet ordre n'est plus à exécuter.", "statut": ordre.statut},
                             status=status.HTTP_409_CONFLICT)
         if ordre.date_fin is not None and not etait_fini:
+            # Écrite par le compte de service du satellite, mais ce n'est pas du bruit
+            # d'automate : c'est le RÉSULTAT d'un ordre donné par quelqu'un. La main courante
+            # masque par défaut les comptes système — cette ligne y échappait (18/11/2026).
             audit_log(
                 request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+                institution=satellite.institution, compte_systeme=False,
                 commentaire=(
                     f"Mise à jour du satellite {satellite.nom} vers {ordre.version.commit[:10]}"
                     if ordre.version_id else f"{ordre.get_action_display()} du satellite {satellite.nom}"

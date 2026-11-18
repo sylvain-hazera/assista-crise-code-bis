@@ -431,6 +431,25 @@ class TestDiagnosticEtRedemarrageDepuisLeCentral:
         satellite.refresh_from_db()
         assert satellite.version_logicielle == "abc1234def"        # ce que l'agent rapporte
 
+    def test_la_demande_et_son_resultat_sont_dans_la_main_courante(self, agent_mairie, satellite):
+        """18/11/2026, question de Sylvain : « les actions sur satellite ne gèrent aucun log
+        dans la main courante ». Deux lignes par ordre : qui l'a demandé, et ce qu'il a donné."""
+        from core.models import AuditLog
+        _client(agent_mairie).post(_url(satellite, "demander-action"), {"action": "REDEMARRAGE"}, format="json")
+        ordre = self._service(satellite).get(_url(satellite, "ordre-mise-a-jour")).data["ordre"]
+        self._service(satellite).post(_url(satellite, "rapport-mise-a-jour"),
+                                      {"ordre": ordre["id"], "statut": "ECHOUEE", "etape": "Le serveur ne répond pas."}, format="json")
+        lignes = list(AuditLog.objects.filter(objet_type="Satellite", objet_id=satellite.id).order_by("date_action"))
+        demande = [l for l in lignes if "demandé au satellite" in (l.commentaire or "")]
+        resultat = [l for l in lignes if "échouée" in (l.commentaire or "")]
+        assert len(demande) == 1 and demande[0].utilisateur_id == agent_mairie.id
+        assert len(resultat) == 1 and "Le serveur ne répond pas." in resultat[0].commentaire
+        # Les deux se lisent depuis l'institution du satellite, pas seulement par le super-admin.
+        assert {l.institution_id for l in demande + resultat} == {satellite.institution_id}
+        # Le résultat vient du compte de service du satellite : il ne doit pas être rangé avec
+        # les automates, que la page masque par défaut.
+        assert resultat[0].compte_systeme is False
+
     def test_un_redemarrage_ne_change_pas_la_version_si_l_agent_n_en_dit_rien(self, agent_mairie, satellite):
         _client(agent_mairie).post(_url(satellite, "demander-action"), {"action": "REDEMARRAGE"}, format="json")
         ordre = self._service(satellite).get(_url(satellite, "ordre-mise-a-jour")).data["ordre"]

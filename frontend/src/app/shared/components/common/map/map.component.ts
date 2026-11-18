@@ -1773,11 +1773,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       </svg>`;
     const url = `data:image/svg+xml;base64,${btoa(svg)}`;
 
+    // Par une balise <img>, et non par `map.loadImage` : celle-ci passe par createImageBitmap,
+    // qui ne sait pas décoder un SVG sous Chrome (« The source image could not be decoded »).
+    // Le calque des postes de secours ne s'affichait donc jamais — vu le 18/11/2026 en
+    // parcourant toutes les pages pour le manuel.
     return new Promise((resolve, reject) => {
-      this.map!.loadImage(url).then(({ data: image }) => {
-        if (!this.map!.hasImage(POSTE_SECOURS_ICON_ID)) this.map!.addImage(POSTE_SECOURS_ICON_ID, image);
+      const image = new Image(32, 32);
+      image.onload = () => {
+        if (this.map && !this.map.hasImage(POSTE_SECOURS_ICON_ID)) this.map.addImage(POSTE_SECOURS_ICON_ID, image);
         resolve();
-      }).catch(reject);
+      };
+      image.onerror = () => reject(new Error("icône illisible"));
+      image.src = url;
     });
   }
 

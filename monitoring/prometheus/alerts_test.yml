@@ -321,3 +321,376 @@ tests:
             exp_annotations:
               summary: "The Meteo-France API key expires in 29 days"
               description: "Generate a new key on portail-api.meteofrance.fr and replace the meteofrance_cle_api secret."
+
+  # ---- 18/11/2026 : machine, conteneurs, base, sauvegardes, satellites, supervision elle-même ----
+  - name: load far above the CPU count
+    interval: 1m
+    input_series:
+      - series: 'node_load15{instance="n"}'
+        values: '20x30'
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="0",instance="n"}'
+        values: '1x30'
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="1",instance="n"}'
+        values: '1x30'
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="2",instance="n"}'
+        values: '1x30'
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="3",instance="n"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighLoad
+        exp_alerts:
+          - exp_labels: { severity: "warning", instance: "n" }
+            exp_annotations:
+              summary: "Load on n is 5.0 times its CPU count"
+              description: "The machine has more work than processors for 15 minutes: everything slows down. Look for the container using the CPU in Grafana (Infrastructure)."
+
+  - name: the kernel kills a process for lack of memory
+    interval: 1m
+    input_series:
+      - series: 'node_vmstat_oom_kill{instance="n"}'
+        values: '0 0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HostOutOfMemoryKill
+        exp_alerts:
+          - exp_labels: { severity: "critical", instance: "n" }
+            exp_annotations:
+              summary: "The kernel killed a process for lack of memory on n"
+              description: "A process (often a container) was killed by the out-of-memory killer in the last 15 minutes. Find it: journalctl -k | grep -i 'killed process'."
+
+  - name: no inodes left
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_files_free{fstype="ext4",mountpoint="/",instance="n"}'
+        values: '3x30'
+      - series: 'node_filesystem_files{fstype="ext4",mountpoint="/",instance="n"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InodesAlmostFull
+        exp_alerts:
+          - exp_labels: { severity: "critical", fstype: "ext4", mountpoint: "/", instance: "n" }
+            exp_annotations:
+              summary: "Disk / has less than 5% free inodes"
+              description: "No new file can be created when inodes run out, even with free space left. Usually millions of small files: old Docker layers or logs."
+
+  - name: a disk remounted read-only
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_readonly{fstype="ext4",mountpoint="/",instance="n"}'
+        values: '0 0 1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FilesystemReadOnly
+        exp_alerts:
+          - exp_labels: { severity: "critical", fstype: "ext4", mountpoint: "/", instance: "n" }
+            exp_annotations:
+              summary: "Disk / is mounted read-only"
+              description: "The kernel remounts a disk read-only after an I/O error. The database can no longer write. Check dmesg and the disk health now."
+
+  - name: clock not synchronised
+    interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{instance="n"}'
+        values: '0x40'
+      - series: 'node_timex_offset_seconds{instance="n"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ClockNotSynchronised
+        exp_alerts:
+          - exp_labels: { severity: "warning", instance: "n" }
+            exp_annotations:
+              summary: "The clock of n is not synchronised"
+              description: "Sign-in tokens, TLS, signed satellite updates and radio timestamps all depend on the clock. Check: timedatectl status."
+
+  - name: the machine just restarted
+    interval: 1m
+    input_series:
+      - series: 'node_boot_time_seconds{instance="n"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HostRebooted
+        exp_alerts:
+          - exp_labels: { severity: "warning", instance: "n" }
+            exp_annotations:
+              summary: "n restarted less than 10 minutes ago"
+              description: "If nobody restarted it on purpose: power cut, kernel panic or automatic update. Check that every container came back (docker ps)."
+
+  - name: the machine overheats
+    interval: 1m
+    input_series:
+      - series: 'node_hwmon_temp_celsius{instance="n",chip="c",sensor="t1"}'
+        values: '95x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighTemperature
+        exp_alerts:
+          - exp_labels: { severity: "warning", instance: "n" }
+            exp_annotations:
+              summary: "n is at 95 °C"
+              description: "Above 90 °C for 15 minutes the processor slows itself down and hardware ages fast. Check the fan and the room."
+
+  - name: cAdvisor names no container (Docker 29, 18/11/2026)
+    interval: 1m
+    input_series:
+      - series: 'container_last_seen{id="/"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ContainerMetricsBlind
+        exp_alerts:
+          - exp_labels: { severity: "critical" }
+            exp_annotations:
+              summary: "The container probe no longer sees any container"
+              description: "cAdvisor answers but names no container: every container alert is blind. Check: docker logs ac_cadvisor (an incompatibility after a Docker upgrade is the usual cause)."
+
+  - name: a container disappears and does not come back
+    interval: 1m
+    input_series:
+      - series: 'container_last_seen{name="ac_backend"}'
+        values: '1 1 1 stale'
+      - series: 'container_last_seen{name="ac_db"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ContainerDown
+        exp_alerts:
+          - exp_labels: { severity: "critical", name: "ac_backend" }
+            exp_annotations:
+              summary: "Container ac_backend is no longer running"
+              description: "It was running in the last 6 hours and has been gone for 5 minutes. Check: docker ps -a --filter name=ac_backend then docker logs ac_backend."
+
+  - name: a container is killed for lack of memory
+    interval: 1m
+    input_series:
+      - series: 'container_oom_events_total{name="ac_backend"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ContainerOutOfMemoryKill
+        exp_alerts:
+          - exp_labels: { severity: "critical", name: "ac_backend" }
+            exp_annotations:
+              summary: "Container ac_backend was killed for lack of memory"
+              description: "It hit its memory limit, or the machine ran out. It restarts, but what it was doing is lost."
+
+  - name: a container close to its memory limit
+    interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{name="ac_redis"}'
+        values: '95x30'
+      - series: 'container_spec_memory_limit_bytes{name="ac_redis"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels: { severity: "warning", name: "ac_redis" }
+            exp_annotations:
+              summary: "Container ac_redis uses 95% of its memory limit"
+              description: "It will be killed when it reaches the limit."
+
+  - name: a deadlock in the database
+    interval: 1m
+    input_series:
+      - series: 'pg_stat_database_deadlocks{datname="x"}'
+        values: '0 0 0 2 2 2 2 2'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: DatabaseDeadlocks
+        exp_alerts:
+          - exp_labels: { severity: "warning" }
+            exp_annotations:
+              summary: "PostgreSQL had to break a deadlock in the last 15 minutes"
+              description: "Two operations blocked each other and one was cancelled: somebody got an error. Details: docker logs ac_db | grep -i deadlock."
+
+  - name: a transaction left open
+    interval: 1m
+    input_series:
+      - series: 'pg_stat_activity_max_tx_duration{state="idle in transaction",datname="x"}'
+        values: '1200x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DatabaseLongTransaction
+        exp_alerts:
+          - exp_labels: { severity: "warning" }
+            exp_annotations:
+              summary: "A database transaction has been open for 20m 0s"
+              description: "A transaction open for more than 15 minutes holds locks and blocks maintenance. Often a forgotten shell or a stuck job."
+
+  - name: nobody measures the backups
+    interval: 1m
+    input_series:
+      - series: 'up{job="node"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BackupMetricsMissing
+        exp_alerts:
+          - exp_labels: { severity: "warning" }
+            exp_annotations:
+              summary: "Backups are not being measured"
+              description: "scripts/114/mesurer-sauvegardes.sh is not running (cron), or node-exporter does not read its file: nobody would notice a backup that stops."
+
+  - name: last night's dump is missing
+    interval: 1m
+    input_series:
+      - series: 'assista_sauvegarde_age_secondes{type="base"}'
+        values: '100000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BackupDatabaseTooOld
+        exp_alerts:
+          - exp_labels: { severity: "critical", type: "base" }
+            exp_annotations:
+              summary: "The last database backup is 1d 3h 46m 40s old"
+              description: "The nightly dump (03:00) did not produce a file. Check ~/backups/assista-db/backup.log."
+
+  - name: an empty dump
+    interval: 1m
+    input_series:
+      - series: 'assista_sauvegarde_octets{type="base"}'
+        values: '2048x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BackupDatabaseTooSmall
+        exp_alerts:
+          - exp_labels: { severity: "critical", type: "base" }
+            exp_annotations:
+              summary: "The last database backup is only 2kiB"
+              description: "A dump this small is empty or truncated: it would not restore anything."
+
+  - name: WAL shipping stopped
+    interval: 1m
+    input_series:
+      - series: 'assista_sauvegarde_age_secondes{type="wal"}'
+        values: '14400x20'
+      - series: 'assista_sauvegarde_age_secondes{type="media"}'
+        values: '60x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BackupContinuousTooOld
+        exp_alerts:
+          - exp_labels: { severity: "warning", type: "wal" }
+            exp_annotations:
+              summary: "The wal backup has not succeeded for 4h 0m 0s"
+              description: "It runs every 15 minutes. Check ~/scripts/backup-snapshot.log."
+
+  - name: the build cache that filled the disk on 17/11/2026
+    interval: 1m
+    input_series:
+      - series: 'assista_docker_cache_construction_octets'
+        values: '88e9x80'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: DockerBuildCacheHuge
+        exp_alerts:
+          - exp_labels: { severity: "warning" }
+            exp_annotations:
+              summary: "Docker build cache uses 81.96GiB"
+              description: "It filled the disk to 95% on 17/11/2026. Free it: docker builder prune -f --filter until=72h"
+
+  - name: a satellite went silent
+    interval: 1m
+    input_series:
+      - series: 'assista_satellites{etat="PERDU",environment="PROD"}'
+        values: '1x40'
+      - series: 'assista_satellites{etat="ACTIF",environment="PROD"}'
+        values: '3x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: SatelliteLost
+        exp_alerts:
+          - exp_labels: { severity: "warning", environment: "PROD" }
+            exp_annotations:
+              summary: "1 satellite(s) have stopped calling the central"
+              description: "An approved satellite has been silent past the 'lost' threshold: power, network, or a crashed machine. See the Satellites page."
+
+  - name: a satellite left on a failed update (17/11/2026)
+    interval: 1m
+    input_series:
+      - series: 'assista_satellites_mise_a_jour_echouee{environment="PROD"}'
+        values: '2x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SatelliteUpdateFailed
+        exp_alerts:
+          - exp_labels: { severity: "warning", environment: "PROD" }
+            exp_annotations:
+              summary: "2 satellite(s) are left on a failed update"
+              description: "Their last update failed and nothing succeeded since: the local server may be down. On the Satellites page, ask for 'Bilan complet' and read the journal."
+
+  - name: an order nobody takes
+    interval: 1m
+    input_series:
+      - series: 'assista_satellites_ordre_en_attente_secondes{environment="PROD"}'
+        values: '7200x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: SatelliteOrderStuck
+        exp_alerts:
+          - exp_labels: { severity: "warning", environment: "PROD" }
+            exp_annotations:
+              summary: "An order to a satellite has been waiting for 2h 0m 0s"
+              description: "The agent of that satellite did not take or finish it: agent stopped, machine off, or reports refused by the firewall."
+
+  - name: a rule that cannot be evaluated
+    interval: 1m
+    input_series:
+      - series: 'prometheus_rule_evaluation_failures_total{job="prometheus"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PrometheusRuleFailures
+        exp_alerts:
+          - exp_labels: { severity: "critical", job: "prometheus" }
+            exp_annotations:
+              summary: "Prometheus cannot evaluate some alert rules"
+              description: "A rule that fails to evaluate never fires: part of the alerting is blind. Check: docker logs ac_prometheus."
+
+  - name: a configuration that did not reload
+    interval: 1m
+    input_series:
+      - series: 'alertmanager_config_last_reload_successful{job="alertmanager"}'
+        values: '0x20'
+      - series: 'prometheus_config_last_reload_successful{job="prometheus"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PrometheusConfigReloadFailed
+        exp_alerts:
+          - exp_labels: { severity: "warning", job: "alertmanager" }
+            exp_annotations:
+              summary: "alertmanager is running on an old configuration"
+              description: "Its last configuration reload failed: recent changes to rules or routes are not applied."
+
+  - name: alerts that reach nobody
+    interval: 1m
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{integration="email"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AlertNotificationsFailing
+        exp_alerts:
+          - exp_labels: { severity: "critical", integration: "email" }
+            exp_annotations:
+              summary: "Alert notifications by email are failing"
+              description: "Alerts fire but do not reach anybody. Check: docker logs ac_alertmanager."
+
+  - name: the site answers slowly
+    interval: 1m
+    input_series:
+      - series: 'probe_duration_seconds{job="blackbox-https",instance="https://x"}'
+        values: '7.5x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: SiteSlow
+        exp_alerts:
+          - exp_labels: { severity: "warning", job: "blackbox-https", instance: "https://x" }
+            exp_annotations:
+              summary: "https://x takes 7.5 s to answer"
+              description: "The home page takes more than 5 seconds for 10 minutes, as a visitor would see it."

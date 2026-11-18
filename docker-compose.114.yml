@@ -486,7 +486,12 @@ services:
 
   cadvisor:
     <<: *service-supervision
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    # 0.55.1 et non 0.49.1 (18/11/2026) : depuis Docker 29, qui range ses images dans
+    # containerd, la 0.49 ne savait plus lire aucun conteneur (« failed to identify the
+    # read-write layer ID »). Toutes les séries perdaient leur `name` et les alertes sur les
+    # conteneurs ne pouvaient plus sonner — sans que rien ne le signale. Essayée ici même : les
+    # 31 conteneurs sont nommés. L'alerte ContainerMetricsBlind garde ce cas désormais.
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
     container_name: ac_cadvisor
     privileged: true                     # compromis assumé : accès large à l'hôte, port jamais publié
     devices: [/dev/kmsg]
@@ -503,9 +508,12 @@ services:
     image: prom/node-exporter:v1.8.2
     container_name: ac_node_exporter
     pid: host
-    command: ['--path.rootfs=/host']
+    # Le dossier textfile : des mesures que seul un script de la machine peut faire (âge des
+    # sauvegardes, cache de construction Docker — scripts/114/mesurer-sauvegardes.sh).
+    command: ['--path.rootfs=/host', '--collector.textfile.directory=/textfile']
     volumes:
       - /:/host:ro,rslave
+      - ${SUPERVISION_TEXTFILE_DIR:-/home/sylvain/supervision-textfile}:/textfile:ro
     networks: [monitoring]
 
   blackbox-exporter:

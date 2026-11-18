@@ -42,6 +42,7 @@ def audit_log(
     perimetre=None,
     recherche=None,
     compte_systeme=None,
+    institution=None,
 ):
     """Écrit une ligne de main courante (AuditLog) et la renvoie (None en cas d'échec). Ne doit
     jamais faire échouer l'action métier appelante.
@@ -66,7 +67,10 @@ def audit_log(
 
         ligne = AuditLog.objects.create(
             utilisateur=request.user if is_authenticated else None,
-            institution=getattr(request.user, "institution", None) if is_authenticated else None,
+            # `institution` imposée par l'appelant quand l'auteur n'en porte pas (le compte de
+            # service d'un satellite) : sans elle la ligne n'est lue que par le super-admin.
+            institution=institution if institution is not None
+            else (getattr(request.user, "institution", None) if is_authenticated else None),
             adresse_ip=get_client_ip(request),
             # request=None : appel hors requête HTTP (signal post_save, commande, shell) --
             # journalisé quand même plutôt que d'échouer (constaté le 16/10 avec un email
