@@ -38,12 +38,24 @@ SOURCE_CARE = {
     "consulte_le": "2026-11-18",
 }
 
+#: Les astuces de terrain ne viennent d'aucun document officiel : ce sont des conseils pratiques,
+#: de bon sens, rassemblés pour Assista-Crise (idée de Sylvain du 18/11/2026 : « vous avez une
+#: médiathèque ? Les livres peuvent aider à occuper les personnes, les enfants »). Elles sont
+#: présentées comme telles, à part des fiches de l'État.
+SOURCE_ASTUCES = {
+    "titre": "Astuces de terrain",
+    "editeur": "Assista-Crise — conseils pratiques, non officiels",
+    "url": "",
+    "consulte_le": "2026-11-18",
+}
+
 #: Les familles de fiches, dans l'ordre où on les présente.
 CATEGORIES = {
     "POSTE": "Postes du poste de commandement communal",
     "TERRAIN": "Rôles sur le terrain",
     "CENTRE": "Tenir un centre d'accueil et de regroupement",
     "RISQUE": "Fiches action par situation",
+    "ASTUCES": "Astuces de terrain pour un centre d'accueil (non officielles)",
 }
 
 FICHES = [
@@ -262,6 +274,103 @@ FICHES = [
              "Assistance matérielle : vêtements, hygiène, puériculture, le plus souvent par les associations caritatives.",
          )),
      ]},
+    # ── Astuces de terrain (non officielles) ─────────────────────────────────────────────
+    {"code": "astuces-ressources", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Ce que la commune a déjà sous la main",
+     "sections": [
+         ("Pensez à vos équipements", (
+             "Vous avez une médiathèque ? Des livres, des bandes dessinées, des revues occupent adultes et enfants ; "
+             "une bibliothécaire peut animer un coin lecture.",
+             "La ludothèque, le centre de loisirs, l'école : jeux de société, ballons, craies, matériel de motricité.",
+             "Le club de sport ou le gymnase lui-même : tapis de sol pour dormir, bancs, vestiaires et douches.",
+             "La cantine scolaire ou la cuisine de la salle des fêtes : de quoi réchauffer et servir chaud au-delà du premier jour.",
+             "Les services techniques : barrières, grilles d'exposition pour séparer les espaces, rallonges, éclairage.",
+             "La salle des fêtes : tables, chaises, sono pour les annonces.",
+         )),
+         ("Pensez aux gens du village", (
+             "Les commerçants : boulanger pour le petit-déjeuner, pharmacien pour les traitements oubliés.",
+             "Les associations : chorale, club des anciens, comité des fêtes — des bras, de la bonne humeur, et des gens qui connaissent tout le monde.",
+             "Les personnes qui parlent une langue étrangère ou la langue des signes : à noter dès l'arrivée des volontaires.",
+             "Un médecin, un infirmier, un psychologue parmi les habitants ou les accueillis : leur demander s'ils acceptent d'aider.",
+         )),
+     ]},
+    {"code": "astuces-enfants", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Les enfants",
+     "sections": [
+         ("Les occuper", (
+             "Prévoir des feuilles, des crayons, des coloriages, des petits jeux de cartes, de la pâte à modeler.",
+             "Un coin enfants à l'écart du passage et du bruit, avec un tapis et quelques coussins.",
+             "Une activité à heure fixe (lecture, dessin, jeu collectif) : ça structure la journée et rassure.",
+             "Faire participer les plus grands : distribuer l'eau, aider au coin lecture — se rendre utile apaise.",
+         )),
+         ("Le nécessaire", (
+             "Couches de plusieurs tailles, lingettes, lait infantile, petits pots, chauffe-biberon, une bouilloire.",
+             "Un espace calme pour allaiter ou changer un bébé, avec un rideau ou un paravent.",
+             "Doudous et peluches : en avoir quelques-uns à donner, un enfant parti sans le sien dort mal.",
+         )),
+         ("Les protéger", (
+             "Ne jamais laisser un enfant sans adulte référent identifié ; noter qui s'occupe de qui à l'accueil.",
+             "Un mineur arrivé seul : le signaler tout de suite au responsable du centre.",
+         )),
+     ]},
+    {"code": "astuces-confort", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Le confort et le moral",
+     "sections": [
+         ("Les petites choses qui comptent", (
+             "Des multiprises et des chargeurs de téléphone (plusieurs types de prise) : rassurer ses proches est la première demande.",
+             "Le code du wifi affiché, ou un partage de connexion si le réseau tient.",
+             "Une bouilloire et du café, du thé, des tisanes en libre-service : un geste simple qui réchauffe.",
+             "Des bouchons d'oreilles et des masques de nuit pour dormir dans un gymnase éclairé.",
+             "Une radio ou une télévision pour suivre l'information — mais pas allumée en permanence dans l'espace de repos.",
+             "Des journaux du jour et un tableau d'affichage tenu à jour : heure de la dernière information, prochaines étapes.",
+         )),
+         ("Respecter chacun", (
+             "Séparer un coin calme et un coin animé ; garder un espace pour qui veut s'isoler ou pleurer.",
+             "Des paravents ou des cartons pour un peu d'intimité entre les couchages.",
+             "Demander les régimes alimentaires (allergies, sans porc, végétarien, diabète) dès l'accueil.",
+             "Prévoir des lunettes de lecture de dépannage, des appareils auditifs se perdent aussi.",
+         )),
+     ]},
+    {"code": "astuces-vulnerables", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Les personnes âgées, malades ou handicapées",
+     "sections": [
+         ("À l'arrivée", (
+             "Demander tout de suite : un traitement à prendre aujourd'hui ? une ordonnance ? un appareil à recharger "
+             "(fauteuil électrique, concentrateur d'oxygène) ?",
+             "Garder une liste des traitements et des horaires ; le pharmacien de garde peut dépanner.",
+             "Des chaises avec accoudoirs et des lits de camp surélevés : se relever d'un tapis de sol est difficile.",
+             "Placer ces personnes près des sanitaires et loin des courants d'air.",
+         )),
+         ("Pendant le séjour", (
+             "Passer régulièrement les voir : boire, manger, se lever — la confusion arrive vite chez une personne âgée déplacée.",
+             "Prévoir des protections pour incontinence et du linge de rechange, discrètement.",
+         )),
+     ]},
+    {"code": "astuces-animaux", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Les animaux",
+     "sections": [
+         ("Les accueillir sans gêner", (
+             "Beaucoup refusent de partir sans leur animal : annoncer clairement si le centre les accepte.",
+             "Un espace à part pour les animaux, à l'écart des personnes allergiques ou craintives.",
+             "Gamelles, laisses, sacs pour les déjections ; un vétérinaire du secteur joignable.",
+             "Noter le nom de l'animal et de son maître : un animal seul se retrouve plus facilement.",
+         )),
+     ]},
+    {"code": "astuces-organisation", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "L'organisation",
+     "sections": [
+         ("Pour s'y retrouver", (
+             "Des chasubles ou des badges pour les bénévoles, et un prénom écrit en gros : on doit savoir à qui s'adresser.",
+             "Un plan du centre affiché à l'entrée : accueil, repos, repas, sanitaires, coin enfants, infirmerie.",
+             "Un point « objets trouvés » et un point « messages » pour les familles séparées.",
+             "Une relève prévue pour les bénévoles toutes les quatre à six heures : un bénévole épuisé fait des erreurs [Planning des équipes].",
+         )),
+         ("Pour la suite", (
+             "Noter à l'accueil où chacun pourra être joint en partant : on doit pouvoir le prévenir quand il pourra rentrer.",
+             "Garder des sacs-poubelle, des gants et des produits d'entretien : un centre propre est un centre calme.",
+             "Avant de fermer : un mot de remerciement aux bénévoles et aux prêteurs de matériel, et le rendu du matériel emprunté [Stocks : prêts].",
+         )),
+     ]},
     # ── Fiches action par situation ──────────────────────────────────────────────────────
     {"code": "evacuation", "categorie": "RISQUE", "source": SOURCE_LOT,
      "titre": "Évacuation",
@@ -373,13 +482,21 @@ def en_texte(fiche: dict) -> str:
         morceaux.append(titre)
         morceaux += [f"• {ligne}" for ligne in lignes]
     source = fiche["source"]
-    morceaux.append(f"(D'après : {source['titre']}, {source['editeur']}.)")
+    morceaux.append(f"(D'après : {source['titre']}, {source['editeur']}.)" if source.get("url")
+                    else f"({source['titre']} — {source['editeur']}.)")
     return "\n".join(morceaux)
 
 
 def catalogue() -> list:
     """Ce que la page montre, dans l'ordre des catégories."""
     ordre = list(CATEGORIES)
-    return [{**f, "categorie_libelle": CATEGORIES[f["categorie"]],
+    return [{**f, "officielle": f.get("officielle", True), "categorie_libelle": CATEGORIES[f["categorie"]],
              "sections": [{"titre": t, "lignes": list(l)} for t, l in f["sections"]]}
             for f in sorted(FICHES, key=lambda f: ordre.index(f["categorie"]))]
+
+
+def une_astuce_au_hasard(nombre: int = 3) -> list:
+    """Quelques astuces de terrain tirées au hasard, pour la page des centres."""
+    import random
+    toutes = [ligne for f in FICHES if f["categorie"] == "ASTUCES" for _t, lignes in f["sections"] for ligne in lignes]
+    return random.sample(toutes, min(nombre, len(toutes)))

@@ -2,7 +2,10 @@ import { RouterLink } from '@angular/router';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 import { forkJoin } from 'rxjs';
+
+import { environment } from '../../../environments/environment';
 
 import { AuthService } from '../../auth/services/auth.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
@@ -42,10 +45,22 @@ export class CentresComponent implements OnInit {
     private pointService: PointOperationnelService,
     private pointTypeService: PointTypeService,
     private authService: AuthService,
+    private http: HttpClient,
   ) {}
+
+  /** Trois astuces de terrain tirées au hasard (bibliothèque des fiches, non officielles). */
+  astuces: string[] = [];
 
   ngOnInit(): void {
     this.load();
+    this.chargerAstuces();
+  }
+
+  chargerAstuces(): void {
+    this.http.get<{ astuces: string[] }>(`${environment.apiUrl}/pcs-fiches-conseil/?astuces=1`).subscribe({
+      next: (d) => (this.astuces = d.astuces ?? []),
+      error: () => (this.astuces = []),   // un conseil en moins n'empêche rien
+    });
   }
 
   get isAdmin(): boolean {

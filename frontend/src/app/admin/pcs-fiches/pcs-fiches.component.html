@@ -3,7 +3,7 @@
     <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › fiches réflexes</p>
     <h1><span class="material-icons" aria-hidden="true">menu_book</span> Fiches réflexes et conseils</h1>
     <p class="chapeau">Les postes du poste de commandement, les rôles sur le terrain, la tenue d'un centre d'accueil, les situations
-      les plus courantes. Ces fiches reprennent des documents publics de l'État ; la source est indiquée sur chacune. Lisez-les,
+      les plus courantes. Ces fiches reprennent des documents publics de l'État ; la source est indiquée sur chacune. Les astuces de terrain, à part, sont des conseils pratiques non officiels. Lisez-les,
       imprimez-les, et reprenez celles qui vous conviennent dans votre plan pour en faire les vôtres.</p>
   </header>
 
@@ -27,9 +27,14 @@
                 <h3>{{ section.titre }}</h3>
                 <ul>@for (ligne of section.lignes; track $index) { <li>{{ ligne }}</li> }</ul>
               }
-              <p class="source">D'après : <a [href]="fiche.source.url" target="_blank" rel="noopener noreferrer">{{ fiche.source.titre }}</a>,
-                {{ fiche.source.editeur }} (consulté le {{ fiche.source.consulte_le | date:'dd/MM/yyyy' }}). Les mentions entre crochets
-                indiquent où cela se fait dans l'application.</p>
+              @if (fiche.officielle) {
+                <p class="source">D'après : <a [href]="fiche.source.url" target="_blank" rel="noopener noreferrer">{{ fiche.source.titre }}</a>,
+                  {{ fiche.source.editeur }} (consulté le {{ fiche.source.consulte_le | date:'dd/MM/yyyy' }}). Les mentions entre crochets
+                  indiquent où cela se fait dans l'application.</p>
+              } @else {
+                <p class="source">Astuce de terrain : conseils pratiques rassemblés pour Assista-Crise, qui ne viennent d'aucun
+                  document officiel. À adapter à votre commune.</p>
+              }
               <div class="gestes">
                 <button type="button" class="btn-secondary" (click)="imprimer(fiche.code)">
                   <span class="material-icons" aria-hidden="true">print</span> Imprimer cette fiche</button>

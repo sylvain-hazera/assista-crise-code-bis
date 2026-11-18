@@ -72,6 +72,10 @@ class TestBibliotheque:
         assert len(fiches_conseil.FICHES) >= 15
         for fiche in fiches_conseil.FICHES:
             source = fiche["source"]
+            if fiche.get("officielle", True) is False:
+                # Les astuces de terrain ne prétendent à aucune source officielle, et le disent.
+                assert fiche["categorie"] == "ASTUCES" and "non officiel" in source["editeur"], fiche["code"]
+                continue
             assert source["url"].startswith("https://www.") and ".gouv.fr/" in source["url"], fiche["code"]
             assert source["editeur"] and source["consulte_le"]
             assert fiche["categorie"] in fiches_conseil.CATEGORIES
@@ -112,3 +116,12 @@ class TestReprendreDansLePlan:
         reponse = mairie.post("/api/pcs-fiches-conseil/", {"fiche": "evacuation"}, format="json")
         assert reponse.status_code == 400 and "fonction" in reponse.data
         assert mairie.post("/api/pcs-fiches-conseil/", {"fiche": "evacuation", "fonction": "COORDINATION"}, format="json").status_code == 201
+
+
+def test_les_astuces_de_terrain_sont_a_part_et_dites_non_officielles():
+    from core import fiches_conseil
+    astuces = [f for f in fiches_conseil.catalogue() if f["categorie"] == "ASTUCES"]
+    assert len(astuces) >= 5 and all(f["officielle"] is False for f in astuces)
+    assert any("médiathèque" in ligne for f in astuces for s in f["sections"] for ligne in s["lignes"])
+    assert all(f["officielle"] is True for f in fiches_conseil.catalogue() if f["categorie"] != "ASTUCES")
+    assert len(fiches_conseil.une_astuce_au_hasard(3)) == 3

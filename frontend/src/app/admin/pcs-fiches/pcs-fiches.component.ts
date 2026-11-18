@@ -16,6 +16,8 @@ export interface FicheConseil {
   moyen?: string;
   sections: { titre: string; lignes: string[] }[];
   source: { titre: string; editeur: string; url: string; consulte_le: string };
+  /** false pour les astuces de terrain, qui ne viennent d'aucun document officiel. */
+  officielle: boolean;
 }
 
 /**

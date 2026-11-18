@@ -150,3 +150,23 @@
   white-space: nowrap;
   cursor: help;
 }
+
+.astuces {
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  border-left: 3px solid var(--ac-amber, #d97706);
+  background: var(--ac-amber-bg, #fffbeb);
+  color: var(--ac-text, #1f2937);
+  border-radius: 4px;
+
+  .astuces-titre {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+    margin: 0 0 .35rem; font-weight: 600;
+    .material-icons { font-size: 1.1rem; color: var(--ac-amber, #d97706); }
+    a, .btn-lien { font-weight: 400; font-size: .85rem; }
+  }
+  .astuces-mention { font-weight: 400; font-size: .75rem; color: var(--ac-text-muted, #6b7280); }
+  .btn-lien { background: none; border: 0; padding: 0; color: var(--ac-link, #1d4ed8); text-decoration: underline; cursor: pointer; }
+  ul { margin: 0; padding-left: 1.2rem; }
+  li { margin: .15rem 0; }
+}

@@ -11,6 +11,16 @@
     </button>
   </header>
 
+  @if (astuces.length) {
+    <aside class="astuces" aria-label="Astuces de terrain">
+      <p class="astuces-titre"><span class="material-icons" aria-hidden="true">lightbulb</span> Astuces de terrain
+        <span class="astuces-mention">non officielles</span>
+        <button type="button" class="btn-lien" (click)="chargerAstuces()">D'autres</button>
+        <a routerLink="/admin/pcs-fiches">Toutes les astuces</a></p>
+      <ul>@for (a of astuces; track a) { <li>{{ a }}</li> }</ul>
+    </aside>
+  }
+
   @if (errorMessage) {
     <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
   }

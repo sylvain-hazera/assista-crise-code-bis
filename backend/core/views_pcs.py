@@ -536,6 +536,9 @@ class FichesConseilView(APIView):
 
     def get(self, request):
         from . import fiches_conseil
+        if request.query_params.get("astuces"):
+            # Quelques astuces tirées au hasard, pour la page des centres.
+            return Response({"astuces": fiches_conseil.une_astuce_au_hasard(3)})
         return Response({"categories": fiches_conseil.CATEGORIES, "fiches": fiches_conseil.catalogue()})
 
     def post(self, request):
