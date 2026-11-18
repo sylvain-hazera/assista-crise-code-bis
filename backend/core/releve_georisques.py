@@ -91,6 +91,14 @@ def relever_tout(commune_code: str, environment, forcer: bool = False, interroge
     _reporter_les_risques(commune_code, environment)
     bilan["zonages"] = zonages_officiels.relever(commune_code, environment, forcer=forcer)
     bilan["plans_prevention"] = plans_prevention.relever(commune_code, environment, forcer=forcer)
+    # Le tracé et l'acte des plans de prévention ne sont pas chez Géorisques : ils sont au
+    # Géoportail de l'urbanisme. Même geste, pour que l'écran ait tout d'un coup.
+    from . import geoportail_urbanisme
+    try:
+        bilan["perimetres_ppr"] = geoportail_urbanisme.relever(commune_code, environment, forcer=forcer)
+    except Exception as erreur:  # noqa: BLE001 -- ne doit pas faire échouer le reste du relevé
+        logger.exception("Relevé des périmètres de plans de prévention : échec pour %s", commune_code)
+        bilan["perimetres_ppr"] = {"releves": 0, "erreurs": {"general": str(erreur)[:200]}}
     return bilan
 
 
@@ -154,6 +162,7 @@ def etat(commune_code: str, environment) -> dict:
         "cavites": len(donnees["cavites"] or []),
         "zonages": zonages_officiels.etat(commune_code, environment),
         "plans_prevention": plans_prevention.etat(commune_code, environment),
+        "perimetres_ppr": __import__("core.geoportail_urbanisme", fromlist=["etat"]).etat(commune_code, environment),
     }
 
 

@@ -28,6 +28,23 @@
         @for (t of etat!.tri; track t.nom) { {{ t.nom }}@if (t.risques.length) { ({{ t.risques.join(', ').toLowerCase() }}) } }</p>
     }
     @if (etat!.azi.length) { <p><strong>Atlas des zones inondables :</strong> {{ etat!.azi.join(' ; ') }}</p> }
+    @if (etat!.perimetres_ppr?.length) {
+      <div class="plans">
+        <strong>Plans de prévention des risques — périmètre et règlement</strong>
+        <ul>
+          @for (plan of etat!.perimetres_ppr; track plan.nom) {
+            <li>{{ plan.nom }}
+              @if (plan.url_acte) {
+                — <a [href]="plan.url_acte" target="_blank" rel="noopener noreferrer">ouvrir l'acte (PDF)</a>
+              }
+            </li>
+          }
+        </ul>
+        <p class="note">Source : Géoportail de l'urbanisme. L'acte est un document public de l'État, parfois très lourd (plus de
+          100 Mo) : il s'ouvre sur leur site, il n'est pas recopié ici. Le périmètre de chaque plan se voit sur la carte dans
+          <a routerLink="/admin/couches-carto">Couches cartographiques</a>.</p>
+      </div>
+    }
     @if (etat!.catnat.derniers.length) {
       <details>
         <summary>Les derniers arrêtés de catastrophe naturelle</summary>

@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
 
@@ -17,6 +18,8 @@ export interface EtatGeorisques {
   tri: { nom: string; risques: string[] }[];
   mouvements: { type: string; date: string; lieu: string }[];
   cavites: number;
+  /** Plans de prévention : leur périmètre est relevé, et l'adresse de leur acte (le règlement). */
+  perimetres_ppr?: { nom: string; categorie: string; type_assiette: string; fichier: string; url_acte: string }[];
 }
 
 /**
@@ -31,7 +34,7 @@ export interface EtatGeorisques {
 @Component({
   selector: 'app-releve-georisques',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   templateUrl: './releve-georisques.component.html',
   styleUrl: './releve-georisques.component.scss',
 })

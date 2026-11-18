@@ -4240,6 +4240,23 @@ class ProcedurePPR(EnvironmentScopedModel):
         ]
 
 
+class ServitudePPR(EnvironmentScopedModel):
+    """Le périmètre d'un plan de prévention des risques qui touche une commune, et l'adresse de
+    son acte, tels que le Géoportail de l'urbanisme les publie (core/geoportail_urbanisme.py).
+    Donnée publique. L'acte lui-même n'est pas recopié : il peut peser plus de 100 Mo."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10, db_index=True)
+    categorie = models.CharField(max_length=5)
+    identifiant = models.CharField(max_length=120, blank=True, default="")
+    nom = models.CharField(max_length=255)
+    type_assiette = models.CharField(max_length=120, blank=True, default="")
+    fichier = models.CharField(max_length=255, blank=True, default="")
+    url_acte = models.CharField(max_length=500, blank=True, default="")
+    polygone = gis_models.MultiPolygonField(srid=4326)
+    releve_le = models.DateTimeField(auto_now=True)
+
+
 class ReleveGeorisques(EnvironmentScopedModel):
     """Ce que Géorisques publie pour une commune, rubrique par rubrique, copié en base : risques
     recensés, arrêtés de catastrophe naturelle, atlas des zones inondables, mouvements de

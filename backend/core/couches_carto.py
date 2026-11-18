@@ -44,6 +44,7 @@ COUCHES = {
     "points-du-plan": "Lieux d'accueil et points des dispositifs",
     "inondation-simulee": "Zones inondées simulées, par niveau d'eau",
     "zonages-officiels": "Zones inondables officielles (Géorisques)",
+    "perimetres-ppr": "Périmètres des plans de prévention des risques (Géoportail de l'urbanisme)",
     "enjeux-exposes": "Enjeux et niveau d'eau qui les atteint",
 }
 
@@ -97,6 +98,14 @@ def _zonages(institution, environment):
                    source="Géorisques", releve_le=z.releve_le.date().isoformat()) for z in zonages]
 
 
+def _perimetres_ppr(institution, environment):
+    from .models import ServitudePPR
+
+    return [_objet(s.polygone, nom=s.nom, type=s.type_assiette, acte=s.url_acte, source="Géoportail de l'urbanisme",
+                   releve_le=s.releve_le.date().isoformat())
+            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment)]
+
+
 def _enjeux(institution, environment):
     from . import enjeux_exposes, zonages_officiels
 
@@ -117,7 +126,7 @@ def _enjeux(institution, environment):
 
 
 _EXPORTS = {"quartiers": _quartiers, "sites-sensibles": _sites, "points-du-plan": _points,
-            "inondation-simulee": _inondation, "zonages-officiels": _zonages, "enjeux-exposes": _enjeux}
+            "inondation-simulee": _inondation, "zonages-officiels": _zonages, "perimetres-ppr": _perimetres_ppr, "enjeux-exposes": _enjeux}
 
 
 def exporter(couche: str, institution, environment) -> dict:

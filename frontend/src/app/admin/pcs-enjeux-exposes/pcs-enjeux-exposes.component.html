@@ -51,8 +51,9 @@
             </li>
           }
         </ul>
-        <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }}. Le tracé des zones n'est pas
-          publié par Géorisques : il se consulte dans le dossier du plan, en préfecture ou sur le Géoportail de l'urbanisme.</p>
+        <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }}. Le périmètre de chaque plan et l'adresse de
+          son règlement sont relevés au Géoportail de l'urbanisme : voir le bloc ci-dessus, et la carte dans
+          <a routerLink="/admin/couches-carto">Couches cartographiques</a>.</p>
       } @else {
         <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }} : aucun plan de prévention ne
           couvre cette commune dans la base de l'État.</p>

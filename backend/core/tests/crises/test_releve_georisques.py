@@ -32,6 +32,8 @@ def sans_reseau(monkeypatch):
     monkeypatch.setattr(releve_georisques, "_attendre_son_tour", lambda: None)
     monkeypatch.setattr(zonages_officiels, "relever", lambda *a, **k: appels.append("zonages") or {"relevees": [], "ignorees": [], "erreurs": {}})
     monkeypatch.setattr(plans_prevention, "relever", lambda *a, **k: appels.append("plans") or {"relevees": [], "ignorees": [], "erreurs": {}})
+    from core import geoportail_urbanisme
+    monkeypatch.setattr(geoportail_urbanisme, "relever", lambda *a, **k: appels.append("perimetres") or {"releves": 0, "erreurs": {}})
 
     def interroger(chemin, commune_code):
         appels.append(chemin)
@@ -48,6 +50,8 @@ class TestUnSeulReleve:
         assert sorted(bilan["relevees"]) == sorted(releve_georisques.RUBRIQUES) and not bilan["erreurs"]
         # Les zones inondables et les plans de prévention partent dans le même geste.
         assert appels.count("zonages") == 1 and appels.count("plans") == 1
+        # ... et le périmètre et l'acte des plans, qui sont au Géoportail de l'urbanisme.
+        assert appels.count("perimetres") == 1
         # La page « Risques de la commune » lit ce que CE relevé a rapporté : plus de second appel.
         assert [r["libelle_risque_long"] for r in Commune.objects.get(code="42186").risques_territoire] == ["Inondation", "Mouvement de terrain"]
 

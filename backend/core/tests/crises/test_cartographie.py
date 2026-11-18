@@ -126,12 +126,15 @@ class TestExportDesCouches:
         Zone.objects.update_or_create(institution=mairie, nom="Mon territoire", defaults={"zone_precise": carre(0.2)[0]})
         PalierInondationSimule.objects.create(commune_code=COMMUNE, niveau_metres=1.0, polygone=carre(0.001))
         ZonageOfficiel.objects.create(commune_code=COMMUNE, couche=MOYEN, polygone=carre(0.002))
+        # Le périmètre d'un plan de prévention, relevé au Géoportail de l'urbanisme (18/11/2026).
+        from core.models import ServitudePPR
+        ServitudePPR.objects.create(commune_code=COMMUNE, categorie="pm1", nom="PPRNPI d'essai", polygone=carre(0.004))
         PersonneVulnerable.objects.create(institution_declarante=mairie, commune_code=COMMUNE, nom="Nomtressecret",
                                           prenom="Jeanne", adresse="3 rue du Secret", mode_consentement="VOLONTAIRE")
 
         inventaire = {ligne["couche"]: ligne["objets"] for ligne in client.get("/api/couches-carto/").data}
         assert inventaire == {"quartiers": 1, "sites-sensibles": 1, "points-du-plan": 1, "inondation-simulee": 1,
-                              "zonages-officiels": 1, "enjeux-exposes": 2}
+                              "zonages-officiels": 1, "perimetres-ppr": 1, "enjeux-exposes": 2}
 
         tout = ""
         for couche in inventaire:
