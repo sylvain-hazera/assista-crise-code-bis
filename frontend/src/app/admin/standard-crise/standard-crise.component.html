@@ -25,23 +25,37 @@
   @if (message) { <p class="message" role="status">{{ message }}</p> }
 
   @if (onglet === 'appels') {
+    <!-- 18/11/2026 : pas de doublon. Une demande, une offre, un signalement ou une disparition
+         reçus par téléphone se saisissent dans LE formulaire du public, pour l'appelant. -->
+    <section class="fiche">
+      <h2>Quelqu'un appelle pour…</h2>
+      <div class="pour-autrui">
+        <a class="geste vert" routerLink="/help-proposal" [queryParams]="pourAutrui()">Proposer son aide</a>
+        <a class="geste rouge" routerLink="/help-request" [queryParams]="pourAutrui()">Demander de l'aide</a>
+        <a class="geste bleu" routerLink="/other-declaration" [queryParams]="pourAutrui()">Autre déclaration</a>
+        <a class="geste jaune" routerLink="/recherches-personnes/new" [queryParams]="pourAutrui()">Signaler une personne disparue</a>
+      </div>
+      <p class="note">Vous remplissez le même formulaire que l'habitant, à sa place. La vraie fiche est créée et suit son
+        chemin habituel ; l'appel est noté ci-dessous, avec un lien vers elle. L'adresse électronique de l'appelant est facultative.</p>
+    </section>
+
     <form class="fiche" (ngSubmit)="enregistrer()">
-      <h2>Nouvel appel</h2>
+      <h2>Un renseignement, ou autre chose</h2>
       <div class="ligne">
         <label>Nature
           <select name="nature" [(ngModel)]="saisie.nature">
-            @for (n of synthese?.natures ?? []; track n.code) { <option [value]="n.code">{{ n.libelle }}</option> }
+            <option value="RENSEIGNEMENT">Demande de renseignement</option>
+            <option value="AUTRE">Autre</option>
           </select></label>
         <label class="large">Objet de l'appel <span class="obligatoire">*</span>
-          <input type="text" name="objet" maxlength="500" [(ngModel)]="saisie.objet" placeholder="Cave inondée, personne seule à l'étage"></label>
+          <input type="text" name="objet" maxlength="500" [(ngModel)]="saisie.objet" placeholder="Demande où se trouve le centre d'accueil"></label>
       </div>
       <div class="ligne">
         <label>Qui appelle <input type="text" name="nom" maxlength="150" [(ngModel)]="saisie.appelant_nom"></label>
         <label>Téléphone <input type="tel" name="telephone" maxlength="30" [(ngModel)]="saisie.appelant_telephone"></label>
         <label class="large">Lieu concerné <input type="text" name="lieu" maxlength="250" [(ngModel)]="saisie.lieu"></label>
       </div>
-      <p class="note">Ces informations sont chiffrées. Un appel qui demande une intervention s'ouvre ensuite en dossier,
-        qui n'en reprend aucune.</p>
+      <p class="note">Ces informations sont chiffrées.</p>
       <div class="actions">
         <button type="submit" class="btn-primary" [disabled]="envoi">{{ envoi ? 'Enregistrement…' : 'Enregistrer la fiche' }}</button>
       </div>
@@ -61,6 +75,7 @@
               <td>{{ a.lieu }}</td>
               <td>
                 <span class="pastille" [attr.data-suite]="a.suite">{{ a.suite_libelle }}</span>
+                @for (f of a.fiches ?? []; track f.id) { <br><a [routerLink]="lienFiche(f)" [queryParams]="{ id: f.id }">{{ libelleFiche(f) }}</a> }
                 @if (a.dossier_numero) { <br><a [routerLink]="['/admin/dossiers']" [queryParams]="{ id: a.dossier }">{{ a.dossier_numero }}</a> }
                 @if (a.suite_donnee) { <br><span class="note">{{ a.suite_donnee }}</span> }
               </td>

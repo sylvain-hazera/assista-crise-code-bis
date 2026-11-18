@@ -564,3 +564,83 @@ class TestLeBureauOuLaMairieValide:
         _, voisine = _mairie(create_user, "Mairie d'à côté", "42199")
         assert self._valider(voisine, ligne).status_code == 400
         assert voisine.get(reverse("releves_equipe")).data["fiches"] == []
+
+
+@pytest.mark.django_db
+class TestSaisiePourAutrui:
+    """18/11/2026, correction de Sylvain : « la mairie enregistre la même chose que sur les
+    formulaires grand public, sauf qu'elle le fait pour autrui. Là tu m'as fait un doublon. »
+    Une demande reçue par téléphone crée donc la VRAIE demande ; la fiche d'appel n'en est que
+    la trace."""
+
+    @pytest.fixture
+    def crise_conduite(self, crise, mairie, create_user):
+        from core.models import ImplicationInstitution, TypeImplication
+        responsable = create_user(username="resp@std.fr", email="resp@std.fr", type="AUT_LOCALE")
+        ImplicationInstitution.objects.create(crise=crise, institution=mairie[0], responsable=responsable,
+                                              type_implication=TypeImplication.ACTEUR, actif=True)
+        return crise
+
+    def _demande(self, client, crise, request_type, **corps):
+        return client.post("/api/demandes/", {
+            "title": "Demande d'aide - Crue du Gier - Matériel", "description": "Cave inondée",
+            "first_name_request": "Jeanne", "last_name_request": "Durand", "phone_request": "0600000000",
+            "request_type": str(request_type.id), "crisis": str(crise.id), **corps}, format="json")
+
+    def test_le_standard_cree_la_vraie_demande_sans_adresse_electronique(self, mairie, crise_conduite, request_type):
+        from core.models import Request
+        _, client = mairie
+        reponse = self._demande(client, crise_conduite, request_type, via_standard="1",
+                                standard_appel="11111111-1111-4111-8111-111111111111")
+        assert reponse.status_code == 201, reponse.data
+        demande = Request.objects.get()
+        assert (demande.first_name_request, demande.email_request or "") == ("Jeanne", "")
+        # La fiche dit elle-même qu'elle a été enregistrée par la mairie, pour la personne.
+        assert demande.enregistre_pour_autrui_par_id == mairie[0].id
+
+        (fiche,) = client.get(reverse("appelstandard-list")).data
+        assert (fiche["nature"], fiche["suite"], fiche["appelant_nom"]) == ("DEMANDE_AIDE", "TRANSMIS", "Jeanne Durand")
+        assert fiche["fiches"] == [{"type": "demande", "id": str(demande.id), "titre": demande.title}]
+
+    def test_deux_besoins_dans_un_meme_appel_ne_laissent_qu_une_fiche(self, mairie, crise_conduite, request_type):
+        _, client = mairie
+        for _ in range(2):
+            assert self._demande(client, crise_conduite, request_type, via_standard="1",
+                                 standard_appel="22222222-2222-4222-8222-222222222222").status_code == 201
+        (fiche,) = client.get(reverse("appelstandard-list")).data
+        assert len(fiche["fiches"]) == 2 and AppelStandard.objects.count() == 1
+
+    def test_hors_standard_l_adresse_reste_exigee(self, mairie, crise_conduite, request_type):
+        reponse = self._demande(mairie[1], crise_conduite, request_type, enregistre_pour_autrui_par=str(mairie[0].id))
+        assert reponse.status_code == 400 and "email_request" in reponse.data
+        assert not AppelStandard.objects.exists()
+
+    def test_un_particulier_ne_s_exempte_pas_en_se_disant_standard(self, create_user, crise_conduite, request_type):
+        particulier = APIClient()
+        particulier.force_authenticate(user=create_user(username="p@std.fr", email="p@std.fr", type="UTIL_SIMPLE"))
+        reponse = self._demande(particulier, crise_conduite, request_type, via_standard="1")
+        assert reponse.status_code == 400 and "email_request" in reponse.data
+        assert not AppelStandard.objects.exists()
+
+    def test_aucun_courriel_ne_part_sans_adresse(self, mairie, crise_conduite, request_type, mailoutbox):
+        self._demande(mairie[1], crise_conduite, request_type, via_standard="1")
+        assert all(m.to and all(m.to) for m in mailoutbox)      # jamais de destinataire vide
+
+    def test_un_signalement_recu_au_standard_cree_le_vrai_signalement(self, mairie, crise_conduite):
+        from core.models import Information, InformationType
+        _, client = mairie
+        t, _c = InformationType.objects.get_or_create(type="Danger imminent")
+        reponse = client.post("/api/informations/", {
+            "title": "Arbre sur la route", "first_name_information": "Paul", "last_name_information": "Petit",
+            "phone_information": "0600000000", "information_type": str(t.id), "crisis": str(crise_conduite.id),
+            "location": "POINT(4.6 45.5)", "via_standard": "1"}, format="json")
+        assert reponse.status_code == 201, reponse.data
+        (fiche,) = client.get(reverse("appelstandard-list")).data
+        assert fiche["nature"] == "SIGNALEMENT" and fiche["fiches"][0]["id"] == str(Information.objects.get().id)
+
+    def test_personne_ne_se_declare_enregistre_par_la_mairie(self, mairie, crise_conduite, request_type):
+        from core.models import Request
+        reponse = self._demande(mairie[1], crise_conduite, request_type, email_request="j@courriel.exemple",
+                                enregistre_pour_autrui_par=str(mairie[0].id))
+        assert reponse.status_code == 201, reponse.data
+        assert Request.objects.get().enregistre_pour_autrui_par_id is None

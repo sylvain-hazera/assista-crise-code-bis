@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
@@ -39,6 +39,13 @@ export class PcsAnnuaireComponent implements OnInit {
   readonly categories = CATEGORIES_INTERLOCUTEUR_PCS;
   readonly modes = MODES_ALERTE_PCS.filter(m => m.disponible);
 
+  /** Renseigné quand la page est affichée DANS la fiche d'une institution (onglet) : on tient
+   * alors l'annuaire de cette institution-là, et non de celle de la personne. Une seule
+   * implémentation pour les deux endroits — il y en avait deux, sous deux noms (18/11/2026). */
+  @Input() institution: string | null = null;
+  @Input() nomInstitution = '';
+  get integre(): boolean { return !!this.institution; }
+
   institutionId = '';
   commune = '';
   sansCollectivite = false;
@@ -55,6 +62,7 @@ export class PcsAnnuaireComponent implements OnInit {
   constructor(private dossier: DossierPcsService, private service: InterlocuteurAlertePCSService) {}
 
   ngOnInit(): void {
+    if (this.institution) { this.institutionId = this.institution; this.commune = this.nomInstitution; this.charger(); return; }
     this.dossier.lire().subscribe({
       next: (d) => { this.institutionId = d.institution; this.commune = d.commune.nom; this.charger(); },
       error: (e) => { this.chargement = false; this.sansCollectivite = e?.status === 403; if (!this.sansCollectivite) this.erreur = "Impossible de lire l'annuaire."; },

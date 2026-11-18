@@ -1,3 +1,4 @@
+import { RETOUR_STANDARD, SaisieStandard, lireSaisieStandard, marquerSaisieStandard, nouvelleSaisiePourAutrui } from '../../../shared/utils/saisie-standard';
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
@@ -117,8 +118,27 @@ export class RequestHelpFormComponent implements OnInit {
     private locationService: LocationService
   ) {}
 
+  /** Non nul quand le standard de crise remplit ce formulaire pour quelqu'un qui téléphone. */
+  saisieStandard: SaisieStandard | null = null;
+
+  /** La case n'est proposée qu'aux comptes de collectivité ou de structure. */
+  get peutSaisirPourAutrui(): boolean { return !!this.authService.isInstitutionalEffective?.(); }
+
+  /** Coche ou décoche « enregistré par la collectivité à la demande de la personne ». */
+  definirPourAutrui(coche: boolean): void {
+    this.saisieStandard = coche ? nouvelleSaisiePourAutrui() : null;
+    const f = this.informationForm;
+    const moi = this.authService.getCurrentUser();
+    // Ses coordonnées, pas les miennes ; et l'inverse quand on décoche.
+    f.patchValue(coche ? { lastName: '', firstName: '', email: '', phoneNumber: '' }
+      : { lastName: moi?.last_name ?? '', firstName: moi?.first_name ?? '', email: moi?.email ?? '', phoneNumber: moi?.phone_number ?? '' });
+    f.get('email')?.setValidators(coche ? [Validators.email] : [Validators.required, Validators.email]);
+    f.get('email')?.updateValueAndValidity();
+  }
+
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
+    this.saisieStandard = lireSaisieStandard(this.authService);
     this.initForm();
     this.loadTypesDemande();
   }
@@ -220,10 +240,11 @@ export class RequestHelpFormComponent implements OnInit {
     this.addNeed();
 
     this.informationForm = this.formBuilder.group({
-      lastName: [this.currentUser?.last_name, Validators.required],
-      firstName: [this.currentUser?.first_name, Validators.required],
-      email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]]
+      // Au standard, ce sont les coordonnées de l'appelant : rien n'est repris du compte de l'agent.
+      lastName: [this.saisieStandard ? '' : this.currentUser?.last_name, Validators.required],
+      firstName: [this.saisieStandard ? '' : this.currentUser?.first_name, Validators.required],
+      email: [this.saisieStandard ? '' : this.currentUser?.email, this.saisieStandard ? [Validators.email] : [Validators.required, Validators.email]],
+      phoneNumber: [this.saisieStandard ? '' : this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]]
     });
   }
 
@@ -284,7 +305,8 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('title', `Demande d'aide - ${crisisLabel} - ${needType}`);
       formData.append('first_name_request', this.informationForm.get('firstName')?.value);
       formData.append('last_name_request', this.informationForm.get('lastName')?.value);
-      formData.append('email_request', this.informationForm.get('email')?.value);
+      formData.append('email_request', this.informationForm.get('email')?.value ?? '');
+      marquerSaisieStandard(formData, this.saisieStandard);
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
 
       // Besoin Hébergement : la zone de recherche remplace `location`/`commune_code`.
@@ -341,8 +363,8 @@ export class RequestHelpFormComponent implements OnInit {
             });
           });
         });
-        alert('Votre demande a été enregistrée avec succès !');
-        this.router.navigate(['/accueil']);
+        alert(this.saisieStandard ? 'Demande enregistrée pour l\'appelant.' : 'Votre demande a été enregistrée avec succès !');
+        this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
       },
       error: (err) => {
         console.error('Erreur création demande:', err);
@@ -372,7 +394,7 @@ export class RequestHelpFormComponent implements OnInit {
 
   goBack(): void {
     if(this.state == 1) {
-      this.router.navigate(['/accueil']);
+      this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
     } else {
       this.state = 1;
       window.scrollTo({ top: 0, behavior: 'smooth' });

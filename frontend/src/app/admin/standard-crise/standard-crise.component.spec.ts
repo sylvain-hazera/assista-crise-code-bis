@@ -34,7 +34,7 @@ describe('StandardCriseComponent', () => {
     composant.enregistrer();
 
     const requete = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/standard-crise/appels/'));
-    expect(requete.request.body).toEqual(jasmine.objectContaining({ crise: 'c1', nature: 'DEMANDE_AIDE', objet: 'Cave inondée' }));
+    expect(requete.request.body).toEqual(jasmine.objectContaining({ crise: 'c1', nature: 'RENSEIGNEMENT', objet: 'Cave inondée' }));
     requete.flush({ numero: 7 });
     expect(composant.message).toContain('n° 7');
     expect(composant.saisie.objet).toBe('');

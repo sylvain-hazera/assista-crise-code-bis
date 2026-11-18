@@ -5,8 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { CrisisService } from '../../services/crisis.service';
 import {
-  AppelStandard, NatureAppel, PointDeSituation, StandardCriseService, SuiteAppel, SyntheseAppels,
-} from '../../services/standard-crise.service';
+  AppelStandard, NatureAppel, PointDeSituation, StandardCriseService, SuiteAppel, SyntheseAppels, FicheLiee } from '../../services/standard-crise.service';
 import { Crisis } from '../../shared/models/crisis.model';
 
 /**
@@ -69,8 +68,22 @@ export class StandardCriseComponent implements OnInit {
     });
   }
 
+  /** Paramètres passés au formulaire du public : il sait ainsi qu'il est rempli pour autrui. */
+  pourAutrui(): Record<string, string> {
+    return this.criseId ? { standard: '1', crise: this.criseId } : { standard: '1' };
+  }
+
+  /** Où se lit et se traite la vraie fiche créée pendant l'appel. */
+  lienFiche(fiche: FicheLiee): string[] {
+    return fiche.type === 'recherche' ? ['/admin/recherches-personnes', fiche.id] : ['/admin/signalements'];
+  }
+
+  libelleFiche(fiche: FicheLiee): string {
+    return { demande: 'Voir la demande', offre: "Voir l'offre", information: 'Voir le signalement', recherche: 'Voir la recherche' }[fiche.type];
+  }
+
   private ficheVide() {
-    return { nature: 'DEMANDE_AIDE' as NatureAppel, objet: '', appelant_nom: '', appelant_telephone: '', lieu: '' };
+    return { nature: 'RENSEIGNEMENT' as NatureAppel, objet: '', appelant_nom: '', appelant_telephone: '', lieu: '' };
   }
 
   ouvrir(onglet: 'appels' | 'situation'): void {

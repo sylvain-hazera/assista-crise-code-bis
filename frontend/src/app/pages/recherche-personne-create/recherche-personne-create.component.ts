@@ -1,3 +1,4 @@
+import { RETOUR_STANDARD, SaisieStandard, lireSaisieStandard, marquerSaisieStandard, nouvelleSaisiePourAutrui } from '../../shared/utils/saisie-standard';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Component } from '@angular/core';
@@ -53,6 +54,20 @@ export class RecherchePersonneCreateComponent {
 
   }
 
+  /** Non nul quand le standard de crise remplit ce formulaire pour quelqu'un qui téléphone. */
+  saisieStandard: SaisieStandard | null = null;
+
+  get peutSaisirPourAutrui(): boolean { return !!this.authService.isInstitutionalEffective?.(); }
+
+  /** Coche ou décoche « enregistré par la collectivité à la demande de la personne ». */
+  definirPourAutrui(coche: boolean): void {
+    this.saisieStandard = coche ? nouvelleSaisiePourAutrui() : null;
+    const moi = this.authService.getCurrentUser();
+    this.modele.contact_nom = coche ? '' : `${moi?.first_name ?? ''} ${moi?.last_name ?? ''}`.trim();
+    this.modele.contact_email = coche ? '' : (moi?.email ?? '');
+    this.modele.contact_telephone = coche ? '' : (moi?.phone_number || '');
+  }
+
   ngOnInit(): void {
 
     this.crisisService
@@ -63,10 +78,13 @@ export class RecherchePersonneCreateComponent {
 
       });
 
+    this.saisieStandard = lireSaisieStandard(this.authService);
+
     const currentUser =
       this.authService.getCurrentUser();
 
-    if (currentUser) {
+    // Au standard, le contact est l'appelant : rien n'est repris du compte de l'agent.
+    if (currentUser && !this.saisieStandard) {
 
       this.modele.contact_nom =
         `${currentUser.first_name ?? ''} ${currentUser.last_name ?? ''}`.trim();
@@ -118,9 +136,12 @@ export class RecherchePersonneCreateComponent {
 
     }
 
+    marquerSaisieStandard(formData, this.saisieStandard);
+
     this.service
       .create(formData)
       .subscribe(() => {
+        if (this.saisieStandard) { this.router.navigate([RETOUR_STANDARD]); return; }
 
         // Le dépôt est ouvert à tout compte authentifié (voir public.routes.ts), mais la liste
         // /recherches-personnes reste réservée aux acteurs institutionnels (institutional

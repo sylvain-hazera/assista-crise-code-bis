@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
@@ -25,6 +25,13 @@ import { RisqueCommunal, RisqueMajeurType, SuggestionGeorisques } from '../../sh
   styleUrl: '../pcs-annuaire/pcs-paragraphe.scss',
 })
 export class PcsRisquesComponent implements OnInit {
+  /** Renseigné quand la page est affichée DANS la fiche d'une institution (onglet) : on tient
+   * alors les risques de cette institution-là, et non de celle de la personne. Une seule
+   * implémentation pour les deux endroits — il y en avait deux, sous deux noms (18/11/2026). */
+  @Input() institution: string | null = null;
+  @Input() nomInstitution = '';
+  get integre(): boolean { return !!this.institution; }
+
   institutionId = '';
   commune = '';
   sansCollectivite = false;
@@ -47,8 +54,7 @@ export class PcsRisquesComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.dossier.lire().subscribe({
-      next: (d) => {
+    const suite = (d: { institution: string; commune: { nom: string } }) => {
         this.institutionId = d.institution;
         this.commune = d.commune.nom;
         this.charger();
@@ -57,7 +63,10 @@ export class PcsRisquesComponent implements OnInit {
           next: ({ suggestions }) => { this.suggestions = suggestions; },
           error: () => { this.suggestionsErreur = 'Géorisques ne répond pas pour cette commune : la saisie reste possible.'; },
         });
-      },
+    };
+    if (this.institution) { suite({ institution: this.institution, commune: { nom: this.nomInstitution } }); return; }
+    this.dossier.lire().subscribe({
+      next: suite,
       error: (e) => { this.chargement = false; this.sansCollectivite = e?.status === 403; if (!this.sansCollectivite) this.erreur = 'Impossible de lire les risques.'; },
     });
   }

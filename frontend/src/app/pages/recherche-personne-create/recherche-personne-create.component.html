@@ -1,6 +1,17 @@
 <div class="recherche-container">
 
   <div class="form-wrapper">
+    <label class="case-pour-autrui" *ngIf="peutSaisirPourAutrui">
+      <input type="checkbox" [checked]="!!saisieStandard" (change)="definirPourAutrui($any($event.target).checked)">
+      <span><strong>Enregistré par la collectivité à la demande de la personne</strong>
+        <small>Cochez quand vous saisissez pour quelqu'un qui vous appelle ou se présente : ce sont ses coordonnées qu'on note,
+        pas les vôtres, et son adresse électronique devient facultative.</small></span>
+    </label>
+    <div class="bandeau-standard" *ngIf="saisieStandard">
+      <span class="material-icons" aria-hidden="true">support_agent</span>
+      <span><strong>Saisie pour autrui.</strong> Notez les coordonnées de la personne, pas les vôtres.
+      L'adresse électronique est facultative : sans elle, la personne ne reçoit pas de lien de suivi.</span>
+    </div>
 
     <div class="form-header">
 
@@ -270,7 +281,7 @@
         et aux autorités locales de vous contacter rapidement.
       </p>
       <p
-        *ngIf="modele.contact_email"
+        *ngIf="modele.contact_email && !saisieStandard"
         class="user-detected"
       >
         Les coordonnées du compte connecté
@@ -288,7 +299,7 @@
           type="text"
           class="form-input"
           [(ngModel)]="modele.contact_nom"
-          [readonly]="true"
+          [readonly]="!saisieStandard"
         >
 
       </div>
@@ -303,7 +314,7 @@
           type="email"
           class="form-input"
           [(ngModel)]="modele.contact_email"
-          [readonly]="true"
+          [readonly]="!saisieStandard"
         >
 
       </div>

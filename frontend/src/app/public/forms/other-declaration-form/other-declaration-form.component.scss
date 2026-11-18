@@ -535,3 +535,13 @@ textarea {
   .material-icons { font-size: 16px; }
   &:hover { text-decoration: underline; }
 }
+
+// Saisie par le standard de crise, pour quelqu'un qui téléphone (18/11/2026).
+.bandeau-standard { display: flex; gap: .6rem; align-items: flex-start; margin: 0 0 1rem; padding: .7rem .9rem;
+  border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); color: var(--ac-text, #111827); border-radius: 6px; font-size: .92rem; }
+
+.case-pour-autrui { display: flex; gap: .6rem; align-items: flex-start; margin: 0 0 .8rem; padding: .6rem .8rem; cursor: pointer;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px; background: var(--ac-surface, #fff);
+  input { margin-top: .25rem; width: 1.1rem; height: 1.1rem; }
+  small { display: block; font-weight: 400; color: var(--ac-text-muted, #6b7280); margin-top: .15rem; }
+}

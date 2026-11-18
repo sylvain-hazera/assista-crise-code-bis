@@ -81,3 +81,13 @@
   &:hover:not(:disabled) { background: #1d4ed8; } }
 .btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
   &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }
+
+// Les quatre gestes du public, repris tels quels : mêmes mots, mêmes couleurs que la page d'accueil.
+.pour-autrui { display: flex; flex-wrap: wrap; gap: .6rem; margin: .4rem 0 .6rem;
+  .geste { display: inline-flex; align-items: center; padding: .65rem 1.2rem; border-radius: 6px; font-weight: 700;
+    text-decoration: none; color: #fff; }
+  .vert { background: #4caf50; } .rouge { background: #f44336; } .bleu { background: #0d6efd; }
+  .jaune { background: #ffd54f; color: #1f2937; }
+  .geste:hover { filter: brightness(.94); }
+  .geste:focus-visible { outline: 3px solid #111827; outline-offset: 2px; }
+}

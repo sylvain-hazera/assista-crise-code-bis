@@ -744,6 +744,10 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     nombre_places_assises = models.PositiveIntegerField(null=True, blank=True)
     first_name_request = EncryptedTextField()
     last_name_request = EncryptedTextField()
+    #: La collectivité ou la structure qui a enregistré cette fiche À LA DEMANDE de la personne
+    #: (au téléphone, au guichet) — voir core/standard_crise.py. Vide : déposée par elle-même.
+    enregistre_pour_autrui_par = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     email_request = EncryptedEmailField()
     # Index aveugle : rapprochement exact avec un compte existant (resolve_or_invite_demandeur).
     email_request_bidx = models.CharField(max_length=64, null=True, blank=True, db_index=True)
@@ -832,6 +836,10 @@ class Information(EnvironmentScopedModel):
     photo = models.ImageField(upload_to=secure_information_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     first_name_information = EncryptedTextField()
     last_name_information = EncryptedTextField()
+    #: La collectivité ou la structure qui a enregistré cette fiche À LA DEMANDE de la personne
+    #: (au téléphone, au guichet) — voir core/standard_crise.py. Vide : déposée par elle-même.
+    enregistre_pour_autrui_par = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     email_information = EncryptedEmailField()
     # Voir User.email_bidx pour le raisonnement -- recherche EXACTE le cas échéant.
     email_information_bidx = models.CharField(max_length=64, null=True, blank=True, db_index=True)
@@ -976,6 +984,10 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     first_name_offer = EncryptedTextField()
     last_name_offer = EncryptedTextField()
+    #: La collectivité ou la structure qui a enregistré cette fiche À LA DEMANDE de la personne
+    #: (au téléphone, au guichet) — voir core/standard_crise.py. Vide : déposée par elle-même.
+    enregistre_pour_autrui_par = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     email_offer = EncryptedEmailField()
     # Voir User.email_bidx pour le raisonnement -- utilisé par resolve_or_invite_benevole pour
     # rapprocher cette offre d'un compte User existant (recherche EXACTE).
@@ -4095,13 +4107,14 @@ class NatureAppelStandard(models.TextChoices):
     DEMANDE_AIDE = "DEMANDE_AIDE", "Demande d'aide"
     OFFRE_AIDE = "OFFRE_AIDE", "Offre d'aide"
     SIGNALEMENT = "SIGNALEMENT", "Signalement"
+    PERSONNE_DISPARUE = "PERSONNE_DISPARUE", "Personne disparue"
     RENSEIGNEMENT = "RENSEIGNEMENT", "Demande de renseignement"
     AUTRE = "AUTRE", "Autre"
 
 
 class SuiteAppelStandard(models.TextChoices):
     A_TRAITER = "A_TRAITER", "À traiter"
-    TRANSMIS = "TRANSMIS", "Transmis (dossier ouvert)"
+    TRANSMIS = "TRANSMIS", "Transmis"
     TRAITE = "TRAITE", "Traité"
     SANS_SUITE = "SANS_SUITE", "Sans suite"
 
@@ -4111,7 +4124,14 @@ class AppelStandard(EnvironmentScopedModel):
     pour quoi, et quelle suite a été donnée — voir core/standard_crise.py.
 
     Tout ce qui parle de la personne est chiffré. Un appel qui demande une intervention ouvre
-    un dossier (`dossier`), qui ne reprend aucune de ces données : il renvoie à la fiche."""
+    un dossier (`dossier`), qui ne reprend aucune de ces données : il renvoie à la fiche.
+
+    18/11/2026, correction de Sylvain : une demande d'aide, une offre, un signalement ou une
+    personne disparue reçus par téléphone ne sont PAS notés ici à part — ce serait un doublon.
+    L'agent remplit le formulaire public à la place de l'appelant, et la vraie fiche est créée ;
+    celle-ci n'en garde que la trace de l'appel (qui a décroché, quand) et y renvoie
+    (`demandes`, `offres`, `informations`, `recherches`). Seuls « renseignement » et « autre »
+    se saisissent directement ici."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="appels_standard")
@@ -4131,12 +4151,22 @@ class AppelStandard(EnvironmentScopedModel):
     date_appel = models.DateTimeField(auto_now_add=True)
     traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="appels_standard_traites")
     traite_le = models.DateTimeField(null=True, blank=True)
+    #: Tiré par le navigateur à l'ouverture du formulaire : un formulaire qui crée plusieurs
+    #: fiches (deux besoins dans une même demande) ne laisse qu'UNE fiche d'appel.
+    identifiant_saisie = models.UUIDField(null=True, blank=True)
+    demandes = models.ManyToManyField("Request", blank=True, related_name="appels_standard")
+    offres = models.ManyToManyField("Offer", blank=True, related_name="appels_standard")
+    informations = models.ManyToManyField("Information", blank=True, related_name="appels_standard")
+    recherches = models.ManyToManyField("RecherchePersonne", blank=True, related_name="appels_standard")
 
     class Meta:
         ordering = ["-date_appel"]
         constraints = [
             models.UniqueConstraint(
                 fields=["institution", "numero", "environment"], name="uq_appel_standard_institution_numero"),
+            models.UniqueConstraint(
+                fields=["institution", "identifiant_saisie", "environment"],
+                condition=models.Q(identifiant_saisie__isnull=False), name="uq_appel_standard_saisie"),
         ]
 
 
@@ -4880,6 +4910,10 @@ class RecherchePersonne(EnvironmentScopedModel):
         related_name="recherches_personnes"
     )
 
+    #: La collectivité ou la structure qui a enregistré cette fiche À LA DEMANDE de la personne
+    #: (au téléphone, au guichet) — voir core/standard_crise.py. Vide : déposée par elle-même.
+    enregistre_pour_autrui_par = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     contact_email = EncryptedEmailField()
 
     contact_telephone = EncryptedTextField(

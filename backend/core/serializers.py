@@ -282,6 +282,30 @@ class InformationTypeBesoinSerializer(serializers.ModelSerializer):
         model = InformationTypeBesoin
         fields = "__all__"
 
+class SaisieStandardMixin:
+    """Quand le standard d'une collectivité remplit le formulaire pour quelqu'un qui téléphone,
+    l'adresse électronique n'est plus exigée : l'appelant n'en a pas toujours. Pour tout autre
+    dépôt elle le reste — voir core/standard_crise.py."""
+
+    CHAMPS_COURRIEL = ("email_request", "email_offer", "email_information", "contact_email")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .standard_crise import est_saisie_standard
+
+        # Posé par le serveur seul : personne ne se déclare « enregistré par la mairie ».
+        if "enregistre_pour_autrui_par" in self.fields:
+            self.fields["enregistre_pour_autrui_par"].read_only = True
+        requete = self.context.get("request")
+        if requete is not None and requete.method == "POST" and est_saisie_standard(requete):
+            for champ in self.CHAMPS_COURRIEL:
+                if champ in self.fields:
+                    self.fields[champ].required = False
+                    self.fields[champ].allow_blank = True
+                    if hasattr(self.fields[champ], "allow_null"):
+                        self.fields[champ].allow_null = False
+
+
 class PositionValideeMixin:
     """Refuse proprement une position illisible.
 
@@ -877,7 +901,7 @@ class CrisisSerializer(serializers.ModelSerializer):
         # .filter().exists() qui ignorerait le cache et relancerait une requête par crise.
         return any(i.responsable_id and i.actif for i in obj.implications.all())
 
-class RequestSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
+class RequestSerializer(SaisieStandardMixin, PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Demande d'aide. La localisation n'est visible que de la mairie, des secours et des
     bénévoles affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -1020,7 +1044,7 @@ class RequestPhotoSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class OfferSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
+class OfferSerializer(SaisieStandardMixin, PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Offre d'aide. La localisation n'est visible que des acteurs institutionnels de la zone ;
     null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -1430,7 +1454,7 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
         return full_name or obj.benevole.email
 
 
-class InformationSerializer(PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
+class InformationSerializer(SaisieStandardMixin, PositionValideeMixin, SansIndexAveugleMixin, serializers.ModelSerializer):
     """Signalement. La localisation n'est visible que de la mairie, des secours et des bénévoles
     affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -2741,7 +2765,7 @@ class DemandeMobilisationSerializer(serializers.ModelSerializer):
 
 
 class RecherchePersonneSerializer(
-    serializers.ModelSerializer
+    SaisieStandardMixin, serializers.ModelSerializer
 ):
 
     crise_nom = serializers.CharField(

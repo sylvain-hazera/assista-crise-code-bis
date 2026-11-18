@@ -1,3 +1,4 @@
+import { RETOUR_STANDARD, SaisieStandard, lireSaisieStandard, marquerSaisieStandard, nouvelleSaisiePourAutrui } from '../../../shared/utils/saisie-standard';
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray, AbstractControl, ValidationErrors } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
@@ -407,8 +408,27 @@ export class ProposeHelpFormComponent implements OnInit {
     }
   }
 
+  /** Non nul quand le standard de crise remplit ce formulaire pour quelqu'un qui téléphone. */
+  saisieStandard: SaisieStandard | null = null;
+
+  /** La case n'est proposée qu'aux comptes de collectivité ou de structure. */
+  get peutSaisirPourAutrui(): boolean { return !!this.authService.isInstitutionalEffective?.(); }
+
+  /** Coche ou décoche « enregistré par la collectivité à la demande de la personne ». */
+  definirPourAutrui(coche: boolean): void {
+    this.saisieStandard = coche ? nouvelleSaisiePourAutrui() : null;
+    const f = this.informationForm;
+    const moi = this.authService.getCurrentUser();
+    // Ses coordonnées, pas les miennes ; et l'inverse quand on décoche.
+    f.patchValue(coche ? { lastName: '', firstName: '', email: '', phoneNumber: '' }
+      : { lastName: moi?.last_name ?? '', firstName: moi?.first_name ?? '', email: moi?.email ?? '', phoneNumber: moi?.phone_number ?? '' });
+    f.get('email')?.setValidators(coche ? [Validators.email] : [Validators.required, Validators.email]);
+    f.get('email')?.updateValueAndValidity();
+  }
+
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
+    this.saisieStandard = lireSaisieStandard(this.authService);
     this.initForm();
     this.loadTypesOffre();
     this.buildJoursDispo();
@@ -484,10 +504,11 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addOffer();
 
     this.informationForm = this.formBuilder.group({
-      lastName: [this.currentUser?.last_name, Validators.required],
-      firstName: [this.currentUser?.first_name, Validators.required],
-      email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
+      // Au standard, ce sont les coordonnées de l'appelant : rien n'est repris du compte de l'agent.
+      lastName: [this.saisieStandard ? '' : this.currentUser?.last_name, Validators.required],
+      firstName: [this.saisieStandard ? '' : this.currentUser?.first_name, Validators.required],
+      email: [this.saisieStandard ? '' : this.currentUser?.email, this.saisieStandard ? [Validators.email] : [Validators.required, Validators.email]],
+      phoneNumber: [this.saisieStandard ? '' : this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
       organisationNom: [''],
       // Qualifications déclarées une fois pour la personne, reportées sur chaque offre où elle est
       // présente (voir onSubmit).
@@ -558,7 +579,8 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('title', `Offre d'aide - ${crisisLabel} - ${v.type}`);
       formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
       formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
-      formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value ?? '');
+      marquerSaisieStandard(formData, this.saisieStandard);
       formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
 
       const typeId = this.typesOffreMap.get(v.type);
@@ -657,7 +679,8 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('title', `Offre d'aide - ${crisisLabel} - Engin : ${line.item.nom}`);
       formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
       formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
-      formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value ?? '');
+      marquerSaisieStandard(formData, this.saisieStandard);
       formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
 
       const typeId = this.typesOffreMap.get(TYPE_MATERIEL);
@@ -709,8 +732,8 @@ export class ProposeHelpFormComponent implements OnInit {
             });
           });
         });
-        alert('Votre offre a été enregistrée avec succès !');
-        this.router.navigate(['/accueil']);
+        alert(this.saisieStandard ? 'Offre enregistrée pour l\'appelant.' : 'Votre offre a été enregistrée avec succès !');
+        this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
       },
       error: (err) => {
         console.error('Erreur création offre:', err);
@@ -741,7 +764,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
   goBack(): void {
     if(this.state == 1) {
-      this.router.navigate(['/accueil']);
+      this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
     } else {
       this.state = 1;
       window.scrollTo({ top: 0, behavior: 'smooth' });

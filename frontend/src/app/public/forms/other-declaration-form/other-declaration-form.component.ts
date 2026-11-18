@@ -1,3 +1,4 @@
+import { RETOUR_STANDARD, SaisieStandard, lireSaisieStandard, marquerSaisieStandard, nouvelleSaisiePourAutrui } from '../../../shared/utils/saisie-standard';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -110,7 +111,26 @@ export class OtherDeclarationFormComponent implements OnInit {
     private geolocationService: GeolocationService
   ) {}
 
+  /** Non nul quand le standard de crise remplit ce formulaire pour quelqu'un qui téléphone. */
+  saisieStandard: SaisieStandard | null = null;
+
+  /** La case n'est proposée qu'aux comptes de collectivité ou de structure. */
+  get peutSaisirPourAutrui(): boolean { return !!this.authService.isInstitutionalEffective?.(); }
+
+  /** Coche ou décoche « enregistré par la collectivité à la demande de la personne ». */
+  definirPourAutrui(coche: boolean): void {
+    this.saisieStandard = coche ? nouvelleSaisiePourAutrui() : null;
+    const f = this.otherInformationForm;
+    const moi = this.authService.getCurrentUser();
+    // Ses coordonnées, pas les miennes ; et l'inverse quand on décoche.
+    f.patchValue(coche ? { lastName: '', firstName: '', email: '', phoneNumber: '' }
+      : { lastName: '', firstName: '', email: '', phoneNumber: '' });
+    f.get('email')?.setValidators(coche ? [Validators.email] : [Validators.required, Validators.email]);
+    f.get('email')?.updateValueAndValidity();
+  }
+
   ngOnInit(): void {
+    this.saisieStandard = lireSaisieStandard(this.authService);
     this.initForm();
     this.loadActiveCrises();
     this.informationService.getTypes().subscribe({
@@ -179,7 +199,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       lastName: ['', Validators.required],
       firstName: ['', Validators.required],
       phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
-      email: ['', [Validators.required, Validators.email]],
+      email: ['', this.saisieStandard ? [Validators.email] : [Validators.required, Validators.email]],
     });
   }
 
@@ -469,7 +489,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     formData.append('title', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
     formData.append('first_name_information', this.otherInformationForm.get('firstName')?.value);
     formData.append('last_name_information', this.otherInformationForm.get('lastName')?.value);
-    formData.append('email_information', this.otherInformationForm.get('email')?.value);
+    formData.append('email_information', this.otherInformationForm.get('email')?.value ?? '');
+    marquerSaisieStandard(formData, this.saisieStandard);
     formData.append('phone_information', this.otherInformationForm.get('phoneNumber')?.value);
 
     const localisation = {
@@ -505,8 +526,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
-        alert('Votre information a été enregistrée avec succès !');
-        this.router.navigate(['/accueil']);
+        alert(this.saisieStandard ? 'Signalement enregistré pour l\'appelant.' : 'Votre information a été enregistrée avec succès !');
+        this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
       },
       error: (err) => {
         console.error('Erreur création information:', err);
@@ -517,7 +538,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   goBack(): void {
-    this.router.navigate(['/accueil']);
+    this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
   }
 
   isFieldInvalid(formName: 'declareSafe' | 'otherInformation', fieldName: string): boolean {

@@ -1,5 +1,16 @@
 <div class="other-declaration-container">
   <div class="form-wrapper">
+    <label class="case-pour-autrui" *ngIf="peutSaisirPourAutrui">
+      <input type="checkbox" [checked]="!!saisieStandard" (change)="definirPourAutrui($any($event.target).checked)">
+      <span><strong>Enregistré par la collectivité à la demande de la personne</strong>
+        <small>Cochez quand vous saisissez pour quelqu'un qui vous appelle ou se présente : ce sont ses coordonnées qu'on note,
+        pas les vôtres, et son adresse électronique devient facultative.</small></span>
+    </label>
+    <div class="bandeau-standard" *ngIf="saisieStandard">
+      <span class="material-icons" aria-hidden="true">support_agent</span>
+      <span><strong>Saisie pour autrui.</strong> Notez les coordonnées de la personne, pas les vôtres.
+      L'adresse électronique est facultative : sans elle, la personne ne reçoit pas de lien de suivi.</span>
+    </div>
     <div class="form-header">
       <a class="back-link" (click)="goBack()">
         <span class="material-icons">arrow_back</span> retour

@@ -1,7 +1,9 @@
 <div class="paragraphe-page">
   <header class="entete">
-    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphe 1.1</p>
-    <h1><span class="material-icons">warning_amber</span> Risques de la commune</h1>
+    @if (!integre) {
+      <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphe 1.1</p>
+      <h1><span class="material-icons">warning_amber</span> Risques de la commune</h1>
+    }
     @if (commune) { <p class="sous-titre">{{ commune }} — {{ risques.length }} risque{{ risques.length > 1 ? 's' : '' }} déclaré{{ risques.length > 1 ? 's' : '' }}</p> }
   </header>
 

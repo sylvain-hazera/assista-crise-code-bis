@@ -374,10 +374,10 @@
             <span class="material-icons">warning</span> Alertes
           </button>
           <button class="tab" [class.active]="detailTab === 'annuaire-pcs'" (click)="detailTab = 'annuaire-pcs'">
-            <span class="material-icons">contacts</span> Annuaire PCS/PICS
+            <span class="material-icons">contact_phone</span> Annuaire de crise
           </button>
           <button class="tab" [class.active]="detailTab === 'mes-risques'" (click)="detailTab = 'mes-risques'">
-            <span class="material-icons">report_problem</span> Mes risques
+            <span class="material-icons">warning_amber</span> Risques
           </button>
           <button class="tab" [class.active]="detailTab === 'atouts'" (click)="ouvrirOngletAtouts()">
             <span class="material-icons">volunteer_activism</span> Ce que nous pouvons apporter
@@ -736,100 +736,10 @@
             </form>
           }
 
-          @if (detailTab === 'annuaire-pcs') {
-            <p class="hint">
-              Interlocuteurs à prévenir quand cette commune déclare une crise (activation du
-              PCS/PICS). Un même contact (ex: le SIDPC d'une préfecture) peut être partagé par
-              plusieurs communes — recherchez-le avant d'en créer un nouveau.
-            </p>
-
-            <app-bloc-ajout
-              quoi="un interlocuteur"
-              libelleManuel="Nouvel interlocuteur"
-              [urlExemple]="urlExempleInterlocuteurs"
-              nomFichierExemple="modele-interlocuteurs-pcs.csv"
-              [urlImport]="urlImportInterlocuteurs"
-              routeAssistant="/admin/import-interlocuteurs-pcs"
-              invitationImpossible="Pas d'invitation par email ici : un interlocuteur PCS est un
-                                    service exterieur (prefecture, SDIS, ARS) que l'on previent,
-                                    pas un compte a creer sur votre plateforme. Pour qu'une
-                                    institution rejoigne la plateforme, invitez-la depuis
-                                    l'onglet Institutions."
-              (ajoutManuel)="focusRechercheInterlocuteur()"
-              (ajoute)="chargerInterlocuteursPCS()">
-            </app-bloc-ajout>
-
-            <app-tag-search-input
-              placeholder="Chercher un interlocuteur existant par organisme (ex: Préfecture Gironde)..."
-              labelField="organisme"
-              subLabelField="nom"
-              [createLabelFn]="interlocuteurPCSCreateLabelFn"
-              emptyMessage="Aucun contact existant ne correspond — créez-en un nouveau."
-              [searchFn]="interlocuteurPCSSearchFn"
-              [createFn]="interlocuteurPCSCreateFn"
-              (itemSelected)="onInterlocuteurPCSSelected($event)">
-            </app-tag-search-input>
-
-            @for (groupe of interlocuteursPCSParCategorie; track groupe.categorie) {
-              <h4 class="pcs-groupe-titre">{{ groupe.libelle }}</h4>
-              <table class="data-table sm">
-                <thead><tr><th>Nom</th><th>Organisme</th><th>Canal</th><th>Contact</th><th>Partagé avec</th><th></th></tr></thead>
-                <tbody>
-                  @for (i of groupe.items; track i.id) {
-                    @if (editionInterlocuteurId === i.id) {
-                      <tr class="edition-row">
-                        <td><input type="text" class="form-input-sm" [(ngModel)]="editionInterlocuteur.nom" [ngModelOptions]="{standalone: true}"></td>
-                        <td><input type="text" class="form-input-sm" [(ngModel)]="editionInterlocuteur.organisme" [ngModelOptions]="{standalone: true}"></td>
-                        <td>
-                          <select [(ngModel)]="editionInterlocuteur.mode_alerte" [ngModelOptions]="{standalone: true}">
-                            @for (m of modesAlertePCS; track m.value) {
-                              <option [value]="m.value" [disabled]="!m.disponible">{{ m.label }}</option>
-                            }
-                          </select>
-                        </td>
-                        <td>
-                          <input type="email" class="form-input-sm" placeholder="Email" [(ngModel)]="editionInterlocuteur.email" [ngModelOptions]="{standalone: true}">
-                          <input type="text" class="form-input-sm" placeholder="Téléphone" [(ngModel)]="editionInterlocuteur.telephone" [ngModelOptions]="{standalone: true}">
-                          <select [(ngModel)]="editionInterlocuteur.utilisateur" [ngModelOptions]="{standalone: true}" title="Lier à un compte (pour l'envoi Matrix)">
-                            <option [ngValue]="null">— Aucun compte lié —</option>
-                            @for (u of utilisateursCandidatsPCS; track u.id) {
-                              <option [ngValue]="u.id">{{ u.first_name }} {{ u.last_name }}</option>
-                            }
-                          </select>
-                        </td>
-                        <td>{{ i.institutions_noms.join(', ') }}</td>
-                        <td>
-                          <button type="button" class="icon-btn" [disabled]="savingInterlocuteurId === i.id" (click)="enregistrerInterlocuteurPCS()" title="Enregistrer">
-                            <span class="material-icons">check</span>
-                          </button>
-                          <button type="button" class="icon-btn" (click)="annulerEditionInterlocuteurPCS()" title="Annuler">
-                            <span class="material-icons">close</span>
-                          </button>
-                        </td>
-                      </tr>
-                    } @else {
-                      <tr>
-                        <td>{{ i.nom }}</td>
-                        <td>{{ i.organisme || '—' }}</td>
-                        <td>{{ modeAlertePCSLabel(i.mode_alerte) }}</td>
-                        <td>{{ i.email || i.telephone || '—' }}</td>
-                        <td>{{ i.institutions_noms.join(', ') }}</td>
-                        <td>
-                          <button type="button" class="icon-btn" (click)="commencerEditionInterlocuteurPCS(i)" title="Modifier">
-                            <span class="material-icons">edit</span>
-                          </button>
-                          <button type="button" class="icon-btn danger" (click)="retirerInterlocuteurPCS(i)" title="Retirer de l'annuaire de cette commune">
-                            <span class="material-icons">link_off</span>
-                          </button>
-                        </td>
-                      </tr>
-                    }
-                  }
-                </tbody>
-              </table>
-            } @empty {
-              <p class="empty-pick">Aucun interlocuteur PCS/PICS pour l'instant.</p>
-            }
+          <!-- 18/11/2026 : la même page que « Annuaire de crise » du plan de sauvegarde, pas une
+               seconde implémentation. -->
+          @if (detailTab === 'annuaire-pcs' && selectedInstitution?.id) {
+            <app-pcs-annuaire [institution]="selectedInstitution!.id!" [nomInstitution]="selectedInstitution!.nom"></app-pcs-annuaire>
           }
 
           <!-- ── MODELES DE MESSAGES ───────────────────────────────────────
@@ -1250,103 +1160,9 @@
             }
           }
 
-          @if (detailTab === 'mes-risques') {
-            <p class="hint">
-              Risques majeurs identifiés pour cette commune — catalogue librement extensible :
-              si un risque propre à votre territoire n'existe pas encore (ex: "Incendie de
-              forêt"), créez-le directement par la recherche ci-dessous.
-            </p>
-
-            <div class="georisques-block">
-              <div class="georisques-header">
-                <span><span class="material-icons">travel_explore</span> Suggestions Géorisques (base officielle de l'État)</span>
-                <button type="button" class="btn-secondary sm" [disabled]="suggestionsGeorisquesEnCours" (click)="chargerSuggestionsGeorisques(suggestionsGeorisquesChargees)">
-                  <span class="material-icons">refresh</span>
-                  {{ suggestionsGeorisquesEnCours ? 'Consultation…' : (suggestionsGeorisquesChargees ? 'Actualiser' : 'Consulter Géorisques') }}
-                </button>
-              </div>
-
-              @if (suggestionsGeorisquesErreur) {
-                <p class="empty-pick">{{ suggestionsGeorisquesErreur }}</p>
-              }
-
-              @if (suggestionsGeorisquesChargees && !suggestionsGeorisquesErreur) {
-                @if (suggestionsGeorisquesDateMaj) {
-                  <p class="georisques-date">maj le {{ suggestionsGeorisquesDateMaj | date:'short' }}</p>
-                }
-                @if (suggestionsGeorisques.length === 0) {
-                  <p class="empty-pick">Aucun risque recensé par Géorisques pour cette commune.</p>
-                } @else {
-                  <ul class="georisques-list">
-                    @for (s of suggestionsGeorisques; track s.num_risque) {
-                      <li>
-                        <span>{{ s.libelle }}</span>
-                        @if (s.deja_declare) {
-                          <span class="badge badge-ok">Déjà déclaré</span>
-                        } @else {
-                          <button type="button" class="btn-primary sm" [disabled]="acceptationSuggestionEnCours === s.num_risque" (click)="accepterSuggestion(s)">
-                            {{ acceptationSuggestionEnCours === s.num_risque ? 'Ajout…' : '+ Ajouter' }}
-                          </button>
-                        }
-                      </li>
-                    }
-                  </ul>
-                }
-              }
-            </div>
-
-            <app-tag-search-input
-              placeholder="Chercher ou créer un type de risque (ex: Inondation)..."
-              labelField="nom"
-              emptyMessage="Aucun risque existant ne correspond — créez-en un nouveau."
-              [createLabelFn]="risqueCreateLabelFn"
-              [searchFn]="risqueSearchFn"
-              [createFn]="risqueCreateFn"
-              (itemSelected)="onRisqueSelected($event)">
-            </app-tag-search-input>
-
-            @for (r of risquesCommunaux; track r.id) {
-              <div class="risque-card">
-                @if (editionRisqueId === r.id) {
-                  <div class="risque-card-header">
-                    <strong>{{ r.risque_nom }}</strong>
-                    <div class="actions-cell">
-                      <button type="button" class="icon-btn" [disabled]="savingRisqueId === r.id" (click)="enregistrerRisqueCommunal()" title="Enregistrer">
-                        <span class="material-icons">check</span>
-                      </button>
-                      <button type="button" class="icon-btn" (click)="annulerEditionRisque()" title="Annuler">
-                        <span class="material-icons">close</span>
-                      </button>
-                    </div>
-                  </div>
-                  <label>
-                    État des lieux
-                    <textarea rows="2" [(ngModel)]="editionRisque.etat_des_lieux" [ngModelOptions]="{standalone: true}"></textarea>
-                  </label>
-                  <label>
-                    Enjeux
-                    <textarea rows="2" [(ngModel)]="editionRisque.enjeux" [ngModelOptions]="{standalone: true}"></textarea>
-                  </label>
-                } @else {
-                  <div class="risque-card-header">
-                    <strong>{{ r.risque_nom }}</strong>
-                    <div class="actions-cell">
-                      <button type="button" class="icon-btn" (click)="commencerEditionRisque(r)" title="Modifier">
-                        <span class="material-icons">edit</span>
-                      </button>
-                      <button type="button" class="icon-btn danger" (click)="retirerRisqueCommunal(r)" title="Retirer ce risque">
-                        <span class="material-icons">delete</span>
-                      </button>
-                    </div>
-                  </div>
-                  @if (r.risque_generalites) { <p class="risque-generalites">{{ r.risque_generalites }}</p> }
-                  <p><strong>État des lieux :</strong> {{ r.etat_des_lieux || '—' }}</p>
-                  <p><strong>Enjeux :</strong> {{ r.enjeux || '—' }}</p>
-                }
-              </div>
-            } @empty {
-              <p class="empty-pick">Aucun risque déclaré pour cette commune pour l'instant.</p>
-            }
+          <!-- 18/11/2026 : la même page que « Risques de la commune » du plan de sauvegarde. -->
+          @if (detailTab === 'mes-risques' && selectedInstitution?.id) {
+            <app-pcs-risques [institution]="selectedInstitution!.id!" [nomInstitution]="selectedInstitution!.nom"></app-pcs-risques>
           }
 
         </div>

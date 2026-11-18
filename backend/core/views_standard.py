@@ -19,12 +19,20 @@ class AppelStandardSerializer(serializers.ModelSerializer):
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     recu_par_nom = serializers.SerializerMethodField()
     dossier_numero = serializers.CharField(source="dossier.numero", read_only=True, default=None)
+    fiches = serializers.SerializerMethodField()
 
     class Meta:
         model = AppelStandard
-        exclude = ["environment"]
+        exclude = ["environment", "demandes", "offres", "informations", "recherches"]
         read_only_fields = ["institution", "numero", "recu_par", "date_appel", "dossier",
-                            "suite", "suite_donnee", "traite_par", "traite_le"]
+                            "suite", "suite_donnee", "traite_par", "traite_le", "identifiant_saisie"]
+
+    def get_fiches(self, obj):
+        """Les vraies fiches créées pendant cet appel : c'est là que se lit et se traite le fond."""
+        return ([{"type": "demande", "id": str(d.id), "titre": d.title} for d in obj.demandes.all()]
+                + [{"type": "offre", "id": str(o.id), "titre": o.title} for o in obj.offres.all()]
+                + [{"type": "information", "id": str(i.id), "titre": i.title} for i in obj.informations.all()]
+                + [{"type": "recherche", "id": str(r.id), "titre": "Recherche de personne"} for r in obj.recherches.all()])
 
     def get_recu_par_nom(self, obj):
         from .views import _nommer_pour
@@ -40,7 +48,8 @@ class AppelStandardViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixin
                            viewsets.GenericViewSet):
     """Fiches d'appel du standard de crise. On crée et on donne une suite ; une fiche ne se
     modifie ni ne se supprime — c'est une trace."""
-    queryset = AppelStandard.objects.select_related("crise", "recu_par", "dossier")
+    queryset = AppelStandard.objects.select_related("crise", "recu_par", "dossier").prefetch_related(
+        "demandes", "offres", "informations", "recherches")
     serializer_class = AppelStandardSerializer
     permission_classes = [IsInstitutionalActor]
     filterset_fields = ["crise", "nature", "suite"]

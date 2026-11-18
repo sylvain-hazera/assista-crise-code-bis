@@ -4828,6 +4828,10 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             author=author, deletion_token=deletion_token, edition_token=edition_token,
             environment=get_active_environment(self.request),
         )
+        # Saisie par le standard pour quelqu'un qui téléphone : la trace de l'appel y renvoie.
+        from .standard_crise import rattacher_saisie
+        rattacher_saisie(self.request, demande)
+
 
         # Résout commune_code/epci_code/departement_code/region_code une seule fois ici plutôt
         # qu'à chaque consultation (même correctif que OfferViewSet.perform_create) : sans
@@ -11628,6 +11632,10 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Sinon il est none
             offre = serializer.save(author=None, deletion_token=deletion_token, reponse_token=reponse_token, environment=environment)
 
+        # Saisie par le standard pour quelqu'un qui téléphone : la trace de l'appel y renvoie.
+        from .standard_crise import rattacher_saisie
+        rattacher_saisie(self.request, offre)
+
         # Résout commune_code/epci_code/departement_code/region_code une seule fois ici plutôt
         # qu'à chaque consultation (voir vue_secteur, et le commentaire sur Offer.commune_code) :
         # le seul appel externe payé sur cette donnée est celui-ci, à la création.
@@ -12115,6 +12123,10 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 edition_token=edition_token, environment=environment,
             )
         
+        # Saisie par le standard pour quelqu'un qui téléphone : la trace de l'appel y renvoie.
+        from .standard_crise import rattacher_saisie
+        rattacher_saisie(self.request, info)
+
         # Dossier de suivi auto-créé, avec affectation automatique d'équipe par compétence --
         # même logique que RequestViewSet.perform_create (voir sa docstring pour le détail du
         # statut jamais auto-confirmé), généralisée à Information le 26/09 (jusqu'ici aucun
@@ -14989,6 +15001,10 @@ class RecherchePersonneViewSet(
             createur=self.request.user,
             environment=get_active_environment(self.request),
         )
+        # Saisie par le standard pour quelqu'un qui téléphone : la trace de l'appel y renvoie.
+        from .standard_crise import rattacher_saisie
+        rattacher_saisie(self.request, recherche)
+
 
         RecherchePersonneHistorique.objects.create(
             recherche=recherche,

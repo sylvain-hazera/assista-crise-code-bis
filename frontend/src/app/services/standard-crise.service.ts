@@ -4,7 +4,10 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
-export type NatureAppel = 'DEMANDE_AIDE' | 'OFFRE_AIDE' | 'SIGNALEMENT' | 'RENSEIGNEMENT' | 'AUTRE';
+export type NatureAppel = 'DEMANDE_AIDE' | 'OFFRE_AIDE' | 'SIGNALEMENT' | 'PERSONNE_DISPARUE' | 'RENSEIGNEMENT' | 'AUTRE';
+
+/** Une vraie fiche créée pendant l'appel, par le formulaire du public rempli pour l'appelant. */
+export interface FicheLiee { type: 'demande' | 'offre' | 'information' | 'recherche'; id: string; titre: string; }
 export type SuiteAppel = 'A_TRAITER' | 'TRANSMIS' | 'TRAITE' | 'SANS_SUITE';
 
 /** Une fiche d'appel du standard de crise (voir core/standard_crise.py). */
@@ -26,6 +29,7 @@ export interface AppelStandard {
   dossier_numero: string | null;
   recu_par_nom: string;
   date_appel: string;
+  fiches?: FicheLiee[];
 }
 
 export interface SyntheseAppels {

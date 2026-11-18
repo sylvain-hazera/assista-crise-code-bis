@@ -133,6 +133,14 @@ def send_mail_logged(request, subject, message, from_email, recipient_list, repl
     from django.core.mail import EmailMessage
     from django.core.mail import send_mail as django_send_mail
 
+    # Une fiche saisie par le standard pour quelqu'un qui téléphone peut ne porter aucune
+    # adresse électronique (18/11/2026) : il n'y a alors rien à envoyer, et ce n'est pas un
+    # échec — ni alerte, ni ligne « envoi » mensongère dans la main courante.
+    recipient_list = [d for d in (recipient_list or []) if d and str(d).strip()]
+    if not recipient_list:
+        logger.info('Aucun destinataire pour "%s" : rien envoyé.', subject)
+        return 0
+
     succes = True
     try:
         if reply_to:

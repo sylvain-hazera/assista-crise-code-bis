@@ -1,7 +1,9 @@
 <div class="paragraphe-page">
   <header class="entete">
-    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphes 2.4 et 4.1</p>
-    <h1><span class="material-icons">contact_phone</span> Annuaire de crise</h1>
+    @if (!integre) {
+      <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › paragraphes 2.4 et 4.1</p>
+      <h1><span class="material-icons">contact_phone</span> Annuaire de crise</h1>
+    }
     @if (commune) { <p class="sous-titre">{{ commune }} — {{ interlocuteurs.length }} interlocuteur{{ interlocuteurs.length > 1 ? 's' : '' }}</p> }
   </header>
 
@@ -23,6 +25,7 @@
 
     @if (!formulaireOuvert) {
       <button type="button" class="btn-primary" (click)="ouvrirAjout()"><span class="material-icons">add</span> Ajouter un interlocuteur</button>
+      <a style="margin-left:.8rem;font-size:.9rem" routerLink="/admin/import-interlocuteurs-pcs">Importer un fichier</a>
     } @else {
       <form class="bloc" (ngSubmit)="enregistrer()">
         <h2>{{ enModification ? "Modifier l'interlocuteur" : 'Nouvel interlocuteur' }}</h2>
