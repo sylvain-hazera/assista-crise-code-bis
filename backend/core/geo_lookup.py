@@ -274,8 +274,9 @@ def _reverse_geocode_point(point) -> dict:
     lat, lon = round(point.y, 4), round(point.x, 4)
     point_commune, _ = PointCommune.objects.select_related("commune").get_or_create(lat=lat, lon=lon)
     if point_commune.commune_id is None and _should_attempt(point_commune.derniere_tentative) and _consume_budget():
-        url = f"https://api-adresse.data.gouv.fr/reverse/?lon={lon}&lat={lat}"
-        data = _fetch_json(url)
+        # Par la Géoplateforme, comme tout le géocodage (core/adresses.py).
+        from .adresses import url_inverse
+        data = _fetch_json(url_inverse(lon, lat))
         point_commune.derniere_tentative = timezone.now()
         nom, citycode = None, None
         if isinstance(data, dict):

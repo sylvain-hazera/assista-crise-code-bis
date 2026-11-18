@@ -338,6 +338,9 @@ def filter_habitations_queryset(request, queryset):
 # plafond par défaut demandé explicitement par Sylvain le 23/09.
 
 
+from .adresses import url_ban  # noqa: E402 -- l'adresse de la Base Adresse Nationale n'est écrite qu'à un endroit
+
+
 def _fetch_json_ban(url: str, timeout: int = 5):
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -347,7 +350,7 @@ def _fetch_json_ban(url: str, timeout: int = 5):
 
 
 def _adresses_voie(voie_id: str) -> list[dict]:
-    data = _fetch_json_ban(f"https://plateforme.adresse.data.gouv.fr/lookup/{urllib.parse.quote(voie_id)}")
+    data = _fetch_json_ban(url_ban(voie_id))
     if not data:
         return []
     resultats = []
@@ -485,7 +488,7 @@ def scanner_ban_commune(commune_code: str, polygone_limite=None, max_workers: in
     largement le timeout gunicorn par défaut). `polygone_limite`, s'il est fourni, filtre les
     adresses en dehors (point-in-polygon, en Python -- ces adresses ne viennent pas de la base,
     rien à requêter côté DB ici)."""
-    commune = _fetch_json_ban(f"https://plateforme.adresse.data.gouv.fr/lookup/{urllib.parse.quote(commune_code)}")
+    commune = _fetch_json_ban(url_ban(commune_code))
     if not commune:
         return {"adresses": [], "voies_totales": 0, "voies_en_echec": 0, "erreur": "Commune introuvable via la BAN."}
 

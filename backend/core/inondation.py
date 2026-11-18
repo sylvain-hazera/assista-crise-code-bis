@@ -435,7 +435,8 @@ def _nombre_voies_commune(commune_code: str) -> int | None:
     d'abandonner AVANT de lancer le scan complet plutôt qu'après (voir SEUIL_VOIES_MAX). None si
     l'appel échoue -- dans ce cas on laisse scanner_ban_commune retenter et échouer normalement,
     plutôt que de bloquer sur un simple échec réseau transitoire de CETTE vérification."""
-    data = _fetch_json(f"https://plateforme.adresse.data.gouv.fr/lookup/{urllib.parse.quote(commune_code)}")
+    from .adresses import url_ban
+    data = _fetch_json(url_ban(commune_code))
     if not data:
         return None
     return len(data.get("voies", []))

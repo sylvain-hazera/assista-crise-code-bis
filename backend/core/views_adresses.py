@@ -41,7 +41,7 @@ from .audit import get_client_ip
 
 logger = logging.getLogger(__name__)
 
-URL_GEOCODAGE = "https://data.geopf.fr/geocodage"
+from .adresses import GEOCODAGE as URL_GEOCODAGE  # noqa: E402 -- une seule adresse pour tout le géocodage
 DELAI_REPONSE_S = 6
 LONGUEUR_MIN, LONGUEUR_MAX = 3, 200
 RESULTATS_MAX = 10

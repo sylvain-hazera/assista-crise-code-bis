@@ -466,15 +466,13 @@ def _geocoder_adresse(adresse: str):
     import urllib.request
 
     try:
-        url = "https://api-adresse.data.gouv.fr/search/?q=" + urllib.parse.quote(adresse) + "&limit=1"
-        with urllib.request.urlopen(url, timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        feature = (data.get("features") or [None])[0]
-        if not feature:
+        # Par la Géoplateforme, comme tout le géocodage (core/adresses.py).
+        from .adresses import premiere_adresse, url_recherche
+        with urllib.request.urlopen(url_recherche(adresse), timeout=5) as response:
+            trouvee = premiere_adresse(json.loads(response.read().decode("utf-8")))
+        if not trouvee:
             return None, None, None, None
-        lon, lat = feature["geometry"]["coordinates"]
-        props = feature.get("properties", {})
-        return lat, lon, props.get("citycode"), props.get("city")
+        return trouvee["latitude"], trouvee["longitude"], trouvee["citycode"], trouvee["commune"]
     except Exception:
         return None, None, None, None
 
