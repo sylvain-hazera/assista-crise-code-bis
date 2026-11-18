@@ -16,6 +16,11 @@ export interface NotificationAlertePCS {
   categorie_snapshot: CategorieInterlocuteurPCS;
   institution_nom_snapshot: string;
   canal_tente: ModeAlertePCS;
+  /** Pourquoi la ligne a été préparée : l'ouverture de la crise, ou celle d'un centre d'accueil. */
+  motif?: 'CRISE' | 'CENTRE';
+  point_nom_snapshot?: string;
+  /** Cochée d'avance : l'annuaire dit de prévenir cette personne à ce moment-là. */
+  preselectionne?: boolean;
   statut: StatutNotificationPCS;
   detail_erreur: string | null;
   message_envoye: string | null;

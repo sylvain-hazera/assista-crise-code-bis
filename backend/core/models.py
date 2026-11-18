@@ -3414,6 +3414,11 @@ class InterlocuteurAlertePCS(EnvironmentScopedModel):
 
     mode_alerte = models.CharField(max_length=20, choices=ModeAlertePCS.choices, default=ModeAlertePCS.EMAIL)
 
+    #: À quels moments cet interlocuteur est à prévenir (18/11/2026). Rien ne part tout seul :
+    #: la liste est PRÉPARÉE avec ces personnes déjà cochées, et quelqu'un confirme d'un clic —
+    #: pour qu'une crise d'essai ne réveille pas la préfecture.
+    prevenir_ouverture_crise = models.BooleanField(default=True)
+    prevenir_ouverture_centre = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
     ordre = models.PositiveIntegerField(default=0)
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -3451,6 +3456,12 @@ class NotificationAlertePCS(EnvironmentScopedModel):
     categorie_snapshot = models.CharField(max_length=30, choices=CategorieInterlocuteurPCS.choices)
     institution_nom_snapshot = models.CharField(max_length=255, blank=True)
 
+    #: Pourquoi cette ligne a été préparée : l'ouverture de la crise, ou celle d'un centre d'accueil.
+    motif = models.CharField(max_length=10, default="CRISE", choices=[("CRISE", "Ouverture de la crise"), ("CENTRE", "Ouverture d'un centre d'accueil")])
+    point = models.ForeignKey("PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True, related_name="notifications_alerte_pcs")
+    point_nom_snapshot = models.CharField(max_length=255, blank=True, default="")
+    #: Cochée d'avance dans la liste à confirmer : l'annuaire dit de prévenir cette personne à ce moment-là.
+    preselectionne = models.BooleanField(default=True)
     canal_tente = models.CharField(max_length=20, choices=ModeAlertePCS.choices)
 
     statut = models.CharField(max_length=20, choices=StatutNotificationPCS.choices, default=StatutNotificationPCS.EN_ATTENTE)
@@ -3474,7 +3485,12 @@ class NotificationAlertePCS(EnvironmentScopedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["crise", "interlocuteur"], name="uq_notification_pcs_crise_interlocuteur"),
+            # Une ligne par interlocuteur pour l'ouverture de la crise ; et une par centre d'accueil
+            # ouvert, pour ceux à prévenir à ce moment-là (18/11/2026).
+            models.UniqueConstraint(fields=["crise", "interlocuteur"], condition=models.Q(motif="CRISE"),
+                                    name="uq_notification_pcs_crise_interlocuteur"),
+            models.UniqueConstraint(fields=["crise", "interlocuteur", "point"], condition=models.Q(motif="CENTRE"),
+                                    name="uq_notification_pcs_centre"),
         ]
 
     def __str__(self):

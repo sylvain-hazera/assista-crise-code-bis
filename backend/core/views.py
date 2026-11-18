@@ -16716,6 +16716,15 @@ class PointOperationnelViewSet(
         # Installé dans un lieu de la commune qui tient déjà un stock : il devient le sien.
         from . import stocks_points
         stocks_points.adopter_le_lieu(point, point.environment)
+        # Un centre d'accueil ouvre : la liste des interlocuteurs à prévenir à ce moment-là est
+        # préparée (jamais envoyée d'office). Ne doit pas empêcher d'ouvrir le centre.
+        try:
+            if point.crise_id and point.type_id and point.type.code == "HEBERGEMENT":
+                from .alertes_pcs import preparer_checklist_centre
+                from .perimetre_admin import institution_regardee
+                preparer_checklist_centre(point, institution_regardee(self.request))
+        except Exception:  # noqa: BLE001
+            logger.exception("Prévenance à l'ouverture du centre %s non préparée.", point.id)
 
         audit_log(
             request=self.request,

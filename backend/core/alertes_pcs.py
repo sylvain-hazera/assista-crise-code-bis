@@ -18,6 +18,7 @@ import logging
 import secrets
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from .matrix import envoyer_dm
@@ -46,12 +47,42 @@ def preparer_checklist_pcs(crise, institution):
                 canal_tente=interlocuteur.mode_alerte,
                 token_confirmation=secrets.token_urlsafe(32),
                 environment=crise.environment,
+                # Tous figurent dans la liste ; ceux que l'annuaire dit de prévenir à
+                # l'ouverture sont cochés d'avance. Rien ne part sans le clic de quelqu'un.
+                preselectionne=interlocuteur.prevenir_ouverture_crise,
             )
         except Exception:
             logger.exception(
                 "Impossible de créer la ligne de checklist PCS pour l'interlocuteur %s (crise %s).",
                 interlocuteur.id, crise.id,
             )
+
+
+def preparer_checklist_centre(point, institution) -> int:
+    """À l'ouverture d'un centre d'accueil : prépare la liste des interlocuteurs que l'annuaire
+    dit de prévenir à ce moment-là (18/11/2026). Rien n'est envoyé — même principe que
+    `preparer_checklist_pcs` : la liste attend d'être relue et confirmée d'un clic.
+
+    Rejouable : un même centre ne prépare pas deux fois la même ligne."""
+    if point.crise_id is None or institution is None:
+        return 0
+    faites = 0
+    for interlocuteur in InterlocuteurAlertePCS.objects.filter(institutions=institution, actif=True, prevenir_ouverture_centre=True):
+        try:
+            if NotificationAlertePCS.objects.filter(crise_id=point.crise_id, interlocuteur=interlocuteur, motif="CENTRE", point=point).exists():
+                continue
+            with transaction.atomic():
+              NotificationAlertePCS.objects.create(
+                crise_id=point.crise_id, interlocuteur=interlocuteur, nom_snapshot=interlocuteur.nom,
+                organisme_snapshot=interlocuteur.organisme, categorie_snapshot=interlocuteur.categorie,
+                institution_nom_snapshot=institution.nom, canal_tente=interlocuteur.mode_alerte,
+                token_confirmation=secrets.token_urlsafe(32), environment=point.environment,
+                motif="CENTRE", point=point, point_nom_snapshot=point.nom[:255], preselectionne=True,
+            )
+            faites += 1
+        except Exception:
+            logger.exception("Impossible de préparer la prévenance de l'interlocuteur %s pour le centre %s.", interlocuteur.id, point.id)
+    return faites
 
 
 def _lien_accuse_reception(notification) -> str:

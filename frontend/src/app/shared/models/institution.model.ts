@@ -50,6 +50,7 @@ export interface ContactInstitution {
   utilisateur: string;   // UUID du User
   utilisateur_nom?: string | null;
   utilisateur_email?: string | null;
+  utilisateur_telephone?: string | null;
   /** Servis avec le rattachement pour que la page des rattachements n'ait pas à charger le
    * catalogue des institutions rien que pour afficher un nom. */
   institution_nom?: string | null;

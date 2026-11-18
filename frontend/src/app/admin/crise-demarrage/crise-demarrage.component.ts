@@ -237,9 +237,15 @@ export class CriseDemarrageComponent implements OnInit {
   private chargerNotificationsPCS(): void {
     this.notificationAlertePCSService.getForCrise(this.criseId).subscribe(notifs => {
       this.notificationsPCS = notifs;
-      // Lignes envoyables (non terminales) cochées par défaut.
-      this.selectionEnvoiPCS = new Set(this.notificationsAutoEnAttente.map(n => n.id));
+      // Cochées d'avance : celles que l'annuaire dit de prévenir à ce moment-là. Les autres
+      // restent dans la liste, à cocher si on le veut. Rien ne part sans le clic sur « Envoyer ».
+      this.selectionEnvoiPCS = new Set(this.notificationsAutoEnAttente.filter(n => n.preselectionne !== false).map(n => n.id));
     });
+  }
+
+  /** « à l'ouverture du centre Gymnase », pour dire pourquoi une ligne est là. */
+  motifPCS(n: NotificationAlertePCS): string {
+    return n.motif === 'CENTRE' ? `à l'ouverture du centre ${n.point_nom_snapshot || ''}`.trim() : '';
   }
 
   get notificationsAuto(): NotificationAlertePCS[] {

@@ -3623,6 +3623,9 @@ class ContactInstitutionSerializer(
 
     utilisateur_nom = serializers.SerializerMethodField()
     utilisateur_email = serializers.CharField(source="utilisateur.email", read_only=True, default=None)
+    #: Pour reprendre un contact comme titulaire ou suppléant d'une fonction du poste de
+    #: commandement sans ressaisir son numéro (18/11/2026). Jamais en zone de démonstration.
+    utilisateur_telephone = serializers.SerializerMethodField()
     # Servis avec le rattachement pour que la page « qui est membre de quoi » n'ait pas à
     # charger le catalogue des institutions pour afficher un nom — c'est précisément le
     # chargement global qu'on cherche à supprimer.
@@ -3641,6 +3644,14 @@ class ContactInstitutionSerializer(
         # principal REMPLACE l'ancien (ContactInstitutionViewSet._liberer_contact_principal),
         # il n'est pas refusé (demande utilisateur du 19/10).
         validators = []
+
+    def get_utilisateur_telephone(self, obj):
+        from .models import Environment
+        from .permissions import get_active_environment
+        requete = self.context.get("request")
+        if requete is None or get_active_environment(requete) == Environment.DEMO:
+            return None
+        return getattr(obj.utilisateur, "phone_number", None) or None
 
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:

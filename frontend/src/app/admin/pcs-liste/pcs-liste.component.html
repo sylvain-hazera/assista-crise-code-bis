@@ -39,6 +39,24 @@
                   <option [ngValue]="null">Aucune équipe : je saisis les noms</option>
                   @for (e of equipes; track e.id) { <option [ngValue]="e.id">{{ e.name }}</option> }
                 </select>
+                @if (estOrganigramme && !saisie[champ.cle]) {
+                  <button type="button" class="btn-secondary creer-equipe" [disabled]="creationEquipe" (click)="creerEquipe()">
+                    <span class="material-icons">group_add</span> {{ creationEquipe ? 'Création…' : "L'équipe n'existe pas encore : la créer pour cette fonction" }}
+                  </button>
+                }
+              }
+              @case ('personne') {
+                <input type="text" [name]="champ.cle" [(ngModel)]="saisie[champ.cle]" [attr.list]="'contacts-' + champ.cle" autocomplete="off"
+                       placeholder="Commencez à taper : les contacts de la collectivité sont proposés" (change)="choisirPersonne(champ)">
+                <datalist [id]="'contacts-' + champ.cle">
+                  @for (c of contacts; track c.id) { <option [value]="nomContact(c)">{{ c.fonction || c.utilisateur_email }}</option> }
+                </datalist>
+                <span class="inviter">
+                  <span class="note">Pas encore sur la plateforme ?</span>
+                  <input type="email" [name]="'inviter-' + champ.cle" [(ngModel)]="invitation[champ.cle]" placeholder="son adresse électronique">
+                  <button type="button" class="btn-secondary" [disabled]="!invitation[champ.cle]" (click)="inviter(champ)">Inviter par courriel</button>
+                  @if (messageInvitation[champ.cle]) { <span class="note" role="status">{{ messageInvitation[champ.cle] }}</span> }
+                </span>
               }
               @case ('long') { <textarea [name]="champ.cle" [(ngModel)]="saisie[champ.cle]" rows="4"></textarea> }
               @case ('date') { <input type="date" [name]="champ.cle" [(ngModel)]="saisie[champ.cle]"> }
@@ -72,6 +90,15 @@
         </ul>
       </section>
       <h2 class="categorie">Moyens de terrain</h2>
+    }
+
+    @if (fonctionsTypesManquantes.length) {
+      <p class="message">
+        Les fonctions habituelles d'un poste de commandement ne sont pas toutes là ({{ fonctionsTypesManquantes.length }} manquante{{ fonctionsTypesManquantes.length > 1 ? 's' : '' }}).
+        <button type="button" class="btn-secondary" [disabled]="creationFonctionsTypes" (click)="creerFonctionsTypes()">
+          {{ creationFonctionsTypes ? 'Création…' : 'Créer les fonctions types manquantes' }}</button>
+        Chacune arrive avec sa fiche réflexe type ; il reste à dire qui la tient. Vous pouvez en ajouter d'autres.
+      </p>
     }
 
     @if (lignes.length) {

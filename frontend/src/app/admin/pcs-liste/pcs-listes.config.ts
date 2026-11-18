@@ -5,13 +5,15 @@
  * paragraphe : ses champs, et surtout à quoi il sert une fois la crise ouverte.
  */
 
-export type TypeChamp = 'texte' | 'telephone' | 'long' | 'choix' | 'date' | 'zone' | 'equipe';
+export type TypeChamp = 'texte' | 'telephone' | 'long' | 'choix' | 'date' | 'zone' | 'equipe' | 'personne';
 
 export interface ChampListe {
   cle: string;
   libelle: string;
   type: TypeChamp;
   options?: { valeur: string; libelle: string }[];
+  /** Champ `personne` : la clé du champ téléphone à remplir quand on choisit un contact. */
+  telephone?: string;
   indication?: string;
   /** Clé d'un texte fourni par le serveur, montré sous le champ tant qu'il est vide (la fiche
    * réflexe type de la trame, sous les consignes propres à la commune). */
@@ -63,9 +65,9 @@ export const PARAGRAPHES_EN_LISTE: Record<string, ParagrapheListe> = {
       { cle: 'equipe', libelle: 'Équipe qui tient cette fonction', type: 'equipe',
         indication: "Son responsable et son encadrement sont repris d'office : inutile de les ressaisir. "
           + 'Cette équipe est prête pour la crise suivante : elle y est proposée d’office. Seule la cellule de crise est recréée à chaque crise, avec les mêmes personnes.' },
-      { cle: 'titulaire', libelle: 'Titulaire, si ce n’est pas le responsable de l’équipe', type: 'texte' },
+      { cle: 'titulaire', libelle: 'Titulaire, si ce n’est pas le responsable de l’équipe', type: 'personne', telephone: 'titulaire_telephone' },
       { cle: 'titulaire_telephone', libelle: 'Téléphone du titulaire', type: 'telephone' },
-      { cle: 'suppleant', libelle: 'Suppléant, si ce n’est pas un encadrant de l’équipe', type: 'texte', indication: 'Une crise dure plus longtemps qu’une personne.' },
+      { cle: 'suppleant', libelle: 'Suppléant, si ce n’est pas un encadrant de l’équipe', type: 'personne', telephone: 'suppleant_telephone', indication: 'Une crise dure plus longtemps qu’une personne.' },
       { cle: 'suppleant_telephone', libelle: 'Téléphone du suppléant', type: 'telephone' },
       { cle: 'consignes', libelle: 'Fiche réflexe propre à la commune', type: 'long',
         indication: 'Laissez vide pour garder la fiche type.', parDefaut: 'fiche_type' },

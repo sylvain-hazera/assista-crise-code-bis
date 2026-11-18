@@ -39,6 +39,13 @@
               @for (m of modes; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
             </select></label>
         </div>
+        <fieldset class="moments">
+          <legend>À quel moment le prévenir</legend>
+          <label class="case"><input type="checkbox" name="prevenir_crise" [(ngModel)]="saisie.prevenir_ouverture_crise"> À l'ouverture d'une crise</label>
+          <label class="case"><input type="checkbox" name="prevenir_centre" [(ngModel)]="saisie.prevenir_ouverture_centre"> À l'ouverture d'un centre d'accueil</label>
+          <p class="note">Rien ne part tout seul : à ce moment-là, la liste est préparée avec cette personne déjà cochée, et
+            quelqu'un confirme l'envoi d'un clic. Décoché, l'interlocuteur reste dans la liste, sans être coché.</p>
+        </fieldset>
         <div class="ligne">
           <label>Nom ou service <input type="text" name="nom" [(ngModel)]="saisie.nom" placeholder="SIDPC, astreinte du maire…"></label>
           <label>Organisme <input type="text" name="organisme" [(ngModel)]="saisie.organisme" maxlength="255"></label>

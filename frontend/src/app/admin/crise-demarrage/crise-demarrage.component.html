@@ -29,7 +29,7 @@
                     <input type="checkbox" [checked]="selectionEnvoiPCS.has(n.id)" (change)="toggleSelectionEnvoiPCS(n.id)">
                   </label>
                 }
-                <span class="pcs-nom">{{ n.nom_snapshot }}</span>
+                <span class="pcs-nom">{{ n.nom_snapshot }}@if (motifPCS(n)) { <small class="pcs-motif"> — {{ motifPCS(n) }}</small> }</span>
                 <span class="pcs-organisme">{{ n.organisme_snapshot }}</span>
                 <span class="pcs-statut" [class]="classeStatutPCS(n.statut)">{{ libelleStatutPCS(n.statut) }}</span>
                 @if (n.statut === 'CONFIRME_PAR_CONTACT' && n.reponse_contact) {
@@ -58,7 +58,7 @@
           <ul class="pcs-liste">
             @for (n of notificationsManuelles; track n.id) {
               <li>
-                <span class="pcs-nom">{{ n.nom_snapshot }}</span>
+                <span class="pcs-nom">{{ n.nom_snapshot }}@if (motifPCS(n)) { <small class="pcs-motif"> — {{ motifPCS(n) }}</small> }</span>
                 <span class="pcs-organisme">{{ n.organisme_snapshot }}</span>
                 <span class="pcs-statut" [class]="classeStatutPCS(n.statut)">{{ libelleStatutPCS(n.statut) }}</span>
                 @if (n.statut !== 'CONFIRME_MANUEL' && n.statut !== 'CONFIRME_PAR_CONTACT') {

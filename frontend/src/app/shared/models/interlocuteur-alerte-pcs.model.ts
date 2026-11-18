@@ -46,6 +46,9 @@ export interface InterlocuteurAlertePCS {
   utilisateur: string | null;
   utilisateur_nom: string | null;
   mode_alerte: ModeAlertePCS;
+  /** À quels moments le prévenir : la liste est préparée avec lui déjà coché, puis confirmée d'un clic. */
+  prevenir_ouverture_crise?: boolean;
+  prevenir_ouverture_centre?: boolean;
   actif: boolean;
   ordre: number;
   departement_code: string | null;

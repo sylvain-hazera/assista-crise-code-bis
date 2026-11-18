@@ -16,6 +16,7 @@ const CATEGORIES_ATTENDUES: CategorieInterlocuteurPCS[] = ['PREFECTURE', 'SDIS',
 interface Saisie {
   categorie: CategorieInterlocuteurPCS; nom: string; organisme: string;
   telephone: string; email: string; mode_alerte: ModeAlertePCS;
+  prevenir_ouverture_crise: boolean; prevenir_ouverture_centre: boolean;
 }
 
 /**
@@ -70,7 +71,8 @@ export class PcsAnnuaireComponent implements OnInit {
   }
 
   private saisieVide(): Saisie {
-    return { categorie: 'PREFECTURE', nom: '', organisme: '', telephone: '', email: '', mode_alerte: 'TELEPHONE' };
+    return { categorie: 'PREFECTURE', nom: '', organisme: '', telephone: '', email: '', mode_alerte: 'TELEPHONE',
+             prevenir_ouverture_crise: true, prevenir_ouverture_centre: false };
   }
 
   private charger(): void {
@@ -107,6 +109,7 @@ export class PcsAnnuaireComponent implements OnInit {
     this.saisie = {
       categorie: fiche.categorie, nom: fiche.nom, organisme: fiche.organisme || '',
       telephone: fiche.telephone || '', email: fiche.email || '', mode_alerte: fiche.mode_alerte,
+      prevenir_ouverture_crise: fiche.prevenir_ouverture_crise !== false, prevenir_ouverture_centre: !!fiche.prevenir_ouverture_centre,
     };
     this.enModification = fiche.id;
     this.formulaireOuvert = true;

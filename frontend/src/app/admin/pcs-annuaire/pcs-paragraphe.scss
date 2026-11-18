@@ -89,3 +89,13 @@ input, textarea, select {
     font-size: .75rem; background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text-muted, #6b7280);
     &.pret { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #166534); } }
 }
+
+.moments { border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px; padding: .5rem .8rem; margin: .4rem 0; display: grid; gap: .25rem;
+  legend { font-weight: 600; font-size: .88rem; padding: 0 .3rem; }
+  .case { display: flex; align-items: center; gap: .45rem; font-weight: 400; }
+}
+
+// Poste de commandement : créer l'équipe, inviter quelqu'un.
+.creer-equipe { margin-top: .35rem; display: inline-flex; align-items: center; gap: .3rem; }
+.inviter { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .3rem; font-weight: 400;
+  input[type=email] { flex: 1 1 14rem; } }
