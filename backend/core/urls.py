@@ -25,7 +25,7 @@ from .views_stocks_logistique import (
 from .views_stocks import CommandeStockViewSet, FactureStockViewSet, PretMaterielViewSet, TiersStockViewSet
 from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, GeorisquesView, RapportGeorisquesView, ZonagesOfficielsView,
-    CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
+    CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FichesConseilView, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
@@ -512,6 +512,7 @@ urlpatterns = [
     path('engagement-ressource/<str:token>/', EngagementRessourcePublicView.as_view(), name='engagement_ressource_public'),
     path('accuser-reception-pcs/<str:token>/', AccuserReceptionAlertePCSPublicView.as_view(), name='accuser_reception_alerte_pcs'),
     path('dossier-pcs/', DossierPCSView.as_view(), name='dossier_pcs'),
+    path('pcs-fiches-conseil/', FichesConseilView.as_view(), name='pcs_fiches_conseil'),
     path('dossier-pcs/revisions/', RevisionPCSView.as_view(), name='dossier_pcs_revisions'),
     path('dossier-pcs/document/', DocumentPCSView.as_view(), name='dossier_pcs_document'),
     path('dossier-pcs/dicrim/', DicrimView.as_view(), name='dossier_pcs_dicrim'),

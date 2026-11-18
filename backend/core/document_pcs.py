@@ -250,7 +250,7 @@ def rassembler(institution, environment, nommer=None) -> dict:
         for r in dossier.revisions.select_related("auteur")
     ]
 
-    from .pcs_fiches import fiche_type
+    from .pcs_fiches import fiche_moyen, fiche_type
     fonctions = [
         {"code": f.fonction, "fonction": f.libelle or f.get_fonction_display(),
          **personnes_de_la_fonction(f, nommer, zone_reelle),
@@ -261,7 +261,9 @@ def rassembler(institution, environment, nommer=None) -> dict:
     ]
     moyens_alerte = [
         {"type": m.get_type_display(), "description": _texte(m.description), "zone": m.zone.nom if m.zone_id else "",
-         "personne": _texte(m.personne), "telephone": _texte(m.personne_telephone)}
+         "personne": _texte(m.personne), "telephone": _texte(m.personne_telephone),
+         # Sa fiche de déclenchement : celle de la commune, sinon la fiche type (18/11/2026).
+         "consignes": _texte(m.consignes) or fiche_moyen(m.type), "fiche_propre": bool(_texte(m.consignes))}
         for m in dossier.moyens_alerte.select_related("zone")
     ]
     exercices = [
@@ -668,6 +670,10 @@ def _partie_organisation(c):
         blocs.append(_tableau(("Moyen", "Lieu, circuit ou liste", "Quartier", "Personne", "Téléphone"),
                               [(m["type"], m["description"], m["zone"], m["personne"], m["telephone"])
                                for m in c["moyens_alerte"]], (36, 58, 28, 32, 26)))
+        for m in c["moyens_alerte"]:
+            if m.get("consignes"):
+                blocs.append(_p(f"Fiche de déclenchement — {m['type']}" + ("" if m["fiche_propre"] else " (fiche type)"), _H3))
+                blocs += [_p(ligne) for ligne in m["consignes"].split("\n") if ligne.strip()]
     else:
         blocs.append(_vide("Aucun moyen d'alerte de la population n'est recensé.", "Alerte de la population"))
     blocs.append(_p("Interlocuteurs à prévenir", _H3))

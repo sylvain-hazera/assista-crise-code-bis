@@ -92,6 +92,10 @@
       <h2 class="categorie">Moyens de terrain</h2>
     }
 
+    @if (estOrganigramme) {
+      <p class="note">Des fiches de conseil par poste, par rôle et pour tenir un centre d'accueil, reprises de documents de l'État :
+        <a routerLink="/admin/pcs-fiches">Fiches réflexes et conseils</a>.</p>
+    }
     @if (fonctionsTypesManquantes.length) {
       <p class="message">
         Les fonctions habituelles d'un poste de commandement ne sont pas toutes là ({{ fonctionsTypesManquantes.length }} manquante{{ fonctionsTypesManquantes.length > 1 ? 's' : '' }}).

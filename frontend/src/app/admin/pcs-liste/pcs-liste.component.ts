@@ -80,6 +80,9 @@ export class PcsListeComponent implements OnInit {
       });
     }
     this.charger();
+    if (this.paragraphe.champs.some(c => c.parDefaut)) {
+      this.http.get<Record<string, string>>(`${this.url}fiches-types/`).subscribe({ next: (f) => { this.fichesTypes = f; }, error: () => {} });
+    }
     if (this.paragraphe.champs.some(c => c.type === 'zone')) {
       // Les quartiers sont facultatifs : s'ils ne se chargent pas, le champ reste vide et c'est tout.
       this.zoneService.getAll().subscribe({
@@ -208,9 +211,16 @@ export class PcsListeComponent implements OnInit {
     this.erreur = '';
   }
 
-  /** Texte fourni par le serveur pour un champ laissé vide (la fiche réflexe type). */
+  /** Les fiches types par fonction ou par moyen, servies par le serveur : montrées dès qu'on
+   * choisit, à la création comme à la modification (18/11/2026 : elles n'apparaissaient qu'en
+   * modifiant une ligne déjà enregistrée). */
+  fichesTypes: Record<string, string> = {};
+
+  /** Texte proposé tant que le champ est vide : la fiche type de ce qui est choisi. */
   parDefaut(cle: string | undefined): string {
     if (!cle) return '';
+    const choix = this.saisie['fonction'] ?? this.saisie['type'];
+    if (choix && this.fichesTypes[choix]) return this.fichesTypes[choix];
     const ligne = this.lignes.find(l => l.id === this.enModification);
     return ligne ? (ligne[cle] || '') : '';
   }

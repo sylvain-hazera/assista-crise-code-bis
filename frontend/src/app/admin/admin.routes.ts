@@ -62,6 +62,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'pcs-organisation', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'organisation' } },
   { path: 'pcs-alerte', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'alerte' } },
   { path: 'pcs-exercices', loadComponent: () => import('./pcs-liste/pcs-liste.component').then(m => m.PcsListeComponent), canActivate: [institutionalEffectiveGuard], data: { paragraphe: 'exercices' } },
+  { path: 'pcs-fiches', loadComponent: () => import('./pcs-fiches/pcs-fiches.component').then(m => m.PcsFichesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'sites-sensibles', loadComponent: () => import('./sites-sensibles/sites-sensibles.component').then(m => m.SitesSensiblesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
   // Gestion des membres d'une association agréée de sécurité civile : annuaire, recrutement,

@@ -35,6 +35,11 @@
             </select>
           </div>
         }
+        @if (suivi?.lieu_de_stock_nom) {
+          <p class="stock-lieu"><span class="material-icons" aria-hidden="true">warehouse</span>
+            Installé dans <strong>{{ suivi!.lieu_de_stock_nom }}</strong> : ce stock est celui du lieu. Ce qui est distribué ici
+            sort du dépôt, et rien n'est à rapatrier à la fermeture.</p>
+        }
         @if (suivi?.peut_doter) {
           <div class="stock-barre">
             @if (!dotation) {

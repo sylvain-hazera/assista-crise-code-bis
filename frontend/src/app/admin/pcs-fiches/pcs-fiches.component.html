@@ -1,0 +1,53 @@
+<div class="fiches-page" [class.impression]="!!ouverte">
+  <header class="entete">
+    <p class="fil"><a routerLink="/admin/plans">Mon plan de sauvegarde</a> › fiches réflexes</p>
+    <h1><span class="material-icons" aria-hidden="true">menu_book</span> Fiches réflexes et conseils</h1>
+    <p class="chapeau">Les postes du poste de commandement, les rôles sur le terrain, la tenue d'un centre d'accueil, les situations
+      les plus courantes. Ces fiches reprennent des documents publics de l'État ; la source est indiquée sur chacune. Lisez-les,
+      imprimez-les, et reprenez celles qui vous conviennent dans votre plan pour en faire les vôtres.</p>
+  </header>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+  @if (chargement) { <p class="message">Chargement…</p> }
+
+  @for (categorie of codesCategories; track categorie) {
+    <section class="categorie">
+      <h2>{{ categories[categorie] }}</h2>
+      @for (fiche of dansLaCategorie(categorie); track fiche.code) {
+        <article class="fiche" [class.ouverte]="ouverte === fiche.code">
+          <button type="button" class="titre-fiche" (click)="basculer(fiche.code)" [attr.aria-expanded]="ouverte === fiche.code">
+            <span class="material-icons" aria-hidden="true">{{ ouverte === fiche.code ? 'expand_less' : 'expand_more' }}</span>
+            {{ fiche.titre }}
+            @if (fiche.fonction) { <small>— {{ libelleFonction(fiche.fonction) }}</small> }
+          </button>
+          @if (ouverte === fiche.code) {
+            <div class="corps">
+              @for (section of fiche.sections; track section.titre) {
+                <h3>{{ section.titre }}</h3>
+                <ul>@for (ligne of section.lignes; track $index) { <li>{{ ligne }}</li> }</ul>
+              }
+              <p class="source">D'après : <a [href]="fiche.source.url" target="_blank" rel="noopener noreferrer">{{ fiche.source.titre }}</a>,
+                {{ fiche.source.editeur }} (consulté le {{ fiche.source.consulte_le | date:'dd/MM/yyyy' }}). Les mentions entre crochets
+                indiquent où cela se fait dans l'application.</p>
+              <div class="gestes">
+                <button type="button" class="btn-secondary" (click)="imprimer(fiche.code)">
+                  <span class="material-icons" aria-hidden="true">print</span> Imprimer cette fiche</button>
+                @if (!fiche.fonction) {
+                  <select [(ngModel)]="fonctionChoisie[fiche.code]" [attr.aria-label]="'Fonction qui reprend la fiche ' + fiche.titre">
+                    <option value="">— Pour quelle fonction ? —</option>
+                    @for (f of FONCTIONS; track f.code) { <option [value]="f.code">{{ f.libelle }}</option> }
+                  </select>
+                }
+                <button type="button" class="btn-primary" [disabled]="enCours === fiche.code || (!fiche.fonction && !fonctionChoisie[fiche.code])"
+                        (click)="reprendre(fiche)">
+                  <span class="material-icons" aria-hidden="true">playlist_add</span>
+                  {{ enCours === fiche.code ? 'Reprise…' : 'Reprendre dans mon plan' }}</button>
+              </div>
+            </div>
+          }
+        </article>
+      }
+    </section>
+  }
+</div>

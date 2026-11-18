@@ -41,6 +41,9 @@ export type ReportKind = 'Crisis' | 'Offer' | 'Request' | 'Information';
 
 export interface ReportRow {
   id:           string;
+  /** Saisie par une collectivité à la demande de la personne (téléphone, guichet) : le nom de
+   * la collectivité, sinon null. */
+  pourAutrui?:  boolean;
   kind:         ReportKind;
   title:        string;
   contact:      string;        // first_name + last_name
@@ -584,7 +587,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       case 'Offer': {
         const o = raw as Offer;
         return {
-          id: o.id, kind: 'Offer', title: o.title,
+          id: o.id, kind: 'Offer', pourAutrui: !!(o as any).enregistre_pour_autrui_par, title: o.title,
           contact: `${o.first_name_offer} ${o.last_name_offer}`, email: o.email_offer,
           telephone: o.phone_offer ?? o.author_phone ?? null, status: o.status, date: o.created_at,
           dateExp: o.expires_at, crisis: o.crisis, crisis_nom: o.crisis_nom ?? null, author: o.author,
@@ -602,7 +605,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       case 'Request': {
         const d = raw as Request;
         return {
-          id: d.id, kind: 'Request', title: d.title,
+          id: d.id, kind: 'Request', pourAutrui: !!(d as any).enregistre_pour_autrui_par, title: d.title,
           contact: `${d.first_name_request} ${d.last_name_request}`, email: d.email_request,
           telephone: d.phone_request, status: d.status, date: d.created_at, dateExp: d.expires_at,
           crisis: d.crisis, crisis_nom: d.crisis_nom ?? null, author: d.author,
@@ -616,7 +619,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       case 'Information': {
         const i = raw as Information;
         return {
-          id: i.id, kind: 'Information', title: i.title,
+          id: i.id, kind: 'Information', pourAutrui: !!(i as any).enregistre_pour_autrui_par, title: i.title,
           contact: `${i.first_name_information} ${i.last_name_information}`, email: i.email_information,
           telephone: i.phone_information, status: i.status, date: i.created_at, dateExp: i.expires_at,
           crisis: i.crisis, crisis_nom: i.crisis_nom ?? null, author: i.author,

@@ -36,6 +36,7 @@ describe('PcsListeComponent', () => {
     // Chaque fiche réflexe et chaque moyen d'alerte demande ses fichiers joints (18/11/2026).
     if (monte) {
       http.match(r => r.url.includes('/pcs-pieces/')).forEach(r => r.flush([]));
+      http.match(r => r.url.endsWith('/fiches-types/')).forEach(r => r.flush({}));
       // L'organigramme demande l'institution du plan (contacts à proposer, invitations).
       http.match(r => r.url.endsWith('/dossier-pcs/')).forEach(r => r.flush({ institution: 'i1', commune: { nom: 'Saint-Exemple' } }));
       http.match(r => r.url.includes('/contacts-institution')).forEach(r => r.flush([]));

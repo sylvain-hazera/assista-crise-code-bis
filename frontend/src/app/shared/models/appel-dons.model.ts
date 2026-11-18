@@ -131,7 +131,6 @@ export interface AppelAuxDons {
   avancement: { lignes: number; lignes_couvertes: number; pieces_voulues: number; pieces_recues: number; pieces_promises: number; pieces_restantes: number };
   reprise?: { foyers: number; lignes_creees: number; lignes_ajustees: number };
   entre_en_stock?: boolean;
-  depot_nom_reception?: string | null;
 }
 
 /** Un avis public : ce qu'il faut et ce qui reste, sans contact ni lieu de livraison. */

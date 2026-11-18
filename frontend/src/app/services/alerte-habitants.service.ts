@@ -19,6 +19,8 @@ export interface MoyenTerrain {
   personne: string; personne_telephone: string;
   /** Vrai : le message peut lui être envoyé par SMS pour qu'il le relaie. */
   peut_relayer: boolean; motif_relais: string;
+  /** Ce qu'on fait quand on le déclenche : la fiche de la commune, sinon la fiche type. */
+  consignes?: string; fiche_propre?: boolean;
   pieces: number;
 }
 

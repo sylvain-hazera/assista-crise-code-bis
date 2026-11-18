@@ -83,7 +83,13 @@
                 } @else if (moyen.motif_relais) {
                   <p class="note">{{ moyen.motif_relais }}</p>
                 }
-                <app-pieces-plan [moyenAlerte]="moyen.id" [modifiable]="false" intitule="Fiche et procédure"></app-pieces-plan>
+                @if (moyen.consignes) {
+                  <div class="consignes-moyen">
+                    <strong>Fiche de déclenchement{{ moyen.fiche_propre ? '' : ' (fiche type)' }}</strong>
+                    <p>{{ moyen.consignes }}</p>
+                  </div>
+                }
+                <app-pieces-plan [moyenAlerte]="moyen.id" [modifiable]="false" intitule="Documents joints"></app-pieces-plan>
               </div>
             }
           </div>

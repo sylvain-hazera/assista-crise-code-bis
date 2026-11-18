@@ -283,6 +283,11 @@
                           <span class="material-icons">domain</span> {{ row.organisationNom }}
                         </span>
                       }
+                      @if (row.pourAutrui) {
+                        <span class="crise-link" title="Enregistrée par la collectivité à la demande de la personne (téléphone, guichet)">
+                          <span class="material-icons">support_agent</span> saisie pour la personne
+                        </span>
+                      }
                       @if (row.crisis && row.kind !== 'Crisis') {
                         <span class="crise-link">
                           <span class="material-icons">link</span> crise liée

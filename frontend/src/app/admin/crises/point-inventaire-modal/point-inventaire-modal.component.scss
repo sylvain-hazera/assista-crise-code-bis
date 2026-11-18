@@ -178,3 +178,6 @@
 .denree { font-size: .78rem; }
 .denree-alerte { font-size: .78rem; color: #b91c1c; font-weight: 600; }
 .stock-demandes { margin: 0 0 .6rem; padding: .5rem .6rem; border-left: 4px solid #b45309; background: var(--ac-surface-2, #fffbeb); font-size: .85rem; display: grid; gap: .4rem; }
+
+.stock-lieu { display: flex; align-items: flex-start; gap: .4rem; margin: .4rem 0; padding: .5rem .7rem; border-radius: 6px;
+  background: var(--ac-blue-bg, #eff6ff); font-size: .9rem; .material-icons { font-size: 1.15rem; } }

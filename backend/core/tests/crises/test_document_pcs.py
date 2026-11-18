@@ -284,7 +284,7 @@ class TestPosteDeCommandementAlerteExercices:
         assert reponse.status_code == 201, reponse.data
         assert "journal de bord" in reponse.data["fiche_type"]
         fiche = document_pcs.rassembler(mairie, "PROD")["fonctions"][0]
-        assert "Assure l'accueil téléphonique" in fiche["consignes"] and fiche["fiche_propre"] is False
+        assert "Tient le standard" in fiche["consignes"] and fiche["fiche_propre"] is False
 
         client.patch(f"/api/pcs-fonctions/{reponse.data['id']}/", {"consignes": "Ouvrir la salle du conseil."}, format="json")
         fiche = document_pcs.rassembler(mairie, "PROD")["fonctions"][0]

@@ -1,0 +1,33 @@
+.fiches-page { max-width: 64rem; margin: 0 auto; padding: 1rem 16px 3rem;
+  .fil { margin: 0; font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+  h1 { display: flex; align-items: center; gap: .4rem; font-size: 1.5rem; margin: .2rem 0 .3rem; }
+  .chapeau { color: var(--ac-text-muted, #6b7280); max-width: 52rem; margin: 0 0 1rem; }
+  .message { padding: .6rem .8rem; border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); margin: .5rem 0; &.erreur { border-color: #b91c1c; } }
+  .categorie { margin: 1.4rem 0 0; h2 { font-size: 1.05rem; margin: 0 0 .5rem; } }
+  .fiche { border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; background: var(--ac-surface, #fff); margin: 0 0 .45rem;
+    &.ouverte { border-color: #2563eb; } }
+  .titre-fiche { width: 100%; display: flex; align-items: center; gap: .4rem; padding: .6rem .8rem; background: none; border: 0;
+    font: inherit; font-weight: 600; text-align: left; cursor: pointer; color: inherit;
+    small { font-weight: 400; color: var(--ac-text-muted, #6b7280); }
+    &:focus-visible { outline: 2px solid #1d4ed8; outline-offset: -2px; } }
+  .corps { padding: 0 1rem .9rem 2.4rem;
+    h3 { font-size: .95rem; margin: .8rem 0 .3rem; }
+    ul { margin: 0; padding-left: 1.1rem; display: grid; gap: .2rem; }
+    li { line-height: 1.45; } }
+  .source { margin: .9rem 0 .5rem; font-size: .82rem; color: var(--ac-text-muted, #6b7280); }
+  .gestes { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+    select { font: inherit; padding: .4rem .5rem; border-radius: 6px; border: 1px solid var(--ac-border-strong, #d1d5db); } }
+  .btn-primary, .btn-secondary { display: inline-flex; align-items: center; gap: .35rem; padding: .5rem 1rem; border-radius: 6px;
+    cursor: pointer; font: inherit; font-size: .9rem; .material-icons { font-size: 1.1rem; } &:disabled { opacity: .5; cursor: not-allowed; } }
+  .btn-primary { border: 1px solid #2563eb; background: #2563eb; color: #fff; }
+  .btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151); }
+}
+
+// À l'impression : la fiche ouverte seule, sans boutons ni menu.
+@media print {
+  .fiches-page.impression {
+    .chapeau, .message, .gestes, .fil, .fiche:not(.ouverte), .categorie h2 { display: none !important; }
+    .categorie:not(:has(.fiche.ouverte)) { display: none !important; }
+    .fiche.ouverte { border: 0; }
+  }
+}

@@ -161,6 +161,7 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
   { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'account_tree', label: 'Poste de commandement', route: '/admin/pcs-organisation', groupe: 'preparation' },
+  { icon: 'menu_book', label: 'Fiches réflexes et conseils', route: '/admin/pcs-fiches', groupe: 'preparation' },
   { icon: 'layers', label: 'Zones', route: '/admin/zones', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'contact_phone', label: 'Annuaire de crise', route: '/admin/pcs-annuaire', groupe: 'preparation' },
   { icon: 'campaign', label: 'Alerte de la population', route: '/admin/pcs-alerte', groupe: 'preparation' },

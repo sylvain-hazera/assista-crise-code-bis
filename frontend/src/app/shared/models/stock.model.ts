@@ -156,6 +156,9 @@ export interface EtatStockPoint {
   peut_doter: boolean;
   institution_nom: string;
   a_rapatrier: boolean;
+  /** Le point est installé dans un lieu de la commune : son stock est celui de ce lieu. */
+  lieu_de_stock?: string | null;
+  lieu_de_stock_nom?: string;
   lignes: { item: string; item_nom: string; quantite: string | null; unite: string; niveau_stock: string | null; suivi: boolean;
     conservation: ConservationStock; preparation: PreparationStock; manques: string[] }[];
   /** Ce que le point a pour garder et préparer des denrées. */

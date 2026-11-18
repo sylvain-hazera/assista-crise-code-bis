@@ -6007,6 +6007,8 @@ class MoyenAlertePCS(EnvironmentScopedModel):
     zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name="moyens_alerte")
     personne = EncryptedTextField(blank=True, default="")
     personne_telephone = EncryptedTextField(blank=True, default="")
+    #: Fiche de déclenchement propre à la commune ; vide = la fiche type du moyen (core/pcs_fiches.py).
+    consignes = models.TextField(blank=True, default="")
     date_maj = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -122,6 +122,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"Échec de la synchronisation {environnement} : {exc}")
                 continue
             self._appliquer_donnees(environnement, reponse.json())
+            self._rapatrier_pieces(base, jeton, environnement)
 
     def _appliquer_donnees(self, environnement, donnees):
         from django.apps import apps
@@ -165,6 +166,33 @@ class Command(BaseCommand):
             f"{compteurs['erreur']} erreur(s) ; équipes et radio : {referentiel['applique']} appliqué(s), "
             f"{referentiel['ignore']} ignoré(s), {referentiel['erreur']} erreur(s)."
         )
+
+    def _rapatrier_pieces(self, base, jeton, environnement):
+        """Les fichiers joints au plan dont la ligne est arrivée mais pas encore le contenu : on
+        les demande un par un, une seule fois, et on les range chiffrés avec la clé du satellite.
+        Une pièce en échec est retentée au passage suivant."""
+        from django.core.files.base import ContentFile
+
+        from core.models import PieceJointePCS
+
+        faits = echecs = 0
+        for piece in PieceJointePCS.objects.filter(environment=environnement):
+            stockage = piece.fichier.storage
+            if piece.fichier.name and stockage.exists(piece.fichier.name):
+                continue
+            try:
+                reponse = requests.get(f"{base}/piece-plan/{piece.id}/", headers={
+                    "Authorization": f"Bearer {jeton}", "X-Environment": environnement}, timeout=120)
+                reponse.raise_for_status()
+                nom = stockage.save(piece.fichier.name or f"documents/{piece.id}", ContentFile(reponse.content))
+                if nom != piece.fichier.name:
+                    PieceJointePCS.objects.filter(pk=piece.pk).update(fichier=nom)
+                faits += 1
+            except Exception as exc:  # noqa: BLE001 -- retenté au passage suivant
+                logger.warning("Fichier du plan %s non rapatrié (%s).", piece.id, type(exc).__name__)
+                echecs += 1
+        if faits or echecs:
+            self.stdout.write(f"Fichiers du plan {environnement} : {faits} rapatrié(s), {echecs} en échec.")
 
     def _copier_comptes(self, base, jeton):
         """Comptes de l'institution (connexion locale sans internet, voir core/sync_comptes.py)."""

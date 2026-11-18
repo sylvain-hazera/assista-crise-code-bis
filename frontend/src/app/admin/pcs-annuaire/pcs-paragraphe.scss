@@ -104,3 +104,5 @@ input, textarea, select {
 .pastille-couleur { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: .35rem; vertical-align: baseline; }
 .gestes-couche { white-space: nowrap; button + button { margin-left: .35rem; } }
 .fichier-local { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0; font-weight: 600; }
+.consignes-moyen { padding: .5rem .7rem; border-radius: 6px; background: var(--ac-surface, #fff); border: 1px solid var(--ac-border, #e5e7eb);
+  p { margin: .25rem 0 0; white-space: pre-line; font-size: .9rem; } }

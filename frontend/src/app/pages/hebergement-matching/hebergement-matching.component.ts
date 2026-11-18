@@ -279,8 +279,13 @@ export class HebergementMatchingComponent implements OnInit {
         const hebergementTypeId = requestTypes.find(t => t.type === 'Hébergement')?.id;
         const crisisIds = new Set(team.assigned_crisis_ids || []);
 
+        // `accueil_sinistres === false` : l'hôte n'accueille QUE des intervenants (bénévoles,
+        // secours). Sa case était enregistrée mais jamais lue : son logement était proposé aux
+        // familles sinistrées quand même (vu le 18/11/2026). Il apparaît dans « Logement
+        // intervenants », pas ici.
         this.allOffres = offers.filter(o =>
           o.offer_type_nom === 'Hébergement' && o.actif !== false && !!o.crisis && crisisIds.has(o.crisis)
+          && o.accueil_sinistres !== false
         );
         this.allDemandes = requests.filter(r =>
           r.request_type === hebergementTypeId && r.actif !== false && !!r.crisis && crisisIds.has(r.crisis)

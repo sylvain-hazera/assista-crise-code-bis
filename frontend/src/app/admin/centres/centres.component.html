@@ -3,7 +3,8 @@
   <header class="page-header">
     <div class="header-left">
       <h1><span class="material-icons">home_work</span> Centres</h1>
-      <p class="subtitle">{{ filteredPoints.length }} centre{{ filteredPoints.length > 1 ? 's' : '' }}</p>
+      <p class="subtitle">{{ filteredPoints.length }} centre{{ filteredPoints.length > 1 ? 's' : '' }} —
+        <a routerLink="/admin/pcs-fiches">comment tenir un centre d'accueil</a></p>
     </div>
     <button type="button" class="btn-primary" (click)="openCreateModal()">
       <span class="material-icons">add</span> Nouveau centre

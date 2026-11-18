@@ -58,6 +58,18 @@ SPEC = (
     }),
     ("ContactMeshCore", "contacts_meshcore", {"cles_naturelles": (("compagnon", "pubkey_hex"),)}),
     ("ContactMeshtastic", "contacts_meshtastic", {"cles_naturelles": (("compagnon", "node_num"),)}),
+    # Le plan communal de sauvegarde (18/11/2026, question de Sylvain : « les fiches se copient sur
+    # les satellites ? ») : pendant une coupure, c'est lui qu'on veut sous la main — qui tient
+    # quelle fonction et sa fiche réflexe, les moyens d'alerte et leur fiche de déclenchement,
+    # l'annuaire de crise, les documents joints. Le central fait autorité : une modification
+    # faite sur le satellite est remplacée au passage suivant.
+    ("Zone", "zones", {"cles_naturelles": ()}),
+    ("DossierPCS", "dossier_pcs", {"cles_naturelles": (("institution", "environment"),)}),
+    ("FonctionPCS", "fonctions_pcs", {"cles_naturelles": ()}),
+    ("MoyenAlertePCS", "moyens_alerte_pcs", {"cles_naturelles": ()}),
+    ("InterlocuteurAlertePCS", "interlocuteurs_pcs", {"cles_naturelles": (), "m2m": ("institutions",)}),
+    # La ligne seulement : le fichier, chiffré, est rapatrié à part (synchroniser_entrant).
+    ("PieceJointePCS", "pieces_pcs", {"cles_naturelles": ()}),
     ("NoeudMeshUtilisateur", "noeuds_meshcore", {"cles_naturelles": (("pubkey_hex",),)}),
     ("NoeudUtilisateurMeshtastic", "noeuds_meshtastic", {"cles_naturelles": (("node_num",),)}),
 )
@@ -91,6 +103,12 @@ def selection(institution, environnement):
             environment=environnement, utilisateur__institution=institution),
         "noeuds_meshtastic": m("NoeudUtilisateurMeshtastic").objects.filter(
             environment=environnement, utilisateur__institution=institution),
+        "zones": m("Zone").objects.filter(environment=environnement, institution=institution),
+        "dossier_pcs": m("DossierPCS").objects.filter(environment=environnement, institution=institution),
+        "fonctions_pcs": m("FonctionPCS").objects.filter(dossier__environment=environnement, dossier__institution=institution),
+        "moyens_alerte_pcs": m("MoyenAlertePCS").objects.filter(dossier__environment=environnement, dossier__institution=institution),
+        "interlocuteurs_pcs": m("InterlocuteurAlertePCS").objects.filter(environment=environnement, institutions=institution).distinct(),
+        "pieces_pcs": m("PieceJointePCS").objects.filter(dossier__environment=environnement, dossier__institution=institution),
     }
 
 
@@ -126,14 +144,20 @@ def referentiel_pour_satellite(institution, environnement):
 
 # ── Côté satellite : application ──────────────────────────────────────────────────────────
 
-def _valeurs_locales(Modele, item):
+def _valeurs_locales(Modele, item, correspondances=None):
     """Champs de `item` prêts à écrire localement ; None si une clé étrangère obligatoire vise un
-    objet absent du satellite (l'objet entier est alors ignoré)."""
+    objet absent du satellite (l'objet entier est alors ignoré).
+
+    `correspondances` : identifiant du central -> identifiant local, quand une ligne a été
+    retrouvée localement par sa clé naturelle sous un autre identifiant (le dossier du plan que
+    le satellite avait créé de lui-même). Ses enfants pointent alors vers la ligne locale."""
     valeurs = {}
     for champ in Modele._meta.concrete_fields:
         if champ.primary_key or champ.attname not in item:
             continue
         valeur = item[champ.attname]
+        if champ.is_relation and correspondances and valeur is not None and str(valeur) in correspondances:
+            valeur = correspondances[str(valeur)]
         if champ.is_relation:
             if valeur is not None and not champ.related_model.objects.filter(pk=valeur).exists():
                 valeur = None
@@ -164,8 +188,8 @@ def _existant(Modele, item, valeurs, options):
     return None
 
 
-def _appliquer_un(Modele, item, options):
-    valeurs = _valeurs_locales(Modele, item)
+def _appliquer_un(Modele, item, options, correspondances=None):
+    valeurs = _valeurs_locales(Modele, item, correspondances)
     if valeurs is None:
         return "ignore"
     with transaction.atomic():
@@ -173,6 +197,8 @@ def _appliquer_un(Modele, item, options):
         if existant is not None:
             Modele.objects.filter(pk=existant.pk).update(**valeurs)
             pk = existant.pk
+            if correspondances is not None and str(pk) != str(item["id"]):
+                correspondances[str(item["id"])] = pk
         else:
             Modele.objects.bulk_create([Modele(id=item["id"], **valeurs)])
             pk = item["id"]
@@ -200,6 +226,7 @@ def appliquer_referentiel(donnees):
     logger = logging.getLogger(__name__)
 
     compteurs = {"applique": 0, "ignore": 0, "erreur": 0}
+    correspondances = {}
     for nom_modele, cle, options in SPEC:
         Modele = _modele(nom_modele)
         items = donnees.get(cle) or []
@@ -209,7 +236,7 @@ def appliquer_referentiel(donnees):
         for passe in range(passes):
             for item in items:
                 try:
-                    resultat = _appliquer_un(Modele, item, options)
+                    resultat = _appliquer_un(Modele, item, options, correspondances)
                 except Exception:
                     logger.exception("Échec application référentiel %s %s", nom_modele, item.get("id"))
                     resultat = "erreur"

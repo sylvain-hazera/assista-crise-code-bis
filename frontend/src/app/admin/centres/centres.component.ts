@@ -1,3 +1,4 @@
+import { RouterLink } from '@angular/router';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,7 +21,7 @@ import { PointModalComponent } from '../crises/point-modal/point-modal.component
 @Component({
   selector: 'app-centres',
   standalone: true,
-  imports: [CommonModule, FormsModule, PointModalComponent],
+  imports: [CommonModule, FormsModule, RouterLink, PointModalComponent],
   templateUrl: './centres.component.html',
   styleUrl: './centres.component.scss'
 })

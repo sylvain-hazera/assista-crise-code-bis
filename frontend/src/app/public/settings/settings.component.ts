@@ -876,15 +876,11 @@ export class SettingsComponent implements OnInit {
 
   // ── Édition ──────────────────────────────────────────────────
 
-  editCrisis(c: Crisis):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
 
   editOffer(offer: Offer): void { 
-    if(offer.status == Status.AVAILABLE) {
-      offer.status = Status.UNAVAILABLE;
-    } else {
-      offer.status = Status.AVAILABLE;
-    }
-    offer.status = Status.UNAVAILABLE;
+    // Bascule : une offre se suspend et se réactive. Une ligne en trop la remettait toujours à
+    // « indisponible », si bien qu'on ne pouvait jamais la réactiver (vu le 18/11/2026).
+    offer.status = offer.status == Status.AVAILABLE ? Status.UNAVAILABLE : Status.AVAILABLE;
     this.offreService.update(offer.id, offer).subscribe({
       next:  () => { this.successMessage = 'Offre mise à jour'; this.loadOffres(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')

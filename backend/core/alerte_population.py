@@ -126,6 +126,7 @@ def moyens_de_terrain(institution, environment) -> list:
     Pour chacun : qui le déclenche ou le relaie, et si le message peut lui être envoyé par SMS
     (il faut son numéro, et un fournisseur SMS configuré pour la collectivité)."""
     from .models import DossierPCS, MoyenAlertePCS
+    from .pcs_fiches import fiche_moyen
 
     dossier = DossierPCS.objects.filter(institution=institution, environment=environment).first()
     if dossier is None:
@@ -146,6 +147,9 @@ def moyens_de_terrain(institution, environment) -> list:
             "description": moyen.description, "zone_nom": moyen.zone.nom if moyen.zone_id else "",
             "personne": moyen.personne or "", "personne_telephone": telephone,
             "peut_relayer": bool(telephone and sms_pret), "motif_relais": motif,
+            # Ce qu'on fait quand on le déclenche : la fiche de la commune, sinon la fiche type.
+            "consignes": (moyen.consignes or "").strip() or fiche_moyen(moyen.type),
+            "fiche_propre": bool((moyen.consignes or "").strip()),
             "pieces": len(moyen.pieces.all()),
         })
     return moyens

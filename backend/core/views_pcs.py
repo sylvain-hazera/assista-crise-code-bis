@@ -397,7 +397,7 @@ from rest_framework import serializers, viewsets  # noqa: E402
 from rest_framework.decorators import action  # noqa: E402
 
 from .models import ExercicePCS, FonctionPCS, MoyenAlertePCS, PieceJointePCS, Zone  # noqa: E402
-from .pcs_fiches import fiche_type  # noqa: E402
+from .pcs_fiches import fiche_moyen, fiche_type  # noqa: E402
 
 
 class FonctionPCSSerializer(serializers.ModelSerializer):
@@ -429,12 +429,17 @@ class FonctionPCSSerializer(serializers.ModelSerializer):
 class MoyenAlertePCSSerializer(serializers.ModelSerializer):
     type_libelle = serializers.CharField(source="get_type_display", read_only=True)
     zone_nom = serializers.CharField(source="zone.nom", read_only=True, default=None)
+    #: La fiche type du moyen, montrée sous le champ tant que la commune n'a pas écrit la sienne.
+    fiche_type = serializers.SerializerMethodField()
 
     class Meta:
         model = MoyenAlertePCS
         fields = ["id", "type", "type_libelle", "description", "zone", "zone_nom", "personne",
-                  "personne_telephone", "date_maj"]
+                  "personne_telephone", "consignes", "fiche_type", "date_maj"]
         read_only_fields = ["id", "date_maj"]
+
+    def get_fiche_type(self, obj):
+        return fiche_moyen(obj.type)
 
 
 class ExercicePCSSerializer(serializers.ModelSerializer):
@@ -501,12 +506,60 @@ class FonctionPCSViewSet(_ListeDuDossierPCS):
     serializer_class = FonctionPCSSerializer
     objet = "FonctionPCS"
 
+    @action(detail=False, methods=["get"], url_path="fiches-types")
+    def fiches_types(self, request):
+        """Les fiches réflexes types, par fonction : montrées dès qu'on choisit la fonction."""
+        from .pcs_fiches import FICHES_TYPES
+        return Response({code: fiche_type(code) for code in FICHES_TYPES})
+
 
 class MoyenAlertePCSViewSet(_ListeDuDossierPCS):
     """/api/pcs-moyens-alerte/ -- les moyens d'alerter la population, par quartier s'il y a lieu."""
     queryset = MoyenAlertePCS.objects.select_related("zone")
     serializer_class = MoyenAlertePCSSerializer
     objet = "MoyenAlertePCS"
+
+    @action(detail=False, methods=["get"], url_path="fiches-types")
+    def fiches_types(self, request):
+        """Les fiches de déclenchement types, par moyen : montrées dès qu'on choisit le moyen."""
+        from .pcs_fiches import FICHES_MOYENS
+        return Response({code: fiche_moyen(code) for code in FICHES_MOYENS})
+
+
+class FichesConseilView(APIView):
+    """GET /api/pcs-fiches-conseil/ -- la bibliothèque de fiches réflexes et de conseils, reprises
+    de documents publics de l'État avec leur source (core/fiches_conseil.py).
+    POST {fiche, fonction?} -- reprend une fiche dans le plan de la commune : elle devient la fiche
+    réflexe de cette fonction (créée si elle manque), que la commune réécrit ensuite à sa guise.
+    On ne remplace jamais en silence une fiche que la commune a déjà écrite."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        from . import fiches_conseil
+        return Response({"categories": fiches_conseil.CATEGORIES, "fiches": fiches_conseil.catalogue()})
+
+    def post(self, request):
+        from . import fiches_conseil
+        fiche = fiches_conseil.par_code().get(str(request.data.get("fiche") or ""))
+        if fiche is None:
+            raise ValidationError({"fiche": "Fiche inconnue."})
+        fonction = str(request.data.get("fonction") or fiche.get("fonction") or "")
+        if fonction not in FonctionPCS.Fonction.values:
+            raise ValidationError({"fonction": "Choisissez la fonction du poste de commandement qui reprend cette fiche."})
+        dossier = document_pcs.dossier_de(_institution(request), get_active_environment(request))
+        ligne = FonctionPCS.objects.filter(dossier=dossier, fonction=fonction).first()
+        if ligne is not None and (ligne.consignes or "").strip() and not request.data.get("remplacer"):
+            return Response({"detail": "Cette fonction a déjà sa fiche écrite par la commune. Confirmez pour la remplacer.",
+                             "deja_ecrite": True}, status=409)
+        texte = fiches_conseil.en_texte(fiche)
+        if ligne is None:
+            ligne = FonctionPCS.objects.create(dossier=dossier, environment=dossier.environment, fonction=fonction, consignes=texte)
+        else:
+            ligne.consignes = texte
+            ligne.save(update_fields=["consignes", "date_maj"])
+        audit_log(request=request, action_code="MODIFICATION", objet_type="FonctionPCS", objet_id=ligne.id,
+                  commentaire=f"Plan communal de sauvegarde : fiche « {fiche['titre']} » reprise pour la fonction {fonction}.")
+        return Response({"fonction": fonction, "id": str(ligne.id)}, status=201)
 
 
 class ExercicePCSViewSet(_ListeDuDossierPCS):

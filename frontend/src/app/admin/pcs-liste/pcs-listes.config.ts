@@ -107,11 +107,16 @@ export const PARAGRAPHES_EN_LISTE: Record<string, ParagrapheListe> = {
       ] },
       { cle: 'description', libelle: 'Lieu, circuit ou liste de diffusion', type: 'texte' },
       { cle: 'zone', libelle: 'Quartier (facultatif)', type: 'zone' },
-      { cle: 'personne', libelle: 'Personne qui le met en œuvre', type: 'texte' },
-      { cle: 'personne_telephone', libelle: 'Son téléphone', type: 'telephone' },
+      { cle: 'personne', libelle: 'Personne qui le met en œuvre', type: 'personne', telephone: 'personne_telephone' },
+      { cle: 'personne_telephone', libelle: 'Son téléphone', type: 'telephone',
+        indication: "Avec un numéro, le message à relayer peut lui être envoyé par SMS au moment de l'alerte." },
+      { cle: 'consignes', libelle: 'Fiche de déclenchement propre à la commune', type: 'long',
+        indication: "Ce qu'on fait quand on déclenche ce moyen. Elle sort dans « Alerter les habitants » quand on le coche. "
+          + 'Laissez vide pour garder la fiche type.', parDefaut: 'fiche_type' },
     ],
     titreLigne: (l) => joindre(l['type_libelle'], l['zone_nom']),
-    detailLigne: (l) => joindre(l['description'], l['personne'], l['personne_telephone']) || 'Sans précision',
+    detailLigne: (l) => joindre(l['description'], l['personne'], l['personne_telephone'],
+      l['consignes'] ? 'fiche propre à la commune' : 'fiche type') || 'Sans précision',
   },
 
   exercices: {

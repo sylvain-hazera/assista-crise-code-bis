@@ -23155,7 +23155,7 @@ class SatelliteViewSet(
         # l'action (_exiger_compte_service) — le compte de service d'un satellite est un
         # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
         if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
-                           'ordre_mise_a_jour', 'rapport_mise_a_jour'):
+                           'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants',
                            'mettre_a_jour', 'annuler_mise_a_jour'):
@@ -23164,7 +23164,7 @@ class SatelliteViewSet(
 
     def get_queryset(self):
         if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants',
-                           'mesh_a_emettre', 'mesh_emis', 'ordre_mise_a_jour', 'rapport_mise_a_jour'):
+                           'mesh_a_emettre', 'mesh_emis', 'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -23616,6 +23616,22 @@ class SatelliteViewSet(
                 ) + f" : {ordre.get_statut_display().lower()} ({ordre.etape}).",
             )
         return Response({"statut": ordre.statut})
+
+    @action(detail=True, methods=['get'], url_path=r'piece-plan/(?P<piece_id>[^/.]+)')
+    def piece_plan(self, request, pk=None, piece_id=None):
+        """GET /api/satellites/<id>/piece-plan/<piece>/ -- le fichier d'une pièce jointe au plan de
+        l'institution du satellite, pour qu'il le garde hors ligne (18/11/2026). Réservé au compte
+        de service de CE satellite, et aux seules pièces de SON institution. Déchiffré ici, il
+        voyage en HTTPS et le satellite le rechiffre avec sa propre clé."""
+        from django.http import FileResponse
+
+        from .models import PieceJointePCS
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        piece = get_object_or_404(PieceJointePCS, pk=piece_id, dossier__institution_id=satellite.institution_id)
+        audit_log(request=request, action_code="TELECHARGEMENT", objet_type="PieceJointePCS", objet_id=piece.id,
+                  institution=satellite.institution, commentaire=f"Fichier du plan copié sur le satellite {satellite.nom}.")
+        return FileResponse(piece.fichier.open("rb"), content_type="application/octet-stream")
 
     def _exiger_compte_service(self, request, satellite):
         """Garde commune à contact()/donnees() : seul le compte de service DE CE satellite,
