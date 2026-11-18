@@ -1,4 +1,6 @@
-<h2>Compétences / thèmes</h2>
+<div class="page-reference">
+<h1><span class="material-icons" aria-hidden="true">psychology</span> Compétences / thèmes</h1>
+<p class="chapeau">Les thèmes qui servent à décrire une offre, une demande ou une équipe. Un thème peut être rangé sous un autre ; le désactiver le retire des listes sans rien effacer.</p>
 
 <app-tag-search-input
   placeholder="Chercher ou créer un thème (ex: transport animaux)..."
@@ -28,8 +30,9 @@
           <option *ngFor="let p of parentOptions(c)" [value]="p.id">{{ p.nom }}</option>
         </select>
       </td>
-      <td>{{ c.active ? 'Oui' : 'Non' }}</td>
+      <td><span class="pastille" [class.inactive]="!c.active">{{ c.active ? 'Oui' : 'Non' }}</span></td>
       <td><button type="button" (click)="toggleActive(c)">{{ c.active ? 'Désactiver' : 'Activer' }}</button></td>
     </tr>
   </tbody>
 </table>
+</div>

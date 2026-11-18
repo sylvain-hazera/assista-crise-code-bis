@@ -270,6 +270,10 @@ class TestOutilsEnquete:
         client = APIClient()
         client.force_authenticate(user=user)
         assert client.get(reverse('auditlog-fiches'), {"q": "x"}).status_code == 403
+        # La question « m'est-elle ouverte ? » (sans recherche) reçoit un non, pas un refus :
+        # un refus s'inscrivait en échec dans la main courante à chaque ouverture de la page.
+        sonde = client.get(reverse('auditlog-fiches'))
+        assert sonde.status_code == 200 and sonde.data == {"types": [], "resultats": [], "disponible": False}
 
     def test_export_fabrique_dans_le_navigateur(self, admin, client_admin):
         ids = [str(uuid.uuid4()), str(uuid.uuid4())]

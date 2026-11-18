@@ -126,7 +126,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Le pendant pour les sinistres : qui a ete reloge, ou, jusqu'a quand, et ce qui tient.
   { icon: 'family_restroom', label: 'Relogement des familles', route: '/admin/relogement-familles', groupe: 'post-critique' },
   // Page encore vide, gardée dans le menu.
-  { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats', groupe: 'post-critique' },
+  // « Résultats » retiré du menu le 18/11/2026 : la page n'a jamais été écrite (elle affiche
+  // « results works! »). La route existe encore ; y remettre une entrée quand il y aura un contenu.
   // Route publique ; les actions de gestion sont contrôlées côté backend (Habitation.peut_gerer).
   { icon: 'home_repair_service', label: 'Référencement des dégâts', route: '/referencement-degats', groupe: 'post-critique' },
   { icon: 'directions_car', label: 'Biens sinistrés', route: '/admin/biens-sinistres', groupe: 'post-critique' },

@@ -14286,10 +14286,15 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
         comprises -- ce serait sinon un moyen détourné de les consulter.
         Sans `q` : la liste des types de fiches proposés."""
         if not request.user.is_superuser:
+            # Sans `q`, la page demande seulement « cette recherche m'est-elle ouverte ? ». Lui
+            # répondre non proprement, et non par un refus : chaque ouverture de la main
+            # courante par une mairie y inscrivait sinon une ligne « Échec » (vu le 18/11/2026).
+            if not request.query_params.get('q'):
+                return Response({'types': [], 'resultats': [], 'disponible': False})
             raise PermissionDenied("Recherche de fiches réservée au super-administrateur.")
         types = [{'type': t, 'libelle': v[0]} for t, v in TYPES_FICHES.items()]
         if not request.query_params.get('q'):
-            return Response({'types': types, 'resultats': []})
+            return Response({'types': types, 'resultats': [], 'disponible': True})
         resultats = rechercher_fiches(
             request.query_params['q'], request.query_params.getlist('type') or None,
             get_active_environment(request),

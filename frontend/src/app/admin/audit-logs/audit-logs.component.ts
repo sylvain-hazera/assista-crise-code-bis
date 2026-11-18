@@ -141,9 +141,9 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
       });
 
     this.auditLogService.rechercherFiches('').pipe(takeUntil(this.destroy$)).subscribe({
-      next: () => {
-        this.rechercheFichesDisponible = true;
-        this.nommerFichesDesCriteres();
+      next: (reponse) => {
+        this.rechercheFichesDisponible = (reponse as { disponible?: boolean })?.disponible !== false;
+        if (this.rechercheFichesDisponible) this.nommerFichesDesCriteres();
       },
       error: () => { this.rechercheFichesDisponible = false; },
     });
