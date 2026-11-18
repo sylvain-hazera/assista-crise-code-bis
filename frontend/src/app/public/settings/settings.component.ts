@@ -574,10 +574,17 @@ export class SettingsComponent implements OnInit {
     return new Set(this.mesEquipes.map(e => e.id).filter((id): id is string => !!id));
   }
 
-  /** Les dossiers ouverts POUR MOI : ma démarche, celle dont j'attends l'issue. */
+  /** Mes démarches : celles dont JE suis à l'initiative — le dossier né de MA demande ou de
+   * MON signalement.
+   *
+   * Corrigé le 18/11/2026 : c'était « tout dossier qui n'est pas confié à une de mes équipes »,
+   * si bien qu'un agent de mairie y lisait les 289 dossiers que son compte peut voir. Ce que
+   * mon compte a le droit de consulter n'est pas ce que j'ai demandé. */
   get mesDemarches(): Dossier[] {
-    const equipes = this.idsDeMesEquipes;
-    return this.allDossiers.filter(d => !d.equipe || !equipes.has(d.equipe));
+    const demandes = new Set(this.allRequests.map(r => r.id).filter(Boolean) as string[]);
+    const signalements = new Set(this.allInformations.map(i => i.id).filter(Boolean) as string[]);
+    return this.allDossiers.filter(d =>
+      (!!d.demande && demandes.has(d.demande)) || (!!d.information && signalements.has(d.information)));
   }
 
   /** Les dossiers confiés à une équipe dont je fais partie : ce que je fais pour les autres. */

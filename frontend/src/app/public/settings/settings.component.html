@@ -229,6 +229,10 @@
                 </p>
               }
 
+              <a class="lien-secteur" routerLink="/referencement-degats">
+                <span class="material-icons">home_repair_service</span>
+                Suivre les dégâts de mon logement et de mes biens
+              </a>
               <button type="button" class="lien-secteur" (click)="setActiveTab('declaration')">
                 <span class="material-icons">verified_user</span>
                 Signaler que je suis en sécurité
@@ -259,6 +263,15 @@
                   <span>mission(s) terminée(s)</span>
                 </a>
               </div>
+
+              <a class="lien-secteur" routerLink="/ma-fiche-benevole">
+                <span class="material-icons">psychology</span>
+                Mes compétences et mes disponibilités — c'est d'après elles qu'on me propose une mission
+              </a>
+              <a class="lien-secteur" routerLink="/mon-releve">
+                <span class="material-icons">schedule</span>
+                Mon relevé d'heures : mes départs, mes retours, les heures à compléter
+              </a>
 
               @if (missionsEnCours.length) {
                 <h3>Vos missions en cours</h3>

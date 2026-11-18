@@ -182,7 +182,7 @@ describe('SettingsComponent', () => {
    */
   describe('les deux secteurs', () => {
 
-    const dossier = (sur: Partial<{ id: string; equipe: string; statut: string }>) => ({
+    const dossier = (sur: Partial<{ id: string; equipe: string; statut: string; demande: string; information: string }>) => ({
       id: 'd1', numero: 'D-001', crise: 'c1', crise_nom: 'Inondation',
       competence: 'co1', competence_nom: 'Hébergement', titre: 'Besoin de draps',
       description: '', statut: 'EN_COURS', priorite: 'NORMALE' as const, ordre: 0,
@@ -194,16 +194,21 @@ describe('SettingsComponent', () => {
       expect(component.activeTab).toBe('apercu');
     });
 
-    it('sépare mes démarches de mes missions', () => {
+    it('mes démarches sont celles dont je suis à l\'initiative, pas ce que mon compte peut voir', () => {
+      // 18/11/2026 : un agent de mairie y lisait les 289 dossiers visibles de son compte.
       component.mesEquipes = [{ id: 'e1', name: 'Équipe hébergement' } as never];
+      component.allRequests = [{ id: 'd1' } as never];
+      component.allInformations = [{ id: 's1' } as never];
       component.allDossiers = [
-        dossier({ id: 'mien' }),                        // ouvert pour moi : aucune équipe
-        dossier({ id: 'mission', equipe: 'e1' }),       // confié à MON équipe
-        dossier({ id: 'ailleurs', equipe: 'e9' }),      // une autre équipe : pas ma mission
+        dossier({ id: 'ma-demande', demande: 'd1' }),
+        dossier({ id: 'mon-signalement', information: 's1' }),
+        dossier({ id: 'mission', equipe: 'e1', demande: 'autre' }),   // confié à MON équipe
+        dossier({ id: 'visible', demande: 'autre' }),                 // visible, pas à moi
+        dossier({ id: 'generique' }),                                 // ni demande ni signalement
       ];
 
       expect(component.mesMissions.map(d => d.id)).toEqual(['mission']);
-      expect(component.mesDemarches.map(d => d.id)).toEqual(['mien', 'ailleurs']);
+      expect(component.mesDemarches.map(d => d.id)).toEqual(['ma-demande', 'mon-signalement']);
     });
 
     it('ne compte que ce qui appelle une action', () => {
@@ -220,12 +225,12 @@ describe('SettingsComponent', () => {
       expect(component.missionsPassees.map(d => d.id)).toEqual(['b', 'c']);
     });
 
-    it('sans équipe, tout dossier est une démarche et non une mission', () => {
+    it('sans équipe, aucun dossier n\'est une mission', () => {
       component.mesEquipes = [];
       component.allDossiers = [dossier({ id: 'x', equipe: 'e1' })];
 
       expect(component.mesMissions).toEqual([]);
-      expect(component.mesDemarches.length).toBe(1);
+      expect(component.mesDemarches).toEqual([]);
     });
 
     it('reconnaît un vécu de bénévole même sans mission en cours', () => {
