@@ -1,4 +1,5 @@
 import { Component, HostListener, OnInit, ViewChild } from '@angular/core';
+import { InvitationDemoComponent } from '../../shared/components/common/invitation-demo/invitation-demo.component';
 import { Router, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../auth/services/auth.service';
 import { User } from '../../shared/models/user.model';
@@ -23,7 +24,7 @@ const CLE_STOCKAGE_SIDEBAR = 'admin-sidebar-affichage';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent, RappelSecondFacteurComponent],
+  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent, RappelSecondFacteurComponent, InvitationDemoComponent],
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })

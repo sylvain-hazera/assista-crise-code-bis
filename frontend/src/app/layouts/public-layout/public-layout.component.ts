@@ -1,4 +1,5 @@
 import { Component, OnInit } from '@angular/core';
+import { InvitationDemoComponent } from '../../shared/components/common/invitation-demo/invitation-demo.component';
 import { RouterOutlet } from "@angular/router";
 import { FooterComponent } from "./footer/footer.component";
 import { HeaderComponent } from './header/header.component';
@@ -12,6 +13,7 @@ import { RappelSecondFacteurComponent } from '../../shared/components/common/rap
   imports: [
     HeaderComponent, 
     RappelSecondFacteurComponent,
+    InvitationDemoComponent,
     GeolocationPopupComponent,
     RouterOutlet, 
     FooterComponent
