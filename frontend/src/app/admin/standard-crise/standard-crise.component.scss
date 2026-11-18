@@ -65,3 +65,17 @@
   .pastille[data-suite="TRANSMIS"] { background: #1d4ed8; }
   .pastille[data-suite="TRAITE"] { background: #15803d; }
 }
+
+// Boutons. Ces classes ne sont PAS globales : chaque page définit les siennes. Cette page les
+// utilisait sans les définir — les boutons s'affichaient donc bruts, vus le 18/11/2026 en
+// regardant enfin les écrans pour le manuel.
+.btn-primary, .btn-secondary {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .5rem 1rem; border-radius: 6px; cursor: pointer; font: inherit; font-size: .9rem;
+  .material-icons { font-size: 1.1rem; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+.btn-primary { border: 1px solid #2563eb; background: #2563eb; color: #fff;
+  &:hover:not(:disabled) { background: #1d4ed8; } }
+.btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
+  &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }
