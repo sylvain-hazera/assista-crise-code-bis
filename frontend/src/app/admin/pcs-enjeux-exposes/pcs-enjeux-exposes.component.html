@@ -13,6 +13,7 @@
   </p>
 
   @if (sansCollectivite) { <p class="message">Votre compte n'est rattaché à aucune collectivité.</p> }
+  @if (!sansCollectivite) { <app-releve-georisques (misAJour)="charger()"></app-releve-georisques> }
   @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
   @if (chargement) { <p class="message">Chargement…</p> }
 
@@ -56,11 +57,7 @@
         <p class="note">Relevés le {{ d.plans_prevention?.releve_le | date:'dd/MM/yyyy' }} : aucun plan de prévention ne
           couvre cette commune dans la base de l'État.</p>
       }
-      @if (!d.zonages_officiels.complet || !d.plans_prevention?.complet) {
-        <button type="button" class="btn-primary" [disabled]="releveDemande" (click)="releverZonages()">Relever auprès de Géorisques</button>
-      }
-      @if (releveDemande) { <button type="button" class="btn-secondary" (click)="charger()">Actualiser</button> }
-      @if (messageReleve) { <p class="message" role="status">{{ messageReleve }}</p> }
+      <!-- Un seul bouton pour tout Géorisques, le même que sur « Risques de la commune » (voir plus haut). -->
     </section>
 
     @if (!d.enjeux.length) {

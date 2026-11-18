@@ -1,0 +1,52 @@
+<section class="releve">
+  <div class="entete">
+    <h2><span class="material-icons" aria-hidden="true">public</span> Ce que l'État publie pour la commune <small>Géorisques</small></h2>
+    <div class="gestes">
+      <button type="button" class="geste principal" [disabled]="enCours" (click)="relever(!!etat?.releve)">
+        <span class="material-icons" aria-hidden="true">refresh</span> {{ enCours ? 'Relevé en cours…' : (etat?.releve ? 'Mettre à jour' : 'Relever auprès de Géorisques') }}
+      </button>
+      <button type="button" class="geste" [disabled]="rapportEnCours" (click)="rapport()">
+        <span class="material-icons" aria-hidden="true">picture_as_pdf</span> {{ rapportEnCours ? 'Préparation…' : 'Rapport de la commune (PDF)' }}
+      </button>
+    </div>
+  </div>
+
+  @if (message) { <p class="note" role="status">{{ message }}</p> }
+
+  @if (etat?.releve; as _) {
+    <p class="note">Relevé du {{ etat!.releve_le | date:'dd/MM/yyyy' }}@if (!etat!.complet) { — incomplet : certaines rubriques n'ont pas répondu }.
+      Ce relevé unique sert à toutes les pages : risques de la commune, enjeux exposés, zones inondables, plans de prévention.</p>
+    <dl class="faits">
+      @if (etat!.sismicite) { <div><dt>Sismicité</dt><dd>zone {{ etat!.sismicite }}</dd></div> }
+      @if (etat!.radon) { <div><dt>Radon</dt><dd>potentiel {{ etat!.radon }}</dd></div> }
+      <div><dt>Catastrophes naturelles</dt><dd>{{ etat!.catnat.nombre }} arrêté{{ etat!.catnat.nombre > 1 ? 's' : '' }}</dd></div>
+      <div><dt>Mouvements de terrain</dt><dd>{{ etat!.mouvements.length }} recensé{{ etat!.mouvements.length > 1 ? 's' : '' }}</dd></div>
+      <div><dt>Cavités souterraines</dt><dd>{{ etat!.cavites }}</dd></div>
+    </dl>
+    @if (etat!.tri.length) {
+      <p><strong>Territoire à risque important d'inondation :</strong>
+        @for (t of etat!.tri; track t.nom) { {{ t.nom }}@if (t.risques.length) { ({{ t.risques.join(', ').toLowerCase() }}) } }</p>
+    }
+    @if (etat!.azi.length) { <p><strong>Atlas des zones inondables :</strong> {{ etat!.azi.join(' ; ') }}</p> }
+    @if (etat!.catnat.derniers.length) {
+      <details>
+        <summary>Les derniers arrêtés de catastrophe naturelle</summary>
+        <ul>
+          @for (a of etat!.catnat.derniers; track $index) {
+            <li>{{ a.risque }} — du {{ a.debut }} au {{ a.fin }} (arrêté du {{ a.arrete }})</li>
+          }
+        </ul>
+      </details>
+    }
+    @if (etat!.mouvements.length) {
+      <details>
+        <summary>Les mouvements de terrain recensés</summary>
+        <ul>@for (m of etat!.mouvements; track $index) { <li>{{ m.type }}@if (m.date) { ({{ m.date | slice:0:4 }}) }@if (m.lieu) { — {{ m.lieu }} }</li> }</ul>
+      </details>
+    }
+  } @else {
+    <p class="note">Rien n'a encore été relevé pour la commune. Un seul relevé rapporte les risques recensés, les arrêtés de catastrophe
+      naturelle, l'atlas des zones inondables, les mouvements de terrain, le radon, la sismicité, les zones inondables officielles et
+      les plans de prévention ; il sert ensuite à toutes les pages du plan.</p>
+  }
+</section>

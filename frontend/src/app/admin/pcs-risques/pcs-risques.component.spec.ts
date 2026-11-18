@@ -30,7 +30,11 @@ describe('PcsRisquesComponent', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Le bloc commun « Ce que l'État publie pour la commune » lit son relevé à l'affichage (18/11/2026).
+    http.match(r => r.method === 'GET' && r.url.endsWith('/dossier-pcs/georisques/')).forEach(r => r.flush({ commune_code: '42186', releve: false, releve_le: null, complet: false, rubriques: [], sismicite: '', radon: '', catnat: { nombre: 0, derniers: [] }, azi: [], tri: [], mouvements: [], cavites: 0 }));
+    http.verify();
+  });
 
   it('montre les risques déclarés, dit à quoi ils servent, et ne propose que ceux qui restent', () => {
     demarrer();

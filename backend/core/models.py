@@ -4240,6 +4240,24 @@ class ProcedurePPR(EnvironmentScopedModel):
         ]
 
 
+class ReleveGeorisques(EnvironmentScopedModel):
+    """Ce que Géorisques publie pour une commune, rubrique par rubrique, copié en base : risques
+    recensés, arrêtés de catastrophe naturelle, atlas des zones inondables, mouvements de
+    terrain, radon, sismicité (voir core/releve_georisques.py). Données publiques : rien de
+    personnel. Les pages lisent cette copie, jamais le service."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10)
+    rubrique = models.CharField(max_length=20)
+    donnees = models.JSONField(default=list)
+    releve_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["commune_code", "rubrique", "environment"], name="uq_releve_georisques"),
+        ]
+
+
 class RelevePPR(EnvironmentScopedModel):
     """Trace qu'une famille de plans a été relevée pour une commune, même s'il n'y en a aucun :
     « relevé, et rien ici » n'est pas « jamais relevé »."""

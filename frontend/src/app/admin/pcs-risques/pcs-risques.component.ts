@@ -1,3 +1,4 @@
+import { ReleveGeorisquesComponent } from '../../shared/components/common/releve-georisques/releve-georisques.component';
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -20,7 +21,7 @@ import { RisqueCommunal, RisqueMajeurType, SuggestionGeorisques } from '../../sh
 @Component({
   selector: 'app-pcs-risques',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, ReleveGeorisquesComponent],
   templateUrl: './pcs-risques.component.html',
   styleUrl: '../pcs-annuaire/pcs-paragraphe.scss',
 })
@@ -68,6 +69,14 @@ export class PcsRisquesComponent implements OnInit {
     this.dossier.lire().subscribe({
       next: suite,
       error: (e) => { this.chargement = false; this.sansCollectivite = e?.status === 403; if (!this.sansCollectivite) this.erreur = 'Impossible de lire les risques.'; },
+    });
+  }
+
+  /** Le relevé Géorisques vient d'être refait : les risques proposés viennent de lui. */
+  relireLesSuggestions(): void {
+    if (!this.institutionId) return;
+    this.risqueService.suggestionsGeorisques(this.institutionId).subscribe({
+      next: ({ suggestions }) => { this.suggestions = suggestions; this.suggestionsErreur = ''; }, error: () => {},
     });
   }
 

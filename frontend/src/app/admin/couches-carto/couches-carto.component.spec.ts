@@ -38,7 +38,10 @@ describe('CouchesCartoComponent', () => {
     spyOn(URL, 'createObjectURL').and.returnValue('blob:essai');
     spyOn(URL, 'revokeObjectURL');
     expect(texte()).toContain('Le registre des personnes vulnérables ne sort jamais par ici');
-    const boutons = Array.from(fixture.nativeElement.querySelectorAll('table button') as NodeListOf<HTMLButtonElement>);
+    // Deux gestes par couche depuis le 18/11/2026 : la voir sur la carte, la télécharger.
+    const tous = Array.from(fixture.nativeElement.querySelectorAll('table button') as NodeListOf<HTMLButtonElement>);
+    const boutons = tous.filter(b => !b.textContent!.includes('carte'));
+    expect(tous.length).toBe(boutons.length * 2);
     expect(boutons[1].disabled).toBeTrue();
     expect(boutons[1].textContent).toContain('Rien à exporter');
 
@@ -47,6 +50,23 @@ describe('CouchesCartoComponent', () => {
     expect(requete.request.responseType).toBe('blob');
     requete.flush(new Blob(['{}'], { type: 'application/geo+json' }));
     expect(URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it('montre une couche sur la carte, dit ce qu’elle contient, et la retire', () => {
+    const voir = Array.from(fixture.nativeElement.querySelectorAll('table button') as NodeListOf<HTMLButtonElement>)
+      .find(b => b.textContent!.includes('Voir sur la carte'))!;
+    voir.click();
+    http.expectOne(`${url}/quartiers/`).flush(JSON.stringify({ type: 'FeatureCollection', features: [
+      { type: 'Feature', properties: { nom: 'Centre' }, geometry: { type: 'Polygon', coordinates: [[[4.6, 45.5], [4.61, 45.5], [4.61, 45.51], [4.6, 45.5]]] } },
+      { type: 'Feature', properties: { nom: 'Mairie' }, geometry: { type: 'Point', coordinates: [4.6, 45.5] } },
+    ] }));
+    fixture.detectChanges();
+    expect(fixture.componentInstance.affichees.map(c => c.cle)).toEqual(['quartiers']);
+    expect(texte()).toContain('1 surface, 1 point');
+    expect(texte()).toContain('Retirer de la carte');
+
+    fixture.componentInstance.basculer({ couche: 'quartiers', libelle: 'Quartiers', objets: 2 });
+    expect(fixture.componentInstance.affichees).toEqual([]);
   });
 
   it('montre un aperçu qui ne crée rien, puis importe seulement à la demande', () => {

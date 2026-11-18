@@ -18,15 +18,22 @@
 
   @if (!chargement && !sansCollectivite) {
     <section class="bloc">
-      <h2>Exporter</h2>
+      <h2>Les couches de la commune : voir, choisir, télécharger</h2>
       <table class="exposition">
         <thead><tr><th>Couche</th><th>Objets</th><th></th></tr></thead>
         <tbody>
           @for (couche of couches; track couche.couche) {
             <tr>
-              <td><strong>{{ couche.libelle }}</strong></td>
-              <td>{{ couche.objets }}</td>
               <td>
+                @if (estAffichee(couche.couche)) { <span class="pastille-couleur" [style.background]="couleurDe(couche.couche)"></span> }
+                <strong>{{ couche.libelle }}</strong>
+                @if (details[couche.couche]) { <br><span class="note">{{ details[couche.couche] }}</span> }
+              </td>
+              <td>{{ couche.objets }}</td>
+              <td class="gestes-couche">
+                <button type="button" class="btn-secondary" [disabled]="!couche.objets || chargementApercu === couche.couche" (click)="basculer(couche)">
+                  {{ chargementApercu === couche.couche ? 'Lecture…' : (estAffichee(couche.couche) ? 'Retirer de la carte' : 'Voir sur la carte') }}
+                </button>
                 <button type="button" class="btn-secondary" [disabled]="!couche.objets || exportEnCours === couche.couche"
                         (click)="exporter(couche)">
                   {{ exportEnCours === couche.couche ? 'Export…' : (couche.objets ? 'Télécharger (.geojson)' : 'Rien à exporter') }}
@@ -36,8 +43,20 @@
           }
         </tbody>
       </table>
-      <p class="note">Chaque export est inscrit à la main courante. Les zones inondées simulées sont des hypothèses
+      <p class="note">Chaque lecture et chaque export est inscrit à la main courante. Les zones inondées simulées sont des hypothèses
         (un niveau d'eau étendu sur le relief) : le fichier le rappelle dans chaque objet.</p>
+
+      <h3>Sur la carte</h3>
+      <p class="note">Affichez plusieurs couches à la fois pour les comparer ; cliquez un objet pour lire ses attributs. Vous pouvez
+        aussi ouvrir un fichier GeoJSON de votre poste pour le voir <strong>sans l'envoyer</strong> — utile pour vérifier ce qu'un bureau
+        d'études a livré avant de l'importer.</p>
+      <label class="fichier-local">Voir un fichier de mon poste
+        <input type="file" accept=".geojson,.json,application/geo+json,application/json" (change)="voirFichierLocal($event)"></label>
+      @if (details['fichier-local']) {
+        <p class="note"><span class="pastille-couleur" style="background:#111827"></span> {{ details['fichier-local'] }}
+          <button type="button" class="btn-lien" (click)="retirerFichierLocal()">Retirer</button></p>
+      }
+      <app-apercu-geojson [couches]="affichees"></app-apercu-geojson>
     </section>
 
     <section class="bloc">

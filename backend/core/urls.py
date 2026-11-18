@@ -24,7 +24,7 @@ from .views_stocks_logistique import (
 )
 from .views_stocks import CommandeStockViewSet, FactureStockViewSet, PretMaterielViewSet, TiersStockViewSet
 from .views_pcs import (
-    AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, ZonagesOfficielsView,
+    AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, GeorisquesView, RapportGeorisquesView, ZonagesOfficielsView,
     CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
 from .views_veille import (
@@ -517,6 +517,8 @@ urlpatterns = [
     path('dossier-pcs/dicrim/', DicrimView.as_view(), name='dossier_pcs_dicrim'),
     path('dossier-pcs/enjeux-exposes/', EnjeuxExposesView.as_view(), name='dossier_pcs_enjeux_exposes'),
     path('dossier-pcs/zonages-officiels/', ZonagesOfficielsView.as_view(), name='dossier_pcs_zonages_officiels'),
+    path('dossier-pcs/georisques/', GeorisquesView.as_view(), name='dossier_pcs_georisques'),
+    path('dossier-pcs/georisques/rapport/', RapportGeorisquesView.as_view(), name='dossier_pcs_georisques_rapport'),
     path('rapports/recevoir/<str:jeton>/', RecevoirRapportView.as_view(), name='rapport_recevoir'),
     path('formulaires-terrain-types/', TypesQuestionView.as_view(), name='formulaires_terrain_types'),
     path('point-de-situation/', PointDeSituationView.as_view(), name='point_de_situation'),

@@ -1,3 +1,4 @@
+import { ReleveGeorisquesComponent } from '../../shared/components/common/releve-georisques/releve-georisques.component';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
@@ -64,7 +65,7 @@ export interface PlansPrevention {
 @Component({
   selector: 'app-pcs-enjeux-exposes',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, ReleveGeorisquesComponent],
   templateUrl: './pcs-enjeux-exposes.component.html',
   styleUrl: '../pcs-annuaire/pcs-paragraphe.scss',
 })

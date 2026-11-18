@@ -19,9 +19,11 @@
   @if (chargement) { <p class="message">Chargement…</p> }
 
   @if (!chargement && !sansCollectivite) {
+    <!-- Le même relevé que sur « Enjeux exposés » : un seul appel à Géorisques nourrit les deux pages. -->
+    @if (!integre) { <app-releve-georisques (misAJour)="relireLesSuggestions()"></app-releve-georisques> }
     @if (suggestionsADeclarer.length) {
       <section class="bloc suggestions">
-        <h2>Recensés par l'État pour votre commune (Géorisques)</h2>
+        <h2>Risques recensés par l'État, à déclarer si vous les retenez</h2>
         <p class="note">Une suggestion, jamais appliquée d'office : déclarez ceux que vous retenez.</p>
         <ul>
           @for (s of suggestionsADeclarer; track s.num_risque) {

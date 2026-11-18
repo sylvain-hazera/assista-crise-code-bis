@@ -214,6 +214,59 @@ class ZonagesOfficielsView(APIView):
                          **zonages_officiels.etat(commune_code, environment)}, status=202)
 
 
+class GeorisquesView(APIView):
+    """GET /api/dossier-pcs/georisques/ -- ce que Géorisques publie pour la commune, lu dans la
+    copie en base (aucun appel extérieur). POST -- demande LE relevé, qui nourrit toutes les
+    pages : risques, enjeux exposés, zones inondables, plans de prévention. En tâche de fond,
+    requêtes espacées ; un relevé récent n'est pas refait (`forcer` pour passer outre)."""
+    permission_classes = [IsInstitutionalActor]
+
+    def _commune(self, request):
+        commune_code = _institution(request).commune_code or ""
+        if not commune_code:
+            raise ValidationError({"commune": "Cette collectivité n'a pas de commune de rattachement : rien à relever."})
+        return commune_code
+
+    def get(self, request):
+        from . import releve_georisques
+        institution = _institution(request)
+        return Response(releve_georisques.etat(institution.commune_code or "", get_active_environment(request)))
+
+    def post(self, request):
+        from . import releve_georisques, zonages_officiels
+        from .tasks import relever_zonages_officiels_task
+
+        commune_code = self._commune(request)
+        environment = get_active_environment(request)
+        relever_zonages_officiels_task.delay(commune_code, environment, bool(request.data.get("forcer")))
+        audit_log(request=request, action_code="MODIFICATION", objet_type="ReleveGeorisques", objet_id=None,
+                  commentaire=f"Relevé Géorisques demandé pour la commune {commune_code}.")
+        return Response({"demande": True, "pause_s": zonages_officiels.PAUSE_S,
+                         **releve_georisques.etat(commune_code, environment)}, status=202)
+
+
+class RapportGeorisquesView(APIView):
+    """GET /api/dossier-pcs/georisques/rapport/ -- le rapport PDF « état des risques » de la
+    commune, demandé à Géorisques par le serveur et rendu tel quel."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        from . import releve_georisques
+
+        commune_code = _institution(request).commune_code or ""
+        if not commune_code:
+            raise ValidationError({"commune": "Cette collectivité n'a pas de commune de rattachement."})
+        try:
+            contenu = releve_georisques.rapport_pdf(commune_code)
+        except Exception:  # noqa: BLE001
+            return Response({"detail": "Géorisques ne rend pas ce rapport pour le moment. Réessayez plus tard."}, status=502)
+        audit_log(request=request, action_code="TELECHARGEMENT", objet_type="ReleveGeorisques", objet_id=None,
+                  commentaire=f"Rapport Géorisques de la commune {commune_code} téléchargé.")
+        reponse = HttpResponse(contenu, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="georisques-{commune_code}.pdf"'
+        return reponse
+
+
 class CouchesCartoView(APIView):
     """GET /api/couches-carto/ -- ce que la commune peut sortir vers un logiciel de cartographie,
     couche par couche (core/couches_carto.py). Le registre des personnes vulnérables n'y est pas."""

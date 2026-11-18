@@ -35,7 +35,11 @@ describe('PcsEnjeuxExposesComponent', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Le bloc commun « Ce que l'État publie pour la commune » lit son relevé à l'affichage (18/11/2026).
+    http.match(r => r.method === 'GET' && r.url.endsWith('/dossier-pcs/georisques/')).forEach(r => r.flush({ commune_code: '42186', releve: false, releve_le: null, complet: false, rubriques: [], sismicite: '', radon: '', catnat: { nombre: 0, derniers: [] }, azi: [], tri: [], mouvements: [], cavites: 0 }));
+    http.verify();
+  });
 
   it('dit pour chaque enjeu le niveau d’eau qui l’atteint, et compte ce qui est dans l’eau au niveau regardé', () => {
     demarrer(DONNEES);
@@ -67,10 +71,11 @@ describe('PcsEnjeuxExposesComponent', () => {
       .find(b => b.textContent!.includes('Relever auprès de Géorisques'))!;
 
     bouton.click();
-    http.expectOne(r => r.method === 'POST' && r.url === `${environment.apiUrl}/dossier-pcs/zonages-officiels/`)
-      .flush({ pause_s: 5, releve: false, releve_le: null, complet: false, couches: [] });
+    // Un seul relevé pour tout Géorisques, le même bouton que sur « Risques de la commune ».
+    http.expectOne(r => r.method === 'POST' && r.url === `${environment.apiUrl}/dossier-pcs/georisques/`)
+      .flush({ commune_code: '42186', releve: false, releve_le: null, complet: false, rubriques: [], sismicite: '', radon: '', catnat: { nombre: 0, derniers: [] }, azi: [], tri: [], mouvements: [], cavites: 0 });
     fixture.detectChanges();
-    expect(texte()).toContain('espacées de 5 secondes');
+    expect(texte()).toContain('Relevé demandé');
 
     fixture.componentInstance.charger();
     http.expectOne(url).flush({

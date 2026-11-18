@@ -99,3 +99,8 @@ input, textarea, select {
 .creer-equipe { margin-top: .35rem; display: inline-flex; align-items: center; gap: .3rem; }
 .inviter { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .3rem; font-weight: 400;
   input[type=email] { flex: 1 1 14rem; } }
+
+// « Couches cartographiques » : la boîte à outils GeoJSON.
+.pastille-couleur { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: .35rem; vertical-align: baseline; }
+.gestes-couche { white-space: nowrap; button + button { margin-left: .35rem; } }
+.fichier-local { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0; font-weight: 600; }
