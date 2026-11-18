@@ -12,6 +12,7 @@ Ce que ces tests tiennent, par ordre d'importance :
 4. **Un ordre annulé n'est pas exécuté.**
 5. **Le compte rendu final n'est jamais perdu**, même central injoignable.
 """
+import sys
 import json
 import subprocess
 import urllib.error
@@ -696,3 +697,88 @@ class TestAucunSecretDansLeJournal:
         script = (Path(agent.__file__).parent / "installer.sh").read_text(encoding="utf-8")
         bloc = script[script.index("afficher_acces_web() {"):script.index("Réafficher ces informations")]
         assert bloc.index("[ -t 1 ]") < bloc.index("${mot_de_passe:-")
+
+
+# ── 18/11/2026 : une construction de 3 h chez Fred ──────────────────────────────────────────
+
+class TestLongueConstruction:
+
+    def test_un_jeton_expire_est_renouvele_une_fois(self):
+        jetons, envois = [], []
+
+        class Reponse:
+            def __init__(self, corps):
+                self.corps = corps
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *arguments):
+                return False
+
+            def read(self):
+                return self.corps
+
+        def ouvrir(requete, timeout=None):
+            if requete.full_url.endswith("/api/token/"):
+                jetons.append(1)
+                return Reponse(b'{"access": "jeton-%d"}' % len(jetons))
+            envois.append(requete.get_header("Authorization"))
+            if requete.get_header("Authorization") == "Bearer jeton-1":
+                raise urllib.error.HTTPError(requete.full_url, 401, "expire", {}, None)
+            return Reponse(b"{}")
+
+        central = agent.Central({"SATELLITE_ID": "s1", "SATELLITE_EMAIL": "s@x", "SATELLITE_PASSWORD": "p"},
+                                ouvrir=ouvrir)
+        assert central.rapport("o1", "ECHOUEE", "fin", "journal") is True
+        assert len(jetons) == 2 and envois == ["Bearer jeton-1", "Bearer jeton-2"]
+
+    def test_un_refus_401_persistant_ne_boucle_pas(self):
+        class Reponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *arguments):
+                return False
+
+            def read(self):
+                return b'{"access": "j"}'
+
+        appels = []
+
+        def ouvrir(requete, timeout=None):
+            if requete.full_url.endswith("/api/token/"):
+                return Reponse()
+            appels.append(1)
+            raise urllib.error.HTTPError(requete.full_url, 401, "non", {}, None)
+
+        central = agent.Central({"SATELLITE_ID": "s1", "SATELLITE_EMAIL": "s@x", "SATELLITE_PASSWORD": "p"},
+                                ouvrir=ouvrir)
+        with pytest.raises(urllib.error.HTTPError):
+            central.rapport("o1", "ECHOUEE", "fin")
+        assert len(appels) == 2
+
+    def test_une_commande_longue_donne_des_nouvelles_et_garde_sa_sortie(self, tmp_path):
+        machine = agent.Machine(tmp_path)
+        machine.INTERVALLE_BATTEMENT_S = 0.3
+        battements = []
+        machine.battement = battements.append
+        code, sortie = machine.lancer([sys.executable, "-c",
+                                       "import time\nprint('debut', flush=True)\ntime.sleep(1.2)\nprint('fin')"])
+        assert code == 0 and "debut" in sortie and "fin" in sortie
+        assert len(battements) >= 2
+
+    def test_le_delai_coupe_toujours_la_commande(self, tmp_path):
+        machine = agent.Machine(tmp_path)
+        machine.INTERVALLE_BATTEMENT_S = 0.2
+        machine.battement = lambda minutes: None
+        code, sortie = machine.lancer([sys.executable, "-c", "import time; time.sleep(30)"], delai=0.7)
+        assert code == 124 and "arrêtée" in sortie
+
+    def test_l_etat_de_la_machine_se_lit_dans_proc(self, tmp_path):
+        (tmp_path / "loadavg").write_text("7.42 5.10 3.00 2/900 1234\n")
+        (tmp_path / "meminfo").write_text("MemTotal: 4000000 kB\nMemAvailable: 204800 kB\n"
+                                          "SwapTotal: 2097152 kB\nSwapFree: 209715 kB\n")
+        etat = agent.etat_de_la_machine(str(tmp_path))
+        assert "charge 7.42" in etat and "200 Mo" in etat and "swap utilisé 1.8 Go sur 2.0" in etat
+        assert agent.etat_de_la_machine(str(tmp_path / "absent")) == "état de la machine illisible"

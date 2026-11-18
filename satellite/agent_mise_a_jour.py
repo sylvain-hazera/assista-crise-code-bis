@@ -151,15 +151,23 @@ class Central:
     def configure(self):
         return bool(self.satellite and self.email and self.mot_de_passe)
 
-    def _appel(self, methode, chemin, corps=None, authentifie=True):
+    def _appel(self, methode, chemin, corps=None, authentifie=True, _renouvele=False):
         entetes = {"Content-Type": "application/json", "User-Agent": "satellite-agent-maj"}
         if authentifie:
             entetes["Authorization"] = f"Bearer {self._jeton_d_acces()}"
         requete = urllib.request.Request(
             self.url + chemin, method=methode, headers=entetes,
             data=json.dumps(corps).encode() if corps is not None else None)
-        with self._ouvrir(requete, timeout=30) as reponse:
-            return json.loads(reponse.read().decode() or "{}")
+        try:
+            with self._ouvrir(requete, timeout=30) as reponse:
+                return json.loads(reponse.read().decode() or "{}")
+        except urllib.error.HTTPError as erreur:
+            # Jeton expiré pendant une longue construction (vu le 18/11/2026 : 3 h, compte
+            # rendu final refusé en 401) : on en redemande un, une seule fois.
+            if erreur.code == 401 and authentifie and not _renouvele:
+                self._jeton = None
+                return self._appel(methode, chemin, corps, authentifie, _renouvele=True)
+            raise
 
     def _jeton_d_acces(self):
         if self._jeton is None:
@@ -216,6 +224,12 @@ class Central:
 class Machine:
     """Tout ce que l'agent fait SUR la machine. À part pour être remplacé dans les tests."""
 
+    #: Appelé avec les minutes écoulées, toutes les INTERVALLE_BATTEMENT_S, pendant une
+    #: commande longue (la construction) : le central sait alors que la machine travaille,
+    #: et dans quel état elle est, au lieu de trois heures de silence (18/11/2026).
+    battement = None
+    INTERVALLE_BATTEMENT_S = 600
+
     def __init__(self, repertoire=REPERTOIRE):
         self.satellite = Path(repertoire)
         self.journal = []
@@ -224,6 +238,8 @@ class Machine:
     def lancer(self, commande, cwd=None, delai=600, entree=None):
         """Lance une commande, garde sa sortie dans le journal, renvoie `(code, sortie)`."""
         self.journal.append("$ " + " ".join(str(c) for c in commande))
+        if self.battement is not None and entree is None:
+            return self._lancer_en_battant(commande, cwd, delai)
         try:
             resultat = subprocess.run(
                 [str(c) for c in commande], cwd=str(cwd or self.satellite),
@@ -236,6 +252,36 @@ class Machine:
             sortie, code = f"(arrêtée après {delai} s sans avoir fini)", 124
         except OSError as erreur:
             sortie, code = str(erreur), 127
+        if sortie.strip():
+            self.journal.append(sortie.strip()[-6000:])
+        return code, sortie
+
+    def _lancer_en_battant(self, commande, cwd, delai):
+        debut = time.monotonic()
+        try:
+            processus = subprocess.Popen(
+                [str(c) for c in commande], cwd=str(cwd or self.satellite),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        except OSError as erreur:
+            self.journal.append(str(erreur))
+            return 127, str(erreur)
+        while True:
+            reste = delai - (time.monotonic() - debut)
+            if reste <= 0:
+                processus.kill()
+                processus.communicate()
+                sortie, code = f"(arrêtée après {delai} s sans avoir fini)", 124
+                break
+            try:
+                brut, _ = processus.communicate(timeout=min(self.INTERVALLE_BATTEMENT_S, reste))
+                sortie, code = brut.decode(errors="replace"), processus.returncode
+                break
+            except subprocess.TimeoutExpired:
+                # communicate() peut être rappelé sans perdre la sortie déjà lue.
+                try:
+                    self.battement(int((time.monotonic() - debut) // 60))
+                except Exception:  # noqa: BLE001 -- un compte rendu manqué n'arrête rien
+                    pass
         if sortie.strip():
             self.journal.append(sortie.strip()[-6000:])
         return code, sortie
@@ -462,6 +508,28 @@ class Machine:
             pause(15)
 
 
+def etat_de_la_machine(proc="/proc"):
+    """« charge 3.1 ; mémoire disponible 210 Mo ; swap utilisé 1.8 Go sur 2.0 » : de quoi voir
+    une machine qui sature pendant une construction. Lu dans /proc, rien n'est lancé."""
+    morceaux = []
+    try:
+        morceaux.append("charge " + open(f"{proc}/loadavg", encoding="utf-8").read().split()[0])
+    except (OSError, IndexError):
+        pass
+    try:
+        info = {}
+        for ligne in open(f"{proc}/meminfo", encoding="utf-8"):
+            cle, _, valeur = ligne.partition(":")
+            info[cle] = int(valeur.split()[0])       # en kio
+        morceaux.append(f"mémoire disponible {info['MemAvailable'] // 1024} Mo")
+        if info.get("SwapTotal"):
+            utilise = (info["SwapTotal"] - info.get("SwapFree", 0)) / 1048576
+            morceaux.append(f"swap utilisé {utilise:.1f} Go sur {info['SwapTotal'] / 1048576:.1f}")
+    except (OSError, KeyError, ValueError, IndexError):
+        pass
+    return " ; ".join(morceaux) or "état de la machine illisible"
+
+
 def appliquer(ordre, central, machine, env, fichier_cle):
     """Exécute un ordre. Renvoie `(statut, etape, version)` — ne lève jamais.
 
@@ -526,7 +594,17 @@ def appliquer(ordre, central, machine, env, fichier_cle):
                         "Rien n'a été modifié.")
 
         etape("Construction (peut prendre longtemps)")
-        if machine.compose("build", delai=DUREE_MAX_CONSTRUCTION_S)[0] != 0:
+
+        def battement(minutes):
+            central.rapport(identifiant, "EN_COURS",
+                            f"Construction en cours depuis {minutes} min — {etat_de_la_machine()}",
+                            machine.texte_du_journal())
+        machine.battement = battement
+        try:
+            construite = machine.compose("build", delai=DUREE_MAX_CONSTRUCTION_S)[0] == 0
+        finally:
+            machine.battement = None
+        if not construite:
             # L'arbre était propre (vérifié plus haut) : revenir au commit d'avant ne perd rien.
             machine.git("reset", "--hard", avant)
             raise Echec("La construction a échoué. Le code a été remis à la version "
