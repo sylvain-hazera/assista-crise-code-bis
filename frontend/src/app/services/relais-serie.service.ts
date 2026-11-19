@@ -12,6 +12,8 @@ export interface PlanCanaux {
   emplacements: number;
   isolee: boolean;
   avertissement: string;
+  /** nom du canal sur la radio (minuscules) → identifiant du canal d'Assista-Crise. */
+  correspondances?: Record<string, string>;
 }
 
 export interface CompagnonRelayable {
@@ -141,6 +143,13 @@ export class RelaisSerieService {
 
   planCanaux(compagnon: string): Observable<PlanCanaux> {
     return this.http.get<PlanCanaux>(`${this.relais}plan-canaux/`, { params: { compagnon } });
+  }
+
+  /** Remplace les correspondances de cette radio (tel canal présent EST tel canal d'Assista-Crise). */
+  enregistrerCorrespondances(compagnon: string, correspondances: Record<string, string>)
+      : Observable<{ correspondances: Record<string, string> }> {
+    return this.http.post<{ correspondances: Record<string, string> }>(
+      `${this.relais}correspondances-canaux/`, { compagnon, correspondances });
   }
 
   /** Annonce les canaux de crise et de commune sur Fr_EMCOM, par cette passerelle seulement. */

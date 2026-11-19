@@ -9209,6 +9209,13 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
+    # Correspondances « nom du canal sur la radio » (en minuscules) -> identifiant d'un canal
+    # d'Assista-Crise (19/11/2026). Le relais rattache d'abord un canal par son NOM ; ici, la
+    # personne qui tient la radio dit qu'un canal déjà présent (« Alerte ») EST tel canal
+    # (celui de la commune), sans rien réécrire sur la radio. Chiffré comme tout ce qui est
+    # saisi ; jamais interrogé en SQL.
+    correspondances_canaux = EncryptedJSONField(default=dict, blank=True)
+
     def save(self, *args, **kwargs):
         if not self.x25519_private_key_hex:
             from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey

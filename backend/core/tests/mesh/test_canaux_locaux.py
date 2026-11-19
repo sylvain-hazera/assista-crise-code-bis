@@ -319,3 +319,63 @@ class TestAvertissementNonChiffre:
         assert donnees[str(public.id)]["cle_publique"] is True
         assert donnees[str(prive.id)]["cle_publique"] is False
         assert "psk_hex" not in donnees[str(public.id)]
+
+
+class TestCorrespondancesDeCanaux:
+    """« Tel canal de la radio EST tel canal d'Assista-Crise », sans réécrire la radio (19/11/2026)."""
+
+    URL = "/api/relais-serie/correspondances-canaux/"
+
+    def _relayeur(self, create_user, moissac, gw_moissac):
+        membre = create_user(username="corr@test.fr", email="corr@test.fr", type=UserRole.LOCAL_AUTHORITY)
+        ContactInstitution.objects.create(institution=moissac, utilisateur=membre, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=membre)
+        ouvrir(membre, gw_moissac, "PROD")
+        return client
+
+    def test_relier_un_canal_de_la_radio_au_canal_de_la_commune(self, crue, gw_moissac, moissac, create_user):
+        client = self._relayeur(create_user, moissac, gw_moissac)
+        plan = client.get("/api/relais-serie/plan-canaux/", {"compagnon": str(gw_moissac.id)}).data
+        commune = next(e for e in plan["canaux"] if e["role"] == "commune")
+        assert plan["correspondances"] == {}
+
+        reponse = client.post(self.URL, {"compagnon": str(gw_moissac.id),
+                                         "correspondances": {"Alerte": commune["canal"]}}, format="json")
+        assert reponse.status_code == status.HTTP_200_OK
+        assert reponse.data["correspondances"] == {"alerte": commune["canal"]}
+        relu = client.get("/api/relais-serie/plan-canaux/", {"compagnon": str(gw_moissac.id)}).data
+        assert relu["correspondances"] == {"alerte": commune["canal"]}
+        # Chiffré en base, comme tout ce qui est saisi.
+        from django.db import connection
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT correspondances_canaux FROM core_compagnonmeshtastic WHERE id = %s", [str(gw_moissac.id)])
+            assert "alerte" not in curseur.fetchone()[0]
+        # Et tracé dans la main courante.
+        from core.models import AuditLog
+        assert any("alerte" in (a.commentaire or "") for a in AuditLog.objects.filter(objet_type="CompagnonMeshtastic"))
+
+    def test_seulement_vers_un_canal_du_plan_et_une_seule_fois(self, crue, gw_moissac, moissac, create_user):
+        client = self._relayeur(create_user, moissac, gw_moissac)
+        plan = client.get("/api/relais-serie/plan-canaux/", {"compagnon": str(gw_moissac.id)}).data
+        commune = next(e for e in plan["canaux"] if e["role"] == "commune")
+        etranger = client.post(self.URL, {"compagnon": str(gw_moissac.id),
+                                          "correspondances": {"Alerte": "00000000-0000-0000-0000-000000000000"}},
+                               format="json")
+        assert etranger.status_code == status.HTTP_400_BAD_REQUEST
+        double = client.post(self.URL, {"compagnon": str(gw_moissac.id),
+                                        "correspondances": {"Alerte": commune["canal"], "Autre": commune["canal"]}},
+                             format="json")
+        assert double.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_il_faut_tenir_la_radio(self, gw_moissac, moissac, create_user):
+        membre = create_user(username="corr2@test.fr", email="corr2@test.fr", type=UserRole.LOCAL_AUTHORITY)
+        ContactInstitution.objects.create(institution=moissac, utilisateur=membre, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=membre)
+        refus = client.post(self.URL, {"compagnon": str(gw_moissac.id), "correspondances": {}}, format="json")
+        assert refus.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_l_api_de_la_passerelle_ne_montre_pas_les_correspondances(self, gw_moissac):
+        from core.serializers import CompagnonMeshtasticSerializer
+        assert "correspondances_canaux" not in CompagnonMeshtasticSerializer(gw_moissac).data

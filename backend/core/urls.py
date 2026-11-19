@@ -133,7 +133,7 @@ from .views import (
     RattachementHabitationViewSet,
     ModuleDegatsCriseViewSet,
     ConservationPiecesView,
-    RelaisSerieView, RelaisPlanCanauxView, RelaisAnnonceView,
+    RelaisSerieView, RelaisPlanCanauxView, RelaisCorrespondancesCanauxView, RelaisAnnonceView,
     InstitutionActiveView, PerimetreAdminView,
     PieceIdentiteReserveViewSet,
     BrandingView, BrandingLogoView,
@@ -446,6 +446,7 @@ urlpatterns = [
     # Règle du 14/11/2026 (core/canaux_locaux.py) : plan de canaux proposé au branchement d'une
     # radio Meshtastic, et annonce des canaux de crise et de commune sur Fr_EMCOM en local.
     path('relais-serie/plan-canaux/', RelaisPlanCanauxView.as_view(), name='relais_plan_canaux'),
+    path('relais-serie/correspondances-canaux/', RelaisCorrespondancesCanauxView.as_view(), name='relais_correspondances_canaux'),
     path('relais-serie/annoncer/', RelaisAnnonceView.as_view(), name='relais_annoncer'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('branding/logo/', BrandingLogoView.as_view(), name='branding_logo'),

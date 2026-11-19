@@ -13054,12 +13054,60 @@ class RelaisPlanCanauxView(APIView):
         if compagnon is None:
             return Response({"error": "Vous ne relayez pas cette radio."},
                             status=status.HTTP_403_FORBIDDEN)
+        canaux = plan_canaux(compagnon, get_active_environment(request))
+        cibles = {e["canal"] for e in canaux if e.get("canal")}
         return Response({
-            "canaux": plan_canaux(compagnon, get_active_environment(request)),
+            "canaux": canaux,
             "emplacements": EMPLACEMENTS_MESHTASTIC,
             "isolee": est_isolee(compagnon),
             "avertissement": AVERTISSEMENT_NON_CHIFFRE,
+            # Seulement vers des canaux encore au plan : une crise close ne garde pas sa traduction.
+            "correspondances": {nom: canal for nom, canal in (compagnon.correspondances_canaux or {}).items()
+                                if canal in cibles},
         })
+
+
+class RelaisCorrespondancesCanauxView(APIView):
+    """Enregistre les correspondances d'une radio (`POST {compagnon, correspondances}`) :
+    `{"alerte": "<id du canal de la commune>", ...}` — tel canal présent sur la radio EST tel
+    canal d'Assista-Crise, sans rien réécrire sur la radio (19/11/2026, « une forme de mapping
+    translate »). Remplace l'ensemble. Seulement par la personne qui tient la radio, et seulement
+    vers un canal du plan de CETTE radio. Tracé dans la main courante."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .canaux_locaux import plan_canaux
+
+        compagnon = _compagnon_relaye_par(request, request.data.get("compagnon"))
+        if compagnon is None:
+            return Response({"error": "Vous ne relayez pas cette radio."},
+                            status=status.HTTP_403_FORBIDDEN)
+        demandees = request.data.get("correspondances") or {}
+        if not isinstance(demandees, dict):
+            return Response({"error": "Correspondances illisibles."}, status=status.HTTP_400_BAD_REQUEST)
+        canaux = plan_canaux(compagnon, get_active_environment(request))
+        par_id = {e["canal"]: e for e in canaux if e.get("canal")}
+        propres, cibles_vues = {}, set()
+        for nom, canal in demandees.items():
+            nom = str(nom or "").strip().lower()
+            if not nom or len(nom) > 11:
+                return Response({"error": f"Nom de canal invalide : « {nom} »."}, status=status.HTTP_400_BAD_REQUEST)
+            if canal not in par_id:
+                return Response({"error": f"« {nom} » ne peut être relié qu'à un canal du plan de cette radio."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if canal in cibles_vues:
+                return Response({"error": f"Le canal « {par_id[canal]['nom']} » est relié deux fois."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            cibles_vues.add(canal)
+            propres[nom] = canal
+        compagnon.correspondances_canaux = propres
+        compagnon.save(update_fields=["correspondances_canaux"])
+        resume = ", ".join(f"{nom} = {par_id[c]['nom']}" for nom, c in propres.items()) or "aucune"
+        audit_log(request=request, action_code="MODIFICATION", objet_type="CompagnonMeshtastic",
+                  objet_id=compagnon.id,
+                  commentaire=f"Correspondances de canaux de « {compagnon.nom} » : {resume}")
+        return Response({"correspondances": propres})
 
 
 class RelaisAnnonceView(APIView):

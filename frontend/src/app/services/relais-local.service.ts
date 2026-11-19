@@ -5,7 +5,7 @@ import { DesignationRadio, RelaisSerieService } from './relais-serie.service';
 import {
   EmplacementCanal, IdentiteRadio, MessageRadio, Pilote, PiloteMeshtastic, Protocole, creerPilote,
 } from '../shared/mesh/pilotes';
-import { EntreePlan, PropositionPlan, operationsPlan, proposerPlan } from '../shared/mesh/plan-canaux';
+import { EntreePlan, OperationsChoix, PropositionPlan, operationsPlan, proposerPlan } from '../shared/mesh/plan-canaux';
 import { MESHCORE_BLE } from '../shared/mesh/meshcore-trames';
 import { MESHTASTIC_BLE } from '../shared/mesh/meshtastic-trames';
 import {
@@ -61,6 +61,8 @@ export interface PlanVisible {
   proposition: PropositionPlan;
   avertissement: string;
   isolee: boolean;
+  /** nom du canal sur la radio (minuscules) → identifiant du canal d'Assista-Crise. */
+  correspondances: Record<string, string>;
 }
 
 interface Relais extends RelaisVisible {
@@ -220,6 +222,7 @@ export class RelaisLocalService implements OnDestroy {
       relais.plan = {
         entrees: plan.canaux, emplacements, avertissement: plan.avertissement, isolee: plan.isolee,
         proposition: proposerPlan(emplacements, plan.canaux, plan.emplacements),
+        correspondances: plan.correspondances ?? {},
       };
       relais.canaux = null;   // de nouveaux canaux ont peut-être été créés côté serveur
     } catch (e) {
@@ -249,6 +252,28 @@ export class RelaisLocalService implements OnDestroy {
     await this.chargerPlan(r);
     await this.annoncer(r);
     return ops.sansPlace;
+  }
+
+  /**
+   * Applique des choix faits emplacement par emplacement (operationsChoix) : correspondances
+   * enregistrées sur le serveur, puis suppressions et écritures sur la radio, une commande
+   * d'administration à la fois. La radio n'est touchée que s'il y a quelque chose à y écrire.
+   */
+  async appliquerChoix(compagnonId: string, ops: OperationsChoix): Promise<void> {
+    const r = this.relais.get(compagnonId);
+    if (!r?.plan || !(r.pilote instanceof PiloteMeshtastic)) {
+      throw new Error('Aucun plan de canaux pour cette radio.');
+    }
+    if (ops.erreurs.length) { throw new Error(ops.erreurs[0]); }
+    await firstValueFrom(this.service.enregistrerCorrespondances(compagnonId, ops.correspondances));
+    for (const index of ops.supprimer) {
+      await r.pilote.supprimerCanal(index);
+    }
+    for (const { index, entree } of ops.ecrire) {
+      await r.pilote.ecrireCanal(index, entree.nom, entree.psk_hex);
+    }
+    await this.chargerPlan(r);
+    await this.annoncer(r);
   }
 
   /** Annonce sur Fr_EMCOM si la radio porte un canal de crise ou de commune. */
@@ -316,6 +341,10 @@ export class RelaisLocalService implements OnDestroy {
 
   private async canalPourNom(r: Relais, nom: string): Promise<string | undefined> {
     if (!nom) { return undefined; }
+    // D'abord la correspondance que la personne a posée (« Alerte » EST le canal de la commune),
+    // ensuite seulement le même nom : dans les deux sens, réception comme émission.
+    const relie = r.plan?.correspondances[nom.trim().toLowerCase()];
+    if (relie) { return relie; }
     if (!r.canaux) {
       try {
         r.canaux = await firstValueFrom(this.service.canauxMeshtastic());

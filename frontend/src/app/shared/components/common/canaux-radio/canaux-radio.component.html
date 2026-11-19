@@ -8,39 +8,54 @@
       </span>
     </div>
 
-    <!-- Les 8 emplacements tels que la radio les a décrits. -->
-    <ol class="emplacements" start="0">
-      @for (i of [0, 1, 2, 3, 4, 5, 6, 7]; track i) {
-        <li [class.libre]="nomDe(i) === '— libre —'"
-            [class.a-supprimer]="aSupprimer.has(i)">
-          <span class="index">{{ i }}</span>
-          <span class="nom">{{ nomDe(i) }}</span>
-        </li>
-      }
-    </ol>
+    <p class="aide-tableau">
+      Pour chaque emplacement : <strong>garder</strong> le canal, le <strong>relier</strong> à un canal
+      d'Assista-Crise (la radio n'est pas réécrite : ses messages sont simplement rattachés à ce canal),
+      le <strong>remplacer</strong> par un autre, ou le supprimer.
+    </p>
 
-    @if (p.proposition.ajouts.length) {
-      <fieldset class="propositions">
-        <legend>À ajouter</legend>
-        @for (a of p.proposition.ajouts; track a.entree.nom) {
-          <label>
-            <input type="checkbox" [checked]="retenus.has(a.entree.nom)"
-                   (change)="basculerAjout(a.entree.nom)">
-            <span class="nom-canal">{{ a.entree.nom }}</span>
-            <span class="role" [attr.data-role]="a.entree.role">{{ libelleRole(a.entree) }}</span>
-            <span class="libelle">{{ a.entree.libelle }}</span>
-            @if (a.entree.public && a.entree.role !== 'communautaire') {
-              <span class="clair" title="Clé publique par défaut : non chiffré">en clair</span>
-            }
-          </label>
-        }
-      </fieldset>
-    } @else {
-      <p class="ok">
-        <span class="material-icons" aria-hidden="true">check_circle</span>
-        La radio porte déjà tous les canaux du plan.
-      </p>
-    }
+    <div class="table-defile">
+      <table class="emplacements">
+        <thead>
+          <tr><th scope="col">N°</th><th scope="col">Sur la radio</th><th scope="col">Action</th><th scope="col">Canal d'Assista-Crise</th></tr>
+        </thead>
+        <tbody>
+          @for (c of choix; track c.index) {
+            <tr [class.libre]="!estOccupe(c.index)" [class.change]="c.action !== 'garder'">
+              <td class="index">{{ c.index }}</td>
+              <td>
+                <span class="nom-canal">{{ nomDe(c.index) }}</span>
+                @if (reconnu(c.index); as r) {
+                  <span class="role" [attr.data-role]="r.role">{{ libelleRole(r) }}</span>
+                }
+              </td>
+              <td>
+                <select [ngModel]="c.action" (ngModelChange)="changerAction(c, $event)"
+                        [attr.aria-label]="'Action pour l\'emplacement ' + c.index">
+                  @for (a of actionsPossibles(c.index); track a.valeur) {
+                    <option [value]="a.valeur">{{ a.libelle }}</option>
+                  }
+                </select>
+              </td>
+              <td>
+                @if (c.action === 'relier' || c.action === 'remplacer' || c.action === 'ajouter') {
+                  <select [(ngModel)]="c.cible" [attr.aria-label]="'Canal visé pour l\'emplacement ' + c.index">
+                    <option [ngValue]="null" disabled>Choisir…</option>
+                    @for (e of cibles(c.action); track e.nom) {
+                      <option [ngValue]="e.nom">{{ e.nom }} — {{ e.libelle }}{{ e.public && e.role !== 'communautaire' ? ' (en clair)' : '' }}</option>
+                    }
+                  </select>
+                } @else if (c.action === 'vider') {
+                  <span class="libelle">sera supprimé de la radio</span>
+                } @else if (reconnu(c.index); as r) {
+                  <span class="libelle">{{ r.libelle }}</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     @if (p.proposition.indisponibles.length) {
       <p class="note">
@@ -50,30 +65,13 @@
       </p>
     }
 
-    @if (p.proposition.manque > 0 && p.proposition.supprimables.length) {
-      <fieldset class="propositions suppression">
-        <legend>
-          @if (impossibles > 0) {
-            Trop de canaux cochés : même en libérant tous les emplacements possibles,
-            {{ impossibles }} ne tiendront pas. Décochez-en {{ impossibles }} plus haut.
-          } @else {
-            Place insuffisante : libérer {{ manqueEncore }} emplacement(s)
-            @if (manqueEncore === 0) { — c'est bon }
-          }
-        </legend>
-        @for (s of p.proposition.supprimables; track s.index) {
-          <label>
-            <input type="checkbox" [checked]="aSupprimer.has(s.index)"
-                   (change)="basculerSuppression(s.index)">
-            <span class="index">{{ s.index }}</span>
-            <span class="nom-canal">{{ s.nom || 'sans nom' }}</span>
-            <span class="libelle">sera supprimé de la radio</span>
-          </label>
-        }
-      </fieldset>
+    @if (operations.erreurs.length) {
+      <ul class="erreurs" role="alert">
+        @for (e of operations.erreurs; track e) { <li>{{ e }}</li> }
+      </ul>
     }
 
-    @if (publicsRetenus) {
+    @if (publicsEcrits) {
       <!-- Exigé par la règle : public par défaut, « tant pis », mais on le dit. -->
       <div class="avertissement" role="note">
         <span class="material-icons" aria-hidden="true">lock_open</span>
@@ -81,15 +79,15 @@
       </div>
     }
 
-    @if (p.proposition.ajouts.length) {
-      <div class="actions">
-        <button type="button" class="appliquer" [disabled]="enCours || !retenus.size"
-                (click)="appliquer()">
-          @if (enCours) { Écriture sur la radio… } @else { Écrire sur la radio }
-        </button>
-        <span class="aide">La radio n'est modifiée qu'à ce clic.</span>
-      </div>
-    }
+    <div class="actions">
+      <button type="button" class="appliquer" [disabled]="enCours || !aFaire || operations.erreurs.length > 0"
+              (click)="appliquer()">
+        @if (enCours) { Application… } @else { Appliquer }
+      </button>
+      <span class="aide">
+        @if (aFaire) { {{ resume }}. } La radio n'est modifiée qu'à ce clic.
+      </span>
+    </div>
 
     @if (resultat) { <p class="resultat">{{ resultat }}</p> }
     @if (relais.annonce) { <p class="resultat">{{ relais.annonce }}</p> }

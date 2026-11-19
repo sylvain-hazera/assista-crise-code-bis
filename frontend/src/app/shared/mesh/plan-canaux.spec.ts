@@ -1,4 +1,4 @@
-import { EntreePlan, ajoutsParDefaut, ajoutsSansPlacePossible, operationsPlan, proposerPlan } from './plan-canaux';
+import { ChoixEmplacement, EntreePlan, ajoutsParDefaut, ajoutsSansPlacePossible, choixParDefaut, operationsChoix, operationsPlan, proposerPlan } from './plan-canaux';
 import { EmplacementCanal } from './pilotes';
 
 const entree = (nom: string, role: EntreePlan['role'], disponible = true): EntreePlan => ({
@@ -95,5 +95,50 @@ describe('Choix par défaut quand la radio manque de place (19/11/2026)', () => 
     expect(p.supprimables.length).toBe(6);
     expect(ajoutsSansPlacePossible(p, 9)).toBe(3);
     expect(ajoutsSansPlacePossible(p, 6)).toBe(0);
+  });
+});
+
+describe('Emplacement par emplacement : relier, remplacer (19/11/2026)', () => {
+  const plan = [entree('Fr_Balise', 'communautaire'), entree('Fr_EMCOM', 'communautaire'),
+                entree('CriseFDF43', 'crise'), entree('Tests', 'commune')];
+  const radio = [slot(0, 'Fr_Balise', 1), slot(1, 'Fr_EMCOM'), slot(2, 'Fr_BlaBla'), slot(3, 'D_HauteLoir'),
+                 slot(4, 'ADRASEC43'), slot(5, 'AASC'), slot(6, 'R_ARA'), slot(7, 'Alerte')];
+
+  it('par défaut, tout est gardé sur une radio pleine, et une correspondance existante se relit', () => {
+    const p = proposerPlan(radio, plan);
+    const choix = choixParDefaut(radio, p, plan, { alerte: 'id-Tests' });
+    expect(choix.filter(c => c.action !== 'garder')).toEqual([{ index: 7, action: 'relier', cible: 'Tests' }]);
+  });
+
+  it('relier ne réécrit rien, remplacer écrit dans le même emplacement', () => {
+    const choix: ChoixEmplacement[] = radio.map(e => ({ index: e.index, action: 'garder' as const, cible: null }));
+    choix[7] = { index: 7, action: 'relier', cible: 'Tests' };
+    choix[4] = { index: 4, action: 'remplacer', cible: 'CriseFDF43' };
+    const ops = operationsChoix(radio, choix, plan);
+    expect(ops.erreurs).toEqual([]);
+    expect(ops.correspondances).toEqual({ alerte: 'id-Tests' });
+    expect(ops.ecrire.map(o => [o.index, o.entree.nom])).toEqual([[4, 'CriseFDF43']]);
+    expect(ops.supprimer).toEqual([]);
+  });
+
+  it('refuse un même canal à deux places, le primaire remplacé, et un relier sans cible', () => {
+    const choix: ChoixEmplacement[] = radio.map(e => ({ index: e.index, action: 'garder' as const, cible: null }));
+    choix[2] = { index: 2, action: 'remplacer', cible: 'Tests' };
+    choix[7] = { index: 7, action: 'relier', cible: 'Tests' };
+    choix[0] = { index: 0, action: 'remplacer', cible: 'CriseFDF43' };
+    choix[5] = { index: 5, action: 'relier', cible: null };
+    const erreurs = operationsChoix(radio, choix, plan).erreurs.join(' | ');
+    expect(erreurs).toContain('« Tests » se retrouverait sur 2 emplacements');
+    expect(erreurs).toContain('primaire');
+    expect(erreurs).toContain('Emplacement 5');
+  });
+
+  it('remplacer Fr_EMCOM par un canal déjà ailleurs est signalé, supprimer libère sans écrire', () => {
+    const choix: ChoixEmplacement[] = radio.map(e => ({ index: e.index, action: 'garder' as const, cible: null }));
+    choix[3] = { index: 3, action: 'remplacer', cible: 'Fr_EMCOM' };   // déjà en 1, gardé
+    choix[6] = { index: 6, action: 'vider', cible: null };
+    const ops = operationsChoix(radio, choix, plan);
+    expect(ops.erreurs.join()).toContain('« Fr_EMCOM » se retrouverait sur 2 emplacements (1, 3)');
+    expect(ops.supprimer).toEqual([6]);
   });
 });

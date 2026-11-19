@@ -4600,7 +4600,7 @@ class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompagnonMeshtastic
         # x25519_private_key_hex exclue : jamais exposée par l'API.
-        exclude = ['x25519_private_key_hex']
+        exclude = ['x25519_private_key_hex', 'correspondances_canaux']
         extra_kwargs = {'mqtt_password': {'write_only': True}}
 
     # Segments que le pont ajoute lui-même pour s'abonner : `<racine>/2/e/#`. Les voir dans la
