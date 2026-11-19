@@ -199,4 +199,29 @@ describe('AdminSidebarComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.classList).toContain('collapsed');
   });
+
+  describe('revue du menu (19/11/2026)', () => {
+    it("chaque entrée a sa propre icône : menu réduit, on ne distingue qu'elles", () => {
+      const vues = new Map<string, string>();
+      const doublons: string[] = [];
+      for (const i of NAV_ITEMS) {
+        if (vues.has(i.icon)) doublons.push(`${i.icon} : ${vues.get(i.icon)} / ${i.label}`);
+        else vues.set(i.icon, i.label);
+      }
+      expect(doublons).toEqual([]);
+    });
+
+    it("ouvre le cadre de la page affichée, sans refermer les autres", () => {
+      component.groupesOuverts = { crise: true };
+      component.sousGroupesOuverts = {};
+      component.ouvrirLeCadreDe('/admin/pcs-fiches?x=1');
+      expect(component.groupesOuverts['preparation']).toBeTrue();
+      expect(component.groupesOuverts['crise']).toBeTrue();
+      component.ouvrirLeCadreDe('/admin/meshtastic-canaux/12');
+      expect(component.groupesOuverts['communications']).toBeTrue();
+      expect(component.sousGroupesOuverts['meshtastic']).toBeTrue();
+      component.ouvrirLeCadreDe('/admin/dashboard');
+      expect(Object.keys(component.groupesOuverts).sort()).toEqual(['communications', 'crise', 'preparation']);
+    });
+  });
 });

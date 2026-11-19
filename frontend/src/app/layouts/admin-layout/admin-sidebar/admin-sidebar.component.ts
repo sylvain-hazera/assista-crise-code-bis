@@ -1,5 +1,7 @@
-import { Component, EventEmitter, HostBinding, Input, Output } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, DestroyRef, EventEmitter, HostBinding, Input, Output, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter } from 'rxjs';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
 import {
@@ -53,6 +55,26 @@ export class AdminSidebarComponent {
     } catch {
       // localStorage indisponible : repli silencieux sur le défaut.
     }
+    // Le cadre de la page affichée s'ouvre de lui-même : arrivé par un lien (un renvoi depuis
+    // une autre page, une notification), on ne doit pas chercher où l'on est (19/11/2026).
+    const router = inject(Router, { optional: true });
+    if (router) {
+      this.ouvrirLeCadreDe(router.url);
+      router.events.pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed(inject(DestroyRef)))
+        .subscribe((e) => this.ouvrirLeCadreDe((e as NavigationEnd).urlAfterRedirects));
+    }
+  }
+
+  /** Ouvre le cadre (et le sous-cadre) de l'entrée la plus précise qui correspond à l'adresse,
+   * sans rien refermer ni enregistrer : la préférence de l'utilisateur reste la sienne. */
+  ouvrirLeCadreDe(url: string): void {
+    const chemin = (url || '').split(/[?#]/)[0];
+    const entree = NAV_ITEMS
+      .filter((i) => chemin === i.route || chemin.startsWith(i.route + '/'))
+      .sort((a, b) => b.route.length - a.route.length)[0];
+    if (!entree || entree.groupe === 'permanent') return;
+    this.groupesOuverts = { ...this.groupesOuverts, [entree.groupe]: true };
+    if (entree.sousGroupe) this.sousGroupesOuverts = { ...this.sousGroupesOuverts, [entree.sousGroupe]: true };
   }
 
   /** TOUTES les entrées visibles du cadre, sous-cadres compris. Sert au mode réduit (qui

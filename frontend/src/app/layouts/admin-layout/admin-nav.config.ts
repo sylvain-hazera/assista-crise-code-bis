@@ -95,14 +95,14 @@ export const NAV_ITEMS: NavItem[] = [
   // particulier n'est pas un compte institutionnel. L'entrée reste visible MÊME SANS ÉQUIPE —
   // la page explique alors ce qu'il faut pour qu'elle se remplisse, au lieu de laisser croire
   // que la fonction n'existe pas (demande du 12/11/2026).
-  { icon: 'home_work', label: 'Hébergement', route: '/hebergement', groupe: 'permanent', visibilite: 'tous' },
+  { icon: 'bed', label: 'Hébergement', route: '/hebergement', groupe: 'permanent', visibilite: 'tous' },
 
   // ── Crise en cours ──────────────────────────────────────────────────
   { icon: 'notification_important', label: 'Alerter les habitants', route: '/admin/alerte-habitants', groupe: 'crise' },
   { icon: 'flag', label: 'Signalements', route: '/admin/signalements', groupe: 'crise' },
   { icon: 'verified_user', label: 'Sécurité', route: '/admin/declarations-securite', groupe: 'crise' },
   // Démarrer/clôturer une mission (Team.mission_active), condition du suivi de position MeshCore.
-  { icon: 'flag_circle', label: 'Missions', route: '/admin/missions', groupe: 'crise' },
+  { icon: 'directions_run', label: 'Missions', route: '/admin/missions', groupe: 'crise' },
   { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises', groupe: 'crise' },
   { icon: 'home_work', label: 'Centres', route: '/admin/centres', groupe: 'crise' },
   { icon: 'groups', label: 'Ressources mobilisées', route: '/admin/ressources-mobilisees', groupe: 'crise' },
@@ -138,7 +138,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Questionnaires composés par la collectivité et remplis sur place, même sans réseau — voir
   // backend/core/formulaires_terrain.py. Le serveur ne les montre qu'aux collectivités et à
   // leurs délégués.
-  { icon: 'fact_check', label: 'Formulaires de terrain', route: '/admin/formulaires-terrain', groupe: 'crise' },
+  { icon: 'edit_note', label: 'Formulaires de terrain', route: '/admin/formulaires-terrain', groupe: 'crise' },
   // Une fiche par appel reçu au standard de la mairie, et les chiffres de la crise rassemblés
   // pour le point avec la préfecture — voir backend/core/standard_crise.py et point_situation.py.
   { icon: 'support_agent', label: 'Standard de crise', route: '/admin/standard-crise', groupe: 'crise' },
@@ -151,7 +151,7 @@ export const NAV_ITEMS: NavItem[] = [
   // enjeux et personnes vulnérables, 2.2 zones, 2.4 annuaire, 3.1 moyens humains. Les lieux
   // d'accueil (2.5, « Centres ») et le matériel (3.2) gardent leur entrée là où on les cherche
   // pendant la crise ; la table des paragraphes de « Mon plan de sauvegarde » y mène.
-  { icon: 'fact_check', label: 'Mon plan de sauvegarde', route: '/admin/plans', groupe: 'preparation' },
+  { icon: 'policy', label: 'Mon plan de sauvegarde', route: '/admin/plans', groupe: 'preparation' },
   { icon: 'warning_amber', label: 'Risques de la commune', route: '/admin/pcs-risques', groupe: 'preparation' },
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'flood', label: 'Enjeux exposés', route: '/admin/pcs-enjeux-exposes', groupe: 'preparation' },
@@ -159,15 +159,15 @@ export const NAV_ITEMS: NavItem[] = [
   // Stock permanent de l'institution (dépôts, articles, mouvements) — voir backend/core/stocks.py.
   { icon: 'warehouse', label: 'Stocks', route: '/admin/stocks', groupe: 'preparation' },
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
-  { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
+  { icon: 'verified', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'account_tree', label: 'Poste de commandement', route: '/admin/pcs-organisation', groupe: 'preparation' },
   { icon: 'menu_book', label: 'Fiches réflexes et conseils', route: '/admin/pcs-fiches', groupe: 'preparation' },
-  { icon: 'layers', label: 'Zones', route: '/admin/zones', groupe: 'preparation', visibilite: 'autorite-locale' },
+  { icon: 'border_outer', label: 'Zones', route: '/admin/zones', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'contact_phone', label: 'Annuaire de crise', route: '/admin/pcs-annuaire', groupe: 'preparation' },
-  { icon: 'campaign', label: 'Alerte de la population', route: '/admin/pcs-alerte', groupe: 'preparation' },
-  { icon: 'groups', label: 'Équipes', route: '/admin/equipes', groupe: 'preparation' },
+  { icon: 'speaker_phone', label: 'Alerte de la population', route: '/admin/pcs-alerte', groupe: 'preparation' },
+  { icon: 'workspaces', label: 'Équipes', route: '/admin/equipes', groupe: 'preparation' },
   { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
-  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'preparation', visibilite: 'campagnes' },
+  { icon: 'event_repeat', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'preparation', visibilite: 'campagnes' },
   { icon: 'water_drop', label: 'Simulation inondation', route: '/admin/simulation-inondation', groupe: 'preparation', visibilite: 'autorite-locale' },
   { icon: 'sports_score', label: 'Exercices', route: '/admin/pcs-exercices', groupe: 'preparation' },
 
@@ -196,7 +196,7 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
 
   // Sous-cadre MeshCore
-  { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
+  { icon: 'smartphone', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
   { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
   // Reclamer un repeteur, prouver qu'on le controle, puis l'administrer par la radio
   // (backend/core/models.py : TacheAdminMeshCore). La page dit ce qui la distingue de son
@@ -204,12 +204,12 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'settings_remote', label: 'Administration MeshCore', route: '/admin/meshcore-administration', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
 
   // Sous-cadre Meshtastic
-  { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
-  { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
+  { icon: 'phone_android', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
+  { icon: 'chat', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
   // Lire et modifier la configuration d'un noeud par la radio (backend/core/models.py:
   // TacheAdminMeshtastic). La page explique le prealable qui conditionne tout : la cle publique
   // de la passerelle doit figurer dans security.admin_key du noeud vise.
-  { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
+  { icon: 'tune', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
 
   // ── Administration ──────────────────────────────────────────────────
   // ── Mon association ───────────────────────────────────────────────
@@ -224,10 +224,10 @@ export const NAV_ITEMS: NavItem[] = [
   // pouvait voir que les membres d'une institution à la fois. Recherche et pagination côté
   // serveur, parce qu'une même personne peut appartenir à plusieurs institutions et qu'il y
   // en aura des milliers.
-  { icon: 'how_to_reg', label: 'Rattachements', route: '/admin/rattachements', groupe: 'administration' },
+  { icon: 'switch_account', label: 'Rattachements', route: '/admin/rattachements', groupe: 'administration' },
   // Messages retenus avant envoi (voir backend/core/brouillons_envoi.py). La fenetre de
   // relecture s'ouvre d'elle-meme apres l'action ; cette page retrouve ce qui a ete manque.
-  { icon: 'drafts', label: 'Messages a relire', route: '/admin/messages-a-relire', groupe: 'administration' },
+  { icon: 'drafts', label: 'Messages à relire', route: '/admin/messages-a-relire', groupe: 'administration' },
   { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins', groupe: 'administration' },
   { icon: 'inventory_2', label: 'Matériel', route: '/admin/materiel', groupe: 'administration' },
   // Conflits de synchronisation entre le central et un satellite, et correspondances du
@@ -242,5 +242,5 @@ export const NAV_ITEMS: NavItem[] = [
   // Tableaux Grafana ; le jeton n'est délivré qu'aux administrateurs (backend/core/grafana.py).
   { icon: 'monitor_heart', label: 'Supervision technique', route: '/admin/monitoring', groupe: 'administration', visibilite: 'admin-plateforme' },
   // Un compte par passerelle radio du site (backend/core/models.py:CompteMqtt).
-  { icon: 'router', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'admin-plateforme' },
+  { icon: 'vpn_key', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'admin-plateforme' },
 ];

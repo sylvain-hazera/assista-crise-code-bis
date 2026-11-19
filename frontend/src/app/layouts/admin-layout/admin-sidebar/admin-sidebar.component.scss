@@ -92,8 +92,10 @@
       background: none;
       border: none;
       cursor: pointer;
-      color: var(--ac-text-subtle, #8a8f98);
-      font-size: 0.78rem;
+      // Lisible : le gris « subtil » (#8a8f98, 3:1 sur blanc) laissait les titres de cadres
+      // se fondre dans le fond (revue du menu, 19/11/2026).
+      color: var(--ac-text-muted, #5b616b);
+      font-size: 0.8rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
@@ -103,7 +105,7 @@
       .material-icons:first-child {
         font-size: 20px;
         min-width: 20px;
-        color: var(--ac-text-subtle, #8a8f98);
+        color: var(--ac-text-muted, #5b616b);
       }
 
       .nav-label {
