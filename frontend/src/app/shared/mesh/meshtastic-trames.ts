@@ -311,6 +311,97 @@ export function lireFromRadio(octets: Uint8Array): EvenementMeshtastic {
   return { genre: 'autre' };
 }
 
+// ══ Mesures (19/11/2026) ══════════════════════════════════════════════════════
+//
+// Ce que le pont Meshtastic tire de chaque paquet (bridge.py, mesure_telemetrie), refait ici pour
+// le relais navigateur : type du paquet, sauts parcourus, télémétrie. Numéros de champs relevés
+// dans la bibliothèque officielle (mesh_pb2, telemetry_pb2) : MeshPacket from = 1, decoded = 4,
+// hop_limit = 9, hop_start = 15 ; Data portnum = 1, payload = 2 ; Telemetry time = 1,
+// device_metrics = 2, local_stats = 6.
+
+/** Noms des ports, comme `portnums_pb2.PortNum.Name` les rend au pont. */
+const NOMS_PORTS: Record<number, string> = {
+  1: 'TEXT_MESSAGE_APP', 3: 'POSITION_APP', 4: 'NODEINFO_APP', 5: 'ROUTING_APP', 6: 'ADMIN_APP',
+  7: 'TEXT_MESSAGE_COMPRESSED_APP', 8: 'WAYPOINT_APP', 10: 'DETECTION_SENSOR_APP', 11: 'ALERT_APP',
+  34: 'PAXCOUNTER_APP', 65: 'STORE_FORWARD_APP', 66: 'RANGE_TEST_APP', 67: 'TELEMETRY_APP',
+  70: 'TRACEROUTE_APP', 71: 'NEIGHBORINFO_APP', 73: 'MAP_REPORT_APP',
+};
+const PORT_TELEMETRIE = 67;
+
+export interface MesureTelemetrie {
+  node_num: number; horodatage: number;
+  batterie?: number; tension?: number; occupation_canal?: number; temps_antenne_tx?: number;
+  uptime_s?: number; paquets_tx?: number; paquets_rx?: number; noeuds_en_ligne?: number;
+}
+
+export interface MesurePaquet {
+  /** Nom du port, ou CHIFFRE_CANAL_INCONNU pour un paquet que la radio n'a pas pu lire. */
+  type: string;
+  de: number;
+  sauts: number | null;
+  telemetrie: MesureTelemetrie | null;
+}
+
+/** Un fixed32 relu comme un float IEEE 754 (les champs `float` du protobuf). */
+function flottant(valeur: number | undefined): number | undefined {
+  if (valeur === undefined) { return undefined; }
+  const vue = new DataView(new ArrayBuffer(4));
+  vue.setUint32(0, valeur, true);
+  return Math.round(vue.getFloat32(0, true) * 100) / 100;
+}
+
+function lireTelemetrie(de: number, charge: Uint8Array): MesureTelemetrie | null {
+  const t = lireChamps(charge);
+  const m: MesureTelemetrie = { node_num: de, horodatage: champ(t, 1)?.nombre || Math.floor(Date.now() / 1000) };
+  const appareil = champ(t, 2)?.octets;
+  const local = champ(t, 6)?.octets;
+  if (appareil) {
+    const d = lireChamps(appareil);
+    m.batterie = champ(d, 1)?.nombre;
+    m.tension = flottant(champ(d, 2)?.nombre);
+    m.occupation_canal = flottant(champ(d, 3)?.nombre);
+    m.temps_antenne_tx = flottant(champ(d, 4)?.nombre);
+    m.uptime_s = champ(d, 5)?.nombre;
+  } else if (local) {
+    const s = lireChamps(local);
+    m.uptime_s = champ(s, 1)?.nombre;
+    m.occupation_canal = flottant(champ(s, 2)?.nombre);
+    m.temps_antenne_tx = flottant(champ(s, 3)?.nombre);
+    m.paquets_tx = champ(s, 4)?.nombre;
+    m.paquets_rx = champ(s, 5)?.nombre;
+    m.noeuds_en_ligne = champ(s, 7)?.nombre;
+  } else {
+    return null;
+  }
+  // Les champs absents restent absents : le serveur n'invente pas de zéro.
+  (Object.keys(m) as (keyof MesureTelemetrie)[]).forEach(k => m[k] === undefined && delete m[k]);
+  return m;
+}
+
+/** La mesure d'un paquet reçu, ou null si ce `FromRadio` n'est pas un paquet. Ne lève pas. */
+export function mesurerFromRadio(octets: Uint8Array): MesurePaquet | null {
+  try {
+    const paquet = champ(lireChamps(octets), 2)?.octets;
+    if (!paquet) { return null; }
+    const p = lireChamps(paquet);
+    const de = champ(p, 1)?.nombre ?? 0;
+    const debut = champ(p, 15)?.nombre;
+    const reste = champ(p, 9)?.nombre ?? 0;
+    const sauts = debut ? Math.max(0, debut - reste) : null;
+    const decode = champ(p, 4)?.octets;
+    if (!decode) { return { type: 'CHIFFRE_CANAL_INCONNU', de, sauts, telemetrie: null }; }
+    const d = lireChamps(decode);
+    const port = champ(d, 1)?.nombre ?? 0;
+    const charge = champ(d, 2)?.octets;
+    return {
+      type: NOMS_PORTS[port] ?? `PORT_${port}`, de, sauts,
+      telemetrie: port === PORT_TELEMETRIE && charge ? lireTelemetrie(de, charge) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ══ Administration de la radio locale ══════════════════════════════════════════
 //
 // Écrire un canal passe par un `AdminMessage` adressé à notre propre numéro de nœud, sur le port

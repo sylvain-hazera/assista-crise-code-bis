@@ -69,7 +69,25 @@ export const REP = {
   NO_MORE_MSGS: 10,
   CONTACT_MSG_RECV_V3: 16,
   MESSAGES_WAITING: 0x83,
+  /** Journal radio : chaque trame entendue, précédée de son SNR et de son RSSI (19/11/2026). */
+  LOG_RX_DATA: 0x88,
 } as const;
+
+/** Une trame radio entendue, telle que le pont MeshCore la rapporte (voir noter_observation). */
+export interface TrameEntendue { raw: string; snr: number; rssi: number; t: number; }
+
+/** `0x88, snr (int8 × 4), rssi (int8), trame…` — format relevé dans la bibliothèque meshcore
+ * (reader.py, PacketType.LOG_DATA). La trame est renvoyée en hexadécimal, sans les deux octets
+ * de mesure, pour le décodeur du serveur. */
+export function lireJournalRadio(charge: Uint8Array): TrameEntendue | null {
+  if (charge[0] !== REP.LOG_RX_DATA || charge.length < 5) { return null; }
+  const signe = (o: number) => (o < 128 ? o : o - 256);
+  return {
+    snr: signe(charge[1]) / 4, rssi: signe(charge[2]),
+    raw: Array.from(charge.slice(3)).map(o => o.toString(16).padStart(2, '0')).join(''),
+    t: Math.floor(Date.now() / 1000),
+  };
+}
 
 /** Un message direct reçu, tel qu'un relais a besoin de le connaître. */
 export interface MessageRecu {

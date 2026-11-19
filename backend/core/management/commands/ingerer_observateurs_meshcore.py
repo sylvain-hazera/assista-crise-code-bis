@@ -42,41 +42,66 @@ class Command(BaseCommand):
             help="Zone dans laquelle écrire les observations (PROD par défaut).",
         )
         parseur.add_argument(
+            '--service', action='store_true',
+            help="Mode service (19/11/2026) : attend qu'une source soit déclarée au lieu de "
+                 "s'arrêter, et reprend seul les sources ajoutées ou modifiées depuis la page.",
+        )
+        parseur.add_argument(
             '--duree', type=int, default=0,
             help="Secondes avant de s'arrêter. 0 = sans fin (défaut). Utile pour un essai.",
         )
+
+    @staticmethod
+    def _signature(sources):
+        """Ce qui, s'il change, impose de rouvrir les connexions."""
+        return sorted((str(s.id), s.broker_host, s.broker_port, s.mqtt_username, s.mqtt_password,
+                       s.mqtt_use_tls, s.mqtt_transport, s.mqtt_ws_chemin, s.filtre_topic) for s in sources)
 
     def handle(self, *args, **options):
         import paho.mqtt.client as mqtt
 
         environment = options['environment']
-        sources = list(SourceObservateurMeshCore.objects.filter(
-            actif=True, environment=environment,
-        ))
-        if not sources:
-            self.stderr.write(
-                "Aucune source d'observateurs active. Déclarez-en une dans "
-                "/api/sources-observateurs-meshcore/ avant de lancer cette commande."
-            )
-            return
+        debut = time.time()
+        while True:
+            sources = list(SourceObservateurMeshCore.objects.filter(actif=True, environment=environment))
+            if not sources:
+                if not options['service']:
+                    self.stderr.write(
+                        "Aucune source d'observateurs active. Déclarez-en une dans "
+                        "/api/sources-observateurs-meshcore/ avant de lancer cette commande."
+                    )
+                    return
+                time.sleep(60)
+                continue
+            if self._ecouter(mqtt, sources, environment, options, debut) == 'fin':
+                return
 
+    def _ecouter(self, mqtt, sources, environment, options, debut):
+        """Écoute jusqu'à la fin demandée ('fin') ou un changement des sources ('relire')."""
         compteurs = {}
         clients = []
-
         for source in sources:
-            compteurs[source.id] = {'recus': 0, 'decodes': 0, 'liaisons': 0, 'illisibles': 0}
+            compteurs[source.id] = {'recus': 0, 'decodes': 0, 'liaisons': 0, 'illisibles': 0, 'types': {}}
             clients.append(self._demarrer(mqtt, source, environment, compteurs[source.id]))
 
         self.stdout.write(f"{len(clients)} source(s) en écoute. Ctrl-C pour arrêter.")
-        debut = time.time()
+        signature = self._signature(sources)
+        tours = 0
         try:
             while True:
                 time.sleep(10)
-                self._resumer(sources, compteurs)
+                tours += 1
+                self._resumer(sources, compteurs, environment)
                 if options['duree'] and time.time() - debut >= options['duree']:
-                    break
+                    return 'fin'
+                if options['service'] and tours % 6 == 0:
+                    actuelles = SourceObservateurMeshCore.objects.filter(actif=True, environment=environment)
+                    if self._signature(actuelles) != signature:
+                        logger.info("Sources modifiées : connexions rouvertes.")
+                        return 'relire'
         except KeyboardInterrupt:
             self.stdout.write("Arrêt demandé.")
+            return 'fin'
         finally:
             for client in clients:
                 client.loop_stop()
@@ -123,6 +148,9 @@ class Command(BaseCommand):
                         compteur['illisibles'] += 1
                     else:
                         compteur['decodes'] += 1
+                        # Nature du trafic par observateur, comme pour nos companions.
+                        cle = (message.observateur, decode["entete"].get("nom_charge") or "INCONNU")
+                        compteur['types'][cle] = compteur['types'].get(cle, 0) + 1
                     if liaison is not None:
                         compteur['liaisons'] += 1
             except Exception:
@@ -132,7 +160,10 @@ class Command(BaseCommand):
                 with verrou:
                     compteur['illisibles'] += 1
 
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                             transport=source.mqtt_transport or "tcp")
+        if source.mqtt_transport == "websockets":
+            client.ws_set_options(path=source.mqtt_ws_chemin or "/mqtt")
         client.on_connect = on_connect
         client.on_subscribe = on_subscribe
         client.on_disconnect = on_disconnect
@@ -152,10 +183,20 @@ class Command(BaseCommand):
             **({'derniere_connexion': timezone.now()} if etat == "CONNECTE" else {}),
         )
 
-    def _resumer(self, sources, compteurs):
+    def _resumer(self, sources, compteurs, environment=Environment.PROD):
         """Un bilan par fenêtre, **y compris à zéro** : c'est le zéro qui est l'information."""
+        from core.views import enregistrer_compteurs_meshcore
         for source in sources:
             c = compteurs[source.id]
+            types, c['types'] = c['types'], {}
+            par_observateur = {}
+            for (observateur, type_paquet), n in types.items():
+                par_observateur.setdefault(observateur, {})[type_paquet] = n
+            for observateur, comptes in par_observateur.items():
+                try:
+                    enregistrer_compteurs_meshcore(observateur, comptes, environment, timezone.now())
+                except Exception:
+                    logger.exception("[%s] compteurs non enregistrés.", source.nom)
             if c['recus'] == 0:
                 logger.warning("[%s] aucun message reçu sur %s.", source.nom, source.filtre_topic)
             else:

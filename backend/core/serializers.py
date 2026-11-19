@@ -5745,7 +5745,8 @@ class SourceObservateurMeshCoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = SourceObservateurMeshCore
         fields = ['id', 'nom', 'institution', 'institution_nom', 'broker_host', 'broker_port',
-                  'mqtt_username', 'mqtt_password', 'mqtt_use_tls', 'filtre_topic', 'actif',
+                  'mqtt_username', 'mqtt_password', 'mqtt_use_tls', 'mqtt_transport', 'mqtt_ws_chemin',
+                  'filtre_topic', 'actif',
                   'derniere_connexion', 'dernier_etat', 'derniere_erreur', 'date_creation']
         read_only_fields = ['derniere_connexion', 'dernier_etat', 'derniere_erreur',
                             'date_creation']

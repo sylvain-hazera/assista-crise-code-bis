@@ -78,6 +78,13 @@ export interface MessageSortant {
  * existent, ils sont éprouvés, et le serveur n'a rien de nouveau à décoder. Le navigateur est un
  * pont qui se trouve tourner dans un onglet.
  */
+/** Ce que le relais remonte de la radio (voir rapporterMesures). */
+export interface CorpsMesures {
+  observations?: { raw: string; snr: number; rssi: number; t: number }[];
+  mesures?: Record<string, number>[];
+  compteurs?: { heure: number; type: string; nombre: number }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class RelaisSerieService {
 
@@ -116,6 +123,12 @@ export class RelaisSerieService {
       : Observable<unknown> {
     return this.http.patch(`${this.messages(protocole)}/${id}/`,
                            erreur ? { statut, erreur } : { statut });
+  }
+
+  /** Mesures de la radio relayée (19/11/2026), chaque minute : trames MeshCore entendues, ou
+   * télémétrie et paquets par type Meshtastic. Mêmes formats que les ponts. */
+  rapporterMesures(protocole: Protocole, compagnon: string, corps: CorpsMesures): Observable<unknown> {
+    return this.http.post(`${this.relais}mesures/`, { protocole, compagnon, ...corps });
   }
 
   deposerDm(protocole: Protocole, compagnon: string, expediteur: string | number, contenu: string)

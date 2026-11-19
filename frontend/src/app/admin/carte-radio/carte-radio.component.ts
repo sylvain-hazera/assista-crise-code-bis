@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import maplibregl from 'maplibre-gl';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import type { FeatureCollection, Geometry } from 'geojson';
 
 import { styleCarte } from '../../shared/utils/carte-style';
@@ -251,9 +253,16 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private chargerLiaisons(): void {
-    this.liaisonService.geojson().subscribe({
-      next: (collection) => {
-        const donnees = collection as unknown as FeatureCollection<Geometry>;
+    // Meshtastic et MeshCore sur le même calque (19/11/2026) : la panne de l'un n'efface pas l'autre.
+    const vide = { type: 'FeatureCollection' as const, features: [] };
+    forkJoin([
+      this.liaisonService.geojson().pipe(catchError(() => of(vide))),
+      this.liaisonService.geojsonMeshcore().pipe(catchError(() => of(vide))),
+    ]).subscribe({
+      next: ([meshtastic, meshcore]) => {
+        const donnees = {
+          type: 'FeatureCollection', features: [...meshtastic.features, ...meshcore.features],
+        } as unknown as FeatureCollection<Geometry>;
         this.donnees.liaisons = donnees;
         this.comptes.liaisons = donnees.features.length;
         this.quandCartePrete(() => this.poserCalqueLiaisons());
@@ -421,10 +430,17 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
       const p = e.features[0].properties || {};
       const snr = p['snr'] != null ? `${p['snr']} dB` : 'SNR inconnu';
       const origine = p['source'] === 'VOISINAGE' ? 'voisinage déclaré'
-        : p['source'] === 'TRACEROUTE' ? 'saut de traceroute' : 'reçu par une passerelle';
+        : p['source'] === 'TRACEROUTE' ? 'saut de traceroute'
+        : p['source'] === 'CHEMIN' ? 'relais consécutifs d\'un chemin (sans mesure)'
+        : 'reçu par une passerelle';
       const distance = p['distance_km'] != null ? `<br>${p['distance_km']} km` : '';
+      const reseau = p['reseau'] === 'MESHCORE' ? 'MeshCore' : 'Meshtastic';
+      // Les noms viennent des nœuds eux-mêmes (adverts) : échappés avant d'entrer dans le HTML.
+      const echapper = (t: unknown) => String(t ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+      const sens = p['emetteur_nom'] && p['recepteur_nom']
+        ? `<br>${echapper(p['emetteur_nom'])} → ${echapper(p['recepteur_nom'])}` : '';
       new maplibregl.Popup().setLngLat(e.lngLat)
-        .setHTML(`<strong>Liaison mesurée</strong><br>${snr} — ${p['nombre']} observation(s)`
+        .setHTML(`<strong>Liaison ${reseau}</strong>${sens}<br>${snr} — ${p['nombre']} observation(s)`
                  + `<br><em>${origine}</em>${distance}`)
         .addTo(this.carte!);
     });

@@ -226,6 +226,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
   // Réclamer un répéteur, prouver qu'on le contrôle, puis l'administrer (TacheAdminMeshCore).
   { icon: 'settings_remote', label: 'Administration MeshCore', route: '/admin/meshcore-administration', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
+  // Brokers où des répéteurs observateurs republient ce qu'ils entendent (19/11/2026).
+  { icon: 'hub', label: 'Brokers MQTT MeshCore', route: '/admin/brokers-meshcore', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
 
   // Sous-cadre Meshtastic
   { icon: 'phone_android', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },

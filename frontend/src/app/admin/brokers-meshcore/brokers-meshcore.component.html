@@ -1,0 +1,82 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">hub</span> Brokers MQTT MeshCore</h1>
+    <p class="explication">
+      Des répéteurs MeshCore « observateurs » republient sur MQTT tout ce qu'ils entendent. Chaque
+      broker déclaré ici est écouté en permanence : ses trames deviennent des liaisons, avec leur
+      SNR, sur la carte radio — en plus de ce qu'entendent nos propres companions.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert"><span class="material-icons">error_outline</span> {{ erreur }}</div>
+  }
+
+  <div class="actions">
+    <button type="button" class="principal" (click)="nouveau()" [disabled]="enEdition !== null">
+      <span class="material-icons">add</span> Déclarer un broker
+    </button>
+  </div>
+
+  @if (enEdition !== null) {
+    <form class="formulaire" (ngSubmit)="enregistrer()" #f="ngForm">
+      <h2>{{ enEdition === 'nouveau' ? 'Nouveau broker' : 'Modifier « ' + brouillon.nom + ' »' }}</h2>
+      <div class="grille">
+        <label>Nom <input name="nom" required [(ngModel)]="brouillon.nom" placeholder="Broker régional BOD"></label>
+        <label>Adresse <input name="hote" required [(ngModel)]="brouillon.broker_host" placeholder="mqtt.exemple.fr"></label>
+        <label>Transport
+          <select name="transport" [(ngModel)]="brouillon.mqtt_transport" (ngModelChange)="changerTransport()">
+            <option value="tcp">TCP (port 1883 le plus souvent)</option>
+            <option value="websockets">WebSocket (port 443, à travers les pare-feu)</option>
+          </select>
+        </label>
+        <label>Port <input name="port" type="number" min="1" max="65535" required [(ngModel)]="brouillon.broker_port"></label>
+        @if (brouillon.mqtt_transport === 'websockets') {
+          <label>Chemin WebSocket <input name="chemin" [(ngModel)]="brouillon.mqtt_ws_chemin" placeholder="/mqtt"></label>
+        }
+        <label class="case"><input name="tls" type="checkbox" [(ngModel)]="brouillon.mqtt_use_tls"> Connexion chiffrée (TLS)</label>
+        <label>Compte <input name="compte" autocomplete="off" [(ngModel)]="brouillon.mqtt_username"></label>
+        <label>Mot de passe
+          <input name="mdp" type="password" autocomplete="new-password" [(ngModel)]="brouillon.mqtt_password"
+                 [placeholder]="enEdition === 'nouveau' ? '' : 'inchangé si laissé vide'">
+        </label>
+        <label class="large">Filtre d'abonnement
+          <input name="filtre" required [(ngModel)]="brouillon.filtre_topic" placeholder="meshcore/BOD/#">
+          <span class="aide">« meshcore/# » pour tout, « meshcore/BOD/# » pour une région (code d'aéroport IATA).</span>
+        </label>
+      </div>
+      <div class="boutons">
+        <button type="submit" class="principal" [disabled]="envoi || !f.valid">Enregistrer</button>
+        <button type="button" class="secondaire" (click)="annuler()">Annuler</button>
+      </div>
+    </form>
+  }
+
+  <div class="defilement">
+    <table>
+      <thead><tr><th>Broker</th><th>Filtre</th><th>État</th><th></th></tr></thead>
+      <tbody>
+        @for (s of sources; track s.id) {
+          <tr>
+            <td>
+              <span class="nom">{{ s.nom }}</span>
+              <span class="detail">{{ s.mqtt_transport === 'websockets' ? 'wss' : (s.mqtt_use_tls ? 'mqtts' : 'mqtt') }}://{{ s.broker_host }}:{{ s.broker_port }}@if (s.mqtt_username) { · compte {{ s.mqtt_username }} }</span>
+            </td>
+            <td class="code">{{ s.filtre_topic }}</td>
+            <td>
+              <span class="pastille" [ngClass]="classeEtat(s)">{{ libelleEtat(s) }}</span>
+              @if (s.derniere_erreur && s.dernier_etat === 'ERREUR') { <span class="detail">{{ s.derniere_erreur }}</span> }
+            </td>
+            <td class="outils">
+              <button type="button" class="secondaire" (click)="editer(s)">Modifier</button>
+              <button type="button" class="secondaire" (click)="basculer(s)">{{ s.actif ? 'Arrêter' : 'Reprendre' }}</button>
+              <button type="button" class="secondaire danger" (click)="supprimer(s)">Retirer</button>
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="4" class="detail">Aucun broker déclaré : seules les trames entendues par nos companions alimentent la carte.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

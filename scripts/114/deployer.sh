@@ -14,6 +14,10 @@ SERVICES=("$@")
 if printf '%s\n' "${SERVICES[@]}" | grep -qx backend && ! printf '%s\n' "${SERVICES[@]}" | grep -qx celery-worker; then
   SERVICES+=(celery-worker)
 fi
+# Même image pour l'ingestion des observateurs MeshCore (19/11/2026).
+if printf '%s\n' "${SERVICES[@]}" | grep -qx backend && ! printf '%s\n' "${SERVICES[@]}" | grep -qx observateurs-meshcore; then
+  SERVICES+=(observateurs-meshcore)
+fi
 
 "${COMPOSE[@]}" build "${SERVICES[@]}"
 "${COMPOSE[@]}" up -d --no-deps "${SERVICES[@]}"

@@ -176,6 +176,21 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_started }
 
+  # Observateurs MeshCore publiés sur MQTT (19/11/2026) : une connexion par broker déclaré sur
+  # la page « Brokers MQTT MeshCore ». Même image que le backend ; un seul exemplaire (deux
+  # compteraient chaque observation deux fois). Attend seul qu'une source soit déclarée.
+  observateurs-meshcore:
+    <<: *service
+    image: assista-crise-backend:prod
+    container_name: ac_observateurs_meshcore
+    entrypoint: ["python", "manage.py"]
+    command: ["ingerer_observateurs_meshcore", "--service"]
+    env_file:
+      - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    networks: [back, db, front]
+    depends_on:
+      db: { condition: service_healthy }
+
   redis:
     <<: *service
     image: redis:7-alpine

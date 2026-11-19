@@ -9319,6 +9319,9 @@ class SourceLiaisonMeshtastic(models.TextChoices):
     RF = "RF", "Reçu par une passerelle MQTT (SNR mesuré)"
     VOISINAGE = "VOISINAGE", "Déclaré par un rapport de voisinage (NeighborInfo)"
     TRACEROUTE = "TRACEROUTE", "Saut d'un traceroute"
+    # MeshCore (19/11/2026) : deux relais consécutifs du chemin d'un paquet en inondation se
+    # sont entendus. Pas de SNR : seule la dernière réception est mesurée.
+    CHEMIN = "CHEMIN", "Relais consécutifs d'un chemin MeshCore"
 
 
 class MesureTelemetrieMeshtastic(EnvironmentScopedModel):
@@ -10177,6 +10180,19 @@ class ReleveVoisinageMeshCore(EnvironmentScopedModel):
         return f"{self.pubkey_hex[:12]} : {self.recus}/{self.total_annonce} voisins"
 
 
+class CompteurPaquetsMeshCore(EnvironmentScopedModel):
+    """Trames MeshCore entendues par un récepteur (notre companion ou un observateur MQTT), par
+    heure et par type de charge : la nature du trafic, comme côté Meshtastic (19/11/2026)."""
+    recepteur_pubkey_hex = models.CharField(max_length=64)
+    heure = models.DateTimeField()
+    type_paquet = models.CharField(max_length=20)
+    nombre = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["recepteur_pubkey_hex", "heure", "type_paquet", "environment"],
+                                               name="uq_compteur_paquets_mc")]
+
+
 class SourceObservateurMeshCore(EnvironmentScopedModel):
     """Un broker MQTT où des **observateurs** MeshCore republient ce qu'ils entendent.
 
@@ -10218,6 +10234,13 @@ class SourceObservateurMeshCore(EnvironmentScopedModel):
         max_length=200, default="meshcore/#",
         help_text="Filtre d'abonnement MQTT, ex. « meshcore/# » ou « meshcore/BOD/# ».",
     )
+    # 19/11/2026 : certains brokers de l'écosystème ne s'atteignent qu'en WebSocket sur 443
+    # (mqtt.meshmapper.net, par exemple), à travers les pare-feu qui ne laissent passer que le web.
+    mqtt_transport = models.CharField(
+        max_length=12, default="tcp", choices=[("tcp", "TCP"), ("websockets", "WebSocket")],
+    )
+    mqtt_ws_chemin = models.CharField(max_length=100, default="/mqtt", blank=True,
+                                      help_text="Chemin WebSocket, « /mqtt » le plus souvent.")
 
     actif = models.BooleanField(default=True)
 

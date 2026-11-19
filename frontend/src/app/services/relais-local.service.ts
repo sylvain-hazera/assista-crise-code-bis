@@ -1,9 +1,9 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 
-import { DesignationRadio, RelaisSerieService } from './relais-serie.service';
+import { CorpsMesures, DesignationRadio, RelaisSerieService } from './relais-serie.service';
 import {
-  EmplacementCanal, IdentiteRadio, MessageRadio, Pilote, PiloteMeshtastic, Protocole, creerPilote,
+  EmplacementCanal, IdentiteRadio, MesureRadio, MessageRadio, Pilote, PiloteMeshtastic, Protocole, creerPilote,
 } from '../shared/mesh/pilotes';
 import { EntreePlan, OperationsChoix, PropositionPlan, operationsPlan, proposerPlan } from '../shared/mesh/plan-canaux';
 import { MESHCORE_BLE } from '../shared/mesh/meshcore-trames';
@@ -77,6 +77,54 @@ interface Relais extends RelaisVisible {
    * le précédent n'a pas fini d'envoyer. */
   enCours: Set<string>;
   cycles: number;
+  /** Mesures en attente du prochain rapport (19/11/2026), et heure du dernier. */
+  mesures: TamponMesures;
+}
+
+/** Une minute de mesures, comme les ponts : bornée, et gardée si le central ne répond pas. */
+export class TamponMesures {
+  static readonly MAX = 3000;
+  observations: NonNullable<CorpsMesures['observations']> = [];
+  telemetrie: Record<string, number>[] = [];
+  compteurs = new Map<string, number>();
+  dernierRapport = Date.now();
+
+  noter(m: MesureRadio): void {
+    if (m.genre === 'trame_meshcore') {
+      if (this.observations.length < TamponMesures.MAX) { this.observations.push(m.trame); }
+      return;
+    }
+    const heure = Math.floor(Date.now() / 3_600_000) * 3600;
+    const cle = `${heure}|${m.paquet.type}`;
+    this.compteurs.set(cle, (this.compteurs.get(cle) ?? 0) + 1);
+    if (m.paquet.telemetrie && this.telemetrie.length < TamponMesures.MAX) {
+      this.telemetrie.push(m.paquet.telemetrie as unknown as Record<string, number>);
+    }
+  }
+
+  /** Vide le tampon et rend le corps à envoyer, ou null s'il n'y a rien. */
+  extraire(): CorpsMesures | null {
+    const corps: CorpsMesures = {
+      observations: this.observations, mesures: this.telemetrie,
+      compteurs: [...this.compteurs].map(([cle, nombre]) => {
+        const [heure, type] = cle.split('|');
+        return { heure: Number(heure), type, nombre };
+      }),
+    };
+    this.observations = []; this.telemetrie = []; this.compteurs = new Map();
+    this.dernierRapport = Date.now();
+    return corps.observations!.length || corps.mesures!.length || corps.compteurs!.length ? corps : null;
+  }
+
+  /** Un rapport refusé revient, dans la limite du plafond (les plus anciens tombent). */
+  remettre(corps: CorpsMesures): void {
+    this.observations = [...(corps.observations ?? []), ...this.observations].slice(-TamponMesures.MAX);
+    this.telemetrie = [...(corps.mesures ?? []), ...this.telemetrie].slice(-TamponMesures.MAX);
+    for (const c of corps.compteurs ?? []) {
+      const cle = `${c.heure}|${c.type}`;
+      this.compteurs.set(cle, (this.compteurs.get(cle) ?? 0) + c.nombre);
+    }
+  }
 }
 
 /** Ce qu'il faut pour brancher une radio. `radio` désigne une ligne précise ; sans elle, la radio
@@ -193,10 +241,11 @@ export class RelaisLocalService implements OnDestroy {
       tramesRecues: 0, tramesEnvoyees: 0, messagesRelayes: 0, canauxIgnores: [],
       derniereActivite: null, erreur: '', plan: null, annonce: '',
       transportObj: transport, pilote, identite, minuterie: null, essais: 0, arrete: false,
-      canaux: null, enCours: new Set(), cycles: 0,
+      canaux: null, enCours: new Set(), cycles: 0, mesures: new TamponMesures(),
     };
     this.relais.set(compagnonId, r);
     pilote.surMessage = m => this.relayerEntrant(r, m);
+    pilote.surMesure = m => r.mesures.noter(m);
     transport.surPerte = raison => void this.reconnecter(r, raison);
 
     await this.prendreLeVerrou();
@@ -379,6 +428,14 @@ export class RelaisLocalService implements OnDestroy {
       await r.pilote.cycle();
     } catch (e) {
       r.erreur = this.lisible(e);
+    }
+
+    if (Date.now() - r.mesures.dernierRapport >= 60_000) {
+      const corps = r.mesures.extraire();
+      if (corps) {
+        this.service.rapporterMesures(r.protocole, r.compagnonId, corps)
+          .subscribe({ error: () => r.mesures.remettre(corps) });
+      }
     }
 
     this.service.aEnvoyer(r.protocole, r.compagnonId).subscribe({

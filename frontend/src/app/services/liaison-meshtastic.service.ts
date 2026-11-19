@@ -7,10 +7,14 @@ import { environment } from '../../environments/environment';
 
 /** Propriétés portées par chaque trait de liaison (voir LiaisonMeshtasticViewSet.geojson). */
 export interface ProprietesLiaison {
-  emetteur: number;
-  recepteur: number;
+  /** Absent : Meshtastic. « MESHCORE » : voir geojsonMeshcore (19/11/2026). */
+  reseau?: 'MESHCORE';
+  emetteur: number | string;
+  recepteur: number | string;
+  emetteur_nom?: string | null;
+  recepteur_nom?: string | null;
   snr: number | null;
-  source: 'RF' | 'VOISINAGE' | 'TRACEROUTE';
+  source: 'RF' | 'VOISINAGE' | 'TRACEROUTE' | 'CHEMIN';
   nombre: number;
   distance_km: number | null;
 }
@@ -27,6 +31,14 @@ export class LiaisonMeshtasticService {
   geojson(depuisHeures = 24): Observable<FeatureCollection<LineString, ProprietesLiaison>> {
     return this.http.get<FeatureCollection<LineString, ProprietesLiaison>>(
       `${this.url}/geojson/`, { params: { depuis_heures: String(depuisHeures) } },
+    );
+  }
+
+  /** Liaisons MeshCore, même forme : trames entendues par nos companions et par les
+   * observateurs MQTT, traceroutes, relais consécutifs d'un chemin. */
+  geojsonMeshcore(depuisHeures = 24): Observable<FeatureCollection<LineString, ProprietesLiaison>> {
+    return this.http.get<FeatureCollection<LineString, ProprietesLiaison>>(
+      `${this.url}/geojson-meshcore/`, { params: { depuis_heures: String(depuisHeures) } },
     );
   }
 }

@@ -136,31 +136,20 @@ def ingerer_paquet(message, environment=Environment.PROD, maintenant=None):
         logger.debug("Trame illisible de l'observateur %s : %s", message.observateur[:8], erreur)
         return None, None
 
-    charge = decode.get("charge") or {}
-    emetteur = charge.get("cle_publique") if charge.get("type") == "ADVERT" else None
-    if not emetteur:
-        # Tout le reste est chiffré ou anonyme : en tirer une liaison supposerait de savoir qui
-        # a émis, ce qu'on ne sait pas. Le paquet reste exploitable par l'appelant.
-        return decode, None
-
-    # Une signature invalide disqualifie l'advert : n'importe qui peut en fabriquer un portant
-    # la clé d'autrui, et la liaison serait attribuée au mauvais nœud.
-    if charge.get("signature_valide") is False:
-        logger.debug("Advert à signature invalide ignoré (observateur %s).", message.observateur[:8])
-        return decode, None
-
+    # 19/11/2026 : même lecture que pour les trames de nos companions (observations_meshcore) :
+    # dernier relais -> observateur avec le SNR, relais consécutifs du chemin, advert direct.
+    # Corrige au passage une erreur : un advert RELAYÉ était attribué à son auteur, alors que
+    # l'observateur n'avait entendu que le dernier relais.
+    from .observations_meshcore import IndexCles, tirer_liaisons
     snr = _nombre(message.donnees.get("SNR"))
-    liaison, cree = LiaisonMeshCore.objects.get_or_create(
-        emetteur_prefixe_hex=emetteur.lower(),
-        recepteur_pubkey_hex=message.observateur,
-        source=SourceLiaisonMeshtastic.RF,
-        environment=environment,
-        defaults={"snr": snr, "prefixe_octets": 32, "dernier_vu": maintenant},
-    )
-    if not cree:
-        if snr is not None and (liaison.snr is None or snr > liaison.snr):
-            liaison.snr = snr
-        liaison.nombre += 1
-        liaison.dernier_vu = maintenant
-        liaison.save(update_fields=["snr", "nombre", "dernier_vu"])
+    tirer_liaisons(decode, snr, message.observateur, IndexCles.partage(environment), environment, maintenant)
+
+    charge = decode.get("charge") or {}
+    auteur = charge.get("cle_publique") if charge.get("type") == "ADVERT" else None
+    if not auteur or charge.get("signature_valide") is False or (decode.get("chemin") or {}).get("sauts"):
+        return decode, None
+    liaison = LiaisonMeshCore.objects.filter(
+        emetteur_prefixe_hex=auteur.lower(), recepteur_pubkey_hex=message.observateur,
+        source=SourceLiaisonMeshtastic.RF, environment=environment,
+    ).first()
     return decode, liaison

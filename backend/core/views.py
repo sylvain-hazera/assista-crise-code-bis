@@ -13111,6 +13111,43 @@ class RelaisCorrespondancesCanauxView(APIView):
         return Response({"correspondances": propres})
 
 
+class RelaisMesuresView(APIView):
+    """Mesures d'une radio relayée par le navigateur (19/11/2026), chaque minute : mêmes
+    formats et même traitement que pour les ponts (`POST {protocole, compagnon, …}`).
+
+    - MeshCore : `observations` (trames entendues avec leur SNR) -> liaisons, chemins, trafic ;
+    - Meshtastic : `mesures` (télémétrie) et `compteurs` (paquets par type).
+
+    Seulement par la personne qui relaie cette radio en ce moment : ces lignes dessinent la
+    carte radio, un compte quelconque ne doit pas pouvoir y inventer un réseau."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .relais_navigateur import compagnon_par_id, session_active
+
+        protocole = request.data.get("protocole")
+        if protocole not in ("MESHCORE", "MESHTASTIC"):
+            return Response({"error": "Protocole inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+        compagnon = compagnon_par_id(request.data.get("compagnon"), protocole)
+        if compagnon is None or session_active(request.user, compagnon) is None:
+            return Response({"error": "Vous ne relayez pas cette radio."}, status=status.HTTP_403_FORBIDDEN)
+        if protocole == "MESHTASTIC":
+            return Response(enregistrer_telemetrie_meshtastic(compagnon, request.data))
+
+        from .observations_meshcore import ingerer_trames
+        trames = request.data.get("observations")
+        if not isinstance(trames, list):
+            return Response({"error": "'observations' doit être une liste."}, status=status.HTTP_400_BAD_REQUEST)
+        if not compagnon.pubkey_hex:
+            return Response({"error": "Clé publique de la radio encore inconnue."}, status=status.HTTP_409_CONFLICT)
+        maintenant = timezone.now()
+        compteurs = {}
+        resume = ingerer_trames(trames[:5000], compagnon.pubkey_hex, compagnon.environment, maintenant, compteurs)
+        enregistrer_compteurs_meshcore(compagnon.pubkey_hex, compteurs, compagnon.environment, maintenant)
+        return Response(resume)
+
+
 class RelaisAnnonceView(APIView):
     """Annonce sur `Fr_EMCOM` les noms des canaux de crise et de commune, par CETTE passerelle
     seulement (`POST {compagnon}`). Voir `canaux_locaux.annoncer` : le message est ciblé sur la
@@ -19984,7 +20021,10 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             return [IsInstitutionalActor()]
         # Ces deux actions livrent les clés de canal en clair (cle_partagee_hex) : réservées
         # aux ponts, pas à tout compte authentifié (voir EstComptePont).
-        if self.action in ('canaux_a_provisionner', 'canaux_pour_decodage_logiciel'):
+        # 19/11/2026 : les trames observées et les traceroutes deviennent des liaisons sur la
+        # carte radio. Un compte quelconque pourrait y fabriquer un réseau : pont seulement.
+        if self.action in ('canaux_a_provisionner', 'canaux_pour_decodage_logiciel',
+                           'rapporter_observations', 'rapporter_traceroute'):
             return [EstComptePont()]
         # `rapporter_etat`, `signaler_canaux_detectes`, `canaux_a_liberer`,
         # `rapporter_canal_libere`, `rapporter_batterie`, `traceroutes_a_executer`,
@@ -20220,7 +20260,32 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         trace.erreur = request.data.get('erreur')
         trace.date_reponse = timezone.now()
         trace.save(update_fields=['statut', 'tag', 'chemin', 'erreur', 'date_reponse'])
-        return Response({"ok": True})
+        liaisons = 0
+        if statut == StatutTraceroute.TERMINE and compagnon.pubkey_hex:
+            # Chaque saut mesuré devient une liaison TRACEROUTE sur la carte radio (19/11/2026).
+            from .observations_meshcore import liaisons_d_un_traceroute
+            liaisons = liaisons_d_un_traceroute(trace.chemin, compagnon.pubkey_hex, compagnon.environment,
+                                                trace.date_reponse)
+        return Response({"ok": True, "liaisons": liaisons})
+
+    @action(detail=True, methods=['post'], url_path='rapporter-observations')
+    def rapporter_observations(self, request, pk=None):
+        """Trames radio entendues par ce companion, avec leur SNR, rapportées chaque minute par
+        le pont (19/11/2026) : liaisons, chemins et nature du trafic (core/observations_meshcore.py)."""
+        from .models import CompteurPaquetsMeshCore
+        from .observations_meshcore import ingerer_trames
+
+        compagnon = self.get_object()
+        if not compagnon.pubkey_hex:
+            return Response({"detail": "Clé publique du companion encore inconnue."}, status=status.HTTP_409_CONFLICT)
+        trames = request.data.get('observations')
+        if not isinstance(trames, list):
+            return Response({"detail": "'observations' doit être une liste."}, status=status.HTTP_400_BAD_REQUEST)
+        maintenant = timezone.now()
+        compteurs = {}
+        resume = ingerer_trames(trames[:5000], compagnon.pubkey_hex, compagnon.environment, maintenant, compteurs)
+        enregistrer_compteurs_meshcore(compagnon.pubkey_hex, compteurs, compagnon.environment, maintenant)
+        return Response(resume)
 
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
@@ -21767,52 +21832,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
     def rapporter_telemetrie(self, request, pk=None):
         """Mesures de télémétrie et compteurs de paquets par type, rapportés par le pont chaque
         minute (19/11/2026). Jamais de tout-ou-rien : une entrée invalide est ignorée."""
-        from datetime import datetime, timezone as dt_timezone
-        from .models import CompteurPaquetsMeshtastic, MesureTelemetrieMeshtastic
-
-        compagnon = self.get_object()
-        environment = compagnon.environment
-        champs = ('batterie', 'tension', 'occupation_canal', 'temps_antenne_tx', 'uptime_s',
-                  'paquets_tx', 'paquets_rx', 'noeuds_en_ligne', 'bruit_dbm')
-
-        def nombre_valide(champ, valeur):
-            if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
-                return False
-            return valeur >= (-200 if champ == 'bruit_dbm' else 0)
-
-        mesures = []
-        for brute in (request.data.get('mesures') or [])[:5000]:
-            try:
-                node_num = int(brute['node_num'])
-                instant = datetime.fromtimestamp(int(brute['horodatage']), tz=dt_timezone.utc)
-            except (KeyError, TypeError, ValueError, OverflowError, OSError):
-                continue
-            valeurs = {c: brute[c] for c in champs if nombre_valide(c, brute.get(c))}
-            mesures.append(MesureTelemetrieMeshtastic(
-                compagnon=compagnon, node_num=node_num, horodatage=instant, environment=environment, **valeurs))
-        MesureTelemetrieMeshtastic.objects.bulk_create(mesures)
-        comptes = 0
-        for brute in (request.data.get('compteurs') or [])[:2000]:
-            try:
-                heure = datetime.fromtimestamp(int(brute['heure']), tz=dt_timezone.utc)
-                type_paquet = str(brute['type'])[:40]
-                nombre = int(brute['nombre'])
-            except (KeyError, TypeError, ValueError, OverflowError, OSError):
-                continue
-            if nombre <= 0:
-                continue
-            objet, cree = CompteurPaquetsMeshtastic.objects.get_or_create(
-                compagnon=compagnon, heure=heure, type_paquet=type_paquet,
-                defaults={'nombre': nombre, 'environment': environment})
-            if not cree:
-                CompteurPaquetsMeshtastic.objects.filter(pk=objet.pk).update(nombre=F('nombre') + nombre)
-            comptes += 1
-        # Trente jours d'historique : au-delà, la purge se fait au fil des rapports.
-        from datetime import timedelta
-        limite = timezone.now() - timedelta(days=30)
-        MesureTelemetrieMeshtastic.objects.filter(compagnon=compagnon, horodatage__lt=limite).delete()
-        CompteurPaquetsMeshtastic.objects.filter(compagnon=compagnon, heure__lt=limite).delete()
-        return Response({'mesures': len(mesures), 'compteurs': comptes})
+        return Response(enregistrer_telemetrie_meshtastic(self.get_object(), request.data))
 
     @action(detail=True, methods=['get'], url_path='tableau')
     def tableau(self, request, pk=None):
@@ -22516,6 +22536,70 @@ class LiaisonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
         return Response({"type": "FeatureCollection", "features": traits})
 
 
+    @action(detail=False, methods=['get'], url_path='geojson-meshcore')
+    def geojson_meshcore(self, request):
+        """Liaisons MeshCore (19/11/2026), même forme que `geojson` pour partager le calque de la
+        carte radio : `reseau: "MESHCORE"` en plus.
+
+        L'émetteur n'est souvent qu'un préfixe : il n'est placé que s'il fait au moins deux
+        octets ET ne désigne qu'un seul nœud positionné. Les autres liaisons existent en base
+        mais ne sont pas dessinées — une ligne vers le mauvais relais serait pire que rien."""
+        from .analyse_liaisons import DISTANCE_MAX_KM, _distance_km
+        from .models import CompagnonMeshCore, ContactMeshCore, LiaisonMeshCore, NoeudPublicMeshCore
+
+        heures = request.query_params.get('depuis_heures', '24')
+        try:
+            heures = min(max(int(heures), 1), 24 * 30)
+        except (TypeError, ValueError):
+            heures = 24
+        environment = get_active_environment(request)
+
+        positions, noms = {}, {}
+        for modele, filtre in ((ContactMeshCore, {'environment': environment}), (NoeudPublicMeshCore, {}),
+                               (CompagnonMeshCore, {})):
+            for objet in modele.objects.filter(location__isnull=False, **filtre):
+                cle = (objet.pubkey_hex or '').lower()
+                if len(cle) == 64:
+                    positions.setdefault(cle, (objet.location.y, objet.location.x))
+                    noms.setdefault(cle, getattr(objet, 'nom', '') or cle[:8])
+        par_prefixe = {}
+        for cle in positions:
+            for n in (4, 6, 8):
+                par_prefixe.setdefault(cle[:n], []).append(cle)
+
+        def placer(prefixe):
+            prefixe = prefixe.lower()
+            if len(prefixe) == 64:
+                return prefixe if prefixe in positions else None
+            if len(prefixe) < 4:
+                return None
+            candidats = par_prefixe.get(prefixe[:8]) if len(prefixe) >= 8 else par_prefixe.get(prefixe)
+            candidats = [c for c in (candidats or []) if c.startswith(prefixe)]
+            return candidats[0] if len(candidats) == 1 else None
+
+        traits = []
+        for liaison in LiaisonMeshCore.objects.filter(
+                environment=environment, dernier_vu__gte=timezone.now() - datetime.timedelta(hours=heures)):
+            emetteur, recepteur = placer(liaison.emetteur_prefixe_hex), placer(liaison.recepteur_pubkey_hex)
+            if not emetteur or not recepteur or emetteur == recepteur:
+                continue
+            a, b = positions[emetteur], positions[recepteur]
+            distance = _distance_km(a, b)
+            if distance is not None and distance > DISTANCE_MAX_KM:
+                continue
+            traits.append({
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[a[1], a[0]], [b[1], b[0]]]},
+                "properties": {
+                    "reseau": "MESHCORE", "emetteur": emetteur, "recepteur": recepteur,
+                    "emetteur_nom": noms.get(emetteur), "recepteur_nom": noms.get(recepteur),
+                    "snr": liaison.snr, "source": liaison.source, "nombre": liaison.nombre,
+                    "distance_km": round(distance, 1) if distance is not None else None,
+                },
+            })
+        return Response({"type": "FeatureCollection", "features": traits})
+
+
 # Nombre maximal de tâches servies en un seul appel du pont : une administration se fait à la
 # main, pas par rafales, et une passerelle ne doit pas se retrouver avec cent opérations à
 # enchaîner sur la radio.
@@ -22527,6 +22611,57 @@ CHAMPS_CONFIGURATION_NOEUD = (
     'puissance_emission_dbm', 'region', 'modem_preset', 'hop_limit', 'role',
     'firmware_version', 'hardware_model',
 )
+
+
+def enregistrer_telemetrie_meshtastic(compagnon, donnees):
+    """Mesures de télémétrie et compteurs de paquets d'une passerelle Meshtastic (19/11/2026) :
+    rapportés par le pont, ou par le relais navigateur. Jamais de tout-ou-rien : une entrée
+    invalide est ignorée."""
+    from datetime import datetime, timezone as dt_timezone
+    from .models import CompteurPaquetsMeshtastic, MesureTelemetrieMeshtastic
+
+    environment = compagnon.environment
+    champs = ('batterie', 'tension', 'occupation_canal', 'temps_antenne_tx', 'uptime_s',
+              'paquets_tx', 'paquets_rx', 'noeuds_en_ligne', 'bruit_dbm')
+
+    def nombre_valide(champ, valeur):
+        if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+            return False
+        return valeur >= (-200 if champ == 'bruit_dbm' else 0)
+
+    mesures = []
+    for brute in (donnees.get('mesures') or [])[:5000]:
+        try:
+            node_num = int(brute['node_num'])
+            instant = datetime.fromtimestamp(int(brute['horodatage']), tz=dt_timezone.utc)
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue
+        valeurs = {c: brute[c] for c in champs if nombre_valide(c, brute.get(c))}
+        mesures.append(MesureTelemetrieMeshtastic(
+            compagnon=compagnon, node_num=node_num, horodatage=instant, environment=environment, **valeurs))
+    MesureTelemetrieMeshtastic.objects.bulk_create(mesures)
+    comptes = 0
+    for brute in (donnees.get('compteurs') or [])[:2000]:
+        try:
+            heure = datetime.fromtimestamp(int(brute['heure']), tz=dt_timezone.utc)
+            type_paquet = str(brute['type'])[:40]
+            nombre = int(brute['nombre'])
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue
+        if nombre <= 0:
+            continue
+        objet, cree = CompteurPaquetsMeshtastic.objects.get_or_create(
+            compagnon=compagnon, heure=heure, type_paquet=type_paquet,
+            defaults={'nombre': nombre, 'environment': environment})
+        if not cree:
+            CompteurPaquetsMeshtastic.objects.filter(pk=objet.pk).update(nombre=F('nombre') + nombre)
+        comptes += 1
+    # Trente jours d'historique : au-delà, la purge se fait au fil des rapports.
+    from datetime import timedelta
+    limite = timezone.now() - timedelta(days=30)
+    MesureTelemetrieMeshtastic.objects.filter(compagnon=compagnon, horodatage__lt=limite).delete()
+    CompteurPaquetsMeshtastic.objects.filter(compagnon=compagnon, heure__lt=limite).delete()
+    return {'mesures': len(mesures), 'compteurs': comptes}
 
 
 def enregistrer_liaison_meshtastic(emetteur, recepteur, source, snr, rssi, environment, maintenant):
@@ -25352,6 +25487,20 @@ class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         )
 
 
+def enregistrer_compteurs_meshcore(recepteur, compteurs, environment, maintenant):
+    """Ajoute les trames comptées à l'heure en cours ; purge au-delà de 30 jours."""
+    from datetime import timedelta
+    from .models import CompteurPaquetsMeshCore
+    heure = maintenant.replace(minute=0, second=0, microsecond=0)
+    for type_paquet, nombre in compteurs.items():
+        objet, cree = CompteurPaquetsMeshCore.objects.get_or_create(
+            recepteur_pubkey_hex=recepteur.lower(), heure=heure, type_paquet=type_paquet[:20],
+            environment=environment, defaults={"nombre": nombre})
+        if not cree:
+            CompteurPaquetsMeshCore.objects.filter(pk=objet.pk).update(nombre=F('nombre') + nombre)
+    CompteurPaquetsMeshCore.objects.filter(heure__lt=maintenant - timedelta(days=30)).delete()
+
+
 class SourceObservateurMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Brokers où des observateurs MeshCore republient ce qu'ils entendent.
 
@@ -25391,6 +25540,8 @@ class SourceObservateurMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.M
                 'mqtt_username': source.mqtt_username,
                 'mqtt_password': source.mqtt_password,
                 'mqtt_use_tls': source.mqtt_use_tls,
+                'mqtt_transport': source.mqtt_transport,
+                'mqtt_ws_chemin': source.mqtt_ws_chemin,
                 'filtre_topic': source.filtre_topic,
             }
             for source in sources

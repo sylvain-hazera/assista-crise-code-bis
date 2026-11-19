@@ -9,4 +9,4 @@ Elle ne réinvente rien : ce sont les ponts Python du satellite (`meshcore-bridg
 central, c'est un satellite de profil « passerelle ».
 """
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"

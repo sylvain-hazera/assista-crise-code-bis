@@ -94,6 +94,7 @@ export const ADMIN_ROUTES: Routes = [
   // n'est plus « etre une institution » mais « avoir affaire a de la radio ». Une commune sans
   // aucun materiel y voyait huit ecrans qui ne pouvaient rien lui dire ; un benevole qui porte
   // un noeud n'y avait acces a aucun. Les deux sont renvoyes vers /admin/radio.
+  { path: 'brokers-meshcore', loadComponent: () => import('./brokers-meshcore/brokers-meshcore.component').then(m => m.BrokersMeshcoreComponent), canActivate: [radioGuard] },
   { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [radioGuard] },
   { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [radioGuard] },
   // Administration a distance des repeteurs MeshCore (login + CLI par la radio). Le serveur

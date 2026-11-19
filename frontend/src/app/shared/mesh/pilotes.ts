@@ -8,11 +8,11 @@
  */
 import {
   CMD, DecoupeurDeTrames, REP, commandeAppStart, commandeEnvoiMessage, commandeHeure,
-  commandeRequeteAppareil, commandeSimple, encadrer, lireMessageRecu, lireSelfInfo,
+  commandeRequeteAppareil, commandeSimple, encadrer, lireJournalRadio, lireMessageRecu, lireSelfInfo, TrameEntendue,
 } from './meshcore-trames';
 import {
   DecoupeurMeshtastic, MT_DIFFUSION, NONCE_CONFIG, NONCE_NOEUDS, PREMIER_NONCE_BATTEMENT,
-  decouperTexte, encadrerMeshtastic, lireFromRadio, nonceSuivant, nouvelIdentifiant,
+  decouperTexte, encadrerMeshtastic, lireFromRadio, MesurePaquet, mesurerFromRadio, nonceSuivant, nouvelIdentifiant,
   octetsDeReveil, toRadioBattement, toRadioTexte, toRadioVeutConfig, adminDemandeProprietaire,
   adminEcrireCanal, adminSupprimerCanal, toRadioAdmin, toRadioTexteCanal, ERREUR_ROUTAGE,
   ROLE_CANAL,
@@ -39,12 +39,19 @@ export interface MessageRadio {
   canalNom?: string;
 }
 
+/** Ce que la radio entend, pour le tableau et la carte radio (19/11/2026) : la trame brute
+ * MeshCore avec son SNR, ou le type, les sauts et la télémétrie d'un paquet Meshtastic. */
+export type MesureRadio =
+  | { genre: 'trame_meshcore'; trame: TrameEntendue }
+  | { genre: 'paquet_meshtastic'; paquet: MesurePaquet };
+
 export interface Pilote {
   readonly protocole: Protocole;
   identite: IdentiteRadio | null;
   tramesRecues: number;
   tramesEnvoyees: number;
   surMessage: (m: MessageRadio) => void;
+  surMesure: (m: MesureRadio) => void;
   /** Se présente et attend l'identité de la radio. Rejette si elle ne répond pas. */
   demarrer(): Promise<IdentiteRadio>;
   /** À brancher sur `transport.surDonnees`. */
@@ -70,6 +77,7 @@ export class PiloteMeshCore implements Pilote {
   tramesRecues = 0;
   tramesEnvoyees = 0;
   surMessage: (m: MessageRadio) => void = () => undefined;
+  surMesure: (m: MesureRadio) => void = () => undefined;
 
   private decoupeur = new DecoupeurDeTrames();
   private attenteIdentite: ((id: IdentiteRadio) => void) | null = null;
@@ -122,6 +130,11 @@ export class PiloteMeshCore implements Pilote {
           this.attenteIdentite?.(this.identite);
           this.attenteIdentite = null;
         }
+        continue;
+      }
+      if (type === REP.LOG_RX_DATA) {
+        const trame = lireJournalRadio(charge);
+        if (trame) { this.surMesure({ genre: 'trame_meshcore', trame }); }
         continue;
       }
       if (type === REP.MSG_SENT || type === REP.ERROR) {
@@ -180,6 +193,7 @@ export class PiloteMeshtastic implements Pilote {
   tramesRecues = 0;
   tramesEnvoyees = 0;
   surMessage: (m: MessageRadio) => void = () => undefined;
+  surMesure: (m: MesureRadio) => void = () => undefined;
 
   /** Index → nom des canaux configurés sur la radio, lus pendant la configuration. */
   readonly canaux = new Map<number, string>();
@@ -311,6 +325,8 @@ export class PiloteMeshtastic implements Pilote {
       } catch {
         continue;   // trame corrompue : écartée, comptée, jamais interprétée
       }
+      const mesure = mesurerFromRadio(trame);
+      if (mesure) { this.surMesure({ genre: 'paquet_meshtastic', paquet: mesure }); }
       switch (e.genre) {
         case 'mon_noeud':
           this.monNumero = e.numero;
