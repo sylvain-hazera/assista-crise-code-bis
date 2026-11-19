@@ -352,3 +352,15 @@ table.mesures, table.mesures-sante {
   &.active .material-icons { color: var(--ac-amber-text, #b45309); }
   small { display: block; color: var(--ac-text-muted, #4b5563); }
 }
+
+.orages .blitzortung {
+  margin: 12px 0;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  iframe { width: 100%; height: 420px; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px; }
+  small { color: var(--ac-text-muted, #4b5563); }
+  button.secondaire {
+    display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .85rem; padding: 5px 12px;
+    border-radius: 6px; border: 1px solid var(--ac-border, #d1d5db); background: transparent; color: var(--ac-text, #111827); cursor: pointer;
+    &:focus-visible { outline: 2px solid var(--brand-primary, #1d4ed8); outline-offset: 2px; }
+  }
+}

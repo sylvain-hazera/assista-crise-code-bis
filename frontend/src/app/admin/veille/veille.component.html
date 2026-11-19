@@ -286,6 +286,21 @@
           </p>
         </div>
       }
+      <div class="blitzortung">
+        @if (carteBlitzortung) {
+          <iframe [src]="carteBlitzortung" title="Carte en direct de la foudre, Blitzortung.org" loading="lazy"
+                  referrerpolicy="no-referrer"></iframe>
+          <p class="note">
+            Illustration : carte en direct du réseau communautaire Blitzortung.org et de ses contributeurs.
+            Elle n'est pas une source d'alerte, et rien sur cette page n'en tire de conclusion.
+          </p>
+        } @else {
+          <button type="button" class="secondaire" (click)="afficherBlitzortung()">
+            <span class="material-icons">public</span> Afficher la carte Blitzortung (illustration)
+          </button>
+          <small>Ouvre une connexion de votre navigateur vers blitzortung.org, réseau communautaire non officiel.</small>
+        }
+      </div>
       <p class="note">
         Radar {{ orages.source }}@if (orages.heure_image) {, image de {{ orages.heure_image | date:'HH:mm' }}}
         ({{ orages.radars }} radars@if (orages.radars_absents.length) {, {{ orages.radars_absents.length }} absent(s)}).
