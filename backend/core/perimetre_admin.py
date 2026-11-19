@@ -128,7 +128,8 @@ def institutions_visibles(request):
     """Identifiants des institutions dont l'appelant voit les objets, ou None pour « pas de
     restriction » (administrateur regardant toute la plateforme).
 
-    - administrateur regardant une institution : celle-là seule ;
+    - administrateur regardant une institution : celle-là et ses filles, à toute profondeur
+      (décision du 19/11/2026 : « les listes incluent les filles ») ;
     - tout autre : les institutions où il est membre actif (`ContactInstitution`), la relation
       qui fait autorité -- ce que les vues écrivaient chacune de leur côté."""
     from .models import ContactInstitution
@@ -137,7 +138,10 @@ def institutions_visibles(request):
         return None
     if est_administrateur(request):
         institution = institution_regardee(request)
-        return [institution.id] if institution is not None else []
+        if institution is None:
+            return []
+        return _memo(request, "regardee_et_filles",
+                     lambda: list(institutions_descendantes({institution.id})))
     return _memo(request, "membre_de", lambda: list(
         ContactInstitution.objects.filter(utilisateur=request.user, actif=True)
         .values_list("institution_id", flat=True)))

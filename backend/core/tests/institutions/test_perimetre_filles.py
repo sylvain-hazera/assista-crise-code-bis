@@ -53,13 +53,15 @@ def test_un_cycle_pose_a_la_main_ne_fait_pas_boucler(arbre):
     assert institutions_descendantes(set()) == set()
 
 
-def test_les_listes_suivent_le_perimetre_de_l_administrateur(arbre, admin):
-    """Configurations d'alerte vigilance (et, sur le même modèle, alerte feux et messages à
-    relire) : placé dans une institution, l'administrateur ne voit que la sienne."""
+def test_les_listes_suivent_le_perimetre_de_l_administrateur_filles_comprises(arbre, admin):
+    """Configurations d'alerte vigilance (et, sur le même modèle, toutes les listes filtrées par
+    institutions_visibles) : placé dans une institution, l'administrateur voit elle et ses
+    filles (décision du 19/11/2026), rien d'autre."""
     from core.models import ConfigurationAlerteVigilance
-    ConfigurationAlerteVigilance.objects.create(institution=arbre["cd"], actif=True)
-    ConfigurationAlerteVigilance.objects.create(institution=arbre["etrangere"], actif=True)
+    for cle in ("cd", "petite_fille", "etrangere"):
+        ConfigurationAlerteVigilance.objects.create(institution=arbre[cle], actif=True)
     url = "/api/configurations-alerte-vigilance/"
     lire = lambda r: {str(c["institution"]) for c in (r.data["results"] if isinstance(r.data, dict) else r.data)}  # noqa: E731
-    assert lire(admin.get(url, HTTP_X_PERIMETRE=str(arbre["cd"].id))) == {str(arbre["cd"].id)}
-    assert lire(admin.get(url, HTTP_X_PERIMETRE="TOUT")) == {str(arbre["cd"].id), str(arbre["etrangere"].id)}
+    assert lire(admin.get(url, HTTP_X_PERIMETRE=str(arbre["cd"].id))) == {str(arbre["cd"].id), str(arbre["petite_fille"].id)}
+    assert lire(admin.get(url, HTTP_X_PERIMETRE=str(arbre["fille"].id))) == {str(arbre["petite_fille"].id)}
+    assert len(lire(admin.get(url, HTTP_X_PERIMETRE="TOUT"))) == 3
