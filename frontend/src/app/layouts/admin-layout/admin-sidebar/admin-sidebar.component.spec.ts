@@ -19,6 +19,9 @@ describe('AdminSidebarComponent', () => {
   const item = (label: string) => NAV_ITEMS.find(i => i.label === label)!;
 
   beforeEach(async () => {
+    // Les replis enregistrés par un essai ne doivent pas déborder sur le suivant.
+    localStorage.removeItem('admin-sidebar-groupes-ouverts');
+    localStorage.removeItem('admin-sidebar-sous-groupes-ouverts');
     auth = jasmine.createSpyObj<AuthService>('AuthService', [
       'isSysAdmin', 'isAdminPlateforme', 'getEffectiveRole', 'isAutoriteLocaleCommunale', 'getCurrentUser', 'isInstitutionalEffective',
     ]);
@@ -68,7 +71,9 @@ describe('AdminSidebarComponent', () => {
     // membre d'aucune équipe engagée, la page dit pourquoi elle n'a rien à lui proposer.
     const visibles = NAV_ITEMS.filter(i => component.isNavItemVisible(i)).map(i => i.label);
     expect(visibles).toEqual([
-      'Mes interventions', "Mon relevé d'heures", 'Devenir passerelle', 'Hébergement', 'Accueil radio',
+      // Même liste ; depuis la revue du 19/11/2026, « Devenir passerelle » est rangé en tête
+      // de la radio, juste après « Accueil radio », et non plus en haut du menu.
+      'Mes interventions', "Mon relevé d'heures", 'Hébergement', 'Accueil radio', 'Devenir passerelle',
     ]);
   });
 
@@ -209,6 +214,49 @@ describe('AdminSidebarComponent', () => {
         else vues.set(i.icon, i.label);
       }
       expect(doublons).toEqual([]);
+    });
+
+    const situation = (crise: boolean, n = 0) => ({
+      signalements: n, messages_a_relire: n, demandes_mobilisation: null, crise_ouverte: crise,
+    });
+
+    it('hors crise, « Préparer » passe devant « Crise en cours » et s\'ouvre', () => {
+      component.appliquerSituation(situation(false));
+      const ordre = component.groupesNav.map(g => g.id);
+      expect(ordre.indexOf('preparation')).toBeLessThan(ordre.indexOf('crise'));
+      expect(component.estGroupeOuvert('preparation')).toBeTrue();
+      expect(component.estGroupeOuvert('crise')).toBeFalse();
+      component.appliquerSituation(situation(true));
+      const enCrise = component.groupesNav.map(g => g.id);
+      expect(enCrise.indexOf('crise')).toBeLessThan(enCrise.indexOf('preparation'));
+      expect(component.estGroupeOuvert('crise')).toBeTrue();
+    });
+
+    it('un choix de l\'utilisateur n\'est plus défait par la situation', () => {
+      component.toggleGroupe('administration');
+      component.appliquerSituation(situation(false));
+      expect(component.estGroupeOuvert('administration')).toBeTrue();
+    });
+
+    it('les étapes de la crise sont dépliées par défaut, pas les protocoles radio', () => {
+      expect(component.estSousGroupeOuvert('crise-recevoir')).toBeTrue();
+      expect(component.estSousGroupeOuvert('prep-connaitre')).toBeTrue();
+      expect(component.estSousGroupeOuvert('meshcore')).toBeFalse();
+    });
+
+    it('les compteurs vont sur leurs pages, et seulement là', () => {
+      component.appliquerSituation(situation(true, 4));
+      expect(component.compteurDe(item('Signalements'))).toBe(4);
+      expect(component.compteurDe(item('Messages à relire'))).toBe(4);
+      expect(component.compteurDe(item('Demandes de mobilisation'))).toBe(0);
+      expect(component.compteurDe(item('Missions'))).toBe(0);
+    });
+
+    it("« Standard de crise » est le premier écran de « Recevoir », « Crises » le premier de « Comprendre »", () => {
+      const premier = (sous: string) => NAV_ITEMS.find(i => i.sousGroupe === sous)!.label;
+      expect(premier('crise-recevoir')).toBe('Standard de crise');
+      expect(premier('crise-comprendre')).toBe('Crises');
+      expect(item('Messages à relire').groupe).toBe('crise');
     });
 
     it("ouvre le cadre de la page affichée, sans refermer les autres", () => {

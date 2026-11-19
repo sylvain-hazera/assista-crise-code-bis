@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
+from .views_menu import CompteursMenuView
 from .grafana import GrafanaTokenView
 from .views_connexion import (
     ConnexionCodeView, ConnexionDebutView, ConnexionEnvoyerCodeView,
@@ -512,6 +513,7 @@ urlpatterns = [
     path('engagement-ressource/<str:token>/', EngagementRessourcePublicView.as_view(), name='engagement_ressource_public'),
     path('accuser-reception-pcs/<str:token>/', AccuserReceptionAlertePCSPublicView.as_view(), name='accuser_reception_alerte_pcs'),
     path('dossier-pcs/', DossierPCSView.as_view(), name='dossier_pcs'),
+    path('compteurs-menu/', CompteursMenuView.as_view(), name='compteurs-menu'),
     path('pcs-fiches-conseil/', FichesConseilView.as_view(), name='pcs_fiches_conseil'),
     path('dossier-pcs/revisions/', RevisionPCSView.as_view(), name='dossier_pcs_revisions'),
     path('dossier-pcs/document/', DocumentPCSView.as_view(), name='dossier_pcs_document'),

@@ -22,6 +22,9 @@
       (click)="navigation.emit()">
       <span class="material-icons">{{ item.icon }}</span>
       <span class="nav-label">{{ item.label }}</span>
+          @if (compteurDe(item) > 0) {
+            <span class="pastille" [attr.aria-label]="compteurDe(item) + ' en attente'">{{ compteurDe(item) > 99 ? '99+' : compteurDe(item) }}</span>
+          }
     </a>
   }
 
@@ -37,6 +40,9 @@
           (click)="navigation.emit()">
           <span class="material-icons">{{ item.icon }}</span>
           <span class="nav-label">{{ item.label }}</span>
+          @if (compteurDe(item) > 0) {
+            <span class="pastille" [attr.aria-label]="compteurDe(item) + ' en attente'">{{ compteurDe(item) > 99 ? '99+' : compteurDe(item) }}</span>
+          }
         </a>
       }
     }
@@ -60,6 +66,9 @@
                   (click)="navigation.emit()">
                   <span class="material-icons">{{ item.icon }}</span>
                   <span class="nav-label">{{ item.label }}</span>
+          @if (compteurDe(item) > 0) {
+            <span class="pastille" [attr.aria-label]="compteurDe(item) + ' en attente'">{{ compteurDe(item) > 99 ? '99+' : compteurDe(item) }}</span>
+          }
                 </a>
               }
               <!-- Second niveau : un sous-cadre par protocole radio (MeshCore, Meshtastic). -->
@@ -85,6 +94,9 @@
                           (click)="navigation.emit()">
                           <span class="material-icons">{{ item.icon }}</span>
                           <span class="nav-label">{{ item.label }}</span>
+          @if (compteurDe(item) > 0) {
+            <span class="pastille" [attr.aria-label]="compteurDe(item) + ' en attente'">{{ compteurDe(item) > 99 ? '99+' : compteurDe(item) }}</span>
+          }
                         </a>
                       }
                     </div>

@@ -277,3 +277,47 @@
     padding: 1rem 0 1rem calc((70px - 24px) / 2 - 3px); // 3px : bordure gauche de l'entrée active
   }
 }
+
+// Pastille de compteur : ce qui attend sur la page (revue du menu, 19/11/2026).
+.pastille {
+  margin-left: auto;
+  min-width: 1.4rem;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.3rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+// Menu réduit aux icônes : la pastille se pose sur l'icône.
+:host(.collapsed) .nav-item { position: relative; }
+:host(.collapsed) .pastille {
+  position: absolute; top: .2rem; right: .3rem;
+  min-width: 1.1rem; line-height: 1.1rem; font-size: .62rem; padding: 0 .25rem;
+}
+
+// Revue du menu (19/11/2026) : avec les étapes de la crise et du plan en sous-cadres, le double
+// retrait coupait les libellés (« Alerter les habit… », « Signale… »). Dans les cadres, menu
+// déplié : retrait unique, lignes plus serrées, et un libellé long passe à la ligne au lieu
+// d'être tronqué. Le mode réduit (icônes seules) n'est pas concerné.
+:host(:not(.collapsed)) .sidebar-nav {
+  .nav-item.nav-item-sous {
+    padding-top: .6rem;
+    padding-bottom: .6rem;
+    gap: .75rem;
+  }
+
+  .nav-item.nav-item-sous-sous {
+    padding-left: 2.25rem;
+  }
+
+  .nav-item-sous .nav-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
+  }
+}
