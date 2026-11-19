@@ -507,7 +507,20 @@ class OragesView(APIView):
                     "dernier_ici": proches.order_by("-instant").values_list("instant", flat=True).first(),
                     "derniere_donnee": derniere,
                 }
+        # Blitzortung, à titre indicatif : compté pour l'affichage, rien de plus.
+        blitzortung = None
+        if not request.query_params.get("france") and emprise is not None:
+            from .models import ImpactBlitzortung
+            maintenant = timezone.now()
+            proches = ImpactBlitzortung.objects.filter(location__within=emprise)
+            blitzortung = {
+                **sources_ouvertes.resume("FOUDRE_BLITZORTUNG"),
+                "impacts_15min": proches.filter(instant__gte=maintenant - datetime.timedelta(minutes=15)).count(),
+                "impacts_1h": proches.filter(instant__gte=maintenant - datetime.timedelta(hours=1)).count(),
+                "dernier_ici": proches.order_by("-instant").values_list("instant", flat=True).first(),
+            }
         return Response({
+            "blitzortung": blitzortung,
             "foudre": foudre,
             "cumuls": cumuls,
             **sources_ouvertes.resume("ORAGES_RADAR"),
@@ -544,6 +557,32 @@ class FoudreView(APIView):
                                "properties": {"instant": e.instant.isoformat(),
                                               "age_min": round((derniere - e.instant).total_seconds() / 60)}})
         return Response({**sources_ouvertes.resume("FOUDRE_MTG"), "derniere_donnee": derniere,
+                         "type": "FeatureCollection", "features": points})
+
+
+class BlitzortungView(APIView):
+    """GET /api/blitzortung/ : impacts du réseau communautaire Blitzortung, en GeoJSON, pour la
+    carte — À TITRE INDICATIF (voir la commande ecouter_blitzortung). `bbox`, `minutes` (60 par
+    défaut, 360 au plus)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from .models import ImpactBlitzortung
+        try:
+            minutes = min(max(int(request.query_params.get("minutes", 60)), 5), 360)
+        except (TypeError, ValueError):
+            minutes = 60
+        maintenant = timezone.now()
+        qs = ImpactBlitzortung.objects.filter(instant__gte=maintenant - datetime.timedelta(minutes=minutes))
+        if request.query_params.get("bbox"):
+            emprise, _centre, _rayon = _emprise(request)
+            qs = qs.filter(location__within=emprise)
+        points = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [e.location.x, e.location.y]},
+                   "properties": {"instant": e.instant.isoformat(),
+                                  "age_min": round((maintenant - e.instant).total_seconds() / 60)}}
+                  for e in qs.order_by("-instant")[:10000]]
+        return Response({**sources_ouvertes.resume("FOUDRE_BLITZORTUNG"),
+                         "mention": "Informations Blitzortung données à titre indicatif",
                          "type": "FeatureCollection", "features": points})
 
 

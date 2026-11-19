@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
@@ -41,8 +40,6 @@ export class VeilleComponent implements OnInit, OnDestroy {
   /** Orages selon le radar (une image toutes les 5 min) : relu toutes les 2 min, onglet visible. */
   orages: OragesRadar | null = null;
   readonly FENETRES_CUMUL = ['1h', '3h', '24h'] as const;
-  /** Carte Blitzortung : chargée seulement à la demande (elle s'ouvre chez un tiers). */
-  carteBlitzortung: SafeResourceUrl | null = null;
   erreurOrages = false;
   private suiviOrages?: Subscription;
 
@@ -94,7 +91,7 @@ export class VeilleComponent implements OnInit, OnDestroy {
   ];
   private readonly SECONDAIRES: CategorieEvenementRoutier[] = ['TRAVAUX', 'RESTRICTION'];
 
-  constructor(private service: VeilleService, private readonly sanitizer: DomSanitizer) {}
+  constructor(private service: VeilleService) {}
 
   ngOnInit(): void {
     this.chargerVigilance();
@@ -138,24 +135,6 @@ export class VeilleComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void { this.suiviOrages?.unsubscribe(); }
-
-  /** Carte en direct du réseau communautaire Blitzortung, centrée sur la commune. Intégrée
-   * comme leur documentation le propose (paramètres de docs.lightningmaps.org), sans publicité
-   * ni cookies. Pour l'illustration seulement : leurs conditions interdisent l'usage de leurs
-   * données pour l'alerte aux orages, et rien ici n'en tire de conclusion. Chargée après un
-   * clic : ouvrir la carte, c'est se connecter à blitzortung.org, ce que la veille ne fait
-   * jamais d'elle-même (règle 1 ci-dessus). */
-  afficherBlitzortung(): void {
-    const c = this.orages?.centre;
-    const lat = c ? c.latitude.toFixed(3) : '46.6';
-    const lon = c ? c.longitude.toFixed(3) : '2.5';
-    const zoom = c ? 8 : 5;
-    const url = 'https://map.blitzortung.org/index.php?interactive=1&NavigationControl=1&FullScreenControl=1'
-      + '&Cookies=0&InfoDiv=0&MenuButtonDiv=0&ScaleControl=1&LinksCheckboxChecked=0&MapStyle=0'
-      + `&MapStyleRangeValue=0&Advertisment=0#${zoom}/${lat}/${lon}`;
-    // Adresse construite ici à partir de nombres : aucun texte venu de l'extérieur n'y entre.
-    this.carteBlitzortung = this.sanitizer.bypassSecurityTrustResourceUrl(url);
-  }
 
   /** Une cellule touche-t-elle déjà la commune de l'institution, ou l'atteindrait-elle ? */
   communesOrage(cellule: CelluleOrage, max = 12): string {

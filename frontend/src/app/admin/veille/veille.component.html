@@ -286,21 +286,22 @@
           </p>
         </div>
       }
-      <div class="blitzortung">
-        @if (carteBlitzortung) {
-          <iframe [src]="carteBlitzortung" title="Carte en direct de la foudre, Blitzortung.org" loading="lazy"
-                  referrerpolicy="no-referrer"></iframe>
-          <p class="note">
-            Illustration : carte en direct du réseau communautaire Blitzortung.org et de ses contributeurs.
-            Elle n'est pas une source d'alerte, et rien sur cette page n'en tire de conclusion.
-          </p>
-        } @else {
-          <button type="button" class="secondaire" (click)="afficherBlitzortung()">
-            <span class="material-icons">public</span> Afficher la carte Blitzortung (illustration)
-          </button>
-          <small>Ouvre une connexion de votre navigateur vers blitzortung.org, réseau communautaire non officiel.</small>
-        }
-      </div>
+      @if (orages.blitzortung; as b) {
+        <p class="foudre indicatif">
+          <span class="material-icons">bolt</span>
+          <span>
+            <strong>Informations Blitzortung données à titre indicatif :</strong>
+            @if (b.impacts_1h) {
+              {{ b.impacts_1h }} impact(s) en une heure à moins de {{ orages.rayon_km }} km, dont {{ b.impacts_15min }} dans le dernier quart d'heure ;
+              dernier à {{ b.dernier_ici | date:'HH:mm' }}.
+            } @else {
+              aucun impact à moins de {{ orages.rayon_km }} km dans l'heure.
+            }
+            <small [class.ancien]="b.perime">Réseau communautaire Blitzortung.org et ses contributeurs, non officiel ;
+              ni analysé ni utilisé pour une alerte.@if (b.perime) { <strong>Relais injoignable.</strong> }</small>
+          </span>
+        </p>
+      }
       <p class="note">
         Radar {{ orages.source }}@if (orages.heure_image) {, image de {{ orages.heure_image | date:'HH:mm' }}}
         ({{ orages.radars }} radars@if (orages.radars_absents.length) {, {{ orages.radars_absents.length }} absent(s)}).

@@ -681,6 +681,8 @@ export interface OragesRadar {
   cellules: CelluleOrage[];
   cumuls: CumulsPluie | null;
   foudre: FoudreIci | null;
+  /** Blitzortung, à titre indicatif seulement (jamais analysé ni annoncé). */
+  blitzortung: { source: string; perime: boolean; impacts_15min: number; impacts_1h: number; dernier_ici: string | null } | null;
 }
 
 /** Éclairs vus par le satellite MTG autour de la commune (backend/core/foudre.py). Comptés

@@ -208,6 +208,20 @@ services:
     depends_on:
       db: { condition: service_healthy }
 
+  # Impacts de foudre Blitzortung, À TITRE INDICATIF (19/11/2026) : relais MQTT public, affichés
+  # dans la veille et sur la carte, jamais analysés ni annoncés (conditions de Blitzortung.org).
+  blitzortung:
+    <<: *service
+    image: assista-crise-backend:prod
+    container_name: ac_blitzortung
+    entrypoint: ["python", "manage.py"]
+    command: ["ecouter_blitzortung", "--service"]
+    env_file:
+      - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    networks: [back, db, front]
+    depends_on:
+      db: { condition: service_healthy }
+
   redis:
     <<: *service
     image: redis:7-alpine

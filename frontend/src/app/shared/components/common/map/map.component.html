@@ -153,6 +153,11 @@
         <span class="layer-dot eclairs-dot"></span>
         Éclairs (satellite)@if (layerVisibility.eclairs && eclairsDerniereDonnee) { <small>&nbsp;{{ eclairsDerniereDonnee | date:'HH:mm' }}</small> }
       </label>
+      <label class="layer-toggle-item" title="Informations Blitzortung données à titre indicatif : impacts de foudre du réseau communautaire Blitzortung.org (non officiel), quelques secondes de retard. Affichés seulement : ni analysés, ni utilisés pour une alerte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.blitzortung" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot blitzortung-dot"></span>
+        Impacts Blitzortung (indicatif)
+      </label>
       <label class="layer-toggle-item" title="Vent moyen prévu par Météo-France (modèle ARPEGE, maille de 10 km), animé : les traînes vont où va le vent, plus vite là où il force. Ni les rafales, ni une mesure. Assombrit légèrement la carte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.vent" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot vent-dot"></span>

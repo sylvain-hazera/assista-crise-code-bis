@@ -3313,6 +3313,15 @@ class ImpactFoudre(models.Model):
     confiance = models.FloatField(null=True, blank=True)
 
 
+class ImpactBlitzortung(models.Model):
+    """Impact de foudre du réseau communautaire Blitzortung (commande ecouter_blitzortung), à
+    titre INDICATIF : affiché, jamais analysé ni annoncé (conditions de Blitzortung.org).
+    24 heures gardées."""
+
+    instant = models.DateTimeField(db_index=True)
+    location = gis_models.PointField(srid=4326)
+
+
 class ProduitFoudre(models.Model):
     """Produit EUMETSAT déjà lu (une tranche de dix minutes, parfois en plusieurs fichiers)."""
 

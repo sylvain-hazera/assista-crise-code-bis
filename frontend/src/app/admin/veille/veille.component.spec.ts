@@ -1118,22 +1118,3 @@ describe('VeilleComponent', () => {
   });
 });
 
-describe('VeilleComponent — carte Blitzortung', () => {
-  it('ne se charge qu’à la demande, centrée sur la commune, sans publicité ni cookies', () => {
-    TestBed.configureTestingModule({
-      imports: [VeilleComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    });
-    const f = TestBed.createComponent(VeilleComponent);
-    const c = f.componentInstance;
-    expect(c.carteBlitzortung).toBeNull();
-    c.orages = { centre: { latitude: 44.84, longitude: -0.58 } } as never;
-    c.afficherBlitzortung();
-    const url = String((c.carteBlitzortung as unknown as { changingThisBreaksApplicationSecurity: string })
-      .changingThisBreaksApplicationSecurity);
-    expect(url).toContain('https://map.blitzortung.org/index.php?');
-    expect(url).toContain('Cookies=0');
-    expect(url).toContain('Advertisment=0');
-    expect(url).toContain('#8/44.840/-0.580');
-  });
-});

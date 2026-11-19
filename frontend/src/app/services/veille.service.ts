@@ -65,6 +65,12 @@ export class VeilleService {
       `${this.api}/foudre/`, { params: { ...this.params(emprise), minutes: String(minutes) } });
   }
 
+  /** Impacts Blitzortung, à titre indicatif, en GeoJSON (60 dernières minutes). */
+  blitzortung(emprise: EmpriseVeille, minutes = 60): Observable<GeoJSON.FeatureCollection & { mention: string; perime: boolean }> {
+    return this.http.get<GeoJSON.FeatureCollection & { mention: string; perime: boolean }>(
+      `${this.api}/blitzortung/`, { params: { ...this.params(emprise), minutes: String(minutes) } });
+  }
+
   /** Orages et pluies intenses autour de la commune de l'institution (radar, toutes les 5 min). */
   orages(emprise?: EmpriseVeille): Observable<OragesRadar> {
     return this.http.get<OragesRadar>(`${this.api}/orages/`, emprise ? { params: this.params(emprise) } : {});

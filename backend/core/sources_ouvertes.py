@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 # la copie ne doit plus être présentée comme actuelle (écrans et supervision).
 Source = namedtuple("Source", "code libelle relever intervalle perime_apres attribution")
 
+def _releve_par_service():
+    raise RuntimeError("Source écoutée en continu par son propre service, pas relevée ici.")
+
+
 SOURCES = {
     source.code: source for source in (
         Source("VIGILANCE_METEO", "Vigilance météorologique", meteo_france.relever,
@@ -63,6 +67,10 @@ SOURCES = {
         # produit par tranche de dix minutes, paru dix à vingt minutes après coup.
         Source("FOUDRE_MTG", "Éclairs vus par satellite (MTG)", foudre.relever,
                datetime.timedelta(minutes=2), foudre.FRAICHEUR_MAX, "EUMETSAT (MTG Lightning Imager)"),
+        # Impacts Blitzortung, à titre indicatif (19/11/2026) : écoutés en continu par leur propre
+        # service (`manage.py ecouter_blitzortung --service`), qui tient cette trace à jour.
+        Source("FOUDRE_BLITZORTUNG", "Impacts de foudre Blitzortung (indicatif)", _releve_par_service,
+               datetime.timedelta(minutes=1), datetime.timedelta(minutes=15), "Blitzortung.org et ses contributeurs"),
         # Vent moyen pour l'animation de la carte : un calcul toutes les six heures, une
         # échéance nouvelle par heure, 300 Ko chacune.
         Source("VENT", "Vent prévu (écoulement, modèle ARPEGE)", vent.relever,
@@ -161,7 +169,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG"}
 
 
 def etat(code):

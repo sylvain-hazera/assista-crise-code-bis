@@ -65,6 +65,8 @@ interface LayerVisibility {
   orages: boolean;
   /** Éclairs vus par le satellite MTG dans l'heure de données la plus récente (19/11/2026). */
   eclairs: boolean;
+  /** Impacts Blitzortung, à titre indicatif (19/11/2026). */
+  blitzortung: boolean;
   /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
@@ -154,6 +156,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     hiver: false,
     orages: false,
     eclairs: false,
+    blitzortung: false,
     vigilanceCrues: false,
     zonesBrulees: false,
     secteursVulnerables: false,
@@ -259,7 +262,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('orages-layer', this.layerVisibility.orages);
     this.applyLayerVisibility('orages-couloirs-layer', this.layerVisibility.orages);
     this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
-    if ((this.layerVisibility.orages || this.layerVisibility.eclairs) && !this.rafraichissementOrages) {
+    this.applyLayerVisibility('blitzortung-layer', this.layerVisibility.blitzortung);
+    if ((this.layerVisibility.orages || this.layerVisibility.eclairs || this.layerVisibility.blitzortung)
+        && !this.rafraichissementOrages) {
       // Une image radar toutes les cinq minutes : relire toutes les deux suffit.
       this.rafraichissementOrages = setInterval(() => this.rafraichirVeille(), 120_000);
     }
@@ -294,11 +299,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
-        && !qualiteAir && !orages && !eclairs) return;
+        && !qualiteAir && !orages && !eclairs && !blitzortung) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -634,6 +639,23 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'fill-color': ['match', ['get', 'risque'], 5, '#7f1d1d', 4, '#ff0000', 3, '#ff9900', 2, '#ffff00', 1, '#ccff66', '#9ca3af'],
           'fill-opacity': 0.4, 'fill-outline-color': '#374151',
         }, this.layerVisibility.avalanche),
+        error: () => {},
+      });
+    }
+    if (blitzortung) {
+      this.veilleService.blitzortung({ bbox }).subscribe({
+        next: (reponse) => {
+          const features = reponse.features.map(f => ({
+            ...f, properties: {
+              ...f.properties,
+              infobulle: `<strong>Impact de foudre (Blitzortung)</strong><br>${new Date((f.properties as { instant: string }).instant).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                + '<br><small>Informations Blitzortung données à titre indicatif</small>',
+            },
+          }));
+          this.afficherCoucheVeille('blitzortung', { type: 'FeatureCollection', features } as FeatureCollection<Geometry>,
+            ['interpolate', ['linear'], ['get', 'age_min'], 0, '#ffffff', 10, '#fde047', 60, '#a8a29e'],
+            this.layerVisibility.blitzortung);
+        },
         error: () => {},
       });
     }

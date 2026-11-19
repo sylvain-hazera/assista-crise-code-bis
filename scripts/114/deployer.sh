@@ -15,7 +15,7 @@ if printf '%s\n' "${SERVICES[@]}" | grep -qx backend && ! printf '%s\n' "${SERVI
   SERVICES+=(celery-worker)
 fi
 # Même image pour l'ingestion des observateurs MeshCore et l'analyse des orages (19/11/2026).
-for meme_image in observateurs-meshcore orages; do
+for meme_image in observateurs-meshcore orages blitzortung; do
   if printf '%s\n' "${SERVICES[@]}" | grep -qx backend && ! printf '%s\n' "${SERVICES[@]}" | grep -qx "$meme_image"; then
     SERVICES+=("$meme_image")
   fi

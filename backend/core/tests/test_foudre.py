@@ -112,3 +112,25 @@ def test_vue_et_compte_sous_une_cellule(client):
 
 def test_la_foudre_est_relevee_par_le_service_et_non_par_le_cron():
     assert "FOUDRE_MTG" in sources_ouvertes.SOURCES_EN_CONTINU
+
+
+# ── Blitzortung, à titre indicatif ────────────────────────────────────────────
+
+def test_lecture_d_un_impact_blitzortung():
+    import struct
+    from core.management.commands.ecouter_blitzortung import lire_impact
+    ns = int(T0.timestamp() * 1e9)
+    instant, lat, lon = lire_impact(struct.pack("<ffq", 48.278, 6.352, ns))
+    assert instant == T0 and lat == pytest.approx(48.278, abs=1e-4) and lon == pytest.approx(6.352, abs=1e-4)
+    assert lire_impact(struct.pack("<ffq", 10.0, 20.0, ns)) is None        # hors emprise
+    assert lire_impact(b"trop court") is None
+
+
+@pytest.mark.django_db
+def test_vue_blitzortung_porte_la_mention(client):
+    from core.models import ImpactBlitzortung
+    ImpactBlitzortung.objects.create(instant=timezone.now(), location=Point(2.35, 48.85, srid=4326))
+    r = client.get("/api/blitzortung/", {"minutes": 30})
+    assert r.status_code == 200 and len(r.json()["features"]) == 1
+    assert r.json()["mention"] == "Informations Blitzortung données à titre indicatif"
+    assert "FOUDRE_BLITZORTUNG" in sources_ouvertes.SOURCES_EN_CONTINU
