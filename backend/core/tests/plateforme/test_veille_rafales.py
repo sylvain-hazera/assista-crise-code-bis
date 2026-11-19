@@ -20,11 +20,16 @@ UTC = datetime.timezone.utc
 MAINTENANT = datetime.datetime(2026, 11, 15, 9, 30, tzinfo=UTC)
 
 
-def _tiff(grille, compression=1, ancrage=(-5.5, 51.5), pas=0.01, nature=3):
-    """Fichier TIFF minimal portant `grille`, dans la forme observée le 15/11/2026."""
+def _tiff(grille, compression=1, ancrage=(-5.5, 51.5), pas=0.01, nature=3, ecart=0, desordre=False):
+    """Fichier TIFF minimal portant `grille`, dans la forme observée le 15/11/2026.
+    `ecart` : octets de bourrage entre deux bandes ; `desordre` : bandes rangées dans le fichier
+    de la dernière à la première (forme observée le 19/11/2026, « bandes dispersées »)."""
     hauteur, largeur = grille.shape
-    donnees = grille.astype("<f8").tobytes()
     taille_ligne = largeur * 8
+    lignes = [grille[i].astype("<f8").tobytes() for i in range(hauteur)]
+    ordre_physique = list(range(hauteur))[::-1] if desordre else list(range(hauteur))
+    donnees = b"".join(lignes[i] + b"\x00" * ecart for i in ordre_physique)
+    rang_physique = {ligne: rang for rang, ligne in enumerate(ordre_physique)}
     etiquettes = []                     # (numéro, genre, valeurs)
     etiquettes.append((256, 3, [largeur]))
     etiquettes.append((257, 3, [hauteur]))
@@ -54,7 +59,7 @@ def _tiff(grille, compression=1, ancrage=(-5.5, 51.5), pas=0.01, nature=3):
     for numero, genre, valeurs in etiquettes:
         combien, taille, ou = tailles[numero]
         if valeurs is None:
-            valeurs = [debut_donnees + i * taille_ligne for i in range(hauteur)]
+            valeurs = [debut_donnees + rang_physique[i] * (taille_ligne + ecart) for i in range(hauteur)]
         brut = struct.pack("<" + codes[genre] * combien, *valeurs)
         if ou is None:
             entrees += struct.pack("<HHI", numero, genre, combien) + brut.ljust(4, b"\x00")
@@ -394,3 +399,21 @@ class TestLectures:
         self._image(timezone.now().replace(minute=0, second=0, microsecond=0), 24.0)
 
         assert api_client.get(reverse("rafales_prevues"), {"ici": 1}).json()["ici"] is None
+
+
+
+class TestBandesDispersees:
+    """19/11/2026 : les grilles de types de précipitation arrivent en bandes dispersées."""
+
+    def test_des_bandes_espacees_et_dans_le_desordre_donnent_la_meme_grille(self):
+        grille = numpy.arange(12, dtype="float64").reshape(3, 4)
+        for ecart, desordre in ((0, False), (16, False), (0, True), (24, True)):
+            valeurs, ouest, nord, pas = rafales.lire_grille_tiff(_tiff(grille, ecart=ecart, desordre=desordre))
+            assert numpy.array_equal(valeurs, grille), (ecart, desordre)
+            assert (ouest, nord, pas) == (-5.5, 51.5, 0.01)
+
+    def test_un_fichier_tronque_est_refuse(self):
+        import pytest
+        grille = numpy.arange(12, dtype="float64").reshape(3, 4)
+        with pytest.raises(ValueError):
+            rafales.lire_grille_tiff(_tiff(grille, ecart=16)[:-40])

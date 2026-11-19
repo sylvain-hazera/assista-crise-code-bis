@@ -165,11 +165,20 @@ def lire_grille_tiff(octets):
         pas, ancrage = etiquettes[_PAS], etiquettes[_ANCRAGE]
         if abs(pas[0] - pas[1]) > 1e-9 or pas[0] <= 0:
             raise ValueError("grille à pas inégal : format non prévu")
-        # Les bandes doivent se suivre sans trou pour être lues d'un seul tenant.
-        if any(positions[i] + tailles[i] != positions[i + 1] for i in range(len(positions) - 1)):
-            raise ValueError("TIFF en bandes dispersées : format non prévu")
-        valeurs = numpy.frombuffer(octets, dtype=f"{ordre}f{bits // 8}", count=largeur * hauteur,
-                                   offset=positions[0])
+        # Bandes lues chacune à sa place, puis mises bout à bout DANS L'ORDRE DE LEUR NUMÉRO
+        # (c'est lui qui dit quelles lignes elles portent, pas leur position dans le fichier).
+        # Météo-France les rendait contiguës ; depuis le 19/11/2026 au matin, les grilles de
+        # types de précipitation arrivent en bandes dispersées, et le relevé s'arrêtait là.
+        if len(positions) != len(tailles):
+            raise ValueError("TIFF aux bandes incohérentes : format non prévu")
+        attendu = largeur * hauteur * (bits // 8)
+        if all(positions[i] + tailles[i] == positions[i + 1] for i in range(len(positions) - 1)):
+            donnees = octets[positions[0]:positions[0] + attendu]
+        else:
+            donnees = b"".join(octets[p:p + t] for p, t in zip(positions, tailles))
+        if len(donnees) < attendu:
+            raise ValueError("TIFF tronqué : moins de valeurs que la grille n'en annonce")
+        valeurs = numpy.frombuffer(donnees, dtype=f"{ordre}f{bits // 8}", count=largeur * hauteur)
     except (KeyError, IndexError, struct.error) as exc:
         raise ValueError(f"TIFF illisible ({type(exc).__name__})") from exc
     return valeurs.reshape(hauteur, largeur), ancrage[3], ancrage[4], pas[0]
