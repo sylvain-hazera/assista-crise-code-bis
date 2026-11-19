@@ -91,6 +91,24 @@ export function proposerPlan(emplacements: EmplacementCanal[], plan: EntreePlan[
 }
 
 /**
+ * Les ajouts cochés d'office : autant qu'il y a d'emplacements LIBRES, jamais plus — rien n'est
+ * retiré de la radio sans que la personne le décide. Le canal de la commune d'abord (il dure
+ * au-delà de chaque crise), puis les crises dans l'ordre du serveur (les plus récentes
+ * d'abord). Les autres restent proposés, décochés (revue du 19/11/2026 : 9 canaux cochés pour
+ * 6 places, et la commune abandonnée en dernier).
+ */
+export function ajoutsParDefaut(proposition: PropositionPlan): string[] {
+  const parPriorite = [...proposition.ajouts].sort((a, b) =>
+    Number(b.entree.role === 'commune') - Number(a.entree.role === 'commune'));
+  return parPriorite.slice(0, proposition.libres.length).map(a => a.entree.nom);
+}
+
+/** Combien d'ajouts retenus ne tiendront pas, même en libérant tout ce qui peut l'être. */
+export function ajoutsSansPlacePossible(proposition: PropositionPlan, retenus: number): number {
+  return Math.max(0, retenus - proposition.libres.length - proposition.supprimables.length);
+}
+
+/**
  * Les opérations à exécuter, une fois la personne d'accord : d'abord les suppressions qu'elle a
  * cochées, puis les ajouts qu'elle a gardés, dans les emplacements libres puis libérés.
  * Renvoie aussi les ajouts qui ne trouvent toujours pas de place.

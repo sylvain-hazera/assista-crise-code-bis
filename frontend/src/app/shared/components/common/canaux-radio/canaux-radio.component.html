@@ -53,8 +53,13 @@
     @if (p.proposition.manque > 0 && p.proposition.supprimables.length) {
       <fieldset class="propositions suppression">
         <legend>
-          Place insuffisante : libérer {{ manqueEncore }} emplacement(s)
-          @if (manqueEncore === 0) { — c'est bon }
+          @if (impossibles > 0) {
+            Trop de canaux cochés : même en libérant tous les emplacements possibles,
+            {{ impossibles }} ne tiendront pas. Décochez-en {{ impossibles }} plus haut.
+          } @else {
+            Place insuffisante : libérer {{ manqueEncore }} emplacement(s)
+            @if (manqueEncore === 0) { — c'est bon }
+          }
         </legend>
         @for (s of p.proposition.supprimables; track s.index) {
           <label>

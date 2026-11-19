@@ -88,7 +88,9 @@ def crises_de(institution):
         institution=institution, actif=True, statut=StatutImplication.VALIDEE,
         crise__end_date__isnull=True,
     ).values_list("crise_id", flat=True)
-    return Crisis.objects.filter(pk__in=list(ids), end_date__isnull=True).order_by("start_date")
+    # Les plus récentes d'abord : quand la radio manque de place, ce sont elles qu'on garde
+    # (revue du 19/11/2026).
+    return Crisis.objects.filter(pk__in=list(ids), end_date__isnull=True).order_by("-start_date")
 
 
 def canaux_du_perimetre(compagnon):

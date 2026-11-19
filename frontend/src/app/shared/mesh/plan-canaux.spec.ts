@@ -1,4 +1,4 @@
-import { EntreePlan, operationsPlan, proposerPlan } from './plan-canaux';
+import { EntreePlan, ajoutsParDefaut, ajoutsSansPlacePossible, operationsPlan, proposerPlan } from './plan-canaux';
 import { EmplacementCanal } from './pilotes';
 
 const entree = (nom: string, role: EntreePlan['role'], disponible = true): EntreePlan => ({
@@ -67,5 +67,33 @@ describe('Plan de canaux au branchement', () => {
   it('ne libère jamais le primaire, même si on le demande', () => {
     const ops = operationsPlan(proposerPlan([slot(0, 'LongFast', 1)], PLAN), PLAN.slice(0, 1), [0]);
     expect(ops.supprimer).toEqual([]);
+  });
+});
+
+
+describe('Choix par défaut quand la radio manque de place (19/11/2026)', () => {
+  // La radio de la capture : 8 emplacements pleins, Fr_Balise et Fr_EMCOM en 0 et 1, six canaux
+  // de la personne ; le serveur propose 8 crises et la commune.
+  const radio = [slot(0, 'Fr_Balise', 1), slot(1, 'Fr_EMCOM'), slot(2, 'Fr_BlaBla'), slot(3, 'D_HauteLoir'),
+                 slot(4, 'ADRASEC43'), slot(5, 'AASC'), slot(6, 'R_ARA'), slot(7, 'Alerte')];
+  const crises = Array.from({ length: 8 }, (_, i) => entree(`Crise${i}`, 'crise'));
+  const plan = [entree('Fr_Balise', 'communautaire'), entree('Fr_EMCOM', 'communautaire'), ...crises,
+                entree('Tests', 'commune')];
+
+  it("ne coche rien quand aucun emplacement n'est libre : rien n'est retiré sans décision", () => {
+    expect(ajoutsParDefaut(proposerPlan(radio, plan))).toEqual([]);
+  });
+
+  it("coche autant que la place libre, la commune d'abord puis les crises dans l'ordre du serveur", () => {
+    const p = proposerPlan([slot(0, 'Fr_Balise', 1), slot(1, 'Fr_EMCOM'), ...vides(2).map((v, i) => ({ ...v, index: i + 2 }))], plan);
+    expect(p.libres.length).toBe(6);
+    expect(ajoutsParDefaut(p)).toEqual(['Tests', 'Crise0', 'Crise1', 'Crise2', 'Crise3', 'Crise4']);
+  });
+
+  it('dit combien ne tiendront pas, même en libérant tout le libérable', () => {
+    const p = proposerPlan(radio, plan);
+    expect(p.supprimables.length).toBe(6);
+    expect(ajoutsSansPlacePossible(p, 9)).toBe(3);
+    expect(ajoutsSansPlacePossible(p, 6)).toBe(0);
   });
 });

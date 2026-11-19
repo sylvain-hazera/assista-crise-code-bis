@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { RelaisLocalService, RelaisVisible } from '../../../../services/relais-local.service';
-import { EntreePlan } from '../../../mesh/plan-canaux';
+import { EntreePlan, ajoutsParDefaut, ajoutsSansPlacePossible } from '../../../mesh/plan-canaux';
 
 /**
  * Plan de canaux d'une radio Meshtastic branchée : ce qu'elle porte, ce qu'on propose, et le
@@ -35,13 +35,14 @@ export class CanauxRadioComponent implements OnChanges {
   constructor(private moteur: RelaisLocalService) {}
 
   ngOnChanges(): void {
-    // Cases cochées par défaut — tous les ajouts proposés — mais seulement quand la proposition
-    // change, sinon chaque rafraîchissement du moteur effacerait les choix de la personne.
+    // Cases cochées par défaut — ce qui tient dans la place libre (ajoutsParDefaut) — mais
+    // seulement quand la proposition change, sinon chaque rafraîchissement du moteur effacerait
+    // les choix de la personne.
     const p = this.relais.plan?.proposition;
     const signature = JSON.stringify(p?.ajouts.map(a => a.entree.nom) ?? []);
     if (signature !== this.signature) {
       this.signature = signature;
-      this.retenus = new Set(p?.ajouts.map(a => a.entree.nom) ?? []);
+      this.retenus = new Set(p ? ajoutsParDefaut(p) : []);
       this.aSupprimer = new Set();
     }
   }
@@ -64,6 +65,12 @@ export class CanauxRadioComponent implements OnChanges {
     const p = this.plan?.proposition;
     if (!p) { return 0; }
     return Math.max(0, this.retenus.size - p.libres.length - this.aSupprimer.size);
+  }
+
+  /** Retenus en trop, même en libérant tous les emplacements possibles. */
+  get impossibles(): number {
+    const p = this.plan?.proposition;
+    return p ? ajoutsSansPlacePossible(p, this.retenus.size) : 0;
   }
 
   /** Au moins un canal en clé publique va être écrit : l'avertissement doit être lu avant. */
