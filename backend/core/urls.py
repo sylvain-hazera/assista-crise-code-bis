@@ -30,7 +30,7 @@ from .views_pcs import (
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
-    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, OragesView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
+    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, FoudreView, OragesView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -412,6 +412,7 @@ urlpatterns = [
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
     path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
     path('orages/', OragesView.as_view(), name='orages'),
+    path('foudre/', FoudreView.as_view(), name='foudre'),
     path('rafales-prevues/image/', ImageRafalesView.as_view(), name='rafales_prevues_image'),
     path('precipitations-hiver/', PrecipitationsHiverView.as_view(), name='precipitations_hiver'),
     path('precipitations-hiver/image/', ImagePrecipitationHiverView.as_view(), name='precipitations_hiver_image'),

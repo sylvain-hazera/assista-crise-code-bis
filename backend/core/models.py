@@ -3276,6 +3276,8 @@ class CelluleOrage(models.Model):
     trace = models.JSONField(default=list, blank=True)
     # Diagnostic de grêle d'AROME-PI le plus fort sous la cellule (kg/m², voir orages.SEUIL_GRELE_KGM2).
     grele_diagnostic_kgm2 = models.FloatField(null=True, blank=True)
+    # Éclairs vus par le satellite MTG sous la cellule dans les 20 minutes autour de l'image.
+    eclairs = models.PositiveIntegerField(null=True, blank=True)
     releve_le = models.DateTimeField()
 
     class Meta:
@@ -3297,6 +3299,27 @@ class ImageRadarOrage(models.Model):
     radars_absents = models.JSONField(default=list, blank=True)
     # Nombre d'images que contient chaque fenêtre de cumul de pluie ({"1h": 12, …}).
     images_par_fenetre = models.JSONField(default=dict, blank=True)
+    releve_le = models.DateTimeField()
+
+
+class ImpactFoudre(models.Model):
+    """Un éclair vu par l'imageur de foudre du satellite MTG (core/foudre.py), sur la métropole.
+    48 heures gardées. Donnée publique partagée PROD/DEMO."""
+
+    instant = models.DateTimeField(db_index=True)
+    location = gis_models.PointField(srid=4326)
+    duree_ms = models.PositiveIntegerField(default=0)
+    radiance = models.FloatField(default=0)
+    confiance = models.FloatField(null=True, blank=True)
+
+
+class ProduitFoudre(models.Model):
+    """Produit EUMETSAT déjà lu (une tranche de dix minutes, parfois en plusieurs fichiers)."""
+
+    identifiant = models.CharField(max_length=200, primary_key=True)
+    debut = models.DateTimeField()
+    fin = models.DateTimeField()
+    eclairs = models.PositiveIntegerField(default=0)
     releve_le = models.DateTimeField()
 
 

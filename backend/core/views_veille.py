@@ -8,6 +8,7 @@ jamais d'appel sortant.
 Les trois lectures sont publiques : ce sont des données publiques, sans rien de personnel, et
 savoir où trouver du carburant ou quelle route est coupée sert autant à un habitant qu'à une
 mairie. Seul le RÉGLAGE de l'annonce de vigilance est réservé aux acteurs institutionnels."""
+import datetime
 import math
 
 from django.contrib.gis.geos import Polygon
@@ -451,6 +452,7 @@ class OragesView(APIView):
                     "libelle": orages.palier(c.max_mmh), "surface_km2": c.surface_km2,
                     "tendance_mmh": c.tendance_mmh, "communes_sous_la_pluie": c.communes_touchees,
                     "rafale_mesuree": c.rafale_mesuree, "trace": c.trace,
+                    "eclairs": c.eclairs,
                 },
                 "estimations": {
                     "cap_deg": c.cap_deg, "vers": orages.vers(c.cap_deg) if c.cap_deg is not None else None,
@@ -491,7 +493,22 @@ class OragesView(APIView):
                     code=ma_commune).values_list("nom", flat=True).first()) if ma_commune else None,
                 "plus_arrosees": [ligne(c.commune_code, proches[c.commune_code]) for c in plus_arrosees if c.mm_24h >= 1],
             }
+        # Foudre vue par satellite dans l'emprise : 15 minutes et une heure de produits.
+        foudre = None
+        if not request.query_params.get("france") and emprise is not None:
+            from .models import ImpactFoudre
+            derniere = ImpactFoudre.objects.order_by("-instant").values_list("instant", flat=True).first()
+            if derniere is not None:
+                proches = ImpactFoudre.objects.filter(location__within=emprise)
+                foudre = {
+                    **sources_ouvertes.resume("FOUDRE_MTG"),
+                    "eclairs_15min": proches.filter(instant__gte=derniere - datetime.timedelta(minutes=15)).count(),
+                    "eclairs_1h": proches.filter(instant__gte=derniere - datetime.timedelta(hours=1)).count(),
+                    "dernier_ici": proches.order_by("-instant").values_list("instant", flat=True).first(),
+                    "derniere_donnee": derniere,
+                }
         return Response({
+            "foudre": foudre,
             "cumuls": cumuls,
             **sources_ouvertes.resume("ORAGES_RADAR"),
             "heure_image": image.heure if image else None,
@@ -500,6 +517,34 @@ class OragesView(APIView):
             "centre": centre, "rayon_km": rayon, "couvert": couvert,
             "cellules": resultats,
         })
+
+
+class FoudreView(APIView):
+    """GET /api/foudre/ : éclairs vus par le satellite MTG (core/foudre.py), en GeoJSON, pour la
+    carte. `bbox` (sinon la France entière gardée) et `minutes` (60 par défaut, 360 au plus),
+    comptées depuis la donnée la plus récente : les produits arrivent dix à vingt minutes après
+    coup, et compter depuis maintenant afficherait une carte vide en permanence."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from .models import ImpactFoudre
+        try:
+            minutes = min(max(int(request.query_params.get("minutes", 60)), 5), 360)
+        except (TypeError, ValueError):
+            minutes = 60
+        derniere = ImpactFoudre.objects.order_by("-instant").values_list("instant", flat=True).first()
+        points = []
+        if derniere is not None:
+            qs = ImpactFoudre.objects.filter(instant__gte=derniere - datetime.timedelta(minutes=minutes))
+            if request.query_params.get("bbox"):
+                emprise, _centre, _rayon = _emprise(request)
+                qs = qs.filter(location__within=emprise)
+            for e in qs.order_by("-instant")[:5000]:
+                points.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [e.location.x, e.location.y]},
+                               "properties": {"instant": e.instant.isoformat(),
+                                              "age_min": round((derniere - e.instant).total_seconds() / 60)}})
+        return Response({**sources_ouvertes.resume("FOUDRE_MTG"), "derniere_donnee": derniere,
+                         "type": "FeatureCollection", "features": points})
 
 
 class ImageRafalesView(APIView):

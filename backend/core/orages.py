@@ -584,6 +584,12 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
             "grele_prevue": prevision["grele"], "rafale_prevue_kmh": prevision["rafale_kmh"],
             "rafale_mesuree": rafale_mesuree(contour, grille.heure),
         })
+    # Éclairs vus par le satellite sous chaque cellule (contour élargi de ~3 km, la précision
+    # d'un pixel de l'imageur), dans les 20 minutes qui précèdent l'image et les 10 qui suivent.
+    from .foudre import eclairs_dans
+    for c in resultat:
+        c["eclairs"] = eclairs_dans(c["contour"].buffer(0.03), grille.heure - datetime.timedelta(minutes=20),
+                                    grille.heure + datetime.timedelta(minutes=10)).count()
     if avec_diagnostic_grele and resultat:
         try:
             for c, valeur in zip(resultat, diagnostic_grele([c["contour"] for c in resultat], grille.heure)):
@@ -616,7 +622,7 @@ def enregistrer(grille, analyse, maintenant=None):
             communes_touchees=c["communes_touchees"], communes_estimees=c["communes_estimees"],
             grele_prevue=c["grele_prevue"], rafale_prevue_kmh=c["rafale_prevue_kmh"],
             rafale_mesuree=c["rafale_mesuree"], trace=c["trace"], releve_le=maintenant,
-            grele_diagnostic_kgm2=c.get("grele_diagnostic_kgm2"),
+            grele_diagnostic_kgm2=c.get("grele_diagnostic_kgm2"), eclairs=c.get("eclairs"),
         ) for c in analyse])
         ImageRadarOrage.objects.update_or_create(heure=grille.heure, defaults={
             "largeur": largeur, "hauteur": hauteur, "projdef": grille.projdef,

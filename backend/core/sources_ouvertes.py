@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
-    observations_meteo, orages, pluie,
+    foudre, observations_meteo, orages, pluie,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
@@ -59,6 +59,10 @@ SOURCES = {
         # minute si une image est parue -- pas par le cron de dix minutes, trop lent.
         Source("ORAGES_RADAR", "Orages et pluies intenses (radar)", orages.relever,
                datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
+        # Éclairs vus par le satellite MTG (19/11/2026) : même service que les orages, un
+        # produit par tranche de dix minutes, paru dix à vingt minutes après coup.
+        Source("FOUDRE_MTG", "Éclairs vus par satellite (MTG)", foudre.relever,
+               datetime.timedelta(minutes=2), foudre.FRAICHEUR_MAX, "EUMETSAT (MTG Lightning Imager)"),
         # Vent moyen pour l'animation de la carte : un calcul toutes les six heures, une
         # échéance nouvelle par heure, 300 Ko chacune.
         Source("VENT", "Vent prévu (écoulement, modèle ARPEGE)", vent.relever,
@@ -157,7 +161,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG"}
 
 
 def etat(code):
@@ -200,7 +204,7 @@ def relever_source(code, forcer=False, maintenant=None):
     trace.dernier_essai = maintenant
     try:
         lignes = source.relever()
-    except meteo_france.CleAbsente:
+    except (meteo_france.CleAbsente, foudre.IdentifiantsAbsents):
         trace.erreur = "aucune clé sur cette machine"
         trace.save(update_fields=["dernier_essai", "erreur"])
         return "échec"

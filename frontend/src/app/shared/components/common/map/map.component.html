@@ -148,6 +148,11 @@
         <span class="layer-dot orages-dot"></span>
         Orages (radar)@if (layerVisibility.orages && oragesHeureImage) { <small [class.ancien]="oragesPerime">&nbsp;{{ oragesHeureImage | date:'HH:mm' }}</small> }
       </label>
+      <label class="layer-toggle-item" title="Éclairs vus depuis l'espace par l'imageur de foudre du satellite MTG (EUMETSAT), sur l'heure de données la plus récente : 10 à 20 minutes de retard sur l'éclair, position à quelques kilomètres près. Du jaune (récent) au gris (une heure). Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.eclairs" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot eclairs-dot"></span>
+        Éclairs (satellite)@if (layerVisibility.eclairs && eclairsDerniereDonnee) { <small>&nbsp;{{ eclairsDerniereDonnee | date:'HH:mm' }}</small> }
+      </label>
       <label class="layer-toggle-item" title="Vent moyen prévu par Météo-France (modèle ARPEGE, maille de 10 km), animé : les traînes vont où va le vent, plus vite là où il force. Ni les rafales, ni une mesure. Assombrit légèrement la carte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.vent" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot vent-dot"></span>

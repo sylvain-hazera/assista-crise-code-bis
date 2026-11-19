@@ -33,11 +33,13 @@ class Command(BaseCommand):
             return
         try:
             while True:
-                resultat = sources_ouvertes.relever_source("ORAGES_RADAR")
-                if resultat != "ignoré":
-                    trace = sources_ouvertes.etat("ORAGES_RADAR")
-                    self.stdout.write(f"Orages : {resultat} ({trace.lignes if trace else 0} cellule(s))"
-                                      + (f" -- {trace.erreur}" if trace and trace.erreur else ""))
+                # La foudre d'abord : les éclairs servent à l'analyse des cellules.
+                for code, unite in (("FOUDRE_MTG", "éclair(s) ajouté(s)"), ("ORAGES_RADAR", "cellule(s)")):
+                    resultat = sources_ouvertes.relever_source(code)
+                    if resultat != "ignoré":
+                        trace = sources_ouvertes.etat(code)
+                        self.stdout.write(f"{code} : {resultat} ({trace.lignes if trace else 0} {unite})"
+                                          + (f" -- {trace.erreur}" if trace and trace.erreur else ""))
                 if not options["service"]:
                     return
                 time.sleep(60)

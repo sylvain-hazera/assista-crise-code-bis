@@ -345,3 +345,10 @@ table.mesures, table.mesures-sante {
   td.fort { font-weight: 700; color: var(--ac-red-text, #991b1b); }
   .ma-commune td { background: var(--ac-surface-2, #f8fafc); }
 }
+
+.orages .foudre {
+  display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; line-height: 1.5; color: var(--ac-text, #111827);
+  .material-icons { color: var(--ac-text-subtle, #6b7280); }
+  &.active .material-icons { color: var(--ac-amber-text, #b45309); }
+  small { display: block; color: var(--ac-text-muted, #4b5563); }
+}

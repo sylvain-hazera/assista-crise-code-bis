@@ -63,6 +63,8 @@ interface LayerVisibility {
   /** Orages selon les relevés radar (19/11/2026) : contours des cellules de pluie intense, et
    * couloir estimé sur une heure. Rafraîchi toutes les deux minutes tant qu'il est affiché. */
   orages: boolean;
+  /** Éclairs vus par le satellite MTG dans l'heure de données la plus récente (19/11/2026). */
+  eclairs: boolean;
   /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
@@ -151,6 +153,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     rafales: false,
     hiver: false,
     orages: false,
+    eclairs: false,
     vigilanceCrues: false,
     zonesBrulees: false,
     secteursVulnerables: false,
@@ -255,7 +258,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
     this.applyLayerVisibility('orages-layer', this.layerVisibility.orages);
     this.applyLayerVisibility('orages-couloirs-layer', this.layerVisibility.orages);
-    if (this.layerVisibility.orages && !this.rafraichissementOrages) {
+    this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
+    if ((this.layerVisibility.orages || this.layerVisibility.eclairs) && !this.rafraichissementOrages) {
       // Une image radar toutes les cinq minutes : relire toutes les deux suffit.
       this.rafraichissementOrages = setInterval(() => this.rafraichirVeille(), 120_000);
     }
@@ -290,11 +294,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
-        && !qualiteAir && !orages) return;
+        && !qualiteAir && !orages && !eclairs) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -630,6 +634,25 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'fill-color': ['match', ['get', 'risque'], 5, '#7f1d1d', 4, '#ff0000', 3, '#ff9900', 2, '#ffff00', 1, '#ccff66', '#9ca3af'],
           'fill-opacity': 0.4, 'fill-outline-color': '#374151',
         }, this.layerVisibility.avalanche),
+        error: () => {},
+      });
+    }
+    if (eclairs) {
+      this.veilleService.foudre({ bbox }).subscribe({
+        next: (reponse) => {
+          this.eclairsDerniereDonnee = reponse.derniere_donnee;
+          const features = reponse.features.map(f => ({
+            ...f, properties: {
+              ...f.properties,
+              infobulle: `<strong>Éclair vu par satellite</strong><br>${new Date((f.properties as { instant: string }).instant).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+                + '<br><small>MTG (EUMETSAT) : position à quelques kilomètres près, 10 à 20 min de retard</small>',
+            },
+          }));
+          this.afficherCoucheVeille('eclairs', { type: 'FeatureCollection', features } as FeatureCollection<Geometry>,
+            // Du plus récent (jaune vif) au plus ancien (gris) sur l'heure affichée.
+            ['interpolate', ['linear'], ['get', 'age_min'], 0, '#facc15', 20, '#f97316', 60, '#9ca3af'],
+            this.layerVisibility.eclairs);
+        },
         error: () => {},
       });
     }
@@ -1119,6 +1142,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   oragesHeureImage: string | null = null;
+  eclairsDerniereDonnee: string | null = null;
   oragesPerime = false;
   private rafraichissementOrages: ReturnType<typeof setInterval> | null = null;
 

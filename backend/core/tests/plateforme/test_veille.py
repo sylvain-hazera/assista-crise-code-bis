@@ -1389,6 +1389,14 @@ class TestZoneAtteignable:
 
 class TestCommandeDeReleve:
 
+    @pytest.fixture(autouse=True)
+    def _verrou_propre(self, tmp_path, monkeypatch):
+        """Le verrou de la commande est un fichier du dossier temporaire : partagé, il ferait se
+        retirer la commande d'un processus d'essai pendant qu'un autre le tient (suite en
+        parallèle, 19/11/2026)."""
+        import tempfile
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
     def _lancer(self, resultats, *arguments):
         from django.core.management import call_command
 

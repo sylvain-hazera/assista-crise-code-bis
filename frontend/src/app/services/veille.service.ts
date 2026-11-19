@@ -59,6 +59,12 @@ export class VeilleService {
     return `${this.api}/pluie-prevue/image/?echeance=${encodeURIComponent(echeance)}`;
   }
 
+  /** Éclairs vus par le satellite MTG, en GeoJSON, pour la carte (60 dernières minutes). */
+  foudre(emprise: EmpriseVeille, minutes = 60): Observable<GeoJSON.FeatureCollection & { derniere_donnee: string | null; perime: boolean }> {
+    return this.http.get<GeoJSON.FeatureCollection & { derniere_donnee: string | null; perime: boolean }>(
+      `${this.api}/foudre/`, { params: { ...this.params(emprise), minutes: String(minutes) } });
+  }
+
   /** Orages et pluies intenses autour de la commune de l'institution (radar, toutes les 5 min). */
   orages(emprise?: EmpriseVeille): Observable<OragesRadar> {
     return this.http.get<OragesRadar>(`${this.api}/orages/`, emprise ? { params: this.params(emprise) } : {});

@@ -202,7 +202,8 @@ services:
     command: ["analyser_orages", "--service"]
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
-    secrets: [meteofrance_cle_api]
+    # eumetsat_api : « clé:secret » du Data Store d'EUMETSAT, pour la foudre vue par satellite.
+    secrets: [meteofrance_cle_api, eumetsat_api]
     networks: [back, db, front]
     depends_on:
       db: { condition: service_healthy }
@@ -584,6 +585,7 @@ secrets:
   # même vide, sinon Compose refuse de créer le conteneur ; vide, la veille météo se tait.
   meteofrance_cle_api:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meteofrance_cle_api.txt" }
   openweathermap_cle_api:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/openweathermap_cle_api.txt" }
+  eumetsat_api:              { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/eumetsat_api.txt" }
   # Clé de signature des satellites, chiffrée par la phrase de passe (jamais en clair). Produite
   # par scripts/satellites/preparer-signature-web.sh. Le fichier doit exister, même vide : vide,
   # la page Satellites propose seulement le collage d'une signature faite dans un terminal.

@@ -647,6 +647,8 @@ export interface CelluleOrage {
     intensite_max_mmh: number; intensite_moyenne_mmh: number; libelle: string; surface_km2: number;
     tendance_mmh: number | null; communes_sous_la_pluie: CommuneOrage[];
     rafale_mesuree: { kmh: number; station: string; mesure_le: string | null } | null;
+    /** Éclairs vus par le satellite MTG sous la cellule, autour de l'heure de l'image. */
+    eclairs: number | null;
   };
   estimations: {
     cap_deg: number | null; vers: string | null; vitesse_kmh: number | null;
@@ -678,4 +680,12 @@ export interface OragesRadar {
   couvert: boolean | null;
   cellules: CelluleOrage[];
   cumuls: CumulsPluie | null;
+  foudre: FoudreIci | null;
+}
+
+/** Éclairs vus par le satellite MTG autour de la commune (backend/core/foudre.py). Comptés
+ * depuis la donnée la plus récente, qui a 10 à 20 minutes de retard sur l'éclair. */
+export interface FoudreIci {
+  source: string; releve_le: string | null; perime: boolean;
+  eclairs_15min: number; eclairs_1h: number; dernier_ici: string | null; derniere_donnee: string;
 }

@@ -198,6 +198,7 @@
               sur {{ c.releves.surface_km2 | number:'1.0-0' }} km²@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh >= 10) {, <strong>en renforcement</strong>}@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh <= -10) {, en affaiblissement}.
               @if (c.releves.communes_sous_la_pluie.length) { Sous la pluie : {{ communesOrage(c) }}. }
               @if (c.releves.rafale_mesuree; as r) { Rafale mesurée : <strong>{{ r.kmh }} km/h</strong> à {{ r.station }}. }
+              @if (c.releves.eclairs) { <strong>{{ c.releves.eclairs }} éclair(s)</strong> vus par satellite sous la cellule. }
             </p>
           </div>
           @if (c.estimations.vitesse_kmh != null) {
@@ -232,6 +233,24 @@
         @if (orages.couvert !== false && !orages.perime) {
           <p class="calme">Aucune cellule de pluie intense (30 mm/h ou plus) à moins de {{ orages.rayon_km }} km de votre commune.</p>
         }
+      }
+      @if (orages.foudre; as f) {
+        <p class="foudre" [class.active]="f.eclairs_15min > 0">
+          <span class="material-icons">bolt</span>
+          <span>
+            <strong>Foudre, selon le satellite :</strong>
+            @if (f.eclairs_1h) {
+              {{ f.eclairs_1h }} éclair(s) en une heure à moins de {{ orages.rayon_km }} km, dont {{ f.eclairs_15min }} dans le dernier quart d'heure ;
+              dernier à {{ f.dernier_ici | date:'HH:mm' }}.
+            } @else {
+              aucun éclair à moins de {{ orages.rayon_km }} km dans l'heure.
+            }
+            <small [class.ancien]="f.perime">
+              Données jusqu'à {{ f.derniere_donnee | date:'HH:mm' }} (MTG, EUMETSAT) : 10 à 20 minutes de retard sur l'éclair,
+              position à quelques kilomètres près.@if (f.perime) { <strong>Relevé ancien.</strong> }
+            </small>
+          </span>
+        </p>
       }
       @if (orages.cumuls; as cumuls) {
         <div class="cumuls">
