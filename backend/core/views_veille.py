@@ -415,7 +415,7 @@ class OragesView(APIView):
 
         image = ImageRadarOrage.objects.order_by("-heure").first()
         cellules = CelluleOrage.objects.all()
-        centre, rayon, couvert = None, None, None
+        centre, rayon, couvert, emprise = None, None, None, None
         if not request.query_params.get("france"):
             emprise, centre, rayon = _emprise(request, RAYON_ORAGES_KM)
             if emprise is None:
@@ -457,11 +457,42 @@ class OragesView(APIView):
                     "vitesse_kmh": c.vitesse_kmh, "communes_atteintes": c.communes_estimees,
                     "ligne_de_grain": c.ligne_de_grain, "longueur_km": c.longueur_km,
                 },
-                "prevision_meteo_france": {"grele": c.grele_prevue, "rafale_kmh": c.rafale_prevue_kmh},
+                "prevision_meteo_france": {
+                    "grele": c.grele_prevue, "rafale_kmh": c.rafale_prevue_kmh,
+                    "grele_diagnostic_kgm2": c.grele_diagnostic_kgm2,
+                    "grele_niveau": orages.niveau_grele(c.grele_diagnostic_kgm2),
+                },
             })
         if centre:
             resultats.sort(key=lambda r: r["distance_km"])
+        # Cumuls de pluie selon le radar : la commune de l'appelant, puis les plus arrosées de
+        # l'emprise. Lus dans la table recalculée à chaque image : aucun calcul ici.
+        cumuls = None
+        if not request.query_params.get("france") and emprise is not None:
+            from .models import CumulPluieCommune
+            ouest, sud, est, nord = emprise.extent
+            proches = dict(Commune.objects.filter(
+                centre_longitude__gte=ouest, centre_longitude__lte=est,
+                centre_latitude__gte=sud, centre_latitude__lte=nord).values_list("code", "nom"))
+            lignes = {c.commune_code: c for c in CumulPluieCommune.objects.filter(commune_code__in=list(proches))}
+            institution = _institution_de_l_appelant(request)
+            ma_commune = institution.commune_code if institution and institution.commune_code else None
+
+            def ligne(code, nom):
+                c = lignes.get(code)
+                valeurs = {"1h": c.mm_1h if c else 0, "3h": c.mm_3h if c else 0, "24h": c.mm_24h if c else 0}
+                return {"code": code, "nom": nom or code, "mm": valeurs,
+                        "fort": [f for f, v in valeurs.items() if v >= orages.SEUILS_CUMUL_MM[f]]}
+            plus_arrosees = sorted(lignes.values(), key=lambda c: (-c.mm_3h, -c.mm_24h))[:10]
+            cumuls = {
+                "fenetres": image.images_par_fenetre if image else {},
+                "attendues": orages.FENETRES_CUMUL, "seuils_mm": orages.SEUILS_CUMUL_MM,
+                "ma_commune": ligne(ma_commune, proches.get(ma_commune) or Commune.objects.filter(
+                    code=ma_commune).values_list("nom", flat=True).first()) if ma_commune else None,
+                "plus_arrosees": [ligne(c.commune_code, proches[c.commune_code]) for c in plus_arrosees if c.mm_24h >= 1],
+            }
         return Response({
+            "cumuls": cumuls,
             **sources_ouvertes.resume("ORAGES_RADAR"),
             "heure_image": image.heure if image else None,
             "radars": len(image.radars) if image else 0,

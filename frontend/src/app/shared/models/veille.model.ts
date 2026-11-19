@@ -640,6 +640,9 @@ export interface CommuneOrage { code: string; nom: string; dans_min?: number; }
 export interface CelluleOrage {
   identifiant: string;
   distance_km: number | null;
+  /** Contour de la cellule et couloir balayé en une heure (estimation), en GeoJSON. */
+  contour: GeoJSON.Polygon;
+  couloir: GeoJSON.Polygon | null;
   releves: {
     intensite_max_mmh: number; intensite_moyenne_mmh: number; libelle: string; surface_km2: number;
     tendance_mmh: number | null; communes_sous_la_pluie: CommuneOrage[];
@@ -649,7 +652,23 @@ export interface CelluleOrage {
     cap_deg: number | null; vers: string | null; vitesse_kmh: number | null;
     communes_atteintes: CommuneOrage[]; ligne_de_grain: boolean; longueur_km: number;
   };
-  prevision_meteo_france: { grele: boolean; rafale_kmh: number | null };
+  prevision_meteo_france: {
+    grele: boolean; rafale_kmh: number | null;
+    /** Diagnostic de grêle d'AROME-PI (kg/m²) ; niveau au-delà de 8 et de 12 kg/m². */
+    grele_diagnostic_kgm2: number | null; grele_niveau: string | null;
+  };
+}
+
+/** Cumuls de pluie d'une commune selon le radar, en mm. `fort` : fenêtres au-delà du repère. */
+export interface CumulCommune { code: string; nom: string; mm: Record<'1h' | '3h' | '24h', number>; fort: string[]; }
+
+export interface CumulsPluie {
+  /** Images réellement disponibles par fenêtre (un service relancé n'a pas 24 h d'historique). */
+  fenetres: Partial<Record<'1h' | '3h' | '24h', number>>;
+  attendues: Record<'1h' | '3h' | '24h', number>;
+  seuils_mm: Record<'1h' | '3h' | '24h', number>;
+  ma_commune: CumulCommune | null;
+  plus_arrosees: CumulCommune[];
 }
 
 export interface OragesRadar {
@@ -658,4 +677,5 @@ export interface OragesRadar {
   centre: { latitude: number; longitude: number } | null; rayon_km: number | null;
   couvert: boolean | null;
   cellules: CelluleOrage[];
+  cumuls: CumulsPluie | null;
 }

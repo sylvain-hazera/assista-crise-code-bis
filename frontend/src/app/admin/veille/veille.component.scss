@@ -334,3 +334,14 @@ table.mesures, table.mesures-sante {
   .estimations .libelle-nature { color: var(--ac-blue-text, #1e40af); }
   .prevision .libelle-nature { color: var(--ac-amber-text, #92400e); }
 }
+
+.orages .cumuls {
+  margin: 14px 0 6px;
+  h3 { font-size: .95rem; margin: 0 0 6px; color: var(--ac-text, #111827); }
+  table { border-collapse: collapse; font-size: .88rem; min-width: 320px; }
+  th, td { padding: 4px 10px; text-align: right; border-bottom: 1px solid var(--ac-border, #f1f5f9); font-variant-numeric: tabular-nums; color: var(--ac-text, #111827); }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ac-text-muted, #4b5563); }
+  td.fort { font-weight: 700; color: var(--ac-red-text, #991b1b); }
+  .ma-commune td { background: var(--ac-surface-2, #f8fafc); }
+}

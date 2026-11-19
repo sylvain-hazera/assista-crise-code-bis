@@ -197,3 +197,55 @@ class TestReleveEtVue:
     def test_le_cron_ne_releve_pas_le_radar(self):
         assert "ORAGES_RADAR" in sources_ouvertes.SOURCES
         assert "ORAGES_RADAR" in sources_ouvertes.SOURCES_EN_CONTINU
+
+
+@pytest.mark.django_db
+class TestDiagnosticGreleEtCumuls:
+
+    def test_seuils_et_regroupement(self):
+        assert orages.niveau_grele(None) is None and orages.niveau_grele(5) is None
+        assert orages.niveau_grele(8.5) == "grêle possible" and orages.niveau_grele(13) == "grosse grêle possible"
+        groupes = orages._regrouper([(0, 0, 1, 1), (0.5, 0.5, 2, 2), (5, 5, 6, 6)])
+        assert sorted(len(g["membres"]) for g in groupes) == [1, 2]
+
+    def test_le_diagnostic_est_le_plus_fort_sous_la_cellule(self):
+        from django.contrib.gis.geos import Polygon
+        from core.models import ImageRafales
+        heure = datetime.datetime(2026, 11, 19, 20, 5, tzinfo=datetime.timezone.utc)
+        ImageRafales.objects.create(echeance=heure, calcul=heure.replace(minute=0), image=b"", releve_le=heure)
+        contour = Polygon.from_bbox((0.02, 44.02, 0.06, 44.06))
+        contour.srid = 4326
+        grille = numpy.zeros((20, 20))          # 0,01° par point, à partir de (0.0 ; 44.1)
+        grille[5, 4] = 9.5                       # sous la cellule (0.04 ; 44.05)
+        grille[15, 15] = 30.0                    # hors de la cellule : ignoré
+        reponse = mock.Mock(status_code=200, content=b"II*\x00reste")
+        with mock.patch.object(orages.meteo_france, "lire_cle", return_value="cle"), \
+             mock.patch.object(orages.requests, "get", return_value=reponse) as appel, \
+             mock.patch("core.rafales.lire_grille_tiff", return_value=(grille, 0.0, 44.1, 0.01)):
+            (valeur,) = orages.diagnostic_grele([contour], heure)
+        assert valeur == 9.5
+        parametres = dict((k, v) for k, v in appel.call_args.kwargs["params"] if k != "subset")
+        assert parametres["coverageid"] == "DIAG_GRELE__GROUND_OR_WATER_SURFACE___2026-11-19T20.00.00Z"
+        assert ("subset", "time(2026-11-19T20:15:00Z)") in appel.call_args.kwargs["params"]
+
+    def test_cumuls_par_commune(self, client):
+        orages.IndexCommunes._cache = {}
+        a = orages.lire(image_hdf5([(300, 300, 10, 2.0)], heure="190000"))      # 2 mm en 5 min
+        creer_commune(a, "99001", "Arrosee", 150, 150)
+        creer_commune(a, "99002", "Seche", 50, 250)
+        orages.cumuler_pluie(a)
+        b = orages.lire(image_hdf5([(300, 300, 10, 3.0)], heure="190500"))
+        orages.cumuler_pluie(b)
+        from core.models import CumulPluieCommune, PluieCommunesImage
+        assert PluieCommunesImage.objects.count() == 2
+        cumul = CumulPluieCommune.objects.get(commune_code="99001")
+        assert cumul.mm_1h == pytest.approx(5.0, abs=0.2) and cumul.mm_24h == pytest.approx(5.0, abs=0.2)
+        assert not CumulPluieCommune.objects.filter(commune_code="99002").exists()
+
+        ImageRadarOrage.objects.create(heure=b.heure, largeur=1, hauteur=1, projdef=PROJDEF, x0=0, y0=0,
+                                       grille=b"", images_par_fenetre={"1h": 2, "3h": 2, "24h": 2}, releve_le=b.heure)
+        lon, lat = geo(b, 150, 150)
+        r = client.get("/api/orages/", {"lat": lat, "lon": lon, "rayon_km": 20})
+        cumuls = r.json()["cumuls"]
+        assert [c["nom"] for c in cumuls["plus_arrosees"]] == ["Arrosee"]
+        assert cumuls["fenetres"]["1h"] == 2 and cumuls["seuils_mm"]["3h"] == 50

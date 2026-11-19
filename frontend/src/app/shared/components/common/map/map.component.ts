@@ -25,7 +25,7 @@ import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-op
 import { VeilleService } from '../../../../services/veille.service';
 import {
   EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_GRAVITE_ANTENNE,
-  LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues,
+  LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues, CelluleOrage,
   StationCarburant,
   VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
@@ -60,6 +60,9 @@ interface LayerVisibility {
   rafales: boolean;
   /** Neige, verglas et grêle prévus dans les trois heures, sur la même réglette. */
   hiver: boolean;
+  /** Orages selon les relevés radar (19/11/2026) : contours des cellules de pluie intense, et
+   * couloir estimé sur une heure. Rafraîchi toutes les deux minutes tant qu'il est affiché. */
+  orages: boolean;
   /** Tronçons de cours d'eau surveillés par Vigicrues, colorés par niveau de vigilance. */
   vigilanceCrues: boolean;
   /** Surfaces brûlées des trente derniers jours (EFFIS). */
@@ -147,6 +150,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     pluie: false,
     rafales: false,
     hiver: false,
+    orages: false,
     vigilanceCrues: false,
     zonesBrulees: false,
     secteursVulnerables: false,
@@ -249,6 +253,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
+    this.applyLayerVisibility('orages-layer', this.layerVisibility.orages);
+    this.applyLayerVisibility('orages-couloirs-layer', this.layerVisibility.orages);
+    if (this.layerVisibility.orages && !this.rafraichissementOrages) {
+      // Une image radar toutes les cinq minutes : relire toutes les deux suffit.
+      this.rafraichissementOrages = setInterval(() => this.rafraichirVeille(), 120_000);
+    }
     this.applyLayerVisibility('secteurs-vulnerables-layer', this.layerVisibility.secteursVulnerables);
     this.applyLayerVisibility('foyers-actifs-layer', this.layerVisibility.foyersActifs);
     this.applyLayerVisibility('avalanche-layer', this.layerVisibility.avalanche);
@@ -280,11 +290,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles, qualiteAir } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages } = this.layerVisibility;
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
-        && !qualiteAir) return;
+        && !qualiteAir && !orages) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -620,6 +630,36 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'fill-color': ['match', ['get', 'risque'], 5, '#7f1d1d', 4, '#ff0000', 3, '#ff9900', 2, '#ffff00', 1, '#ccff66', '#9ca3af'],
           'fill-opacity': 0.4, 'fill-outline-color': '#374151',
         }, this.layerVisibility.avalanche),
+        error: () => {},
+      });
+    }
+    if (orages) {
+      this.veilleService.orages({ bbox }).subscribe({
+        next: (reponse) => {
+          this.oragesHeureImage = reponse.heure_image;
+          this.oragesPerime = reponse.perime;
+          const cellules = reponse.cellules;
+          // Le couloir d'abord : il passe SOUS les cellules.
+          this.afficherTracesVeille('orages-couloirs', 'line', {
+            type: 'FeatureCollection',
+            features: cellules.filter(c => c.couloir).map(c => ({
+              type: 'Feature', geometry: c.couloir as Geometry,
+              properties: { infobulle: this.infobulleOrage(c) },
+            })),
+          }, { 'line-color': '#1e40af', 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.8 },
+          this.layerVisibility.orages);
+          this.afficherTracesVeille('orages', 'fill', {
+            type: 'FeatureCollection',
+            features: cellules.map(c => ({
+              type: 'Feature', geometry: c.contour as Geometry,
+              properties: { intensite: c.releves.intensite_max_mmh, infobulle: this.infobulleOrage(c) },
+            })),
+          }, {
+            // Paliers d'intensité : 30, 50, 100 mm/h.
+            'fill-color': ['step', ['get', 'intensite'], '#f59e0b', 50, '#dc2626', 100, '#7e22ce'],
+            'fill-opacity': 0.55, 'fill-outline-color': '#450a0a',
+          }, this.layerVisibility.orages);
+        },
         error: () => {},
       });
     }
@@ -1078,6 +1118,30 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  oragesHeureImage: string | null = null;
+  oragesPerime = false;
+  private rafraichissementOrages: ReturnType<typeof setInterval> | null = null;
+
+  /** Infobulle d'une cellule : les trois natures d'information, sans les mélanger. */
+  private infobulleOrage(c: CelluleOrage): string {
+    const r = c.releves, e = c.estimations, p = c.prevision_meteo_france;
+    let html = `<strong>${this.echapper(r.libelle)}</strong>`
+      + `<br><small>Selon les relevés</small><br>jusqu'à ${Math.round(r.intensite_max_mmh)} mm/h sur ${Math.round(r.surface_km2)} km²`;
+    if (r.rafale_mesuree) {
+      html += `<br>rafale mesurée ${r.rafale_mesuree.kmh} km/h (${this.echapper(r.rafale_mesuree.station)})`;
+    }
+    if (e.vitesse_kmh != null) {
+      html += `<br><small>Nos estimations (qui ne sont pas des prévisions)</small><br>vers ${this.echapper(e.vers)}, ~${e.vitesse_kmh} km/h`;
+      if (e.ligne_de_grain) html += '<br>forme de ligne de grain';
+    }
+    if (p.grele || p.rafale_kmh || p.grele_niveau) {
+      html += '<br><small>Selon la prévision Météo-France</small><br>'
+        + [p.grele ? 'grêle prévue' : '', p.grele_niveau ? `diagnostic : ${this.echapper(p.grele_niveau)}` : '',
+           p.rafale_kmh ? `rafales ${p.rafale_kmh} km/h et plus` : ''].filter(Boolean).join(', ');
+    }
+    return html;
+  }
+
   private afficherTracesVeille(sourceId: string, type: 'line' | 'fill', data: FeatureCollection<Geometry>,
                                paint: any, visible: boolean): void {
     this.runWhenMapReady(() => {
@@ -1263,6 +1327,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.rafraichissementPrevision) clearInterval(this.rafraichissementPrevision);
     this.animationVent?.arreter();
     if (this.rafraichissementVent) clearInterval(this.rafraichissementVent);
+    if (this.rafraichissementOrages) clearInterval(this.rafraichissementOrages);
     if (this.map) this.map.remove();
   }
 

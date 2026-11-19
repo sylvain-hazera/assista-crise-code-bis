@@ -85,8 +85,11 @@ class GrilleRadar:
     """Une image radar ramenée à 1 km : intensité en mm/h (float32, NaN là où rien n'est vu),
     et de quoi passer d'un point de la grille à des coordonnées géographiques."""
 
-    def __init__(self, taux, projdef, x0, y0, heure, radars, absents):
+    def __init__(self, taux, projdef, x0, y0, heure, radars, absents, taux_moyen=None):
         self.taux = taux
+        # Moyenne des quatre points de 500 m : pour les CUMULS, où la valeur la plus forte
+        # surestimerait la pluie tombée. `taux` (la plus forte) sert aux cellules.
+        self.taux_moyen = taux_moyen if taux_moyen is not None else taux
         self.projdef = projdef
         self.x0, self.y0 = x0, y0          # coin haut gauche, mètres dans la projection
         self.heure = heure
@@ -199,13 +202,14 @@ def lire(octets):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)   # « All-NaN slice » : voulu, donne NaN
         taux_1km = numpy.nanmax(blocs, axis=(1, 3))
+        taux_moyen_1km = numpy.nanmean(blocs, axis=(1, 3))
 
     # Coin haut gauche dans la projection, à partir du coin géographique donné par le fichier.
     from django.contrib.gis.gdal import CoordTransform, SpatialReference
     from django.contrib.gis.geos import Point
     coin = Point(coin_lon, coin_lat, srid=4326)
     coin.transform(CoordTransform(SpatialReference(4326), SpatialReference(projdef)))
-    return GrilleRadar(taux_1km, projdef, coin.x, coin.y, heure, radars, absents)
+    return GrilleRadar(taux_1km, projdef, coin.x, coin.y, heure, radars, absents, taux_moyen_1km)
 
 
 # ── Cellules ─────────────────────────────────────────────────────────────────
@@ -368,6 +372,99 @@ def prevu_par_meteo_france(points, heure):
     return resultat
 
 
+#: Diagnostic de grêle d'AROME-PI (`DIAG_GRELE`, kg/m²). Seuils de Météo-France pour classer
+#: la grêle dans ses types de précipitation : au-delà de 8, grêle ; au-delà de 12, grosse grêle.
+#: Vérifié le 19/11/2026 sur un découpage réel : valeurs de 0 à 10,8 sur les Landes un soir
+#: orageux. C'est un contenu diagnostiqué par le modèle, pas une quantité tombée au sol.
+COUVERTURE_GRELE = "DIAG_GRELE__GROUND_OR_WATER_SURFACE"
+SEUIL_GRELE_KGM2, SEUIL_GROSSE_GRELE_KGM2 = 8.0, 12.0
+#: Au plus autant de découpages par image : chaque découpage est un appel à Météo-France.
+DECOUPAGES_MAX = 8
+MARGE_DEG = 0.1
+
+
+def niveau_grele(kgm2):
+    if kgm2 is None:
+        return None
+    if kgm2 >= SEUIL_GROSSE_GRELE_KGM2:
+        return "grosse grêle possible"
+    if kgm2 >= SEUIL_GRELE_KGM2:
+        return "grêle possible"
+    return None
+
+
+def _regrouper(boites):
+    """Fusionne les boîtes (ouest, sud, est, nord) qui se chevauchent : un découpage par groupe."""
+    groupes = []
+    for i, boite in enumerate(boites):
+        for groupe in groupes:
+            o, s, e, n = groupe["boite"]
+            if boite[0] <= e and boite[2] >= o and boite[1] <= n and boite[3] >= s:
+                groupe["boite"] = (min(o, boite[0]), min(s, boite[1]), max(e, boite[2]), max(n, boite[3]))
+                groupe["membres"].append(i)
+                break
+        else:
+            groupes.append({"boite": boite, "membres": [i]})
+    return groupes
+
+
+def diagnostic_grele(contours, heure):
+    """Le diagnostic de grêle d'AROME-PI le plus fort sous chaque contour, au quart d'heure qui
+    suit l'image : [kg/m² ou None]. Lu par petits découpages autour des cellules (quelques
+    centaines de kilo-octets) plutôt que sur la France entière (13 Mo par échéance)."""
+    import numpy
+    from django.contrib.gis.geos import Point
+    from . import rafales
+    from .models import ImageRafales
+
+    resultat = [None] * len(contours)
+    derniere = ImageRafales.objects.filter(calcul__lte=heure).order_by("-calcul").first()
+    if derniere is None or not contours:
+        return resultat
+    calcul = derniere.calcul
+    echeance = heure + datetime.timedelta(minutes=(15 - heure.minute % 15) % 15 or 15)
+    echeance = echeance.replace(second=0, microsecond=0)
+    if echeance - calcul > datetime.timedelta(hours=6):
+        return resultat
+    boites = []
+    for contour in contours:
+        o, s, e, n = contour.extent
+        boites.append((o - MARGE_DEG, s - MARGE_DEG, e + MARGE_DEG, n + MARGE_DEG))
+    groupes = sorted(_regrouper(boites), key=lambda g: -len(g["membres"]))[:DECOUPAGES_MAX]
+    cle = meteo_france.lire_cle()
+    for groupe in groupes:
+        o, s, e, n = groupe["boite"]
+        identifiant = f"{COUVERTURE_GRELE}___{calcul.astimezone(datetime.timezone.utc):%Y-%m-%dT%H.%M.%SZ}"
+        try:
+            r = requests.get(rafales.URL_WCS, headers={"apikey": cle}, timeout=DELAI_REPONSE_S, params=[
+                ("service", "WCS"), ("version", "2.0.1"), ("coverageid", identifiant),
+                ("subset", f"time({echeance.astimezone(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ})"),
+                ("subset", f"lat({s:.3f},{n:.3f})"), ("subset", f"long({o:.3f},{e:.3f})"),
+                ("format", "image/tiff")])
+            if r.status_code != 200 or r.content[:4] not in (b"II*\x00", b"MM\x00*"):
+                continue
+            grille, ouest, nord, pas = rafales.lire_grille_tiff(r.content)
+        except Exception:
+            logger.warning("Diagnostic de grêle illisible pour %s.", groupe["boite"], exc_info=True)
+            continue
+        grille = numpy.asarray(grille, dtype=float)
+        for i in groupe["membres"]:
+            contour = contours[i].prepared
+            co, cs, ce, cn = contours[i].extent
+            c0, c1 = max(0, int((co - ouest) / pas)), min(grille.shape[1], int((ce - ouest) / pas) + 2)
+            l0, l1 = max(0, int((nord - cn) / pas)), min(grille.shape[0], int((nord - cs) / pas) + 2)
+            meilleur = None
+            for ligne in range(l0, l1):
+                for colonne in range(c0, c1):
+                    valeur = grille[ligne, colonne]
+                    if not numpy.isfinite(valeur) or valeur < 0 or valeur > 500:
+                        continue
+                    if contour.contains(Point(ouest + colonne * pas, nord - ligne * pas, srid=4326)):
+                        meilleur = valeur if meilleur is None else max(meilleur, valeur)
+            resultat[i] = round(float(meilleur), 1) if meilleur is not None else None
+    return resultat
+
+
 def rafale_mesuree(contour, heure):
     """La plus forte rafale mesurée sous la cellule (contour élargi de ~5 km) dans les 20 minutes
     autour de l'image : {"kmh", "station", "mesure_le"} ou None."""
@@ -404,7 +501,7 @@ def _polygone(grille, lignes, colonnes, decalages=((0.0, 0.0),)):
     return Polygon(geo + [geo[0]], srid=4326)
 
 
-def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=()):
+def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=(), avec_diagnostic_grele=False):
     """Analyse une image : rend la liste des cellules, prêtes à enregistrer."""
     import numpy
     from scipy import ndimage
@@ -474,6 +571,7 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
         trace = (trace + [[grille.heure.isoformat(), round(centre_geo[1], 4), round(centre_geo[0], 4)]])[-12:]
 
         resultat.append({
+            "grele_diagnostic_kgm2": None,
             "identifiant": identifiant, "centre": cellule["centre"], "vitesse": vitesse, "trace": trace,
             "max_mmh": round(cellule["max_mmh"], 1), "moyenne_mmh": round(cellule["moyenne_mmh"], 1),
             "surface_km2": round(cellule["surface_km2"], 1), "tendance_mmh": round(tendance, 1) if tendance is not None else None,
@@ -486,6 +584,12 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
             "grele_prevue": prevision["grele"], "rafale_prevue_kmh": prevision["rafale_kmh"],
             "rafale_mesuree": rafale_mesuree(contour, grille.heure),
         })
+    if avec_diagnostic_grele and resultat:
+        try:
+            for c, valeur in zip(resultat, diagnostic_grele([c["contour"] for c in resultat], grille.heure)):
+                c["grele_diagnostic_kgm2"] = valeur
+        except meteo_france.CleAbsente:
+            pass
     return resultat
 
 
@@ -512,6 +616,7 @@ def enregistrer(grille, analyse, maintenant=None):
             communes_touchees=c["communes_touchees"], communes_estimees=c["communes_estimees"],
             grele_prevue=c["grele_prevue"], rafale_prevue_kmh=c["rafale_prevue_kmh"],
             rafale_mesuree=c["rafale_mesuree"], trace=c["trace"], releve_le=maintenant,
+            grele_diagnostic_kgm2=c.get("grele_diagnostic_kgm2"),
         ) for c in analyse])
         ImageRadarOrage.objects.update_or_create(heure=grille.heure, defaults={
             "largeur": largeur, "hauteur": hauteur, "projdef": grille.projdef,
@@ -522,7 +627,8 @@ def enregistrer(grille, analyse, maintenant=None):
         AnalyseOrages.objects.update_or_create(heure=grille.heure, defaults={
             "radars_absents": grille.absents,
             "cellules": [{k: c[k] for k in ("identifiant", "max_mmh", "surface_km2", "vitesse_kmh", "cap_deg",
-                                            "ligne_de_grain", "grele_prevue", "rafale_prevue_kmh")}
+                                            "ligne_de_grain", "grele_prevue", "rafale_prevue_kmh",
+                                            "grele_diagnostic_kgm2")}
                          | {"lat": round(c["centre_geo"][1], 3), "lon": round(c["centre_geo"][0], 3),
                             "rafale_mesuree_kmh": (c["rafale_mesuree"] or {}).get("kmh"),
                             "communes": len(c["communes_touchees"])} for c in analyse],
@@ -552,8 +658,75 @@ def relever(maintenant=None):
     anciennes = [{"identifiant": c.identifiant, "centre": (c.ligne, c.colonne), "max_mmh": c.max_mmh,
                   "vitesse": (c.vitesse_lignes, c.vitesse_colonnes) if c.vitesse_lignes is not None else None,
                   "trace": c.trace} for c in CelluleOrage.objects.all()] if precedente is not None else []
-    analyse = analyser(grille, precedente, minutes, anciennes)
-    return enregistrer(grille, analyse, maintenant)
+    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True)
+    nombre = enregistrer(grille, analyse, maintenant)
+    try:
+        cumuler_pluie(grille, maintenant)
+    except Exception:
+        # Les cumuls ne doivent pas faire échouer l'analyse des orages.
+        logger.exception("Cumuls de pluie par commune non calculés.")
+    return nombre
+
+
+# ── Cumuls de pluie par commune ──────────────────────────────────────────────
+
+#: Fenêtres des cumuls, en nombre d'images de cinq minutes.
+FENETRES_CUMUL = {"1h": 12, "3h": 36, "24h": 288}
+#: Cumuls à partir desquels une commune est signalée (mm) : pluies qui débordent les réseaux
+#: et font monter les petits cours d'eau. Repères, pas des seuils de vigilance.
+SEUILS_CUMUL_MM = {"1h": 30, "3h": 50, "24h": 80}
+
+
+def cumuler_pluie(grille, maintenant=None):
+    """Pluie tombée en cinq minutes au centre de chaque commune (moyenne sur 3 × 3 km), gardée
+    25 heures, puis cumuls glissants 1 h / 3 h / 24 h. Seules les communes où il a plu sont
+    écrites : une nuit sèche ne fait pas 35 000 lignes."""
+    import numpy
+    from scipy import ndimage
+    from django.db import transaction
+    from .models import CumulPluieCommune, PluieCommunesImage
+
+    maintenant = maintenant or timezone.now()
+    index = IndexCommunes.pour(grille)
+    lissee = ndimage.uniform_filter(numpy.nan_to_num(grille.taux_moyen), size=3) / 12      # mm en 5 min
+    h, w = lissee.shape
+    dedans = (index.lignes >= 0) & (index.lignes < h) & (index.colonnes >= 0) & (index.colonnes < w)
+    valeurs = {}
+    for i in numpy.nonzero(dedans)[0]:
+        mm = float(lissee[index.lignes[i], index.colonnes[i]])
+        if mm >= 0.05:
+            valeurs[index.codes[i]] = round(mm, 1)
+    PluieCommunesImage.objects.update_or_create(heure=grille.heure, defaults={"valeurs": valeurs})
+    PluieCommunesImage.objects.filter(heure__lt=grille.heure - datetime.timedelta(hours=25)).delete()
+
+    images = list(PluieCommunesImage.objects.filter(
+        heure__gt=grille.heure - datetime.timedelta(hours=24)).order_by("-heure").values_list("heure", "valeurs"))
+    sommes = {}
+    for rang, (heure, image) in enumerate(images):
+        age_min = (grille.heure - heure).total_seconds() / 60
+        for code, mm in image.items():
+            s = sommes.setdefault(code, [0.0, 0.0, 0.0])
+            s[2] += mm
+            if age_min < 180:
+                s[1] += mm
+            if age_min < 60:
+                s[0] += mm
+    disponibles = {cle: sum(1 for heure, _ in images if (grille.heure - heure).total_seconds() / 60 < n * 5)
+                   for cle, n in FENETRES_CUMUL.items()}
+    with transaction.atomic():
+        CumulPluieCommune.objects.all().delete()
+        CumulPluieCommune.objects.bulk_create([CumulPluieCommune(
+            commune_code=code, mm_1h=round(s[0], 1), mm_3h=round(s[1], 1), mm_24h=round(s[2], 1),
+            heure=grille.heure) for code, s in sommes.items() if s[2] >= 0.5], batch_size=2000)
+    _ecrire_disponibilite(disponibles, grille.heure)
+    return len(sommes)
+
+
+def _ecrire_disponibilite(disponibles, heure):
+    """Combien d'images chaque fenêtre de cumul contient vraiment (un service relancé depuis
+    une heure n'a pas de cumul sur 24 h) : gardé sur la dernière image."""
+    from .models import ImageRadarOrage
+    ImageRadarOrage.objects.filter(heure=heure).update(images_par_fenetre=disponibles)
 
 
 def palier(mmh):

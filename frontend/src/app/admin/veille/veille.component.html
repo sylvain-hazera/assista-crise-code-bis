@@ -214,11 +214,15 @@
               </p>
             </div>
           }
-          @if (c.prevision_meteo_france.grele || c.prevision_meteo_france.rafale_kmh) {
+          @if (c.prevision_meteo_france.grele || c.prevision_meteo_france.rafale_kmh || c.prevision_meteo_france.grele_niveau) {
             <div class="nature prevision">
               <span class="libelle-nature">Selon la prévision Météo-France</span>
               <p>
                 @if (c.prevision_meteo_france.grele) { <strong>Grêle prévue</strong> sous cette cellule. }
+                @if (c.prevision_meteo_france.grele_niveau; as niveau) {
+                  Diagnostic de grêle : <strong>{{ niveau }}</strong>
+                  ({{ c.prevision_meteo_france.grele_diagnostic_kgm2 | number:'1.0-1' }} kg/m² ; grêle au-delà de 8, grosse grêle au-delà de 12).
+                }
                 @if (c.prevision_meteo_france.rafale_kmh) { Rafales prévues de {{ c.prevision_meteo_france.rafale_kmh }} km/h ou plus. }
               </p>
             </div>
@@ -228,6 +232,40 @@
         @if (orages.couvert !== false && !orages.perime) {
           <p class="calme">Aucune cellule de pluie intense (30 mm/h ou plus) à moins de {{ orages.rayon_km }} km de votre commune.</p>
         }
+      }
+      @if (orages.cumuls; as cumuls) {
+        <div class="cumuls">
+          <h3>Pluie tombée, selon les relevés du radar</h3>
+          <div class="defilement">
+            <table>
+              <thead><tr><th>Commune</th><th>1 h</th><th>3 h</th><th>24 h</th></tr></thead>
+              <tbody>
+                @if (cumuls.ma_commune; as m) {
+                  <tr class="ma-commune">
+                    <td>{{ m.nom }} <small>(votre commune)</small></td>
+                    @for (f of FENETRES_CUMUL; track f) { <td [class.fort]="m.fort.includes(f)">{{ m.mm[f] | number:'1.0-1' }} mm</td> }
+                  </tr>
+                }
+                @for (c of cumuls.plus_arrosees; track c.code) {
+                  @if (c.code !== cumuls.ma_commune?.code) {
+                    <tr>
+                      <td>{{ c.nom }}</td>
+                      @for (f of FENETRES_CUMUL; track f) { <td [class.fort]="c.fort.includes(f)">{{ c.mm[f] | number:'1.0-1' }} mm</td> }
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="note">
+            En gras, au-delà de {{ cumuls.seuils_mm['1h'] }} mm en 1 h, {{ cumuls.seuils_mm['3h'] }} mm en 3 h ou
+            {{ cumuls.seuils_mm['24h'] }} mm en 24 h : de quoi déborder les réseaux et faire monter les petits cours d'eau.
+            Estimation radar au centre de chaque commune, pas une mesure de pluviomètre.
+            @if ((cumuls.fenetres['24h'] ?? 0) < cumuls.attendues['24h']) {
+              Le cumul sur 24 h ne couvre encore que {{ ((cumuls.fenetres['24h'] ?? 0) * 5 / 60) | number:'1.0-1' }} h d'images.
+            }
+          </p>
+        </div>
       }
       <p class="note">
         Radar {{ orages.source }}@if (orages.heure_image) {, image de {{ orages.heure_image | date:'HH:mm' }}}

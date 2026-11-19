@@ -60,8 +60,8 @@ export class VeilleService {
   }
 
   /** Orages et pluies intenses autour de la commune de l'institution (radar, toutes les 5 min). */
-  orages(): Observable<OragesRadar> {
-    return this.http.get<OragesRadar>(`${this.api}/orages/`);
+  orages(emprise?: EmpriseVeille): Observable<OragesRadar> {
+    return this.http.get<OragesRadar>(`${this.api}/orages/`, emprise ? { params: this.params(emprise) } : {});
   }
 
   /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.

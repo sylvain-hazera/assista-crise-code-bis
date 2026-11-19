@@ -37,5 +37,7 @@ websockets>=12
 pytest>=7.4.0
 pytest-django>=4.5.0
 pytest-cov>=4.1.0
+# Suite en parallele, une base d essai par processus (19/11/2026).
+pytest-xdist>=3.5
 coverage>=7.3.0
 faker>=19.0.0

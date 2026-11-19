@@ -39,6 +39,7 @@ export class VeilleComponent implements OnInit, OnDestroy {
 
   /** Orages selon le radar (une image toutes les 5 min) : relu toutes les 2 min, onglet visible. */
   orages: OragesRadar | null = null;
+  readonly FENETRES_CUMUL = ['1h', '3h', '24h'] as const;
   erreurOrages = false;
   private suiviOrages?: Subscription;
 

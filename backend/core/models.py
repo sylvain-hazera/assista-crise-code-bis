@@ -3274,6 +3274,8 @@ class CelluleOrage(models.Model):
     rafale_prevue_kmh = models.PositiveSmallIntegerField(null=True, blank=True)
     rafale_mesuree = models.JSONField(null=True, blank=True)
     trace = models.JSONField(default=list, blank=True)
+    # Diagnostic de grêle d'AROME-PI le plus fort sous la cellule (kg/m², voir orages.SEUIL_GRELE_KGM2).
+    grele_diagnostic_kgm2 = models.FloatField(null=True, blank=True)
     releve_le = models.DateTimeField()
 
     class Meta:
@@ -3293,7 +3295,28 @@ class ImageRadarOrage(models.Model):
     grille = models.BinaryField()
     radars = models.JSONField(default=list, blank=True)
     radars_absents = models.JSONField(default=list, blank=True)
+    # Nombre d'images que contient chaque fenêtre de cumul de pluie ({"1h": 12, …}).
+    images_par_fenetre = models.JSONField(default=dict, blank=True)
     releve_le = models.DateTimeField()
+
+
+class PluieCommunesImage(models.Model):
+    """Pluie tombée en cinq minutes au centre de chaque commune où il a plu, selon une image
+    radar (core/orages.cumuler_pluie). 25 heures gardées, de quoi recalculer les cumuls."""
+
+    heure = models.DateTimeField(primary_key=True)
+    valeurs = models.JSONField(default=dict, blank=True, help_text="code INSEE -> mm en cinq minutes")
+
+
+class CumulPluieCommune(models.Model):
+    """Cumuls glissants de pluie par commune, selon le radar (1 h, 3 h, 24 h), recalculés à
+    chaque image. Seules les communes où il a plu dans les 24 h ont une ligne."""
+
+    commune_code = models.CharField(max_length=10, primary_key=True)
+    mm_1h = models.FloatField(default=0)
+    mm_3h = models.FloatField(default=0)
+    mm_24h = models.FloatField(default=0)
+    heure = models.DateTimeField()
 
 
 class AnalyseOrages(models.Model):

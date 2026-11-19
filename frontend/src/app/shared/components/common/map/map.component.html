@@ -143,6 +143,11 @@
         <span class="layer-dot rafales-dot"></span>
         Rafales prévues (3 h)
       </label>
+      <label class="layer-toggle-item" title="Cellules de pluie intense (30 mm/h et plus) selon le radar de Météo-France, toutes les cinq minutes, et en pointillé le couloir qu'elles balaieraient en une heure SI elles gardaient leur trajectoire — une estimation, pas une prévision. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.orages" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot orages-dot"></span>
+        Orages (radar)@if (layerVisibility.orages && oragesHeureImage) { <small [class.ancien]="oragesPerime">&nbsp;{{ oragesHeureImage | date:'HH:mm' }}</small> }
+      </label>
       <label class="layer-toggle-item" title="Vent moyen prévu par Météo-France (modèle ARPEGE, maille de 10 km), animé : les traînes vont où va le vent, plus vite là où il force. Ni les rafales, ni une mesure. Assombrit légèrement la carte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.vent" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot vent-dot"></span>
