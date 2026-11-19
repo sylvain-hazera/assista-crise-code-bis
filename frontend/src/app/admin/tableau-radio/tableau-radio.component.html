@@ -1,0 +1,149 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">monitoring</span> Tableau radio</h1>
+    <p class="explication">
+      Ce que voit une passerelle Meshtastic : occupation du canal, temps passé à émettre, paquets
+      émis et reçus, nature du trafic, et les nœuds qu'elle entend. Au-delà de 25 % d'occupation,
+      le canal sature : les messages se perdent en collisions.
+    </p>
+  </header>
+
+  <div class="barre">
+    <label>
+      Passerelle
+      <select name="passerelle" [(ngModel)]="passerelleId" (ngModelChange)="recharger()">
+        @for (p of passerelles; track p.id) { <option [value]="p.id">{{ p.nom }}</option> }
+      </select>
+    </label>
+    <div class="fenetres" role="group" aria-label="Période">
+      @for (f of fenetres; track f.valeur) {
+        <button type="button" [class.actif]="fenetre === f.valeur" [attr.aria-pressed]="fenetre === f.valeur"
+                (click)="choisirFenetre(f.valeur)">{{ f.libelle }}</button>
+      }
+    </div>
+  </div>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert"><span class="material-icons">error_outline</span> {{ erreur }}</div>
+  }
+  @if (!passerelles.length && !erreur) {
+    <p class="attente">Aucune passerelle Meshtastic n'est déclarée pour votre institution.</p>
+  }
+  @if (chargement) { <p class="attente">Chargement…</p> }
+
+  @if (tableau; as t) {
+    <section class="bloc">
+      <h2>Passerelle {{ t.passerelle.nom }}</h2>
+      <div class="series">
+        <app-serie-compacte libelle="Occupation du canal" unite="%" [points]="t.series.occupation_canal"
+          [debut]="t.debut" [pasS]="t.pas_s" [dureeS]="dureeS" [max]="50" couleur="#b45309"></app-serie-compacte>
+        <app-serie-compacte libelle="Temps d'antenne en émission" unite="%" [points]="t.series.temps_antenne_tx"
+          [debut]="t.debut" [pasS]="t.pas_s" [dureeS]="dureeS" [max]="10" couleur="#7c3aed"></app-serie-compacte>
+        <app-serie-compacte libelle="Batterie" unite="%" [points]="t.series.batterie"
+          [debut]="t.debut" [pasS]="t.pas_s" [dureeS]="dureeS" [max]="100" mode="valeur"></app-serie-compacte>
+        <app-serie-compacte libelle="Paquets émis" unite="" [points]="t.series.paquets_tx"
+          [debut]="t.debut" [pasS]="t.pas_s" [dureeS]="dureeS" couleur="#0e7490"></app-serie-compacte>
+        <app-serie-compacte libelle="Paquets reçus" unite="" [points]="t.series.paquets_rx"
+          [debut]="t.debut" [pasS]="t.pas_s" [dureeS]="dureeS" couleur="#047857"></app-serie-compacte>
+        <app-serie-compacte libelle="Paquets relayés au pont, par heure" unite="" [points]="t.series.paquets_recus_par_heure"
+          [debut]="t.debut" [pasS]="3600" [dureeS]="dureeS" couleur="#1d4ed8"></app-serie-compacte>
+      </div>
+      <p class="note">
+        Les quatre premières séries viennent de la télémétrie que la passerelle publie d'elle-même :
+        vides si son module Télémétrie est coupé (Administration Meshtastic → Modifier des réglages).
+      </p>
+    </section>
+
+    <section class="bloc">
+      <h2>Nature du trafic</h2>
+      <app-carte-paquets [types]="t.types_paquets"></app-carte-paquets>
+    </section>
+
+    <section class="bloc">
+      <div class="titre-outils">
+        <h2>Nœuds entendus <span class="compte">{{ t.noeuds.length }}</span></h2>
+        <div class="outils">
+          <input type="search" name="filtre" [(ngModel)]="filtre" placeholder="Filtrer par nom ou !id"
+                 aria-label="Filtrer les nœuds">
+          <label>
+            Trier par
+            <select name="tri" [(ngModel)]="tri">
+              <option value="dernier_entendu">dernière écoute</option>
+              <option value="nom">nom</option>
+              <option value="snr">meilleur SNR</option>
+              <option value="sauts">sauts</option>
+              <option value="batterie">batterie</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      @if (messageTraceroute) { <p class="message info" role="status">{{ messageTraceroute }}</p> }
+      <div class="defilement">
+        <table class="noeuds">
+          <thead>
+            <tr><th>Nœud</th><th>Batterie</th><th>SNR reçu</th><th>Sauts</th><th>Entendu</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (n of noeudsAffiches; track n.node_num) {
+              <tr>
+                <td>
+                  <span class="nom">{{ n.nom }}</span>
+                  <span class="id">{{ n.id }}@if (n.materiel) { · {{ n.materiel }} }</span>
+                </td>
+                <td>
+                  @if (n.batterie !== null) {
+                    <span class="pastille" [ngClass]="classeBatterie(n.batterie)">
+                      {{ n.batterie > 100 ? 'secteur' : n.batterie + ' %' }}
+                    </span>
+                  } @else { <span class="muet">—</span> }
+                </td>
+                <td>
+                  @if (n.snr !== null) {
+                    <span class="pastille" [ngClass]="classeSnr(n.snr)">{{ snrLisible(n.snr) }}</span>
+                  } @else { <span class="muet" title="jamais entendu en direct par cette passerelle">relayé</span> }
+                </td>
+                <td class="nombre">{{ n.sauts ?? '—' }}</td>
+                <td class="muet">{{ depuis(n.dernier_entendu) }}</td>
+                <td>
+                  <button type="button" class="secondaire" (click)="lancerTraceroute(n)"
+                          [disabled]="traceroutesDemandes.has(n.node_num)">
+                    {{ traceroutesDemandes.has(n.node_num) ? 'demandé' : 'Traceroute' }}
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="muet">Aucun nœud.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="bloc">
+      <h2>Traceroutes</h2>
+      @for (tr of t.traceroutes; track $index) {
+        <div class="traceroute">
+          <div class="tr-entete"><strong>{{ tr.cible_nom }}</strong> <span class="muet">{{ depuis(tr.date) }}</span></div>
+          <div class="chemin" aria-label="Aller">
+            <span class="sens">aller</span>
+            @for (saut of tr.aller; track $index; let i = $index; let dernier = $last) {
+              <span class="noeud-chemin">{{ saut.nom }}</span>
+              @if (!dernier) { <span class="fleche" [ngClass]="classeSnr(tr.snr_aller[i] ?? null)">→ {{ snrLisible(tr.snr_aller[i]) }} →</span> }
+            }
+          </div>
+          @if (tr.retour.length) {
+            <div class="chemin" aria-label="Retour">
+              <span class="sens">retour</span>
+              @for (saut of tr.retour; track $index; let i = $index; let dernier = $last) {
+                <span class="noeud-chemin">{{ saut.nom }}</span>
+                @if (!dernier) { <span class="fleche" [ngClass]="classeSnr(tr.snr_retour[i] ?? null)">→ {{ snrLisible(tr.snr_retour[i]) }} →</span> }
+              }
+            </div>
+          }
+        </div>
+      } @empty {
+        <p class="muet">Aucun traceroute pour l'instant : lancez-en un depuis le tableau des nœuds.</p>
+      }
+    </section>
+  }
+</div>

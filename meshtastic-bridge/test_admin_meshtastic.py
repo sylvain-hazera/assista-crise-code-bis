@@ -43,10 +43,13 @@ class FauxInterface:
             "message": data, "destination": destinationId, "portnum": portNum,
             "attend_reponse": wantResponse, "canal": channelIndex, "pki": pkiEncrypted,
             "ack_permis": onResponseAckPermitted,
-            "cle_session": bytes(data.session_passkey) if data.session_passkey else None,
+            "cle_session": bytes(data.session_passkey) if getattr(data, "session_passkey", None) else None,
         })
         reponse = self.reponses.pop(0) if self.reponses else "__ACK__"
         if reponse is None:                         # silence : on n'appelle pas le rappel
+            return
+        if isinstance(reponse, dict):               # paquet complet (ex. réponse de traceroute)
+            onResponse(reponse)
             return
         if isinstance(reponse, str) and reponse != "__ACK__":
             onResponse({"decoded": {"routing": {"errorReason": reponse}}})
@@ -537,3 +540,65 @@ class TestDivers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class TestOperationsDuDixNeuf(unittest.TestCase):
+    """Opérations ajoutées le 19/11/2026."""
+
+    def tache(self, type_tache, cible=0x2000, **parametres):
+        return {"type_tache": type_tache, "node_num_cible": cible, "parametres": parametres or None}
+
+    def test_traceroute_rend_le_chemin_et_les_snr_en_db(self):
+        route = mesh_pb2.RouteDiscovery(route=[0x3000], snr_towards=[40, 26], route_back=[0x3000],
+                                        snr_back=[22, -128])
+        iface = FauxInterface(reponses=[{"decoded": {"portnum": "TRACEROUTE_APP",
+                                                     "payload": route.SerializeToString()}}])
+        reponse, config = mod.executer(iface, self.tache("TRACEROUTE"))
+        self.assertEqual(reponse["aller"], [0x1000, 0x3000, 0x2000])
+        self.assertEqual(reponse["snr_aller"], [10.0, 6.5])
+        self.assertEqual(reponse["retour"], [0x2000, 0x3000, 0x1000])
+        self.assertEqual(reponse["snr_retour"], [5.5, None])          # -128 : inconnu
+        envoi = iface.envois[0]
+        self.assertEqual(envoi["portnum"], portnums_pb2.PortNum.TRACEROUTE_APP)
+        self.assertFalse(envoi["pki"])
+
+    def test_un_traceroute_refuse_par_le_routage_le_dit(self):
+        iface = FauxInterface(reponses=["NO_ROUTE"])
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, self.tache("TRACEROUTE"))
+
+    def test_les_canaux_ne_rapportent_jamais_la_cle(self):
+        from meshtastic.protobuf import channel_pb2
+        reponses = [admin_pb2.AdminMessage(get_channel_response=channel_pb2.Channel(
+            index=i, role=1 if i == 0 else 0,
+            settings=channel_pb2.ChannelSettings(name="Fr_EMCOM" if i == 0 else "", psk=b"\x01" * 16)))
+            for i in range(8)]
+        iface = FauxInterface(reponses=reponses)
+        reponse, _ = mod.executer(iface, self.tache("LIRE_CANAUX"))
+        # Le firmware attend index + 1 : de 1 à 8.
+        self.assertEqual([e["message"].get_channel_request for e in iface.envois], list(range(1, 9)))
+        self.assertEqual(reponse["canaux"][0]["nom"], "Fr_EMCOM")
+        self.assertEqual(reponse["canaux"][0]["cle_octets"], 16)
+        self.assertNotIn("psk", str(reponse))
+
+    def test_une_ecriture_sur_un_noeud_vise_par_son_numero(self):
+        iface = FauxInterface(reponses=[reponse_metadata(), "__ACK__"])
+        reponse, _ = mod.executer(iface, self.tache("FAVORI", node_num=0x4242))
+        self.assertEqual(reponse, {"noeud": 0x4242})
+        self.assertEqual(iface.envois[-1]["message"].set_favorite_node, 0x4242)
+        self.assertIsNotNone(iface.envois[-1]["cle_session"])      # écriture : clé de session
+
+    def test_vider_la_base_exige_la_confirmation(self):
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(FauxInterface(), self.tache("VIDER_BASE_NOEUDS"))
+
+    def test_position_fixe_en_degres_vers_entiers(self):
+        iface = FauxInterface(reponses=[reponse_metadata(), "__ACK__"])
+        mod.executer(iface, self.tache("POSITION_FIXE", latitude=45.4339, longitude=4.3872))
+        message = iface.envois[-1]["message"]
+        self.assertEqual(message.set_fixed_position.latitude_i, 454339000)
+
+    def test_les_nouvelles_sections_de_reglages_sont_connues(self):
+        for section in ("alimentation", "store_forward", "test_portee"):
+            mod._section_connue(section)        # lève si la section est inconnue

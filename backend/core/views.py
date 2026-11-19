@@ -21486,8 +21486,11 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [IsInstitutionalActor()]
         # Ces deux actions livrent des SECRETS en clair (mot de passe MQTT, clé privée X25519) :
         # « authentifié » ne suffit pas, voir EstComptePont.
-        if self.action in ('avec_cle_privee', 'actifs_avec_identifiants', 'annuaire_cles'):
+        if self.action in ('avec_cle_privee', 'actifs_avec_identifiants', 'annuaire_cles',
+                           'rapporter_telemetrie'):
             return [EstComptePont()]
+        if self.action == 'tableau':
+            return [PeutAccederRadio()]
         return [permissions.IsAuthenticated()]
 
     @action(detail=True, methods=['get'], url_path='annuaire-cles')
@@ -21754,26 +21757,70 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             if source not in SourceLiaisonMeshtastic.values or emetteur == recepteur:
                 ignorees += 1
                 continue
-            snr = brute.get('snr')
-            rssi = brute.get('rssi')
-            objet, cree = LiaisonMeshtastic.objects.get_or_create(
-                emetteur=emetteur, recepteur=recepteur, source=source, environment=environment,
-                defaults={'snr': snr, 'rssi': rssi, 'dernier_vu': maintenant},
-            )
-            if not cree:
-                champs = ['nombre', 'dernier_vu']
-                objet.nombre = F('nombre') + 1
-                objet.dernier_vu = maintenant
-                # On conserve le MEILLEUR SNR observé : c'est lui qui dit de quoi la liaison est
-                # capable. Une moyenne serait tirée vers le bas par les paquets en limite de
-                # portée, et masquerait une liaison en réalité bonne.
-                if snr is not None and (objet.snr is None or snr > objet.snr):
-                    objet.snr, objet.rssi = snr, rssi
-                    champs += ['snr', 'rssi']
-                objet.save(update_fields=champs)
+            enregistrer_liaison_meshtastic(emetteur, recepteur, source, brute.get('snr'), brute.get('rssi'),
+                                           environment, maintenant)
             enregistrees += 1
 
         return Response({'enregistrees': enregistrees, 'ignorees': ignorees})
+
+    @action(detail=True, methods=['post'], url_path='rapporter-telemetrie')
+    def rapporter_telemetrie(self, request, pk=None):
+        """Mesures de télémétrie et compteurs de paquets par type, rapportés par le pont chaque
+        minute (19/11/2026). Jamais de tout-ou-rien : une entrée invalide est ignorée."""
+        from datetime import datetime, timezone as dt_timezone
+        from .models import CompteurPaquetsMeshtastic, MesureTelemetrieMeshtastic
+
+        compagnon = self.get_object()
+        environment = compagnon.environment
+        champs = ('batterie', 'tension', 'occupation_canal', 'temps_antenne_tx', 'uptime_s',
+                  'paquets_tx', 'paquets_rx', 'noeuds_en_ligne', 'bruit_dbm')
+
+        def nombre_valide(champ, valeur):
+            if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+                return False
+            return valeur >= (-200 if champ == 'bruit_dbm' else 0)
+
+        mesures = []
+        for brute in (request.data.get('mesures') or [])[:5000]:
+            try:
+                node_num = int(brute['node_num'])
+                instant = datetime.fromtimestamp(int(brute['horodatage']), tz=dt_timezone.utc)
+            except (KeyError, TypeError, ValueError, OverflowError, OSError):
+                continue
+            valeurs = {c: brute[c] for c in champs if nombre_valide(c, brute.get(c))}
+            mesures.append(MesureTelemetrieMeshtastic(
+                compagnon=compagnon, node_num=node_num, horodatage=instant, environment=environment, **valeurs))
+        MesureTelemetrieMeshtastic.objects.bulk_create(mesures)
+        comptes = 0
+        for brute in (request.data.get('compteurs') or [])[:2000]:
+            try:
+                heure = datetime.fromtimestamp(int(brute['heure']), tz=dt_timezone.utc)
+                type_paquet = str(brute['type'])[:40]
+                nombre = int(brute['nombre'])
+            except (KeyError, TypeError, ValueError, OverflowError, OSError):
+                continue
+            if nombre <= 0:
+                continue
+            objet, cree = CompteurPaquetsMeshtastic.objects.get_or_create(
+                compagnon=compagnon, heure=heure, type_paquet=type_paquet,
+                defaults={'nombre': nombre, 'environment': environment})
+            if not cree:
+                CompteurPaquetsMeshtastic.objects.filter(pk=objet.pk).update(nombre=F('nombre') + nombre)
+            comptes += 1
+        # Trente jours d'historique : au-delà, la purge se fait au fil des rapports.
+        from datetime import timedelta
+        limite = timezone.now() - timedelta(days=30)
+        MesureTelemetrieMeshtastic.objects.filter(compagnon=compagnon, horodatage__lt=limite).delete()
+        CompteurPaquetsMeshtastic.objects.filter(compagnon=compagnon, heure__lt=limite).delete()
+        return Response({'mesures': len(mesures), 'compteurs': comptes})
+
+    @action(detail=True, methods=['get'], url_path='tableau')
+    def tableau(self, request, pk=None):
+        """Le tableau radio d'une passerelle (19/11/2026), sur une fenêtre de 1 h, 6 h, 24 h ou
+        7 jours : séries de sa propre télémétrie, répartition des paquets par type, nœuds
+        entendus (batterie, sauts, meilleur SNR reçu, dernière écoute), derniers traceroutes."""
+        from .tableau_radio import construire_tableau
+        return Response(construire_tableau(self.get_object(), request.query_params.get('fenetre', '6h')))
 
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
@@ -21808,6 +21855,11 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             if dernier_advert:
                 from datetime import datetime, timezone as dt_timezone
                 defaults['dernier_advert'] = datetime.fromtimestamp(dernier_advert, tz=dt_timezone.utc)
+            if isinstance(contact.get('sauts'), int) and 0 <= contact['sauts'] <= 15:
+                defaults['sauts'] = contact['sauts']
+            if contact.get('dernier_entendu'):
+                from datetime import datetime, timezone as dt_timezone
+                defaults['dernier_entendu'] = datetime.fromtimestamp(contact['dernier_entendu'], tz=dt_timezone.utc)
 
             ContactMeshtastic.objects.update_or_create(
                 compagnon=compagnon, node_num=node_num,
@@ -22452,6 +22504,39 @@ CHAMPS_CONFIGURATION_NOEUD = (
 )
 
 
+def enregistrer_liaison_meshtastic(emetteur, recepteur, source, snr, rssi, environment, maintenant):
+    """Agrège une observation de liaison : compteur incrémenté, MEILLEUR SNR conservé (c'est lui
+    qui dit de quoi la liaison est capable ; une moyenne serait tirée vers le bas par les paquets
+    en limite de portée). Commune aux rapports du pont et aux traceroutes (19/11/2026)."""
+    objet, cree = LiaisonMeshtastic.objects.get_or_create(
+        emetteur=emetteur, recepteur=recepteur, source=source, environment=environment,
+        defaults={'snr': snr, 'rssi': rssi, 'dernier_vu': maintenant},
+    )
+    if not cree:
+        champs = ['nombre', 'dernier_vu']
+        objet.nombre = F('nombre') + 1
+        objet.dernier_vu = maintenant
+        if snr is not None and (objet.snr is None or snr > objet.snr):
+            objet.snr, objet.rssi = snr, rssi
+            champs += ['snr', 'rssi']
+        objet.save(update_fields=champs)
+
+
+def liaisons_du_traceroute(reponse):
+    """[(émetteur, récepteur, snr)] d'une réponse de traceroute : `snr_aller[i]` est le SNR auquel
+    `aller[i + 1]` a reçu `aller[i]` (même chose au retour). Les nœuds inconnus (None) sont
+    sautés."""
+    sauts = []
+    for chemin, snrs in ((reponse.get('aller') or [], reponse.get('snr_aller') or []),
+                         (reponse.get('retour') or [], reponse.get('snr_retour') or [])):
+        for i in range(len(chemin) - 1):
+            a, b = chemin[i], chemin[i + 1]
+            if a is None or b is None or a == b:
+                continue
+            sauts.append((int(a), int(b), snrs[i] if i < len(snrs) else None))
+    return sauts
+
+
 class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """File des opérations d'administration à distance sur les nœuds Meshtastic.
 
@@ -22621,6 +22706,12 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             tache.date_reponse = maintenant
             tache.save(update_fields=['statut', 'reponse', 'erreur', 'date_reponse'])
             self._enregistrer_configuration(tache, request.data.get('configuration'), maintenant)
+            if tache.type_tache == "TRACEROUTE" and isinstance(reponse, dict):
+                # Chaque saut mesuré devient une liaison (source TRACEROUTE) : c'est ce qui la
+                # fait apparaître sur la carte radio et dans l'analyse des liaisons.
+                for emetteur, recepteur, snr in liaisons_du_traceroute(reponse):
+                    enregistrer_liaison_meshtastic(emetteur, recepteur, SourceLiaisonMeshtastic.TRACEROUTE,
+                                                   snr, None, tache.environment, maintenant)
         else:
             tache.erreur = str(request.data.get('erreur') or "Échec sans message.")[:2000]
             if tache.tentatives >= TENTATIVES_MAX_TACHE_ADMIN:

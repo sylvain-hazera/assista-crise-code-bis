@@ -661,3 +661,43 @@ class TestRacinesDEmission(unittest.TestCase):
 
     def test_la_meme_racine_n_est_pas_publiee_deux_fois(self):
         self.assertEqual(len(self._publier(topic_racine_emission="Traitement/msh/EU_868")), 1)
+
+
+class TestTelemetrieEtComptages(unittest.TestCase):
+    """19/11/2026 : télémétrie, types de paquets et sauts, pour le tableau radio."""
+
+    def test_device_metrics(self):
+        from meshtastic.protobuf import telemetry_pb2
+        t = telemetry_pb2.Telemetry(time=1700000000, device_metrics=telemetry_pb2.DeviceMetrics(
+            battery_level=87, voltage=4.01, channel_utilization=12.345, air_util_tx=1.5, uptime_seconds=3600))
+        m = bridge.mesure_telemetrie(0x1234, t)
+        self.assertEqual((m["node_num"], m["horodatage"], m["batterie"], m["occupation_canal"]),
+                         (0x1234, 1700000000, 87, 12.35))
+
+    def test_local_stats(self):
+        from meshtastic.protobuf import telemetry_pb2
+        t = telemetry_pb2.Telemetry(local_stats=telemetry_pb2.LocalStats(
+            num_packets_tx=10, num_packets_rx=200, num_online_nodes=7, noise_floor=-110, channel_utilization=5.0))
+        m = bridge.mesure_telemetrie(1, t)
+        self.assertEqual((m["paquets_tx"], m["paquets_rx"], m["noeuds_en_ligne"], m["bruit_dbm"]), (10, 200, 7, -110))
+
+    def test_une_telemetrie_vide_n_est_pas_une_mesure(self):
+        from meshtastic.protobuf import telemetry_pb2
+        self.assertIsNone(bridge.mesure_telemetrie(1, telemetry_pb2.Telemetry()))
+
+    def test_les_compteurs_s_agregent_par_heure_et_par_type(self):
+        tampon = bridge.TamponTelemetrie()
+        for t in ("TEXT_MESSAGE_APP", "TEXT_MESSAGE_APP", "POSITION_APP"):
+            tampon.compter(t)
+        mesures, compteurs = tampon.extraire()
+        self.assertEqual(sorted((c["type"], c["nombre"]) for c in compteurs),
+                         [("POSITION_APP", 1), ("TEXT_MESSAGE_APP", 2)])
+        self.assertEqual(tampon.extraire(), ([], []))
+
+    def test_les_sauts_sont_retenus(self):
+        tampon = bridge.TamponContacts()
+        tampon.maj_reception(0x42, 2)
+        tampon.maj_reception(0x43, None)
+        contacts = {c["node_num"]: c for c in tampon.extraire()}
+        self.assertEqual(contacts[0x42]["sauts"], 2)
+        self.assertNotIn("sauts", contacts[0x43])

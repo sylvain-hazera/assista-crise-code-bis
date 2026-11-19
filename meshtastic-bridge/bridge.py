@@ -34,7 +34,7 @@ import time
 import httpx
 import paho.mqtt.client as mqtt
 from google.protobuf.message import DecodeError
-from meshtastic.protobuf import mesh_pb2, mqtt_pb2, portnums_pb2
+from meshtastic.protobuf import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
 
 import admin_meshtastic
 import crypto
@@ -284,6 +284,13 @@ class DjangoClient:
         response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/annuaire-cles/")
         return response.json()
 
+    async def rapporter_telemetrie(self, compagnon_id, mesures, compteurs):
+        """Mesures de télémétrie et compteurs de paquets par type (19/11/2026)."""
+        if not mesures and not compteurs:
+            return
+        await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-telemetrie/",
+                            json={"mesures": mesures, "compteurs": compteurs})
+
     async def rapporter_liaisons(self, compagnon_id, liaisons):
         if not liaisons:
             return
@@ -511,6 +518,70 @@ def _observer_liaison_rf(tampon, enveloppe, paquet, node_num):
     tampon.observer(node_num, passerelle, "RF", snr=snr, rssi=rssi)
 
 
+def mesure_telemetrie(node_num, telemetrie):
+    """Une ligne de mesure à partir d'un `Telemetry` (DeviceMetrics et/ou LocalStats), ou None.
+
+    DeviceMetrics : ce que tout nœud publie de lui-même (batterie, tension, occupation du canal,
+    temps d'antenne). LocalStats : ce qu'une passerelle compte de son côté (paquets émis et reçus,
+    nœuds en ligne, bruit de fond). Un nœud alimenté sur secteur rapporte 101 % de batterie."""
+    mesure = {"node_num": node_num,
+              "horodatage": telemetrie.time or int(time.time())}
+    if telemetrie.HasField("device_metrics"):
+        d = telemetrie.device_metrics
+        mesure.update({
+            "batterie": d.battery_level if d.HasField("battery_level") else None,
+            "tension": round(d.voltage, 3) if d.HasField("voltage") else None,
+            "occupation_canal": round(d.channel_utilization, 2) if d.HasField("channel_utilization") else None,
+            "temps_antenne_tx": round(d.air_util_tx, 2) if d.HasField("air_util_tx") else None,
+            "uptime_s": d.uptime_seconds if d.HasField("uptime_seconds") else None,
+        })
+    elif telemetrie.HasField("local_stats"):
+        s = telemetrie.local_stats
+        mesure.update({
+            "occupation_canal": round(s.channel_utilization, 2), "temps_antenne_tx": round(s.air_util_tx, 2),
+            "uptime_s": s.uptime_seconds, "paquets_tx": s.num_packets_tx, "paquets_rx": s.num_packets_rx,
+            "noeuds_en_ligne": s.num_online_nodes, "bruit_dbm": s.noise_floor or None,
+        })
+    else:
+        return None
+    return mesure
+
+
+class TamponTelemetrie:
+    """Mesures de télémétrie et compteurs de paquets par type et par heure, vidés chaque minute.
+    C'est ce qui nourrit le tableau radio : occupation du canal, temps d'antenne, batterie,
+    paquets émis/reçus, répartition des paquets par type."""
+
+    def __init__(self):
+        self.mesures = []
+        self.compteurs = {}
+
+    def mesurer(self, mesure):
+        if mesure is not None and len(self.mesures) < 5000:
+            self.mesures.append(mesure)
+
+    def compter(self, type_paquet):
+        heure = int(time.time()) // 3600 * 3600
+        cle = (heure, type_paquet)
+        self.compteurs[cle] = self.compteurs.get(cle, 0) + 1
+
+    def extraire(self):
+        mesures, self.mesures = self.mesures, []
+        compteurs = [{"heure": h, "type": t, "nombre": n} for (h, t), n in self.compteurs.items()]
+        self.compteurs = {}
+        return mesures, compteurs
+
+
+async def boucle_flush_telemetrie(django, compagnon_id, tampon, nom_compagnon="?"):
+    while True:
+        await asyncio.sleep(CONTACTS_FLUSH_INTERVAL_SECONDS)
+        mesures, compteurs = tampon.extraire()
+        try:
+            await django.rapporter_telemetrie(compagnon_id, mesures, compteurs)
+        except Exception:
+            logger.exception("Échec du rapport de télémétrie (%s).", nom_compagnon)
+
+
 class TamponContacts:
     """Accumule les nœuds découverts (NodeInfo/Position) en mémoire, flush périodique vers
     Django par lot — évite un POST HTTP par paquet MQTT reçu, potentiellement très fréquent sur
@@ -529,6 +600,13 @@ class TamponContacts:
             entree["hardware_model"] = hardware_model
         if public_key_hex:
             entree["public_key_hex"] = public_key_hex
+
+    def maj_reception(self, node_num, sauts):
+        """Nombre de sauts du dernier paquet entendu de ce nœud (hop_start - hop_limit)."""
+        entree = self._par_node_num.setdefault(node_num, {"node_num": node_num})
+        if sauts is not None and sauts >= 0:
+            entree["sauts"] = sauts
+        entree["dernier_entendu"] = time.time()
 
     def maj_position(self, node_num, latitude, longitude):
         entree = self._par_node_num.setdefault(node_num, {"node_num": node_num})
@@ -800,13 +878,20 @@ class EchangeCles:
 
 
 def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, compagnon_id, boucle,
-                              echange=None, packet_id=0):
+                              echange=None, packet_id=0, tampon_telemetrie=None):
     """Décodage du Data protobuf déjà déchiffré — dispatch par portnum. Retourne une coroutine
     à planifier si un appel réseau est nécessaire (log message entrant), sinon None."""
     data = mesh_pb2.Data()
     data.ParseFromString(payload)
     if echange is not None and canal_id is not None:
         echange.annuaire.entendu(node_num, canal_nom)
+    if tampon_telemetrie is not None:
+        tampon_telemetrie.compter(portnums_pb2.PortNum.Name(data.portnum))
+
+    if data.portnum == portnums_pb2.PortNum.TELEMETRY_APP:
+        if tampon_telemetrie is not None:
+            tampon_telemetrie.mesurer(mesure_telemetrie(node_num, telemetry_pb2.Telemetry.FromString(data.payload)))
+        return None
 
     if data.portnum == portnums_pb2.PortNum.TEXT_MESSAGE_APP:
         contenu = data.payload.decode("utf-8", errors="replace")
@@ -960,7 +1045,7 @@ def _dechiffrer_message_pki(paquet, node_num, packet_id, cle_privee_hex, annuair
 
 
 def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex,
-                  echange=None):
+                  echange=None, tampon_telemetrie=None):
     """paho-mqtt tourne dans son propre thread (loop_start) — chaque callback poste les
     coroutines réseau à exécuter dans la boucle asyncio principale via
     call_soon_threadsafe, jamais d'appel réseau direct depuis le thread MQTT."""
@@ -1045,6 +1130,8 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             # Après la liaison (chaque passerelle qui a entendu compte), avant tout le reste.
             if deja_vus.deja_vu(node_num, packet_id):
                 return
+            # Sauts parcourus par ce paquet (pas de hop_start : firmware ancien, on ne sait pas).
+            tampon.maj_reception(node_num, (paquet.hop_start - paquet.hop_limit) if paquet.hop_start else None)
 
             if paquet.HasField("decoded"):
                 payload = paquet.decoded.SerializeToString()
@@ -1072,12 +1159,14 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
                 # paquet EST arrivé, et c'est ce que le bilan de réception doit distinguer d'un
                 # réseau vide.
                 compteurs.canal_inconnu += 1
+                if tampon_telemetrie is not None:
+                    tampon_telemetrie.compter("CHIFFRE_CANAL_INCONNU")
                 return
 
             coro = _traiter_paquet_dechiffre(
                 payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django,
                 {"id": compagnon["id"], "node_num": compagnon["node_num"], "nom": compagnon.get("nom", "?")}, boucle,
-                echange=echange, packet_id=packet_id,
+                echange=echange, packet_id=packet_id, tampon_telemetrie=tampon_telemetrie,
             )
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
@@ -1496,6 +1585,23 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
     # 15/11/2026 il était envoyé avec `canal: None`, que le serveur refuse (400) — tous les
     # messages de canal entendus par un appareil TCP ou série étaient perdus en silence.
     canaux_par_nom = {}
+    # 19/11/2026 : jusqu'ici, un appareil branché en direct ne rapportait QUE les messages texte.
+    # Sa télémétrie (et celle des nœuds qu'il entend), les sauts et les types de paquets nourrissent
+    # désormais le tableau radio, comme pour une passerelle MQTT.
+    tampon_telemetrie = TamponTelemetrie()
+    tampon_contacts = TamponContacts()
+
+    def _observer(packet):
+        decoded = packet.get("decoded") or {}
+        portnum = decoded.get("portnum") or "CHIFFRE_CANAL_INCONNU"
+        tampon_telemetrie.compter(portnum)
+        expediteur = packet.get("from")
+        if expediteur:
+            debut, reste = packet.get("hopStart"), packet.get("hopLimit")
+            tampon_contacts.maj_reception(expediteur, (debut - reste) if debut and reste is not None else None)
+        if portnum == "TELEMETRY_APP" and isinstance(decoded.get("payload"), (bytes, bytearray)):
+            tampon_telemetrie.mesurer(mesure_telemetrie(
+                expediteur, telemetry_pb2.Telemetry.FromString(bytes(decoded["payload"]))))
 
     def _canal_django_du_paquet(packet, interface):
         try:
@@ -1507,6 +1613,10 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
 
     def on_receive(packet, interface):
         try:
+            try:
+                _observer(packet)
+            except Exception:
+                logger.debug("Paquet non mesuré (%s).", compagnon["nom"], exc_info=True)
             decoded = packet.get("decoded") or {}
             if decoded.get("portnum") != "TEXT_MESSAGE_APP":
                 return
@@ -1639,6 +1749,8 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
             boucle_envoi_canaux_locale(),
             boucle_taches_admin(),
             boucle_cles_locale(django, compagnon, iface, node_num, libelle_connexion),
+            boucle_flush_telemetrie(django, compagnon["id"], tampon_telemetrie, compagnon.get("nom", "?")),
+            boucle_flush_contacts(django, compagnon["id"], tampon_contacts, compagnon.get("nom", "?")),
         )
     finally:
         pub.unsubscribe(on_receive, "meshtastic.receive")
@@ -1698,6 +1810,7 @@ async def _executer_compagnon_mqtt(django, compagnon):
     registre.mettre_a_jour(await django.canaux_avec_cle(compagnon["id"]))
     tampon = TamponContacts()
     tampon_liaisons = TamponLiaisons()
+    tampon_telemetrie = TamponTelemetrie()
 
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
@@ -1705,7 +1818,7 @@ async def _executer_compagnon_mqtt(django, compagnon):
     echange = EchangeCles(compagnon, registre, compagnon["x25519_public_key_hex"])
     mqtt_client, compteurs = demarrer_mqtt(
         compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex,
-        echange=echange,
+        echange=echange, tampon_telemetrie=tampon_telemetrie,
     )
     echange.publier = lambda canal_nom, paquet: _publier_paquet(
         mqtt_client, compagnon, canal_nom, registre.get(canal_nom), paquet,
@@ -1717,6 +1830,7 @@ async def _executer_compagnon_mqtt(django, compagnon):
             boucle_rafraichissement_canaux(django, registre, compagnon["id"]),
             boucle_flush_contacts(django, compagnon["id"], tampon, compagnon.get("nom", "?")),
             boucle_flush_liaisons(django, compagnon["id"], tampon_liaisons, compagnon.get("nom", "?")),
+            boucle_flush_telemetrie(django, compagnon["id"], tampon_telemetrie, compagnon.get("nom", "?")),
             boucle_statistiques_reception(
                 compteurs, compagnon.get("nom", "?"),
                 f"{compagnon['topic_racine']}/2/e/#",

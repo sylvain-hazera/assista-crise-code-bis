@@ -43,7 +43,7 @@ from .models import (
     StatutPreuveRadio,
     SourceObservateurMeshCore,
     TacheAdminMeshCore,
-    TypeTacheAdminMeshCore, TACHES_ADMIN_MESHCORE_LOCALES,
+    TypeTacheAdminMeshCore, TACHES_ADMIN_MESHCORE_LOCALES, TACHES_ADMIN_SUR_UN_NOEUD,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
@@ -4374,6 +4374,8 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
         if type_tache == TypeTacheAdminMeshtastic.DEFINIR_NOM:
             self._valider_nom(attrs.get('parametres') or {})
 
+        self._valider_operations_du_19(type_tache, attrs)
+
         if type_tache == TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE:
             parametres = attrs.get('parametres') or {}
             try:
@@ -4428,6 +4430,40 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
             )
         except ReglageInvalide as erreur:
             raise serializers.ValidationError({"parametres": str(erreur)}) from erreur
+
+    @staticmethod
+    def _valider_operations_du_19(type_tache, attrs):
+        """Opérations ajoutées le 19/11/2026 : forme des paramètres, refusée ici plutôt que par
+        un aller-retour radio."""
+        T = TypeTacheAdminMeshtastic
+        parametres = attrs.get('parametres') or {}
+        if type_tache in TACHES_ADMIN_SUR_UN_NOEUD:
+            try:
+                cible = int(parametres['node_num'])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({"parametres": "node_num (numéro du nœud visé) est requis."})
+            if not 0 < cible < 0xFFFFFFFF:
+                raise serializers.ValidationError({"parametres": "node_num hors bornes."})
+        elif type_tache == T.DEFINIR_MESSAGES_PREDEF:
+            texte = str(parametres.get('messages') or '').strip()
+            # Le firmware range ces messages dans un champ de 200 octets, séparés par « | ».
+            if not texte or len(texte.encode('utf-8')) > 200:
+                raise serializers.ValidationError({"parametres": (
+                    "messages requis : 200 octets au plus, séparés par « | » (ex. « Besoin d'aide|"
+                    "Tout va bien|Évacué »).")})
+        elif type_tache == T.POSITION_FIXE:
+            try:
+                lat, lon = float(parametres['latitude']), float(parametres['longitude'])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({"parametres": "latitude et longitude sont requises."})
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise serializers.ValidationError({"parametres": "Position hors du globe."})
+        elif type_tache == T.VIDER_BASE_NOEUDS and parametres.get('confirme') is not True:
+            raise serializers.ValidationError({"parametres": (
+                "Confirmation requise (confirme: true) : le nœud oublie tous les nœuds connus, "
+                "leurs clés publiques comprises, et devra les réapprendre.")})
+        elif type_tache == T.TRACEROUTE and not attrs.get('node_num_cible'):
+            raise serializers.ValidationError({"node_num_cible": "Le nœud vers lequel tracer la route est requis."})
 
     @staticmethod
     def _valider_nom(parametres):

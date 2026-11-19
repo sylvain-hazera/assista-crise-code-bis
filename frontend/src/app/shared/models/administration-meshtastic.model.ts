@@ -18,7 +18,22 @@ export type TypeTacheAdminMeshtastic =
   | 'DEFINIR_NOM'
   | 'DEFINIR_PUISSANCE'
   | 'DEFINIR_MQTT_JSON'
-  | 'REDEMARRER';
+  | 'REDEMARRER'
+  // 19/11/2026
+  | 'LIRE_CANAUX'
+  | 'LIRE_ETAT_CONNEXION'
+  | 'LIRE_MESSAGES_PREDEF'
+  | 'DEFINIR_MESSAGES_PREDEF'
+  | 'POSITION_FIXE'
+  | 'RETIRER_POSITION_FIXE'
+  | 'REGLER_HEURE'
+  | 'FAVORI'
+  | 'RETIRER_FAVORI'
+  | 'IGNORER'
+  | 'NE_PLUS_IGNORER'
+  | 'OUBLIER_NOEUD'
+  | 'VIDER_BASE_NOEUDS'
+  | 'TRACEROUTE';
 
 /** Catalogue des réglages modifiables, servi par
  * `GET /api/taches-admin-meshtastic/reglages/`.
@@ -164,6 +179,66 @@ export const OPERATIONS_ADMIN_MESHTASTIC: {
     explication: "Le nœud publie en plus une version décodée EN CLAIR sur « …/2/json/# ». Utile "
       + "aux outils tiers du site (Node-RED, tableau de bord) ; sans effet sur ce pont, qui ne "
       + "lit que « …/2/e/# ». À réserver à un broker de site : le broker voit alors le texte.",
+  },
+  // ── 19/11/2026 ─────────────────────────────────────────────────────────
+  {
+    type: 'TRACEROUTE', libelle: 'Traceroute vers ce nœud', ecriture: false,
+    explication: "Le chemin aller et retour, et le SNR à chaque saut. Chaque saut mesuré devient "
+      + "une liaison sur la carte radio. Choisissez le nœud visé comme cible.",
+  },
+  {
+    type: 'LIRE_CANAUX', libelle: 'Lire les canaux', ecriture: false,
+    explication: 'Les huit emplacements : nom, rôle, liaisons MQTT, longueur de la clé — jamais la clé elle-même.',
+  },
+  {
+    type: 'LIRE_ETAT_CONNEXION', libelle: "Lire l'état des connexions", ecriture: false,
+    explication: 'Wi-Fi, Ethernet, Bluetooth, série : ce qui est branché et joignable sur le nœud.',
+  },
+  {
+    type: 'LIRE_MESSAGES_PREDEF', libelle: 'Lire les messages prédéfinis', ecriture: false,
+    explication: "Les messages qu'on envoie d'un clic depuis un appareil à molette ou à boutons.",
+  },
+  {
+    type: 'DEFINIR_MESSAGES_PREDEF', libelle: 'Définir les messages prédéfinis', ecriture: true,
+    explication: "Séparés par « | », 200 octets au plus — par exemple « Besoin d'aide|Tout va "
+      + "bien|Évacué|Blessé ». Précieux en crise pour qui n'a pas de clavier.",
+  },
+  {
+    type: 'POSITION_FIXE', libelle: 'Fixer la position', ecriture: true,
+    explication: "Pour un relais sans GPS : il annonce cette position, et apparaît au bon endroit sur la carte.",
+  },
+  {
+    type: 'RETIRER_POSITION_FIXE', libelle: 'Retirer la position fixe', ecriture: true,
+    explication: 'Le nœud reprend la position de son GPS, s’il en a un.',
+  },
+  {
+    type: 'REGLER_HEURE', libelle: "Mettre le nœud à l'heure", ecriture: true,
+    explication: "Envoie l'heure du serveur. Un nœud sans GPS ni réseau perd l'heure à chaque redémarrage.",
+  },
+  {
+    type: 'FAVORI', libelle: 'Marquer un nœud comme favori', ecriture: true,
+    explication: "Le nœud cible garde ce nœud dans sa base même quand elle est pleine.",
+  },
+  {
+    type: 'RETIRER_FAVORI', libelle: 'Retirer un nœud des favoris', ecriture: true,
+    explication: '',
+  },
+  {
+    type: 'IGNORER', libelle: 'Ignorer un nœud', ecriture: true,
+    explication: "Le nœud cible ne traite plus les paquets de ce nœud (un nœud qui sature le canal, par exemple).",
+  },
+  {
+    type: 'NE_PLUS_IGNORER', libelle: 'Ne plus ignorer un nœud', ecriture: true,
+    explication: '',
+  },
+  {
+    type: 'OUBLIER_NOEUD', libelle: 'Retirer un nœud de la base', ecriture: true,
+    explication: 'Le nœud cible l’oublie ; il réapparaîtra à sa prochaine annonce.',
+  },
+  {
+    type: 'VIDER_BASE_NOEUDS', libelle: 'Vider la base des nœuds', ecriture: true,
+    explication: "Le nœud oublie TOUS les nœuds connus, clés publiques comprises, et les "
+      + "réapprendra peu à peu. Confirmation exigée.",
   },
   {
     type: 'DEFINIR_PUISSANCE', libelle: "Définir la puissance d'émission", ecriture: true,

@@ -520,6 +520,66 @@ SECTIONS = {
             ),
         },
     },
+    # ── 19/11/2026 : trois sections de plus, utiles en crise et sans aucun secret. Les sections
+    # réseau et Bluetooth (mot de passe Wi-Fi, code PIN) et sécurité (clés d'administration)
+    # restent fermées : elles transportent un secret ou décident de qui administre.
+    "alimentation": {
+        "libelle": "Alimentation",
+        "module": False,
+        "redemarre": False,
+        "champs": {
+            "is_power_saving": Booleen(
+                "Économie d'énergie",
+                "Le nœud dort entre deux trafics. Bon pour un capteur ou un relais solaire ; un "
+                "relais qui dort rate des paquets.",
+            ),
+            "on_battery_shutdown_after_secs": Entier(
+                0, SEPT_JOURS_S, "Extinction sur batterie après (s)",
+                "0 = jamais. Sinon le nœud s'éteint ce délai après la perte du secteur : utile "
+                "pour protéger une batterie, fatal pour un relais de secours.",
+            ),
+        },
+    },
+    "store_forward": {
+        "libelle": "Module Store & Forward",
+        "module": True,
+        "redemarre": False,
+        "champs": {
+            "enabled": Booleen(
+                "Module activé",
+                "Le nœud garde les messages et les redonne à ceux qui étaient hors de portée : "
+                "précieux quand des équipes entrent et sortent de la couverture.",
+            ),
+            "is_server": Booleen(
+                "Serveur",
+                "Ce nœud stocke pour les autres (il lui faut de la mémoire : ESP32 avec PSRAM).",
+            ),
+            "heartbeat": Booleen(
+                "Battement",
+                "Annonce régulièrement qu'un serveur Store & Forward est là.",
+            ),
+            "records": Entier(0, 10000, "Messages gardés", "0 = valeur par défaut du firmware."),
+            "history_return_max": Entier(0, 1000, "Messages redonnés au plus", "0 = valeur par défaut."),
+            "history_return_window": Entier(0, 10080, "Fenêtre de rappel (min)", "0 = valeur par défaut."),
+        },
+    },
+    "test_portee": {
+        "libelle": "Module Test de portée",
+        "module": True,
+        "redemarre": False,
+        "champs": {
+            "enabled": Booleen(
+                "Module activé",
+                "Pour mesurer la couverture sur le terrain : un nœud émet, l'autre note ce qu'il "
+                "reçoit. À couper après l'essai : il consomme du temps d'antenne.",
+            ),
+            "sender": Entier(
+                0, 3600, "Émission toutes les (s)",
+                "0 = ce nœud reçoit seulement. Sinon il émet à cet intervalle.",
+            ),
+            "save": Booleen("Enregistrer", "Le récepteur garde ce qu'il a reçu (ESP32)."),
+        },
+    },
 }
 
 

@@ -9295,6 +9295,10 @@ class ContactMeshtastic(EnvironmentScopedModel):
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
     dernier_advert = models.DateTimeField(null=True, blank=True)
+    # 19/11/2026 : sauts parcourus par le dernier paquet entendu (hop_start - hop_limit) et
+    # moment de cette dernière écoute, quel que soit le type de paquet.
+    sauts = models.PositiveSmallIntegerField(null=True, blank=True)
+    dernier_entendu = models.DateTimeField(null=True, blank=True)
 
     date_synchronisation = models.DateTimeField(auto_now=True)
 
@@ -9315,6 +9319,45 @@ class SourceLiaisonMeshtastic(models.TextChoices):
     RF = "RF", "Reçu par une passerelle MQTT (SNR mesuré)"
     VOISINAGE = "VOISINAGE", "Déclaré par un rapport de voisinage (NeighborInfo)"
     TRACEROUTE = "TRACEROUTE", "Saut d'un traceroute"
+
+
+class MesureTelemetrieMeshtastic(EnvironmentScopedModel):
+    """Une mesure de télémétrie d'un nœud Meshtastic, telle qu'une passerelle l'a reçue
+    (19/11/2026, tableau radio). DeviceMetrics : batterie, tension, occupation du canal, temps
+    d'antenne. LocalStats (passerelles) : paquets émis/reçus, nœuds en ligne, bruit de fond.
+
+    Données techniques, sans rien de personnel : en clair, parce qu'on les agrège par intervalle
+    de temps. Gardées 30 jours (purge au fil des rapports)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    compagnon = models.ForeignKey(CompagnonMeshtastic, on_delete=models.CASCADE, related_name="mesures")
+    node_num = models.PositiveBigIntegerField()
+    horodatage = models.DateTimeField()
+    batterie = models.PositiveSmallIntegerField(null=True, blank=True, help_text="%, 101 = secteur")
+    tension = models.FloatField(null=True, blank=True)
+    occupation_canal = models.FloatField(null=True, blank=True, help_text="% du temps où le canal est occupé")
+    temps_antenne_tx = models.FloatField(null=True, blank=True, help_text="% du temps passé à émettre")
+    uptime_s = models.PositiveIntegerField(null=True, blank=True)
+    paquets_tx = models.PositiveIntegerField(null=True, blank=True)
+    paquets_rx = models.PositiveIntegerField(null=True, blank=True)
+    noeuds_en_ligne = models.PositiveSmallIntegerField(null=True, blank=True)
+    bruit_dbm = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["node_num", "horodatage"], name="mesure_mt_noeud_heure"),
+                   models.Index(fields=["compagnon", "horodatage"], name="mesure_mt_gw_heure")]
+
+
+class CompteurPaquetsMeshtastic(EnvironmentScopedModel):
+    """Paquets reçus par une passerelle, par heure et par type (portnum) : la répartition du
+    trafic, et ce qui occupe le canal (19/11/2026)."""
+    compagnon = models.ForeignKey(CompagnonMeshtastic, on_delete=models.CASCADE, related_name="compteurs_paquets")
+    heure = models.DateTimeField()
+    type_paquet = models.CharField(max_length=40)
+    nombre = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["compagnon", "heure", "type_paquet"],
+                                               name="uq_compteur_paquets_mt")]
 
 
 class LiaisonMeshtastic(EnvironmentScopedModel):
@@ -9478,6 +9521,21 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
     DEFINIR_PUISSANCE = "DEFINIR_PUISSANCE", "Définir la puissance d'émission"
     DEFINIR_MQTT_JSON = "DEFINIR_MQTT_JSON", "Activer ou couper la publication JSON du MQTT"
     REDEMARRER = "REDEMARRER", "Redémarrer le nœud"
+    # ── 19/11/2026 : le reste de ce que l'administration Meshtastic permet sans risque ──
+    LIRE_CANAUX = "LIRE_CANAUX", "Lire les canaux (noms et rôles, jamais les clés)"
+    LIRE_ETAT_CONNEXION = "LIRE_ETAT_CONNEXION", "Lire l'état des connexions (Wi-Fi, Ethernet, Bluetooth, série)"
+    LIRE_MESSAGES_PREDEF = "LIRE_MESSAGES_PREDEF", "Lire les messages prédéfinis"
+    DEFINIR_MESSAGES_PREDEF = "DEFINIR_MESSAGES_PREDEF", "Définir les messages prédéfinis"
+    POSITION_FIXE = "POSITION_FIXE", "Fixer la position du nœud"
+    RETIRER_POSITION_FIXE = "RETIRER_POSITION_FIXE", "Retirer la position fixe"
+    REGLER_HEURE = "REGLER_HEURE", "Mettre le nœud à l'heure"
+    FAVORI = "FAVORI", "Marquer un nœud comme favori"
+    RETIRER_FAVORI = "RETIRER_FAVORI", "Retirer un nœud des favoris"
+    IGNORER = "IGNORER", "Ignorer un nœud"
+    NE_PLUS_IGNORER = "NE_PLUS_IGNORER", "Ne plus ignorer un nœud"
+    OUBLIER_NOEUD = "OUBLIER_NOEUD", "Retirer un nœud de la base"
+    VIDER_BASE_NOEUDS = "VIDER_BASE_NOEUDS", "Vider la base des nœuds"
+    TRACEROUTE = "TRACEROUTE", "Traceroute vers un nœud (chemin et SNR aller-retour)"
 
 
 # Opérations d'ÉCRITURE : le firmware exige pour elles une clé de session valide (AdminModule.cpp,
@@ -9489,6 +9547,22 @@ TACHES_ADMIN_ECRITURE = frozenset({
     TypeTacheAdminMeshtastic.DEFINIR_REGLAGES,
     TypeTacheAdminMeshtastic.DEFINIR_NOM,
     TypeTacheAdminMeshtastic.REDEMARRER,
+    TypeTacheAdminMeshtastic.DEFINIR_MESSAGES_PREDEF,
+    TypeTacheAdminMeshtastic.POSITION_FIXE,
+    TypeTacheAdminMeshtastic.RETIRER_POSITION_FIXE,
+    TypeTacheAdminMeshtastic.REGLER_HEURE,
+    TypeTacheAdminMeshtastic.FAVORI,
+    TypeTacheAdminMeshtastic.RETIRER_FAVORI,
+    TypeTacheAdminMeshtastic.IGNORER,
+    TypeTacheAdminMeshtastic.NE_PLUS_IGNORER,
+    TypeTacheAdminMeshtastic.OUBLIER_NOEUD,
+    TypeTacheAdminMeshtastic.VIDER_BASE_NOEUDS,
+})
+# Opérations qui visent un AUTRE nœud que leur cible, désigné par `parametres.node_num`.
+TACHES_ADMIN_SUR_UN_NOEUD = frozenset({
+    TypeTacheAdminMeshtastic.FAVORI, TypeTacheAdminMeshtastic.RETIRER_FAVORI,
+    TypeTacheAdminMeshtastic.IGNORER, TypeTacheAdminMeshtastic.NE_PLUS_IGNORER,
+    TypeTacheAdminMeshtastic.OUBLIER_NOEUD,
 })
 
 # Longueurs imposées par le firmware pour l'identité d'un nœud, en OCTETS et non en caractères :
@@ -9572,7 +9646,7 @@ class TacheAdminMeshtastic(EnvironmentScopedModel):
         help_text="Vide = l'appareil passerelle lui-même (aucune autorisation préalable requise).",
     )
 
-    type_tache = models.CharField(max_length=24, choices=TypeTacheAdminMeshtastic.choices)
+    type_tache = models.CharField(max_length=30, choices=TypeTacheAdminMeshtastic.choices)
 
     # Paramètres de l'opération, ex. {"puissance_dbm": 20}. Jamais de secret ici (voir les
     # opérations volontairement absentes de TypeTacheAdminMeshtastic) : pas de chiffrement.

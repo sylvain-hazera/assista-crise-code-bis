@@ -112,6 +112,7 @@ export const ADMIN_ROUTES: Routes = [
   // TacheAdminMeshtasticViewSet.perform_create et core/acces_radio.py).
   { path: 'meshtastic-administration', loadComponent: () => import('./meshtastic-administration/meshtastic-administration.component').then(m => m.MeshtasticAdministrationComponent), canActivate: [radioGuard] },
   // Diagnostic des liaisons radio (core/analyse_liaisons.py) : lecture seule.
+  { path: 'tableau-radio', loadComponent: () => import('./tableau-radio/tableau-radio.component').then(m => m.TableauRadioComponent), canActivate: [radioGuard] },
   { path: 'diagnostic-radio', loadComponent: () => import('./diagnostic-radio/diagnostic-radio.component').then(m => m.DiagnosticRadioComponent), canActivate: [radioGuard] },
   // Planification radio sur le relief (core/relief_radio.py) : bilan de liaison et couverture
   // d'un site. Les calculs restent couteux (un balayage coute des milliers d'interrogations a

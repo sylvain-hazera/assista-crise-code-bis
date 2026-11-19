@@ -168,6 +168,29 @@
               <input name="delai" type="number" min="1" max="300" [(ngModel)]="nouvelle.delai_s">
             </label>
           }
+          @if (operationsSurUnNoeud.includes(nouvelle.type_tache)) {
+            <label>
+              Nœud visé (numéro, ou identifiant !xxxxxxxx)
+              <input name="node-vise" type="text" [(ngModel)]="nouvelle.node_vise" placeholder="!a1b2c3d4">
+            </label>
+          }
+          @if (nouvelle.type_tache === 'DEFINIR_MESSAGES_PREDEF') {
+            <label>
+              Messages, séparés par « | » ({{ octets(nouvelle.messages) }}/200 octets)
+              <input name="messages" type="text" [(ngModel)]="nouvelle.messages"
+                     placeholder="Besoin d'aide|Tout va bien|Évacué|Blessé">
+            </label>
+          }
+          @if (nouvelle.type_tache === 'POSITION_FIXE') {
+            <label>Latitude <input name="lat" type="number" step="any" [(ngModel)]="nouvelle.latitude"></label>
+            <label>Longitude <input name="lon" type="number" step="any" [(ngModel)]="nouvelle.longitude"></label>
+          }
+          @if (nouvelle.type_tache === 'VIDER_BASE_NOEUDS') {
+            <label class="case">
+              <input name="confirme" type="checkbox" [(ngModel)]="nouvelle.confirme">
+              Je confirme : le nœud oubliera tous les nœuds connus et leurs clés.
+            </label>
+          }
         </div>
 
         @if (nouvelle.type_tache === 'DEFINIR_REGLAGES' && sectionCourante) {

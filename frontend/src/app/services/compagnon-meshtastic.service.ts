@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import { CompagnonMeshtastic } from '../shared/models/compagnon-meshtastic.model';
+import { FenetreTableauRadio, TableauRadio } from '../shared/models/tableau-radio.model';
 
 @Injectable({ providedIn: 'root' })
 export class CompagnonMeshtasticService {
@@ -20,6 +21,11 @@ export class CompagnonMeshtasticService {
    * les identifiants MQTT) pour le sélecteur de broker lors d'une réclamation de nœud. */
   envoyables(): Observable<Pick<CompagnonMeshtastic, 'id' | 'nom' | 'broker_host'>[]> {
     return this.http.get<Pick<CompagnonMeshtastic, 'id' | 'nom' | 'broker_host'>[]>(`${this.url}/envoyables/`);
+  }
+
+  /** GET /api/compagnons-meshtastic/<id>/tableau/?fenetre=1h|6h|24h|7j (19/11/2026). */
+  tableau(id: string, fenetre: FenetreTableauRadio): Observable<TableauRadio> {
+    return this.http.get<TableauRadio>(`${this.url}/${id}/tableau/`, { params: { fenetre } });
   }
 
   create(data: Partial<CompagnonMeshtastic>): Observable<CompagnonMeshtastic> {

@@ -54,9 +54,18 @@ PUISSANCE_MIN_DBM = 1
 PUISSANCE_MAX_DBM = 36
 
 LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL",
-            "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT", "LIRE_REGLAGES"}
+            "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT", "LIRE_REGLAGES",
+            "LIRE_CANAUX", "LIRE_ETAT_CONNEXION", "LIRE_MESSAGES_PREDEF", "TRACEROUTE"}
 ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON", "DEFINIR_REGLAGES",
-             "DEFINIR_NOM"}
+             "DEFINIR_NOM", "DEFINIR_MESSAGES_PREDEF", "POSITION_FIXE", "RETIRER_POSITION_FIXE",
+             "REGLER_HEURE", "FAVORI", "RETIRER_FAVORI", "IGNORER", "NE_PLUS_IGNORER",
+             "OUBLIER_NOEUD", "VIDER_BASE_NOEUDS"}
+# Opération d'admin -> champ de l'AdminMessage qui prend le numéro du nœud visé.
+CHAMP_PAR_NOEUD = {"FAVORI": "set_favorite_node", "RETIRER_FAVORI": "remove_favorite_node",
+                   "IGNORER": "set_ignored_node", "NE_PLUS_IGNORER": "remove_ignored_node",
+                   "OUBLIER_NOEUD": "remove_by_nodenum"}
+#: Délai d'attente d'un traceroute : il traverse le réseau aller ET retour.
+TIMEOUT_TRACEROUTE_S = 120
 
 # Sections de configuration et modules accessibles par les opérations génériques `LIRE_REGLAGES`
 # et `DEFINIR_REGLAGES`. La liste blanche des CHAMPS, elle, vit côté Django
@@ -67,15 +76,19 @@ SECTIONS_CONFIG = {
     "device": admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG,
     "lora": admin_pb2.AdminMessage.ConfigType.LORA_CONFIG,
     "position": admin_pb2.AdminMessage.ConfigType.POSITION_CONFIG,
+    "alimentation": admin_pb2.AdminMessage.ConfigType.POWER_CONFIG,
 }
 SECTIONS_MODULE = {
     "voisinage": admin_pb2.AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG,
     "telemetrie": admin_pb2.AdminMessage.ModuleConfigType.TELEMETRY_CONFIG,
+    "store_forward": admin_pb2.AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG,
+    "test_portee": admin_pb2.AdminMessage.ModuleConfigType.RANGETEST_CONFIG,
 }
 # Nom du champ protobuf correspondant, dans Config / ModuleConfig.
 CHAMP_PROTOBUF = {
-    "device": "device", "lora": "lora", "position": "position",
+    "device": "device", "lora": "lora", "position": "position", "alimentation": "power",
     "voisinage": "neighbor_info", "telemetrie": "telemetry",
+    "store_forward": "store_forward", "test_portee": "range_test",
 }
 
 # Minima imposés par le FIRMWARE, revalidés ici bien que Django les vérifie déjà : un pont peut
@@ -413,7 +426,129 @@ def executer(iface, tache):
         _ecrire(iface, node_num, local, construire)
         return {"redemarrage_dans_s": delai}, None
 
+    resultat = _executer_du_19(iface, node_num, local, type_tache, parametres)
+    if resultat is not None:
+        return resultat
     raise ErreurAdmin(f"Opération inconnue de ce pont : {type_tache}.")
+
+
+# ---------------------------------------------------------------- 19/11/2026
+
+def _champ_simple(nom, valeur):
+    """AdminMessage avec un seul champ posé, quel que soit son type (bool ou entier selon la
+    version du protobuf : lu sur le descripteur plutôt que supposé)."""
+    message = admin_pb2.AdminMessage()
+    champ = admin_pb2.AdminMessage.DESCRIPTOR.fields_by_name[nom]
+    if champ.type == champ.TYPE_BOOL:
+        valeur = bool(valeur)
+    setattr(message, nom, valeur)
+    return message
+
+
+def _lire_canaux(iface, node_num, local):
+    """Les huit emplacements : nom, rôle, liaisons MQTT, et SEULEMENT la longueur de la clé —
+    jamais la clé elle-même, qui n'a rien à faire dans une réponse affichée à l'écran."""
+    from meshtastic.protobuf import channel_pb2
+    canaux = []
+    for index in range(8):
+        demande = admin_pb2.AdminMessage()
+        demande.get_channel_request = index + 1          # le firmware attend index + 1
+        rep = _lire(iface, node_num, local, demande).get_channel_response
+        canaux.append({
+            "index": rep.index,
+            "role": _nom_enum(channel_pb2.Channel.Role, rep.role),
+            "nom": rep.settings.name,
+            "cle_octets": len(rep.settings.psk),
+            "uplink": rep.settings.uplink_enabled,
+            "downlink": rep.settings.downlink_enabled,
+        })
+    return {"canaux": canaux}
+
+
+def traceroute(iface, node_num):
+    """Trace la route vers `node_num` : chemin aller et retour, SNR à chaque saut.
+
+    Pas un message d'administration : portnum TRACEROUTE_APP, que tout nœud traite. Écrit à la
+    main plutôt qu'avec `sendTraceRoute` de la lib, qui ne rend rien (elle imprime le résultat).
+    Les SNR du protobuf sont en quarts de dB (`snr_towards`, `snr_back`, entiers)."""
+    recu = {}
+    pret = threading.Event()
+
+    def sur_reponse(paquet):
+        recu["paquet"] = paquet
+        pret.set()
+
+    iface.sendData(mesh_pb2.RouteDiscovery(), destinationId=node_num,
+                   portNum=portnums_pb2.PortNum.TRACEROUTE_APP, wantResponse=True,
+                   onResponse=sur_reponse, channelIndex=0, hopLimit=7)
+    if not pret.wait(TIMEOUT_TRACEROUTE_S):
+        raise ErreurAdmin(f"Pas de réponse au traceroute après {TIMEOUT_TRACEROUTE_S} s : nœud "
+                          "éteint, hors de portée, ou réponse perdue en route.")
+    # Un refus de routage (pas de route, nœud injoignable) revient par le même rappel.
+    decode = _verifier(recu["paquet"])
+    if decode.get("portnum") not in (None, "TRACEROUTE_APP"):
+        raise ErreurAdmin(f"Le traceroute a reçu une réponse inattendue ({decode.get('portnum')}).")
+    brut = decode.get("payload")
+    if not isinstance(brut, (bytes, bytearray)):
+        raise ErreurAdmin("Réponse au traceroute illisible.")
+    route = mesh_pb2.RouteDiscovery.FromString(bytes(brut))
+    notre = iface.myInfo.my_node_num if iface.myInfo is not None else None
+    def _snr(valeurs):
+        return [None if v == -128 else v / 4 for v in valeurs]   # -128 : SNR inconnu
+    return {
+        "aller": [notre, *list(route.route), node_num],
+        "snr_aller": _snr(route.snr_towards),
+        "retour": [node_num, *list(route.route_back), notre] if route.snr_back else [],
+        "snr_retour": _snr(route.snr_back),
+    }
+
+
+def _executer_du_19(iface, node_num, local, type_tache, parametres):
+    if type_tache == "TRACEROUTE":
+        return traceroute(iface, node_num), None
+    if type_tache == "LIRE_CANAUX":
+        return _lire_canaux(iface, node_num, local), None
+    if type_tache == "LIRE_ETAT_CONNEXION":
+        rep = _lire(iface, node_num, local, _champ_simple("get_device_connection_status_request", True))
+        return json_format.MessageToDict(rep.get_device_connection_status_response), None
+    if type_tache == "LIRE_MESSAGES_PREDEF":
+        rep = _lire(iface, node_num, local, _champ_simple("get_canned_message_module_messages_request", True))
+        return {"messages": rep.get_canned_message_module_messages_response}, None
+    if type_tache == "DEFINIR_MESSAGES_PREDEF":
+        texte = str(parametres.get("messages") or "").strip()
+        if not texte or len(texte.encode("utf-8")) > 200:
+            raise ErreurAdmin("Messages prédéfinis : 200 octets au plus.")
+        _ecrire(iface, node_num, local, lambda: _champ_simple("set_canned_message_module_messages", texte))
+        return {"messages": texte}, None
+    if type_tache == "POSITION_FIXE":
+        lat, lon = float(parametres["latitude"]), float(parametres["longitude"])
+        def construire():
+            message = admin_pb2.AdminMessage()
+            message.set_fixed_position.latitude_i = int(round(lat * 1e7))
+            message.set_fixed_position.longitude_i = int(round(lon * 1e7))
+            if parametres.get("altitude") is not None:
+                message.set_fixed_position.altitude = int(parametres["altitude"])
+            return message
+        _ecrire(iface, node_num, local, construire)
+        return {"latitude": lat, "longitude": lon}, None
+    if type_tache == "RETIRER_POSITION_FIXE":
+        _ecrire(iface, node_num, local, lambda: _champ_simple("remove_fixed_position", True))
+        return {"position_fixe": "retirée"}, None
+    if type_tache == "REGLER_HEURE":
+        import time as _time
+        instant = int(_time.time())
+        _ecrire(iface, node_num, local, lambda: _champ_simple("set_time_only", instant))
+        return {"heure": instant}, None
+    if type_tache in CHAMP_PAR_NOEUD:
+        visee = int(parametres["node_num"])
+        _ecrire(iface, node_num, local, lambda: _champ_simple(CHAMP_PAR_NOEUD[type_tache], visee))
+        return {"noeud": visee}, None
+    if type_tache == "VIDER_BASE_NOEUDS":
+        if parametres.get("confirme") is not True:
+            raise ErreurAdmin("Vidage non confirmé : rien n'a été fait.")
+        _ecrire(iface, node_num, local, lambda: _champ_simple("nodedb_reset", True))
+        return {"base_des_noeuds": "vidée"}, None
+    return None
 
 
 def _message_metadata():

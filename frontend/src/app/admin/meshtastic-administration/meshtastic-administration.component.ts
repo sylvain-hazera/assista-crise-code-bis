@@ -57,10 +57,26 @@ export class MeshtasticAdministrationComponent implements OnInit {
     puissance_dbm: number;
     delai_s: number;
     mqtt_json: boolean;
+    node_vise: string;        // FAVORI, IGNORER… : le nœud visé, en décimal ou !hex
+    messages: string;
+    latitude: number | null;
+    longitude: number | null;
+    confirme: boolean;
   } = {
     compagnon: '', cible: '', type_tache: 'LIRE_CONFIG_LORA', puissance_dbm: 20, delai_s: 10,
-    mqtt_json: true,
+    mqtt_json: true, node_vise: '', messages: '', latitude: null, longitude: null, confirme: false,
   };
+
+  /** Opérations qui visent un autre nœud que la cible (miroir de TACHES_ADMIN_SUR_UN_NOEUD). */
+  readonly operationsSurUnNoeud = ['FAVORI', 'RETIRER_FAVORI', 'IGNORER', 'NE_PLUS_IGNORER', 'OUBLIER_NOEUD'];
+
+  /** « 3054 », « !00000bee » ou « bee » → numéro de nœud. */
+  numeroDe(texte: string): number | null {
+    const t = (texte || '').trim().toLowerCase();
+    if (!t) { return null; }
+    const n = t.startsWith('!') ? parseInt(t.slice(1), 16) : /^[0-9]+$/.test(t) ? Number(t) : parseInt(t, 16);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
 
   /** Catalogue servi par le serveur : sections, champs, types, bornes et avertissements
    * réglementaires. Jamais recopié ici — ce sont des contraintes du firmware et un texte
@@ -291,6 +307,14 @@ export class MeshtasticAdministrationComponent implements OnInit {
       parametres = { delai_s: Number(this.nouvelle.delai_s) };
     } else if (this.nouvelle.type_tache === 'DEFINIR_MQTT_JSON') {
       parametres = { actif: this.nouvelle.mqtt_json };
+    } else if (this.operationsSurUnNoeud.includes(this.nouvelle.type_tache)) {
+      parametres = { node_num: this.numeroDe(this.nouvelle.node_vise) };
+    } else if (this.nouvelle.type_tache === 'DEFINIR_MESSAGES_PREDEF') {
+      parametres = { messages: this.nouvelle.messages.trim() };
+    } else if (this.nouvelle.type_tache === 'POSITION_FIXE') {
+      parametres = { latitude: this.nouvelle.latitude, longitude: this.nouvelle.longitude };
+    } else if (this.nouvelle.type_tache === 'VIDER_BASE_NOEUDS') {
+      parametres = { confirme: this.nouvelle.confirme };
     }
 
     this.service.creer({
