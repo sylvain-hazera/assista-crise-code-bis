@@ -34,7 +34,8 @@ class Command(BaseCommand):
         try:
             while True:
                 # La foudre d'abord : les éclairs servent à l'analyse des cellules.
-                for code, unite in (("FOUDRE_MTG", "éclair(s) ajouté(s)"), ("ORAGES_RADAR", "cellule(s)")):
+                for code, unite in (("FOUDRE_MTG", "éclair(s) ajouté(s)"), ("ORAGES_RADAR", "cellule(s)"),
+                                    ("DOPPLER_RADAR", "cellule(s) examinée(s) au Doppler")):
                     resultat = sources_ouvertes.relever_source(code)
                     if resultat != "ignoré":
                         trace = sources_ouvertes.etat(code)

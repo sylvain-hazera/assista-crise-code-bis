@@ -453,6 +453,10 @@ class OragesView(APIView):
                     "tendance_mmh": c.tendance_mmh, "communes_sous_la_pluie": c.communes_touchees,
                     "rafale_mesuree": c.rafale_mesuree, "trace": c.trace,
                     "eclairs": c.eclairs,
+                    # Signatures Doppler, selon les relevés des radars les plus proches.
+                    "doppler": {"rotation": c.doppler_rotation, "grele": c.doppler_grele,
+                                "divergence": c.doppler_divergence, "radars": c.doppler_radars,
+                                "heure": c.doppler_heure} if c.doppler_heure else None,
                 },
                 "estimations": {
                     "cap_deg": c.cap_deg, "vers": orages.vers(c.cap_deg) if c.cap_deg is not None else None,

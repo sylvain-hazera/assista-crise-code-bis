@@ -3278,6 +3278,14 @@ class CelluleOrage(models.Model):
     grele_diagnostic_kgm2 = models.FloatField(null=True, blank=True)
     # Éclairs vus par le satellite MTG sous la cellule dans les 20 minutes autour de l'image.
     eclairs = models.PositiveIntegerField(null=True, blank=True)
+    # Signatures Doppler (core/doppler.py), SELON LES RELEVÉS des radars les plus proches :
+    # rotation {vrot_ms, elevations, lon, lat, radar}, grêle {z_max_dbz, sommet_45_m,
+    # isotherme0_m, probable, radar}, divergence {ms, radar}.
+    doppler_rotation = models.JSONField(null=True, blank=True)
+    doppler_grele = models.JSONField(null=True, blank=True)
+    doppler_divergence = models.JSONField(null=True, blank=True)
+    doppler_radars = models.JSONField(default=list, blank=True)
+    doppler_heure = models.DateTimeField(null=True, blank=True)
     releve_le = models.DateTimeField()
 
     class Meta:
@@ -3311,6 +3319,19 @@ class ImpactFoudre(models.Model):
     duree_ms = models.PositiveIntegerField(default=0)
     radiance = models.FloatField(default=0)
     confiance = models.FloatField(null=True, blank=True)
+
+
+class RadarMeteo(models.Model):
+    """Radar de Météo-France : identifiant de l'API, balayages publiés, position lue dans
+    l'en-tête de ses propres fichiers (core/doppler.py)."""
+
+    station = models.PositiveSmallIntegerField(primary_key=True)
+    nom = models.CharField(max_length=80)
+    tours = models.JSONField(default=list, blank=True)
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    altitude = models.FloatField(default=0)
+    maj = models.DateTimeField()
 
 
 class ImpactBlitzortung(models.Model):

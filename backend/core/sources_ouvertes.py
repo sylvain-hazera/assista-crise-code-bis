@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
-    foudre, observations_meteo, orages, pluie,
+    doppler, foudre, observations_meteo, orages, pluie,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
@@ -67,6 +67,10 @@ SOURCES = {
         # produit par tranche de dix minutes, paru dix à vingt minutes après coup.
         Source("FOUDRE_MTG", "Éclairs vus par satellite (MTG)", foudre.relever,
                datetime.timedelta(minutes=2), foudre.FRAICHEUR_MAX, "EUMETSAT (MTG Lightning Imager)"),
+        # Signatures Doppler des cellules intenses (19/11/2026) : rotation, grêle, divergence, lues
+        # radar par radar après chaque analyse des orages, par le même service.
+        Source("DOPPLER_RADAR", "Rotation, grêle et divergence (radars Doppler)", doppler.relever,
+               datetime.timedelta(minutes=4), datetime.timedelta(minutes=30), "Météo-France"),
         # Impacts Blitzortung, à titre indicatif (19/11/2026) : écoutés en continu par leur propre
         # service (`manage.py ecouter_blitzortung --service`), qui tient cette trace à jour.
         Source("FOUDRE_BLITZORTUNG", "Impacts de foudre Blitzortung (indicatif)", _releve_par_service,
@@ -169,7 +173,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR"}
 
 
 def etat(code):

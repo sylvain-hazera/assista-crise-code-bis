@@ -649,6 +649,13 @@ export interface CelluleOrage {
     rafale_mesuree: { kmh: number; station: string; mesure_le: string | null } | null;
     /** Éclairs vus par le satellite MTG sous la cellule, autour de l'heure de l'image. */
     eclairs: number | null;
+    /** Signatures Doppler (backend/core/doppler.py), selon les relevés des radars proches. */
+    doppler: {
+      rotation: { vrot_ms: number; elevations: number[]; radar: string } | null;
+      grele: { z_max_dbz: number | null; sommet_45_m: number | null; isotherme0_m: number | null; probable: boolean; radar: string } | null;
+      divergence: { ms: number; radar: string } | null;
+      radars: string[]; heure: string;
+    } | null;
   };
   estimations: {
     cap_deg: number | null; vers: string | null; vitesse_kmh: number | null;

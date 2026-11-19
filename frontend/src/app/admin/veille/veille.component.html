@@ -199,6 +199,20 @@
               @if (c.releves.communes_sous_la_pluie.length) { Sous la pluie : {{ communesOrage(c) }}. }
               @if (c.releves.rafale_mesuree; as r) { Rafale mesurée : <strong>{{ r.kmh }} km/h</strong> à {{ r.station }}. }
               @if (c.releves.eclairs) { <strong>{{ c.releves.eclairs }} éclair(s)</strong> vus par satellite sous la cellule. }
+              @if (c.releves.doppler; as d) {
+                @if (d.rotation; as rot) {
+                  <br><strong class="alerte-doppler">Rotation détectée</strong> par le radar de {{ rot.radar }}
+                  (vitesse de rotation ~{{ rot.vrot_ms * 3.6 | number:'1.0-0' }} km/h, sur {{ rot.elevations.length }} angles de visée).
+                }
+                @if (d.grele?.probable) {
+                  <br><strong>Grêle probable</strong> selon le radar de {{ d.grele!.radar }} : écho de 45 dBZ jusqu'à
+                  {{ d.grele!.sommet_45_m | number:'1.0-0' }} m, isotherme 0 °C à {{ d.grele!.isotherme0_m | number:'1.0-0' }} m.
+                }
+                @if (d.divergence; as div) {
+                  <br><strong>Divergence forte près du sol</strong> (rafale descendante possible), radar de {{ div.radar }} :
+                  {{ div.ms * 3.6 | number:'1.0-0' }} km/h d'écart sur quelques kilomètres.
+                }
+              }
             </p>
           </div>
           @if (c.estimations.vitesse_kmh != null) {
