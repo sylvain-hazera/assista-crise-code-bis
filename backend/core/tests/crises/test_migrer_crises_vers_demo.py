@@ -80,3 +80,24 @@ class TestMigration:
         with pytest.raises(CommandError):
             call_command("migrer_crises_vers_demo", crises=f"{scene['crise'].id},00000000-0000-0000-0000-000000000000", appliquer=True)
         assert Crisis.objects.get(pk=scene["crise"].pk).environment == "PROD"
+
+
+@pytest.mark.django_db
+class TestPrevenirSeulement:
+    """19/11/2026 : crises déplacées sans qu'aucun courriel parte ; on prévient après coup."""
+
+    def test_previent_les_responsables_d_une_crise_deja_en_demo(self, scene, mailoutbox):
+        Crisis.objects.filter(pk=scene["crise"].pk).update(environment="DEMO")
+        call_command("migrer_crises_vers_demo", crises=str(scene["crise"].id), prevenir_seulement=True)
+        assert mailoutbox == []                                   # par défaut : rien ne part
+        call_command("migrer_crises_vers_demo", crises=str(scene["crise"].id), prevenir_seulement=True, appliquer=True)
+        (courriel,) = mailoutbox
+        assert courriel.to == ["maire@migr.fr"] and "Crue réelle" in courriel.body
+        # Rien d'autre n'a bougé : la demande n'a pas été touchée.
+        assert Request.objects.get(pk=scene["demande"].pk).last_name_request == "Durand"
+
+    def test_une_crise_encore_en_production_est_refusee(self, scene, mailoutbox):
+        from django.core.management.base import CommandError
+        with pytest.raises(CommandError):
+            call_command("migrer_crises_vers_demo", crises=str(scene["crise"].id), prevenir_seulement=True, appliquer=True)
+        assert mailoutbox == []

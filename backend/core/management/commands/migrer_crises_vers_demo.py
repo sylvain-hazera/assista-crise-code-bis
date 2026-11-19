@@ -7,6 +7,9 @@ données des habitants rendues anonymes, courriel aux responsables des instituti
     manage.py migrer_crises_vers_demo                       # montre les crises de production
     manage.py migrer_crises_vers_demo --crises ID,ID        # montre ce qui serait fait
     manage.py migrer_crises_vers_demo --crises ID,ID --appliquer
+    manage.py migrer_crises_vers_demo --crises ID,ID --prevenir-seulement [--appliquer]
+        # crises DÉJÀ en démonstration : envoie (ou montre) seulement les courriels (19/11/2026,
+        # la migration avait été faite sans qu'aucun courriel parte)
 
 Par défaut RIEN n'est modifié : la commande dit ce qu'elle ferait. `--appliquer` agit, en une
 seule transaction ; les courriels partent seulement une fois la transaction réussie.
@@ -146,13 +149,17 @@ class Command(BaseCommand):
         parser.add_argument("--crises", default="", help="Identifiants des crises, séparés par des virgules.")
         parser.add_argument("--appliquer", action="store_true", help="Agir. Sans lui, la commande montre seulement.")
         parser.add_argument("--sans-courriel", action="store_true", help="Ne prévenir personne.")
+        parser.add_argument("--prevenir-seulement", action="store_true",
+                            help="Crises déjà en démonstration : seulement prévenir leurs responsables.")
 
-    def handle(self, *args, crises="", appliquer=False, sans_courriel=False, **options):
+    def handle(self, *args, crises="", appliquer=False, sans_courriel=False, prevenir_seulement=False, **options):
         from core.models import Crisis, Environment
 
+        zone = Environment.DEMO if prevenir_seulement else Environment.PROD
+        nom_zone = "démonstration" if prevenir_seulement else "production"
         if not crises:
-            self.stdout.write("Crises de production (ouvertes et closes) :")
-            for c in Crisis.objects.filter(environment=Environment.PROD).order_by("-start_date"):
+            self.stdout.write(f"Crises en {nom_zone} (ouvertes et closes) :")
+            for c in Crisis.objects.filter(environment=zone).order_by("-start_date"):
                 etat = "close" if c.end_date else "ouverte"
                 self.stdout.write(f"  {c.id}  {c.name}  ({c.get_type_display()}, {etat}{', essai' if c.essai else ''}, "
                                   f"depuis le {c.start_date:%d/%m/%Y})")
@@ -160,10 +167,21 @@ class Command(BaseCommand):
             return
 
         identifiants = [i.strip() for i in crises.split(",") if i.strip()]
-        choisies = list(Crisis.objects.filter(pk__in=identifiants, environment=Environment.PROD))
+        choisies = list(Crisis.objects.filter(pk__in=identifiants, environment=zone))
         if len(choisies) != len(identifiants):
             trouvees = {str(c.id) for c in choisies}
-            raise CommandError("Introuvables en production : " + ", ".join(i for i in identifiants if i not in trouvees))
+            raise CommandError(f"Introuvables en {nom_zone} : " + ", ".join(i for i in identifiants if i not in trouvees))
+
+        if prevenir_seulement:
+            destinataires = responsables(choisies)
+            self.stdout.write(f"Seraient prévenus ({len(destinataires)}) :")
+            for courriel, (nom, noms) in destinataires.items():
+                self.stdout.write(f"  {nom or courriel} — {', '.join(noms)}")
+            if not appliquer:
+                self.stdout.write(self.style.WARNING("\nAucun courriel envoyé. Ajoutez --appliquer pour les envoyer."))
+                return
+            self._prevenir(destinataires)
+            return
 
         plan = {c: collecter(c) for c in choisies}
         destinataires = responsables(choisies)
@@ -207,6 +225,9 @@ class Command(BaseCommand):
 
         if sans_courriel:
             return
+        self._prevenir(destinataires)
+
+    def _prevenir(self, destinataires):
         from django.conf import settings
 
         from core.audit import send_mail_logged
@@ -224,8 +245,10 @@ class Command(BaseCommand):
                 f"{adresse}\n\nL'équipe Assista-Crise"
             )
             try:
-                send_mail_logged(None, "Vos crises sont maintenant dans la zone de démonstration", corps, None, [courriel])
-                partis += 1
+                if send_mail_logged(None, "Vos crises sont maintenant dans la zone de démonstration", corps, None, [courriel]):
+                    partis += 1
+                else:
+                    self.stdout.write(self.style.ERROR(f"  Courriel non parti pour {courriel} (refusé par le serveur d'envoi)."))
             except Exception as erreur:  # noqa: BLE001 -- un courriel en échec n'annule rien
                 self.stdout.write(self.style.ERROR(f"  Courriel non parti pour {courriel} : {erreur}"))
         self.stdout.write(f"{partis} courriel(s) envoyé(s) sur {len(destinataires)}.")
