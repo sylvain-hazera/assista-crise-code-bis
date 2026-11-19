@@ -91,6 +91,25 @@ LISTEN_HOST = os.environ.get("PROXY_LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("PROXY_LISTEN_PORT", "5050"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "5"))
 
+# Clé privée de la radio (19/11/2026) : EXPORT_PRIVATE_KEY la livre en clair, IMPORT_PRIVATE_KEY
+# la remplace -- c'est l'identité de la radio sur le réseau (qui l'a se fait passer pour elle et
+# lit ses messages directs). Le proxy écoute tout le réseau local : seuls les appareils listés ici
+# y ont droit. Home Assistant (intégration meshcore-ha) en a besoin pour signer ses envois vers la
+# carte MeshCore et vers mqtt.meshmapper.net. Assista-Crise, lui, ne l'utilise jamais. Liste vide
+# (défaut) : refusé à tous. Un refus répond DISABLED, ce que répond une radio dont le firmware
+# interdit l'export -- les clients savent le traiter.
+CODES_CLE_PRIVEE = {CommandType.EXPORT_PRIVATE_KEY.value, CommandType.IMPORT_PRIVATE_KEY.value}
+AUTORISES_CLE_PRIVEE = frozenset(
+    ip.strip() for ip in os.environ.get("PROXY_CLE_PRIVEE_AUTORISES", "").split(",") if ip.strip())
+CODE_DISABLED = 15   # meshcore.packets.PacketType.DISABLED
+
+
+def cle_privee_refusee(payload: bytes, ip: str | None, autorises=None) -> bool:
+    """Vrai si cette commande touche la clé privée et que l'appareil n'est pas autorisé."""
+    autorises = AUTORISES_CLE_PRIVEE if autorises is None else autorises
+    return bool(payload) and payload[0] in CODES_CLE_PRIVEE and (ip or "") not in autorises
+
+
 PUSH_THRESHOLD = 0x80
 # CONTACT_MSG_RECV, CHANNEL_MSG_RECV (meshcore/packets.py) : un message reçu par le companion
 # n'est délivré qu'UNE fois, au premier client qui appelle get_msg() après le push
@@ -334,6 +353,12 @@ class ProxyMeshCore:
         `_reprogrammer_silence` — une commande comme GET_CONTACTS répond en rafale)."""
         if self.upstream_writer is None:
             logger.warning("Trame cliente reçue mais companion réel non connecté, ignorée.")
+            return
+        pair = writer.get_extra_info("peername") or (None,)
+        if cle_privee_refusee(payload, pair[0]):
+            logger.warning("REFUSÉ à %s : %s (clé privée de la radio, appareil non autorisé ; "
+                           "voir PROXY_CLE_PRIVEE_AUTORISES).", pair, _decrire_commande(payload))
+            await self._envoyer(writer, b"\x3e" + (1).to_bytes(2, "little") + bytes([CODE_DISABLED]))
             return
         async with self.verrou_commande:
             if self.upstream_writer is None:

@@ -275,6 +275,12 @@ services:
     network_mode: host
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meshcore-proxy.env", format: raw }
+    environment:
+      # Seuls appareils autorisés à exporter ou importer la clé privée de la radio (voir
+      # meshcore-bridge/proxy.py) : le NAS et son Home Assistant (intégration meshcore-ha, qui
+      # signe ses envois vers la carte MeshCore et mqtt.meshmapper.net). Adresse réservée dans
+      # la box le 19/11/2026.
+      - PROXY_CLE_PRIVEE_AUTORISES=172.16.1.124
 
   meshtastic-bridge:
     <<: *service
