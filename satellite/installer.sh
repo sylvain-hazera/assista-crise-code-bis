@@ -600,6 +600,72 @@ WantedBy=timers.target"
     fi
 }
 
+installer_ecran() {
+    # Écran d'état sur la console de la machine (tty1), à la manière de Home Assistant OS :
+    # IP, URL, liaison au central, version, mises à jour (ecran_etat.py). Rien de secret n'y
+    # est affiché. `auto` (au démarrage) : seulement sur une machine SANS bureau graphique --
+    # sur un poste de bureau, la première console peut porter l'affichage graphique, et la
+    # prendre le perturberait ; on y installe alors l'écran à la demande ($0 ecran).
+    # N'échoue jamais l'installation.
+    local mode="${1:-auto}"
+    if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+        [ "$mode" = auto ] || log "systemd absent : écran d'état impossible ici (réafficher : $0 etat)."
+        return 0
+    fi
+    if [ "$mode" = auto ] && systemctl is-active --quiet display-manager 2>/dev/null; then
+        log "Bureau graphique détecté : écran d'état non installé sur la console (le voir : $0 etat ;"
+        log "  l'installer quand même sur la console texte : $0 ecran)."
+        return 0
+    fi
+    local utilisateur dossier_unites service SUDO="sudo"
+    [ -t 0 ] || SUDO="sudo -n"
+    [ "$(id -u)" = 0 ] && SUDO=""
+    utilisateur="$(id -un)"
+    dossier_unites="/etc/systemd/system"
+    service="[Unit]
+Description=Assista-Crise : ecran d'etat du satellite sur la console
+After=network-online.target docker.service systemd-user-sessions.service
+Wants=network-online.target
+Conflicts=getty@tty1.service
+
+[Service]
+User=$utilisateur
+SupplementaryGroups=tty docker
+WorkingDirectory=$REPERTOIRE_SCRIPT
+Environment=HOME=$HOME TERM=linux
+ExecStart=/usr/bin/env python3 $REPERTOIRE_SCRIPT/ecran_etat.py --boucle
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVTDisallocate=yes
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target"
+    if [ "$mode" = retirer ]; then
+        $SUDO systemctl disable --now assista-satellite-ecran.service >/dev/null 2>&1 || true
+        $SUDO rm -f "$dossier_unites/assista-satellite-ecran.service"
+        $SUDO systemctl daemon-reload 2>/dev/null || true
+        $SUDO systemctl start getty@tty1.service 2>/dev/null || true
+        log "Écran d'état retiré : la console retrouve son invite de connexion."
+        return 0
+    fi
+    if [ "$(cat "$dossier_unites/assista-satellite-ecran.service" 2>/dev/null)" = "$service" ] \
+        && systemctl is-enabled --quiet assista-satellite-ecran.service 2>/dev/null; then
+        return 0
+    fi
+    log "Installation de l'écran d'état sur la console (tty1)..."
+    if printf '%s\n' "$service" | $SUDO tee "$dossier_unites/assista-satellite-ecran.service" >/dev/null \
+        && $SUDO systemctl daemon-reload \
+        && $SUDO systemctl enable --now assista-satellite-ecran.service >/dev/null 2>&1; then
+        log "  Écran d'état en service sur l'écran de la machine. Console de connexion : Alt+F2."
+    else
+        log "  Écran d'état NON installé (droits insuffisants). Le voir dans un terminal : $0 etat"
+    fi
+}
+
 phase_demarrer() {
     installer_docker_si_absent
 
@@ -722,6 +788,7 @@ EOF
     (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil" up -d --build "${scale_args[@]}")
 
     installer_agent_maj
+    installer_ecran auto
 
     log "Terminé. Vérifier l'état :"
     echo "  cd $REPERTOIRE_SCRIPT && docker compose --profile $profil ps"
@@ -986,6 +1053,12 @@ case "${1:-}" in
     acces-web)
         afficher_acces_web
         ;;
+    etat)
+        exec python3 "$REPERTOIRE_SCRIPT/ecran_etat.py"
+        ;;
+    ecran)
+        [ "${2:-}" = retirer ] && installer_ecran retirer || installer_ecran force
+        ;;
     *)
         echo "Usage :"
         echo "  $0 mettre-a-jour        # METTRE À JOUR : récupère le code et redémarre"
@@ -995,6 +1068,8 @@ case "${1:-}" in
         echo "  $0 connecter-noeud      # radio branchée après l'installation"
         echo "  $0 demarrer             # redémarrer sans récupérer le code"
         echo "  $0 acces-web            # URL de l'application et compte admin local (profil full)"
+        echo "  $0 etat                 # état du satellite : IP, URL, central, version, mises à jour"
+        echo "  $0 ecran [retirer]      # cet état en permanence sur l'écran de la machine (console)"
         echo
         echo "Ancien parcours (installations commencées avant le 20/10/2026) :"
         echo "  $0 enroler <jeton> <nom> <gw|full>  puis  $0 demarrer"

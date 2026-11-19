@@ -255,6 +255,34 @@ test, pas sur celui d'une mairie.
 
 Une passerelle Windows n'a pas d'agent : la page ne lui propose pas la mise à jour.
 
+## Écran d'état sur la machine (19/11/2026)
+
+Comme Home Assistant OS : l'écran branché au satellite affiche en permanence ce qu'il faut savoir
+sans se connecter. `ecran_etat.py`, actualisé toutes les 30 secondes :
+
+- **État** : en fonctionnement (services en marche / total), dégradé (lesquels sont arrêtés),
+  arrêté, ou mise à jour en cours ;
+- **Central** : joignable ou non, et depuis quand (lu dans le fichier de `etat_connectivite.py`) ;
+- **Accès** : l'URL de l'application locale pour chaque adresse IP (profil full), les adresses IP ;
+- **Machine** : allumée depuis, charge, mémoire, swap, disque libre, température ;
+- **Version** installée, et **mises à jour** : agent actif ou non, dernier passage, opération en
+  cours (avec l'étape), dernière opération et son résultat (lus dans `.etat-agent.json`, que
+  l'agent tient à jour).
+
+Aucun mot de passe ni jeton n'y figure : l'écran est visible de quiconque passe devant. Le compte
+admin local se réaffiche dans un terminal (`./installer.sh acces-web`).
+
+```bash
+./installer.sh etat             # l'écran, une fois, dans le terminal
+./installer.sh ecran            # en permanence sur la console (tty1) ; connexion : Alt+F2
+./installer.sh ecran retirer    # rendre la console à l'invite de connexion
+```
+
+Au démarrage (`./installer.sh demarrer`), l'écran s'installe de lui-même **seulement sur une
+machine sans bureau graphique** (un Raspberry Pi avec écran) : sur un poste de bureau, la première
+console peut porter l'affichage graphique, et la prendre le perturberait. Sur ces postes, on
+l'installe à la demande, ou on le consulte avec `./installer.sh etat`.
+
 ## Ce que chaque service fait
 
 | Service | Profil | Rôle |

@@ -66,6 +66,9 @@ DIAGNOSTIC_LIGNES = 60
 DIAGNOSTIC_SERVICES_MAX = 6
 #: Ce que l'agent note avant chaque mise à jour, pour pouvoir en revenir.
 FICHIER_PRECEDENTE = ".maj-precedente.json"
+#: Ce que fait l'agent, pour l'écran d'état de la machine (ecran_etat.py) : dernier passage,
+#: opération en cours, dernier résultat. Aucun journal ni secret : de quoi lire d'un coup d'œil.
+FICHIER_ETAT_AGENT = ".etat-agent.json"
 #: Par service, pour l'ordre « journaux » : tous les services, donc moins de lignes chacun.
 JOURNAUX_LIGNES = 40
 #: Ce qu'on garde de la sortie des commandes, par rapport envoyé. La FIN : l'erreur y est.
@@ -537,8 +540,11 @@ def appliquer(ordre, central, machine, env, fichier_cle):
     se pose en lisant un échec depuis le central."""
     commit, identifiant = ordre.get("commit", ""), ordre.get("id", "")
 
+    debut = time.time()
+
     def etape(texte):
         machine.journal.append(f"── {texte}")
+        noter_etat(machine.satellite, en_cours={"version": commit[:10], "etape": texte, "depuis": debut})
         try:
             central.rapport(identifiant, "EN_COURS", texte, machine.texte_du_journal())
         except (urllib.error.URLError, OSError, ValueError, KeyError):
@@ -596,6 +602,8 @@ def appliquer(ordre, central, machine, env, fichier_cle):
         etape("Construction (peut prendre longtemps)")
 
         def battement(minutes):
+            noter_etat(machine.satellite, en_cours={
+                "version": commit[:10], "etape": f"Construction en cours depuis {minutes} min", "depuis": debut})
             central.rapport(identifiant, "EN_COURS",
                             f"Construction en cours depuis {minutes} min — {etat_de_la_machine()}",
                             machine.texte_du_journal())
@@ -915,6 +923,17 @@ def _ecrire_json(fichier, contenu):
     os.replace(temporaire, str(fichier))
 
 
+def noter_etat(repertoire, **champs):
+    """Complète `.etat-agent.json` ; une erreur d'écriture n'arrête jamais l'agent."""
+    try:
+        fichier = Path(repertoire) / FICHIER_ETAT_AGENT
+        etat = _lire_json(fichier) or {}
+        etat.update(champs)
+        _ecrire_json(fichier, etat)
+    except OSError:
+        pass
+
+
 def passage(central, machine, env, fichier_cle, fichier_rapport):
     """Un passage de l'agent. Renvoie un mot pour le journal systemd."""
     # Un compte rendu final resté sur les bras (central injoignable à la fin d'une mise à
@@ -935,6 +954,9 @@ def passage(central, machine, env, fichier_cle, fichier_rapport):
     if resultat is None:
         return "ordre annulé"
     statut, etape, version = resultat
+    noter_etat(machine.satellite, en_cours=None, derniere_operation={
+        "quoi": ordre.get("action") or "MISE_A_JOUR", "version": (ordre.get("commit") or "")[:10],
+        "statut": statut, "etape": etape, "fin": time.time()})
     final = {"ordre": ordre.get("id", ""), "statut": statut, "etape": etape,
              "journal": machine.texte_du_journal(), "version": version}
     # Écrit AVANT l'envoi : si la machine s'arrête entre les deux, le compte rendu survit.
@@ -959,11 +981,15 @@ def principal():
         print("Une mise à jour est déjà en cours.")
         return 0
     try:
-        print(passage(central, Machine(), env, REPERTOIRE / ".cle-signature.pub",
-                      REPERTOIRE / ".maj-rapport.json"))
+        resultat = passage(central, Machine(), env, REPERTOIRE / ".cle-signature.pub",
+                           REPERTOIRE / ".maj-rapport.json")
+        noter_etat(REPERTOIRE, dernier_passage=time.time(), resultat=resultat, central_joint=True, en_cours=None)
+        print(resultat)
         return 0
     except (urllib.error.URLError, OSError, ValueError, KeyError) as erreur:
         # Central injoignable : ce n'est pas une panne, c'est la vie d'un satellite.
+        noter_etat(REPERTOIRE, dernier_passage=time.time(), resultat="central injoignable",
+                   central_joint=False, en_cours=None)
         print(f"Central injoignable ou réponse illisible : {erreur}")
         return 0
 
