@@ -10297,6 +10297,11 @@ class SourceObservateurMeshCore(EnvironmentScopedModel):
         max_length=200, default="meshcore/#",
         help_text="Filtre d'abonnement MQTT, ex. « meshcore/# » ou « meshcore/BOD/# ».",
     )
+    # 19/11/2026 : deux sortes de sources. Un broker MQTT où les observateurs publient, ou le
+    # flux temps réel d'une instance CoreScope (WebSocket à la racine du site, une observation
+    # par message) — `broker_host` est alors l'adresse de l'instance.
+    type_source = models.CharField(max_length=12, default="MQTT",
+                                   choices=[("MQTT", "Broker MQTT"), ("CORESCOPE", "Flux temps réel CoreScope")])
     # 19/11/2026 : certains brokers de l'écosystème ne s'atteignent qu'en WebSocket sur 443
     # (mqtt.meshmapper.net, par exemple), à travers les pare-feu qui ne laissent passer que le web.
     mqtt_transport = models.CharField(

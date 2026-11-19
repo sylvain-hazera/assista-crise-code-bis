@@ -25540,6 +25540,7 @@ class SourceObservateurMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.M
                 'mqtt_username': source.mqtt_username,
                 'mqtt_password': source.mqtt_password,
                 'mqtt_use_tls': source.mqtt_use_tls,
+                'type_source': source.type_source,
                 'mqtt_transport': source.mqtt_transport,
                 'mqtt_ws_chemin': source.mqtt_ws_chemin,
                 'filtre_topic': source.filtre_topic,

@@ -10,7 +10,7 @@ import {
 type Brouillon = Omit<SourceObservateurMeshCore, 'id' | 'derniere_connexion' | 'dernier_etat' | 'derniere_erreur'>;
 
 const BROUILLON_VIDE: Brouillon = {
-  nom: '', broker_host: '', broker_port: 1883, mqtt_username: '', mqtt_password: '', mqtt_use_tls: false,
+  nom: '', type_source: 'MQTT', broker_host: '', broker_port: 1883, mqtt_username: '', mqtt_password: '', mqtt_use_tls: false,
   mqtt_transport: 'tcp', mqtt_ws_chemin: '/mqtt', filtre_topic: 'meshcore/#', actif: true,
 };
 
@@ -59,6 +59,23 @@ export class BrokersMeshcoreComponent implements OnInit {
   }
 
   annuler(): void { this.enEdition = null; }
+
+  /** Un flux CoreScope s'écoute en WebSocket chiffré sur 443, à la racine du site, sans compte. */
+  changerType(): void {
+    if (this.brouillon.type_source === 'CORESCOPE') {
+      Object.assign(this.brouillon, { broker_port: 443, mqtt_use_tls: true, mqtt_ws_chemin: '/',
+                                      mqtt_transport: 'websockets', filtre_topic: '' });
+    } else {
+      Object.assign(this.brouillon, { broker_port: 1883, mqtt_use_tls: false, mqtt_ws_chemin: '/mqtt',
+                                      mqtt_transport: 'tcp', filtre_topic: 'meshcore/#' });
+    }
+  }
+
+  adresse(s: SourceObservateurMeshCore): string {
+    if (s.type_source === 'CORESCOPE') { return `flux temps réel de ${s.broker_host}`; }
+    const schema = s.mqtt_transport === 'websockets' ? 'wss' : (s.mqtt_use_tls ? 'mqtts' : 'mqtt');
+    return `${schema}://${s.broker_host}:${s.broker_port}${s.mqtt_username ? ' · compte ' + s.mqtt_username : ''}`;
+  }
 
   /** Le transport WebSocket va presque toujours avec le port 443 et le chiffrement. */
   changerTransport(): void {

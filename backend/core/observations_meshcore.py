@@ -78,26 +78,97 @@ class IndexCles:
         return self._cache[prefixe]
 
 
-def enregistrer_liaison_meshcore(emetteur, recepteur, source, snr, environment, maintenant, prefixe_octets=32):
-    """Agrège une observation : compteur, dernière vue, MEILLEUR SNR conservé (même choix que
-    côté Meshtastic : une moyenne serait tirée vers le bas par les paquets en limite de portée)."""
+def _ecrire_liaison(emetteur, recepteur, source, snr, environment, maintenant, prefixe_octets, nombre=1):
     from django.db.models import F
     from .models import LiaisonMeshCore
 
-    emetteur, recepteur = emetteur.lower(), recepteur.lower()
-    if not emetteur or not recepteur or recepteur.startswith(emetteur) or emetteur.startswith(recepteur):
-        return None
     liaison, cree = LiaisonMeshCore.objects.get_or_create(
         emetteur_prefixe_hex=emetteur, recepteur_pubkey_hex=recepteur, source=source,
         environment=environment,
-        defaults={"snr": snr, "prefixe_octets": prefixe_octets, "dernier_vu": maintenant},
+        defaults={"snr": snr, "prefixe_octets": prefixe_octets, "dernier_vu": maintenant, "nombre": nombre},
     )
     if not cree:
-        champs = {"nombre": F("nombre") + 1, "dernier_vu": maintenant}
+        champs = {"nombre": F("nombre") + nombre, "dernier_vu": maintenant}
         if snr is not None and (liaison.snr is None or snr > liaison.snr):
             champs["snr"] = snr
         LiaisonMeshCore.objects.filter(pk=liaison.pk).update(**champs)
     return liaison
+
+
+def enregistrer_liaison_meshcore(emetteur, recepteur, source, snr, environment, maintenant, prefixe_octets=32,
+                                 tampon=None):
+    """Agrège une observation : compteur, dernière vue, MEILLEUR SNR conservé (même choix que
+    côté Meshtastic : une moyenne serait tirée vers le bas par les paquets en limite de portée).
+
+    Avec un `tampon` (flux continus, 19/11/2026), l'observation est seulement notée : le tampon
+    l'écrira avec les autres au prochain vidage."""
+    emetteur, recepteur = emetteur.lower(), recepteur.lower()
+    if not emetteur or not recepteur or recepteur.startswith(emetteur) or emetteur.startswith(recepteur):
+        return None
+    if tampon is not None:
+        tampon.noter(emetteur, recepteur, source, snr, environment, prefixe_octets)
+        return True
+    return _ecrire_liaison(emetteur, recepteur, source, snr, environment, maintenant, prefixe_octets)
+
+
+class TamponLiaisons:
+    """Observations de liaisons notées en mémoire et écrites par lots (19/11/2026).
+
+    Un broker national publie une dizaine de trames par seconde : une écriture en base par trame
+    ferait des dizaines de requêtes par seconde pour un résultat agrégé. Ici, une ligne par
+    liaison et par vidage, avec le nombre d'observations et le meilleur SNR de la période.
+    Utilisable depuis plusieurs fils (un par source)."""
+
+    def __init__(self):
+        import threading
+        self._verrou = threading.Lock()
+        self._lignes = {}
+        self.notees = 0
+
+    def noter(self, emetteur, recepteur, source, snr, environment, prefixe_octets):
+        cle = (emetteur, recepteur, source, environment, prefixe_octets)
+        with self._verrou:
+            nombre, meilleur = self._lignes.get(cle, (0, None))
+            if snr is not None and (meilleur is None or snr > meilleur):
+                meilleur = snr
+            self._lignes[cle] = (nombre + 1, meilleur)
+            self.notees += 1
+
+    def vider(self, maintenant=None):
+        """Écrit ce qui a été noté. Rend le nombre de lignes écrites."""
+        maintenant = maintenant or timezone.now()
+        with self._verrou:
+            lignes, self._lignes = self._lignes, {}
+        for (emetteur, recepteur, source, environment, octets), (nombre, snr) in lignes.items():
+            _ecrire_liaison(emetteur, recepteur, source, snr, environment, maintenant, octets, nombre)
+        return len(lignes)
+
+
+class DejaVus:
+    """Les (observateur, trame) déjà traités depuis quelques minutes : la même observation peut
+    arriver par deux sources (un broker et le flux d'une instance CoreScope qu'il alimente).
+    Sans cela, chaque observation compterait deux fois."""
+
+    def __init__(self, duree_s=600, maximum=200000):
+        import threading
+        self._verrou = threading.Lock()
+        self._vus = {}
+        self.duree_s, self.maximum = duree_s, maximum
+
+    def deja_vu(self, observateur, trame):
+        import hashlib
+        import time
+        cle = (observateur.lower(), hashlib.sha1((trame or "").lower().encode()).digest()[:12])
+        maintenant = time.monotonic()
+        with self._verrou:
+            vu = self._vus.get(cle)
+            if vu is not None and maintenant - vu < self.duree_s:
+                return True
+            self._vus[cle] = maintenant
+            if len(self._vus) > self.maximum:
+                limite = maintenant - self.duree_s
+                self._vus = {k: v for k, v in self._vus.items() if v >= limite}
+        return False
 
 
 def _nombre(valeur):
@@ -107,8 +178,13 @@ def _nombre(valeur):
         return None
 
 
-def tirer_liaisons(decode, snr, recepteur, index, environment, maintenant):
-    """Les liaisons qu'une trame décodée prouve (voir la docstring du module). Renvoie leur nombre."""
+def tirer_liaisons(decode, snr, recepteur, index, environment, maintenant, tampon=None, resolus=None):
+    """Les liaisons qu'une trame décodée prouve (voir la docstring du module). Renvoie leur nombre.
+
+    `resolus` : les relais du chemin déjà résolus en clés complètes par la source (une instance
+    CoreScope le fait), alignés sur les sauts. Utilisés pour les RÉCEPTEURS des maillons du
+    chemin, et seulement quand le préfixe fait au moins deux octets : même règle que notre propre
+    résolution, pour ne pas importer une conclusion qu'on refuserait de tirer soi-même."""
     from .models import SourceLiaisonMeshtastic as Source
 
     entete, chemin, charge = decode["entete"], decode["chemin"] or {}, decode.get("charge") or {}
@@ -124,21 +200,29 @@ def tirer_liaisons(decode, snr, recepteur, index, environment, maintenant):
     n = 0
     # 1. Le dernier émetteur, entendu par le récepteur, avec le SNR mesuré.
     if sauts and inondation:
-        if enregistrer_liaison_meshcore(sauts[-1], recepteur, Source.RF, snr, environment, maintenant, taille):
+        if enregistrer_liaison_meshcore(sauts[-1], recepteur, Source.RF, snr, environment, maintenant, taille, tampon):
             n += 1
     elif not sauts and auteur:
-        if enregistrer_liaison_meshcore(auteur, recepteur, Source.RF, snr, environment, maintenant, 32):
+        if enregistrer_liaison_meshcore(auteur, recepteur, Source.RF, snr, environment, maintenant, 32, tampon):
             n += 1
     # 2. Les relais consécutifs d'une inondation, et l'auteur d'un advert vers son premier relais.
     if inondation and sauts:
         maillons = ([auteur] if auteur else []) + sauts
-        for precedent, suivant in zip(maillons, maillons[1:]):
-            recepteur_saut = index.resoudre(suivant) if taille >= OCTETS_MIN_RESOLUTION else None
+        decalage = 1 if auteur else 0
+        resolus = resolus if isinstance(resolus, list) and len(resolus) == len(sauts) else None
+        for i, (precedent, suivant) in enumerate(zip(maillons, maillons[1:])):
+            recepteur_saut = None
+            if taille >= OCTETS_MIN_RESOLUTION:
+                donne = resolus[i + 1 - decalage] if resolus else None
+                if isinstance(donne, str) and len(donne) == 64 and donne.lower().startswith(suivant.lower()):
+                    recepteur_saut = donne.lower()
+                else:
+                    recepteur_saut = index.resoudre(suivant)
             if recepteur_saut is None:
                 continue
             octets = 32 if precedent == auteur else taille
             if enregistrer_liaison_meshcore(precedent, recepteur_saut, Source.CHEMIN, None,
-                                            environment, maintenant, octets):
+                                            environment, maintenant, octets, tampon):
                 n += 1
     return n
 

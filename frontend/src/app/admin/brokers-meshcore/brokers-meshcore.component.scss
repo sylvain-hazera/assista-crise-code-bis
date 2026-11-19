@@ -55,3 +55,5 @@ table {
   &.moyen { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); }
   &.faible { background: var(--ac-red-bg, #fee2e2); color: var(--ac-red-text, #991b1b); }
 }
+
+.aide-corescope { margin: 12px 0 0; font-size: .85rem; color: var(--ac-text-muted, #4b5563); }

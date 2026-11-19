@@ -113,7 +113,28 @@ def _nombre(valeur):
         return None
 
 
-def ingerer_paquet(message, environment=Environment.PROD, maintenant=None):
+def lire_message_corescope(texte):
+    """Un message du flux temps réel d'une instance CoreScope (WebSocket à la racine du site),
+    ou None. Forme relevée le 19/11/2026 : `{"type": "packet", "data": {"raw_hex", "snr",
+    "rssi", "observer_id", "direction", "route_type", "path_json", "resolved_path", …}}` — une
+    observation par message, celle d'UN observateur."""
+    try:
+        d = json.loads(texte)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(d, dict) or d.get("type") != "packet" or not isinstance(d.get("data"), dict):
+        return None
+    data = d["data"]
+    observateur = str(data.get("observer_id") or "").lower()
+    if data.get("direction", "rx") != "rx" or not data.get("raw_hex") or len(observateur) != 64:
+        return None
+    return MessageObservateur(data.get("scope_name") or None, observateur, "packets", {
+        "raw": data["raw_hex"], "SNR": data.get("snr"), "RSSI": data.get("rssi"),
+        "chemin_resolu": data.get("resolved_path"),
+    })
+
+
+def ingerer_paquet(message, environment=Environment.PROD, maintenant=None, tampon=None):
     """Décode la trame d'un message `packets` et en tire une liaison orientée.
 
     Renvoie `(decode, liaison)` — `decode` est le résultat du décodeur (utile à l'appelant pour
@@ -142,7 +163,10 @@ def ingerer_paquet(message, environment=Environment.PROD, maintenant=None):
     # l'observateur n'avait entendu que le dernier relais.
     from .observations_meshcore import IndexCles, tirer_liaisons
     snr = _nombre(message.donnees.get("SNR"))
-    tirer_liaisons(decode, snr, message.observateur, IndexCles.partage(environment), environment, maintenant)
+    tirer_liaisons(decode, snr, message.observateur, IndexCles.partage(environment), environment, maintenant,
+                   tampon=tampon, resolus=message.donnees.get("chemin_resolu"))
+    if tampon is not None:
+        return decode, None          # écrite au prochain vidage du tampon
 
     charge = decode.get("charge") or {}
     auteur = charge.get("cle_publique") if charge.get("type") == "ADVERT" else None

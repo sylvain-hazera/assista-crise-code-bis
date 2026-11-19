@@ -5745,7 +5745,7 @@ class SourceObservateurMeshCoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = SourceObservateurMeshCore
         fields = ['id', 'nom', 'institution', 'institution_nom', 'broker_host', 'broker_port',
-                  'mqtt_username', 'mqtt_password', 'mqtt_use_tls', 'mqtt_transport', 'mqtt_ws_chemin',
+                  'type_source', 'mqtt_username', 'mqtt_password', 'mqtt_use_tls', 'mqtt_transport', 'mqtt_ws_chemin',
                   'filtre_topic', 'actif',
                   'derniere_connexion', 'dernier_etat', 'derniere_erreur', 'date_creation']
         read_only_fields = ['derniere_connexion', 'dernier_etat', 'derniere_erreur',
@@ -5766,6 +5766,10 @@ class SourceObservateurMeshCoreSerializer(serializers.ModelSerializer):
         un filtre sans joker ne capterait qu'un unique topic exact, ce qui n'est jamais ce
         qu'on veut ici."""
         valeur = (valeur or '').strip()
+        type_source = (self.initial_data.get('type_source') if hasattr(self, 'initial_data') else None) \
+            or (self.instance.type_source if self.instance else 'MQTT')
+        if type_source == 'CORESCOPE':
+            return valeur           # un flux CoreScope n'a pas de filtre : il sert tout
         if not valeur:
             raise serializers.ValidationError("Filtre d'abonnement requis, ex. « meshcore/# ».")
         if not valeur.startswith("meshcore/"):

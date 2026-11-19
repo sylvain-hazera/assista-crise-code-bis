@@ -145,3 +145,86 @@ def test_le_relais_navigateur_rapporte_par_le_meme_chemin(compagnon, create_user
     r = c.post("/api/relais-serie/mesures/", corps, format="json")
     assert r.status_code == 200, r.data
     assert ("bbbb", NOUS, "RF") in liaisons()
+
+
+# ── Flux continus : tampon, doublons, CoreScope (19/11/2026) ───────────────────
+
+@pytest.mark.django_db
+def test_le_tampon_agrege_puis_ecrit_en_une_fois(compagnon):
+    from django.utils import timezone
+    from core.observations_meshcore import IndexCles, TamponLiaisons, tirer_liaisons
+    from core.decodeur_meshcore import decoder_paquet
+    tampon = TamponLiaisons()
+    index = IndexCles("PROD")
+    for snr in (2.0, 7.5, 4.0):
+        tirer_liaisons(decoder_paquet(trame(["aaaa", "bbbb"])), snr, NOUS, index, "PROD", timezone.now(), tampon=tampon)
+    assert LiaisonMeshCore.objects.count() == 0            # rien d'écrit avant le vidage
+    assert tampon.notees == 6
+    assert tampon.vider() == 2
+    rf = LiaisonMeshCore.objects.get(source="RF")
+    assert (rf.nombre, rf.snr) == (3, 7.5)
+    assert LiaisonMeshCore.objects.get(source="CHEMIN").nombre == 3
+    tampon.noter("bbbb", NOUS, "RF", 9.0, "PROD", 2)
+    tampon.vider()
+    rf.refresh_from_db()
+    assert (rf.nombre, rf.snr) == (4, 9.0)
+
+
+def test_une_observation_recue_deux_fois_n_est_comptee_qu_une_fois():
+    from core.observations_meshcore import DejaVus
+    vus = DejaVus()
+    assert vus.deja_vu("AB" * 32, "1100AA") is False
+    assert vus.deja_vu("ab" * 32, "1100aa") is True        # même observateur, même trame
+    assert vus.deja_vu("cd" * 32, "1100aa") is False       # autre observateur : autre observation
+
+
+def test_lecture_d_un_message_corescope():
+    from core.ingestion_observateurs_meshcore import lire_message_corescope
+    message = lire_message_corescope(json.dumps({"type": "packet", "data": {
+        "direction": "rx", "raw_hex": "1100", "snr": 6.5, "rssi": -90, "observer_id": "AB" * 32,
+        "resolved_path": [RELAIS_A], "scope_name": "BOD"}}))
+    assert (message.observateur, message.sorte, message.donnees["SNR"]) == ("ab" * 32, "packets", 6.5)
+    assert message.donnees["chemin_resolu"] == [RELAIS_A]
+    assert lire_message_corescope('{"type": "stats"}') is None
+    assert lire_message_corescope("pas du json") is None
+    assert lire_message_corescope(json.dumps({"type": "packet", "data": {
+        "direction": "tx", "raw_hex": "11", "observer_id": "AB" * 32}})) is None
+
+
+@pytest.mark.django_db
+def test_les_relais_resolus_par_la_source_servent_aux_recepteurs(db):
+    """Aucun nœud connu chez nous : sans les clés résolues par CoreScope, pas de maillon."""
+    from django.utils import timezone
+    from core.observations_meshcore import IndexCles, tirer_liaisons
+    from core.decodeur_meshcore import decoder_paquet
+    inconnu_b = "bbbb" + "99" * 30
+    n = tirer_liaisons(decoder_paquet(trame(["aaaa", "bbbb"])), 3.0, NOUS, IndexCles("PROD"), "PROD",
+                       timezone.now(), resolus=["aaaa" + "88" * 30, inconnu_b])
+    assert n == 2
+    assert LiaisonMeshCore.objects.filter(source="CHEMIN", emetteur_prefixe_hex="aaaa",
+                                          recepteur_pubkey_hex=inconnu_b).exists()
+    # Une clé « résolue » qui ne commence pas par le préfixe du saut est refusée.
+    LiaisonMeshCore.objects.all().delete()
+    tirer_liaisons(decoder_paquet(trame(["aaaa", "bbbb"])), 3.0, NOUS, IndexCles("PROD"), "PROD",
+                   timezone.now(), resolus=["aaaa" + "88" * 30, "cccc" + "77" * 30])
+    assert not LiaisonMeshCore.objects.filter(source="CHEMIN").exists()
+
+
+@pytest.mark.django_db
+def test_une_source_corescope_se_declare_sans_filtre(create_user):
+    admin = create_user(username="admin-cs@x.fr", email="admin-cs@x.fr", type=UserRole.ADMINISTRATOR)
+    c = APIClient()
+    c.force_authenticate(user=admin)
+    r = c.post("/api/sources-observateurs-meshcore/", {
+        "nom": "Meshstats", "type_source": "CORESCOPE", "broker_host": "meshstats.exemple.invalide",
+        "broker_port": 443, "mqtt_use_tls": True, "mqtt_ws_chemin": "/", "filtre_topic": ""}, format="json")
+    assert r.status_code == 201, r.data
+    from core.management.commands.ingerer_observateurs_meshcore import ClientCoreScope
+    from core.models import SourceObservateurMeshCore
+    source = SourceObservateurMeshCore.objects.get()
+    client = ClientCoreScope.__new__(ClientCoreScope)
+    client.source = source
+    assert client.url == "wss://meshstats.exemple.invalide/"
+    refus = c.post("/api/sources-observateurs-meshcore/", {
+        "nom": "MQTT sans filtre", "broker_host": "mqtt.exemple.invalide", "filtre_topic": ""}, format="json")
+    assert refus.status_code == 400

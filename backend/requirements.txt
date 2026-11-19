@@ -30,6 +30,8 @@ numpy>=1.26.0
 scipy>=1.11.0
 # Lame d eau radar de Meteo-France en HDF5 ODIM (core/orages.py, 19/11/2026).
 h5py>=3.10
+# Flux temps reel d une instance CoreScope (ingerer_observateurs_meshcore, 19/11/2026).
+websockets>=12
 
 # Tests & Coverage
 pytest>=7.4.0

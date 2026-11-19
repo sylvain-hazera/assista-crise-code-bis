@@ -9,6 +9,8 @@ import { environment } from '../../environments/environment';
 export interface SourceObservateurMeshCore {
   id: string;
   nom: string;
+  /** MQTT : un broker où publient les observateurs. CORESCOPE : le flux temps réel d'une instance. */
+  type_source: 'MQTT' | 'CORESCOPE';
   broker_host: string;
   broker_port: number;
   mqtt_username: string;

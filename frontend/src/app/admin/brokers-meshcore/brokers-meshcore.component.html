@@ -3,8 +3,10 @@
     <h1><span class="material-icons">hub</span> Brokers MQTT MeshCore</h1>
     <p class="explication">
       Des répéteurs MeshCore « observateurs » republient sur MQTT tout ce qu'ils entendent. Chaque
-      broker déclaré ici est écouté en permanence : ses trames deviennent des liaisons, avec leur
-      SNR, sur la carte radio — en plus de ce qu'entendent nos propres companions.
+      source déclarée ici — un broker MQTT, ou le flux temps réel d'une instance CoreScope — est
+      écoutée en permanence : ses trames deviennent des liaisons, avec leur SNR, sur la carte
+      radio, en plus de ce qu'entendent nos propres companions. Une observation reçue par deux
+      sources n'est comptée qu'une fois.
     </p>
   </header>
 
@@ -14,16 +16,28 @@
 
   <div class="actions">
     <button type="button" class="principal" (click)="nouveau()" [disabled]="enEdition !== null">
-      <span class="material-icons">add</span> Déclarer un broker
+      <span class="material-icons">add</span> Déclarer une source
     </button>
   </div>
 
   @if (enEdition !== null) {
     <form class="formulaire" (ngSubmit)="enregistrer()" #f="ngForm">
-      <h2>{{ enEdition === 'nouveau' ? 'Nouveau broker' : 'Modifier « ' + brouillon.nom + ' »' }}</h2>
+      <h2>{{ enEdition === 'nouveau' ? 'Nouvelle source' : 'Modifier « ' + brouillon.nom + ' »' }}</h2>
       <div class="grille">
         <label>Nom <input name="nom" required [(ngModel)]="brouillon.nom" placeholder="Broker régional BOD"></label>
-        <label>Adresse <input name="hote" required [(ngModel)]="brouillon.broker_host" placeholder="mqtt.exemple.fr"></label>
+        <label>Sorte
+          <select name="type" [(ngModel)]="brouillon.type_source" (ngModelChange)="changerType()">
+            <option value="MQTT">Broker MQTT</option>
+            <option value="CORESCOPE">Flux temps réel d'une instance CoreScope</option>
+          </select>
+        </label>
+        <label>{{ brouillon.type_source === 'CORESCOPE' ? "Adresse de l'instance" : 'Adresse' }}
+          <input name="hote" required [(ngModel)]="brouillon.broker_host"
+                 [placeholder]="brouillon.type_source === 'CORESCOPE' ? 'meshstats.exemple.fr' : 'mqtt.exemple.fr'">
+        </label>
+      </div>
+      @if (brouillon.type_source === 'MQTT') {
+      <div class="grille">
         <label>Transport
           <select name="transport" [(ngModel)]="brouillon.mqtt_transport" (ngModelChange)="changerTransport()">
             <option value="tcp">TCP (port 1883 le plus souvent)</option>
@@ -45,6 +59,9 @@
           <span class="aide">« meshcore/# » pour tout, « meshcore/BOD/# » pour une région (code d'aéroport IATA).</span>
         </label>
       </div>
+      } @else {
+        <p class="aide-corescope">Le flux s'écoute en WebSocket chiffré, sans compte, comme la page de l'instance elle-même.</p>
+      }
       <div class="boutons">
         <button type="submit" class="principal" [disabled]="envoi || !f.valid">Enregistrer</button>
         <button type="button" class="secondaire" (click)="annuler()">Annuler</button>
@@ -54,15 +71,15 @@
 
   <div class="defilement">
     <table>
-      <thead><tr><th>Broker</th><th>Filtre</th><th>État</th><th></th></tr></thead>
+      <thead><tr><th>Source</th><th>Filtre</th><th>État</th><th></th></tr></thead>
       <tbody>
         @for (s of sources; track s.id) {
           <tr>
             <td>
               <span class="nom">{{ s.nom }}</span>
-              <span class="detail">{{ s.mqtt_transport === 'websockets' ? 'wss' : (s.mqtt_use_tls ? 'mqtts' : 'mqtt') }}://{{ s.broker_host }}:{{ s.broker_port }}@if (s.mqtt_username) { · compte {{ s.mqtt_username }} }</span>
+              <span class="detail">{{ adresse(s) }}</span>
             </td>
-            <td class="code">{{ s.filtre_topic }}</td>
+            <td class="code">{{ s.type_source === 'CORESCOPE' ? '—' : s.filtre_topic }}</td>
             <td>
               <span class="pastille" [ngClass]="classeEtat(s)">{{ libelleEtat(s) }}</span>
               @if (s.derniere_erreur && s.dernier_etat === 'ERREUR') { <span class="detail">{{ s.derniere_erreur }}</span> }
