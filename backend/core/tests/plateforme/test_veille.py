@@ -1418,7 +1418,7 @@ class TestCommandeDeReleve:
 
         # Métropole, puis outre-mer : chacune annoncée dès son propre relevé.
         assert ordre[:4] == ["VIGILANCE_METEO", "ANNONCE", "VIGILANCE_OUTRE_MER", "ANNONCE"]
-        assert set(ordre[4:]) == (set(sources_ouvertes.SOURCES)
+        assert set(ordre[4:]) == (set(sources_ouvertes.SOURCES) - sources_ouvertes.SOURCES_EN_CONTINU
                                   - {"VIGILANCE_METEO", "VIGILANCE_OUTRE_MER"}) | {"ANNONCE_FOYER"}
         # Les foyers aussi sont annoncés dès leur relevé, sans attendre la suite.
         assert ordre[ordre.index("FOYERS_ACTIFS") + 1] == "ANNONCE_FOYER"

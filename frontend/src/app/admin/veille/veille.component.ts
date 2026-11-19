@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
@@ -10,7 +10,10 @@ import {
   ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
+  CelluleOrage, OragesRadar,
 } from '../../shared/models/veille.model';
+import { Subscription } from 'rxjs';
+import { pollWhileVisible } from '../../shared/utils/polling.util';
 
 /** Veille du territoire : ce que les services de l'État publient en ce moment pour le
  * territoire de l'institution — vigilance météorologique, routes, carburant.
@@ -32,7 +35,12 @@ import {
   templateUrl: './veille.component.html',
   styleUrl: './veille.component.scss',
 })
-export class VeilleComponent implements OnInit {
+export class VeilleComponent implements OnInit, OnDestroy {
+
+  /** Orages selon le radar (une image toutes les 5 min) : relu toutes les 2 min, onglet visible. */
+  orages: OragesRadar | null = null;
+  erreurOrages = false;
+  private suiviOrages?: Subscription;
 
   vigilance: VigilanceMeteo | null = null;
   observations: ObservationsMeteo | null = null;
@@ -110,6 +118,10 @@ export class VeilleComponent implements OnInit {
       next: (forets) => { this.forets = forets; },
       error: () => { this.forets = null; },
     });
+    this.suiviOrages = pollWhileVisible(() => this.service.orages(), 120_000).subscribe({
+      next: (orages) => { this.orages = orages; this.erreurOrages = false; },
+      error: () => { this.erreurOrages = true; },
+    });
     // Rafales prévues sur la commune : lues par le serveur dans ses images, rien ne sort.
     this.service.rafalesPrevues(true).subscribe({
       next: (rafales) => { this.rafales = rafales; },
@@ -119,6 +131,26 @@ export class VeilleComponent implements OnInit {
       next: (hiver) => { this.hiver = hiver; },
       error: () => { this.hiver = null; },
     });
+  }
+
+  ngOnDestroy(): void { this.suiviOrages?.unsubscribe(); }
+
+  /** Une cellule touche-t-elle déjà la commune de l'institution, ou l'atteindrait-elle ? */
+  communesOrage(cellule: CelluleOrage, max = 12): string {
+    const noms = cellule.releves.communes_sous_la_pluie.map(c => c.nom);
+    return noms.length > max ? `${noms.slice(0, max).join(', ')} et ${noms.length - max} autre(s)` : noms.join(', ');
+  }
+
+  /** Communes atteintes, regroupées par délai : « dans 15 min : A, B ; dans 30 min : C ». */
+  atteintesParDelai(cellule: CelluleOrage): { delai: number; noms: string }[] {
+    const groupes = new Map<number, string[]>();
+    for (const c of cellule.estimations.communes_atteintes) {
+      const tranche = Math.ceil((c.dans_min ?? 0) / 15) * 15;
+      groupes.set(tranche, [...(groupes.get(tranche) ?? []), c.nom]);
+    }
+    return [...groupes].sort((a, b) => a[0] - b[0]).map(([delai, noms]) => ({
+      delai, noms: noms.length > 10 ? `${noms.slice(0, 10).join(', ')} et ${noms.length - 10} autre(s)` : noms.join(', '),
+    }));
   }
 
   chargerVigilance(departement?: string): void {

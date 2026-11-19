@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
-    observations_meteo, pluie,
+    observations_meteo, orages, pluie,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
@@ -53,6 +53,12 @@ SOURCES = {
         # entre-temps (les échéances déjà copiées ne sont pas redemandées).
         Source("PLUIE_PREVISION", "Pluie prévue (prévision immédiate)", pluie.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1), "Météo-France"),
+        # Orages selon les relevés radar (19/11/2026) : placé ici et non en fin de liste, où
+        # se rangent les sources lentes ; de toute façon hors du cron : une image toutes les cinq minutes. Relevé
+        # par son propre service (`manage.py analyser_orages --service`), qui regarde chaque
+        # minute si une image est parue -- pas par le cron de dix minutes, trop lent.
+        Source("ORAGES_RADAR", "Orages et pluies intenses (radar)", orages.relever,
+               datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
         # Vent moyen pour l'animation de la carte : un calcul toutes les six heures, une
         # échéance nouvelle par heure, 300 Ko chacune.
         Source("VENT", "Vent prévu (écoulement, modèle ARPEGE)", vent.relever,
@@ -148,6 +154,10 @@ SOURCES = {
                datetime.timedelta(minutes=9), datetime.timedelta(hours=1), "Météo-France"),
     )
 }
+
+#: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
+#: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
+SOURCES_EN_CONTINU = {"ORAGES_RADAR"}
 
 
 def etat(code):

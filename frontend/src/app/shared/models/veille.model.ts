@@ -630,3 +630,32 @@ export interface ConfigurationAlerteVigilance {
   couleur_min: number;
   date_creation?: string;
 }
+
+
+/** GET /api/orages/ (backend/core/orages.py, 19/11/2026). Trois natures d'information que
+ * l'écran ne mélange pas : ce que le radar a vu (`releves`), NOS estimations — qui ne sont pas
+ * des prévisions — (`estimations`), et ce que Météo-France prévoit (`prevision_meteo_france`). */
+export interface CommuneOrage { code: string; nom: string; dans_min?: number; }
+
+export interface CelluleOrage {
+  identifiant: string;
+  distance_km: number | null;
+  releves: {
+    intensite_max_mmh: number; intensite_moyenne_mmh: number; libelle: string; surface_km2: number;
+    tendance_mmh: number | null; communes_sous_la_pluie: CommuneOrage[];
+    rafale_mesuree: { kmh: number; station: string; mesure_le: string | null } | null;
+  };
+  estimations: {
+    cap_deg: number | null; vers: string | null; vitesse_kmh: number | null;
+    communes_atteintes: CommuneOrage[]; ligne_de_grain: boolean; longueur_km: number;
+  };
+  prevision_meteo_france: { grele: boolean; rafale_kmh: number | null };
+}
+
+export interface OragesRadar {
+  source: string; releve_le: string | null; perime: boolean;
+  heure_image: string | null; radars: number; radars_absents: string[];
+  centre: { latitude: number; longitude: number } | null; rayon_km: number | null;
+  couvert: boolean | null;
+  cellules: CelluleOrage[];
+}

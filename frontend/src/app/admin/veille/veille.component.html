@@ -160,6 +160,84 @@
     }
   </section>
 
+  <!-- ════ Orages et pluies intenses (radar Météo-France, core/orages.py) ════ -->
+  <section aria-labelledby="titre-orages" class="orages">
+    <h2 id="titre-orages">
+      <span class="material-icons">thunderstorm</span> Orages et pluies intenses
+      @if (orages) { <span class="compte">{{ orages.cellules.length }}</span> }
+    </h2>
+    @if (erreurOrages && !orages) {
+      <p class="note">Analyse radar indisponible pour le moment.</p>
+    } @else if (orages) {
+      @if (orages.perime) {
+        <p class="message avertissement" role="status">
+          <span class="material-icons">schedule</span>
+          Analyse radar ancienne
+          @if (orages.heure_image) { (image de {{ orages.heure_image | date:'HH:mm' }}) } @else { (aucune image analysée) }
+          : ce qui suit ne décrit pas la situation actuelle.
+        </p>
+      }
+      @if (orages.couvert === false) {
+        <p class="message avertissement" role="status">
+          <span class="material-icons">visibility_off</span>
+          Votre commune n'est pas couverte par le radar en ce moment : l'absence d'orage ci-dessous
+          ne veut pas dire qu'il n'y en a pas.
+        </p>
+      }
+      @for (c of orages.cellules; track c.identifiant) {
+        <article class="cellule" [class.forte]="c.releves.intensite_max_mmh >= 50">
+          <h3>
+            {{ c.releves.libelle | titlecase }}
+            @if (c.distance_km != null) { <span class="distance">à {{ c.distance_km }} km</span> }
+            @if (c.estimations.ligne_de_grain) { <span class="etiquette">ligne de grain</span> }
+          </h3>
+          <div class="nature releves">
+            <span class="libelle-nature">Selon les relevés</span>
+            <p>
+              Jusqu'à <strong>{{ c.releves.intensite_max_mmh | number:'1.0-0' }} mm/h</strong>
+              sur {{ c.releves.surface_km2 | number:'1.0-0' }} km²@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh >= 10) {, <strong>en renforcement</strong>}@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh <= -10) {, en affaiblissement}.
+              @if (c.releves.communes_sous_la_pluie.length) { Sous la pluie : {{ communesOrage(c) }}. }
+              @if (c.releves.rafale_mesuree; as r) { Rafale mesurée : <strong>{{ r.kmh }} km/h</strong> à {{ r.station }}. }
+            </p>
+          </div>
+          @if (c.estimations.vitesse_kmh != null) {
+            <div class="nature estimations">
+              <span class="libelle-nature">Nos estimations (qui ne sont pas des prévisions)</span>
+              <p>
+                Se déplace vers {{ c.estimations.vers }} à environ {{ c.estimations.vitesse_kmh }} km/h.
+                @for (g of atteintesParDelai(c); track g.delai) {
+                  <br>D'ici {{ g.delai }} min, si rien ne change : {{ g.noms }}.
+                }
+                @if (c.estimations.ligne_de_grain) {
+                  <br>Forme de ligne de grain : bande d'environ {{ c.estimations.longueur_km }} km qui avance de front.
+                }
+              </p>
+            </div>
+          }
+          @if (c.prevision_meteo_france.grele || c.prevision_meteo_france.rafale_kmh) {
+            <div class="nature prevision">
+              <span class="libelle-nature">Selon la prévision Météo-France</span>
+              <p>
+                @if (c.prevision_meteo_france.grele) { <strong>Grêle prévue</strong> sous cette cellule. }
+                @if (c.prevision_meteo_france.rafale_kmh) { Rafales prévues de {{ c.prevision_meteo_france.rafale_kmh }} km/h ou plus. }
+              </p>
+            </div>
+          }
+        </article>
+      } @empty {
+        @if (orages.couvert !== false && !orages.perime) {
+          <p class="calme">Aucune cellule de pluie intense (30 mm/h ou plus) à moins de {{ orages.rayon_km }} km de votre commune.</p>
+        }
+      }
+      <p class="note">
+        Radar {{ orages.source }}@if (orages.heure_image) {, image de {{ orages.heure_image | date:'HH:mm' }}}
+        ({{ orages.radars }} radars@if (orages.radars_absents.length) {, {{ orages.radars_absents.length }} absent(s)}).
+        Les estimations prolongent le déplacement observé, sans tenir compte d'un orage qui se
+        renforce ou se dissipe. La vigilance de Météo-France fait foi.
+      </p>
+    }
+  </section>
+
   <!-- La pluie et les rafales prévues ne se lisent bien que sur une carte : cette page y
        renvoie, et dit seulement ce que la prévision donne pour la commune. -->
   <p class="vers-la-carte">

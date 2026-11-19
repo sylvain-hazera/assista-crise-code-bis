@@ -46,7 +46,8 @@ class Command(BaseCommand):
             verrou.close()
 
     def _relever(self, options):
-        codes = [options["source"]] if options["source"] else list(sources_ouvertes.SOURCES)
+        codes = [options["source"]] if options["source"] else [
+            code for code in sources_ouvertes.SOURCES if code not in sources_ouvertes.SOURCES_EN_CONTINU]
         resultats, annonces, foyers = {}, [], []
         for code in codes:
             resultats[code] = sources_ouvertes.relever_source(code, forcer=options["forcer"])

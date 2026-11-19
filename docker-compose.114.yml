@@ -191,6 +191,22 @@ services:
     depends_on:
       db: { condition: service_healthy }
 
+  # Orages selon les relevés radar de Météo-France (19/11/2026) : une image toutes les cinq
+  # minutes, analysée dès sa parution (core/orages.py). Même image que le backend ; la clé
+  # Météo-France est le seul secret dont il a besoin.
+  orages:
+    <<: *service
+    image: assista-crise-backend:prod
+    container_name: ac_orages
+    entrypoint: ["python", "manage.py"]
+    command: ["analyser_orages", "--service"]
+    env_file:
+      - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    secrets: [meteofrance_cle_api]
+    networks: [back, db, front]
+    depends_on:
+      db: { condition: service_healthy }
+
   redis:
     <<: *service
     image: redis:7-alpine

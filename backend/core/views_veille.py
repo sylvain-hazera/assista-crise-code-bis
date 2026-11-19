@@ -11,7 +11,7 @@ mairie. Seul le RÉGLAGE de l'annonce de vigilance est réservé aux acteurs ins
 import math
 
 from django.contrib.gis.geos import Polygon
-from django.db.models import Case, Count, F, IntegerField, Value, When
+from django.db.models import Case, Count, F, IntegerField, Q, Value, When
 from django.http import HttpResponse, HttpResponseNotFound
 from django.utils import timezone
 from rest_framework import permissions, viewsets
@@ -67,7 +67,7 @@ def _nombre(valeur):
     return nombre if math.isfinite(nombre) else None
 
 
-def _emprise(request):
+def _emprise(request, rayon_defaut=None):
     """Zone demandée -> (polygone, centre, rayon_km), ou (None, None, None) si rien ne la fixe.
 
     Trois façons de la donner, dans cet ordre : `bbox=ouest,sud,est,nord` (la carte), `lat` et
@@ -94,7 +94,7 @@ def _emprise(request):
     if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
         raise ValidationError({"lat": "Position hors des bornes."})
 
-    rayon = _nombre(request.query_params.get("rayon_km")) or RAYON_DEFAUT_KM
+    rayon = _nombre(request.query_params.get("rayon_km")) or rayon_defaut or RAYON_DEFAUT_KM
     rayon = max(1, min(RAYON_MAX_KM, rayon))
     ecart_lat = rayon / 111.0
     ecart_lon = rayon / (111.0 * max(0.1, math.cos(math.radians(latitude))))
@@ -387,6 +387,87 @@ class RafalesPrevuesView(APIView):
             "echeances": [image.echeance for image in images],
             "legende": rafales.legende(),
             "ici": ici,
+        })
+
+
+#: Rayon par défaut autour de la commune pour les orages : une cellule à 60 km et à 60 km/h
+#: arrive dans l'heure.
+RAYON_ORAGES_KM = 60
+
+
+class OragesView(APIView):
+    """GET /api/orages/ : orages et pluies intenses autour du territoire (core/orages.py).
+
+    Trois natures d'information, que la réponse ne mélange pas :
+    - `releves` : ce que le radar a VU (contour, intensité, communes sous la pluie) et ce que les
+      stations ont MESURÉ ;
+    - `estimations` : NOS estimations, qui ne sont pas des prévisions — le déplacement et les
+      communes atteintes si la cellule gardait sa vitesse et sa direction ;
+    - `prevision_meteo_france` : ce que Météo-France prévoit au même endroit (AROME-PI).
+
+    Même emprise que le reste de la veille (`bbox`, `lat`/`lon`/`rayon_km`, ou la commune de
+    l'institution), 60 km par défaut. `?france=1` : toutes les cellules du pays."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from . import orages
+        from .models import CelluleOrage, ImageRadarOrage
+
+        image = ImageRadarOrage.objects.order_by("-heure").first()
+        cellules = CelluleOrage.objects.all()
+        centre, rayon, couvert = None, None, None
+        if not request.query_params.get("france"):
+            emprise, centre, rayon = _emprise(request, RAYON_ORAGES_KM)
+            if emprise is None:
+                cellules = CelluleOrage.objects.none()
+            else:
+                cellules = cellules.filter(Q(contour__intersects=emprise) | Q(couloir__intersects=emprise))
+            if centre and image is not None:
+                grille = orages.GrilleRadar(None, image.projdef, image.x0, image.y0, image.heure, [], [])
+                (ligne,), (colonne,) = grille.depuis_geo([centre["longitude"]], [centre["latitude"]])
+                ligne, colonne = int(round(ligne)), int(round(colonne))
+                if 0 <= ligne < image.hauteur and 0 <= colonne < image.largeur:
+                    valeurs = orages.GrilleRadar.depuis_compacte(image.grille, image.largeur, image.hauteur)
+                    couvert = not math.isnan(float(valeurs[ligne, colonne]))
+                else:
+                    couvert = False
+
+        def distance_km(cellule):
+            if not centre:
+                return None
+            dlat = math.radians(cellule.centre.y - centre["latitude"])
+            dlon = math.radians(cellule.centre.x - centre["longitude"]) * math.cos(math.radians(centre["latitude"]))
+            return round(6371 * math.hypot(dlat, dlon))
+
+        resultats = []
+        for c in cellules.order_by("-max_mmh")[:RESULTATS_MAX]:
+            resultats.append({
+                "identifiant": c.identifiant,
+                "distance_km": distance_km(c),
+                "contour": json.loads(c.contour.geojson),
+                "couloir": json.loads(c.couloir.geojson) if c.couloir else None,
+                "releves": {
+                    "intensite_max_mmh": c.max_mmh, "intensite_moyenne_mmh": c.moyenne_mmh,
+                    "libelle": orages.palier(c.max_mmh), "surface_km2": c.surface_km2,
+                    "tendance_mmh": c.tendance_mmh, "communes_sous_la_pluie": c.communes_touchees,
+                    "rafale_mesuree": c.rafale_mesuree, "trace": c.trace,
+                },
+                "estimations": {
+                    "cap_deg": c.cap_deg, "vers": orages.vers(c.cap_deg) if c.cap_deg is not None else None,
+                    "vitesse_kmh": c.vitesse_kmh, "communes_atteintes": c.communes_estimees,
+                    "ligne_de_grain": c.ligne_de_grain, "longueur_km": c.longueur_km,
+                },
+                "prevision_meteo_france": {"grele": c.grele_prevue, "rafale_kmh": c.rafale_prevue_kmh},
+            })
+        if centre:
+            resultats.sort(key=lambda r: r["distance_km"])
+        return Response({
+            **sources_ouvertes.resume("ORAGES_RADAR"),
+            "heure_image": image.heure if image else None,
+            "radars": len(image.radars) if image else 0,
+            "radars_absents": image.radars_absents if image else [],
+            "centre": centre, "rayon_km": rayon, "couvert": couvert,
+            "cellules": resultats,
         })
 
 

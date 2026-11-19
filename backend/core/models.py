@@ -3243,6 +3243,69 @@ class ImageRafales(models.Model):
         return f"Rafales prévues pour {self.echeance:%d/%m %H:%M}"
 
 
+class CelluleOrage(models.Model):
+    """Une cellule de pluie intense de la dernière image radar analysée (core/orages.py) :
+    SELON LES RELEVÉS pour son contour et son intensité, SELON NOS ESTIMATIONS (qui ne sont pas
+    des prévisions) pour son déplacement et les communes qu'elle atteindrait. Remplacées à
+    chaque image. Donnée publique partagée PROD/DEMO."""
+
+    identifiant = models.CharField(max_length=12, help_text="Stable d'une image à l'autre tant que la cellule est suivie.")
+    heure_image = models.DateTimeField()
+    centre = gis_models.PointField(srid=4326)
+    contour = gis_models.PolygonField(srid=4326)
+    # Zone balayée en une heure si la cellule gardait sa vitesse et sa direction.
+    couloir = gis_models.PolygonField(srid=4326, null=True, blank=True)
+    # Position et déplacement dans la grille radar (1 km), pour suivre la cellule à l'image suivante.
+    ligne = models.FloatField()
+    colonne = models.FloatField()
+    vitesse_lignes = models.FloatField(null=True, blank=True)
+    vitesse_colonnes = models.FloatField(null=True, blank=True)
+    max_mmh = models.FloatField()
+    moyenne_mmh = models.FloatField()
+    surface_km2 = models.FloatField()
+    tendance_mmh = models.FloatField(null=True, blank=True, help_text="Écart d'intensité maximale avec l'image précédente.")
+    cap_deg = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Direction vers laquelle elle va, 0 = nord.")
+    vitesse_kmh = models.PositiveSmallIntegerField(null=True, blank=True)
+    longueur_km = models.PositiveIntegerField(default=0)
+    ligne_de_grain = models.BooleanField(default=False)
+    communes_touchees = models.JSONField(default=list, blank=True)
+    communes_estimees = models.JSONField(default=list, blank=True)
+    grele_prevue = models.BooleanField(default=False, help_text="Grêle prévue par Météo-France (AROME-PI) sous la cellule.")
+    rafale_prevue_kmh = models.PositiveSmallIntegerField(null=True, blank=True)
+    rafale_mesuree = models.JSONField(null=True, blank=True)
+    trace = models.JSONField(default=list, blank=True)
+    releve_le = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["-max_mmh"])]
+
+
+class ImageRadarOrage(models.Model):
+    """Les dernières images radar, ramenées à 1 km et compactées : il en faut deux pour estimer
+    un déplacement (core/orages.py). Trois lignes au plus."""
+
+    heure = models.DateTimeField(primary_key=True)
+    largeur = models.PositiveIntegerField()
+    hauteur = models.PositiveIntegerField()
+    projdef = models.CharField(max_length=300)
+    x0 = models.FloatField()
+    y0 = models.FloatField()
+    grille = models.BinaryField()
+    radars = models.JSONField(default=list, blank=True)
+    radars_absents = models.JSONField(default=list, blank=True)
+    releve_le = models.DateTimeField()
+
+
+class AnalyseOrages(models.Model):
+    """Résumé de chaque analyse radar, gardé trente jours : de quoi comparer après coup les
+    cellules détectées aux orages réellement signalés, et régler les seuils avant toute annonce."""
+
+    heure = models.DateTimeField(primary_key=True)
+    radars_absents = models.JSONField(default=list, blank=True)
+    cellules = models.JSONField(default=list, blank=True)
+    releve_le = models.DateTimeField()
+
+
 class ChampVent(models.Model):
     """Champ de vent à dix mètres pour une heure donnée (modèle ARPEGE de Météo-France), gardé
     sous forme compacte pour l'animation de la carte -- voir core/vent.py. `donnees` : un octet

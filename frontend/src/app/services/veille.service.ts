@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AntennesIndisponibles, ArretesCirculation, Circulation, QualiteAir, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
-  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees,
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -57,6 +57,11 @@ export class VeilleService {
   /** Adresse de l'image d'une échéance, servie par notre serveur. */
   imagePluieUrl(echeance: string): string {
     return `${this.api}/pluie-prevue/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
+  /** Orages et pluies intenses autour de la commune de l'institution (radar, toutes les 5 min). */
+  orages(): Observable<OragesRadar> {
+    return this.http.get<OragesRadar>(`${this.api}/orages/`);
   }
 
   /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.
