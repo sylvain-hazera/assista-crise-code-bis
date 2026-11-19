@@ -189,7 +189,8 @@ from .models import (
     SourceObservateurMeshCore,
     TacheAdminMeshCore,
     TypeTacheAdminMeshCore,
-    TACHES_ADMIN_MESHCORE_ECRITURE,
+    TACHES_ADMIN_MESHCORE_ECRITURE, TACHES_ADMIN_MESHCORE_SESSION,
+    TACHES_ADMIN_MESHCORE_LOCALES, TACHES_ADMIN_MESHCORE_LOCALES_ECRITURE,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     Environment,
@@ -24993,15 +24994,30 @@ class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
     def perform_create(self, serializer):
         from .acces_radio import peut_administrer_noeud_meshcore
 
+        from .acces_radio import peut_administrer_compagnon_meshcore
+
         type_tache = serializer.validated_data['type_tache']
         pubkey = serializer.validated_data['pubkey_cible']
+        compagnon = serializer.validated_data['compagnon']
 
-        if type_tache in TACHES_ADMIN_MESHCORE_ECRITURE:
+        def _zone_prod():
             if get_active_environment(self.request) != Environment.PROD:
                 raise PermissionDenied(
                     "Une écriture sur un nœud radio ne se fait pas depuis la zone de "
                     "démonstration : aucun pont n'exécuterait la tâche."
                 )
+
+        if type_tache in TACHES_ADMIN_MESHCORE_LOCALES:
+            # Le nœud local : la cible EST la passerelle qui exécute (vérifié par le sérialiseur).
+            if type_tache in TACHES_ADMIN_MESHCORE_LOCALES_ECRITURE:
+                _zone_prod()
+                if not peut_administrer_compagnon_meshcore(self.request.user, compagnon):
+                    raise PermissionDenied(
+                        "Seule l'institution qui a déployé cette passerelle (ou un administrateur "
+                        "radio) peut la régler."
+                    )
+        elif type_tache in TACHES_ADMIN_MESHCORE_ECRITURE or type_tache in TACHES_ADMIN_MESHCORE_SESSION:
+            _zone_prod()
             if not peut_administrer_noeud_meshcore(self.request.user, pubkey):
                 raise PermissionDenied(
                     "Ce répéteur n'est pas rattaché à vous avec une preuve de contrôle faite. "

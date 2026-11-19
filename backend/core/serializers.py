@@ -43,7 +43,7 @@ from .models import (
     StatutPreuveRadio,
     SourceObservateurMeshCore,
     TacheAdminMeshCore,
-    TypeTacheAdminMeshCore,
+    TypeTacheAdminMeshCore, TACHES_ADMIN_MESHCORE_LOCALES,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
@@ -5561,6 +5561,8 @@ class TacheAdminMeshCoreSerializer(serializers.ModelSerializer):
                   'date_creation', 'date_prise', 'date_reponse']
         read_only_fields = ['statut', 'tentatives', 'reponse', 'erreur', 'demande_par',
                             'date_creation', 'date_prise', 'date_reponse']
+        # Déduite de la passerelle pour une opération locale ; exigée sinon (voir validate).
+        extra_kwargs = {'pubkey_cible': {'required': False}}
 
     # Bornes du firmware, `CommonCLI.cpp` l. 261 : freq 150-2500 MHz, bw 7-500 kHz, sf 5-12,
     # cr 5-8, et un délai de retour STRICTEMENT positif.
@@ -5603,12 +5605,85 @@ class TacheAdminMeshCoreSerializer(serializers.ModelSerializer):
                            "ramène le nœud à ses paramètres précédents si l'essai échoue."
             })
 
+    @staticmethod
+    def _pubkey_parametre(parametres, champ='pubkey'):
+        valeur = str(parametres.get(champ) or '').strip().lower()
+        if len(valeur) != 64 or any(c not in '0123456789abcdef' for c in valeur):
+            raise serializers.ValidationError(
+                {champ: "Clé publique du contact attendue : 64 caractères hexadécimaux."})
+        return valeur
+
+    def _valider_radio(self, parametres):
+        """Mêmes bornes que tempradio, sans le délai : c'est un réglage DURABLE du nœud local,
+        d'où la confirmation exigée (un nœud sur une autre fréquence n'entend plus le réseau)."""
+        for champ, (mini, maxi) in self.BORNES_TEMPRADIO.items():
+            try:
+                valeur = float(parametres[champ])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({champ: "Nombre requis."})
+            if not (mini <= valeur <= maxi):
+                raise serializers.ValidationError({champ: f"Hors des bornes du firmware : {mini} à {maxi}."})
+        if parametres.get('confirme') is not True:
+            raise serializers.ValidationError({'confirme': (
+                "Confirmation requise : sur d'autres paramètres radio, ce nœud n'entendra plus le "
+                "réseau tant qu'on ne les remet pas. Il reste joignable par son câble.")})
+
+    def _valider_locaux(self, type_tache, parametres):
+        T = TypeTacheAdminMeshCore
+        if type_tache in (T.LOCAL_CHEMIN_ANNONCE, T.LOCAL_DECOUVRIR_CHEMIN,
+                          T.LOCAL_SUPPRIMER_CONTACT, T.LOCAL_REINIT_CHEMIN):
+            parametres['pubkey'] = self._pubkey_parametre(parametres)
+        elif type_tache == T.LOCAL_NOM:
+            nom = str(parametres.get('nom') or '').strip()
+            if not (1 <= len(nom.encode('utf-8')) <= 31) or any(ord(c) < 32 for c in nom):
+                raise serializers.ValidationError({'nom': "Nom de 1 à 31 octets, sans caractère de contrôle."})
+            parametres['nom'] = nom
+        elif type_tache == T.LOCAL_POSITION:
+            try:
+                lat, lon = float(parametres['latitude']), float(parametres['longitude'])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({'latitude': "Latitude et longitude requises."})
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise serializers.ValidationError({'latitude': "Position hors du globe."})
+        elif type_tache == T.LOCAL_PUISSANCE:
+            try:
+                dbm = int(parametres['dbm'])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({'dbm': "Puissance en dBm requise."})
+            if not (1 <= dbm <= 30):
+                raise serializers.ValidationError({'dbm': "De 1 à 30 dBm (le firmware borne selon la carte)."})
+        elif type_tache == T.LOCAL_RADIO:
+            self._valider_radio(parametres)
+
     def validate(self, attrs):
         type_tache = attrs.get('type_tache', getattr(self.instance, 'type_tache', None))
         parametres = attrs.get('parametres') or {}
 
+        if type_tache in TACHES_ADMIN_MESHCORE_LOCALES:
+            # La cible d'une opération locale est la passerelle elle-même, jamais un autre nœud.
+            compagnon = attrs.get('compagnon')
+            propre = (getattr(compagnon, 'pubkey_hex', '') or '').strip().lower()
+            if len(propre) != 64:
+                raise serializers.ValidationError({'compagnon': (
+                    "La clé publique de cette passerelle n'est pas encore connue : attendez sa "
+                    "première synchronisation.")})
+            attrs['pubkey_cible'] = propre
+            self._valider_locaux(type_tache, parametres)
+            attrs['parametres'] = parametres or None
+            return attrs
+
+        if not attrs.get('pubkey_cible') and not getattr(self.instance, 'pubkey_cible', None):
+            raise serializers.ValidationError({'pubkey_cible': "Clé publique du répéteur requise."})
+
         if type_tache == TypeTacheAdminMeshCore.RADIO_TEMPORAIRE:
             self._valider_radio_temporaire(parametres)
+
+        elif type_tache == TypeTacheAdminMeshCore.LIRE_REGLAGE:
+            cle = str(parametres.get('cle') or '').strip()
+            if not re.fullmatch(r'[a-z][a-z0-9._]{0,31}', cle):
+                raise serializers.ValidationError({'cle': "Nom de réglage invalide (ex. radio, tx, advert.interval)."})
+            if cle in REGLAGES_MESHCORE_INTERDITS:
+                raise serializers.ValidationError({'cle': MOTIF_REGLAGE_INTERDIT[cle]})
 
         elif type_tache == TypeTacheAdminMeshCore.DEFINIR_REGLAGE:
             cle = (parametres.get('cle') or '').strip()

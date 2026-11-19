@@ -149,3 +149,17 @@ button {
   margin-left: 6px; font-size: .8rem; cursor: help;
   color: var(--ac-amber-text, #b45309); text-decoration: underline dotted;
 }
+
+// Flotte (19/11/2026) : une ligne par répéteur réclamé.
+.table-defile { overflow-x: auto; }
+.flotte {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+  font-variant-numeric: tabular-nums;
+  th, td { padding: .35rem .5rem; border-bottom: 1px solid var(--ac-border, #e2e8f0); text-align: left; white-space: nowrap; }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ac-text-muted, #475569); }
+  .alerte { color: var(--ac-red-text, #b91c1c); font-weight: 600; }
+  .erreur-courte { white-space: normal; max-width: 22rem; color: var(--ac-red-text, #b91c1c); font-size: .82rem; }
+}
+.confirmation { display: flex; gap: .5rem; align-items: flex-start; margin-top: .5rem; font-size: .88rem; }

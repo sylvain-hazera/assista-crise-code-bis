@@ -167,6 +167,20 @@ def peut_administrer_noeud_meshcore(user, pubkey_hex):
     ).exists()
 
 
+def peut_administrer_compagnon_meshcore(user, compagnon):
+    """« Ce compte peut-il régler la passerelle MeshCore elle-même (son nom, sa radio, ses
+    contacts) ? » Même règle que `peut_administrer_noeud` pour une passerelle : l'administrateur
+    radio, ou l'institution qui l'a déployée — c'est elle qui ira la rechercher si elle devient
+    muette (règle du 10/11/2026)."""
+    niveau = niveau_acces_radio(user)
+    if niveau == NiveauAccesRadio.ADMINISTRATEUR:
+        return True
+    if niveau == NiveauAccesRadio.AUCUN or compagnon is None:
+        return False
+    institution_id = getattr(compagnon, 'institution_id', None)
+    return bool(institution_id and institution_id in institutions_de(user))
+
+
 def _institution_possede_du_materiel(user):
     """Une institution du compte exploite-t-elle de la radio ? Passerelle OU nœud d'un membre.
 

@@ -53,9 +53,23 @@ class FausseCommandes:
         return self._commande
 
 
+class FauxEvenement:
+    def __init__(self, payload):
+        self.payload = payload
+
+
 class FauxCompagnon:
-    def __init__(self, **kwargs):
+    """`reponse_cli` : texte que le répéteur renvoie à une commande (None : il ne répond pas)."""
+
+    def __init__(self, reponse_cli="OK", **kwargs):
         self.commands = FausseCommandes(**kwargs)
+        self.reponse_cli = reponse_cli
+        self.attentes = []
+
+    async def wait_for_event(self, type_evenement, attribute_filters=None, timeout=None):
+        self.attentes.append(attribute_filters)
+        await asyncio.sleep(0)
+        return None if self.reponse_cli is None else FauxEvenement({"text": self.reponse_cli})
 
 
 CIBLE = "ab" * 32
@@ -227,3 +241,92 @@ class TestExecution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class FausseCommandesCompletes(FausseCommandes):
+    """Les méthodes ajoutées le 19/11/2026."""
+
+    async def req_owner_sync(self, contact, **kwargs):
+        self.appels.append(("proprietaire", contact))
+        return FauxEvenement({"owner": "Mairie"})
+
+    async def req_acl_sync(self, contact, **kwargs):
+        self.appels.append(("acl", contact))
+        return FauxEvenement({"acl_data": [{"key": "ab12", "perm": 3}]})
+
+    async def send_logout(self, dst):
+        self.appels.append(("logout", dst))
+        return FauxEvenement({})
+
+    async def get_stats_core(self):
+        return FauxEvenement({"uptime": 10})
+
+    async def get_stats_radio(self):
+        return FauxEvenement({"noise_floor": -110})
+
+    async def get_stats_packets(self):
+        return FauxEvenement({"recv": 5})
+
+    async def set_name(self, nom):
+        self.appels.append(("nom", nom))
+        return FauxEvenement({})
+
+    async def set_radio(self, freq, bw, sf, cr):
+        self.appels.append(("radio", freq, bw, sf, cr))
+        return FauxEvenement({})
+
+    async def remove_contact(self, cle):
+        self.appels.append(("supprimer", cle))
+        return FauxEvenement({})
+
+
+class TestOperationsDuDixNeuf(unittest.TestCase):
+
+    def compagnon(self, **kwargs):
+        c = FauxCompagnon(**kwargs)
+        c.commands = FausseCommandesCompletes()
+        return c
+
+    def test_relire_un_reglage_rend_la_reponse_du_repeteur(self):
+        c = self.compagnon(reponse_cli="> 869.525,62.5,8,5")
+        reponse, erreur = executer(mod.executer_tache(c, tache(mod.LIRE_REGLAGE, parametres={"cle": "radio"})))
+        self.assertIsNone(erreur)
+        self.assertEqual(reponse, {"commande": "get radio", "reponse": "> 869.525,62.5,8,5"})
+        # L'attente vise CE répéteur, et seulement une réponse de commande.
+        self.assertEqual(c.attentes, [{"pubkey_prefix": CIBLE[:12], "txt_type": 1}])
+
+    def test_un_reglage_secret_n_est_jamais_relu(self):
+        _, erreur = executer(mod.executer_tache(self.compagnon(), tache(mod.LIRE_REGLAGE, parametres={"cle": "prv.key"})))
+        self.assertIn("invalide", erreur)
+
+    def test_une_commande_sans_reponse_est_un_echec_sauf_le_redemarrage(self):
+        _, erreur = executer(mod.executer_tache(self.compagnon(reponse_cli=None), tache(mod.LIRE_VERSION)))
+        self.assertIn("n'a pas répondu", erreur)
+        reponse, erreur = executer(mod.executer_tache(self.compagnon(reponse_cli=None), tache(mod.REDEMARRER)))
+        self.assertIsNone(erreur)
+
+    def test_horloge_proprietaire_acl_et_session(self):
+        c = self.compagnon(reponse_cli="OK - clock set")
+        reponse, _ = executer(mod.executer_tache(c, tache(mod.SYNCHRO_HORLOGE)))
+        self.assertEqual(reponse["commande"], "clock sync")
+        reponse, _ = executer(mod.executer_tache(c, tache(mod.LIRE_PROPRIETAIRE)))
+        self.assertEqual(reponse, {"owner": "Mairie"})
+        reponse, _ = executer(mod.executer_tache(c, tache(mod.LIRE_ACL)))
+        self.assertEqual(reponse["acl_data"][0]["perm"], 3)
+        reponse, _ = executer(mod.executer_tache(c, tache(mod.CONNEXION_ROOM, moyen_admin="MOT_DE_PASSE", mot_de_passe="x")))
+        self.assertEqual(reponse, {"session": "ouverte"})
+        self.assertIn(("login", CIBLE, "x"), c.commands.appels)
+
+    def test_operations_locales(self):
+        c = self.compagnon()
+        reponse, erreur = executer(mod.executer_tache(c, tache(mod.LOCAL_STATISTIQUES)))
+        self.assertIsNone(erreur)
+        self.assertEqual(reponse["radio"], {"noise_floor": -110})
+        executer(mod.executer_tache(c, tache(mod.LOCAL_NOM, parametres={"nom": "Mairie-GW"})))
+        self.assertIn(("nom", "Mairie-GW"), c.commands.appels)
+        _, erreur = executer(mod.executer_tache(c, tache(mod.LOCAL_RADIO, parametres={
+            "frequence_mhz": 869.525, "bande_khz": 250, "facteur_etalement": 11, "taux_codage": 5})))
+        self.assertIn("non confirmé", erreur)
+        executer(mod.executer_tache(c, tache(mod.LOCAL_SUPPRIMER_CONTACT, parametres={"pubkey": "cd" * 32})))
+        self.assertIn(("supprimer", "cd" * 32), c.commands.appels)

@@ -9852,6 +9852,26 @@ class TypeTacheAdminMeshCore(models.TextChoices):
     DEFINIR_REGLAGE = "DEFINIR_REGLAGE", "Modifier un réglage (set)"
     ANNONCER = "ANNONCER", "Déclencher une annonce (advert)"
     REDEMARRER = "REDEMARRER", "Redémarrer le répéteur"
+    # ── 19/11/2026 : le reste de ce que MeshCore permet, sur un répéteur joint par le nœud ──
+    LIRE_REGLAGE = "LIRE_REGLAGE", "Relire un réglage (get)"
+    LIRE_VERSION = "LIRE_VERSION", "Lire la version du firmware"
+    LIRE_HORLOGE = "LIRE_HORLOGE", "Lire l'horloge du répéteur"
+    LIRE_ACL = "LIRE_ACL", "Lire la liste des accès (ACL)"
+    LIRE_PROPRIETAIRE = "LIRE_PROPRIETAIRE", "Lire les informations du propriétaire"
+    SYNCHRO_HORLOGE = "SYNCHRO_HORLOGE", "Remettre l'horloge à l'heure (clock sync)"
+    CONNEXION_ROOM = "CONNEXION_ROOM", "Se connecter à un room server"
+    DECONNECTER = "DECONNECTER", "Fermer la session"
+    # ── … et sur le nœud local lui-même (la passerelle qui exécute) ──
+    LOCAL_STATISTIQUES = "LOCAL_STATISTIQUES", "Nœud local : statistiques (radio, paquets, système)"
+    LOCAL_REGLAGES = "LOCAL_REGLAGES", "Nœud local : réglages et identité"
+    LOCAL_CHEMIN_ANNONCE = "LOCAL_CHEMIN_ANNONCE", "Nœud local : chemin d'annonce d'un contact"
+    LOCAL_DECOUVRIR_CHEMIN = "LOCAL_DECOUVRIR_CHEMIN", "Nœud local : découvrir le chemin vers un contact"
+    LOCAL_NOM = "LOCAL_NOM", "Nœud local : changer le nom"
+    LOCAL_POSITION = "LOCAL_POSITION", "Nœud local : changer la position"
+    LOCAL_PUISSANCE = "LOCAL_PUISSANCE", "Nœud local : puissance d'émission"
+    LOCAL_RADIO = "LOCAL_RADIO", "Nœud local : paramètres radio"
+    LOCAL_SUPPRIMER_CONTACT = "LOCAL_SUPPRIMER_CONTACT", "Nœud local : supprimer un contact"
+    LOCAL_REINIT_CHEMIN = "LOCAL_REINIT_CHEMIN", "Nœud local : réinitialiser le chemin d'un contact"
 
 
 # Opérations qui ÉCRIVENT sur le nœud : elles exigent le droit sur ce nœud précis, la zone
@@ -9861,7 +9881,35 @@ TACHES_ADMIN_MESHCORE_ECRITURE = frozenset({
     TypeTacheAdminMeshCore.DEFINIR_REGLAGE,
     TypeTacheAdminMeshCore.ANNONCER,
     TypeTacheAdminMeshCore.REDEMARRER,
+    TypeTacheAdminMeshCore.SYNCHRO_HORLOGE,
 })
+# Opérations qui ouvrent une session avec le mot de passe d'administration du répéteur (ou
+# lisent sa liste d'accès) sans rien y écrire : même condition qu'une écriture — le mot de
+# passe ne sert que si la preuve de contrôle est faite.
+TACHES_ADMIN_MESHCORE_SESSION = frozenset({
+    TypeTacheAdminMeshCore.LIRE_REGLAGE,
+    TypeTacheAdminMeshCore.LIRE_VERSION,
+    TypeTacheAdminMeshCore.LIRE_HORLOGE,
+    TypeTacheAdminMeshCore.LIRE_ACL,
+    TypeTacheAdminMeshCore.CONNEXION_ROOM,
+    TypeTacheAdminMeshCore.DECONNECTER,
+})
+# Opérations sur le nœud LOCAL (la passerelle qui exécute) : la cible est sa propre clé.
+TACHES_ADMIN_MESHCORE_LOCALES_LECTURE = frozenset({
+    TypeTacheAdminMeshCore.LOCAL_STATISTIQUES,
+    TypeTacheAdminMeshCore.LOCAL_REGLAGES,
+    TypeTacheAdminMeshCore.LOCAL_CHEMIN_ANNONCE,
+    TypeTacheAdminMeshCore.LOCAL_DECOUVRIR_CHEMIN,
+})
+TACHES_ADMIN_MESHCORE_LOCALES_ECRITURE = frozenset({
+    TypeTacheAdminMeshCore.LOCAL_NOM,
+    TypeTacheAdminMeshCore.LOCAL_POSITION,
+    TypeTacheAdminMeshCore.LOCAL_PUISSANCE,
+    TypeTacheAdminMeshCore.LOCAL_RADIO,
+    TypeTacheAdminMeshCore.LOCAL_SUPPRIMER_CONTACT,
+    TypeTacheAdminMeshCore.LOCAL_REINIT_CHEMIN,
+})
+TACHES_ADMIN_MESHCORE_LOCALES = TACHES_ADMIN_MESHCORE_LOCALES_LECTURE | TACHES_ADMIN_MESHCORE_LOCALES_ECRITURE
 
 
 class TacheAdminMeshCore(EnvironmentScopedModel):
@@ -9901,7 +9949,7 @@ class TacheAdminMeshCore(EnvironmentScopedModel):
                   "le companion local se pilote par CommandeMeshCore, pas par cette file.",
     )
 
-    type_tache = models.CharField(max_length=18, choices=TypeTacheAdminMeshCore.choices)
+    type_tache = models.CharField(max_length=30, choices=TypeTacheAdminMeshCore.choices)
 
     # Paramètres, ex. {"cle": "advert.interval", "valeur": "240"} ou les cinq champs de
     # tempradio. Jamais de secret ici : les commandes qui en transportent sont absentes de
@@ -9939,7 +9987,8 @@ class TacheAdminMeshCore(EnvironmentScopedModel):
 
     @property
     def est_ecriture(self):
-        return self.type_tache in TACHES_ADMIN_MESHCORE_ECRITURE
+        return (self.type_tache in TACHES_ADMIN_MESHCORE_ECRITURE
+                or self.type_tache in TACHES_ADMIN_MESHCORE_LOCALES_ECRITURE)
 
     def __str__(self):
         return f"{self.get_type_tache_display()} -> {self.pubkey_cible[:12]} ({self.statut})"

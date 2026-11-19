@@ -25,7 +25,8 @@ export class AdministrationMeshCoreService {
 
   creer(data: {
     compagnon: string;
-    pubkey_cible: string;
+    /** Absente pour une opération sur le nœud local : le serveur la déduit de la passerelle. */
+    pubkey_cible?: string;
     type_tache: TypeTacheAdminMeshCore;
     parametres?: Record<string, unknown> | null;
   }): Observable<TacheAdminMeshCore> {

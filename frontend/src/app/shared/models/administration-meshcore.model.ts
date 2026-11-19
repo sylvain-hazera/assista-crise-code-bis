@@ -18,7 +18,27 @@ export type TypeTacheAdminMeshCore =
   | 'RADIO_TEMPORAIRE'
   | 'DEFINIR_REGLAGE'
   | 'ANNONCER'
-  | 'REDEMARRER';
+  | 'REDEMARRER'
+  // 19/11/2026 : le reste de ce que MeshCore permet, sur un répéteur joint par le nœud…
+  | 'LIRE_REGLAGE'
+  | 'LIRE_VERSION'
+  | 'LIRE_HORLOGE'
+  | 'LIRE_ACL'
+  | 'LIRE_PROPRIETAIRE'
+  | 'SYNCHRO_HORLOGE'
+  | 'CONNEXION_ROOM'
+  | 'DECONNECTER'
+  // … et sur le nœud local (la passerelle qui exécute)
+  | 'LOCAL_STATISTIQUES'
+  | 'LOCAL_REGLAGES'
+  | 'LOCAL_CHEMIN_ANNONCE'
+  | 'LOCAL_DECOUVRIR_CHEMIN'
+  | 'LOCAL_NOM'
+  | 'LOCAL_POSITION'
+  | 'LOCAL_PUISSANCE'
+  | 'LOCAL_RADIO'
+  | 'LOCAL_SUPPRIMER_CONTACT'
+  | 'LOCAL_REINIT_CHEMIN';
 
 export type StatutTacheAdminMeshCore = 'EN_ATTENTE' | 'EN_COURS' | 'TERMINEE' | 'ECHEC';
 
@@ -52,5 +72,7 @@ export interface OperationMeshCore {
   libelle: string;
   /** Vrai quand l'opération écrit sur le répéteur, donc exige une preuve faite. */
   ecriture: boolean;
+  /** Vrai quand l'opération ouvre une session avec le mot de passe du répéteur : même condition. */
+  session?: boolean;
   aide: string;
 }

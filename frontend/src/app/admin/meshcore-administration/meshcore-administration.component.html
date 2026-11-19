@@ -227,12 +227,18 @@
         </p>
       }
 
+      @if (operation.type === 'LIRE_REGLAGE') {
+        <label class="champ"><span>Clé à relire</span>
+          <input type="text" [(ngModel)]="operation.cle" name="cle-lire"
+                 placeholder="ex. radio, tx, advert.interval, name"></label>
+      }
+
       @if (ecritureImpossible) {
         <div class="message avertissement" role="alert">
           <span class="material-icons">warning_amber</span>
           <span>
-            Cette opération <strong>écrit</strong> sur le répéteur, et sa preuve de contrôle
-            n'est pas faite. Lancez <em>Vérifier</em> sur ce répéteur d'abord — sans elle, l'opération sera refusée.
+            Cette opération {{ operationChoisie?.ecriture ? 'écrit sur le répéteur' : 'ouvre une session avec son mot de passe' }},
+            et sa preuve de contrôle n'est pas faite. Lancez <em>Vérifier</em> sur ce répéteur d'abord — sans elle, l'opération sera refusée.
           </span>
         </div>
       }
@@ -253,6 +259,116 @@
         L'opération traverse la radio : elle met de quelques secondes à plusieurs minutes, et
         elle est réessayée si le répéteur ne répond pas. Le résultat apparaît ci-dessous.
       </p>
+    }
+  </section>
+
+  <!-- ── Flotte : l'état connu de chaque répéteur réclamé (19/11/2026) ─────── -->
+  <section>
+    <h2><span class="material-icons">lan</span> Flotte</h2>
+    <p class="explication">
+      Le dernier état connu de chaque répéteur réclamé, tiré des opérations déjà faites. « Relever
+      la flotte » met en file statut et télémétrie pour tous, et version et horloge pour ceux dont
+      la preuve est faite.
+    </p>
+    <div class="ligne">
+      <button type="button" [disabled]="envoiFlotte || !rattachements.length" (click)="releverLaFlotte()">
+        <span class="material-icons">sync</span> Relever la flotte
+      </button>
+      <button type="button" [disabled]="envoiFlotte || !rattachements.length" (click)="remettreLesHorloges()">
+        <span class="material-icons">schedule</span> Remettre les horloges à l'heure
+      </button>
+    </div>
+    @if (messageFlotte) { <p class="explication" role="status">{{ messageFlotte }}</p> }
+    @if (rattachements.length) {
+      <div class="table-defile">
+        <table class="flotte">
+          <thead><tr>
+            <th scope="col">Répéteur</th><th scope="col">Preuve</th><th scope="col">Batterie</th>
+            <th scope="col">En service</th><th scope="col">Bruit</th><th scope="col">Version</th>
+            <th scope="col">Horloge</th><th scope="col">Relevé</th><th scope="col">Dernière erreur</th>
+          </tr></thead>
+          <tbody>
+            @for (l of flotte; track l.rattachement.id) {
+              <tr>
+                <td>{{ libelleRattachement(l.rattachement) }}</td>
+                <td>{{ l.rattachement.preuve_faite ? 'faite' : '—' }}</td>
+                <td [class.alerte]="l.batterieV !== null && l.batterieV < 3.5">
+                  {{ l.batterieV !== null ? (l.batterieV | number:'1.2-2') + ' V' : '—' }}</td>
+                <td>{{ l.enServiceH !== null ? l.enServiceH + ' h' : '—' }}</td>
+                <td>{{ l.bruitDbm !== null ? l.bruitDbm + ' dBm' : '—' }}</td>
+                <td>{{ l.version ?? '—' }}</td>
+                <td>{{ l.horloge ?? '—' }}</td>
+                <td>{{ l.releveLe ? (l.releveLe | date:'dd/MM HH:mm') : 'jamais' }}</td>
+                <td class="erreur-courte">{{ l.derniereErreur ?? '' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- ── Nœud local : la passerelle elle-même (19/11/2026) ─────────────────── -->
+  <section>
+    <h2><span class="material-icons">router</span> Nœud local (la passerelle)</h2>
+    @if (!companions.length) {
+      <p class="attente">Aucune passerelle MeshCore active.</p>
+    } @else {
+      <label class="champ"><span>Passerelle</span>
+        <select [(ngModel)]="locale.compagnon" name="locale-compagnon">
+          <option value="">— choisir —</option>
+          @for (c of companions; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+        </select>
+      </label>
+      <label class="champ"><span>Opération</span>
+        <select [(ngModel)]="locale.type" name="locale-type">
+          @for (o of operationsLocales; track o.type) {
+            <option [value]="o.type">{{ o.libelle }}@if (o.ecriture) { — écriture }</option>
+          }
+        </select>
+        @if (operationLocaleChoisie) { <small>{{ operationLocaleChoisie.aide }}</small> }
+      </label>
+      @if (localeAvecContact) {
+        <label class="champ"><span>Clé publique du contact (64 caractères)</span>
+          <input type="text" [(ngModel)]="locale.pubkey" name="locale-pubkey"></label>
+      }
+      @if (locale.type === 'LOCAL_NOM') {
+        <label class="champ"><span>Nom</span>
+          <input type="text" maxlength="31" [(ngModel)]="locale.nom" name="locale-nom"></label>
+      }
+      @if (locale.type === 'LOCAL_POSITION') {
+        <div class="ligne">
+          <label><span>Latitude</span><input type="number" step="any" [(ngModel)]="locale.latitude" name="locale-lat"></label>
+          <label><span>Longitude</span><input type="number" step="any" [(ngModel)]="locale.longitude" name="locale-lon"></label>
+        </div>
+      }
+      @if (locale.type === 'LOCAL_PUISSANCE') {
+        <label class="champ"><span>Puissance (dBm)</span>
+          <input type="number" min="1" max="30" [(ngModel)]="locale.dbm" name="locale-dbm"></label>
+      }
+      @if (locale.type === 'LOCAL_RADIO') {
+        <div class="bloc-radio">
+          <div class="ligne">
+            <label><span>Fréquence (MHz)</span><input type="number" step="any" [(ngModel)]="locale.frequence_mhz" name="l-freq"></label>
+            <label><span>Bande (kHz)</span><input type="number" step="any" [(ngModel)]="locale.bande_khz" name="l-bw"></label>
+            <label><span>Étalement</span><input type="number" [(ngModel)]="locale.facteur_etalement" name="l-sf"></label>
+            <label><span>Codage</span><input type="number" [(ngModel)]="locale.taux_codage" name="l-cr"></label>
+          </div>
+          <label class="confirmation">
+            <input type="checkbox" [(ngModel)]="locale.confirme" name="l-confirme">
+            Je sais que sur d'autres paramètres que le réseau, ce nœud n'entendra plus personne
+            tant qu'on ne les remet pas.
+          </label>
+        </div>
+      }
+      @if (erreurLocale) {
+        <div class="message erreur" role="alert"><span class="material-icons">error_outline</span> {{ erreurLocale }}</div>
+      }
+      <button type="button" class="principal"
+              [disabled]="!locale.compagnon || envoiLocale || (locale.type === 'LOCAL_RADIO' && !locale.confirme)"
+              (click)="lancerLocale()">
+        <span class="material-icons">send</span> {{ envoiLocale ? 'Mise en file…' : 'Mettre en file' }}
+      </button>
     }
   </section>
 

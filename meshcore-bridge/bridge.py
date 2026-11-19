@@ -483,6 +483,11 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canau
     async def _sur_message(event):
         payload = event.payload or {}
         logger.debug("Événement CONTACT_MSG_RECV brut : %r", payload)
+        if payload.get("txt_type") == admin_meshcore.TXT_TYPE_CLI:
+            # Réponse d'un répéteur à une commande d'administration (« OK », une valeur) : elle
+            # est lue par la tâche qui l'attend, ce n'est pas un message à relayer. Avant le
+            # 19/11/2026, chaque « OK » finissait dans la messagerie comme un message direct.
+            return
         pubkey_prefix = payload.get("pubkey_prefix") or payload.get("pubkey") or "inconnu"
         texte = payload.get("text", "")
         logger.info("Message reçu de %s (%d caractères).", pubkey_prefix, len(texte))

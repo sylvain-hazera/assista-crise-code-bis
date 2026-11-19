@@ -58,6 +58,49 @@ export class MeshcoreAdministrationComponent implements OnInit {
       aide: "Pose un `set <clé> <valeur>` durable. Les clés qui transportent un secret ou changent l'identité du nœud sont refusées par le serveur, avec leur motif." },
     { type: 'REDEMARRER', libelle: 'Redémarrer', ecriture: true,
       aide: "Le répéteur se recharge avec sa configuration enregistrée. Il est muet le temps du redémarrage." },
+    // 19/11/2026 : le reste de ce que MeshCore permet sur un répéteur.
+    { type: 'LIRE_PROPRIETAIRE', libelle: 'Lire les informations du propriétaire', ecriture: false,
+      aide: "Ce que le répéteur déclare de son propriétaire. Sans effet sur lui." },
+    { type: 'LIRE_REGLAGE', libelle: 'Relire un réglage', ecriture: false, session: true,
+      aide: "Lit la valeur actuelle d'un réglage (`get <clé>`) — à faire avant de le modifier. Ouvre une session avec le mot de passe : preuve exigée. Les clés secrètes ne sont jamais relues." },
+    { type: 'LIRE_VERSION', libelle: 'Lire la version du firmware', ecriture: false, session: true,
+      aide: "La version installée (`ver`). Ouvre une session : preuve exigée." },
+    { type: 'LIRE_HORLOGE', libelle: "Lire l'horloge", ecriture: false, session: true,
+      aide: "L'heure du répéteur (`clock`). Une horloge fausse fait rejeter ses messages horodatés." },
+    { type: 'LIRE_ACL', libelle: 'Lire la liste des accès (ACL)', ecriture: false, session: true,
+      aide: "Qui a des droits sur ce répéteur, et lesquels. Ouvre une session : preuve exigée." },
+    { type: 'SYNCHRO_HORLOGE', libelle: "Remettre l'horloge à l'heure", ecriture: true,
+      aide: "`clock sync` : le répéteur prend l'heure du message reçu. Sans danger." },
+    { type: 'CONNEXION_ROOM', libelle: 'Se connecter (room server)', ecriture: false, session: true,
+      aide: "Pour un room server : ouvre la session ; ses messages arrivent ensuite dans la messagerie comme des messages directs, et on lui écrit de la même façon." },
+    { type: 'DECONNECTER', libelle: 'Fermer la session', ecriture: false, session: true,
+      aide: "Ferme la session ouverte avec ce répéteur ou ce room server." },
+  ];
+
+  /** Opérations sur le nœud LOCAL : la passerelle qui exécute, réglée par l'institution qui l'a
+   * déployée (ou un administrateur radio). Rien ne traverse la radio, sauf la découverte de
+   * chemin, qui l'interroge justement. */
+  readonly operationsLocales: OperationMeshCore[] = [
+    { type: 'LOCAL_STATISTIQUES', libelle: 'Statistiques (radio, paquets, système)', ecriture: false,
+      aide: "Bruit de fond, paquets reçus et émis, temps d'antenne, durée de fonctionnement." },
+    { type: 'LOCAL_REGLAGES', libelle: 'Réglages et identité', ecriture: false,
+      aide: "Modèle, firmware, paramètres radio, réglages fins et télémétrie du nœud." },
+    { type: 'LOCAL_CHEMIN_ANNONCE', libelle: "Chemin d'annonce d'un contact", ecriture: false,
+      aide: "Par quels répéteurs l'annonce de ce contact est arrivée." },
+    { type: 'LOCAL_DECOUVRIR_CHEMIN', libelle: 'Découvrir le chemin vers un contact', ecriture: false,
+      aide: "Interroge le réseau pour trouver un chemin direct vers ce contact. Utile quand un message direct ne passe plus." },
+    { type: 'LOCAL_REINIT_CHEMIN', libelle: "Réinitialiser le chemin d'un contact", ecriture: true,
+      aide: "Oublie le chemin mémorisé : le prochain message repartira en diffusion et réapprendra la route." },
+    { type: 'LOCAL_SUPPRIMER_CONTACT', libelle: 'Supprimer un contact', ecriture: true,
+      aide: "Retire le contact du nœud. Il reviendra à sa prochaine annonce si l'ajout automatique est actif." },
+    { type: 'LOCAL_NOM', libelle: 'Changer le nom', ecriture: true,
+      aide: "Le nom annoncé sur le réseau (31 octets au plus)." },
+    { type: 'LOCAL_POSITION', libelle: 'Changer la position', ecriture: true,
+      aide: "La position annoncée du nœud." },
+    { type: 'LOCAL_PUISSANCE', libelle: "Puissance d'émission", ecriture: true,
+      aide: "En dBm. Le firmware borne selon la carte ; plus fort porte plus loin et consomme plus." },
+    { type: 'LOCAL_RADIO', libelle: 'Paramètres radio (durable)', ecriture: true,
+      aide: "Fréquence, bande, étalement, codage — DURABLE. Sur d'autres paramètres que le réseau, le nœud n'entend plus personne ; il reste joignable par son câble pour revenir en arrière." },
   ];
 
   rattachements: RattachementNoeudRadio[] = [];
@@ -92,6 +135,20 @@ export class MeshcoreAdministrationComponent implements OnInit {
   erreurOperation: string | null = null;
   envoiOperation = false;
   tacheDepliee: string | null = null;
+
+  /** Formulaire d'opération sur le nœud local. */
+  locale = {
+    compagnon: '',
+    type: 'LOCAL_STATISTIQUES' as TypeTacheAdminMeshCore,
+    pubkey: '', nom: '', latitude: 0, longitude: 0, dbm: 20,
+    frequence_mhz: 869.525, bande_khz: 250, facteur_etalement: 11, taux_codage: 5, confirme: false,
+  };
+  erreurLocale: string | null = null;
+  envoiLocale = false;
+
+  /** Relevés groupés de la flotte. */
+  messageFlotte: string | null = null;
+  envoiFlotte = false;
 
   constructor(private service: AdministrationMeshCoreService,
               private rattachementService: RattachementNoeudRadioService,
@@ -147,7 +204,7 @@ export class MeshcoreAdministrationComponent implements OnInit {
   get ecritureImpossible(): boolean {
     const operation = this.operationChoisie;
     const rattachement = this.rattachementChoisi;
-    return !!operation?.ecriture && !!rattachement && !rattachement.preuve_faite;
+    return !!(operation?.ecriture || operation?.session) && !!rattachement && !rattachement.preuve_faite;
   }
 
   libelleRattachement(rattachement: RattachementNoeudRadio): string {
@@ -241,7 +298,126 @@ export class MeshcoreAdministrationComponent implements OnInit {
     if (this.operation.type === 'DEFINIR_REGLAGE') {
       return { cle: this.operation.cle.trim(), valeur: this.operation.valeur.trim() };
     }
+    if (this.operation.type === 'LIRE_REGLAGE') {
+      return { cle: this.operation.cle.trim() };
+    }
     return null;
+  }
+
+  // ── Nœud local ─────────────────────────────────────────────────────────
+
+  get operationLocaleChoisie(): OperationMeshCore | undefined {
+    return this.operationsLocales.find(o => o.type === this.locale.type);
+  }
+
+  get localeAvecContact(): boolean {
+    return ['LOCAL_CHEMIN_ANNONCE', 'LOCAL_DECOUVRIR_CHEMIN', 'LOCAL_REINIT_CHEMIN',
+            'LOCAL_SUPPRIMER_CONTACT'].includes(this.locale.type);
+  }
+
+  parametresLocaux(): Record<string, unknown> | null {
+    const l = this.locale;
+    switch (l.type) {
+      case 'LOCAL_CHEMIN_ANNONCE': case 'LOCAL_DECOUVRIR_CHEMIN':
+      case 'LOCAL_REINIT_CHEMIN': case 'LOCAL_SUPPRIMER_CONTACT':
+        return { pubkey: l.pubkey.trim().toLowerCase() };
+      case 'LOCAL_NOM': return { nom: l.nom.trim() };
+      case 'LOCAL_POSITION': return { latitude: l.latitude, longitude: l.longitude };
+      case 'LOCAL_PUISSANCE': return { dbm: l.dbm };
+      case 'LOCAL_RADIO':
+        return { frequence_mhz: l.frequence_mhz, bande_khz: l.bande_khz, facteur_etalement: l.facteur_etalement,
+                 taux_codage: l.taux_codage, confirme: l.confirme };
+      default: return null;
+    }
+  }
+
+  lancerLocale(): void {
+    if (!this.locale.compagnon || this.envoiLocale) return;
+    this.erreurLocale = null;
+    this.envoiLocale = true;
+    this.service.creer({ compagnon: this.locale.compagnon, type_tache: this.locale.type,
+                         parametres: this.parametresLocaux() }).subscribe({
+      next: () => { this.envoiLocale = false; this.locale.confirme = false; this.rafraichirTaches(); },
+      error: (e: HttpErrorResponse) => { this.erreurLocale = this.message(e); this.envoiLocale = false; },
+    });
+  }
+
+  // ── Flotte ─────────────────────────────────────────────────────────────
+
+  /** Le dernier résultat réussi d'un type d'opération sur ce répéteur, ou null. */
+  private dernier(pubkey: string, type: TypeTacheAdminMeshCore): TacheAdminMeshCore | null {
+    return this.taches
+      .filter(t => t.pubkey_cible === pubkey && t.type_tache === type && t.statut === 'TERMINEE')
+      .sort((a, b) => (b.date_reponse ?? '').localeCompare(a.date_reponse ?? ''))[0] ?? null;
+  }
+
+  private json(tache: TacheAdminMeshCore | null): Record<string, unknown> | null {
+    if (!tache?.reponse) return null;
+    try { return JSON.parse(tache.reponse); } catch { return null; }
+  }
+
+  /** Une ligne par répéteur réclamé : son dernier état connu, tiré des opérations déjà faites. */
+  get flotte() {
+    return this.rattachements.map(r => {
+      const statut = this.json(this.dernier(r.pubkey_hex, 'LIRE_STATUT'));
+      const version = this.json(this.dernier(r.pubkey_hex, 'LIRE_VERSION'));
+      const horloge = this.json(this.dernier(r.pubkey_hex, 'LIRE_HORLOGE'));
+      const echecs = this.taches.filter(t => t.pubkey_cible === r.pubkey_hex && t.statut === 'ECHEC')
+        .sort((a, b) => (b.date_reponse ?? '').localeCompare(a.date_reponse ?? ''));
+      const releve = this.dernier(r.pubkey_hex, 'LIRE_STATUT');
+      return {
+        rattachement: r,
+        batterieV: typeof statut?.['bat'] === 'number' ? (statut['bat'] as number) / 1000 : null,
+        enServiceH: typeof statut?.['uptime'] === 'number' ? Math.round((statut['uptime'] as number) / 3600) : null,
+        bruitDbm: typeof statut?.['noise_floor'] === 'number' ? statut['noise_floor'] as number : null,
+        version: (version?.['reponse'] as string) ?? null,
+        horloge: (horloge?.['reponse'] as string) ?? null,
+        releveLe: releve?.date_reponse ?? null,
+        derniereErreur: echecs[0]?.erreur ?? null,
+      };
+    });
+  }
+
+  /** Met en file, pour chaque répéteur réclamé qui a une passerelle, les lectures qui
+   * renseignent la flotte : statut et télémétrie pour tous, version et horloge pour ceux dont
+   * la preuve est faite (elles ouvrent une session). */
+  releverLaFlotte(): void {
+    const demandes: { compagnon: string; pubkey_cible: string; type_tache: TypeTacheAdminMeshCore }[] = [];
+    for (const r of this.rattachements) {
+      if (!r.compagnon_meshcore) continue;
+      const types: TypeTacheAdminMeshCore[] = ['LIRE_STATUT', 'LIRE_TELEMETRIE'];
+      if (r.preuve_faite) types.push('LIRE_VERSION', 'LIRE_HORLOGE');
+      for (const t of types) demandes.push({ compagnon: r.compagnon_meshcore, pubkey_cible: r.pubkey_hex, type_tache: t });
+    }
+    this.envoyerEnLot(demandes, 'relevés');
+  }
+
+  /** `clock sync` sur chaque répéteur dont la preuve est faite. */
+  remettreLesHorloges(): void {
+    if (!confirm("Remettre à l'heure l'horloge de chaque répéteur dont la preuve est faite ?")) return;
+    const demandes = this.rattachements.filter(r => r.preuve_faite && r.compagnon_meshcore)
+      .map(r => ({ compagnon: r.compagnon_meshcore!, pubkey_cible: r.pubkey_hex,
+                   type_tache: 'SYNCHRO_HORLOGE' as TypeTacheAdminMeshCore }));
+    this.envoyerEnLot(demandes, 'remises à l\'heure');
+  }
+
+  private envoyerEnLot(demandes: { compagnon: string; pubkey_cible: string; type_tache: TypeTacheAdminMeshCore }[],
+                       quoi: string): void {
+    if (!demandes.length) { this.messageFlotte = "Aucun répéteur concerné (passerelle ou preuve manquante)."; return; }
+    this.envoiFlotte = true;
+    let restantes = demandes.length, refusees = 0;
+    for (const d of demandes) {
+      this.service.creer(d).subscribe({
+        next: () => { if (--restantes === 0) this.finLot(demandes.length, refusees, quoi); },
+        error: () => { refusees++; if (--restantes === 0) this.finLot(demandes.length, refusees, quoi); },
+      });
+    }
+  }
+
+  private finLot(total: number, refusees: number, quoi: string): void {
+    this.envoiFlotte = false;
+    this.messageFlotte = `${total - refusees} ${quoi} mis en file` + (refusees ? `, ${refusees} refusé(s).` : '.');
+    this.rafraichirTaches();
   }
 
   basculerTache(id: string): void {

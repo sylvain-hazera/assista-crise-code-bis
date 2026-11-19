@@ -182,4 +182,54 @@ describe('MeshcoreAdministrationComponent', () => {
       { reponse: '{"a":1}' } as any,
     )).toContain('"a": 1');
   });
+
+  describe('flotte et nœud local (19/11/2026)', () => {
+    const tache = (pubkey: string, type: string, statut: string, reponse: unknown, quand: string, erreur: string | null = null) => ({
+      id: type + quand, compagnon: 'c1', pubkey_cible: pubkey, type_tache: type, statut, tentatives: 1,
+      reponse: reponse === null ? null : JSON.stringify(reponse), erreur, date_creation: quand, date_reponse: quand,
+    });
+
+    it("résume le dernier état connu de chaque répéteur", () => {
+      const p = VERIFIE.pubkey_hex;
+      const fixture = demarrer([VERIFIE], [
+        tache(p, 'LIRE_STATUT', 'TERMINEE', { bat: 3400, uptime: 7200, noise_floor: -112 }, '2026-11-19T10:00:00Z'),
+        tache(p, 'LIRE_STATUT', 'TERMINEE', { bat: 4100, uptime: 3600, noise_floor: -110 }, '2026-11-18T10:00:00Z'),
+        tache(p, 'LIRE_VERSION', 'TERMINEE', { commande: 'ver', reponse: 'v1.10.0' }, '2026-11-19T10:01:00Z'),
+        tache(p, 'LIRE_HORLOGE', 'ECHEC', null, '2026-11-19T10:02:00Z', 'Aucune réponse du répéteur.'),
+      ]);
+      const [ligne] = fixture.componentInstance.flotte;
+      expect(ligne.batterieV).toBe(3.4);                 // le plus récent, en volts
+      expect(ligne.enServiceH).toBe(2);
+      expect(ligne.bruitDbm).toBe(-112);
+      expect(ligne.version).toBe('v1.10.0');
+      expect(ligne.horloge).toBeNull();
+      expect(ligne.derniereErreur).toBe('Aucune réponse du répéteur.');
+    });
+
+    it("relève la flotte : version et horloge seulement là où la preuve est faite", () => {
+      const fixture = demarrer([VERIFIE, SANS_PREUVE]);
+      fixture.componentInstance.releverLaFlotte();
+      const requetes = http.match(`${API}/taches-admin-meshcore/`).filter(r => r.request.method === 'POST');
+      const types = (pubkey: string) => requetes.filter(r => r.request.body.pubkey_cible === pubkey)
+        .map(r => r.request.body.type_tache).sort();
+      expect(types(VERIFIE.pubkey_hex)).toEqual(['LIRE_HORLOGE', 'LIRE_STATUT', 'LIRE_TELEMETRIE', 'LIRE_VERSION']);
+      expect(types(SANS_PREUVE.pubkey_hex)).toEqual(['LIRE_STATUT', 'LIRE_TELEMETRIE']);
+      requetes.forEach(r => r.flush({}));
+      http.expectOne(`${API}/taches-admin-meshcore/`).flush([]);
+      expect(fixture.componentInstance.messageFlotte).toContain('6 relevés mis en file');
+    });
+
+    it("une opération locale part sans clé visée, le serveur la déduit de la passerelle", () => {
+      const fixture = demarrer();
+      const c = fixture.componentInstance;
+      c.locale.compagnon = 'c1';
+      c.locale.type = 'LOCAL_NOM';
+      c.locale.nom = '  Mairie-GW ';
+      c.lancerLocale();
+      const req = http.expectOne(r => r.method === 'POST' && r.url === `${API}/taches-admin-meshcore/`);
+      expect(req.request.body).toEqual({ compagnon: 'c1', type_tache: 'LOCAL_NOM', parametres: { nom: 'Mairie-GW' } });
+      req.flush({});
+      http.expectOne(`${API}/taches-admin-meshcore/`).flush([]);
+    });
+  });
 });
