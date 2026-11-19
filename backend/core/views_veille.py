@@ -476,22 +476,31 @@ class OragesView(APIView):
             proches = dict(Commune.objects.filter(
                 centre_longitude__gte=ouest, centre_longitude__lte=est,
                 centre_latitude__gte=sud, centre_latitude__lte=nord).values_list("code", "nom"))
+            from .models import PrevisionPluieCommune
             lignes = {c.commune_code: c for c in CumulPluieCommune.objects.filter(commune_code__in=list(proches))}
+            prevues = {p.commune_code: p for p in PrevisionPluieCommune.objects.filter(commune_code__in=list(proches))}
             institution = _institution_de_l_appelant(request)
             ma_commune = institution.commune_code if institution and institution.commune_code else None
 
             def ligne(code, nom):
                 c = lignes.get(code)
                 valeurs = {"1h": c.mm_1h if c else 0, "3h": c.mm_3h if c else 0, "24h": c.mm_24h if c else 0}
+                p = prevues.get(code)
                 return {"code": code, "nom": nom or code, "mm": valeurs,
-                        "fort": [f for f, v in valeurs.items() if v >= orages.SEUILS_CUMUL_MM[f]]}
+                        "fort": [f for f, v in valeurs.items() if v >= orages.SEUILS_CUMUL_MM[f]],
+                        # Nos estimations pour l'heure qui vient (extrapolation des images radar).
+                        "estimation": {"cumul_mm": p.cumul_mm, "max_mmh": p.max_mmh,
+                                       "intense_dans_min": p.dans_min_intense} if p else None}
             plus_arrosees = sorted(lignes.values(), key=lambda c: (-c.mm_3h, -c.mm_24h))[:10]
+            attendues = sorted((p for p in prevues.values() if p.dans_min_intense is not None),
+                               key=lambda p: (p.dans_min_intense, -p.max_mmh))[:10]
             cumuls = {
                 "fenetres": image.images_par_fenetre if image else {},
                 "attendues": orages.FENETRES_CUMUL, "seuils_mm": orages.SEUILS_CUMUL_MM,
                 "ma_commune": ligne(ma_commune, proches.get(ma_commune) or Commune.objects.filter(
                     code=ma_commune).values_list("nom", flat=True).first()) if ma_commune else None,
                 "plus_arrosees": [ligne(c.commune_code, proches[c.commune_code]) for c in plus_arrosees if c.mm_24h >= 1],
+                "pluie_intense_attendue": [ligne(p.commune_code, proches[p.commune_code]) for p in attendues],
             }
         # Foudre vue par satellite dans l'emprise : 15 minutes et une heure de produits.
         foudre = None

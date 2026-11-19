@@ -21,7 +21,16 @@ for meme_image in observateurs-meshcore orages blitzortung; do
   fi
 done
 
-"${COMPOSE[@]}" build "${SERVICES[@]}"
+# L'image d'analyse météo (service orages) est construite SUR celle du backend : le backend
+# d'abord, sinon elle repartirait de l'ancienne image et embarquerait l'ancien code.
+if printf '%s\n' "${SERVICES[@]}" | grep -qx backend; then
+  "${COMPOSE[@]}" build backend
+  AUTRES=()
+  for s in "${SERVICES[@]}"; do [ "$s" = backend ] || AUTRES+=("$s"); done
+  [ ${#AUTRES[@]} -eq 0 ] || "${COMPOSE[@]}" build "${AUTRES[@]}"
+else
+  "${COMPOSE[@]}" build "${SERVICES[@]}"
+fi
 "${COMPOSE[@]}" up -d --no-deps "${SERVICES[@]}"
 
 # ac_proxy résout backend/frontend une seule fois au démarrage : sans reload, il continue

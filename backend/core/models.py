@@ -3340,6 +3340,20 @@ class PluieCommunesImage(models.Model):
     valeurs = models.JSONField(default=dict, blank=True, help_text="code INSEE -> mm en cinq minutes")
 
 
+class PrevisionPluieCommune(models.Model):
+    """Estimation de la pluie de l'heure qui vient par commune, par extrapolation des images radar
+    (core/prevision_immediate.py, pysteps) : NOS ESTIMATIONS, pas une prévision officielle.
+    Remplacées à chaque image ; une ligne seulement là où il pleuvrait."""
+
+    commune_code = models.CharField(max_length=10, primary_key=True)
+    heure_image = models.DateTimeField()
+    dans_min_intense = models.PositiveSmallIntegerField(null=True, blank=True,
+                                                        help_text="Minutes avant 30 mm/h ou plus, si dans l'heure.")
+    max_mmh = models.FloatField(default=0)
+    cumul_mm = models.FloatField(default=0)
+    releve_le = models.DateTimeField()
+
+
 class CumulPluieCommune(models.Model):
     """Cumuls glissants de pluie par commune, selon le radar (1 h, 3 h, 24 h), recalculés à
     chaque image. Seules les communes où il a plu dans les 24 h ont une ligne."""

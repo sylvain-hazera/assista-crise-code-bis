@@ -354,3 +354,9 @@ table.mesures, table.mesures-sante {
 }
 
 .orages .foudre.indicatif .material-icons { color: var(--ac-text-subtle, #9ca3af); }
+
+.orages .cumuls {
+  th.estime, td.estime { color: var(--ac-blue-text, #1e40af); border-left: 1px dashed var(--ac-border, #d1d5db); }
+  .attendue { margin: 8px 0; line-height: 1.5; color: var(--ac-text, #111827);
+    .libelle-nature { display: block; color: var(--ac-blue-text, #1e40af); } }
+}

@@ -91,13 +91,16 @@ def produits_depuis(entete, depuis):
         "pi": COLLECTION, "format": "json", "si": 0, "c": 100, "sort": "start,time,1",
         "dtstart": depuis.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
     r.raise_for_status()
-    produits = []
+    produits, vus = [], set()
     for f in r.json().get("features", []):
         p = f.get("properties", {})
         url = ((p.get("links") or {}).get("data") or [{}])[0].get("href")
         debut, _, fin = (p.get("date") or "").partition("/")
-        if not url or not debut:
+        # Constaté en service le 19/11/2026 : une même réponse peut citer deux fois le même
+        # produit. Lu deux fois, il doublait ses éclairs puis échouait sur son enregistrement.
+        if not url or not debut or f.get("id") in vus:
             continue
+        vus.add(f.get("id"))
         produits.append((f.get("id"), url, _instant(debut), _instant(fin or debut)))
     return sorted(produits, key=lambda p: (p[2], p[0]))
 
@@ -151,9 +154,11 @@ def lire_eclairs(archive):
 def relever(maintenant=None):
     """Lit les produits parus depuis le dernier relevé. Rend le nombre d'éclairs ajoutés."""
     from django.contrib.gis.geos import Point
+    from django.db import transaction
     from .models import ImpactFoudre, ProduitFoudre
 
     maintenant = maintenant or timezone.now()
+    supprimer_doublons()
     entete = {"Authorization": f"Bearer {jeton()}"}
     dernier = ProduitFoudre.objects.order_by("-debut").first()
     depuis = dernier.debut if dernier else maintenant - datetime.timedelta(hours=1)
@@ -163,11 +168,15 @@ def relever(maintenant=None):
         r = requests.get(url, headers=entete, timeout=DELAI_REPONSE_S * 2)
         r.raise_for_status()
         eclairs = lire_eclairs(r.content)
-        ImpactFoudre.objects.bulk_create([ImpactFoudre(
-            instant=e["instant"], location=Point(e["longitude"], e["latitude"], srid=4326),
-            duree_ms=e["duree_ms"], radiance=e["radiance"], confiance=e["confiance"]) for e in eclairs])
-        ProduitFoudre.objects.create(identifiant=identifiant, debut=debut, fin=fin, eclairs=len(eclairs),
-                                     releve_le=maintenant)
+        # Un produit et ses éclairs d'un seul bloc : jamais l'un sans l'autre.
+        with transaction.atomic():
+            _produit, cree = ProduitFoudre.objects.get_or_create(identifiant=identifiant, defaults={
+                "debut": debut, "fin": fin, "eclairs": len(eclairs), "releve_le": maintenant})
+            if not cree:
+                continue
+            ImpactFoudre.objects.bulk_create([ImpactFoudre(
+                instant=e["instant"], location=Point(e["longitude"], e["latitude"], srid=4326),
+                duree_ms=e["duree_ms"], radiance=e["radiance"], confiance=e["confiance"]) for e in eclairs])
         ajoutes += len(eclairs)
     limite = maintenant - DUREE_GARDEE
     ImpactFoudre.objects.filter(instant__lt=limite).delete()
@@ -176,6 +185,20 @@ def relever(maintenant=None):
     if dernier is None or maintenant - dernier.fin > FRAICHEUR_MAX:
         raise RuntimeError("Aucun produit de foudre récent chez EUMETSAT.")
     return ajoutes
+
+
+def supprimer_doublons():
+    """Retire les éclairs enregistrés deux fois (même instant, même position) — reliquat du défaut
+    du 19/11/2026, et garde-fou pour la suite. Rend le nombre de lignes supprimées."""
+    from django.db import connection
+    from .models import ImpactFoudre
+    table = ImpactFoudre._meta.db_table
+    with connection.cursor() as curseur:
+        curseur.execute(f"""
+            DELETE FROM {table} a USING {table} b
+            WHERE a.id > b.id AND a.instant = b.instant AND ST_Equals(a.location, b.location)
+        """)
+        return curseur.rowcount
 
 
 def eclairs_dans(zone, depuis, jusqu_a=None):

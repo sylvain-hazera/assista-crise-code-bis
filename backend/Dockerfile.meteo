@@ -1,0 +1,39 @@
+# Image d'analyse météo (19/11/2026) : l'image du backend, plus ce que seul le service `orages`
+# utilise — pour ne pas alourdir le serveur web de près de 200 Mo.
+#
+#   - pysteps (prévision immédiate de la lame d'eau) et OpenCV sans interface graphique : la
+#     méthode de flux optique de référence de pysteps (Lucas-Kanade) en dépend. Comparée le
+#     19/11/2026 sur deux vraies images radar : Lucas-Kanade donne ~70 km/h vers l'est, en accord
+#     avec l'estimation par corrélation de phase ; Proesmans (sans OpenCV) 3 km/h, inutilisable.
+#   - decbufr, le décodeur BUFR radar de BALTRAD (baltrad/bbufr, commit figé), et ses tables :
+#     ce sont elles qui décrivent les descripteurs locaux de Météo-France (centre 85, tables 12
+#     pour le Doppler « PAG »). Vérifié sur un vrai balayage du radar de Bollène.
+#
+# Construite sur l'image du backend : `scripts/114/deployer.sh` construit celle-ci d'abord.
+ARG BASE=assista-crise-backend:prod
+
+# ── decbufr ─────────────────────────────────────────────────────────────────
+FROM debian:trixie-slim AS bbufr
+ARG BBUFR_COMMIT=a46dd91cdcf20d66aef3429cae35c7d3c9a5fbe5
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends git ca-certificates build-essential autoconf automake \
+      libtool zlib1g-dev libproj-dev libhdf5-dev pkg-config \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git clone -q https://github.com/baltrad/bbufr.git . && git checkout -q "$BBUFR_COMMIT" \
+ # Le clonage remet les dates à plat : sans cet ordre, make croit devoir régénérer la
+ # configuration avec un automake de 2009 qu'aucune distribution ne fournit plus.
+ && touch aclocal.m4 && sleep 1 && touch configure && sleep 1 && find . -name Makefile.in -exec touch {} + \
+ && CPPFLAGS=-I/usr/include/hdf5/serial LDFLAGS=-L/usr/lib/x86_64-linux-gnu/hdf5/serial ./configure > /dev/null \
+ && make -j4 > /dev/null \
+ # Seul decbufr : les autres outils d'essai attendent l'ancienne interface de PROJ (proj_api.h).
+ && make -C tests decbufr > /dev/null \
+ && mkdir -p /opt/bbufr/bin && cp tests/decbufr /opt/bbufr/bin/ && cp -r tables /opt/bbufr/tables
+
+# ── image d'analyse ──────────────────────────────────────────────────────────
+FROM ${BASE}
+USER root
+RUN pip install --no-cache-dir "pysteps==1.21.5" "opencv-python-headless==5.1.0.95"
+COPY --from=bbufr /opt/bbufr /opt/bbufr
+ENV BBUFR_DECBUFR=/opt/bbufr/bin/decbufr BBUFR_TABLES=/opt/bbufr/tables
+USER appuser

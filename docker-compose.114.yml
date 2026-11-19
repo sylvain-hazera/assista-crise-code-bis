@@ -196,7 +196,10 @@ services:
   # Météo-France est le seul secret dont il a besoin.
   orages:
     <<: *service
-    image: assista-crise-backend:prod
+    # Image d'analyse météo : celle du backend, plus pysteps, OpenCV et le décodeur radar BALTRAD
+    # (backend/Dockerfile.meteo). Construite APRÈS celle du backend (scripts/114/deployer.sh).
+    image: assista-crise-meteo:prod
+    build: { context: ./backend, dockerfile: Dockerfile.meteo }
     container_name: ac_orages
     entrypoint: ["python", "manage.py"]
     command: ["analyser_orages", "--service"]

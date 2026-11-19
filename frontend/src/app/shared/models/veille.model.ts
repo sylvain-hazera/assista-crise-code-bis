@@ -662,7 +662,11 @@ export interface CelluleOrage {
 }
 
 /** Cumuls de pluie d'une commune selon le radar, en mm. `fort` : fenêtres au-delà du repère. */
-export interface CumulCommune { code: string; nom: string; mm: Record<'1h' | '3h' | '24h', number>; fort: string[]; }
+export interface CumulCommune {
+  code: string; nom: string; mm: Record<'1h' | '3h' | '24h', number>; fort: string[];
+  /** Nos estimations pour l'heure qui vient (extrapolation des images radar par pysteps). */
+  estimation: { cumul_mm: number; max_mmh: number; intense_dans_min: number | null } | null;
+}
 
 export interface CumulsPluie {
   /** Images réellement disponibles par fenêtre (un service relancé n'a pas 24 h d'historique). */
@@ -671,6 +675,7 @@ export interface CumulsPluie {
   seuils_mm: Record<'1h' | '3h' | '24h', number>;
   ma_commune: CumulCommune | null;
   plus_arrosees: CumulCommune[];
+  pluie_intense_attendue: CumulCommune[];
 }
 
 export interface OragesRadar {

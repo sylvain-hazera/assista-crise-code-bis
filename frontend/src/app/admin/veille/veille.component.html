@@ -257,12 +257,13 @@
           <h3>Pluie tombée, selon les relevés du radar</h3>
           <div class="defilement">
             <table>
-              <thead><tr><th>Commune</th><th>1 h</th><th>3 h</th><th>24 h</th></tr></thead>
+              <thead><tr><th>Commune</th><th>1 h</th><th>3 h</th><th>24 h</th><th class="estime">heure qui vient*</th></tr></thead>
               <tbody>
                 @if (cumuls.ma_commune; as m) {
                   <tr class="ma-commune">
                     <td>{{ m.nom }} <small>(votre commune)</small></td>
                     @for (f of FENETRES_CUMUL; track f) { <td [class.fort]="m.fort.includes(f)">{{ m.mm[f] | number:'1.0-1' }} mm</td> }
+                    <td class="estime">@if (m.estimation; as e) { {{ e.cumul_mm | number:'1.0-1' }} mm } @else { — }</td>
                   </tr>
                 }
                 @for (c of cumuls.plus_arrosees; track c.code) {
@@ -270,13 +271,25 @@
                     <tr>
                       <td>{{ c.nom }}</td>
                       @for (f of FENETRES_CUMUL; track f) { <td [class.fort]="c.fort.includes(f)">{{ c.mm[f] | number:'1.0-1' }} mm</td> }
+                      <td class="estime">@if (c.estimation; as e) { {{ e.cumul_mm | number:'1.0-1' }} mm } @else { — }</td>
                     </tr>
                   }
                 }
               </tbody>
             </table>
           </div>
+          @if (cumuls.pluie_intense_attendue.length) {
+            <p class="attendue">
+              <span class="libelle-nature">Nos estimations (qui ne sont pas des prévisions)</span>
+              Pluie intense (30 mm/h ou plus) attendue :
+              @for (c of cumuls.pluie_intense_attendue; track c.code; let dernier = $last) {
+                {{ c.nom }} dans ~{{ c.estimation?.intense_dans_min }} min@if (!dernier) {, }
+              }.
+            </p>
+          }
           <p class="note">
+            * Heure qui vient : nos estimations, par extrapolation des dernières images radar — elles déplacent la pluie
+            sans la faire naître ni mourir.
             En gras, au-delà de {{ cumuls.seuils_mm['1h'] }} mm en 1 h, {{ cumuls.seuils_mm['3h'] }} mm en 3 h ou
             {{ cumuls.seuils_mm['24h'] }} mm en 24 h : de quoi déborder les réseaux et faire monter les petits cours d'eau.
             Estimation radar au centre de chaque commune, pas une mesure de pluviomètre.

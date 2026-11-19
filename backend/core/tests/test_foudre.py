@@ -134,3 +134,25 @@ def test_vue_blitzortung_porte_la_mention(client):
     assert r.status_code == 200 and len(r.json()["features"]) == 1
     assert r.json()["mention"] == "Informations Blitzortung données à titre indicatif"
     assert "FOUDRE_BLITZORTUNG" in sources_ouvertes.SOURCES_EN_CONTINU
+
+
+@pytest.mark.django_db
+def test_un_produit_cite_deux_fois_n_est_lu_qu_une_fois(tmp_path, monkeypatch):
+    secret = tmp_path / "eumetsat_api"
+    secret.write_text("cle-essai:secret-essai")
+    monkeypatch.setenv("EUMETSAT_API_FILE", str(secret))
+    archive = produit([(45.64, -1.55, T0)])
+    double = [("P1", T0, T0 + datetime.timedelta(minutes=10), archive)] * 2
+    get, poste = _reponses(double)
+    with mock.patch.object(foudre.requests, "get", side_effect=get), mock.patch.object(foudre.requests, "post", poste):
+        assert foudre.relever(T0 + datetime.timedelta(minutes=20)) == 1
+    assert ImpactFoudre.objects.count() == 1 and ProduitFoudre.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_les_doublons_deja_en_base_sont_retires():
+    for _ in range(3):
+        ImpactFoudre.objects.create(instant=T0, location=Point(-1.55, 45.64, srid=4326))
+    ImpactFoudre.objects.create(instant=T0, location=Point(-1.56, 45.64, srid=4326))
+    assert foudre.supprimer_doublons() == 2
+    assert ImpactFoudre.objects.count() == 2

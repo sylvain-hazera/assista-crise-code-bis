@@ -501,7 +501,8 @@ def _polygone(grille, lignes, colonnes, decalages=((0.0, 0.0),)):
     return Polygon(geo + [geo[0]], srid=4326)
 
 
-def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=(), avec_diagnostic_grele=False):
+def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=(), avec_diagnostic_grele=False,
+             champ_mouvement=None):
     """Analyse une image : rend la liste des cellules, prêtes à enregistrer."""
     import numpy
     from scipy import ndimage
@@ -511,7 +512,16 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
     resultat = []
     for cellule in trouvees:
         masque_cellule = ndimage.binary_dilation(etiquettes == cellule["etiquette"], iterations=1)
-        vitesse = deplacement(precedente, grille.taux, cellule["centre"], minutes_ecoulees)
+        # Le flux optique de pysteps (une vitesse par point) d'abord ; à défaut, la corrélation de
+        # phase autour de la cellule (19/11/2026).
+        vitesse = None
+        if champ_mouvement is not None:
+            from .prevision_immediate import vitesse_sous
+            vitesse = vitesse_sous(champ_mouvement, cellule["lignes"], cellule["colonnes"])
+            if vitesse is not None and cap_et_vitesse(vitesse)[1] > VITESSE_MAX_KMH:
+                vitesse = None
+        if vitesse is None:
+            vitesse = deplacement(precedente, grille.taux, cellule["centre"], minutes_ecoulees)
 
         # Suivi : la cellule précédente dont la position estimée est la plus proche.
         precedente_cellule, meilleure = None, DISTANCE_SUIVI_KM
@@ -661,11 +671,33 @@ def relever(maintenant=None):
         minutes = (grille.heure - derniere.heure).total_seconds() / 60
         if 0 < minutes <= 20:
             precedente = GrilleRadar.depuis_compacte(derniere.grille, derniere.largeur, derniere.hauteur)
+    # Images consécutives (pas de cinq minutes, même grille) pour le flux optique de pysteps.
+    successives = []
+    if precedente is not None and abs(minutes - 5) < 1:
+        successives = [precedente, grille.taux]
+        avant = ImageRadarOrage.objects.filter(heure=derniere.heure - datetime.timedelta(minutes=5)).first()
+        if avant is not None and avant.largeur == derniere.largeur and avant.hauteur == derniere.hauteur:
+            successives.insert(0, GrilleRadar.depuis_compacte(avant.grille, avant.largeur, avant.hauteur))
+    champ = None
+    if successives:
+        from . import prevision_immediate
+        try:
+            champ = prevision_immediate.champ_de_deplacement(successives)
+        except Exception:
+            logger.exception("Flux optique impossible : repli sur la corrélation de phase.")
     anciennes = [{"identifiant": c.identifiant, "centre": (c.ligne, c.colonne), "max_mmh": c.max_mmh,
                   "vitesse": (c.vitesse_lignes, c.vitesse_colonnes) if c.vitesse_lignes is not None else None,
                   "trace": c.trace} for c in CelluleOrage.objects.all()] if precedente is not None else []
-    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True)
+    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True, champ_mouvement=champ)
     nombre = enregistrer(grille, analyse, maintenant)
+    if champ is not None:
+        from . import prevision_immediate
+        try:
+            prevue = prevision_immediate.extrapoler(grille.taux, champ)
+            prevision_immediate.enregistrer(grille.heure, prevision_immediate.par_commune(prevue, IndexCommunes.pour(grille)),
+                                            maintenant)
+        except Exception:
+            logger.exception("Prévision immédiate par commune non calculée.")
     try:
         cumuler_pluie(grille, maintenant)
     except Exception:
