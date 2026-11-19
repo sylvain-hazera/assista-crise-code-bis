@@ -19391,7 +19391,7 @@ class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
         from .campagnes_disponibilite import institutions_proposees
 
         return Response(institutions_proposees(
-            request.user, recherche=request.query_params.get("q", "")))
+            request.user, recherche=request.query_params.get("q", ""), request=request))
 
     def _verifier_le_droit(self, institution, equipe):
         from .campagnes_disponibilite import peut_lancer_campagne
@@ -25387,13 +25387,11 @@ class BrouillonEnvoiViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMode
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
-            pass
-        else:
-            mes_institutions = ContactInstitution.objects.filter(
-                utilisateur=self.request.user, actif=True,
-            ).values_list('institution_id', flat=True)
-            qs = qs.filter(institution_id__in=mes_institutions)
+        # Administrateur placé dans une institution : la sienne seulement (19/11/2026 : il voyait
+        # les messages de toute la plateforme). Pour les autres, leurs rattachements actifs.
+        from .perimetre_admin import admin_sans_filtre, institutions_visibles
+        if not admin_sans_filtre(self.request, self):
+            qs = qs.filter(institution_id__in=institutions_visibles(self.request))
         statut = self.request.query_params.get('statut')
         if statut:
             qs = qs.filter(statut=statut)

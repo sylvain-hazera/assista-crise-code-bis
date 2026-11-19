@@ -129,7 +129,7 @@ def perimetre_de_pilotage(utilisateur):
     return institutions, _equipes_descendantes(encadrees)
 
 
-def institutions_proposees(utilisateur, recherche="", limite=50):
+def institutions_proposees(utilisateur, recherche="", limite=50, request=None):
     """Les institutions où cette personne peut se placer pour mener une campagne.
 
     Chaque ligne dit sa PORTÉE : `toute` l'institution, ou seulement les `equipes` encadrées.
@@ -151,6 +151,12 @@ def institutions_proposees(utilisateur, recherche="", limite=50):
 
     if getattr(utilisateur, "type", None) == UserRole.ADMINISTRATOR:
         qs = Institution.objects.filter(actif=True).select_related("type").order_by("nom")
+        # Placé dans une institution (sélecteur de périmètre) : elle et ses filles seulement.
+        if request is not None:
+            from .perimetre_admin import institution_regardee_et_filles
+            permises = institution_regardee_et_filles(request)
+            if permises is not None:
+                qs = qs.filter(id__in=permises)
         recherche = (recherche or "").strip()
         if recherche:
             qs = qs.filter(nom__icontains=recherche)

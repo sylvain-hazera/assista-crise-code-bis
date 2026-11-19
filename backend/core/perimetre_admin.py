@@ -154,3 +154,39 @@ def etat(request):
         "institution": ({"id": str(institution.id), "nom": institution.nom_affichage or institution.nom}
                         if institution is not None else None),
     }
+
+
+def institutions_descendantes(ids_racines):
+    """Les institutions données et toutes leurs filles (`institution_parente`), à toute
+    profondeur : CCAS et médiathèque sous une mairie, comités sous une association nationale.
+
+    Même méthode que `visibilite_membres._equipes_descendantes` : une requête pour tout l'arbre,
+    parcours en mémoire, ensemble des vus contre un cycle posé à la main."""
+    from .models import Institution
+
+    racines = {r for r in (ids_racines or ()) if r is not None}
+    if not racines:
+        return set()
+    filles = {}
+    for fille_id, mere_id in Institution.objects.exclude(institution_parente_id=None).values_list(
+        "id", "institution_parente_id"
+    ):
+        filles.setdefault(mere_id, []).append(fille_id)
+    vus, a_voir = set(racines), list(racines)
+    while a_voir:
+        for fille in filles.get(a_voir.pop(), ()):
+            if fille not in vus:
+                vus.add(fille)
+                a_voir.append(fille)
+    return vus
+
+
+def institution_regardee_et_filles(request):
+    """Pour un administrateur qui se place dans une institution : elle et ses filles — ce qu'il
+    peut choisir pour AGIR au nom de cette institution (19/11/2026 : en se plaçant dans le
+    Conseil départemental de la Loire, la page des campagnes proposait toutes les institutions
+    de la plateforme). None quand il regarde toute la plateforme (pas de restriction)."""
+    if admin_voit_tout(request):
+        return None
+    regardee = institution_regardee(request)
+    return institutions_descendantes({regardee.id}) if regardee is not None else set()

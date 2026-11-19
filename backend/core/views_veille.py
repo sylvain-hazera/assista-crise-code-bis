@@ -1122,12 +1122,12 @@ class ConfigurationAlerteVigilanceViewSet(EnvironmentScopedViewSetMixin, viewset
         institution_id = self.request.query_params.get('institution')
         if institution_id:
             qs = qs.filter(institution_id=institution_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        # Administrateur placé dans une institution : la sienne seulement (19/11/2026). Pour les
+        # autres, leurs rattachements actifs.
+        from .perimetre_admin import admin_sans_filtre, institutions_visibles
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
-        return qs.filter(institution_id__in=mes_institutions)
+        return qs.filter(institution_id__in=institutions_visibles(self.request))
 
     def perform_create(self, serializer):
         institution_id = self.request.data.get('institution')
@@ -1156,12 +1156,12 @@ class ConfigurationAlerteFeuViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         institution_id = self.request.query_params.get('institution')
         if institution_id:
             qs = qs.filter(institution_id=institution_id)
-        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+        # Administrateur placé dans une institution : la sienne seulement (19/11/2026). Pour les
+        # autres, leurs rattachements actifs.
+        from .perimetre_admin import admin_sans_filtre, institutions_visibles
+        if admin_sans_filtre(self.request, self):
             return qs
-        mes_institutions = ContactInstitution.objects.filter(
-            utilisateur=self.request.user, actif=True
-        ).values_list('institution_id', flat=True)
-        return qs.filter(institution_id__in=mes_institutions)
+        return qs.filter(institution_id__in=institutions_visibles(self.request))
 
     def perform_create(self, serializer):
         institution_id = self.request.data.get('institution')
