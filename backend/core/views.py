@@ -21819,8 +21819,15 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         """Le tableau radio d'une passerelle (19/11/2026), sur une fenêtre de 1 h, 6 h, 24 h ou
         7 jours : séries de sa propre télémétrie, répartition des paquets par type, nœuds
         entendus (batterie, sauts, meilleur SNR reçu, dernière écoute), derniers traceroutes."""
-        from .tableau_radio import construire_tableau
-        return Response(construire_tableau(self.get_object(), request.query_params.get('fenetre', '6h')))
+        from .tableau_radio import construire_tableau, historique_noeud
+        fenetre = request.query_params.get('fenetre', '6h')
+        noeud = request.query_params.get('noeud')
+        if noeud is not None:
+            try:
+                return Response(historique_noeud(self.get_object(), int(noeud), fenetre))
+            except ValueError:
+                return Response({'noeud': 'Numéro de nœud attendu.'}, status=400)
+        return Response(construire_tableau(self.get_object(), fenetre))
 
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
@@ -22345,6 +22352,20 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         inchangé."""
         canal_id = request.query_params.get('canal')
         compagnon_id = request.query_params.get('compagnon')
+        # `?canaux=<id>,<id>` (19/11/2026) : tous les canaux d'une passerelle en UN appel. Le pont
+        # posait la question canal par canal toutes les 15 s, soit 110 requêtes par minute pour
+        # deux passerelles. Chaque entrée porte alors son `canal`. `?canal=` reste accepté (pont
+        # pas encore mis à jour, satellite).
+        canaux = None
+        if request.query_params.get('canaux') is not None:
+            canaux = set()
+            for brut in request.query_params.get('canaux', '').split(','):
+                try:
+                    canaux.add(uuid.UUID(brut.strip()))
+                except ValueError:
+                    continue
+            if not canaux:
+                return Response([])
         # Passerelle locale isolée (règle du 14/11/2026, core/canaux_locaux.py) : elle ne reçoit
         # que sa crise et sa commune, et suit SA propre diffusion au lieu du statut global — sans
         # quoi la première passerelle d'un canal de crise partagé privait les autres de l'émettre.
@@ -22356,7 +22377,8 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             except (ValueError, DjangoValidationError):
                 compagnon_local = None
         if compagnon_local is not None and est_isolee(compagnon_local):
-            qs = list(messages_a_diffuser(compagnon_local, canal_id))
+            qs = [m for m in messages_a_diffuser(compagnon_local, canal_id)
+                  if canaux is None or m.canal_id in canaux]
             # Notée à la prise, pas à la confirmation : voir DiffusionCanalMeshtastic.
             for m in qs:
                 noter_diffusion(m, compagnon_local, get_active_environment(request))
@@ -22366,6 +22388,8 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             ).select_related('canal__institution')
             if canal_id:
                 qs = qs.filter(canal_id=canal_id)
+            if canaux is not None:
+                qs = qs.filter(canal_id__in=canaux)
             if compagnon_id:
                 qs = qs.filter(Q(compagnon__isnull=True) | Q(compagnon_id=compagnon_id))
 
@@ -22374,7 +22398,8 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             institution = m.canal.institution if m.canal_id else None
             prefixe = _prefixe_expediteur_mesh_sortant(m.expediteur, institution)
             for morceau in _decouper_message_mesh(f"{prefixe} : {m.contenu}", MESHTASTIC_MAX_OCTETS):
-                resultat.append({"id": str(m.id), "contenu": morceau})
+                resultat.append({"id": str(m.id), "contenu": morceau,
+                                 "canal": str(m.canal_id) if m.canal_id else None})
         return Response(resultat)
 
 

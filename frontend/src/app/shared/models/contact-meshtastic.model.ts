@@ -13,6 +13,9 @@ export interface ContactMeshtastic {
   latitude?: number | null;
   longitude?: number | null;
   dernier_advert?: string | null;
+  /** Sauts du dernier paquet entendu (0 = en direct) et moment de cette écoute (19/11/2026). */
+  sauts?: number | null;
+  dernier_entendu?: string | null;
   date_synchronisation?: string;
   deja_associe: boolean;
 }

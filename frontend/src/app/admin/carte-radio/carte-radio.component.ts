@@ -237,7 +237,10 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
             geometry: { type: 'Point', coordinates: [Number(c.longitude), Number(c.latitude)] },
             properties: {
               nom: c.long_name || c.short_name || c.node_num.toString(16).padStart(8, '0'),
-              detail: `Nœud Meshtastic entendu par « ${c.compagnon_nom ?? 'une passerelle'} »`,
+              detail: `Nœud Meshtastic entendu par « ${c.compagnon_nom ?? 'une passerelle'} »`
+                // Sauts du dernier paquet reçu (19/11/2026) : 0 = entendu en direct.
+                + (c.sauts != null ? (c.sauts === 0 ? ' — en direct' : ` — ${c.sauts} saut(s)`) : '')
+                + (c.dernier_entendu ? ` — entendu le ${new Date(c.dernier_entendu).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : ''),
             },
           })),
         };

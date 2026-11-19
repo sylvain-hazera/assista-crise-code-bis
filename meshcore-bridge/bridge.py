@@ -199,6 +199,11 @@ class _CibleAuth:
         self.access_token = None
 
 
+class CentralInjoignable(Exception):
+    """Le central est signalé hors ligne : une MESURE ne part pas vers la base locale du
+    satellite, que la synchronisation ne remonte pas -- elle attend dans le tampon du pont."""
+
+
 class DjangoClient:
     """Client HTTP vers l'API assista-crise — authentification JWT avec ré-obtention
     automatique du token d'accès (durée de vie 1h côté serveur, voir SIMPLE_JWT dans
@@ -252,6 +257,14 @@ class DjangoClient:
         response.raise_for_status()
         cible.access_token = response.json()["access"]
         logger.info("Authentifié auprès de %s.", cible.base_url)
+
+    async def _request_central(self, method, path, **kwargs):
+        """Pour les mesures (télémétrie, compteurs, trames observées, 19/11/2026) : le central
+        ou rien. Écrites sur un satellite coupé, elles y resteraient : la synchronisation ne
+        remonte que les données saisies. L'appelant les garde et réessaie au retour du réseau."""
+        if self._cible_actuelle() is not self._central:
+            raise CentralInjoignable()
+        return await self._request(method, path, **kwargs)
 
     async def _request(self, method, path, **kwargs):
         cible = self._cible_actuelle()
@@ -369,6 +382,14 @@ class DjangoClient:
             "POST", f"/compagnons-meshcore/{compagnon_id}/rapporter-traceroute/", json=payload,
         )
 
+    async def rapporter_observations(self, compagnon_id, observations):
+        """Trames radio entendues par le companion, avec leur SNR (19/11/2026) : le serveur en
+        tire les liaisons (dernier relais -> nous), les chemins et la répartition du trafic."""
+        if not observations:
+            return
+        await self._request_central("POST", f"/compagnons-meshcore/{compagnon_id}/rapporter-observations/",
+                            json={"observations": observations})
+
     async def signaler_canaux_detectes(self, compagnon_id, hashes):
         """`hashes` : dict chan_hash (2 car. hex) -> nombre de paquets observés depuis le
         dernier envoi — voir CompagnonMeshCoreViewSet.signaler_canaux_detectes. Pas d'appel si
@@ -465,7 +486,39 @@ async def obtenir_pubkey(meshcore):
     return None
 
 
-def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canaux_idx_map, canaux_detectes_compteur, canaux_virtuels_par_hash):
+#: Plafond de trames gardées entre deux rapports : au-delà (rafale, broker bavard), on écarte
+#: plutôt que de grossir sans fin si le serveur ne répond plus.
+OBSERVATIONS_MAX = 3000
+OBSERVATIONS_INTERVAL_SECONDS = int(os.environ.get("OBSERVATIONS_INTERVAL_SECONDS", "60"))
+
+
+def noter_observation(observations, payload):
+    """Garde la trame brute d'un RX_LOG_DATA avec son SNR et son RSSI. `payload` (hex) est le
+    paquet MeshCore lui-même ; `raw_hex` porterait en plus les deux octets SNR/RSSI du firmware."""
+    trame = (payload or {}).get("payload")
+    if not trame or len(observations) >= OBSERVATIONS_MAX:
+        return
+    observations.append({"raw": trame, "snr": payload.get("snr"), "rssi": payload.get("rssi"),
+                         "t": payload.get("recv_time")})
+
+
+async def boucle_rapport_observations(django, compagnon_id, observations):
+    while True:
+        await asyncio.sleep(OBSERVATIONS_INTERVAL_SECONDS)
+        lot = observations[:]
+        del observations[:len(lot)]
+        try:
+            await django.rapporter_observations(compagnon_id, lot)
+        except Exception as erreur:
+            if not isinstance(erreur, CentralInjoignable):
+                logger.exception("Échec du rapport des trames observées, gardées pour le prochain essai.")
+            # En tête, plafonné : lors d'une longue coupure, les plus anciennes tombent.
+            observations[:0] = lot
+            del observations[:max(0, len(observations) - OBSERVATIONS_MAX)]
+
+
+def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canaux_idx_map, canaux_detectes_compteur, canaux_virtuels_par_hash,
+                          observations=None):
     """`canaux_idx_map` (dict canal_idx -> canal_id, partagé avec boucle_provisionnement_canaux)
     permet de rattacher un message de canal entrant au bon CanalMeshCore — un canal n'a pas
     d'identité serveur à ce niveau protocolaire, seulement un index local (voir
@@ -531,6 +584,8 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canau
         `chan_name` n'est renseigné que si la clé correspond à un slot déjà connu du parseur
         (physique OU virtuel) : c'est ce qui distingue un canal "fantôme" (jamais vu, ni
         physiquement ni virtuellement) d'un canal déjà reconnu (évite de le compter deux fois)."""
+        if observations is not None:
+            noter_observation(observations, event.payload)
         if event.attributes.get("payload_type") != 5:
             return
         payload = event.payload or {}
@@ -1081,7 +1136,10 @@ async def executer_une_session(django):
     # donc rien à perdre entre deux redémarrages).
     canaux_virtuels_par_hash = {}
     meshcore.set_decrypt_channel_logs(True)
-    enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte, canaux_idx_map, canaux_detectes_compteur, canaux_virtuels_par_hash)
+    # Trames entendues, rapportées chaque minute (19/11/2026) : voir noter_observation.
+    observations = []
+    enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte, canaux_idx_map, canaux_detectes_compteur, canaux_virtuels_par_hash,
+                          observations=observations)
     # Le firmware ne pousse jamais un message reçu de lui-même : il émet juste un événement
     # MESSAGES_WAITING, et CONTACT_MSG_RECV/CHANNEL_MSG_RECV ne sont émis qu'en réponse à une
     # commande explicite get_msg(). Sans cet appel, les écouteurs ci-dessus ne se déclenchent
@@ -1100,6 +1158,7 @@ async def executer_une_session(django):
     tache_batterie_compagnon = asyncio.create_task(boucle_batterie_compagnon(meshcore, django, COMPAGNON_ID))
     tache_traceroutes = asyncio.create_task(boucle_traceroutes(meshcore, django, COMPAGNON_ID))
     tache_admin = asyncio.create_task(boucle_taches_admin(meshcore, django, COMPAGNON_ID))
+    tache_observations = asyncio.create_task(boucle_rapport_observations(django, COMPAGNON_ID, observations))
     try:
         await deconnecte.wait()
     finally:
@@ -1115,6 +1174,7 @@ async def executer_une_session(django):
         tache_batterie_compagnon.cancel()
         tache_traceroutes.cancel()
         tache_admin.cancel()
+        tache_observations.cancel()
         try:
             await django.rapporter_etat(COMPAGNON_ID, "DECONNECTE")
         except Exception:

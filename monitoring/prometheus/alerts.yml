@@ -330,6 +330,18 @@ groups:
           summary: "{{ $value }} heard repeater(s) below 20% battery"
           description: "See /admin/meshcore-companions; a repeater on a mast takes time to reach."
 
+      - alert: MeshtasticCanalSature
+        # Au-delà de 25 % d'occupation, le firmware Meshtastic retient ses propres émissions et
+        # les collisions font perdre des messages. 20 min : un pic d'annonces au démarrage de
+        # plusieurs nœuds ne doit pas suffire. Remède : voir la nature du trafic sur
+        # /admin/tableau-radio (positions trop fréquentes, preset trop lent).
+        expr: max(assista_meshtastic_occupation_canal_max_pourcent) > 25
+        for: 20m
+        labels: { severity: warning }
+        annotations:
+          summary: "Meshtastic channel utilization at {{ $value | printf \"%.0f\" }}%"
+          description: "Messages are being lost to collisions. See traffic by type on /admin/tableau-radio."
+
       - alert: MeshTachesAdminEnEchec
         # Une tache d'administration abandonnee apres ses reessais signale presque toujours la
         # meme chose : la cle publique de la passerelle n'est pas autorisee sur le noeud cible

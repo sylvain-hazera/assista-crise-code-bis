@@ -135,3 +135,53 @@ class TestTelemetrieEtTableau:
         assert r.status_code == 200
         contact = ContactMeshtastic.objects.get(node_num=0xD030)
         assert contact.sauts == 3 and contact.dernier_entendu is not None
+
+
+@pytest.mark.django_db
+class TestHistoriqueEtEnvoiGroupe:
+
+    def test_historique_d_un_noeud(self, agent, passerelle, pont):
+        maintenant = int(time.time())
+        pont.post(f"/api/compagnons-meshtastic/{passerelle.id}/rapporter-telemetrie/", {"mesures": [
+            {"node_num": 0xD020, "horodatage": maintenant - 7200, "batterie": 80},
+            {"node_num": 0xD020, "horodatage": maintenant - 60, "batterie": 70},
+            {"node_num": 0xD021, "horodatage": maintenant - 60, "batterie": 10}], "compteurs": []}, format="json")
+        r = _client(agent).get(f"/api/compagnons-meshtastic/{passerelle.id}/tableau/",
+                               {"fenetre": "24h", "noeud": 0xD020})
+        assert r.status_code == 200
+        assert r.data["nombre_mesures"] == 2
+        assert [p["v"] for p in r.data["series"]["batterie"]] == [80, 70]
+        assert _client(agent).get(f"/api/compagnons-meshtastic/{passerelle.id}/tableau/",
+                                  {"noeud": "x"}).status_code == 400
+
+    def test_les_messages_de_plusieurs_canaux_en_un_appel(self, create_user, institution, passerelle, pont):
+        from core.models import CanalMeshtastic, MessageCanalMeshtastic
+        a = CanalMeshtastic.objects.create(nom="A", institution=institution)
+        b = CanalMeshtastic.objects.create(nom="B", institution=institution)
+        c = CanalMeshtastic.objects.create(nom="C", institution=institution)
+        for canal in (a, b, c):
+            MessageCanalMeshtastic.objects.create(canal=canal, direction="SORTANT", statut="EN_ATTENTE",
+                                                  contenu=f"pour {canal.nom}")
+        r = pont.get("/api/messages-canal-meshtastic/a-envoyer/",
+                     {"canaux": f"{a.id},{b.id},pas-un-uuid", "compagnon": str(passerelle.id)})
+        assert r.status_code == 200
+        assert sorted(m["canal"] for m in r.data) == sorted([str(a.id), str(b.id)])
+        assert pont.get("/api/messages-canal-meshtastic/a-envoyer/", {"canaux": ""}).data == []
+
+
+@pytest.mark.django_db
+def test_metriques_de_telemetrie(passerelle):
+    from django.utils import timezone
+    from core.metrics import MeshStateCollector
+    maintenant = timezone.now()
+    MesureTelemetrieMeshtastic.objects.create(compagnon=passerelle, node_num=GW, horodatage=maintenant,
+                                              occupation_canal=31.5)
+    MesureTelemetrieMeshtastic.objects.create(compagnon=passerelle, node_num=0xD020, horodatage=maintenant,
+                                              occupation_canal=80, batterie=12)
+    MesureTelemetrieMeshtastic.objects.create(compagnon=passerelle, node_num=0xD021, horodatage=maintenant,
+                                              batterie=101)          # secteur : pas une batterie faible
+    familles = {f.name: f for f in MeshStateCollector._telemetrie_meshtastic()}
+    (occupation,) = familles["assista_meshtastic_occupation_canal_max_pourcent"].samples
+    assert occupation.value == 31.5        # la passerelle seulement, pas le nœud distant à 80 %
+    (faibles,) = familles["assista_meshtastic_noeuds_batterie_faible"].samples
+    assert faibles.value == 1

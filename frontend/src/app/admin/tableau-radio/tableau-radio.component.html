@@ -87,7 +87,8 @@
             @for (n of noeudsAffiches; track n.node_num) {
               <tr>
                 <td>
-                  <span class="nom">{{ n.nom }}</span>
+                  <button type="button" class="lien-noeud nom" (click)="suivre(n)"
+                          [attr.aria-expanded]="noeudSuivi?.node_num === n.node_num">{{ n.nom }}</button>
                   <span class="id">{{ n.id }}@if (n.materiel) { · {{ n.materiel }} }</span>
                 </td>
                 <td>
@@ -111,6 +112,35 @@
                   </button>
                 </td>
               </tr>
+              @if (noeudSuivi?.node_num === n.node_num) {
+                <tr class="historique"><td colspan="6">
+                  <div class="historique-entete">
+                    <strong>Historique de {{ n.nom }}</strong>
+                    <div class="fenetres petites" role="group" aria-label="Période de l'historique">
+                      @for (f of fenetres; track f.valeur) {
+                        <button type="button" [class.actif]="fenetreHistorique === f.valeur"
+                                (click)="fenetreHistorique = f.valeur; chargerHistorique()">{{ f.libelle }}</button>
+                      }
+                    </div>
+                  </div>
+                  @if (historique; as h) {
+                    @if (h.nombre_mesures === 0) {
+                      <p class="muet">Ce nœud n'a publié aucune télémétrie sur la période (module Télémétrie coupé, ou nœud hors de portée).</p>
+                    } @else {
+                      <div class="series">
+                        <app-serie-compacte libelle="Batterie" unite="%" [points]="h.series.batterie" [debut]="h.debut"
+                          [pasS]="h.pas_s" [dureeS]="dureeDe(h.fenetre)" [max]="100" mode="valeur"></app-serie-compacte>
+                        <app-serie-compacte libelle="Tension" unite="V" [points]="h.series.tension" [debut]="h.debut"
+                          [pasS]="h.pas_s" [dureeS]="dureeDe(h.fenetre)" [max]="4.3" couleur="#0e7490"></app-serie-compacte>
+                        <app-serie-compacte libelle="Occupation du canal vue par ce nœud" unite="%" [points]="h.series.occupation_canal"
+                          [debut]="h.debut" [pasS]="h.pas_s" [dureeS]="dureeDe(h.fenetre)" [max]="50" couleur="#b45309"></app-serie-compacte>
+                        <app-serie-compacte libelle="Temps d'antenne en émission" unite="%" [points]="h.series.temps_antenne_tx"
+                          [debut]="h.debut" [pasS]="h.pas_s" [dureeS]="dureeDe(h.fenetre)" [max]="10" couleur="#7c3aed"></app-serie-compacte>
+                      </div>
+                    }
+                  } @else { <p class="muet">Chargement…</p> }
+                </td></tr>
+              }
             } @empty {
               <tr><td colspan="6" class="muet">Aucun nœud.</td></tr>
             }

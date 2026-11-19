@@ -8,7 +8,7 @@ import { startWith, switchMap } from 'rxjs/operators';
 import { CompagnonMeshtasticService } from '../../services/compagnon-meshtastic.service';
 import { AdministrationMeshtasticService } from '../../services/administration-meshtastic.service';
 import { CompagnonMeshtastic } from '../../shared/models/compagnon-meshtastic.model';
-import { FenetreTableauRadio, NoeudTableau, TableauRadio } from '../../shared/models/tableau-radio.model';
+import { FenetreTableauRadio, HistoriqueNoeud, NoeudTableau, TableauRadio } from '../../shared/models/tableau-radio.model';
 import { SerieCompacteComponent } from '../../shared/components/common/serie-compacte/serie-compacte.component';
 import { CartePaquetsComponent } from '../../shared/components/common/carte-paquets/carte-paquets.component';
 
@@ -46,6 +46,9 @@ export class TableauRadioComponent implements OnInit, OnDestroy {
   tri: TriNoeuds = 'dernier_entendu';
   traceroutesDemandes = new Set<number>();
   messageTraceroute: string | null = null;
+  noeudSuivi: NoeudTableau | null = null;
+  historique: HistoriqueNoeud | null = null;
+  fenetreHistorique: FenetreTableauRadio = '24h';
 
   private abonnement?: Subscription;
 
@@ -133,6 +136,24 @@ export class TableauRadioComponent implements OnInit, OnDestroy {
   classeBatterie(b: number | null): string {
     if (b === null) { return ''; }
     return b > 100 ? 'secteur' : b >= 50 ? 'bon' : b >= 20 ? 'moyen' : 'faible';
+  }
+
+  /** Ouvre (ou referme) l'historique d'un nœud. */
+  suivre(noeud: NoeudTableau): void {
+    if (this.noeudSuivi?.node_num === noeud.node_num) { this.noeudSuivi = null; this.historique = null; return; }
+    this.noeudSuivi = noeud;
+    this.chargerHistorique();
+  }
+
+  chargerHistorique(): void {
+    if (!this.noeudSuivi || !this.passerelleId) { return; }
+    this.historique = null;
+    this.passerellesService.historiqueNoeud(this.passerelleId, this.noeudSuivi.node_num, this.fenetreHistorique)
+      .subscribe({ next: h => { this.historique = h; }, error: () => { this.historique = null; } });
+  }
+
+  dureeDe(f: FenetreTableauRadio): number {
+    return this.fenetres.find(x => x.valeur === f)?.duree_s ?? 86400;
   }
 
   lancerTraceroute(noeud: NoeudTableau): void {

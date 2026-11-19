@@ -54,6 +54,27 @@ def _ecarts(points, debut, pas):
     return [{"t": t.isoformat(), "v": v} for t, v in sorted(seaux.items())]
 
 
+def historique_noeud(compagnon, node_num, fenetre="24h"):
+    """L'historique d'UN nœud tel que cette passerelle l'a reçu : batterie, tension, occupation
+    du canal et temps d'antenne qu'il publie lui-même, plus les traceroutes vers lui. Sert à
+    répondre à « ce relais tient-il la nuit ? » et « depuis quand sature-t-il ? »."""
+    from .models import MesureTelemetrieMeshtastic
+
+    fenetre = fenetre if fenetre in FENETRES else "24h"
+    duree, pas = FENETRES[fenetre]
+    debut = timezone.now() - duree
+    mesures = list(MesureTelemetrieMeshtastic.objects.filter(
+        compagnon=compagnon, node_num=node_num, horodatage__gte=debut).order_by("horodatage").values(
+        "horodatage", "batterie", "tension", "occupation_canal", "temps_antenne_tx"))
+    serie = lambda champ: [(m["horodatage"], m[champ]) for m in mesures]  # noqa: E731
+    return {
+        "node_num": node_num, "fenetre": fenetre, "pas_s": int(pas.total_seconds()),
+        "debut": debut.isoformat(), "nombre_mesures": len(mesures),
+        "series": {c: _moyennes(serie(c), debut, pas)
+                   for c in ("batterie", "tension", "occupation_canal", "temps_antenne_tx")},
+    }
+
+
 def construire_tableau(compagnon, fenetre="6h"):
     from .models import (
         CompteurPaquetsMeshtastic, ContactMeshtastic, LiaisonMeshtastic, MesureTelemetrieMeshtastic,

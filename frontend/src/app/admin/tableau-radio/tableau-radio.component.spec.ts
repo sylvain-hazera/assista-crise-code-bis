@@ -101,3 +101,29 @@ describe('CartePaquetsComponent.squarifier', () => {
     }
   });
 });
+
+describe('TableauRadioComponent — historique d’un nœud', () => {
+  it('ouvre puis referme l’historique', () => {
+    TestBed.configureTestingModule({
+      imports: [TableauRadioComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    const http = TestBed.inject(HttpTestingController);
+    const f = TestBed.createComponent(TableauRadioComponent);
+    f.detectChanges();
+    http.expectOne(`${environment.apiUrl}/compagnons-meshtastic/`).flush([{ id: 'gw1', nom: 'Mairie' }]);
+    http.expectOne(r => r.url.endsWith('/gw1/tableau/')).flush(TABLEAU);
+    f.detectChanges();
+    f.componentInstance.suivre(TABLEAU.noeuds[0]);
+    http.expectOne(r => r.url.endsWith('/gw1/tableau/') && r.params.get('noeud') === '1'
+      && r.params.get('fenetre') === '24h').flush({
+      node_num: 1, fenetre: '24h', pas_s: 1800, debut: new Date(Date.now() - 86400_000).toISOString(), nombre_mesures: 1,
+      series: { batterie: [{ t: new Date().toISOString(), v: 70 }], tension: [], occupation_canal: [], temps_antenne_tx: [] },
+    });
+    f.detectChanges();
+    expect(f.nativeElement.textContent).toContain('Historique de Relais Pilat');
+    f.componentInstance.suivre(TABLEAU.noeuds[0]);
+    expect(f.componentInstance.historique).toBeNull();
+    f.destroy();
+  });
+});

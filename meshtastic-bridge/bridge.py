@@ -211,6 +211,11 @@ class _CibleAuth:
         self.access_token = None
 
 
+class CentralInjoignable(Exception):
+    """Le central est signalé hors ligne : une MESURE ne part pas vers la base locale du
+    satellite, que la synchronisation ne remonte pas -- elle attend dans le tampon du pont."""
+
+
 class DjangoClient:
     """Même patron que meshcore-bridge/bridge.py:DjangoClient (JWT, ré-authentification
     automatique sur 401, bascule vers une cible LOCALE si le central est signalé hors-ligne —
@@ -247,6 +252,14 @@ class DjangoClient:
         response.raise_for_status()
         cible.access_token = response.json()["access"]
         logger.info("Authentifié auprès de %s.", cible.base_url)
+
+    async def _request_central(self, method, path, **kwargs):
+        """Pour les mesures (télémétrie, compteurs, trames observées, 19/11/2026) : le central
+        ou rien. Écrites sur un satellite coupé, elles y resteraient : la synchronisation ne
+        remonte que les données saisies. L'appelant les garde et réessaie au retour du réseau."""
+        if self._cible_actuelle() is not self._central:
+            raise CentralInjoignable()
+        return await self._request(method, path, **kwargs)
 
     async def _request(self, method, path, **kwargs):
         cible = self._cible_actuelle()
@@ -288,7 +301,7 @@ class DjangoClient:
         """Mesures de télémétrie et compteurs de paquets par type (19/11/2026)."""
         if not mesures and not compteurs:
             return
-        await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-telemetrie/",
+        await self._request_central("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-telemetrie/",
                             json={"mesures": mesures, "compteurs": compteurs})
 
     async def rapporter_liaisons(self, compagnon_id, liaisons):
@@ -354,6 +367,14 @@ class DjangoClient:
         if compagnon_id:
             params["compagnon"] = compagnon_id
         response = await self._request("GET", "/messages-canal-meshtastic/a-envoyer/", params=params)
+        return response.json()
+
+    async def canaux_a_envoyer(self, canal_ids, compagnon_id):
+        """Les messages de TOUS ces canaux en un appel (19/11/2026) ; chacun porte son `canal`."""
+        if not canal_ids:
+            return []
+        response = await self._request("GET", "/messages-canal-meshtastic/a-envoyer/", params={
+            "canaux": ",".join(str(c) for c in canal_ids), "compagnon": compagnon_id})
         return response.json()
 
     async def marquer_message_canal(self, message_id, statut, erreur=None):
@@ -571,6 +592,14 @@ class TamponTelemetrie:
         self.compteurs = {}
         return mesures, compteurs
 
+    def remettre(self, mesures, compteurs):
+        """Un rapport qui n'est pas parti revient en tête du tampon, dans la limite du plafond :
+        en cas de longue coupure, ce sont les plus anciennes mesures qui tombent."""
+        self.mesures = (mesures + self.mesures)[-5000:]
+        for c in compteurs:
+            cle = (c["heure"], c["type"])
+            self.compteurs[cle] = self.compteurs.get(cle, 0) + c["nombre"]
+
 
 async def boucle_flush_telemetrie(django, compagnon_id, tampon, nom_compagnon="?"):
     while True:
@@ -578,8 +607,11 @@ async def boucle_flush_telemetrie(django, compagnon_id, tampon, nom_compagnon="?
         mesures, compteurs = tampon.extraire()
         try:
             await django.rapporter_telemetrie(compagnon_id, mesures, compteurs)
+        except CentralInjoignable:
+            tampon.remettre(mesures, compteurs)
         except Exception:
-            logger.exception("Échec du rapport de télémétrie (%s).", nom_compagnon)
+            logger.exception("Échec du rapport de télémétrie (%s), gardé pour le prochain essai.", nom_compagnon)
+            tampon.remettre(mesures, compteurs)
 
 
 class TamponContacts:
@@ -1293,33 +1325,36 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
     chiffrement_supporte = bool(compagnon.get("chiffrement_supporte"))
     while True:
         try:
-            for canal_nom, canal in registre.tous().items():
-                for message in await django.canal_a_envoyer(canal["id"], compagnon_id=compagnon["id"]):
-                    packet_id = random.randint(1, 0xFFFFFFFF)
-                    data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.TEXT_MESSAGE_APP, payload=message["contenu"].encode("utf-8"))
-                    paquet = mesh_pb2.MeshPacket()
-                    setattr(paquet, "from", compagnon["node_num"])
-                    paquet.to = BROADCAST_NUM
-                    paquet.id = packet_id
-                    paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
-                    paquet.hop_limit = 7
-                    paquet.hop_start = 7
+            par_id = {str(c["id"]): (nom, c) for nom, c in registre.tous().items()}
+            for message in await django.canaux_a_envoyer(list(par_id), compagnon["id"]):
+                if message.get("canal") not in par_id:
+                    continue
+                canal_nom, canal = par_id[message["canal"]]
+                packet_id = random.randint(1, 0xFFFFFFFF)
+                data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.TEXT_MESSAGE_APP, payload=message["contenu"].encode("utf-8"))
+                paquet = mesh_pb2.MeshPacket()
+                setattr(paquet, "from", compagnon["node_num"])
+                paquet.to = BROADCAST_NUM
+                paquet.id = packet_id
+                paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
+                paquet.hop_limit = 7
+                paquet.hop_start = 7
 
-                    # chiffrement_supporte décoché : on ne tente même pas crypto.chiffrer, même
-                    # logique de fail-closed que boucle_envoi_dm (voir modèle Django).
-                    chiffre = (
-                        crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
-                        if chiffrement_supporte else None
-                    )
-                    if chiffre is None:
-                        paquet.decoded.CopyFrom(data)
-                    else:
-                        paquet.encrypted = chiffre
+                # chiffrement_supporte décoché : on ne tente même pas crypto.chiffrer, même
+                # logique de fail-closed que boucle_envoi_dm (voir modèle Django).
+                chiffre = (
+                    crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                    if chiffrement_supporte else None
+                )
+                if chiffre is None:
+                    paquet.decoded.CopyFrom(data)
+                else:
+                    paquet.encrypted = chiffre
 
-                    _publier(mqtt_client, compagnon, canal_nom, paquet)
+                _publier(mqtt_client, compagnon, canal_nom, paquet)
 
-                    await django.marquer_message_canal(message["id"], "ENVOYE")
-                    logger.info("Message de canal '%s' publié.", canal_nom)
+                await django.marquer_message_canal(message["id"], "ENVOYE")
+                logger.info("Message de canal '%s' publié.", canal_nom)
         except Exception:
             logger.exception("Échec du cycle d'envoi des messages de canal.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -1684,17 +1719,23 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
                 canaux_distants = await django.canaux_avec_cle(compagnon["id"])
                 canaux_par_nom.clear()
                 canaux_par_nom.update({c["nom"].lower(): c["id"] for c in canaux_distants})
+                # Seulement les canaux que CET appareil sert : une passerelle isolée note la
+                # diffusion dès la prise, demander un canal qu'on ne peut pas émettre le perdrait.
+                servis = {}
                 for canal in canaux_distants:
                     canal_local = iface.localNode.getChannelByName(canal["nom"])
-                    if canal_local is None:
+                    if canal_local is not None:
+                        servis[str(canal["id"])] = (canal, canal_local)
+                for message in await django.canaux_a_envoyer(list(servis), compagnon["id"]):
+                    if message.get("canal") not in servis:
                         continue
-                    for message in await django.canal_a_envoyer(canal["id"], compagnon_id=compagnon["id"]):
-                        iface.sendText(message["contenu"], channelIndex=canal_local.index)
-                        await django.marquer_message_canal(message["id"], "ENVOYE")
-                        logger.info(
-                            "Message de canal '%s' envoyé en %s (index local %d, %s).",
-                            canal["nom"], libelle_connexion, canal_local.index, compagnon["nom"],
-                        )
+                    canal, canal_local = servis[message["canal"]]
+                    iface.sendText(message["contenu"], channelIndex=canal_local.index)
+                    await django.marquer_message_canal(message["id"], "ENVOYE")
+                    logger.info(
+                        "Message de canal '%s' envoyé en %s (index local %d, %s).",
+                        canal["nom"], libelle_connexion, canal_local.index, compagnon["nom"],
+                    )
             except Exception:
                 logger.exception("Échec du cycle d'envoi de canal (%s, %s).", libelle_connexion, compagnon["nom"])
             await asyncio.sleep(POLL_INTERVAL_SECONDS)

@@ -261,6 +261,23 @@ tests:
               summary: "1 heard repeater(s) below 20% battery"
               description: "See /admin/meshcore-companions; a repeater on a mast takes time to reach."
 
+  - name: a Meshtastic channel stays saturated
+    interval: 1m
+    input_series:
+      - series: 'assista_meshtastic_occupation_canal_max_pourcent{environment="PROD"}'
+        values: '12+0x10 31+0x40'
+    alert_rule_test:
+      - eval_time: 20m           # sature depuis ~9 min, « for: 20m » pas atteint
+        alertname: MeshtasticCanalSature
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: MeshtasticCanalSature
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Meshtastic channel utilization at 31%"
+              description: "Messages are being lost to collisions. See traffic by type on /admin/tableau-radio."
+
   # La serie ECHEC existe toujours (core/metrics.py emet tous les statuts, meme a zero) : sans
   # ca, l'alerte ne pourrait pas se declencher au premier echec, faute de serie a evaluer.
   - name: an admin task is abandoned after its retries

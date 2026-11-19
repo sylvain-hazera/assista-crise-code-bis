@@ -15,6 +15,11 @@ export interface TracerouteTableau {
   retour: { node_num: number | null; nom: string }[]; snr_retour: (number | null)[];
 }
 
+export interface HistoriqueNoeud {
+  node_num: number; fenetre: FenetreTableauRadio; pas_s: number; debut: string; nombre_mesures: number;
+  series: Record<'batterie' | 'tension' | 'occupation_canal' | 'temps_antenne_tx', PointTableau[]>;
+}
+
 export interface TableauRadio {
   fenetre: FenetreTableauRadio; pas_s: number; debut: string;
   passerelle: { id: string; nom: string; node_num: number };

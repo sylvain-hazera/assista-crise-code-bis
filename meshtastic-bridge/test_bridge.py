@@ -701,3 +701,14 @@ class TestTelemetrieEtComptages(unittest.TestCase):
         contacts = {c["node_num"]: c for c in tampon.extraire()}
         self.assertEqual(contacts[0x42]["sauts"], 2)
         self.assertNotIn("sauts", contacts[0x43])
+
+
+class TestTamponGardeSiCentralCoupe(unittest.TestCase):
+    def test_remettre_fusionne_et_plafonne(self):
+        tampon = bridge.TamponTelemetrie()
+        tampon.compter("TEXT_MESSAGE_APP")
+        mesures, compteurs = tampon.extraire()
+        tampon.compter("TEXT_MESSAGE_APP")
+        tampon.remettre([{"node_num": 1}] * 6000, compteurs)
+        self.assertEqual(len(tampon.mesures), 5000)
+        self.assertEqual(sum(tampon.compteurs.values()), 2)

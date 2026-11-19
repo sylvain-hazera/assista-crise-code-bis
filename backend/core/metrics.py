@@ -12,7 +12,7 @@ Les labels doivent rester bornés (types, statuts) : jamais d'id, d'email ni de 
 import logging
 import os
 
-from django.db.models import Count, Min
+from django.db.models import Count, Max, Min
 from django.db.models.signals import post_save
 from django.http import HttpResponse
 from django.utils import timezone
@@ -141,8 +141,50 @@ class MeshStateCollector(Collector):
             yield from self._compagnons()
             yield from self._infrastructure()
             yield from self._administration()
+            yield from self._telemetrie_meshtastic()
         except Exception:
             logger.exception("Could not collect mesh metrics")
+
+    @staticmethod
+    def _telemetrie_meshtastic():
+        """Télémétrie Meshtastic rapportée par les ponts (19/11/2026) : occupation du canal la
+        plus haute parmi les passerelles sur 15 min, et nœuds sous 20 % de batterie sur 24 h.
+
+        L'occupation du canal est LA mesure de santé d'un réseau Meshtastic : au-delà de 25 %,
+        le firmware commence à retenir ses propres émissions et les collisions font perdre des
+        messages. Sans étiquette de nœud, comme le reste (voir la docstring de la classe)."""
+        from datetime import timedelta
+        from .models import CompagnonMeshtastic, MesureTelemetrieMeshtastic
+
+        maintenant = timezone.now()
+        occupation = GaugeMetricFamily(
+            "assista_meshtastic_occupation_canal_max_pourcent",
+            "Highest channel utilization reported by a gateway itself over the last 15 minutes",
+            labels=["environment"])
+        passerelles = list(CompagnonMeshtastic.objects.values_list("node_num", flat=True))
+        for row in (MesureTelemetrieMeshtastic.objects
+                    .filter(horodatage__gte=maintenant - timedelta(minutes=15),
+                            node_num__in=passerelles, occupation_canal__isnull=False)
+                    .values("environment").annotate(m=Max("occupation_canal"))):
+            occupation.add_metric([row["environment"]], row["m"])
+        yield occupation
+
+        faibles = GaugeMetricFamily(
+            "assista_meshtastic_noeuds_batterie_faible",
+            "Meshtastic nodes whose latest battery report (24 h) is below 20% (mains excluded)",
+            labels=["environment"])
+        derniers = {}
+        for m in (MesureTelemetrieMeshtastic.objects
+                  .filter(horodatage__gte=maintenant - timedelta(hours=24), batterie__isnull=False)
+                  .order_by("node_num", "-horodatage").values("node_num", "batterie", "environment")):
+            derniers.setdefault((m["node_num"], m["environment"]), m["batterie"])
+        comptes = {}
+        for (_, environment), batterie in derniers.items():
+            if 0 < batterie < 20:
+                comptes[environment] = comptes.get(environment, 0) + 1
+        for environment, n in comptes.items():
+            faibles.add_metric([environment], n)
+        yield faibles
 
     @staticmethod
     def _compagnons():

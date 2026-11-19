@@ -58,6 +58,16 @@ table.noeuds {
   .nombre { font-variant-numeric: tabular-nums; }
 }
 
+.lien-noeud {
+  border: 0; background: none; padding: 0; font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+  color: var(--brand-primary-lisible, var(--brand-primary, #1d4ed8));
+  &:hover { text-decoration: underline; }
+  &:focus-visible { outline: 2px solid var(--brand-primary, #1d4ed8); outline-offset: 2px; }
+}
+tr.historique > td { background: var(--ac-surface-2, #f8fafc); padding: 12px; }
+.historique-entete { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fenetres.petites button { padding: 3px 8px; font-size: .78rem; }
+
 .muet { color: var(--ac-text-subtle, #6b7280); }
 
 .pastille {
