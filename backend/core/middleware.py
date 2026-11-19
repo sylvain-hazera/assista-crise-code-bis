@@ -251,6 +251,12 @@ class NoCacheApiMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
+        # Seule exception : une vue qui le déclare (`response.cache_public = True`), pour une
+        # réponse publique, sans rien de personnel, qui NE DÉPEND PAS de X-Environment. Seule
+        # BrandingView le fait (19/11/2026) : la charte suit le nom de domaine, jamais la zone,
+        # et elle est demandée à chaque ouverture du site.
+        if request.path.startswith('/api/') and getattr(response, 'cache_public', False):
+            return response
         if request.path.startswith('/api/'):
             response['Cache-Control'] = 'no-store'
             existing_vary = response.get('Vary', '')

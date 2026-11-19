@@ -12769,7 +12769,7 @@ class BrandingView(APIView):
     def get(self, request):
         institution = resolve_institution_branding(request)
         branding = branding_for_institution(institution)
-        return Response({
+        reponse = Response({
             "nom_affichage": branding.nom_affichage,
             "logo_url": request.build_absolute_uri(branding.logo_url) if branding.logo_url else None,
             "couleur_primaire": branding.couleur_primaire,
@@ -12778,6 +12778,13 @@ class BrandingView(APIView):
             "police_texte": branding.police_texte,
             "reserve_active": branding.reserve_active,
         })
+        # Appelée à CHAQUE ouverture du site, avant tout affichage (19/11/2026, « le site
+        # rame ») : le navigateur la garde 5 minutes. Une charte changée dans l'administration
+        # apparaît donc au plus tard 5 minutes après. Rien de personnel : public, par nom de
+        # domaine (l'adresse de la requête porte déjà le Host, le cache s'y range).
+        reponse["Cache-Control"] = "public, max-age=300"
+        reponse.cache_public = True     # voir NoCacheApiMiddleware : seule exception au no-store
+        return reponse
 
 
 class BrandingLogoView(APIView):
