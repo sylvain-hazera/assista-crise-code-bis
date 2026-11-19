@@ -463,6 +463,20 @@ tests:
               summary: "Container ac_backend is no longer running"
               description: "It was running in the last 6 hours and has been gone for 5 minutes. Check: docker ps -a --filter name=ac_backend then docker logs ac_backend."
 
+  - name: a throwaway test container that goes away is not an outage
+    interval: 1m
+    input_series:
+      # scripts/tester-referencement.sh : ac_test_referencement_<pid>, supprimé à la fin (vu le
+      # 19/11/2026 : fausse alerte ContainerDown pendant six heures).
+      - series: 'container_last_seen{name="ac_test_referencement_2530934"}'
+        values: '1 1 1 stale'
+      - series: 'container_last_seen{name="ac_db"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ContainerDown
+        exp_alerts: []
+
   - name: a container is killed for lack of memory
     interval: 1m
     input_series:

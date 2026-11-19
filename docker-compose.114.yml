@@ -497,7 +497,7 @@ services:
     # seconde (4 % de processeur et 620 Mo en continu) alors que Prometheus ne lit que toutes
     # les 15 s. On garde ce que lisent alertes et tableaux : cpu, memory, disk
     # (container_fs_usage_bytes), oom_event ; container_last_seen, start_time et spec sont
-    # toujours exportées, et les étiquettes (assista_role) aussi.
+    # toujours exportées, avec les étiquettes des conteneurs (container_label_*).
     command: ['--housekeeping_interval=15s', '--docker_only=true', '--enable_metrics=cpu,memory,disk,oom_event']
     privileged: true                     # compromis assumé : accès large à l'hôte, port jamais publié
     devices: [/dev/kmsg]

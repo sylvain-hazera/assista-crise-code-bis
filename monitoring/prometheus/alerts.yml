@@ -187,7 +187,7 @@ groups:
       # needs no list to maintain. `for: 5m` lets a redeployment recreate it in peace.
       - alert: ContainerDown
         expr: |
-          group by (name) (last_over_time(container_last_seen{name=~"ac_.+", name!="ac_mig_db"}[6h]))
+          group by (name) (last_over_time(container_last_seen{name=~"ac_.+", name!="ac_mig_db", name!~"ac_test_.+"}[6h]))
             unless group by (name) (container_last_seen{name=~"ac_.+"})
         for: 5m
         labels: { severity: critical }
