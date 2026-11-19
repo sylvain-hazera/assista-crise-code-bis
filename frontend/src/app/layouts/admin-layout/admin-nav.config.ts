@@ -213,7 +213,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Toute la carte du réseau radio (10/11/2026).
   { icon: 'travel_explore', label: 'Carte radio', route: '/admin/carte-radio', groupe: 'communications', visibilite: 'radio' },
   // Occupation du canal, trafic par type, nœuds, traceroutes d'une passerelle (19/11/2026).
-  { icon: 'monitoring', label: 'Tableau radio', route: '/admin/tableau-radio', groupe: 'communications', visibilite: 'radio' },
+  { icon: 'insights', label: 'Tableau radio', route: '/admin/tableau-radio', groupe: 'communications', visibilite: 'radio' },
   // Relais sourds, liaisons à sens unique (backend/core/analyse_liaisons.py).
   { icon: 'troubleshoot', label: 'Diagnostic radio', route: '/admin/diagnostic-radio', groupe: 'communications', visibilite: 'radio' },
   // Jusqu'où porte un site (backend/core/relief_radio.py).
