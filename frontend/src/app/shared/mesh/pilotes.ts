@@ -168,6 +168,8 @@ const BATTEMENT_MESHTASTIC_MS = 30_000;
  * oui. Repris du client officiel, comme le plafond par étape. */
 const POIGNEE_INACTIVITE_MS = 15_000;
 const POIGNEE_PLAFOND_MS = 150_000;
+/** Pendant la poignée de main en HTTP : fréquence des lectures de `fromradio`. */
+const POIGNEE_SONDAGE_HTTP_MS = 400;
 const POIGNEE_PAUSE_MS = 100;
 
 const attendre = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -263,9 +265,18 @@ export class PiloteMeshtastic implements Pilote {
     });
     this.rearmer();
     const plafond = setTimeout(() => this.echecEtape?.(new Error('plafond')), POIGNEE_PLAFOND_MS);
+    // Réseau local (HTTP) : rien n'arrive tout seul, et le cycle régulier du relais ne démarre
+    // qu'APRÈS la poignée de main. Sans ce sondage, la seule lecture était celle qui suit
+    // l'écriture ; une radio qui répond « vide » le temps de préparer sa configuration, ou une
+    // base de nœuds de plus de 200 trames, laissait l'étape caler jusqu'au délai d'inactivité
+    // (vu le 19/11/2026 : « Connexion… » sans fin sur une radio en Wi-Fi). Le client officiel
+    // interroge lui aussi la radio en continu.
+    const sondage = this.transport.flux ? null
+      : setInterval(() => void this.transport.tirer(), POIGNEE_SONDAGE_HTTP_MS);
     void this.ecrire(toRadioVeutConfig(nonce)).catch(e => this.echecEtape?.(e));
     return fin.finally(() => {
       clearTimeout(plafond);
+      if (sondage) { clearInterval(sondage); }
       if (this.minuterieInactivite) { clearTimeout(this.minuterieInactivite); }
       this.minuterieInactivite = null;
       this.etape = null;

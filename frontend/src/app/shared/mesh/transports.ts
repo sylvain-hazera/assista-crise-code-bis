@@ -399,8 +399,25 @@ export class TransportHttpMeshtastic implements Transport {
     return resultat as RequestInit;
   }
 
+  /**
+   * Une page HTTPS qui appelle `http://192.168.x.x` : seuls Chrome et Edge l'autorisent (après
+   * la demande « appareils du réseau local »). Firefox et Safari bloquent l'appel comme contenu
+   * mixte, sans rien demander : mieux vaut le dire avant que laisser croire à une radio muette.
+   * `navigator.userAgentData` n'existe que dans les navigateurs Chromium (Chrome sur iPhone est
+   * un Safari : il est bien bloqué lui aussi).
+   */
+  static navigateurBloque(base: string, page = globalThis.location?.protocol,
+                          chromium = !!(globalThis.navigator as { userAgentData?: unknown } | undefined)?.userAgentData): boolean {
+    return base.startsWith('http:') && page === 'https:' && !chromium;
+  }
+
   async ouvrir(): Promise<void> {
     this.ferme = false;
+    if (TransportHttpMeshtastic.navigateurBloque(this.base)) {
+      throw new Error('Ce navigateur bloque la connexion à une radio du réseau local depuis ce site '
+        + '(Firefox, Safari et les navigateurs sur iPhone). Ouvrez cette page dans Chrome ou Edge, '
+        + "ou branchez la radio en USB ou en Bluetooth.");
+    }
     // Une lecture d'essai : c'est elle qui déclenche l'autorisation « réseau local » et qui dit
     // tout de suite si la radio répond, plutôt qu'au premier message.
     const reponse = await this.lireUne();

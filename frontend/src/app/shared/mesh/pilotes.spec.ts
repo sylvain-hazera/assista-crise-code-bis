@@ -2,7 +2,7 @@ import { PiloteMeshCore, PiloteMeshtastic, MessageRadio } from './pilotes';
 import { REP, DEBUT_TRAME_RECUE } from './meshcore-trames';
 import { encadrerMeshtastic, toRadioTexte } from './meshtastic-trames';
 import { EcrivainProtobuf, champ, lireChamps } from './protobuf-mini';
-import { Transport } from './transports';
+import { Transport, TransportHttpMeshtastic } from './transports';
 
 /** Un transport qui note ce qu'on lui écrit, sans radio ni réseau. */
 class FauxTransport implements Transport {
@@ -162,6 +162,27 @@ describe('Pilote Meshtastic', () => {
     expect(Array.from(t.ecrits[1].slice(0, 2))).toEqual([0x94, 0xc3]);
   });
 
+  it("en HTTP, interroge la radio pendant la poignée de main sans attendre le cycle", async () => {
+    class TransportHttpFactice extends FauxTransport {
+      lectures = 0;
+      override async tirer() { this.lectures++; }
+    }
+    const t = new TransportHttpFactice(false);
+    const p = new PiloteMeshtastic(t);
+    const identite = p.demarrer();
+    await attendreEcriture(t, '18ac9e04');
+    await new Promise(r => setTimeout(r, 1000));
+    expect(t.lectures).toBeGreaterThanOrEqual(2);       // sondage toutes les 400 ms
+    p.recevoir(octets('08071a0608cdd7d29101'));          // my_info
+    p.recevoir(octets('38ac9e04'));                      // fin de l'étape « configuration »
+    await attendreEcriture(t, '18ad9e04');
+    p.recevoir(octets('38ad9e04'));
+    await identite;
+    const apres = t.lectures;
+    await new Promise(r => setTimeout(r, 900));
+    expect(t.lectures).toBe(apres);                      // plus de sondage une fois connecté
+  });
+
   it('refuse une configuration arrivée sans numéro de nœud', async () => {
     const t = new FauxTransport(false);
     const p = new PiloteMeshtastic(t);
@@ -306,5 +327,16 @@ describe('Pilote Meshtastic', () => {
   it('refuse le numéro de diffusion comme destinataire d\'un message direct', async () => {
     const p = new PiloteMeshtastic(new FauxTransport(false));
     await expectAsync(p.envoyerDm(0xffffffff, 'x')).toBeRejected();
+  });
+});
+
+
+describe('Radio sur le réseau local (HTTP)', () => {
+  it('prévient que Firefox et Safari bloquent une radio en http depuis une page https', () => {
+    const bloque = TransportHttpMeshtastic.navigateurBloque;
+    expect(bloque('http://192.168.0.156', 'https:', false)).toBeTrue();     // Firefox, Safari
+    expect(bloque('http://192.168.0.156', 'https:', true)).toBeFalse();     // Chrome, Edge
+    expect(bloque('https://192.168.0.156', 'https:', false)).toBeFalse();   // radio en https
+    expect(bloque('http://192.168.0.156', 'http:', false)).toBeFalse();     // page en http
   });
 });
