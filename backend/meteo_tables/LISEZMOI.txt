@@ -1,0 +1,5 @@
+Tables BUFR locales de Meteo-France, version 20 (centre 85), pour les produits radar
+multipolarises « PAM ». Converties le 20/11/2026 au format CSV de BALTRAD (baltrad/bbufr) a partir
+des tables libDWD du projet NLradar (github.com/Bram94/NLradar, GPL-3.0, commit e32bab0cef670a240cefc8f9bc251c82ab00539a,
+Python_files/Tables/libdwd/local_00085_00000/table_b_020 et table_d_020), qui ne sont publiees
+nulle part ailleurs. Copiees dans l'image d'analyse (backend/Dockerfile.meteo).

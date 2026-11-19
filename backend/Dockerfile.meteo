@@ -35,5 +35,8 @@ FROM ${BASE}
 USER root
 RUN pip install --no-cache-dir "pysteps==1.21.5" "opencv-python-headless==5.1.0.95"
 COPY --from=bbufr /opt/bbufr /opt/bbufr
+# Tables de la version 20 (produits multipolarisés « PAM »), absentes de BALTRAD : converties
+# depuis NLradar (voir meteo_tables/LISEZMOI.txt).
+COPY meteo_tables/localtabb_85_20.csv meteo_tables/localtabd_85_20.csv /opt/bbufr/tables/
 ENV BBUFR_DECBUFR=/opt/bbufr/bin/decbufr BBUFR_TABLES=/opt/bbufr/tables
 USER appuser

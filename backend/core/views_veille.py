@@ -455,7 +455,8 @@ class OragesView(APIView):
                     "eclairs": c.eclairs,
                     # Signatures Doppler, selon les relevés des radars les plus proches.
                     "doppler": {"rotation": c.doppler_rotation, "grele": c.doppler_grele,
-                                "divergence": c.doppler_divergence, "radars": c.doppler_radars,
+                                "divergence": c.doppler_divergence, "polarimetrie": c.doppler_polarimetrie,
+                                "radars": c.doppler_radars,
                                 "heure": c.doppler_heure} if c.doppler_heure else None,
                 },
                 "estimations": {

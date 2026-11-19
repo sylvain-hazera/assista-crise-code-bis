@@ -208,6 +208,13 @@
                   <br><strong>Grêle probable</strong> selon le radar de {{ d.grele!.radar }} : écho de 45 dBZ jusqu'à
                   {{ d.grele!.sommet_45_m | number:'1.0-0' }} m, isotherme 0 °C à {{ d.grele!.isotherme0_m | number:'1.0-0' }} m.
                 }
+                @if (d.polarimetrie?.debris) {
+                  <br><strong class="alerte-doppler">Signature de débris</strong> au cœur de la rotation (radar de {{ d.polarimetrie!.radar }}) :
+                  objets soulevés, tornade au sol probable.
+                }
+                @if (d.polarimetrie?.grele) {
+                  <br><strong>Grêle détectée par la double polarisation</strong> (radar de {{ d.polarimetrie!.radar }}).
+                }
                 @if (d.divergence; as div) {
                   <br><strong>Divergence forte près du sol</strong> (rafale descendante possible), radar de {{ div.radar }} :
                   {{ div.ms * 3.6 | number:'1.0-0' }} km/h d'écart sur quelques kilomètres.

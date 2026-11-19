@@ -10,7 +10,14 @@ Bollène :
 - trois messages par fichier : (1) réflectivité, 720 azimuts × 256 portes d'un kilomètre ;
   (2) largeur spectrale, 360 × 256 ; (3) VITESSE RADIALE, 360 × 256, en classes de 0,5 m/s à
   partir de −60,2 m/s — DÉJÀ DÉPLIÉE par le radar (trois fréquences d'impulsion alternées) ;
-  classe 255 = pas de donnée ;
+  classe 255 = pas de donnée. ATTENTION : chez Météo-France la vitesse est POSITIVE VERS le radar
+  (« Description des données radars individuelles (PAG et PAM) », 04/05/2026, § vitesses
+  radiales) ; elle est retournée au décodage dans la convention usuelle, positive en s'éloignant ;
+- produit « PAM » des radars à double polarisation : six messages dans cet ordre — réflectivité,
+  corrélation copolaire ρHV, réflectivité différentielle ZDR, phase différentielle, écart-type,
+  advection — en 720 azimuts × 1066 portes de 240 m. Codages par défaut de la même fiche
+  (descripteurs de décalage et de pas absents des fichiers) : ρHV = 0,3 + code/100,
+  ZDR = −10 + code/10 dB, 255 = manquant ;
 - l'en-tête donne la position du radar, l'élévation, et l'altitude de l'isotherme 0 °C de son
   profil vertical de réflectivité.
 
@@ -23,7 +30,12 @@ CE QU'ON EN TIRE, ET LES CRITÈRES (prudents, à régler sur des cas réels avan
 - **grêle probable** (critère de Waldvogel) : l'écho de 45 dBZ monte à plus de 1,4 km au-dessus
   de l'isotherme 0 °C ;
 - **divergence forte** près du sol (rafale descendante possible) : la vitesse radiale gagne au
-  moins 20 m/s sur 4 km ou moins le long d'un rayon, faisceau à moins de 2 km d'altitude.
+  moins 20 m/s sur 4 km ou moins le long d'un rayon, faisceau à moins de 2 km d'altitude ;
+- **grêle détectée par la double polarisation** : au moins cinq portes où Z ≥ 50 dBZ, ZDR entre
+  −1 et +1 dB (les grêlons qui culbutent paraissent ronds) et 0,70 ≤ ρHV ≤ 0,96 (milieu mêlé) ;
+- **signature de débris** : à moins de 3 km d'une rotation détectée, au moins trois portes où
+  Z ≥ 35 dBZ et ρHV ≤ 0,80 avec |ZDR| ≤ 1,5 dB — des objets de formes quelconques soulevés :
+  le signe qu'une tornade touche probablement le sol.
 
 Limites : un radar ne voit que la composante du vent dans l'axe du faisceau ; loin du radar, le
 faisceau passe au-dessus du bas des orages ; à moins de 10 km, les élévations basses manquent.
@@ -129,8 +141,9 @@ def _valeur(lignes, libelle):
     return None
 
 
-def lire_message(texte):
-    """Balayage d'un message décodé, ou None s'il n'est ni réflectivité ni vitesse."""
+def lire_message(texte, nature_imposee=None):
+    """Balayage d'un message décodé, ou None s'il n'est ni réflectivité ni vitesse. `nature_imposee`
+    (« Z », « RHO », « ZDR ») vaut pour les messages PAM, que seul leur rang identifie."""
     import numpy
 
     lignes = texte.splitlines()
@@ -138,10 +151,13 @@ def lire_message(texte):
     rangees = int(_valeur(lignes, "Number of pixels per column") or 0)     # azimuts
     if not colonnes or not rangees:
         return None
-    try:
-        debut = next(i for i, l in enumerate(lignes) if "Facteur super elargi" in l)
-    except StopIteration:
+    # Le message PAM de réflectivité répète deux fois : le bruit de ses 720 radiales, puis les
+    # pixels. On prend la répétition dont la taille vaut azimuts × portes (la dernière à défaut).
+    repetitions = [i for i, l in enumerate(lignes) if "Facteur super elargi" in l]
+    if not repetitions:
         return None
+    debut = next((i for i in repetitions if (_valeur([lignes[i]], "Facteur super elargi") or 0) == colonnes * rangees),
+                 repetitions[-1])
     classes = []
     for ligne in lignes[debut + 1:]:
         if "Pixel value" in ligne:
@@ -153,11 +169,16 @@ def lire_message(texte):
     brut = numpy.array(classes).reshape(rangees, colonnes)
 
     vmin = _valeur(lignes, "Valeur minimale de la vitesse radiale")
-    if vmin is not None:
+    if nature_imposee == "RHO":
+        valeurs, nature = numpy.where(brut >= 255, numpy.nan, 0.3 + brut / 100 + 0.005), "RHO"
+    elif nature_imposee == "ZDR":
+        valeurs, nature = numpy.where(brut >= 255, numpy.nan, -10 + brut / 10 + 0.05), "ZDR"
+    elif vmin is not None:
         pas = _valeur(lignes, "Ecart entre deux valeurs consecutives") or 0.5
-        valeurs = numpy.where(brut >= 255, numpy.nan, vmin + pas * brut)
+        # Retournée : Météo-France compte la vitesse positive VERS le radar.
+        valeurs = numpy.where(brut >= 255, numpy.nan, -(vmin + pas * brut))
         nature = "V"
-    elif rangees == 720:
+    elif nature_imposee == "Z" or (nature_imposee is None and rangees == 720):
         # Table « classe -> deux bornes de réflectivité », écrite avant les pixels.
         table, classe = {}, None
         for ligne in lignes[:debut]:
@@ -170,9 +191,13 @@ def lire_message(texte):
                 if decimaux:
                     table[classe].append(float(decimaux[0]))
         correspondance = numpy.full(256, numpy.nan)
-        for k, bornes in table.items():
-            if k and bornes and max(bornes) > 0:
-                correspondance[k] = sum(bornes) / len(bornes)
+        if table:
+            for k, bornes in table.items():
+                if k and bornes and max(bornes) > 0:
+                    correspondance[k] = sum(bornes) / len(bornes)
+        else:
+            # Codage par défaut : classe N = [−11 + N ; −10 + N[ dBZ ; 0 et 1 trop près du bruit.
+            correspondance[2:80] = numpy.arange(2, 80) - 10.5
         valeurs = correspondance[brut.astype(int).clip(0, 255)]
         nature = "Z"
     else:
@@ -199,6 +224,20 @@ def decoder(octets):
     reflectivite = next((b for b in resultat if b.nature == "Z"), None)
     for vitesse in (b for b in resultat if b.nature == "V"):
         nettoyer_vitesse(vitesse, reflectivite)
+    return resultat
+
+
+def decoder_pam(octets):
+    """Réflectivité, ρHV et ZDR d'un fichier PAM (les trois premiers messages, dans cet ordre)."""
+    resultat = []
+    for message, nature in zip(messages(octets)[:3], ("Z", "RHO", "ZDR")):
+        try:
+            balayage = lire_message(_decbufr(message), nature)
+        except Exception:
+            logger.warning("Message PAM illisible.", exc_info=True)
+            continue
+        if balayage is not None:
+            resultat.append(balayage)
     return resultat
 
 
@@ -325,6 +364,8 @@ def grele(balayages_reflectivite, zone):
         az, portes = _zone_polaire(b, zone)
         for j in portes:
             r = (j + 0.5) * b.porte_m
+            if r < PORTEE_MIN_KM * 1000:       # échos du sol autour du radar (non filtrés)
+                continue
             for i in az:
                 z = b.valeurs[i % b.valeurs.shape[0], j]
                 if not numpy.isfinite(z):
@@ -362,6 +403,56 @@ def divergence(balayages_vitesse, zone):
                 if DIVERGENCE_MIN_MS <= ecart <= DIVERGENCE_MAX_MS:
                     meilleure = max(meilleure or 0, ecart)
     return round(meilleure, 1) if meilleure is not None else None
+
+
+def polarimetrie(balayages, zone, rotation_centre=None):
+    """Grêle et débris selon la double polarisation : {"grele", "portes_grele", "debris"}. Les
+    balayages Z, RHO et ZDR d'une même élévation sont appariés par leur élévation."""
+    import numpy
+
+    portes_grele, portes_debris = 0, 0
+    par_elevation = {}
+    for b in balayages:
+        par_elevation.setdefault(round(b.elevation, 1), {})[b.nature] = b
+    for trio in par_elevation.values():
+        if not {"Z", "RHO", "ZDR"} <= set(trio):
+            continue
+        z, rho, zdr = trio["Z"], trio["RHO"], trio["ZDR"]
+        if not (z.valeurs.shape == rho.valeurs.shape == zdr.valeurs.shape):
+            continue
+        az, portes = _zone_polaire(z, zone)
+        lignes = numpy.array([i % z.valeurs.shape[0] for i in az])
+        # Échos du sol autour du radar : ce produit n'est pas filtré (fiche Météo-France).
+        colonnes = numpy.array([j for j in portes if (j + 0.5) * z.porte_m >= PORTEE_MIN_KM * 1000])
+        if not len(lignes) or not len(colonnes):
+            continue
+        Z = z.valeurs[numpy.ix_(lignes, colonnes)]
+        R = rho.valeurs[numpy.ix_(lignes, colonnes)]
+        D = zdr.valeurs[numpy.ix_(lignes, colonnes)]
+        with numpy.errstate(invalid="ignore"):
+            grele_ici = (Z >= 50) & (numpy.abs(D) <= 1.0) & (R >= 0.70) & (R <= 0.96)
+            portes_grele += int(numpy.count_nonzero(grele_ici))
+            if rotation_centre is not None:
+                debris_ici = (Z >= 35) & (R <= 0.80) & (numpy.abs(D) <= 1.5)
+                for a, j in zip(*numpy.nonzero(debris_ici)):
+                    azimut = z.azimut0 + lignes[a] * z.pas_azimut
+                    lon, lat = position(z, azimut, (colonnes[j] + 0.5) * z.porte_m)
+                    if _distance_km(lon, lat, *rotation_centre) <= 3.0:
+                        portes_debris += 1
+    return {"grele": portes_grele >= 5, "portes_grele": portes_grele, "debris": portes_debris >= 3}
+
+
+def telecharger_pam(station, tour):
+    import gzip
+    cle = meteo_france.lire_cle()
+    r = requests.get(f"{URL}/{station}/observations/PAM/produit", params={"tour_antenne": tour},
+                     headers={"apikey": cle}, timeout=DELAI_REPONSE_S)
+    if r.status_code != 200:
+        return None
+    try:
+        return gzip.decompress(r.content)
+    except OSError:
+        return r.content
 
 
 def _distance_km(lon1, lat1, lon2, lat2):
@@ -491,7 +582,22 @@ def relever(maintenant=None):
             div = divergence(vitesses, zone)
             if div is not None and (divergence_retenue is None or div > divergence_retenue["ms"]):
                 divergence_retenue = {"ms": div, "radar": radar.nom}
+        # Double polarisation, seulement là où elle peut trancher : écho fort ou rotation, au
+        # radar le plus proche, deux balayages les plus bas (fichiers lourds : ~4 Mo chacun).
+        polar = None
+        fort = grele_retenue and (grele_retenue.get("z_max_dbz") or 0) >= 50
+        if (fort or rotation_retenue) and besoins[cellule.pk]:
+            radar = besoins[cellule.pk][0]
+            lus = []
+            for tour in radar.tours[-2:]:
+                octets = telecharger_pam(radar.station, tour)
+                if octets:
+                    lus += decoder_pam(octets)
+            if lus:
+                centre = (rotation_retenue["lon"], rotation_retenue["lat"]) if rotation_retenue else None
+                polar = {**polarimetrie(lus, zone, centre), "radar": radar.nom}
         CelluleOrage.objects.filter(pk=cellule.pk).update(
             doppler_rotation=rotation_retenue, doppler_grele=grele_retenue, doppler_divergence=divergence_retenue,
+            doppler_polarimetrie=polar,
             doppler_radars=noms, doppler_heure=maintenant)
     return len(cellules)

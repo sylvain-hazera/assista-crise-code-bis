@@ -3284,6 +3284,8 @@ class CelluleOrage(models.Model):
     doppler_rotation = models.JSONField(null=True, blank=True)
     doppler_grele = models.JSONField(null=True, blank=True)
     doppler_divergence = models.JSONField(null=True, blank=True)
+    # Double polarisation : {grele, portes_grele, debris, radar}.
+    doppler_polarimetrie = models.JSONField(null=True, blank=True)
     doppler_radars = models.JSONField(default=list, blank=True)
     doppler_heure = models.DateTimeField(null=True, blank=True)
     releve_le = models.DateTimeField()

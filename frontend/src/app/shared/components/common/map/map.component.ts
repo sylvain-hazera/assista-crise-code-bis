@@ -1179,7 +1179,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (r.doppler?.rotation) {
       html += `<br><strong>Rotation détectée</strong> (radar de ${this.echapper(r.doppler.rotation.radar)})`;
     }
-    if (r.doppler?.grele?.probable) {
+    if (r.doppler?.polarimetrie?.debris) {
+      html += `<br><strong>Signature de débris</strong> : tornade au sol probable`;
+    }
+    if (r.doppler?.polarimetrie?.grele) {
+      html += `<br>grêle détectée par la double polarisation`;
+    } else if (r.doppler?.grele?.probable) {
       html += `<br>grêle probable selon le radar`;
     }
     if (r.doppler?.divergence) {

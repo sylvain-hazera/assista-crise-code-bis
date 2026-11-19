@@ -654,6 +654,7 @@ export interface CelluleOrage {
       rotation: { vrot_ms: number; elevations: number[]; radar: string } | null;
       grele: { z_max_dbz: number | null; sommet_45_m: number | null; isotherme0_m: number | null; probable: boolean; radar: string } | null;
       divergence: { ms: number; radar: string } | null;
+      polarimetrie: { grele: boolean; portes_grele: number; debris: boolean; radar: string } | null;
       radars: string[]; heure: string;
     } | null;
   };

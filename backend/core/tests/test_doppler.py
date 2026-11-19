@@ -95,8 +95,9 @@ def test_lecture_d_un_message_decode():
     b = doppler.lire_message(texte)
     assert b.nature == "V" and b.elevation == 2.4 and b.porte_m == 128000.0
     assert b.latitude == pytest.approx(44.32306) and b.isotherme0 == 1700.0
-    assert b.valeurs[0, 0] == pytest.approx(-0.2) and math.isnan(b.valeurs[0, 1])
-    assert b.valeurs[1, 0] == pytest.approx(9.8) and b.valeurs[1, 1] == pytest.approx(-10.2)
+    # Météo-France compte la vitesse positive VERS le radar : retournée au décodage.
+    assert b.valeurs[0, 0] == pytest.approx(0.2) and math.isnan(b.valeurs[0, 1])
+    assert b.valeurs[1, 0] == pytest.approx(-9.8) and b.valeurs[1, 1] == pytest.approx(10.2)
 
 
 def test_decoupage_en_messages():
@@ -127,3 +128,37 @@ def test_releve_met_a_jour_la_cellule_avec_le_radar_proche():
     assert {c.args[0] for c in appel.call_args_list} == {99}         # le radar lointain n'est pas lu
     cellule = CelluleOrage.objects.get()
     assert cellule.doppler_rotation["radar"] == "Essai" and cellule.doppler_radars == ["Essai"]
+
+
+def _texte_pam(codes):
+    entete = [" 0 30  21       2.0000000            Number of pixels per row",
+              " 0 30  22       2.0000000            Number of pixels per column",
+              " 0  2 135       0.8000000            Antenna elevation",
+              " 0 31 192       4.0000000            Facteur super elargi de repetition differe du descripteur"]
+    return "\n".join(entete + [f"              {c:.7f}   0 30   1 Pixel value (4 bits)" for c in codes])
+
+
+def test_codages_de_la_double_polarisation():
+    rho = doppler.lire_message(_texte_pam([69, 255, 0, 66]), "RHO")
+    assert rho.nature == "RHO" and rho.valeurs[0, 0] == pytest.approx(0.995) and math.isnan(rho.valeurs[0, 1])
+    zdr = doppler.lire_message(_texte_pam([100, 110, 90, 255]), "ZDR")
+    assert zdr.valeurs[0, 0] == pytest.approx(0.05) and zdr.valeurs[0, 1] == pytest.approx(1.05)
+    z = doppler.lire_message(_texte_pam([0, 1, 2, 60]), "Z")
+    assert math.isnan(z.valeurs[0, 0]) and math.isnan(z.valeurs[0, 1]) and z.valeurs[1, 1] == pytest.approx(49.5)
+
+
+def test_grele_et_debris_par_la_double_polarisation():
+    forme = (720, 1066)
+    z, rho, zdr = numpy.full(forme, 20.0), numpy.full(forme, 0.99), numpy.full(forme, 1.5)
+    rangees = slice(178, 184)                       # vers 90°
+    portes = slice(int(59000 / 240), int(61000 / 240))
+    z[rangees, portes], rho[rangees, portes], zdr[rangees, portes] = 55.0, 0.93, 0.2
+    lus = [balayage(n, 0.8, v, porte_m=240.0) for n, v in (("Z", z), ("RHO", rho), ("ZDR", zdr))]
+    zone = zone_autour()
+    resultat = doppler.polarimetrie(lus, zone)
+    assert resultat["grele"] is True and resultat["portes_grele"] >= 5 and resultat["debris"] is False
+    # Corrélation effondrée au cœur d'une rotation : signature de débris.
+    rho[rangees, portes], z[rangees, portes] = 0.6, 45.0
+    lus = [balayage(n, 0.8, v, porte_m=240.0) for n, v in (("Z", z), ("RHO", rho), ("ZDR", zdr))]
+    centre = doppler.position(lus[0], 90.25, 60000)
+    assert doppler.polarimetrie(lus, zone, centre)["debris"] is True
