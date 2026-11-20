@@ -13,8 +13,9 @@ adresse (`Habitation.ban_id`).
 **D'où viennent les adresses de la commune.** De trois sources, mises ensemble : le relevé que
 la simulation d'inondation rapatrie de la Base Adresse Nationale (`AdresseSimuleeInondation`) ;
 les habitations référencées pour le suivi des dégâts d'une crise, quel que soit le sinistre —
-feu, tempête, eau (`Habitation`) ; et, à défaut des deux, un relevé simple demandé d'ici
-(`relever_les_adresses`), sans simulation. Le rattachement ne dépend donc pas du risque
+feu, tempête, eau (`Habitation`) ; et, à défaut des deux, un relevé simple sans simulation
+(`relever_les_adresses`), demandé AUTOMATIQUEMENT dès que la carte ou le registre constate
+qu'aucune adresse n'est connue (`demander_le_releve`, 20/11/2026). Le rattachement ne dépend donc pas du risque
 d'inondation. Aucune adresse de personne vulnérable ne part vers un service de recherche
 d'adresses, pas même ce que l'agent tape : la recherche se fait dans ce relevé, sur notre serveur.
 
@@ -69,6 +70,31 @@ def relever_les_adresses(commune_code: str, environment) -> int:
         location=Point(a["lon"], a["lat"], srid=4326), environment=environment) for a in resultat["adresses"]]
     AdresseSimuleeInondation.objects.bulk_create(lignes)
     return len(lignes)
+
+
+#: Une demande de relevé par commune et par demi-heure au plus : la carte et le registre la
+#: refont à chaque affichage tant qu'aucune adresse n'est connue.
+DELAI_ENTRE_DEMANDES_S = 1800
+
+
+def cle_de_demande(commune_code: str, environment) -> str:
+    return f"releve-adresses:{environment}:{commune_code}"
+
+
+def demander_le_releve(commune_code: str, environment) -> bool:
+    """Demande en tâche de fond le relevé simple des adresses de la commune (voir
+    `relever_les_adresses`), une fois par demi-heure au plus. Appelé quand la carte ou le
+    registre constate qu'aucune adresse n'est connue : une personne vulnérable l'est quel que
+    soit le risque -- tempête, coupure d'électricité, canicule, inondation --, et ses secteurs ne
+    doivent pas attendre qu'une simulation d'inondation ait été lancée. Seul le code de la
+    commune part vers la Base Adresse Nationale. Rend vrai : un relevé est en cours."""
+    from django.core.cache import cache
+
+    from .tasks import relever_adresses_commune_task
+
+    if cache.add(cle_de_demande(commune_code, environment), 1, DELAI_ENTRE_DEMANDES_S):
+        relever_adresses_commune_task.delay(commune_code, environment)
+    return True
 
 
 class Releve:

@@ -776,6 +776,34 @@ class TestSecteursSurLaCarte:
 
         assert reponse.data["features"] == [] and reponse.data["non_situees"] == 1 and reponse.data["releve_disponible"] is True
 
+    def test_sans_aucune_adresse_le_releve_est_demande_sans_simulation(self, create_user, mairie, maire):
+        """Une personne vulnérable l'est quel que soit le risque : ses secteurs n'attendent pas
+        une simulation d'inondation. Le relevé simple est demandé une fois, puis on attend."""
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from core.rattachement_adresses import cle_de_demande
+
+        self._inscrire(mairie, "1 rue du Bourg")
+        client = self._client(self._teneur(create_user, mairie, maire))
+        for environnement in ("PROD", "DEMO"):
+            cache.delete(cle_de_demande(COMMUNE_CODE, environnement))
+        with mock.patch("core.tasks.relever_adresses_commune_task.delay") as relever:
+            premiere = client.get(URL_SECTEURS).data
+            seconde = client.get(URL_SECTEURS).data
+        assert premiere["releve_disponible"] is False and premiere["releve_demande"] is True
+        assert seconde["releve_demande"] is True
+        assert relever.call_count == 1 and relever.call_args.args[0] == COMMUNE_CODE
+
+    def test_le_releve_n_est_demande_que_pour_sa_propre_commune(self, create_user, mairie):
+        from unittest import mock
+
+        admin = create_user(username="admin-releve@test.fr", email="admin-releve@test.fr", type="ADMIN")
+        with mock.patch("core.tasks.relever_adresses_commune_task.delay") as relever:
+            reponse = self._client(admin).get(URL_SECTEURS, {"commune_code": "99999"})
+        assert reponse.data["releve_demande"] is False and relever.call_count == 0
+
     def test_la_meme_adresse_se_reconnait_ecrite_de_deux_facons(self):
         from core.secteurs_vulnerables import cle_d_adresse
 

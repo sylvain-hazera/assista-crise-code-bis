@@ -389,8 +389,11 @@ describe('MapComponent', () => {
       component.layerVisibility.secteursVulnerables = true;
       component.onLayerToggle();
       http.expectOne(r => r.url === `${api}/personnes-vulnerables/secteurs/`)
-        .flush({ type: 'FeatureCollection', libelle: 'x', situees: 0, non_situees: 3, releve_disponible: false, features: [] });
-      expect(component.noteSecteursVulnerables).toContain('relevé des adresses manquant');
+        .flush({ type: 'FeatureCollection', libelle: 'x', situees: 0, non_situees: 3, releve_disponible: false,
+                 releve_demande: true, features: [] });
+      // Le relevé se fait sans simulation : la carte ne renvoie plus vers l'inondation.
+      expect(component.noteSecteursVulnerables).toContain('relevé des adresses de la commune en cours');
+      expect(component.noteSecteursVulnerables).not.toContain('inondation');
 
       component.layerVisibility.secteursVulnerables = false;
       component.onLayerToggle();

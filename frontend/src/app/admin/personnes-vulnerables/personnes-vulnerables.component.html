@@ -97,8 +97,15 @@
     @if (rattachement; as r) {
       <section class="rattachement">
         @if (!r.releve_disponible) {
-          <p><span class="material-icons">link_off</span> La commune n'a pas encore de relevé d'adresses : lancez une fois la
-            simulation d'inondation pour pouvoir rattacher les fiches à leurs adresses.</p>
+          <p><span class="material-icons">link_off</span>
+            @if (r.releve_demande || releveDemande) {
+              Relevé des adresses de la commune en cours (Base Adresse Nationale, quelques minutes) : les fiches pourront
+              ensuite être rattachées à leur adresse et apparaître sur la carte, quel que soit le risque.
+            } @else {
+              La commune n'a pas encore de relevé d'adresses.
+              <button type="button" class="btn-secondary" (click)="releverAdresses()">Relever les adresses de la commune</button>
+            }
+          </p>
         } @else if (!r.a_rattacher.length) {
           <p><span class="material-icons">link</span> Les {{ r.fiches }} fiche{{ r.fiches > 1 ? 's sont rattachées' : ' est rattachée' }} à une adresse de la commune.</p>
         } @else {

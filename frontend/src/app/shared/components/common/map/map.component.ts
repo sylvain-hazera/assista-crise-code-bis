@@ -1273,9 +1273,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           features: reponse.features.map(f => ({ ...f, properties: { infobulle: `<strong>${libelle}</strong>` } })),
         }, { 'fill-color': '#f97316', 'fill-opacity': 0.28, 'fill-outline-color': '#c2410c' },
         this.layerVisibility.secteursVulnerables);
-        this.noteSecteursVulnerables = !reponse.releve_disponible
-          ? 'relevé des adresses manquant : lancez la simulation d’inondation de la commune'
-          : reponse.non_situees ? `${reponse.non_situees} fiche(s) non située(s)` : '';
+        if (!reponse.releve_disponible && reponse.releve_demande) {
+          // Le serveur relève les adresses de la commune (quelques minutes) : on relit ensuite.
+          this.noteSecteursVulnerables = 'relevé des adresses de la commune en cours, les cercles apparaîtront dans quelques minutes';
+          setTimeout(() => { if (this.map && this.layerVisibility.secteursVulnerables) this.chargerSecteursVulnerables(); }, 180_000);
+        } else {
+          this.noteSecteursVulnerables = !reponse.releve_disponible
+            ? 'aucune adresse connue pour la commune'
+            : reponse.non_situees ? `${reponse.non_situees} fiche(s) non située(s)` : '';
+        }
       },
       error: () => {
         this.secteursVulnerablesCharges = false;

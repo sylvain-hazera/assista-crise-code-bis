@@ -72,6 +72,11 @@ export class PersonneVulnerableService {
     return this.http.post<PersonneVulnerable>(`${this.url}/${id}/rattacher/`, { ban_id: banId });
   }
 
+  /** Demande le relevé des adresses de la commune (Base Adresse Nationale), sans simulation. */
+  releverAdresses(communeCode?: string): Observable<{ demande: boolean }> {
+    return this.http.post<{ demande: boolean }>(`${this.url}/relever-adresses/`, communeCode ? { commune_code: communeCode } : {});
+  }
+
   /** Rattache d'un coup les fiches dont l'adresse est mot pour mot une adresse du relevé. */
   rattacherExactes(communeCode?: string): Observable<EtatRattachement> {
     return this.http.post<EtatRattachement>(`${this.url}/rattacher-exactes/`, communeCode ? { commune_code: communeCode } : {});
@@ -166,4 +171,6 @@ export interface SecteursVulnerables {
   situees: number;
   non_situees: number;
   releve_disponible: boolean;
+  /** Aucune adresse connue : le serveur vient de demander le relevé de la commune. */
+  releve_demande?: boolean;
 }

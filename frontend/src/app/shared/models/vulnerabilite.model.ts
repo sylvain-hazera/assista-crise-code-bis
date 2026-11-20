@@ -51,6 +51,8 @@ export interface EtatRattachement {
   exactes: number;
   a_rattacher: { id: string; nom: string; adresse: string; propositions: AdresseDeLaCommune[]; lien_perdu: boolean }[];
   rattachees_a_l_instant?: number;
+  /** Aucune adresse connue : le serveur vient de demander le relevé de la commune. */
+  releve_demande?: boolean;
 }
 
 /** Ce que le rattachement apporte : niveau d'eau qui atteint l'adresse, dégâts constatés. */

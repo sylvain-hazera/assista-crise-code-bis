@@ -117,6 +117,17 @@ export class PersonnesVulnerablesComponent implements OnInit {
     this.personneVulnerableService.exposition(commune).subscribe({ next: (e) => this.exposition = e, error: () => {} });
   }
 
+  /** Relevé des adresses demandé d'ici (sans simulation) : on relit le rattachement ensuite. */
+  releveDemande = false;
+
+  releverAdresses(): void {
+    const commune = this.communes.length === 1 ? this.communes[0] : (this.communeAImprimer || undefined);
+    this.personneVulnerableService.releverAdresses(commune).subscribe({
+      next: () => { this.releveDemande = true; setTimeout(() => this.chargerRattachement(), 180_000); },
+      error: () => { this.errorMessage = "Le relevé des adresses n'a pas pu être demandé."; },
+    });
+  }
+
   private apresRattachement(): void {
     this.personneVulnerableService.getAll().subscribe({ next: (personnes) => { this.personnes = personnes; this.chargerRattachement(); } });
   }

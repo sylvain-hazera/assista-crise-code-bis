@@ -7127,7 +7127,14 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         commune_code = self._commune_demandee(request)
         self._refuser_si_non_accede(commune_code)
         personnes = list(self.get_queryset().filter(commune_code=commune_code, actif=True))
-        return Response(etat_du_rattachement(personnes, Releve(commune_code, get_active_environment(request))))
+        environment = get_active_environment(request)
+        releve = Releve(commune_code, environment)
+        etat = etat_du_rattachement(personnes, releve)
+        etat["releve_demande"] = False
+        if not releve.disponible:
+            from .rattachement_adresses import demander_le_releve
+            etat["releve_demande"] = demander_le_releve(commune_code, environment)
+        return Response(etat)
 
     @action(detail=True, methods=["post"], url_path="rattacher")
     def rattacher(self, request, pk=None):
@@ -7249,6 +7256,12 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             commune_code=commune_code, actif=True, environment=environment))
         resultat = secteurs_vulnerables.secteurs(personnes, commune_code, environment)
         fiches = resultat.pop("_fiches")
+        # Aucune adresse connue : le relevé simple est demandé ici, pour sa propre commune
+        # seulement. Les secteurs ne dépendent pas d'une simulation d'inondation.
+        resultat["releve_demande"] = False
+        if not resultat["releve_disponible"] and commune_code == getattr(institution, "commune_code", None):
+            from .rattachement_adresses import demander_le_releve
+            resultat["releve_demande"] = demander_le_releve(commune_code, environment)
         audit_log(
             request=request, action_code="LECTURE", objet_type="PersonneVulnerable", objet_id=None,
             exposition=AuditLog.Exposition.LISTE_SANS_COORDONNEES, objets_ids=fiches,
