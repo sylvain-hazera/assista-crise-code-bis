@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AntennesIndisponibles, ArretesCirculation, Circulation, QualiteAir, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
-  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar,
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar, PluieRadar,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -74,6 +74,20 @@ export class VeilleService {
   /** Orages et pluies intenses autour de la commune de l'institution (radar, toutes les 5 min). */
   orages(emprise?: EmpriseVeille): Observable<OragesRadar> {
     return this.http.get<OragesRadar>(`${this.api}/orages/`, emprise ? { params: this.params(emprise) } : {});
+  }
+
+  /** Toutes les cellules orageuses du pays (sans cumuls ni foudre, qui sont par territoire). */
+  oragesFrance(): Observable<OragesRadar> {
+    return this.http.get<OragesRadar>(`${this.api}/orages/`, { params: { france: '1' } });
+  }
+
+  /** Dernière pluie observée par le radar : heure, coins et légende de l'image. */
+  pluieRadar(): Observable<PluieRadar> {
+    return this.http.get<PluieRadar>(`${this.api}/orages/radar/`);
+  }
+
+  imagePluieRadarUrl(heure: string): string {
+    return `${this.api}/orages/radar/image/?heure=${encodeURIComponent(heure)}`;
   }
 
   /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.

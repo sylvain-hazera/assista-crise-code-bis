@@ -25,7 +25,7 @@ import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-op
 import { VeilleService } from '../../../../services/veille.service';
 import {
   EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_GRAVITE_ANTENNE,
-  LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PrecipitationsHiver, RafalesPrevues, CelluleOrage,
+  LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PluieRadar, PrecipitationsHiver, RafalesPrevues, CelluleOrage,
   StationCarburant,
   VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
@@ -60,6 +60,8 @@ interface LayerVisibility {
   rafales: boolean;
   /** Neige, verglas et grêle prévus dans les trois heures, sur la même réglette. */
   hiver: boolean;
+  /** Pluie observée par le radar (20/11/2026) : la dernière lame d'eau, peinte par paliers. */
+  pluieRadar: boolean;
   /** Orages selon les relevés radar (19/11/2026) : contours des cellules de pluie intense, et
    * couloir estimé sur une heure. Rafraîchi toutes les deux minutes tant qu'il est affiché. */
   orages: boolean;
@@ -123,6 +125,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Center of France by default, will be updated to user location if available
   @Input() center: [number, number] = [2.2137, 46.2276];
   @Input() zoom: number = 5;
+  /** Carte météo (20/11/2026) : seulement les calques météo, la pluie observée, les orages et
+   * les éclairs affichés d'entrée, et rien d'autre de chargé (ni crises, ni positions). */
+  @Input() modeMeteo = false;
 
   // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
@@ -154,6 +159,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     pluie: false,
     rafales: false,
     hiver: false,
+    pluieRadar: false,
     orages: false,
     eclairs: false,
     blitzortung: false,
@@ -206,6 +212,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private personneVulnerableService: PersonneVulnerableService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
+    if (this.modeMeteo) {
+      for (const cle of Object.keys(this.layerVisibility) as (keyof LayerVisibility)[]) {
+        this.layerVisibility[cle] = false;
+      }
+      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, eclairs: true });
+      this.layersPanelOpen = true;
+      this.runWhenMapReady(() => this.onLayerToggle());
+      return;
+    }
 
     // Load user location and center map on it if available, otherwise keep default center
     this.loadUserLocation();
@@ -259,12 +274,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('stations-meteo-layer', this.layerVisibility.stationsMeteo);
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
+    this.applyLayerVisibility('pluie-radar-layer', this.layerVisibility.pluieRadar);
     this.applyLayerVisibility('orages-layer', this.layerVisibility.orages);
     this.applyLayerVisibility('orages-couloirs-layer', this.layerVisibility.orages);
     this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
     this.applyLayerVisibility('blitzortung-layer', this.layerVisibility.blitzortung);
-    if ((this.layerVisibility.orages || this.layerVisibility.eclairs || this.layerVisibility.blitzortung)
-        && !this.rafraichissementOrages) {
+    if ((this.layerVisibility.orages || this.layerVisibility.eclairs || this.layerVisibility.blitzortung
+         || this.layerVisibility.pluieRadar) && !this.rafraichissementOrages) {
       // Une image radar toutes les cinq minutes : relire toutes les deux suffit.
       this.rafraichissementOrages = setInterval(() => this.rafraichirVeille(), 120_000);
     }
@@ -299,7 +315,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung, pluieRadar } = this.layerVisibility;
+    if (pluieRadar) this.chargerPluieRadar();
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
@@ -1161,6 +1178,44 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.noteSecteursVulnerables = 'secteurs indisponibles pour le moment';
       },
     });
+  }
+
+  // ── Pluie observée par le radar : une image nationale, remplacée à chaque nouvelle image ──
+  pluieRadar: PluieRadar | null = null;
+
+  private chargerPluieRadar(): void {
+    this.veilleService.pluieRadar().subscribe({
+      next: (reponse) => {
+        const nouvelle = reponse.heure !== this.pluieRadar?.heure;
+        this.pluieRadar = reponse;
+        if (!nouvelle || !reponse.heure || !reponse.coins) return;
+        const url = this.veilleService.imagePluieRadarUrl(reponse.heure);
+        const coordinates = reponse.coins;
+        this.runWhenMapReady(() => {
+          if (!this.map) return;
+          const source = this.map.getSource('pluie-radar') as maplibregl.ImageSource | undefined;
+          if (source) {
+            source.updateImage({ url, coordinates });
+            return;
+          }
+          this.map.addSource('pluie-radar', { type: 'image', url, coordinates });
+          // Sous les contours des cellules quand ils sont déjà là, sinon sous les libellés.
+          const dessous = ['orages-couloirs-layer', 'orages-layer'].find(id => this.map!.getLayer(id))
+            ?? this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+          this.map.addLayer({
+            id: 'pluie-radar-layer', type: 'raster', source: 'pluie-radar',
+            layout: { visibility: this.layerVisibility.pluieRadar ? 'visible' : 'none' },
+            paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+          }, dessous);
+        });
+      },
+      error: () => {},
+    });
+  }
+
+  /** Centre la carte sur un point (liste de la carte météo). */
+  centrerSur(longitude: number, latitude: number, zoom = 9): void {
+    this.map?.flyTo({ center: [longitude, latitude], zoom: Math.max(this.map.getZoom(), zoom) });
   }
 
   oragesHeureImage: string | null = null;

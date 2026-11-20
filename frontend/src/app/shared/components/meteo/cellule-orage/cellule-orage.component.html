@@ -1,0 +1,74 @@
+@let c = cellule;
+<article class="cellule" [class.forte]="c.releves.intensite_max_mmh >= 50">
+  <h3>
+    {{ c.releves.libelle | titlecase }}
+    @if (c.distance_km != null) { <span class="distance">à {{ c.distance_km }} km</span> }
+    @if (c.estimations.ligne_de_grain) { <span class="etiquette">ligne de grain</span> }
+    <!-- Place d'une action propre à la page (« voir sur la carte »). -->
+    <span class="action"><ng-content /></span>
+  </h3>
+  <div class="nature releves">
+    <span class="libelle-nature">Selon les relevés</span>
+    <p>
+      Jusqu'à <strong>{{ c.releves.intensite_max_mmh | number:'1.0-0' }} mm/h</strong>
+      sur {{ c.releves.surface_km2 | number:'1.0-0' }} km²@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh >= 10) {, <strong>en renforcement</strong>}@if (c.releves.tendance_mmh != null && c.releves.tendance_mmh <= -10) {, en affaiblissement}.
+      @if (c.releves.communes_sous_la_pluie.length) { Sous la pluie : {{ communesOrage() }}. }
+      @if (c.releves.rafale_mesuree; as r) { Rafale mesurée : <strong>{{ r.kmh }} km/h</strong> à {{ r.station }}. }
+      @if (c.releves.eclairs) { <strong>{{ c.releves.eclairs }} éclair(s)</strong> vus par satellite sous la cellule. }
+      @if (c.releves.suivi; as s) {
+        <br>@if (s.suivie_depuis_min) {Suivie depuis {{ s.suivie_depuis_min }} min} @else {Apparue sur la dernière image}
+        ({{ s.noyaux }} noyau{{ s.noyaux > 1 ? 'x' : '' }}@if (s.noyaux_intenses) {, dont {{ s.noyaux_intenses }} au-delà de 50 mm/h})@if (s.evolution === 'renforcement') {, <strong>en renforcement</strong>}@if (s.evolution === 'affaiblissement') {, en affaiblissement}@if (s.evolution === 'stable') {, stable}@if (s.max_10min_mmh != null && s.surface_10min_km2 != null) { ({{ s.max_10min_mmh > 0 ? '+' : '' }}{{ s.max_10min_mmh | number:'1.0-0' }} mm/h, {{ s.surface_10min_km2 > 0 ? '+' : '' }}{{ s.surface_10min_km2 | number:'1.0-0' }} km² en 10 min)}.
+        @if (s.fusion) { <strong>Fusion de cellules</strong> dans l'heure. }
+        @if (s.division) { Division de cellule dans l'heure. }
+      }
+      @if (c.releves.doppler; as d) {
+        @if (d.rotation; as rot) {
+          <br><strong class="alerte-doppler">Rotation détectée</strong> par le radar de {{ rot.radar }}
+          (vitesse de rotation ~{{ rot.vrot_ms * 3.6 | number:'1.0-0' }} km/h, sur {{ rot.elevations.length }} angles de visée).
+        }
+        @if (d.grele?.probable) {
+          <br><strong>Grêle probable</strong> selon le radar de {{ d.grele!.radar }} : écho de 45 dBZ jusqu'à
+          {{ d.grele!.sommet_45_m | number:'1.0-0' }} m, isotherme 0 °C à {{ d.grele!.isotherme0_m | number:'1.0-0' }} m.
+        }
+        @if (d.polarimetrie?.debris) {
+          <br><strong class="alerte-doppler">Signature de débris</strong> au cœur de la rotation (radar de {{ d.polarimetrie!.radar }}) :
+          objets soulevés, tornade au sol probable.
+        }
+        @if (d.polarimetrie?.grele) {
+          <br><strong>Grêle détectée par la double polarisation</strong> (radar de {{ d.polarimetrie!.radar }}).
+        }
+        @if (d.divergence; as div) {
+          <br><strong>Divergence forte près du sol</strong> (rafale descendante possible), radar de {{ div.radar }} :
+          {{ div.ms * 3.6 | number:'1.0-0' }} km/h d'écart sur quelques kilomètres.
+        }
+      }
+    </p>
+  </div>
+  @if (c.estimations.vitesse_kmh != null) {
+    <div class="nature estimations">
+      <span class="libelle-nature">Nos estimations (qui ne sont pas des prévisions)</span>
+      <p>
+        Se déplace vers {{ c.estimations.vers }} à environ {{ c.estimations.vitesse_kmh }} km/h.
+        @for (g of atteintesParDelai(); track g.delai) {
+          <br>D'ici {{ g.delai }} min, si rien ne change : {{ g.noms }}.
+        }
+        @if (c.estimations.ligne_de_grain) {
+          <br>Forme de ligne de grain : bande d'environ {{ c.estimations.longueur_km }} km qui avance de front.
+        }
+      </p>
+    </div>
+  }
+  @if (c.prevision_meteo_france.grele || c.prevision_meteo_france.rafale_kmh || c.prevision_meteo_france.grele_niveau) {
+    <div class="nature prevision">
+      <span class="libelle-nature">Selon la prévision Météo-France</span>
+      <p>
+        @if (c.prevision_meteo_france.grele) { <strong>Grêle prévue</strong> sous cette cellule. }
+        @if (c.prevision_meteo_france.grele_niveau; as niveau) {
+          Diagnostic de grêle : <strong>{{ niveau }}</strong>
+          ({{ c.prevision_meteo_france.grele_diagnostic_kgm2 | number:'1.0-1' }} kg/m² ; grêle au-delà de 8, grosse grêle au-delà de 12).
+        }
+        @if (c.prevision_meteo_france.rafale_kmh) { Rafales prévues de {{ c.prevision_meteo_france.rafale_kmh }} km/h ou plus. }
+      </p>
+    </div>
+  }
+</article>

@@ -1,0 +1,139 @@
+<div class="carte-meteo">
+  <header class="entete">
+    <div class="titre">
+      <h1>Carte météo</h1>
+      <p class="etat" role="status">
+        @if (orages?.heure_image) {
+          Image radar de <strong>{{ orages!.heure_image | date:'HH:mm' }}</strong>
+          · {{ orages!.radars }} radar(s)@if (orages!.radars_absents.length) {, {{ orages!.radars_absents.length }} absent(s)}
+          @if (orages!.perime) { · <strong class="ancien">analyse ancienne</strong> }
+        } @else if (!erreur) {
+          Lecture de l'analyse radar…
+        }
+      </p>
+    </div>
+    <div class="perimetre" role="group" aria-label="Périmètre de la retranscription">
+      <button type="button" [class.actif]="perimetre === 'territoire'" [attr.aria-pressed]="perimetre === 'territoire'"
+              (click)="choisirPerimetre('territoire')">Mon territoire</button>
+      <button type="button" [class.actif]="perimetre === 'france'" [attr.aria-pressed]="perimetre === 'france'"
+              (click)="choisirPerimetre('france')">France entière</button>
+    </div>
+  </header>
+
+  <div class="corps">
+    <section class="carte" aria-label="Carte">
+      <app-map [modeMeteo]="true" />
+    </section>
+
+    <aside class="retranscription" aria-label="Retranscription de la carte">
+      @if (erreur) {
+        <p class="message">Analyse radar indisponible pour le moment.</p>
+      } @else if (orages) {
+        @let s = synthese;
+        <section class="synthese">
+          <h2>En ce moment
+            @if (perimetre === 'territoire' && orages.rayon_km) { <small>à moins de {{ orages.rayon_km }} km</small> }
+            @else { <small>en métropole</small> }
+          </h2>
+          @if (orages.couvert === false) {
+            <p class="message avertissement">Votre commune n'est pas couverte par le radar en ce moment :
+              l'absence d'orage ne veut pas dire qu'il n'y en a pas.</p>
+          }
+          <dl>
+            <div><dt>Cellules de pluie intense</dt><dd>{{ s.cellules }}</dd></div>
+            <div [class.alerte]="s.fortes"><dt>Au-delà de 50 mm/h</dt><dd>{{ s.fortes }}</dd></div>
+            <div [class.alerte]="s.renforcement"><dt>En renforcement</dt><dd>{{ s.renforcement }}</dd></div>
+            <div [class.alerte]="s.rotations"><dt>Rotation détectée</dt><dd>{{ s.rotations }}</dd></div>
+            <div [class.alerte]="s.grele"><dt>Grêle (relevée ou prévue)</dt><dd>{{ s.grele }}</dd></div>
+            <div [class.alerte]="s.lignes"><dt>Lignes de grain</dt><dd>{{ s.lignes }}</dd></div>
+          </dl>
+          <p class="legende-natures">
+            Trois natures d'information, jamais mélangées : <strong>selon les relevés</strong> (ce que le radar et les
+            stations ont vu), <strong class="estimation">nos estimations</strong> (qui ne sont pas des prévisions) et
+            <strong class="prevision">la prévision Météo-France</strong>.
+          </p>
+        </section>
+
+        <section class="cellules">
+          <h2>Cellules orageuses</h2>
+          @for (c of cellules; track c.identifiant) {
+            <app-cellule-orage [cellule]="c">
+              <button type="button" class="voir" (click)="voirSurLaCarte(c)" title="Centrer la carte sur cette cellule">
+                <span class="material-icons" aria-hidden="true">my_location</span> Voir
+              </button>
+            </app-cellule-orage>
+          } @empty {
+            @if (!orages.perime) {
+              <p class="calme">Aucune cellule de pluie intense (30 mm/h ou plus)@if (perimetre === 'territoire') { sur votre territoire} @else { en métropole}.</p>
+            }
+          }
+        </section>
+
+        @if (orages.foudre; as f) {
+          <section class="foudre" [class.active]="f.eclairs_15min > 0">
+            <h2><span class="material-icons" aria-hidden="true">bolt</span> Foudre, selon le satellite</h2>
+            <p>
+              @if (f.eclairs_1h) {
+                {{ f.eclairs_1h }} éclair(s) en une heure, dont {{ f.eclairs_15min }} dans le dernier quart d'heure ;
+                dernier à {{ f.dernier_ici | date:'HH:mm' }}.
+              } @else { Aucun éclair dans l'heure. }
+            </p>
+            <small [class.ancien]="f.perime">Données jusqu'à {{ f.derniere_donnee | date:'HH:mm' }} (MTG, EUMETSAT) :
+              10 à 20 minutes de retard, position à quelques kilomètres près.</small>
+          </section>
+        }
+        @if (orages.blitzortung; as b) {
+          <section class="foudre indicatif">
+            <h2><span class="material-icons" aria-hidden="true">flash_on</span> Impacts Blitzortung</h2>
+            <p>{{ b.impacts_1h }} impact(s) en une heure, dont {{ b.impacts_15min }} dans le dernier quart d'heure.</p>
+            <small>Informations Blitzortung données à titre indicatif.</small>
+          </section>
+        }
+
+        @if (orages.cumuls; as cumuls) {
+          <section class="cumuls">
+            <h2>Pluie tombée, selon les relevés du radar</h2>
+            <div class="defilement">
+              <table>
+                <thead><tr><th>Commune</th>@for (f of FENETRES; track f) { <th>{{ f }}</th> }<th class="estime">heure qui vient*</th></tr></thead>
+                <tbody>
+                  @if (cumuls.ma_commune; as m) {
+                    <tr class="ma-commune">
+                      <td>{{ m.nom }} <small>(votre commune)</small></td>
+                      @for (f of FENETRES; track f) { <td [class.fort]="m.fort.includes(f)">{{ m.mm[f] | number:'1.0-1' }}</td> }
+                      <td class="estime">@if (m.estimation; as e) { {{ e.cumul_mm | number:'1.0-1' }} } @else { — }</td>
+                    </tr>
+                  }
+                  @for (c of cumuls.plus_arrosees; track c.code) {
+                    @if (c.code !== cumuls.ma_commune?.code) {
+                      <tr>
+                        <td>{{ c.nom }}</td>
+                        @for (f of FENETRES; track f) { <td [class.fort]="c.fort.includes(f)">{{ c.mm[f] | number:'1.0-1' }}</td> }
+                        <td class="estime">@if (c.estimation; as e) { {{ e.cumul_mm | number:'1.0-1' }} } @else { — }</td>
+                      </tr>
+                    }
+                  }
+                </tbody>
+              </table>
+            </div>
+            <small>En mm. En gras : au-delà de {{ cumuls.seuils_mm['1h'] }} mm en 1 h, {{ cumuls.seuils_mm['3h'] }} mm en 3 h,
+              {{ cumuls.seuils_mm['24h'] }} mm en 24 h. * Nos estimations (qui ne sont pas des prévisions).</small>
+            @if (cumuls.pluie_intense_attendue.length) {
+              <h3>Pluie intense attendue dans l'heure <small>(nos estimations)</small></h3>
+              <ul class="attendue">
+                @for (c of cumuls.pluie_intense_attendue; track c.code) {
+                  <li><strong>{{ c.nom }}</strong> : dans {{ c.estimation!.intense_dans_min }} min environ,
+                    jusqu'à {{ c.estimation!.max_mmh | number:'1.0-0' }} mm/h.</li>
+                }
+              </ul>
+            }
+          </section>
+        } @else if (perimetre === 'france') {
+          <p class="note">Foudre et cumuls de pluie : affichés sur votre territoire seulement.</p>
+        }
+      } @else {
+        <p class="note">Lecture de l'analyse radar…</p>
+      }
+    </aside>
+  </div>
+</div>

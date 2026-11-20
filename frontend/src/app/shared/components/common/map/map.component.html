@@ -87,7 +87,74 @@
       </button>
     }
 
-    @if (layersPanelOpen) {
+    @if (layersPanelOpen && modeMeteo) {
+    <!-- Carte météo : seulement les calques météo, dans l'ordre où on les lit. -->
+    <div class="layer-toggle-panel">
+      <div class="layer-toggle-title">
+        Calques météo
+        <button type="button" class="layer-toggle-close" (click)="layersPanelOpen = false" title="Fermer">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="layer-toggle-groupe">Selon les relevés</div>
+      <label class="layer-toggle-item" title="La dernière image de pluie du radar de Météo-France (toutes les cinq minutes), en mm/h. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.pluieRadar" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot pluie-radar-dot"></span>
+        Pluie observée (radar)@if (layerVisibility.pluieRadar && pluieRadar?.heure) { <small [class.ancien]="pluieRadar!.perime">&nbsp;{{ pluieRadar!.heure | date:'HH:mm' }}</small> }
+      </label>
+      <label class="layer-toggle-item" title="Cellules de pluie intense (30 mm/h et plus), et en pointillé le couloir qu'elles balaieraient en une heure SI elles gardaient leur trajectoire — une estimation, pas une prévision.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.orages" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot orages-dot"></span>
+        Orages (radar)@if (layerVisibility.orages && oragesHeureImage) { <small [class.ancien]="oragesPerime">&nbsp;{{ oragesHeureImage | date:'HH:mm' }}</small> }
+      </label>
+      <label class="layer-toggle-item" title="Éclairs vus par le satellite MTG (EUMETSAT) dans l'heure de données la plus récente : 10 à 20 minutes de retard.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.eclairs" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot eclairs-dot"></span>
+        Éclairs (satellite)@if (layerVisibility.eclairs && eclairsDerniereDonnee) { <small>&nbsp;{{ eclairsDerniereDonnee | date:'HH:mm' }}</small> }
+      </label>
+      <label class="layer-toggle-item" title="Informations Blitzortung données à titre indicatif.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.blitzortung" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot blitzortung-dot"></span>
+        Impacts Blitzortung (indicatif)
+      </label>
+      <label class="layer-toggle-item" title="Température, vent, pluie mesurés par les stations Météo-France. Orange : rafale ou pluie forte.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.stationsMeteo" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot meteo-dot"></span>
+        Stations météo : vent, pluie
+      </label>
+      <div class="layer-toggle-groupe">Selon la prévision Météo-France</div>
+      <label class="layer-toggle-item" title="Pluie prévue dans les trois heures, par quart d'heure.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.pluie" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot pluie-dot"></span>
+        Pluie prévue
+      </label>
+      <label class="layer-toggle-item" title="Rafales prévues dans les trois heures.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.rafales" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot rafales-dot"></span>
+        Rafales prévues
+      </label>
+      <label class="layer-toggle-item" title="Neige, pluie verglaçante, grésil, grêle prévus dans les trois heures.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.hiver" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot hiver-dot"></span>
+        Neige, verglas, grêle prévus
+      </label>
+      <label class="layer-toggle-item" title="Vent moyen prévu (ARPEGE), animé.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.vent" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot vent-dot"></span>
+        Vent prévu (animé)
+      </label>
+      @if (layerVisibility.pluieRadar && pluieRadar?.legende?.length) {
+        <div class="rafales-legende radar-legende" aria-label="Légende de la pluie observée, en mm/h">
+          @for (palier of pluieRadar!.legende; track palier.a_partir_de_mmh) {
+            <span><i [style.background]="palier.couleur"></i>{{ palier.a_partir_de_mmh | number:'1.0-1' }}</span>
+          }
+          <span class="unite">mm/h</span>
+        </div>
+      }
+    </div>
+    }
+
+    @if (layersPanelOpen && !modeMeteo) {
     <div class="layer-toggle-panel">
       <div class="layer-toggle-title">
         Calques

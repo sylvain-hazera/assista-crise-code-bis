@@ -30,7 +30,7 @@ from .views_pcs import (
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
-    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, BlitzortungView, FoudreView, OragesView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
+    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, BlitzortungView, FoudreView, OragesView, PluieRadarView, ImagePluieRadarView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -412,6 +412,8 @@ urlpatterns = [
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
     path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
     path('orages/', OragesView.as_view(), name='orages'),
+    path('orages/radar/', PluieRadarView.as_view(), name='orages_radar'),
+    path('orages/radar/image/', ImagePluieRadarView.as_view(), name='orages_radar_image'),
     path('foudre/', FoudreView.as_view(), name='foudre'),
     path('blitzortung/', BlitzortungView.as_view(), name='blitzortung'),
     path('rafales-prevues/image/', ImageRafalesView.as_view(), name='rafales_prevues_image'),

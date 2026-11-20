@@ -2,6 +2,8 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
+import { CelluleOrageComponent } from '../../shared/components/meteo/cellule-orage/cellule-orage.component';
+
 import { VeilleService } from '../../services/veille.service';
 import {
   AntennesIndisponibles, QualiteAir, LIBELLES_GRAVITE_ANTENNE, technologiesCoupees,
@@ -10,7 +12,7 @@ import {
   ObservationMeteo, ObservationsMeteo, RafalesPrevues, PrecipitationsHiver, PhenomeneVigilance, RestrictionsEau, RisqueAvalanche,
   Radioactivite, SanteUrgences, Seisme, Seismes, Volcan,
   VigilanceCrues, ZonesBrulees, StationCarburant, StationsCarburant, VigilanceDepartement, VigilanceMeteo,
-  CelluleOrage, OragesRadar,
+  OragesRadar,
 } from '../../shared/models/veille.model';
 import { Subscription } from 'rxjs';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
@@ -31,7 +33,7 @@ import { pollWhileVisible } from '../../shared/utils/polling.util';
 @Component({
   selector: 'app-veille',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, CelluleOrageComponent],
   templateUrl: './veille.component.html',
   styleUrl: './veille.component.scss',
 })
@@ -135,24 +137,6 @@ export class VeilleComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void { this.suiviOrages?.unsubscribe(); }
-
-  /** Une cellule touche-t-elle déjà la commune de l'institution, ou l'atteindrait-elle ? */
-  communesOrage(cellule: CelluleOrage, max = 12): string {
-    const noms = cellule.releves.communes_sous_la_pluie.map(c => c.nom);
-    return noms.length > max ? `${noms.slice(0, max).join(', ')} et ${noms.length - max} autre(s)` : noms.join(', ');
-  }
-
-  /** Communes atteintes, regroupées par délai : « dans 15 min : A, B ; dans 30 min : C ». */
-  atteintesParDelai(cellule: CelluleOrage): { delai: number; noms: string }[] {
-    const groupes = new Map<number, string[]>();
-    for (const c of cellule.estimations.communes_atteintes) {
-      const tranche = Math.ceil((c.dans_min ?? 0) / 15) * 15;
-      groupes.set(tranche, [...(groupes.get(tranche) ?? []), c.nom]);
-    }
-    return [...groupes].sort((a, b) => a[0] - b[0]).map(([delai, noms]) => ({
-      delai, noms: noms.length > 10 ? `${noms.slice(0, 10).join(', ')} et ${noms.length - 10} autre(s)` : noms.join(', '),
-    }));
-  }
 
   chargerVigilance(departement?: string): void {
     this.erreurVigilance = false;

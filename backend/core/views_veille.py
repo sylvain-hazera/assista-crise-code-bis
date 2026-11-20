@@ -602,6 +602,48 @@ class BlitzortungView(APIView):
                          "type": "FeatureCollection", "features": points})
 
 
+class PluieRadarView(APIView):
+    """GET /api/orages/radar/ : la dernière pluie OBSERVÉE par le radar (core/carte_radar.py) —
+    heure (qui désigne l'image, /api/orages/radar/image/?heure=…), coins où la poser, légende."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from . import carte_radar, orages
+        from .models import ImageRadarOrage
+        image = ImageRadarOrage.objects.order_by("-heure").first()
+        reponse = {**sources_ouvertes.resume("ORAGES_RADAR"), "legende": carte_radar.legende(),
+                   "heure": None, "coins": None, "perime": True}
+        if image is not None:
+            _png, coins = carte_radar.rendre(image)
+            reponse.update({
+                "heure": image.heure, "coins": coins,
+                "perime": timezone.now() - image.heure > orages.FRAICHEUR_MAX + datetime.timedelta(minutes=10),
+            })
+        return Response(reponse)
+
+
+class ImagePluieRadarView(APIView):
+    """GET /api/orages/radar/image/?heure=… : l'image PNG transparente d'une heure gardée.
+    Sans authentification, comme les autres images de la carte."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from django.utils.dateparse import parse_datetime
+
+        from . import carte_radar
+        from .models import ImageRadarOrage
+        heure = parse_datetime(request.query_params.get("heure") or "")
+        image = ImageRadarOrage.objects.filter(heure=heure).first() if heure else None
+        if image is None:
+            return HttpResponseNotFound()
+        png, _coins = carte_radar.rendre(image)
+        reponse = HttpResponse(png, content_type="image/png")
+        # Une heure d'image ne change jamais.
+        reponse["Cache-Control"] = "public, max-age=3600"
+        return reponse
+
+
 class ImageRafalesView(APIView):
     """GET /api/rafales-prevues/image/?echeance=… : l'image d'une échéance (PNG transparent),
     servie comme celle de la pluie."""

@@ -249,3 +249,34 @@ class TestDiagnosticGreleEtCumuls:
         cumuls = r.json()["cumuls"]
         assert [c["nom"] for c in cumuls["plus_arrosees"]] == ["Arrosee"]
         assert cumuls["fenetres"]["1h"] == 2 and cumuls["seuils_mm"]["3h"] == 50
+
+
+@pytest.mark.django_db
+def test_pluie_observee_en_image_pour_la_carte(client):
+    """La dernière image, reprojetée pour la carte : coins plausibles, PNG transparent, une
+    intensité forte peinte de la teinte de son palier."""
+    import io as _io
+
+    from PIL import Image
+
+    from core import carte_radar
+    carte_radar._CACHE.clear()
+    h0 = datetime.datetime(2026, 11, 19, 19, 0, tzinfo=datetime.timezone.utc)
+    with mock.patch.object(orages, "heure_disponible", return_value=h0), \
+         mock.patch.object(orages, "telecharger", return_value=image_hdf5([(300, 300, 10, 5.0)])):
+        orages.relever(maintenant=h0 + datetime.timedelta(minutes=5))
+
+    r = client.get("/api/orages/radar/")
+    assert r.status_code == 200
+    donnees = r.json()
+    (ouest, nord), _, (est, sud), _ = donnees["coins"]
+    assert ouest == pytest.approx(UL_LON, abs=0.05) and ouest < est and sud < nord
+    assert donnees["legende"][0] == {"a_partir_de_mmh": 0.5, "couleur": "#bfdbfe"}
+
+    image = client.get("/api/orages/radar/image/", {"heure": donnees["heure"]})
+    assert image.status_code == 200 and image["Content-Type"] == "image/png"
+    rgba = Image.open(_io.BytesIO(image.content)).convert("RGBA")
+    couleurs = {c for _, c in rgba.getcolors(maxcolors=100000) if c[3] > 0}
+    assert (220, 38, 38, carte_radar.OPACITE) in couleurs           # 60 mm/h : palier 50 mm/h
+    assert rgba.getpixel((0, 0))[3] == 0                            # hors pluie : transparent
+    assert client.get("/api/orages/radar/image/", {"heure": "2020-01-01T00:00:00Z"}).status_code == 404

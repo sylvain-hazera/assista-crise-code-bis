@@ -696,6 +696,15 @@ export interface CumulsPluie {
   pluie_intense_attendue: CumulCommune[];
 }
 
+/** GET /api/orages/radar/ : la dernière pluie OBSERVÉE par le radar, en image pour la carte
+ * (backend/core/carte_radar.py). `heure` désigne l'image. */
+export interface PluieRadar {
+  source: string; releve_le: string | null; perime: boolean;
+  heure: string | null;
+  coins: [[number, number], [number, number], [number, number], [number, number]] | null;
+  legende: { a_partir_de_mmh: number; couleur: string }[];
+}
+
 export interface OragesRadar {
   source: string; releve_le: string | null; perime: boolean;
   heure_image: string | null; radars: number; radars_absents: string[];

@@ -321,3 +321,17 @@
   .material-icons { font-size: 1.6rem; color: var(--ac-text-subtle, #9ca3af); flex: 0 0 auto; }
   div { max-width: 32rem; }
 }
+
+// ── Carte météo (20/11/2026) ────────────────────────────────────────────────
+.pluie-radar-dot { background: linear-gradient(90deg, #60a5fa, #16a34a, #facc15, #dc2626); }
+.layer-toggle-groupe {
+  margin: 8px 0 2px; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ac-text-muted, #6b7280);
+}
+.layer-toggle-panel .radar-legende {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 8px;
+  font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--ac-text, #1f2937);
+  span { display: inline-flex; align-items: center; gap: 3px; }
+  i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, .25); }
+  .unite { color: var(--ac-text-muted, #6b7280); }
+}

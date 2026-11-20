@@ -118,6 +118,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   // Vigilance, routes, carburant : relevés par le serveur (core/sources_ouvertes.py).
   { icon: 'radar', label: 'Veille du territoire', route: '/admin/veille', groupe: 'crise', sousGroupe: 'crise-comprendre' },
+  // Pluie observée, orages, foudre et prévisions sur une carte, avec leur retranscription.
+  { icon: 'thunderstorm', label: 'Carte météo', route: '/admin/carte-meteo', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   // Les chiffres de la crise, pour le point avec la préfecture (core/point_situation.py).
   { icon: 'summarize', label: 'Point de situation', route: '/admin/point-de-situation', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   { icon: 'visibility', label: 'Supervision PC Crise', route: '/admin/supervision-pc-crise', groupe: 'crise', sousGroupe: 'crise-comprendre' },

@@ -315,25 +315,7 @@ table.mesures, table.mesures-sante {
 
 
 // ── Orages (19/11/2026) ─────────────────────────────────────────────────────
-.orages {
-  .cellule {
-    border: 1px solid var(--ac-border, #e5e7eb); border-left: 4px solid var(--ac-amber-text, #b45309);
-    border-radius: 6px; padding: 10px 14px; margin: 0 0 10px; background: var(--ac-surface, #fff);
-    &.forte { border-left-color: var(--ac-red-text, #991b1b); }
-    h3 { margin: 0 0 6px; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; color: var(--ac-text, #111827); }
-    .distance { font-weight: 400; font-size: .85rem; color: var(--ac-text-muted, #4b5563); }
-    .etiquette { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 1px 8px;
-                 border-radius: 999px; background: var(--ac-red-bg, #fee2e2); color: var(--ac-red-text, #991b1b); }
-  }
-  .nature {
-    display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 4px 12px; padding: 4px 0;
-    p { margin: 0; line-height: 1.5; color: var(--ac-text, #111827); }
-    @media (max-width: 640px) { grid-template-columns: 1fr; }
-  }
-  .libelle-nature { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ac-text-muted, #4b5563); padding-top: 2px; }
-  .estimations .libelle-nature { color: var(--ac-blue-text, #1e40af); }
-  .prevision .libelle-nature { color: var(--ac-amber-text, #92400e); }
-}
+// Les cellules : shared/components/meteo/cellule-orage.
 
 .orages .cumuls {
   margin: 14px 0 6px;
