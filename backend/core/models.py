@@ -3397,6 +3397,45 @@ class ImageRadarEstimee(models.Model):
     releve_le = models.DateTimeField()
 
 
+class AdresseBAN(models.Model):
+    """Une adresse de la Base Adresse Nationale, copiée en local pour les communes qui nous
+    concernent (core/referentiel_adresses.py) : territoire des institutions communales et
+    intercommunales, communes des crises ouvertes. Donnée publique partagée PROD/DEMO, non
+    chiffrée : c'est le LIEN entre une personne et une adresse qui est chiffré, ailleurs.
+
+    Une adresse disparue du fichier national est marquée `retiree_le`, jamais effacée : les
+    fiches et les habitations qui y renvoient par `ban_id` restent valables."""
+
+    ban_id = models.CharField(max_length=64, primary_key=True, help_text="Clé d'interopérabilité de la BAN.")
+    commune_code = models.CharField(max_length=10, db_index=True)
+    commune_nom = models.CharField(max_length=100, blank=True, default="")
+    code_postal = models.CharField(max_length=5, blank=True, default="")
+    numero = models.CharField(max_length=10, blank=True, default="")
+    suffixe = models.CharField(max_length=10, blank=True, default="")
+    voie = models.CharField(max_length=200, blank=True, default="")
+    lieu_dit = models.CharField(max_length=200, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    type_position = models.CharField(max_length=30, blank=True, default="",
+                                     help_text="entrée, bâtiment, segment, parcelle… (BAN).")
+    parcelles = models.CharField(max_length=300, blank=True, default="", help_text="Parcelles cadastrales, séparées par |.")
+    retiree_le = models.DateTimeField(null=True, blank=True, db_index=True)
+    modifie_le = models.DateTimeField(db_index=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["commune_code", "retiree_le"])]
+
+    @property
+    def libelle(self):
+        """« 12 bis Rue des Pins, Lieu-dit, 33680 Le Porge »."""
+        debut = " ".join(p for p in (self.numero, self.suffixe, self.voie) if p)
+        lieu = self.lieu_dit if self.lieu_dit and self.lieu_dit != self.voie else ""
+        fin = " ".join(p for p in (self.code_postal, self.commune_nom) if p)
+        return ", ".join(p for p in (debut, lieu, fin) if p)
+
+    def __str__(self):
+        return self.libelle
+
+
 class PotentielOrageFeu(models.Model):
     """Potentiel d'orage de feu (pyrocumulonimbus) pour une heure de l'après-midi, calculé sur le
     profil vertical d'ARPEGE (core/orages_de_feu.py) : NOS ESTIMATIONS, pas une prévision.

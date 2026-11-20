@@ -12,6 +12,14 @@ def api_client():
 
 
 @pytest.fixture(autouse=True)
+def _pas_de_chargement_automatique_des_adresses(settings):
+    """Une institution ou une crise créée charge ses adresses en tâche de fond depuis la Base
+    Adresse Nationale (core/referentiel_adresses.py). Coupé pour toute la suite : des milliers de
+    tests créent institutions et crises. Les tests du référentiel le rallument, sans réseau."""
+    settings.CHARGEMENT_ADRESSES_AUTO = False
+
+
+@pytest.fixture(autouse=True)
 def _inscription_sans_controle_anti_robot(settings):
     """La création de compte passe par un contrôle anti-robot (core/defi_inscription.py) qui
     compte les demandes par adresse : laissé actif, il ferait dépendre chaque test qui crée

@@ -8050,13 +8050,22 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         adresse = " ".join(str(request.data.get('adresse') or "").split())[:300]
         ban_id = parcelle = commune_nom = None
         if not adresse:
-            reponse = _interroger("reverse", {"lat": round(latitude, 5), "lon": round(longitude, 5), "limit": 1, "index": "address"})
-            trouve = ((reponse or {}).get("features") or [{}])[0].get("properties") or {}
-            # Au-delà de 60 m, « l'adresse la plus proche » est celle d'un voisin, pas la sienne.
-            if trouve and (trouve.get("distance") is None or trouve.get("distance") <= 60):
-                adresse = trouve.get("label") or ""
-                ban_id = trouve.get("id")
-                commune_nom = trouve.get("city")
+            # Le référentiel local d'abord (core/referentiel_adresses.py) : aucune question ne
+            # sort. Le service de géocodage seulement si la commune n'y est pas encore.
+            from .models import AdresseBAN
+            from .referentiel_adresses import la_plus_proche
+
+            locale = la_plus_proche(latitude, longitude)
+            if locale is not None:
+                adresse, ban_id, commune_nom = locale.libelle, locale.ban_id, locale.commune_nom
+            elif not AdresseBAN.objects.filter(commune_code=commune_code).exists():
+                reponse = _interroger("reverse", {"lat": round(latitude, 5), "lon": round(longitude, 5), "limit": 1, "index": "address"})
+                trouve = ((reponse or {}).get("features") or [{}])[0].get("properties") or {}
+                # Au-delà de 60 m, « l'adresse la plus proche » est celle d'un voisin, pas la sienne.
+                if trouve and (trouve.get("distance") is None or trouve.get("distance") <= 60):
+                    adresse = trouve.get("label") or ""
+                    ban_id = trouve.get("id")
+                    commune_nom = trouve.get("city")
         deja = self.get_queryset().filter(crise=crise, environment=environment)
         existante = (deja.filter(ban_id=ban_id).first() if ban_id else None) or (
             deja.filter(location__distance_lte=(point, D(m=self.RAYON_MEME_MAISON_M))).first())

@@ -47,29 +47,18 @@ class AdresseDeHabitation:
         self.ban_id, self.adresse, self.location = habitation.ban_id, habitation.adresse, habitation.location
 
 
-def relever_les_adresses(commune_code: str, environment) -> int:
-    """Rapatrie les adresses de la commune depuis la Base Adresse Nationale, sans rien simuler.
+def relever_les_adresses(commune_code: str, environment=None) -> int:
+    """Charge les adresses de la commune dans le référentiel local (core/referentiel_adresses.py),
+    depuis le fichier départemental de la Base Adresse Nationale, sans rien simuler. Rend le
+    nombre d'adresses créées ; ne touche à rien si la commune en a déjà (la mise à jour est
+    hebdomadaire). Seul le numéro du département part. `environment` est ignoré : les adresses
+    sont une donnée publique partagée."""
+    from .models import AdresseBAN
+    from .referentiel_adresses import charger_communes
 
-    Pour les communes qui n'ont pas lancé (ou pas besoin) de simulation d'inondation : sans
-    cela, on ne pouvait rattacher une personne à son adresse que là où l'eau avait été simulée.
-    Les adresses sont gardées dans la même table que celles de la simulation, sans altitude ni
-    niveau d'eau ; une simulation lancée plus tard les remplace par les siennes, et les liens
-    tiennent puisqu'ils portent l'identifiant national de l'adresse. Seul le code de la commune
-    part vers la Base Adresse Nationale. Ne touche à rien si un relevé existe déjà."""
-    from django.contrib.gis.geos import Point
-
-    from .habitations import scanner_ban_commune
-
-    if AdresseSimuleeInondation.objects.filter(commune_code=commune_code, environment=environment).exists():
+    if AdresseBAN.objects.filter(commune_code=commune_code).exists():
         return 0
-    resultat = scanner_ban_commune(commune_code)
-    if resultat["erreur"]:
-        raise RuntimeError(f"Relevé des adresses impossible pour {commune_code} : {resultat['erreur']}")
-    lignes = [AdresseSimuleeInondation(
-        commune_code=commune_code, ban_id=a.get("ban_id"), adresse=a["adresse"],
-        location=Point(a["lon"], a["lat"], srid=4326), environment=environment) for a in resultat["adresses"]]
-    AdresseSimuleeInondation.objects.bulk_create(lignes)
-    return len(lignes)
+    return charger_communes([commune_code])["creees"]
 
 
 #: Une demande de relevé par commune et par demi-heure au plus : la carte et le registre la
@@ -97,15 +86,33 @@ def demander_le_releve(commune_code: str, environment) -> bool:
     return True
 
 
+class AdresseDuReferentiel:
+    """Une adresse du référentiel local, vue comme une adresse du relevé. Pas de niveau d'eau :
+    elle ne vient pas de la simulation."""
+    seuil_inondation_metres = None
+    altitude_metres = None
+
+    def __init__(self, adresse_ban):
+        self.ban_id, self.adresse, self.location = adresse_ban.ban_id, adresse_ban.libelle, adresse_ban.location
+
+
 class Releve:
-    """Le relevé d'adresses d'une commune, indexé pour les rapprochements."""
+    """Le relevé d'adresses d'une commune, indexé pour les rapprochements : les adresses de la
+    simulation d'inondation (avec leur niveau d'eau), celles du référentiel local, puis les
+    maisons référencées pour une crise."""
 
     def __init__(self, commune_code: str, environment):
+        from .models import AdresseBAN
+
         self.adresses = list(AdresseSimuleeInondation.objects.filter(commune_code=commune_code, environment=environment))
+        connues = {a.ban_id for a in self.adresses if a.ban_id}
+        for adresse in AdresseBAN.objects.filter(commune_code=commune_code, retiree_le__isnull=True):
+            if adresse.ban_id not in connues:
+                connues.add(adresse.ban_id)
+                self.adresses.append(AdresseDuReferentiel(adresse))
         # Les maisons référencées pour le suivi des dégâts d'une crise (relevé de la Base Adresse
         # Nationale ou pointage terrain) sont aussi des adresses de la commune : une commune
         # touchée par un incendie ou une tempête n'a pas forcément de simulation d'inondation.
-        connues = {a.ban_id for a in self.adresses if a.ban_id}
         for habitation in (Habitation.objects.filter(commune_code=commune_code, environment=environment)
                            .exclude(ban_id__isnull=True).exclude(ban_id="").exclude(location__isnull=True)):
             if habitation.ban_id not in connues:

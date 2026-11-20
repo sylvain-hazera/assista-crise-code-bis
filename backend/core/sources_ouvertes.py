@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
-    doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie,
+    doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie, referentiel_adresses,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
@@ -161,6 +161,11 @@ SOURCES = {
         Source("CIRCULATION", "Circulation sur le réseau routier national", circulation.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(minutes=45),
                "Bison Futé - directions interdépartementales des routes"),
+        # Référentiel d'adresses (20/11/2026) : un fichier par département concerné, une fois par
+        # semaine (la BAN publie chaque nuit, une adresse change rarement). Parmi les sources
+        # lentes : quelques dizaines de Mo à lire par département.
+        Source("ADRESSES_BAN", "Adresses des communes (Base Adresse Nationale)", referentiel_adresses.relever,
+               datetime.timedelta(days=7), datetime.timedelta(days=10), "Base Adresse Nationale"),
         # Potentiel d'orage de feu (20/11/2026), nos estimations : profil vertical d'ARPEGE,
         # trois heures par jour, aujourd'hui et demain. 54 grilles de 70 Ko par heure calculée,
         # une heure par relevé, appels espacés de 3 s (clé partagée) ; rien entre deux calculs du modèle. Parmi les

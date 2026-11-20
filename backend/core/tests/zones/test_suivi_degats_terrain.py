@@ -263,15 +263,19 @@ class TestRattachementSansInondation:
         assert seuils_du_registre([fiche], COMMUNE, "PROD") == {}
 
     def test_un_releve_simple_des_adresses_suffit_sans_rien_simuler(self):
-        scan = {"adresses": [{"adresse": "3 Rue du Port, 33260 La Teste-de-Buch", "lon": -1.15, "lat": 44.64,
-                              "parcelle_cadastrale": None, "ban_id": "33529_0200_00003"}],
-                "voies_totales": 1, "voies_en_echec": 0, "erreur": None}
-        with patch("core.habitations.scanner_ban_commune", return_value=scan) as appel:
+        """Le relevé simple charge le référentiel local depuis le fichier départemental de la
+        BAN (core/referentiel_adresses.py), sans rien simuler."""
+        from core import referentiel_adresses
+        from core.models import AdresseBAN
+        from core.tests.test_referentiel_adresses import fichier, ligne
+
+        contenu = ligne("33529_0200_00003", "3", "Rue du Port", commune=COMMUNE, lon=-1.15, lat=44.64, nom="La Teste-de-Buch")
+        with patch.object(referentiel_adresses, "telecharger", side_effect=lambda d: fichier(contenu)) as appel:
             assert rattachement_adresses.relever_les_adresses(COMMUNE, "PROD") == 1
             assert rattachement_adresses.relever_les_adresses(COMMUNE, "PROD") == 0       # déjà relevé : rien n'est redemandé
         assert appel.call_count == 1
-        ligne = AdresseSimuleeInondation.objects.get()
-        assert ligne.altitude_metres is None and ligne.seuil_inondation_metres is None
+        assert AdresseBAN.objects.get().ban_id == "33529_0200_00003"
+        assert not AdresseSimuleeInondation.objects.exists()
         fiche = self._fiche("ailleurs", adresse_ban_id="33529_0200_00003")
         from core.enjeux_exposes import seuils_du_registre
         assert seuils_du_registre([fiche], COMMUNE, "PROD") == {}                        # relevé, mais pas simulé

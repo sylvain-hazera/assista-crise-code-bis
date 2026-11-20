@@ -115,20 +115,19 @@ Chaque création porte l'identifiant tiré **sur le téléphone** : un renvoi ne
 doublon. Les propositions de fusion rejoignent la file de validation de la commune, avec les deux
 fiches côte à côte.
 
-## 6. Décisions à prendre
+## 6. Décisions (20/11/2026)
 
-1. **Institutions départementales** (préfecture, SDIS, conseil départemental) : charger tout le
-   département (jusqu'à plusieurs centaines de milliers d'adresses) ou seulement les communes
-   d'une crise ouverte ? Proposé : seulement à l'ouverture d'une crise sur ces communes.
-2. **Les biens qui ne sont pas des bâtiments** (voiture, ouvrage, réseau) : une **catégorie** sur
-   le bien existant (`Habitation`, affiché « bien ») ou un modèle à part ? Proposé : la catégorie,
-   pour garder carte, décomptes, rapports et dossiers tels qu'ils sont.
-3. **Qui évalue sur le téléphone** : les intervenants des équipes engagées sur la crise (constat
-   validé par la commune) et le personnel communal (direct) — comme le pointage du site.
-   Proposé : inchangé.
-4. **Effacement du secteur embarqué** : à la clôture de la crise, ou au plus tard sept jours après
-   l'embarquement s'il n'est pas renouvelé. Proposé.
-5. **Seuil de rapprochement** des biens sans adresse : 50 m proposé.
+1. **Quelles communes** : celles du territoire des institutions communales et intercommunales,
+   dès leur création ; et pour tous, **les communes d'une crise ouverte**, à l'ouverture de la
+   crise ou à l'ajout d'une commune dans la crise. Une institution départementale ne charge donc
+   pas tout son département d'avance.
+2. **Les biens qui ne sont pas des bâtiments** : sur la **fiche existante**, avec un **type de bien
+   à préciser**, choisi dans une liste ; un texte libre ajoute une option à la liste, comme le
+   catalogue du matériel (`MaterielCatalogue`).
+3. **Qui évalue sur le téléphone** : le **personnel municipal et les élus**.
+4. **Effacement du secteur embarqué** : **dès la synchronisation** de ce qui a été saisi.
+5. **Rapprochement** : seuil de 50 m ; le rapprochement reste **proposé**, peut être fait **à la
+   main** ensuite, et deux biens rapprochés par erreur doivent pouvoir être **séparés**.
 
 ## 7. Lots
 
@@ -136,7 +135,7 @@ fiches côte à côte.
 |---|---|---|
 | **A** | Référentiel `AdresseBAN` : import par fichier départemental, mise à jour hebdomadaire, adresses retirées ; branché sur le registre, les secteurs, la recherche et l'adresse la plus proche | import sur un fichier réduit fabriqué, retraits, rattachements inchangés |
 | **B** | Copie vers le satellite (incrémentale, par pages) | rejeu complet puis incrémental |
-| **C** | API de l'évaluation : points proches, constat avec identifiant du téléphone, position replacée, nouveau point avec catégorie, photos, propositions de fusion et de rattachement, écran de validation sur le site | idempotence, fusion jamais automatique |
+| **C** | API de l'évaluation : points proches, constat avec identifiant du téléphone, position replacée, nouveau point avec type de bien (liste extensible), photos, propositions de fusion et de rattachement, rapprochement manuel et séparation, écran sur le site | idempotence, fusion jamais automatique, séparation |
 | **D** | Application : la tournée à pied **en ligne** | parcours complet sur émulateur |
 | **E** | Application : **embarquer un secteur**, tournée hors ligne, effacement | parcours en mode avion |
 | **F** | Satellite : biens, constats et photos dans la synchronisation (lot 4 du dossier hors ligne) | coupure simulée |

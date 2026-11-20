@@ -48,6 +48,17 @@ class CoreConfig(AppConfig):
         if not getattr(settings, "INSTANCE_SATELLITE_LOCALE", False):
             from django.db.models.signals import m2m_changed
 
+            # Référentiel d'adresses (20/11/2026, core/referentiel_adresses.py) : une institution
+            # communale ou intercommunale, une crise ouverte ou une commune ajoutée à sa zone
+            # chargent leurs adresses. Pas sur un satellite : il les reçoit du central.
+            from . import referentiel_adresses
+            from .models import Crisis
+
+            post_save.connect(referentiel_adresses.institution_enregistree, sender=Institution,
+                              dispatch_uid="referentiel_adresses_institution")
+            post_save.connect(referentiel_adresses.crise_enregistree, sender=Crisis,
+                              dispatch_uid="referentiel_adresses_crise")
+
             from . import salons_matrix
             from .models import ContactInstitution
 

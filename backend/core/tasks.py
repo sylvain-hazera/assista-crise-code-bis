@@ -164,6 +164,15 @@ def relever_zonages_officiels_task(commune_code: str, environment: str, forcer: 
     return relever_tout(commune_code, environment, forcer=forcer)
 
 
+@shared_task(acks_late=True, time_limit=1800, soft_time_limit=1770)
+def charger_adresses_task(communes: list):
+    """Charge les adresses de ces communes depuis le fichier départemental de la Base Adresse
+    Nationale (core/referentiel_adresses.py) : un téléchargement par département."""
+    from .referentiel_adresses import charger_communes
+
+    return charger_communes(communes)
+
+
 @shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
 def relever_adresses_commune_task(commune_code: str, environment: str):
     """Rapatrie les adresses d'une commune depuis la Base Adresse Nationale, sans simulation
