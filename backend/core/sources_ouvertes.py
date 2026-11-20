@@ -66,6 +66,10 @@ SOURCES = {
         # La Réunion (20/11/2026) : sa propre mosaïque, même service, même analyse.
         Source("ORAGES_RADAR_REUNION", "Orages et pluies intenses (radar, La Réunion)", orages.relever_reunion,
                datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
+        Source("ORAGES_RADAR_ANTILLES", "Orages et pluies intenses (radar, Antilles)", orages.relever_antilles,
+               datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
+        Source("ORAGES_RADAR_CALEDONIE", "Orages et pluies intenses (radar, Nouvelle-Calédonie)",
+               orages.relever_caledonie, datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
         # Éclairs vus par le satellite MTG (19/11/2026) : même service que les orages, un
         # produit par tranche de dix minutes, paru dix à vingt minutes après coup.
         Source("FOUDRE_MTG", "Éclairs vus par satellite (MTG)", foudre.relever,
@@ -192,7 +196,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR", "ORAGES_RADAR_REUNION", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR", "FEUX_MTG"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "ORAGES_RADAR_REUNION", "ORAGES_RADAR_ANTILLES", "ORAGES_RADAR_CALEDONIE", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR", "FEUX_MTG"}
 
 
 def etat(code):

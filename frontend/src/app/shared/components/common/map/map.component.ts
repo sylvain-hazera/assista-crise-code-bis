@@ -1315,6 +1315,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         const zone = reponse.zone ?? 'METROPOLE';
         const nouvelle = reponse.heure !== this.pluieRadar?.heure || zone !== (this.pluieRadar?.zone ?? 'METROPOLE');
         this.pluieRadar = reponse;
+        if (!reponse.heure && !reponse.zone) {
+          // Aucune mosaïque ici (Guyane, Mayotte…) : on retire celle d'un autre territoire.
+          this.boucleRadar = [];
+          this.retirerImageRadar();
+          return;
+        }
         if (!nouvelle || !reponse.heure || !reponse.coins) return;
         const etaitMaintenant = !this.boucleRadar.length || this.indiceBoucle === this.indiceMaintenant;
         const base = reponse.heure;
@@ -1354,6 +1360,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   revenirMaintenant(): void {
     if (this.lectureBoucle) this.basculerLectureBoucle();
     this.choisirImageBoucle(this.indiceMaintenant);
+  }
+
+  private retirerImageRadar(): void {
+    if (!this.map) return;
+    if (this.map.getLayer('pluie-radar-layer')) this.map.removeLayer('pluie-radar-layer');
+    if (this.map.getSource('pluie-radar')) this.map.removeSource('pluie-radar');
   }
 
   private afficherImageBoucle(): void {

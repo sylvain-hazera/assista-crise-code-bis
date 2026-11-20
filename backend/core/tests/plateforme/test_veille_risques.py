@@ -363,6 +363,20 @@ class TestFoyersActifs:
 
         assert [(round(f["location"].y, 2), round(f["location"].x, 2)) for f in foyers] == [(-21.07, 55.45)]
 
+    def test_l_outre_mer_est_garde_les_pays_voisins_non(self):
+        for region in ("Southern_Africa", "Central_America", "South_America", "Australia_NewZealand"):
+            assert sum(region in f for f in foyers_actifs.FICHIERS) == 4, region
+        foyers = foyers_actifs.analyser([_fichier_viirs(
+            _viirs(4.90, -52.60, "2026-11-15"),                 # Guyane
+            _viirs(4.90, -55.50, "2026-11-15"),                 # Suriname
+            _viirs(14.65, -61.00, "2026-11-15"),                # Martinique
+            _viirs(15.40, -61.35, "2026-11-15"),                # la Dominique
+            _viirs(-12.80, 45.15, "2026-11-15"),                # Mayotte
+            _viirs(-21.50, 165.50, "2026-11-15"),               # Nouvelle-Calédonie
+        )], MAINTENANT)
+
+        assert sorted(round(f["location"].x, 2) for f in foyers) == [-61.0, -52.6, 45.15, 165.5]
+
     def test_modis_donne_sa_confiance_en_pourcentage(self):
         modis = "\n".join([ENTETE_MODIS,
                            "45.5,4.5,300.46,1.17,1.07,2026-11-15,1014,A,85,6.1NRT,274.22,11.62,D",
@@ -404,8 +418,10 @@ class TestFoyersActifs:
         bon = mock.Mock(text=_fichier_viirs(_viirs(45.5, 4.5, "2026-11-15")), raise_for_status=lambda: None)
 
         with mock.patch("core.foyers_actifs.requests.get",
-                        side_effect=[requests.ConnectionError("coupé"), bon, bon, requests.ReadTimeout("lent")] * 2):
-            assert len(foyers_actifs.telecharger()) == 4      # quatre fichiers Europe, quatre Afrique australe
+                        side_effect=[requests.ConnectionError("coupé"), bon, bon, requests.ReadTimeout("lent")]
+                        * (len(foyers_actifs.FICHIERS) // 4)):
+            # Quatre capteurs par région : deux sur quatre répondent dans chacune.
+            assert len(foyers_actifs.telecharger()) == len(foyers_actifs.FICHIERS) // 2
 
         with mock.patch("core.foyers_actifs.requests.get", side_effect=requests.ConnectionError("coupé")):
             with pytest.raises(requests.ConnectionError):

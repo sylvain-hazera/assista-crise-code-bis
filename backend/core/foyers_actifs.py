@@ -3,7 +3,7 @@ annonce aux institutions qui l'ont demandée.
 
 SOURCE
 FIRMS (Fire Information for Resource Management System, NASA), fichiers publics des détections
-des sept derniers jours en Europe et en Afrique australe (pour La Réunion), sans clé :
+des sept derniers jours en Europe et, pour l'outre-mer, dans quatre autres régions, sans clé :
 https://firms.modaps.eosdis.nasa.gov. Quatre capteurs -- VIIRS sur trois satellites (375 m) et MODIS (1 km) --, soit environ six passages par
 jour, publiés trois heures après. Données libres, à citer (« NASA FIRMS »). Ce n'est pas un
 service de l'État français : il n'en existe pas d'équivalent.
@@ -50,18 +50,27 @@ FICHIERS = (
     "noaa-21-viirs-c2/csv/J2_VIIRS_C2_Europe_7d.csv",
     "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Europe_7d.csv",
     "modis-c6.1/csv/MODIS_C6_1_Europe_7d.csv",
-    # La Réunion est dans le fichier « Afrique australe » (10° E à 58° E, vérifié le 20/11/2026).
-    "noaa-20-viirs-c2/csv/J1_VIIRS_C2_Southern_Africa_7d.csv",
-    "noaa-21-viirs-c2/csv/J2_VIIRS_C2_Southern_Africa_7d.csv",
-    "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Southern_Africa_7d.csv",
-    "modis-c6.1/csv/MODIS_C6_1_Southern_Africa_7d.csv",
+    # L'outre-mer, fichier par région (emprises vérifiées le 20/11/2026) : La Réunion et Mayotte
+    # dans « Afrique australe », les Antilles dans « Amérique centrale » (jusqu'à 58,5° O), la
+    # Guyane dans « Amérique du Sud », la Nouvelle-Calédonie dans « Australie et Nouvelle-Zélande ».
+    *(f"{capteur}_{region}_7d.csv"
+      for region in ("Southern_Africa", "Central_America", "South_America", "Australia_NewZealand")
+      for capteur in ("noaa-20-viirs-c2/csv/J1_VIIRS_C2", "noaa-21-viirs-c2/csv/J2_VIIRS_C2",
+                      "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2", "modis-c6.1/csv/MODIS_C6_1")),
 )
 DELAI_REPONSE_S = 60
 # (ouest, sud, est, nord). Métropole et Corse : le rectangle déborde sur les pays voisins, ce qui
-# sert les communes frontalières. La Réunion : l'île seule (Maurice, dans le même fichier, non).
+# sert les communes frontalières. Outre-mer : les terres françaises seules (Maurice, la Dominique
+# ou le Suriname, dans les mêmes fichiers, non).
 EMPRISES = (
-    (-5.5, 41.0, 10.0, 51.5),
-    (55.1, -21.5, 56.0, -20.8),
+    (-5.5, 41.0, 10.0, 51.5),       # métropole et Corse
+    (55.1, -21.5, 56.0, -20.8),     # La Réunion
+    (44.9, -13.05, 45.35, -12.6),   # Mayotte
+    (-61.9, 15.8, -60.9, 16.6),     # Guadeloupe
+    (-63.2, 17.85, -62.75, 18.15),  # Saint-Martin et Saint-Barthélemy
+    (-61.3, 14.35, -60.75, 14.9),   # Martinique
+    (-54.7, 2.0, -51.5, 6.0),       # Guyane
+    (163.5, -22.8, 168.2, -19.4),   # Nouvelle-Calédonie
 )
 # Ce qui est gardé en base et montré : les deux derniers jours.
 PROFONDEUR = datetime.timedelta(hours=48)

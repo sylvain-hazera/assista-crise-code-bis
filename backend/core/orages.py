@@ -50,20 +50,28 @@ logger = logging.getLogger(__name__)
 
 URL_MOSAIQUES = "https://public-api.meteofrance.fr/public/DPRadar/v1/mosaiques"
 URL = f"{URL_MOSAIQUES}/METROPOLE/observations/LAME_D_EAU"
-#: Les mosaïques analysées (20/11/2026). Même produit, même format HDF5 ODIM à 500 m ; seules la
-#: grille et la projection changent, et le fichier les décrit lui-même. La Réunion : deux radars
-#: (Colorado et Piton Villers), Mercator, 2300 × 2000 points de 51° E à 62° E — vérifié sur une
-#: image réelle le 20/11/2026. Ce que Météo-France PRÉVOIT sous une cellule (AROME-PI) n'existe
-#: qu'en métropole, de même que le Doppler et la trace d'analyse gardée trente jours.
+#: Les mosaïques analysées (20/11/2026) : toutes celles que Météo-France publie. Même produit,
+#: même format HDF5 ODIM à 500 m ; seules la grille et la projection changent, et le fichier les
+#: décrit lui-même. Vérifié sur une image réelle de chacune le 20/11/2026 :
+#: - La Réunion : Colorado et Piton Villers, Mercator, de 51° E à 62° E ;
+#: - Antilles (Guadeloupe, Martinique et les îles du Nord) : deux radars, de 66° O à 57° O ;
+#: - Nouvelle-Calédonie : deux radars, de 159,7° E à 171,6° E.
+#: Il n'existe pas de mosaïque pour la Guyane, Mayotte, Saint-Pierre-et-Miquelon ni la Polynésie.
+#: Ce que Météo-France PRÉVOIT sous une cellule (AROME-PI) n'existe qu'en métropole, de même que
+#: le Doppler et la trace d'analyse gardée trente jours.
 ZONES = {
-    "METROPOLE": {"source": "ORAGES_RADAR", "libelle": "Métropole", "arome_pi": True},
-    "REUNION": {"source": "ORAGES_RADAR_REUNION", "libelle": "La Réunion", "arome_pi": False},
+    "METROPOLE": {"mosaique": "METROPOLE", "source": "ORAGES_RADAR", "libelle": "Métropole", "arome_pi": True},
+    "REUNION": {"mosaique": "REUNION", "source": "ORAGES_RADAR_REUNION", "libelle": "La Réunion", "arome_pi": False},
+    "ANTILLES": {"mosaique": "ANTILLES", "source": "ORAGES_RADAR_ANTILLES", "libelle": "Antilles", "arome_pi": False},
+    # Clé courte (colonne `zone` de 12 caractères), nom de la mosaïque à part.
+    "CALEDONIE": {"mosaique": "NOUVELLE-CALEDONIE", "source": "ORAGES_RADAR_CALEDONIE",
+                  "libelle": "Nouvelle-Calédonie", "arome_pi": False},
 }
 ZONE_PAR_DEFAUT = "METROPOLE"
 
 
 def url_zone(zone):
-    return f"{URL_MOSAIQUES}/{zone}/observations/LAME_D_EAU"
+    return f"{URL_MOSAIQUES}/{ZONES[zone]['mosaique']}/observations/LAME_D_EAU"
 DELAI_REPONSE_S = 60
 
 #: Pluie à partir de laquelle on parle de cellule de pluie intense (mm/h). 30 mm/h est le seuil
@@ -713,6 +721,14 @@ def enregistrer(grille, analyse, maintenant=None, zone=ZONE_PAR_DEFAUT):
 
 def relever_reunion(maintenant=None):
     return relever(maintenant, zone="REUNION")
+
+
+def relever_antilles(maintenant=None):
+    return relever(maintenant, zone="ANTILLES")
+
+
+def relever_caledonie(maintenant=None):
+    return relever(maintenant, zone="CALEDONIE")
 
 
 def relever(maintenant=None, zone=ZONE_PAR_DEFAUT):

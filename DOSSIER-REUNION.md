@@ -65,3 +65,18 @@ Sources des recherches : [Vigicrues Réunion, communiqué de la préfecture](htt
 [routes.re](https://www.data.gouv.fr/reuses/routes-re),
 [InfoTrafic 974](https://apps.apple.com/fr/app/infotrafic-974/id1331377238),
 [prix des carburants fixés par la préfecture](https://www.reunion.gouv.fr/contenu/telechargement/41653/311934/file/2024-02-28-CP-Prix_Carburants_Mars2024.pdf).
+
+## 4. Les autres territoires d'outre-mer (20/11/2026)
+
+| Territoire | Radar (mosaïque Météo-France) | Foudre (MTG) | Foyers de feu (FIRMS) |
+|---|---|---|---|
+| Guadeloupe, Martinique, îles du Nord | ✅ mosaïque ANTILLES | ✅ | ✅ fichier « Amérique centrale » |
+| Nouvelle-Calédonie | ✅ mosaïque NOUVELLE-CALEDONIE (aucune commune en base) | ❌ hors du disque de MTG | ✅ fichier « Australie et Nouvelle-Zélande » |
+| Guyane | ❌ pas de mosaïque publiée : rien n'est montré plutôt que le radar de métropole | ✅ | ✅ fichier « Amérique du Sud » |
+| Mayotte | ❌ pas de mosaïque publiée | ✅ | ✅ fichier « Afrique australe » |
+| Saint-Pierre-et-Miquelon, Polynésie, Wallis-et-Futuna | ❌ | ❌ | ❌ non branché |
+
+Vérifié sur des données réelles : une image de chaque mosaïque (coins, radars, Fort-de-France et
+Nouméa dans le champ), une heure de produits MTG (éclairs de 81° O à 78° E), les fichiers FIRMS
+de chaque région (emprise et détections de la semaine).
+

@@ -708,8 +708,9 @@ export interface CumulsPluie {
  * (backend/core/carte_radar.py). `heure` désigne l'image. */
 export interface PluieRadar {
   source: string; releve_le: string | null; perime: boolean;
-  /** Mosaïque radar (METROPOLE, REUNION), à rappeler dans l'adresse des images. */
-  zone?: string;
+  /** Mosaïque radar (METROPOLE, REUNION, ANTILLES, CALEDONIE), à rappeler dans l'adresse des
+   * images ; null là où aucune ne couvre l'endroit (Guyane, Mayotte…). */
+  zone?: string | null;
   heure: string | null;
   coins: [[number, number], [number, number], [number, number], [number, number]] | null;
   legende: { a_partir_de_mmh: number; couleur: string }[];
@@ -721,7 +722,7 @@ export interface PluieRadar {
 
 export interface OragesRadar {
   source: string; releve_le: string | null; perime: boolean;
-  zone?: string;
+  zone?: string | null;
   heure_image: string | null; radars: number; radars_absents: string[];
   centre: { latitude: number; longitude: number } | null; rayon_km: number | null;
   couvert: boolean | null;

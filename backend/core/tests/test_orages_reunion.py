@@ -69,6 +69,24 @@ def test_la_reunion_a_sa_mosaique_et_son_releve():
     assert sources_ouvertes.SOURCES["ORAGES_RADAR_REUNION"].relever == orages.relever_reunion
 
 
+def test_toutes_les_mosaiques_de_meteo_france():
+    # La Nouvelle-Calédonie : clé courte, nom de la mosaïque à part.
+    assert orages.url_zone("CALEDONIE").endswith("/mosaiques/NOUVELLE-CALEDONIE/observations/LAME_D_EAU")
+    assert orages.url_zone("ANTILLES").endswith("/mosaiques/ANTILLES/observations/LAME_D_EAU")
+    for zone, reglage in orages.ZONES.items():
+        assert len(zone) <= 12
+        assert reglage["source"] in sources_ouvertes.SOURCES_EN_CONTINU
+        assert sources_ouvertes.SOURCES[reglage["source"]].relever is not None
+    from core.views_veille import _zone_radar_au_point
+    assert _zone_radar_au_point(-61.07, 14.6) == "ANTILLES"          # Fort-de-France
+    assert _zone_radar_au_point(-61.53, 16.24) == "ANTILLES"         # Pointe-à-Pitre
+    assert _zone_radar_au_point(166.45, -22.27) == "CALEDONIE"       # Nouméa
+    assert _zone_radar_au_point(55.45, -20.88) == "REUNION"
+    assert _zone_radar_au_point(-52.33, 4.93) is None                # Cayenne : pas de mosaïque
+    assert _zone_radar_au_point(45.23, -12.78) is None               # Mamoudzou
+    assert _zone_radar_au_point(2.35, 48.85) == "METROPOLE"
+
+
 @pytest.mark.django_db
 def test_les_deux_mosaiques_vivent_cote_a_cote(client):
     orages.IndexCommunes._cache = {}
@@ -102,6 +120,10 @@ def test_les_deux_mosaiques_vivent_cote_a_cote(client):
     assert 51 <= coins[0][0] < 52 and -16.1 <= coins[0][1] <= -15.9
     assert client.get("/api/orages/radar/", {"lat": 45.0, "lon": 2.0}).json()["zone"] == "METROPOLE"
     assert client.get("/api/orages/radar/").json()["zone"] == "METROPOLE"
+    # La Guyane n'a pas de mosaïque : rien plutôt que la pluie de la métropole.
+    guyane = client.get("/api/orages/radar/", {"lat": 4.93, "lon": -52.33}).json()
+    assert guyane["zone"] is None and guyane["heure"] is None and guyane["passees"] == []
+    assert client.get("/api/orages/", {"lat": 4.93, "lon": -52.33}).json()["radars"] == 0
     image = client.get("/api/orages/radar/image/", {"heure": r.json()["heure"], "zone": "REUNION"})
     assert image.status_code == 200 and image["Content-Type"] == "image/png"
     assert client.get("/api/orages/radar/image/", {"heure": r.json()["heure"]}).status_code == 404

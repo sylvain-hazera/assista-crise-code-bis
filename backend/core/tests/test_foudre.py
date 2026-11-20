@@ -67,6 +67,16 @@ def test_les_eclairs_de_la_reunion_sont_gardes():
     assert [(round(e["latitude"], 1), round(e["longitude"], 1)) for e in eclairs] == [(-21.1, 55.5), (-21.9, 54.8)]
 
 
+def test_les_eclairs_d_outre_mer_vus_par_mtg_sont_gardes():
+    eclairs = foudre.lire_eclairs(produit([
+        (14.60, -61.05, T0),                 # Martinique
+        (5.10, -52.60, T0),                  # Guyane
+        (-12.80, 45.15, T0),                 # Mayotte
+        (10.50, -66.90, T0),                 # Venezuela : hors emprise
+    ]))
+    assert sorted(round(e["longitude"], 1) for e in eclairs) == [-61.0, -52.6, 45.1]
+
+
 def _reponses(produits):
     """Faux Data Store : jeton, recherche, téléchargements."""
     def get(url, headers=None, timeout=None, params=None):

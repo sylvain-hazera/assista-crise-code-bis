@@ -105,21 +105,29 @@ def _emprise(request, rayon_defaut=None):
 
 
 #: Emprise de chaque mosaïque radar hors métropole (ouest, sud, est, nord), pour choisir celle qui
-#: répond à une position : la grille de La Réunion telle que le fichier la décrit.
-EMPRISES_ZONES_RADAR = {"REUNION": (51.0, -25.0, 62.0, -16.0)}
+#: répond à une position : chaque grille telle que son fichier la décrit (20/11/2026).
+EMPRISES_ZONES_RADAR = {
+    "METROPOLE": (-10.0, 40.0, 13.0, 54.0),
+    "REUNION": (51.0, -25.0, 62.0, -16.0),
+    "ANTILLES": (-66.0, 10.6, -57.0, 21.0),
+    "CALEDONIE": (159.7, -27.3, 171.6, -16.2),
+}
 
 
 def _zone_radar_au_point(longitude, latitude):
+    """La mosaïque qui couvre ce point, ou None : la Guyane, Mayotte, Saint-Pierre-et-Miquelon
+    n'en ont pas, et leur montrer le radar de la métropole serait trompeur."""
     for zone, (ouest, sud, est, nord) in EMPRISES_ZONES_RADAR.items():
         if ouest <= longitude <= est and sud <= latitude <= nord:
             return zone
-    return "METROPOLE"
+    return None
 
 
 def _zone_radar(request):
     """La mosaïque radar qui répond à la demande : `zone` si elle est donnée, sinon celle qui
     contient la position demandée (`lat`/`lon` ou le centre de `bbox`), sinon celle de la commune
-    de l'institution de l'appelant ; la métropole à défaut."""
+    de l'institution de l'appelant ; la métropole quand rien ne fixe d'endroit. None pour un
+    endroit qu'aucune mosaïque ne couvre."""
     from . import orages
     zone = (request.query_params.get("zone") or "").upper()
     if zone in orages.ZONES:
@@ -450,7 +458,7 @@ class OragesView(APIView):
         from .models import CelluleOrage, ImageRadarOrage
 
         zone = orages.ZONE_PAR_DEFAUT if request.query_params.get("france") else _zone_radar(request)
-        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first()
+        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first() if zone else None
         cellules = CelluleOrage.objects.all()
         centre, rayon, couvert, emprise = None, None, None, None
         if not request.query_params.get("france"):
@@ -575,7 +583,7 @@ class OragesView(APIView):
             "blitzortung": blitzortung,
             "foudre": foudre,
             "cumuls": cumuls,
-            **sources_ouvertes.resume(orages.ZONES[zone]["source"]),
+            **sources_ouvertes.resume(orages.ZONES[zone or orages.ZONE_PAR_DEFAUT]["source"]),
             "zone": zone,
             "heure_image": image.heure if image else None,
             "radars": len(image.radars) if image else 0,
@@ -655,8 +663,9 @@ class PluieRadarView(APIView):
         from . import carte_radar, orages
         from .models import ImageRadarEstimee, ImageRadarOrage
         zone = _zone_radar(request)
-        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first()
-        reponse = {**sources_ouvertes.resume(orages.ZONES[zone]["source"]), "legende": carte_radar.legende(),
+        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first() if zone else None
+        reponse = {**sources_ouvertes.resume(orages.ZONES[zone or orages.ZONE_PAR_DEFAUT]["source"]),
+                   "legende": carte_radar.legende(),
                    "zone": zone, "heure": None, "coins": None, "perime": True, "passees": [], "estimees": []}
         if image is not None:
             _png, coins = carte_radar.rendre(image)

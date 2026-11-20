@@ -42,12 +42,16 @@ URL_RECHERCHE = "https://api.eumetsat.int/data/search-products/1.0.0/os"
 COLLECTION = "EO:EUM:DAT:0691"
 DELAI_REPONSE_S = 60
 
-#: Emprises gardées : métropole et Corse, et La Réunion avec une marge en mer pour voir venir les
-#: orages (le disque de MTG va jusqu'à 60° E, vérifié le 20/11/2026). Le reste n'a rien à faire
-#: dans notre base.
+#: Emprises gardées : métropole et Corse, et l'outre-mer que voit MTG, avec une marge en mer pour
+#: voir venir les orages. Vérifié sur une heure de produits le 20/11/2026 : des éclairs de 81° O à
+#: 78° E, dont la Guyane ; la Nouvelle-Calédonie (165° E) est hors du disque. Le reste n'a rien
+#: à faire dans notre base.
 EMPRISES = (
-    (-5.8, 41.0, 10.0, 51.6),
-    (54.5, -22.2, 56.6, -20.0),
+    (-5.8, 41.0, 10.0, 51.6),       # métropole et Corse
+    (54.5, -22.2, 56.6, -20.0),     # La Réunion
+    (-63.5, 13.0, -59.5, 18.5),     # Antilles : Martinique, Guadeloupe, îles du Nord
+    (-55.0, 1.8, -51.0, 6.2),       # Guyane
+    (44.5, -13.5, 45.8, -12.3),     # Mayotte
 )
 #: Éclairs gardés 48 heures.
 DUREE_GARDEE = datetime.timedelta(hours=48)

@@ -72,7 +72,7 @@ def _geometrie(image):
         point = Point(x, y, srid=3857)
         point.transform(vers_geo)
         coins.append([round(point.x, 5), round(point.y, 5)])
-    if len(_GEOMETRIES) >= 4:          # une géométrie par mosaïque, avec de la marge
+    if len(_GEOMETRIES) >= 6:          # une géométrie par mosaïque, avec de la marge
         _GEOMETRIES.clear()
     _GEOMETRIES[cle] = (correspondance, coins)
     return _GEOMETRIES[cle]
