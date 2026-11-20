@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { NotificationTerrain, TerrainService } from '../terrain.service';
+import { NotificationsPousseesService } from '../notifications-poussees.service';
 
 /**
  * Mes notifications (mobilisations, consignes), comme dans l'application Android. Les accusés
@@ -11,6 +12,27 @@ import { NotificationTerrain, TerrainService } from '../terrain.service';
   imports: [DatePipe],
   template: `
     <h1>Alertes</h1>
+    @switch (poussees.etat()) {
+      @case ('inactives') {
+        <section class="encart">
+          <p>Recevez les mobilisations et les consignes sur ce téléphone, même application fermée.</p>
+          <button type="button" class="principal" (click)="activer()">Activer les notifications</button>
+        </section>
+      }
+      @case ('a-installer') {
+        <section class="encart">
+          <p>Sur iPhone, les notifications ne sont possibles qu'une fois l'application installée :
+             dans Safari, touchez <strong>Partager</strong> puis <strong>« Sur l'écran d'accueil »</strong>,
+             puis ouvrez-la depuis son icône.</p>
+        </section>
+      }
+      @case ('refusees') {
+        <section class="encart">
+          <p>Les notifications sont refusées pour cette application. Pour les rétablir : Réglages du téléphone,
+             Notifications, puis le nom de l'application.</p>
+        </section>
+      }
+    }
     @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
     @if (!chargement() && !notifications().length) {
       <p class="discret">Aucune notification ces derniers jours.</p>
@@ -42,10 +64,17 @@ import { NotificationTerrain, TerrainService } from '../terrain.service';
     .corps { white-space: pre-line; margin: 8px 0 0; }
     .discret { color: var(--ac-text-muted, #6b7280); font-size: .85rem; margin: 4px 0 0; }
     .erreur { color: var(--ac-red-text, #b91c1c); }
+    .encart { background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af);
+              border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+    .encart p { margin: 0 0 8px; font-size: .9rem; }
+    .encart p:last-child { margin-bottom: 0; }
+    .principal { width: 100%; border: 0; border-radius: 10px; padding: 12px; font: inherit; font-weight: 600;
+                 cursor: pointer; background: var(--brand-primary, #2563eb); color: #fff; }
   `],
 })
 export class TerrainAlertesComponent implements OnInit {
   private terrain = inject(TerrainService);
+  readonly poussees = inject(NotificationsPousseesService);
   readonly notifications = signal<NotificationTerrain[]>([]);
   readonly chargement = signal(true);
   readonly erreur = signal<string | null>(null);
@@ -65,6 +94,8 @@ export class TerrainAlertesComponent implements OnInit {
       },
     });
   }
+
+  activer(): void { this.poussees.activer().catch(() => {}); }
 
   ouvrir(n: NotificationTerrain): void {
     this.ouverte.set(this.ouverte() === n.id ? null : n.id);

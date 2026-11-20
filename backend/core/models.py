@@ -11843,6 +11843,8 @@ class AffectationRotation(EnvironmentScopedModel):
 class PlateformeMobile(models.TextChoices):
     ANDROID = "ANDROID", "Android"
     IOS = "IOS", "iPhone"
+    # L'application installée depuis le navigateur (PWA, DOSSIER-PWA-INTERVENANTS.md).
+    WEB = "WEB", "Application web"
 
 
 class AppareilMobile(models.Model):
@@ -11869,6 +11871,10 @@ class AppareilMobile(models.Model):
     #: La personne a-t-elle laissé le système afficher nos notifications ? Refusé, le message
     #: attend dans l'application qu'elle l'ouvre : « reçu » ne voudra pas dire « prévenu ».
     notifications_autorisees = models.BooleanField(default=True)
+    #: Application web seulement : l'abonnement aux notifications poussées que le navigateur a
+    #: donné (adresse chez Apple, Google ou Mozilla, et clés de chiffrement), en JSON. Donnée
+    #: personnelle : chiffrée. Jamais cherchée en SQL : on la lit par l'appareil.
+    abonnement_push = EncryptedTextField(blank=True, default="")
     date_creation = models.DateTimeField(auto_now_add=True)
     dernier_contact = models.DateTimeField(default=timezone.now)
 

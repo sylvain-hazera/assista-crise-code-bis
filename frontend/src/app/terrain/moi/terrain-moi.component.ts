@@ -3,6 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/services/auth.service';
 import { ApplicationInstallableService } from '../../services/application-installable.service';
 import { TerrainService } from '../terrain.service';
+import { NotificationsPousseesService } from '../notifications-poussees.service';
 
 /** Mon compte, côté terrain : ma fiche, mes réglages, l'installation, la déconnexion. */
 @Component({
@@ -45,15 +46,16 @@ export class TerrainMoiComponent {
   private auth = inject(AuthService);
   private terrain = inject(TerrainService);
   private router = inject(Router);
+  private notifications = inject(NotificationsPousseesService);
   readonly installable = inject(ApplicationInstallableService);
 
   prenom(): string { return this.auth.getCurrentUser()?.first_name || 'Mon compte'; }
 
   deconnecter(): void {
     // Ce téléphone ne joint plus cette personne : comme à la déconnexion sur Android.
-    this.terrain.oublierLAppareil().subscribe({
+    this.notifications.desactiver().finally(() => this.terrain.oublierLAppareil().subscribe({
       complete: () => this.fin(), error: () => this.fin(),
-    });
+    }));
   }
 
   private fin(): void {

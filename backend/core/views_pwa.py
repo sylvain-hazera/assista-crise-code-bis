@@ -130,3 +130,21 @@ class ManifestePwaView(APIView):
         reponse["Cache-Control"] = "public, max-age=300"
         reponse.cache_public = True
         return reponse
+
+
+class ClePushView(APIView):
+    """GET /api/pwa/cle-push/ : la clé publique VAPID que le navigateur donne au service de
+    notification en s'abonnant. 404 si les notifications poussées ne sont pas configurées."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from .web_push import cle_publique_b64url
+        cle = cle_publique_b64url()
+        if cle is None:
+            return HttpResponseNotFound()
+        reponse = JsonResponse({"cle": cle})
+        reponse["Cache-Control"] = "public, max-age=3600"
+        reponse.cache_public = True
+        return reponse
+

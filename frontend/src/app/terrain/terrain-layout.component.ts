@@ -4,7 +4,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { BrandingService } from '../services/branding.service';
 import { AuthService } from '../auth/services/auth.service';
 import { BoutonFormationComponent } from '../shared/components/common/bouton-formation/bouton-formation.component';
-import { TerrainService } from './terrain.service';
+import { NotificationsPousseesService } from './notifications-poussees.service';
 
 /**
  * L'espace terrain, pensé pour le téléphone (DOSSIER-PWA-INTERVENANTS.md, lot 2) : un en-tête
@@ -80,7 +80,7 @@ import { TerrainService } from './terrain.service';
 })
 export class TerrainLayoutComponent implements OnInit {
   private branding = inject(BrandingService);
-  private terrain = inject(TerrainService);
+  private notifications = inject(NotificationsPousseesService);
   private auth = inject(AuthService);
 
   enFormation(): boolean { return this.auth.getEnvironment() === 'DEMO'; }
@@ -98,8 +98,7 @@ export class TerrainLayoutComponent implements OnInit {
   logo(): string { return this.marque()?.logo_url ?? '/logo.png'; }
 
   ngOnInit(): void {
-    // Joignable par l'application dès l'ouverture de l'espace terrain.
-    const autorisees = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-    this.terrain.presenterLAppareil(autorisees).subscribe({ error: () => {} });
+    // Joignable par l'application dès l'ouverture de l'espace terrain, abonnement compris.
+    this.notifications.actualiser().catch(() => {});
   }
 }

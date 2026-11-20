@@ -49,12 +49,18 @@ class MonAppareilView(APIView):
         if len(installation) < 16:
             return Response({"error": "Identifiant d'installation manquant."},
                             status=status.HTTP_400_BAD_REQUEST)
-        appareil = moteur.enregistrer_appareil(
-            request.user, installation,
-            plateforme=str(request.data.get("plateforme") or ""),
-            version=str(request.data.get("version") or ""),
-            notifications_autorisees=request.data.get("notifications_autorisees", True),
-        )
+        from .web_push import AbonnementRefuse
+        try:
+            appareil = moteur.enregistrer_appareil(
+                request.user, installation,
+                plateforme=str(request.data.get("plateforme") or ""),
+                version=str(request.data.get("version") or ""),
+                notifications_autorisees=request.data.get("notifications_autorisees", True),
+                # Application web : l'abonnement aux notifications poussées (absent ailleurs).
+                abonnement_push=request.data.get("abonnement_push"),
+            )
+        except AbonnementRefuse as refus:
+            return Response({"error": str(refus)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"id": appareil.id, "dernier_contact": appareil.dernier_contact})
 
     def delete(self, request):

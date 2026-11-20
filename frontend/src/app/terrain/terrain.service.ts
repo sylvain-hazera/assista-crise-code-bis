@@ -55,10 +55,13 @@ export class TerrainService {
    * ouverture : sans cela, le serveur ne déposerait aucune notification pour cette personne.
    * L'identifiant est tiré au hasard ici et ne désigne que cette installation.
    */
-  presenterLAppareil(notificationsAutorisees: boolean): Observable<unknown> {
+  presenterLAppareil(notificationsAutorisees: boolean, abonnement?: PushSubscriptionJSON | ''): Observable<unknown> {
+    // `abonnement` : l'abonnement aux notifications poussées ; '' pour l'oublier ; absent, le
+    // serveur garde celui qu'il a.
     return this.http.post(`${this.api}/mon-appareil/`, {
       installation: TerrainService.installation(), plateforme: 'WEB', version: 'pwa',
       notifications_autorisees: notificationsAutorisees,
+      ...(abonnement !== undefined ? { abonnement_push: abonnement } : {}),
     });
   }
 

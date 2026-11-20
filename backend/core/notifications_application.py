@@ -16,8 +16,13 @@ les notifications, elle ne l'a pas vu pour autant — d'où `AppareilMobile.noti
 autorisees`, que le suivi affiche à côté.
 """
 import datetime
+import json
+import logging
 
+from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 #: Au-delà, on considère que l'application n'est plus sur ce téléphone. Une application
 #: ouverte une fois il y a six mois ne joint personne, et l'annoncer comme un canal ferait
@@ -52,25 +57,28 @@ def joignables_par_application(utilisateur_ids):
 
 
 def enregistrer_appareil(utilisateur, installation, plateforme="", version="",
-                         notifications_autorisees=True):
+                         notifications_autorisees=True, abonnement_push=None):
     """Le téléphone se présente. Idempotent : appelé à chaque ouverture de l'application.
 
     Un téléphone qui change de compte (déconnexion, puis connexion d'une autre personne) suit
     le dernier connecté : sinon l'ancien titulaire resterait « joignable » sur un appareil
     qu'il n'a plus en main."""
     from .models import AppareilMobile, PlateformeMobile
+    from .web_push import valider_abonnement
 
     plateforme = plateforme if plateforme in PlateformeMobile.values else PlateformeMobile.ANDROID
-    appareil, _ = AppareilMobile.objects.update_or_create(
-        installation=installation[:64],
-        defaults={
-            "utilisateur": utilisateur,
-            "plateforme": plateforme,
-            "version": (version or "")[:20],
-            "notifications_autorisees": bool(notifications_autorisees),
-            "dernier_contact": timezone.now(),
-        },
-    )
+    valeurs = {
+        "utilisateur": utilisateur,
+        "plateforme": plateforme,
+        "version": (version or "")[:20],
+        "notifications_autorisees": bool(notifications_autorisees),
+        "dernier_contact": timezone.now(),
+    }
+    # Application web : l'abonnement aux notifications poussées (vérifié, lève
+    # AbonnementRefuse). Absent : on garde celui qu'on a ; vide : on l'oublie.
+    if abonnement_push is not None:
+        valeurs["abonnement_push"] = json.dumps(valider_abonnement(abonnement_push)) if abonnement_push else ""
+    appareil, _ = AppareilMobile.objects.update_or_create(installation=installation[:64], defaults=valeurs)
     return appareil
 
 
@@ -93,11 +101,66 @@ def notifier(utilisateur, genre, titre, corps="", *, urgent=False, institution=N
 
     if not joignables_par_application([utilisateur.id]):
         return None
-    return NotificationApplication.objects.create(
+    notification = NotificationApplication.objects.create(
         utilisateur=utilisateur, genre=genre, titre=titre, corps=corps or "",
         urgent=urgent, institution=institution, campagne=campagne,
         environment=environment or getattr(campagne, "environment", None) or Environment.PROD,
     )
+    programmer_la_poussee(notification)
+    return notification
+
+
+# ── Notifications poussées vers les applications web (DOSSIER-PWA-INTERVENANTS.md, lot 4) ──
+#
+# Seule exception au « le téléphone vient chercher » : sur iPhone, une application web fermée ne
+# peut rien aller chercher. Le message est chiffré de bout en bout et ne porte que le titre et la
+# page à ouvrir (voir core/web_push.py) ; le détail se lit dans l'application.
+
+#: Ce que porte une notification poussée, au plus : un titre court.
+TITRE_POUSSE_MAX = 120
+
+
+def programmer_la_poussee(notification):
+    """Après l'enregistrement : pousse vers les applications web de la personne, s'il y en a."""
+    from .models import AppareilMobile, PlateformeMobile
+
+    if not AppareilMobile.objects.filter(utilisateur_id=notification.utilisateur_id,
+                                         plateforme=PlateformeMobile.WEB).exists():
+        return
+    from .tasks import pousser_notification_task
+
+    identifiant = str(notification.id)
+    transaction.on_commit(lambda: pousser_notification_task.delay(identifiant))
+
+
+def pousser(notification_id, envoyer=None):
+    """Envoie une notification à chaque application web abonnée de son destinataire. Rend le
+    nombre d'envois acceptés. Un abonnement que le service dit expiré est oublié."""
+    from . import web_push
+    from .models import AppareilMobile, NotificationApplication, PlateformeMobile
+
+    notification = NotificationApplication.objects.filter(id=notification_id).first()
+    if notification is None:
+        return 0
+    envoyer = envoyer or web_push.envoyer
+    message = {"titre": (notification.titre or "Nouvelle notification")[:TITRE_POUSSE_MAX],
+               "lien": "/terrain/alertes", "id": str(notification.id), "urgent": notification.urgent}
+    acceptes = 0
+    # Le filtre sur l'abonnement se fait ici, en Python : la colonne est chiffrée.
+    for appareil in AppareilMobile.objects.filter(utilisateur_id=notification.utilisateur_id,
+                                                  plateforme=PlateformeMobile.WEB,
+                                                  notifications_autorisees=True):
+        if not appareil.abonnement_push:
+            continue
+        try:
+            statut = envoyer(json.loads(appareil.abonnement_push), message, urgent=notification.urgent)
+            acceptes += 1 if statut < 400 else 0
+        except web_push.AbonnementExpire:
+            appareil.abonnement_push = ""
+            appareil.save(update_fields=["abonnement_push"])
+        except Exception:
+            logger.exception("Notification poussée non envoyée (appareil %s).", appareil.id)
+    return acceptes
 
 
 def accuser(utilisateur, identifiants, etape):

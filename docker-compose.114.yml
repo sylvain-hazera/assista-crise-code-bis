@@ -149,8 +149,10 @@ services:
     # passe de son détenteur, remise à son navigateur pour signer depuis la page Satellites.
     # openweathermap_cle_api : clé gratuite d'OpenWeather, pour la qualité de l'air estimée
     # (core/qualite_air.py), lue par la même tâche planifiée.
+    # vapid_prive : clé (PEM, P-256) qui signe les notifications poussées vers les applications
+    # web installées (core/web_push.py) ; le backend en tire la clé publique donnée au navigateur.
     secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password, meteofrance_cle_api,
-              openweathermap_cle_api, signature_satellites_web]
+              openweathermap_cle_api, signature_satellites_web, vapid_prive]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data          # jeton du bot Matrix, partagé avec matrix-bridge
@@ -168,6 +170,8 @@ services:
     command: ["-A", "config", "worker", "--loglevel=INFO", "--concurrency=2"]
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    # Les notifications poussées partent d'ici (core/tasks.pousser_notification_task).
+    secrets: [vapid_prive]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data
@@ -605,6 +609,7 @@ secrets:
   openweathermap_cle_api:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/openweathermap_cle_api.txt" }
   eumetsat_api:              { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/eumetsat_api.txt" }
   lsasaf_identifiants:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/lsasaf_identifiants.txt" }
+  vapid_prive:               { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/vapid_prive.pem" }
   # Clé de signature des satellites, chiffrée par la phrase de passe (jamais en clair). Produite
   # par scripts/satellites/preparer-signature-web.sh. Le fichier doit exister, même vide : vide,
   # la page Satellites propose seulement le collage d'une signature faite dans un terminal.

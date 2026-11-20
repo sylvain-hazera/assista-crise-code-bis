@@ -11,7 +11,7 @@
  *
  * Changer ce fichier (VERSION) remplace l'ancien service worker et vide ses caches.
  */
-const VERSION = 'coquille-2026-11-20';
+const VERSION = 'coquille-2026-11-21';
 const PAGE = '/index.html';
 
 self.addEventListener('install', (evenement) => {
@@ -69,3 +69,38 @@ self.addEventListener('fetch', (evenement) => {
     );
   }
 });
+
+/*
+ * Notifications poussées (lot 4) : le serveur n'envoie qu'un titre et la page à ouvrir, chiffrés
+ * pour ce seul navigateur (backend/core/web_push.py). Le détail se lit dans l'application.
+ */
+self.addEventListener('push', (evenement) => {
+  let message = {};
+  try { message = evenement.data ? evenement.data.json() : {}; } catch (e) { message = {}; }
+  const lien = typeof message.lien === 'string' && message.lien.startsWith('/') ? message.lien : '/terrain/alertes';
+  evenement.waitUntil(self.registration.showNotification(message.titre || 'Nouvelle notification', {
+    body: 'Touchez pour ouvrir.',
+    icon: '/api/pwa/icone/?taille=192',
+    badge: '/api/pwa/icone/?taille=192',
+    tag: message.id || undefined,
+    requireInteraction: !!message.urgent,
+    data: { lien },
+  }));
+});
+
+self.addEventListener('notificationclick', (evenement) => {
+  evenement.notification.close();
+  const lien = (evenement.notification.data && evenement.notification.data.lien) || '/terrain/alertes';
+  evenement.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((fenetres) => {
+      for (const fenetre of fenetres) {
+        if ('focus' in fenetre) {
+          fenetre.navigate(lien).catch(() => {});
+          return fenetre.focus();
+        }
+      }
+      return self.clients.openWindow(lien);
+    }),
+  );
+});
+

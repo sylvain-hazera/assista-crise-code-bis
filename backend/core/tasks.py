@@ -193,3 +193,11 @@ def prevenir_le_reseau_des_dons_task(appel_id: str):
 
     appel = AppelAuxDons.objects.select_related("institution", "crise").filter(pk=appel_id).first()
     return prevenir_le_reseau(appel) if appel is not None else {"institutions": 0, "personnes": 0}
+
+
+@shared_task(acks_late=True, time_limit=120, soft_time_limit=100)
+def pousser_notification_task(notification_id: str):
+    """Notification poussée vers les applications web (core/notifications_application.pousser)."""
+    from .notifications_application import pousser
+    return pousser(notification_id)
+
