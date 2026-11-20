@@ -15,34 +15,6 @@
       </div>
     }
 
-    @if (layerVisibility.pluieRadar && boucleRadar.length > 1 && imageBoucle; as image) {
-      <!-- Boucle du radar : l'heure écoulée (relevés) puis l'heure qui vient (NOS ESTIMATIONS). -->
-      <div class="radar-temps" [class.estimation]="image.estimation" role="group" aria-label="Boucle du radar : choisir l'heure">
-        <button type="button" class="radar-lecture" (click)="basculerLectureBoucle()"
-                [attr.aria-label]="lectureBoucle ? 'Arrêter la boucle' : 'Lire la boucle du radar'">
-          <span class="material-icons">{{ lectureBoucle ? 'pause' : 'play_arrow' }}</span>
-        </button>
-        <div class="radar-reglette">
-          <div class="radar-heure">
-            <strong>{{ image.heure | date:'HH:mm' }}</strong>
-            @if (image.estimation) {
-              <span class="nature-estimation">+{{ image.minutes }} min · nos estimations, pas une prévision</span>
-            } @else if (indiceBoucle === indiceMaintenant) {
-              <span>dernière image du radar</span>
-            } @else {
-              <span>relevé du radar</span>
-            }
-            @if (indiceBoucle !== indiceMaintenant) {
-              <button type="button" class="radar-maintenant" (click)="revenirMaintenant()">maintenant</button>
-            }
-          </div>
-          <input type="range" min="0" [max]="boucleRadar.length - 1" step="1"
-                 [ngModel]="indiceBoucle" (ngModelChange)="choisirImageBoucle($event)" aria-label="Heure de l'image radar"
-                 [style.--maintenant]="(indiceMaintenant / (boucleRadar.length - 1) * 100) + '%'">
-        </div>
-      </div>
-    }
-
     @if (carteIndisponible) {
       <!-- Le conteneur reste dans le DOM : MapLibre s'y accroche si la page est rechargée sur
            un poste capable. Ce bandeau se superpose plutôt que de le remplacer. -->
@@ -57,22 +29,47 @@
       </div>
     }
 
-    @if ((layerVisibility.pluie && pluie) || (layerVisibility.rafales && rafales) || (layerVisibility.hiver && hiver)) {
-      <!-- Réglette de temps commune à la pluie et aux rafales prévues. Ce sont des PRÉVISIONS
-           (recalées chaque heure), pas des mesures : le libellé le dit, avec l'heure du calcul. -->
-      <div class="pluie-temps" role="group" aria-label="Prévision à trois heures : choisir l'heure">
-        @if (echeancesPrevision.length) {
-          <button type="button" class="pluie-lecture" (click)="basculerAnimationPrevision()"
-                  [attr.aria-label]="animationPrevision ? 'Arrêter l\'animation' : 'Animer la prévision'">
-            <span class="material-icons">{{ animationPrevision ? 'pause' : 'play_arrow' }}</span>
-          </button>
-          <div class="pluie-reglette">
-            <div class="pluie-heure">
-              <strong>{{ echeancePrevision | date:'HH:mm' }}</strong> <span>{{ ecartPrevision }}</span>
+    @if ((layerVisibility.pluieRadar && boucleRadar.length) || (layerVisibility.pluie && pluie)
+         || (layerVisibility.rafales && rafales) || (layerVisibility.hiver && hiver)) {
+      <!-- Une seule frise de temps (frise-temps.ts) : à gauche les RELEVÉS du radar, puis NOS
+           ESTIMATIONS (pas une prévision), puis la PRÉVISION de Météo-France. Les calques
+           basculent tout seuls selon l'heure choisie ; l'étiquette dit toujours ce qu'on voit. -->
+      <div class="frise-temps" [class.estimation]="pasFrise?.nature === 'estimation'"
+           [class.prevision]="pasFrise?.nature === 'prevision'" role="group" aria-label="Heure de la météo affichée">
+        @if (pasFrise; as pas) {
+          @if (frise.length > 1) {
+            <button type="button" class="frise-lecture" (click)="basculerLectureFrise()"
+                    [attr.aria-label]="lectureFrise ? 'Arrêter la lecture' : 'Lire, de l\'heure écoulée aux heures qui viennent'">
+              <span class="material-icons">{{ lectureFrise ? 'pause' : 'play_arrow' }}</span>
+            </button>
+          }
+          <div class="frise-reglette">
+            <div class="frise-heure">
+              <strong>{{ pas.heure | date:'HH:mm' }}</strong>
+              <span>{{ ecartFrise }}</span>
+              @switch (pas.nature) {
+                @case ('releve') {
+                  <span class="nature">{{ indiceFrise === indiceMaintenantFrise ? 'dernière image du radar' : 'relevé du radar' }}</span>
+                }
+                @case ('estimation') { <span class="nature nature-estimation">nos estimations, pas une prévision</span> }
+                @case ('prevision') { <span class="nature nature-prevision">prévision Météo-France</span> }
+              }
+              @if (indiceFrise !== indiceMaintenantFrise) {
+                <button type="button" class="frise-maintenant" (click)="revenirMaintenantFrise()">maintenant</button>
+              }
             </div>
-            <input type="range" min="0" [max]="echeancesPrevision.length - 1" step="1"
-                   [ngModel]="indicePrevision" (ngModelChange)="choisirEcheance($event)"
-                   aria-label="Heure de la prévision">
+            @if (frise.length > 1) {
+              <input type="range" min="0" [max]="frise.length - 1" step="1"
+                     [ngModel]="indiceFrise" (ngModelChange)="choisirPas($event)" aria-label="Heure de la météo affichée">
+              @if (zonesFrise; as zones) {
+                <div class="frise-zones" aria-hidden="true"
+                     [style.--maintenant]="zones.finReleves + '%'" [style.--fin-estimations]="zones.finEstimations + '%'">
+                  @if (zones.releves) { <span class="zone-releves">relevés</span> }
+                  @if (zones.estimations) { <span class="zone-estimations">estimations</span> }
+                  @if (zones.previsions) { <span class="zone-previsions">Météo-France</span> }
+                </div>
+              }
+            }
             @if (layerVisibility.pluie && pluie) {
               <div class="pluie-note" [class.ancien]="pluie.perime">
                 Pluie prévue — calcul de {{ pluie.calcul | date:'HH:mm' }}, {{ pluie.source }}
@@ -104,7 +101,7 @@
             }
           </div>
         } @else {
-          <div class="pluie-note ancien">Aucune image de prévision n'a encore été relevée.</div>
+          <div class="pluie-note ancien">Aucune image de radar ni de prévision n'a encore été relevée.</div>
         }
       </div>
     }

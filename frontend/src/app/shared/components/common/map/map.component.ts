@@ -31,6 +31,9 @@ import {
   VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
 import * as dessinOrages from './orages-carte';
+import {
+  calquesDuPas, construireFrise, ecartLisible, PasFrise, rangDeLInstant, rangMaintenant,
+} from './frise-temps';
 import * as dessinFeux from './feux-carte';
 import { AnimationVent, GrilleVent, decoderChampVent } from './vent-anime';
 
@@ -294,6 +297,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('pluie-radar-layer', this.layerVisibility.pluieRadar);
     this.appliquerVisibiliteOrages();
     if (!this.layerVisibility.pluieRadar && this.lectureBoucle) this.basculerLectureBoucle();
+    // Le radar entre dans la frise ou en sort : la frise se recale (et les calques avec).
+    if (this.frise.length < 2 && this.lectureFrise) this.basculerLectureFrise();
+    this.appliquerPas();
     this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
     this.applyLayerVisibility('blitzortung-layer', this.layerVisibility.blitzortung);
     this.applyLayerVisibility('feux-suivis-layer', this.layerVisibility.feuxSuivis);
@@ -971,7 +977,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private afficherVent(): void {
     const vent = this.vent;
     if (!this.layerVisibility.vent || !vent?.echeances.length) return;
-    const instant = this.echeancePrevision ? new Date(this.echeancePrevision).getTime() : Date.now();
+    const instant = this.pasFrise?.instant
+      ?? (this.echeancePrevision ? new Date(this.echeancePrevision).getTime() : Date.now());
     const echeance = vent.echeances[this.rangLePlusProche(vent.echeances, instant)];
     const cle = `${vent.calcul}|${echeance}`;
     const connue = this.grillesVent.get(cle);
@@ -1046,7 +1053,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private chargerPrevision(serie: 'pluie' | 'rafales' | 'hiver'): void {
     const fin = { error: () => {} };
-    const afficher = () => this.afficherPrevisions();
+    const afficher = () => this.appliquerPas();
     if (serie === 'pluie') {
       this.veilleService.pluiePrevue().subscribe({ next: (donnees) => { this.pluie = donnees; afficher(); }, ...fin });
     } else if (serie === 'rafales') {
@@ -1103,7 +1110,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   choisirEcheance(indice: number): void {
     const echeances = this.echeancesPrevision;
     this.echeanceChoisie = echeances[Math.max(0, Math.min(echeances.length - 1, +indice))] ?? null;
+    // La frise suit : c'est elle qui donne l'heure au vent et aux calques.
+    if (this.echeanceChoisie) this.instantFrise = new Date(this.echeanceChoisie).getTime();
     this.afficherPrevisions();
+    this.appliquerCalquesDuPas();
   }
 
   basculerAnimationPrevision(): void {
@@ -1151,6 +1161,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       const source = this.map.getSource(nom) as maplibregl.ImageSource | undefined;
       if (source) {
         source.updateImage({ url, coordinates });
+        this.appliquerCalquesDuPas();
         return;
       }
       this.map.addSource(nom, { type: 'image', url, coordinates });
@@ -1163,6 +1174,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         paint: { 'raster-opacity': opacite, 'raster-fade-duration': 0,
                  'raster-resampling': nom === 'pluie' ? 'linear' : 'nearest' },
       }, premierTexte);
+      this.appliquerCalquesDuPas();
     });
   }
 
@@ -1335,7 +1347,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         // Images chargées d'avance : la lecture ne s'arrête pas sur chaque image.
         if (typeof Image !== 'undefined') this.boucleRadar.forEach(i => { new Image().src = i.url; });
         if (etaitMaintenant || this.indiceBoucle >= this.boucleRadar.length) this.indiceBoucle = this.indiceMaintenant;
-        this.afficherImageBoucle();
+        this.appliquerPas();
       },
       error: () => {},
     });
@@ -1394,6 +1406,119 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       const filtre = image.estimation ? null : ['<=', ['get', 'instant'], image.instant];
       for (const id of ['orages-trajectoires-layer', 'orages-trajectoire-points-layer']) {
         if (this.map.getLayer(id)) this.map.setFilter(id, filtre as maplibregl.FilterSpecification | null);
+      }
+      this.appliquerCalquesDuPas();
+    });
+  }
+
+  // ── Frise de temps unique (frise-temps.ts, 20/11/2026) ──────────────────────────────────
+  // À gauche les relevés du radar, puis NOS ESTIMATIONS, puis la PRÉVISION de Météo-France ;
+  // les calques suivent le pas choisi tout seuls.
+  /** Instant choisi sur la frise ; null : la frise suit « maintenant ». */
+  instantFrise: number | null = null;
+  lectureFrise = false;
+  private minuterieFrise: ReturnType<typeof setInterval> | null = null;
+  private memoFrise: { cle: string; frise: PasFrise[] } | null = null;
+
+  get frise(): PasFrise[] {
+    const radar = this.layerVisibility.pluieRadar ? this.boucleRadar : [];
+    const echeances = this.echeancesPrevision;
+    const cle = `${radar.length}|${radar[0]?.url}|${radar[radar.length - 1]?.url}|${echeances.join(',')}`;
+    if (this.memoFrise?.cle !== cle) this.memoFrise = { cle, frise: construireFrise(radar, echeances) };
+    return this.memoFrise.frise;
+  }
+
+  get indiceMaintenantFrise(): number { return rangMaintenant(this.frise); }
+
+  get indiceFrise(): number {
+    const frise = this.frise;
+    if (!frise.length) return 0;
+    return this.instantFrise === null ? this.indiceMaintenantFrise : rangDeLInstant(frise, this.instantFrise);
+  }
+
+  get pasFrise(): PasFrise | null { return this.frise[this.indiceFrise] ?? null; }
+
+  get ecartFrise(): string {
+    const pas = this.pasFrise;
+    return pas ? ecartLisible(pas.instant) : '';
+  }
+
+  /** Les zones de la frise, en pourcentage de sa longueur : fin des relevés (« maintenant »),
+   * fin de nos estimations ; et lesquelles existent, pour n'étiqueter que celles-là. */
+  get zonesFrise(): { finReleves: number; finEstimations: number; releves: boolean; estimations: boolean; previsions: boolean } {
+    const frise = this.frise;
+    const dernier = (nature: string) => frise.reduce((rang, p, i) => (p.nature === nature ? i : rang), -1);
+    const part = (rang: number) => (frise.length > 1 ? Math.max(0, rang) / (frise.length - 1) * 100 : 0);
+    const releve = dernier('releve');
+    const estimation = dernier('estimation');
+    return {
+      finReleves: part(releve),
+      finEstimations: part(Math.max(releve, estimation)),
+      releves: releve >= 0, estimations: estimation >= 0, previsions: frise.some(p => p.nature === 'prevision'),
+    };
+  }
+
+  choisirPas(indice: number): void {
+    const frise = this.frise;
+    if (!frise.length) return;
+    const rang = Math.max(0, Math.min(frise.length - 1, +indice));
+    this.instantFrise = rang === this.indiceMaintenantFrise ? null : frise[rang].instant;
+    this.appliquerPas();
+  }
+
+  revenirMaintenantFrise(): void {
+    if (this.lectureFrise) this.basculerLectureFrise();
+    this.instantFrise = null;
+    this.appliquerPas();
+  }
+
+  basculerLectureFrise(): void {
+    this.lectureFrise = !this.lectureFrise;
+    if (this.minuterieFrise) { clearInterval(this.minuterieFrise); this.minuterieFrise = null; }
+    if (!this.lectureFrise) return;
+    this.minuterieFrise = setInterval(() => {
+      const frise = this.frise;
+      if (frise.length < 2) return;
+      this.instantFrise = frise[(this.indiceFrise + 1) % frise.length].instant;
+      this.appliquerPas();
+    }, 700);
+  }
+
+  /** Pose ce que le pas choisi demande : l'image du radar (relevé ou estimation), l'échéance de
+   * prévision, le vent ; puis montre ou masque chaque calque. */
+  private appliquerPas(): void {
+    const pas = this.pasFrise;
+    if (!pas) { this.afficherPrevisions(); return; }
+    if (pas.radar !== null && this.boucleRadar[pas.radar]) {
+      this.indiceBoucle = pas.radar;
+      this.afficherImageBoucle();
+    }
+    if (pas.prevision) {
+      this.echeanceChoisie = pas.prevision;
+      this.afficherPrevisions();
+    } else {
+      this.afficherVent();
+    }
+    this.appliquerCalquesDuPas();
+  }
+
+  /** La bascule automatique : le passé au radar, la première heure à nos estimations (avec les
+   * rafales et la neige prévues), au-delà la prévision de Météo-France. Un calque masqué l'est
+   * par son opacité : sa case reste cochée. */
+  private appliquerCalquesDuPas(): void {
+    if (!this.frise.length) return;
+    const pas = this.pasFrise;
+    const calques = calquesDuPas(pas);
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const opacites: [string, number][] = [
+        ['pluie-radar-layer', calques.radar ? (pas?.nature === 'estimation' ? 0.6 : 0.85) : 0],
+        ['pluie-layer', calques.pluie ? 0.7 : 0],
+        ['rafales-layer', calques.autresPrevisions ? 0.8 : 0],
+        ['hiver-layer', calques.autresPrevisions ? 0.85 : 0],
+      ];
+      for (const [id, opacite] of opacites) {
+        if (this.map.getLayer(id)) this.map.setPaintProperty(id, 'raster-opacity', opacite);
       }
     });
   }
@@ -1849,6 +1974,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.rafraichissementVent) clearInterval(this.rafraichissementVent);
     if (this.rafraichissementOrages) clearInterval(this.rafraichissementOrages);
     if (this.minuterieBoucle) clearInterval(this.minuterieBoucle);
+    if (this.minuterieFrise) clearInterval(this.minuterieFrise);
     if (this.map) this.map.remove();
   }
 

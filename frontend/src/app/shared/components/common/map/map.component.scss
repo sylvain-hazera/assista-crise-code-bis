@@ -203,28 +203,56 @@
   &.ancien { color: var(--ac-amber-text, #92400e); }
 }
 
-// Réglette de temps de la pluie prévue, en bas de la carte.
-.pluie-temps {
+// Frise de temps unique, en bas de la carte (frise-temps.ts, 20/11/2026) : relevés du radar,
+// nos estimations, puis la prévision de Météo-France. Le cadre dit la nature de ce qu'on voit :
+// plein pour un relevé, tirets pour nos estimations, pointillés pour une prévision.
+.frise-temps {
   position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
-  z-index: 5; width: min(440px, calc(100% - 24px));
+  z-index: 5; width: min(460px, calc(100% - 24px));
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; border-radius: 10px;
   background: var(--ac-surface, white); color: var(--ac-text, #1f2937);
   box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+  border: 2px solid transparent;
+  &.estimation { border-color: var(--ac-blue-border, #93c5fd); border-style: dashed; }
+  &.prevision { border-color: var(--ac-indigo-border, #a5b4fc); border-style: dotted; }
 
-  .pluie-lecture {
+  .frise-lecture {
     flex: none; width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     background: var(--brand-primary); color: #fff;
     &:focus-visible { outline: 2px solid var(--ac-text, #1f2937); outline-offset: 2px; }
   }
-  .pluie-reglette { flex: 1; min-width: 0; }
-  .pluie-heure {
-    display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums;
+  .frise-reglette { flex: 1; min-width: 0; }
+  .frise-heure {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-variant-numeric: tabular-nums;
     strong { font-size: 1.05rem; }
     span { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
+    .nature { font-weight: 600; color: var(--ac-text, #1f2937); }
+    .nature-estimation { color: var(--ac-blue-text, #1e40af); }
+    .nature-prevision { color: var(--ac-indigo-text, #3730a3); }
   }
-  input[type="range"] { width: 100%; margin: 2px 0; accent-color: var(--brand-primary); }
+  .frise-maintenant {
+    margin-left: auto; border: 1px solid var(--ac-border, #d1d5db); border-radius: 999px; cursor: pointer;
+    background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #1f2937); font: inherit; font-size: .72rem; padding: 0 8px;
+    &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+  }
+  input[type="range"] { width: 100%; margin: 2px 0 0; accent-color: var(--brand-primary); }
+  // Les trois zones sous le curseur : relevés jusqu'à « maintenant », nos estimations, puis
+  // Météo-France. Les libellés se placent dans leur zone.
+  .frise-zones {
+    position: relative; height: 4px; margin: 0 8px 14px; border-radius: 2px;
+    background: linear-gradient(90deg,
+      var(--ac-surface-3, #e5e7eb) 0 var(--maintenant, 0%),
+      var(--ac-blue-border, #93c5fd) var(--maintenant, 0%) var(--fin-estimations, 0%),
+      var(--ac-indigo-border, #a5b4fc) var(--fin-estimations, 0%) 100%);
+    span {
+      position: absolute; top: 5px; font-size: .66rem; white-space: nowrap; color: var(--ac-text-muted, #6b7280);
+      &.zone-releves { left: 0; }
+      &.zone-estimations { left: var(--maintenant, 0%); }
+      &.zone-previsions { right: 0; }
+    }
+  }
   .pluie-note {
     font-size: .72rem; color: var(--ac-text-muted, #6b7280);
     &.ancien { color: var(--ac-amber-text, #92400e); }
@@ -341,43 +369,6 @@
 // ── Cellules orageuses et boucle du radar (20/11/2026) ──────────────────────
 .orages-estimations-dot { background: transparent; border: 2px dashed #1e40af; }
 .layer-toggle-item.sous-calque { padding-left: 18px; font-size: .92em; }
-
-// La boucle du radar, en haut au centre : la réglette des prévisions Météo-France occupe le bas.
-.radar-temps {
-  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
-  z-index: 5; width: min(460px, calc(100% - 140px));
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 12px; border-radius: 10px;
-  background: var(--ac-surface, white); color: var(--ac-text, #1f2937);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
-  border: 2px solid transparent;
-  &.estimation { border-color: #1e40af; border-style: dashed; }
-
-  .radar-lecture {
-    flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--brand-primary, #1d4ed8); color: #fff;
-    &:focus-visible { outline: 2px solid var(--brand-primary, #1d4ed8); outline-offset: 2px; }
-  }
-  .radar-reglette { flex: 1; min-width: 0; }
-  .radar-heure {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: .8rem;
-    font-variant-numeric: tabular-nums;
-    strong { font-size: .95rem; }
-    span { color: var(--ac-text-muted, #6b7280); }
-    .nature-estimation { color: #1e40af; font-weight: 600; }
-  }
-  .radar-maintenant {
-    margin-left: auto; border: 1px solid var(--ac-border, #d1d5db); border-radius: 999px; cursor: pointer;
-    background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #1f2937); font: inherit; font-size: .72rem; padding: 0 8px;
-  }
-  // Le repère « maintenant » sur la réglette : à gauche les relevés, à droite nos estimations.
-  input[type="range"] {
-    width: 100%; margin: 2px 0; accent-color: var(--brand-primary, #1d4ed8);
-    background: linear-gradient(90deg, transparent calc(var(--maintenant, 100%) - 1px), #1e40af calc(var(--maintenant, 100%) - 1px),
-                #1e40af calc(var(--maintenant, 100%) + 1px), transparent calc(var(--maintenant, 100%) + 1px));
-  }
-}
 
 // Potentiel d'orage de feu : heure choisie, légende, mention.
 .potentiel-orage-feu {

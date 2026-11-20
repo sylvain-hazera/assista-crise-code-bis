@@ -223,8 +223,8 @@ describe('MapComponent', () => {
       expect(legende.textContent).toContain('40');
       expect(legende.textContent).toContain('km/h et plus');
       expect(legende.querySelectorAll('i').length).toBe(2);
-      expect(fixture.nativeElement.querySelector('.pluie-temps').textContent).toContain('Rafales prévues — calcul de');
-      expect(fixture.nativeElement.querySelector('.pluie-temps').textContent).not.toContain('Pluie prévue');
+      expect(fixture.nativeElement.querySelector('.frise-temps').textContent).toContain('Rafales prévues — calcul de');
+      expect(fixture.nativeElement.querySelector('.frise-temps').textContent).not.toContain('Pluie prévue');
     });
 
     it('la neige et le verglas prévus partagent la même réglette, avec leur légende', () => {
@@ -240,18 +240,45 @@ describe('MapComponent', () => {
 
       expect(http.match(r => r.url.includes('rafales-prevues') || r.url.includes('pluie-prevue')).length).toBe(0);
       expect(component.echeancesPrevision).toEqual([instants.proche, instants.suivant]);
-      const reglette: HTMLElement = fixture.nativeElement.querySelector('.pluie-temps');
+      const reglette: HTMLElement = fixture.nativeElement.querySelector('.frise-temps');
       expect(reglette.textContent).toContain('Neige, verglas, grêle prévus — calcul de');
       expect(reglette.querySelector('.hiver-legende')!.textContent).toContain('Pluie ou bruine verglaçante');
       component.layerVisibility.hiver = false;
       component.onLayerToggle();
     });
 
+    it('une seule frise pour le radar et les prévisions, qui bascule toute seule', () => {
+      // Le radar : deux relevés (−5 min, maintenant) et une estimation (+5 min).
+      component.layerVisibility.pluieRadar = true;
+      component.boucleRadar = [-5, 0, 5].map(m => ({
+        url: `radar-${m}`, instant: Date.now() + m * 60000, heure: dans(m), estimation: m > 0, minutes: Math.max(0, m) }));
+      component.layerVisibility.rafales = true;
+      component.rafales = rafales();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelectorAll('.frise-temps').length).toBe(1);
+      expect(fixture.nativeElement.querySelectorAll('input[type="range"]').length).toBe(1);
+      const frise: HTMLElement = fixture.nativeElement.querySelector('.frise-temps');
+      expect(frise.textContent).toContain('dernière image du radar');       // « maintenant » : le relevé
+      expect(frise.textContent).toContain('Rafales prévues — calcul de');
+
+      component.choisirPas(2);                                               // + 5 min
+      fixture.detectChanges();
+      expect(frise.textContent).toContain('nos estimations, pas une prévision');
+      component.choisirPas(component.frise.length - 1);                      // au-delà : Météo-France
+      fixture.detectChanges();
+      expect(frise.textContent).toContain('prévision Météo-France');
+      expect(frise.classList).toContain('prevision');
+      component.revenirMaintenantFrise();
+      expect(component.indiceFrise).toBe(1);
+      component.layerVisibility.pluieRadar = false;
+    });
+
     it('n’affiche pas de réglette quand aucun calque de prévision n’est coché', () => {
       component.rafales = rafales();
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('.pluie-temps')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.frise-temps')).toBeNull();
     });
   });
 
