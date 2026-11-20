@@ -603,28 +603,42 @@ class BlitzortungView(APIView):
 
 
 class PluieRadarView(APIView):
-    """GET /api/orages/radar/ : la dernière pluie OBSERVÉE par le radar (core/carte_radar.py) —
-    heure (qui désigne l'image, /api/orages/radar/image/?heure=…), coins où la poser, légende."""
+    """GET /api/orages/radar/ : la pluie du radar en images pour la carte (core/carte_radar.py).
+
+    - `heure`, `coins` : la dernière image OBSERVÉE et où la poser ;
+    - `passees` : les heures des images observées gardées (une heure), pour la boucle ;
+    - `estimees` : [{minutes, echeance}] des images de l'heure qui vient extrapolées de la
+      dernière image — NOS ESTIMATIONS, pas une prévision ;
+    - `legende`. Les images : /api/orages/radar/image/?heure=… ou ?estimee=<minutes>."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         from . import carte_radar, orages
-        from .models import ImageRadarOrage
+        from .models import ImageRadarEstimee, ImageRadarOrage
         image = ImageRadarOrage.objects.order_by("-heure").first()
         reponse = {**sources_ouvertes.resume("ORAGES_RADAR"), "legende": carte_radar.legende(),
-                   "heure": None, "coins": None, "perime": True}
+                   "heure": None, "coins": None, "perime": True, "passees": [], "estimees": []}
         if image is not None:
             _png, coins = carte_radar.rendre(image)
             reponse.update({
                 "heure": image.heure, "coins": coins,
                 "perime": timezone.now() - image.heure > orages.FRAICHEUR_MAX + datetime.timedelta(minutes=10),
+                "passees": list(ImageRadarOrage.objects.filter(
+                    largeur=image.largeur, hauteur=image.hauteur, projdef=image.projdef,
+                ).order_by("heure").values_list("heure", flat=True)),
+                # Seulement celles qui partent de la dernière image : jamais d'estimation d'une image
+                # plus ancienne présentée comme actuelle.
+                "estimees": [{"minutes": m, "echeance": image.heure + datetime.timedelta(minutes=m)}
+                             for m in ImageRadarEstimee.objects.filter(heure_base=image.heure)
+                             .order_by("minutes").values_list("minutes", flat=True)],
             })
         return Response(reponse)
 
 
 class ImagePluieRadarView(APIView):
-    """GET /api/orages/radar/image/?heure=… : l'image PNG transparente d'une heure gardée.
-    Sans authentification, comme les autres images de la carte."""
+    """GET /api/orages/radar/image/?heure=… (image observée gardée) ou ?estimee=<minutes> (image
+    estimée de l'heure qui vient) : PNG transparent. Sans authentification, comme les autres
+    images de la carte."""
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -632,14 +646,27 @@ class ImagePluieRadarView(APIView):
         from django.utils.dateparse import parse_datetime
 
         from . import carte_radar
-        from .models import ImageRadarOrage
+        from .models import ImageRadarEstimee, ImageRadarOrage
+        if request.query_params.get("estimee"):
+            try:
+                minutes = int(request.query_params["estimee"])
+            except ValueError:
+                return HttpResponseNotFound()
+            image = ImageRadarEstimee.objects.filter(minutes=minutes).first()
+            if image is None:
+                return HttpResponseNotFound()
+            png, _coins = carte_radar.rendre(image, cle=("estimee", image.heure_base, minutes))
+            reponse = HttpResponse(png, content_type="image/png")
+            # Remplacée à chaque nouvelle image observée (cinq minutes).
+            reponse["Cache-Control"] = "no-cache"
+            return reponse
         heure = parse_datetime(request.query_params.get("heure") or "")
         image = ImageRadarOrage.objects.filter(heure=heure).first() if heure else None
         if image is None:
             return HttpResponseNotFound()
         png, _coins = carte_radar.rendre(image)
         reponse = HttpResponse(png, content_type="image/png")
-        # Une heure d'image ne change jamais.
+        # Une heure d'image observée ne change jamais.
         reponse["Cache-Control"] = "public, max-age=3600"
         return reponse
 

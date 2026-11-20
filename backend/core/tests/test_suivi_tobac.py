@@ -90,6 +90,8 @@ def test_le_releve_radar_porte_le_suivi(client):
     from unittest import mock
 
     from core import orages
+    from django.contrib.gis.geos import Point
+
     from core.models import CelluleOrage, ImageRadarOrage
     from core.tests.test_orages import image_hdf5
 
@@ -107,3 +109,6 @@ def test_le_releve_radar_porte_le_suivi(client):
     (cellule,) = CelluleOrage.objects.all()
     assert cellule.suivi["suivie_depuis_min"] == 10
     assert cellule.suivi["evolution"] == "renforcement"
+    # Les noyaux sont placés sur la carte, à l'intérieur de la cellule.
+    (noyau, *_) = cellule.suivi["noyaux_positions"]
+    assert cellule.contour.buffer(0.02).contains(Point(noyau["lon"], noyau["lat"], srid=4326))

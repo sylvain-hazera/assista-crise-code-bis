@@ -57,3 +57,24 @@ def test_releve_complet_sur_trois_images():
     prevue = PrevisionPluieCommune.objects.get(commune_code="99010")
     assert prevue.dans_min_intense is not None and 10 <= prevue.dans_min_intense <= 45
     assert prevue.cumul_mm > 0
+
+
+@pytest.mark.django_db
+def test_la_boucle_de_la_carte_va_du_releve_a_l_estimation(client):
+    """Après trois images : les images observées de l'heure et les douze images estimées de
+    l'heure qui vient sont listées et servies ; la trajectoire porte l'intensité."""
+    from core import carte_radar
+    from core.models import ImageRadarEstimee
+    carte_radar._IMAGES.clear()
+    test_releve_complet_sur_trois_images()
+    assert ImageRadarEstimee.objects.count() == 12
+    r = client.get("/api/orages/radar/").json()
+    assert len(r["passees"]) == 3
+    assert [e["minutes"] for e in r["estimees"]] == list(range(5, 65, 5))
+    image = client.get("/api/orages/radar/image/", {"estimee": 30})
+    assert image.status_code == 200 and image["Content-Type"] == "image/png"
+    assert client.get("/api/orages/radar/image/", {"estimee": 90}).status_code == 404
+    cellule = CelluleOrage.objects.get()
+    assert len(cellule.trace) == 3 and cellule.trace[-1][3] == pytest.approx(60, abs=1)
+    (commune,) = [c for c in cellule.communes_estimees if c["code"] == "99010"]
+    assert {"lon", "lat"} <= set(commune)

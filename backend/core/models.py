@@ -3380,6 +3380,23 @@ class PrevisionPluieCommune(models.Model):
     releve_le = models.DateTimeField()
 
 
+class ImageRadarEstimee(models.Model):
+    """Pluie de l'heure qui vient, extrapolée des images radar par pysteps
+    (core/prevision_immediate.enregistrer_images) : NOS ESTIMATIONS, pas une prévision. Une image
+    par pas de cinq minutes, de +5 à +60, remplacées à chaque image observée. Grille compacte
+    comme ImageRadarOrage (mm/h plafonné à 254)."""
+
+    minutes = models.PositiveSmallIntegerField(primary_key=True)
+    heure_base = models.DateTimeField(help_text="Heure de l'image observée dont elle est extrapolée.")
+    largeur = models.PositiveIntegerField()
+    hauteur = models.PositiveIntegerField()
+    projdef = models.CharField(max_length=300)
+    x0 = models.FloatField()
+    y0 = models.FloatField()
+    grille = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+
 class CumulPluieCommune(models.Model):
     """Cumuls glissants de pluie par commune, selon le radar (1 h, 3 h, 24 h), recalculés à
     chaque image. Seules les communes où il a plu dans les 24 h ont une ligne."""

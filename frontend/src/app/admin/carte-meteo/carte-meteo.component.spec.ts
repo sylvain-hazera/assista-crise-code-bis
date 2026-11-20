@@ -12,7 +12,9 @@ import { CelluleOrage, OragesRadar } from '../../shared/models/veille.model';
 class CarteFactice {
   @Input() modeMeteo = false;
   centres: [number, number, number][] = [];
+  choix: [string | null, boolean][] = [];
   centrerSur(lon: number, lat: number, zoom = 9): void { this.centres.push([lon, lat, zoom]); }
+  choisirCellule(identifiant: string | null, centrer = false): void { this.choix.push([identifiant, centrer]); }
 }
 
 function cellule(identifiant: string, max: number, extra: Partial<CelluleOrage['releves']> = {}): CelluleOrage {
@@ -23,7 +25,7 @@ function cellule(identifiant: string, max: number, extra: Partial<CelluleOrage['
     releves: {
       intensite_max_mmh: max, intensite_moyenne_mmh: max / 2, libelle: 'pluie intense', surface_km2: 40,
       tendance_mmh: null, communes_sous_la_pluie: [{ code: '42218', nom: 'Saint-Étienne' }],
-      rafale_mesuree: null, eclairs: 3, suivi: null, doppler: null, ...extra,
+      rafale_mesuree: null, trace: [], eclairs: 3, suivi: null, doppler: null, ...extra,
     },
     estimations: { cap_deg: 90, vers: "l'est", vitesse_kmh: 45, communes_atteintes: [], ligne_de_grain: false, longueur_km: 12 },
     prevision_meteo_france: { grele: false, rafale_kmh: null, grele_diagnostic_kgm2: null, grele_niveau: null },
@@ -76,16 +78,29 @@ describe('CarteMeteoComponent', () => {
     discardPeriodicTasks();
   }));
 
-  it('« Voir » centre la carte sur la cellule', fakeAsync(() => {
+  it('« Voir » fait chercher et mettre en avant la cellule par la carte', fakeAsync(() => {
     service.orages.and.returnValue(of(reponse([cellule('a', 40)])));
     const fixture = creer();
     const carte = fixture.debugElement.query(sel => sel.componentInstance instanceof CarteFactice).componentInstance as CarteFactice;
     // @ViewChild(MapComponent) ne voit pas la carte factice : on la lui donne.
     fixture.componentInstance.carte = carte as unknown as MapComponent;
     (fixture.nativeElement.querySelector('button.voir') as HTMLButtonElement).click();
-    const [lon, lat] = carte.centres[carte.centres.length - 1];
-    expect(lon).toBeCloseTo(2.1, 5);
-    expect(lat).toBeCloseTo(46.1, 5);
+    fixture.detectChanges();
+    expect(carte.choix).toEqual([['a', true]]);
+    expect(fixture.nativeElement.querySelector('app-cellule-orage.choisie')).not.toBeNull();
+    discardPeriodicTasks();
+  }));
+
+  it('une cellule cliquée sur la carte est mise en avant dans la liste', fakeAsync(() => {
+    service.orages.and.returnValue(of(reponse([cellule('a', 40), cellule('b', 60)])));
+    const fixture = creer();
+    fixture.componentInstance.surCelluleChoisie('a');
+    tick(0);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-cellule-orage.choisie')?.id).toBe('cellule-a');
+    fixture.componentInstance.surCelluleChoisie(null);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-cellule-orage.choisie')).toBeNull();
     discardPeriodicTasks();
   }));
 

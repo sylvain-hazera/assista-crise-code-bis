@@ -90,6 +90,11 @@ export class VeilleService {
     return `${this.api}/orages/radar/image/?heure=${encodeURIComponent(heure)}`;
   }
 
+  /** Image estimée (+minutes) ; `base` (l'image observée d'origine) rend l'adresse unique. */
+  imagePluieEstimeeUrl(minutes: number, base: string): string {
+    return `${this.api}/orages/radar/image/?estimee=${minutes}&base=${encodeURIComponent(base)}`;
+  }
+
   /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.
    * `ici` demande en plus le palier prévu sur la commune de l'institution de l'appelant. */
   rafalesPrevues(ici = false): Observable<RafalesPrevues> {

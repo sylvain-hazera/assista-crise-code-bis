@@ -260,7 +260,7 @@ def test_pluie_observee_en_image_pour_la_carte(client):
     from PIL import Image
 
     from core import carte_radar
-    carte_radar._CACHE.clear()
+    carte_radar._IMAGES.clear()
     h0 = datetime.datetime(2026, 11, 19, 19, 0, tzinfo=datetime.timezone.utc)
     with mock.patch.object(orages, "heure_disponible", return_value=h0), \
          mock.patch.object(orages, "telecharger", return_value=image_hdf5([(300, 300, 10, 5.0)])):

@@ -15,6 +15,34 @@
       </div>
     }
 
+    @if (layerVisibility.pluieRadar && boucleRadar.length > 1 && imageBoucle; as image) {
+      <!-- Boucle du radar : l'heure écoulée (relevés) puis l'heure qui vient (NOS ESTIMATIONS). -->
+      <div class="radar-temps" [class.estimation]="image.estimation" role="group" aria-label="Boucle du radar : choisir l'heure">
+        <button type="button" class="radar-lecture" (click)="basculerLectureBoucle()"
+                [attr.aria-label]="lectureBoucle ? 'Arrêter la boucle' : 'Lire la boucle du radar'">
+          <span class="material-icons">{{ lectureBoucle ? 'pause' : 'play_arrow' }}</span>
+        </button>
+        <div class="radar-reglette">
+          <div class="radar-heure">
+            <strong>{{ image.heure | date:'HH:mm' }}</strong>
+            @if (image.estimation) {
+              <span class="nature-estimation">+{{ image.minutes }} min · nos estimations, pas une prévision</span>
+            } @else if (indiceBoucle === indiceMaintenant) {
+              <span>dernière image du radar</span>
+            } @else {
+              <span>relevé du radar</span>
+            }
+            @if (indiceBoucle !== indiceMaintenant) {
+              <button type="button" class="radar-maintenant" (click)="revenirMaintenant()">maintenant</button>
+            }
+          </div>
+          <input type="range" min="0" [max]="boucleRadar.length - 1" step="1"
+                 [ngModel]="indiceBoucle" (ngModelChange)="choisirImageBoucle($event)" aria-label="Heure de l'image radar"
+                 [style.--maintenant]="(indiceMaintenant / (boucleRadar.length - 1) * 100) + '%'">
+        </div>
+      </div>
+    }
+
     @if (carteIndisponible) {
       <!-- Le conteneur reste dans le DOM : MapLibre s'y accroche si la page est rechargée sur
            un poste capable. Ce bandeau se superpose plutôt que de le remplacer. -->
@@ -106,6 +134,11 @@
         <input type="checkbox" [(ngModel)]="layerVisibility.orages" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot orages-dot"></span>
         Orages (radar)@if (layerVisibility.orages && oragesHeureImage) { <small [class.ancien]="oragesPerime">&nbsp;{{ oragesHeureImage | date:'HH:mm' }}</small> }
+      </label>
+      <label class="layer-toggle-item sous-calque" title="Trajectoire prolongée, contours à +15, +30, +45 et +60 min, cône d'incertitude, communes atteintes : si la cellule gardait sa vitesse et sa direction. Une estimation, pas une prévision.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.oragesEstimations" (ngModelChange)="onLayerToggle()" [disabled]="!layerVisibility.orages">
+        <span class="layer-dot orages-estimations-dot"></span>
+        Nos estimations (l'heure qui vient)
       </label>
       <label class="layer-toggle-item" title="Éclairs vus par le satellite MTG (EUMETSAT) dans l'heure de données la plus récente : 10 à 20 minutes de retard.">
         <input type="checkbox" [(ngModel)]="layerVisibility.eclairs" (ngModelChange)="onLayerToggle()">
@@ -210,11 +243,23 @@
         <span class="layer-dot rafales-dot"></span>
         Rafales prévues (3 h)
       </label>
+      <label class="layer-toggle-item" title="La dernière image de pluie du radar de Météo-France (toutes les cinq minutes), en mm/h, avec la boucle de l'heure écoulée et de l'heure qui vient. Métropole.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.pluieRadar" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot pluie-radar-dot"></span>
+        Pluie observée (radar)@if (layerVisibility.pluieRadar && pluieRadar?.heure) { <small [class.ancien]="pluieRadar!.perime">&nbsp;{{ pluieRadar!.heure | date:'HH:mm' }}</small> }
+      </label>
       <label class="layer-toggle-item" title="Cellules de pluie intense (30 mm/h et plus) selon le radar de Météo-France, toutes les cinq minutes, et en pointillé le couloir qu'elles balaieraient en une heure SI elles gardaient leur trajectoire — une estimation, pas une prévision. Métropole.">
         <input type="checkbox" [(ngModel)]="layerVisibility.orages" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot orages-dot"></span>
         Orages (radar)@if (layerVisibility.orages && oragesHeureImage) { <small [class.ancien]="oragesPerime">&nbsp;{{ oragesHeureImage | date:'HH:mm' }}</small> }
       </label>
+      @if (layerVisibility.orages) {
+        <label class="layer-toggle-item sous-calque" title="Trajectoire prolongée, contours à +15/+60 min, cône d'incertitude, communes atteintes : une estimation, pas une prévision.">
+          <input type="checkbox" [(ngModel)]="layerVisibility.oragesEstimations" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot orages-estimations-dot"></span>
+          Nos estimations
+        </label>
+      }
       <label class="layer-toggle-item" title="Éclairs vus depuis l'espace par l'imageur de foudre du satellite MTG (EUMETSAT), sur l'heure de données la plus récente : 10 à 20 minutes de retard sur l'éclair, position à quelques kilomètres près. Du jaune (récent) au gris (une heure). Métropole.">
         <input type="checkbox" [(ngModel)]="layerVisibility.eclairs" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot eclairs-dot"></span>

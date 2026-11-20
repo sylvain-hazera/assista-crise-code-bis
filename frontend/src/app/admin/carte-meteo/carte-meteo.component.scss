@@ -92,3 +92,6 @@
   .carte { height: 60vh; }
   .retranscription { border-left: 0; border-top: 1px solid var(--ac-border, #e5e7eb); overflow: visible; }
 }
+
+// La cellule choisie sur la carte : un liseré, sans changer la mise en page.
+app-cellule-orage.choisie { border-radius: 8px; box-shadow: 0 0 0 3px var(--brand-primary, #1d4ed8); }

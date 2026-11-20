@@ -22,7 +22,7 @@
 
   <div class="corps">
     <section class="carte" aria-label="Carte">
-      <app-map [modeMeteo]="true" />
+      <app-map [modeMeteo]="true" (celluleChoisie)="surCelluleChoisie($event)" />
     </section>
 
     <aside class="retranscription" aria-label="Retranscription de la carte">
@@ -48,6 +48,10 @@
             <div [class.alerte]="s.lignes"><dt>Lignes de grain</dt><dd>{{ s.lignes }}</dd></div>
           </dl>
           <p class="legende-natures">
+            Sur la carte : la flèche montre où va chaque cellule, le trait plein d'où elle vient (coloré par son intensité),
+            les pointillés bleus où elle serait dans 15 à 60 minutes si rien ne changeait. Cliquez une cellule pour la suivre.
+          </p>
+          <p class="legende-natures">
             Trois natures d'information, jamais mélangées : <strong>selon les relevés</strong> (ce que le radar et les
             stations ont vu), <strong class="estimation">nos estimations</strong> (qui ne sont pas des prévisions) et
             <strong class="prevision">la prévision Météo-France</strong>.
@@ -57,8 +61,8 @@
         <section class="cellules">
           <h2>Cellules orageuses</h2>
           @for (c of cellules; track c.identifiant) {
-            <app-cellule-orage [cellule]="c">
-              <button type="button" class="voir" (click)="voirSurLaCarte(c)" title="Centrer la carte sur cette cellule">
+            <app-cellule-orage [cellule]="c" [attr.id]="'cellule-' + c.identifiant" [class.choisie]="c.identifiant === choisie">
+              <button type="button" class="voir" (click)="voirSurLaCarte(c)" title="Centrer la carte sur cette cellule et la mettre en avant">
                 <span class="material-icons" aria-hidden="true">my_location</span> Voir
               </button>
             </app-cellule-orage>

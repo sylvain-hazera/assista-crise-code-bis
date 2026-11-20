@@ -635,7 +635,11 @@ export interface ConfigurationAlerteVigilance {
 /** GET /api/orages/ (backend/core/orages.py, 19/11/2026). Trois natures d'information que
  * l'écran ne mélange pas : ce que le radar a vu (`releves`), NOS estimations — qui ne sont pas
  * des prévisions — (`estimations`), et ce que Météo-France prévoit (`prevision_meteo_france`). */
-export interface CommuneOrage { code: string; nom: string; dans_min?: number; }
+/** `lon`/`lat` : centre de la commune, pour la carte (absents des cellules d'avant le 20/11/2026). */
+export interface CommuneOrage { code: string; nom: string; dans_min?: number; lon?: number; lat?: number; }
+
+/** Un noyau tobac placé sur la carte. */
+export interface NoyauOrage { lon: number; lat: number; seuil: number; max_mmh: number; fusion: boolean; division: boolean; }
 
 export interface SuiviCellule {
   suivie_depuis_min: number; noyaux: number; noyaux_intenses: number;
@@ -643,6 +647,7 @@ export interface SuiviCellule {
   surface_10min_km2: number | null; max_10min_mmh: number | null;
   evolution: 'renforcement' | 'affaiblissement' | 'stable' | null;
   fusion: boolean; division: boolean;
+  noyaux_positions?: NoyauOrage[];
 }
 
 export interface CelluleOrage {
@@ -655,13 +660,16 @@ export interface CelluleOrage {
     intensite_max_mmh: number; intensite_moyenne_mmh: number; libelle: string; surface_km2: number;
     tendance_mmh: number | null; communes_sous_la_pluie: CommuneOrage[];
     rafale_mesuree: { kmh: number; station: string; mesure_le: string | null } | null;
+    /** Positions de l'heure écoulée : [heure, lat, lon, intensité max (absente avant le 20/11/2026)]. */
+    trace: [string, number, number, number?][];
     /** Éclairs vus par le satellite MTG sous la cellule, autour de l'heure de l'image. */
     eclairs: number | null;
     /** Histoire de la cellule sur l'heure écoulée, suivie par tobac (backend/core/suivi_tobac.py). */
     suivi: SuiviCellule | null;
     /** Signatures Doppler (backend/core/doppler.py), selon les relevés des radars proches. */
     doppler: {
-      rotation: { vrot_ms: number; elevations: number[]; radar: string } | null;
+      /** `lon`/`lat` : où le radar a mesuré la rotation. */
+      rotation: { vrot_ms: number; elevations: number[]; radar: string; lon?: number; lat?: number } | null;
       grele: { z_max_dbz: number | null; sommet_45_m: number | null; isotherme0_m: number | null; probable: boolean; radar: string } | null;
       divergence: { ms: number; radar: string } | null;
       polarimetrie: { grele: boolean; portes_grele: number; debris: boolean; radar: string } | null;
@@ -703,6 +711,10 @@ export interface PluieRadar {
   heure: string | null;
   coins: [[number, number], [number, number], [number, number], [number, number]] | null;
   legende: { a_partir_de_mmh: number; couleur: string }[];
+  /** Heures des images observées gardées (une heure), pour la boucle. */
+  passees: string[];
+  /** Images de l'heure qui vient extrapolées de la dernière : NOS ESTIMATIONS. */
+  estimees: { minutes: number; echeance: string }[];
 }
 
 export interface OragesRadar {

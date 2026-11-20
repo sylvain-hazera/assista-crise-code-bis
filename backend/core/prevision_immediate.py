@@ -93,6 +93,26 @@ def par_commune(prevue, index):
     return resultat
 
 
+def enregistrer_images(grille, prevue, maintenant=None):
+    """Garde les images extrapolées de l'heure qui vient (+5 à +60 min), pour la boucle de la
+    carte — remplacées à chaque image. Même grille compacte que les images observées."""
+    import zlib
+
+    import numpy
+    from django.db import transaction
+    from .models import ImageRadarEstimee
+    maintenant = maintenant or timezone.now()
+    hauteur, largeur = grille.forme
+    with transaction.atomic():
+        ImageRadarEstimee.objects.all().delete()
+        ImageRadarEstimee.objects.bulk_create([ImageRadarEstimee(
+            minutes=(i + 1) * PAS_MIN, heure_base=grille.heure, largeur=largeur, hauteur=hauteur,
+            projdef=grille.projdef, x0=grille.x0, y0=grille.y0,
+            grille=zlib.compress(numpy.clip(numpy.nan_to_num(image), 0, 254).astype(numpy.uint8).tobytes(), 6),
+            releve_le=maintenant) for i, image in enumerate(prevue)])
+    return len(prevue)
+
+
 def enregistrer(heure, valeurs, maintenant=None):
     """Remplace les estimations par commune (une ligne par commune où il pleuvrait)."""
     from django.db import transaction

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, Input, Output, EventEmitter, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -29,6 +29,7 @@ import {
   StationCarburant,
   VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
+import * as dessinOrages from './orages-carte';
 import { AnimationVent, GrilleVent, decoderChampVent } from './vent-anime';
 
 interface LayerVisibility {
@@ -62,6 +63,9 @@ interface LayerVisibility {
   hiver: boolean;
   /** Pluie observée par le radar (20/11/2026) : la dernière lame d'eau, peinte par paliers. */
   pluieRadar: boolean;
+  /** Nos estimations autour des cellules : trajectoire prolongée, contours à +15/+60 min, cône
+   * d'incertitude, couloir, communes atteintes. Affichées avec les orages, masquables. */
+  oragesEstimations: boolean;
   /** Orages selon les relevés radar (19/11/2026) : contours des cellules de pluie intense, et
    * couloir estimé sur une heure. Rafraîchi toutes les deux minutes tant qu'il est affiché. */
   orages: boolean;
@@ -128,6 +132,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Carte météo (20/11/2026) : seulement les calques météo, la pluie observée, les orages et
    * les éclairs affichés d'entrée, et rien d'autre de chargé (ni crises, ni positions). */
   @Input() modeMeteo = false;
+  /** Cellule orageuse choisie sur la carte (clic), ou null quand on clique ailleurs. */
+  @Output() celluleChoisie = new EventEmitter<string | null>();
 
   // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
@@ -160,6 +166,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     rafales: false,
     hiver: false,
     pluieRadar: false,
+    oragesEstimations: true,
     orages: false,
     eclairs: false,
     blitzortung: false,
@@ -216,7 +223,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       for (const cle of Object.keys(this.layerVisibility) as (keyof LayerVisibility)[]) {
         this.layerVisibility[cle] = false;
       }
-      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, eclairs: true });
+      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, oragesEstimations: true, eclairs: true });
       this.layersPanelOpen = true;
       this.runWhenMapReady(() => this.onLayerToggle());
       return;
@@ -275,8 +282,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('vigilance-crues-layer', this.layerVisibility.vigilanceCrues);
     this.applyLayerVisibility('zones-brulees-layer', this.layerVisibility.zonesBrulees);
     this.applyLayerVisibility('pluie-radar-layer', this.layerVisibility.pluieRadar);
-    this.applyLayerVisibility('orages-layer', this.layerVisibility.orages);
-    this.applyLayerVisibility('orages-couloirs-layer', this.layerVisibility.orages);
+    this.appliquerVisibiliteOrages();
+    if (!this.layerVisibility.pluieRadar && this.lectureBoucle) this.basculerLectureBoucle();
     this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
     this.applyLayerVisibility('blitzortung-layer', this.layerVisibility.blitzortung);
     if ((this.layerVisibility.orages || this.layerVisibility.eclairs || this.layerVisibility.blitzortung
@@ -700,27 +707,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         next: (reponse) => {
           this.oragesHeureImage = reponse.heure_image;
           this.oragesPerime = reponse.perime;
-          const cellules = reponse.cellules;
-          // Le couloir d'abord : il passe SOUS les cellules.
-          this.afficherTracesVeille('orages-couloirs', 'line', {
-            type: 'FeatureCollection',
-            features: cellules.filter(c => c.couloir).map(c => ({
-              type: 'Feature', geometry: c.couloir as Geometry,
-              properties: { infobulle: this.infobulleOrage(c) },
-            })),
-          }, { 'line-color': '#1e40af', 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.8 },
-          this.layerVisibility.orages);
-          this.afficherTracesVeille('orages', 'fill', {
-            type: 'FeatureCollection',
-            features: cellules.map(c => ({
-              type: 'Feature', geometry: c.contour as Geometry,
-              properties: { intensite: c.releves.intensite_max_mmh, infobulle: this.infobulleOrage(c) },
-            })),
-          }, {
-            // Paliers d'intensité : 30, 50, 100 mm/h.
-            'fill-color': ['step', ['get', 'intensite'], '#f59e0b', 50, '#dc2626', 100, '#7e22ce'],
-            'fill-opacity': 0.55, 'fill-outline-color': '#450a0a',
-          }, this.layerVisibility.orages);
+          this.dessinerCellules(reponse.cellules);
         },
         error: () => {},
       });
@@ -1180,8 +1167,21 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  // ── Pluie observée par le radar : une image nationale, remplacée à chaque nouvelle image ──
+  // ── Pluie du radar : boucle de l'heure écoulée (relevés) et de l'heure qui vient (estimations) ──
   pluieRadar: PluieRadar | null = null;
+  /** Images de la boucle, de la plus ancienne à la plus lointaine estimation. */
+  boucleRadar: { url: string; instant: number; heure: string; estimation: boolean; minutes: number }[] = [];
+  indiceBoucle = 0;
+  lectureBoucle = false;
+  private minuterieBoucle: ReturnType<typeof setInterval> | null = null;
+
+  /** Rang de l'image observée la plus récente : « maintenant ». */
+  get indiceMaintenant(): number {
+    const rang = this.boucleRadar.findIndex(i => i.estimation);
+    return rang === -1 ? this.boucleRadar.length - 1 : rang - 1;
+  }
+
+  get imageBoucle() { return this.boucleRadar[this.indiceBoucle] ?? null; }
 
   private chargerPluieRadar(): void {
     this.veilleService.pluieRadar().subscribe({
@@ -1189,28 +1189,288 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         const nouvelle = reponse.heure !== this.pluieRadar?.heure;
         this.pluieRadar = reponse;
         if (!nouvelle || !reponse.heure || !reponse.coins) return;
-        const url = this.veilleService.imagePluieRadarUrl(reponse.heure);
-        const coordinates = reponse.coins;
-        this.runWhenMapReady(() => {
-          if (!this.map) return;
-          const source = this.map.getSource('pluie-radar') as maplibregl.ImageSource | undefined;
-          if (source) {
-            source.updateImage({ url, coordinates });
-            return;
-          }
-          this.map.addSource('pluie-radar', { type: 'image', url, coordinates });
-          // Sous les contours des cellules quand ils sont déjà là, sinon sous les libellés.
-          const dessous = ['orages-couloirs-layer', 'orages-layer'].find(id => this.map!.getLayer(id))
-            ?? this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
-          this.map.addLayer({
-            id: 'pluie-radar-layer', type: 'raster', source: 'pluie-radar',
-            layout: { visibility: this.layerVisibility.pluieRadar ? 'visible' : 'none' },
-            paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
-          }, dessous);
-        });
+        const etaitMaintenant = !this.boucleRadar.length || this.indiceBoucle === this.indiceMaintenant;
+        const base = reponse.heure;
+        this.boucleRadar = [
+          ...(reponse.passees?.length ? reponse.passees : [base]).map(h => ({
+            url: this.veilleService.imagePluieRadarUrl(h), instant: new Date(h).getTime(), heure: h,
+            estimation: false, minutes: 0 })),
+          ...(reponse.estimees ?? []).map(e => ({
+            url: this.veilleService.imagePluieEstimeeUrl(e.minutes, base), instant: new Date(e.echeance).getTime(),
+            heure: e.echeance, estimation: true, minutes: e.minutes })),
+        ];
+        // Images chargées d'avance : la lecture ne s'arrête pas sur chaque image.
+        if (typeof Image !== 'undefined') this.boucleRadar.forEach(i => { new Image().src = i.url; });
+        if (etaitMaintenant || this.indiceBoucle >= this.boucleRadar.length) this.indiceBoucle = this.indiceMaintenant;
+        this.afficherImageBoucle();
       },
       error: () => {},
     });
+  }
+
+  choisirImageBoucle(indice: number): void {
+    this.indiceBoucle = Math.max(0, Math.min(this.boucleRadar.length - 1, +indice));
+    this.afficherImageBoucle();
+  }
+
+  basculerLectureBoucle(): void {
+    this.lectureBoucle = !this.lectureBoucle;
+    if (this.minuterieBoucle) { clearInterval(this.minuterieBoucle); this.minuterieBoucle = null; }
+    if (this.lectureBoucle) {
+      this.minuterieBoucle = setInterval(() => {
+        // Une pause sur « maintenant » et au bout, pour qu'on voie où l'on en est.
+        this.choisirImageBoucle((this.indiceBoucle + 1) % this.boucleRadar.length);
+      }, 700);
+    }
+  }
+
+  revenirMaintenant(): void {
+    if (this.lectureBoucle) this.basculerLectureBoucle();
+    this.choisirImageBoucle(this.indiceMaintenant);
+  }
+
+  private afficherImageBoucle(): void {
+    const image = this.imageBoucle;
+    const coordinates = this.pluieRadar?.coins;
+    if (!image || !coordinates) return;
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const source = this.map.getSource('pluie-radar') as maplibregl.ImageSource | undefined;
+      if (source) {
+        source.updateImage({ url: image.url, coordinates });
+      } else {
+        this.map.addSource('pluie-radar', { type: 'image', url: image.url, coordinates });
+        // Sous les cellules quand elles sont déjà là, sinon sous les libellés.
+        const dessous = ['orages-cones-layer', 'orages-couloirs-layer', 'orages-layer'].find(id => this.map!.getLayer(id))
+          ?? this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+        this.map.addLayer({
+          id: 'pluie-radar-layer', type: 'raster', source: 'pluie-radar',
+          layout: { visibility: this.layerVisibility.pluieRadar ? 'visible' : 'none' },
+          paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+        }, dessous);
+      }
+      // Les estimations un peu plus pâles que les relevés.
+      this.map.setPaintProperty('pluie-radar-layer', 'raster-opacity', image.estimation ? 0.6 : 0.85);
+      // La trajectoire passée s'arrête à l'heure de l'image montrée.
+      const filtre = image.estimation ? null : ['<=', ['get', 'instant'], image.instant];
+      for (const id of ['orages-trajectoires-layer', 'orages-trajectoire-points-layer']) {
+        if (this.map.getLayer(id)) this.map.setFilter(id, filtre as maplibregl.FilterSpecification | null);
+      }
+    });
+  }
+
+  // ── Cellules orageuses : position, trajectoires, noyaux, signatures, estimations ────────
+  private cellulesOrages: CelluleOrage[] = [];
+  private celluleSelectionnee: string | null = null;
+  private calquesOragesPoses = false;
+
+  /** Calques des cellules, de bas en haut, et leur nature. */
+  private static readonly CALQUES_ESTIMATIONS = [
+    'orages-cones-layer', 'orages-couloirs-layer', 'orages-fantomes-layer', 'orages-fantomes-contour-layer',
+    'orages-estimees-layer', 'orages-communes-estimees-layer', 'orages-reperes-layer',
+  ];
+  private static readonly CALQUES_RELEVES = [
+    'orages-layer', 'orages-trajectoires-layer', 'orages-trajectoire-points-layer', 'orages-communes-layer',
+    'orages-communes-etiquettes-layer', 'orages-noyaux-layer', 'orages-signatures-layer', 'orages-centres-layer',
+  ];
+
+  private dessinerCellules(cellules: CelluleOrage[]): void {
+    this.cellulesOrages = cellules;
+    if (this.celluleSelectionnee && !cellules.some(c => c.identifiant === this.celluleSelectionnee)) {
+      this.celluleSelectionnee = null;
+    }
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const traj = dessinOrages.trajectoires(cellules);
+      const estimees = dessinOrages.trajectoiresEstimees(cellules);
+      const donnees: Record<string, FeatureCollection<Geometry>> = {
+        'orages-cones': dessinOrages.cones(cellules),
+        'orages-couloirs': { type: 'FeatureCollection', features: cellules.filter(c => c.couloir).map(c => ({
+          type: 'Feature', geometry: c.couloir as Geometry, properties: { identifiant: c.identifiant } })) },
+        'orages-fantomes': dessinOrages.fantomes(cellules),
+        'orages': { type: 'FeatureCollection', features: cellules.map(c => ({
+          type: 'Feature', geometry: c.contour as Geometry,
+          properties: { identifiant: c.identifiant, intensite: c.releves.intensite_max_mmh, infobulle: this.infobulleOrage(c) } })) },
+        'orages-trajectoires': traj.segments,
+        'orages-estimees': estimees.lignes,
+        'orages-trajectoire-points': traj.points,
+        'orages-communes': dessinOrages.communes(cellules),
+        'orages-noyaux': dessinOrages.noyaux(cellules),
+        'orages-reperes': estimees.reperes,
+        'orages-signatures': dessinOrages.signatures(cellules),
+        'orages-centres': (() => {
+          const fc = dessinOrages.centres(cellules);
+          fc.features.forEach((f, i) => { f.properties = { ...f.properties, infobulle: this.infobulleOrage(cellules[i]) }; });
+          return fc;
+        })(),
+      };
+      for (const [id, data] of Object.entries(donnees)) {
+        const source = this.map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+        if (source) source.setData(data); else this.map.addSource(id, { type: 'geojson', data });
+      }
+      if (!this.calquesOragesPoses) {
+        this.calquesOragesPoses = true;
+        this.poserCalquesOrages();
+      }
+      this.appliquerVisibiliteOrages();
+      this.appliquerSelectionOrages();
+      this.afficherImageBoucle();
+    });
+  }
+
+  private poserCalquesOrages(): void {
+    const carte = this.map!;
+    const premierTexte = carte.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+    const couleur = dessinOrages.COULEUR_INTENSITE as unknown as maplibregl.ExpressionSpecification;
+    const halo = { 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 };
+    const texte = (taille: number) => ({ 'text-font': ['Noto Sans Regular'], 'text-size': taille, 'text-allow-overlap': false });
+    const dessous = (calque: maplibregl.LayerSpecification) => carte.addLayer(calque, premierTexte);
+    const dessus = (calque: maplibregl.LayerSpecification) => carte.addLayer(calque);
+
+    // Flèche des centres : une seule image, teintée par la carte (SDF).
+    if (!carte.hasImage('orage-fleche') && typeof document !== 'undefined') {
+      const toile = document.createElement('canvas');
+      toile.width = toile.height = 48;
+      const ctx = toile.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.moveTo(24, 3); ctx.lineTo(42, 40); ctx.lineTo(24, 31); ctx.lineTo(6, 40); ctx.closePath();
+        ctx.fill();
+        carte.addImage('orage-fleche', ctx.getImageData(0, 0, 48, 48), { sdf: true });
+      }
+    }
+
+    // Nos estimations, sous les relevés.
+    dessous({ id: 'orages-cones-layer', type: 'fill', source: 'orages-cones',
+              paint: { 'fill-color': '#1e40af', 'fill-opacity': 0.08 } } as maplibregl.LayerSpecification);
+    dessous({ id: 'orages-couloirs-layer', type: 'line', source: 'orages-couloirs',
+              paint: { 'line-color': '#1e40af', 'line-width': 1.2, 'line-dasharray': [2, 2], 'line-opacity': 0.5 } } as maplibregl.LayerSpecification);
+    dessous({ id: 'orages-fantomes-layer', type: 'fill', source: 'orages-fantomes',
+              paint: { 'fill-color': '#1e40af',
+                       'fill-opacity': ['interpolate', ['linear'], ['get', 'minutes'], 15, 0.16, 60, 0.04] } } as maplibregl.LayerSpecification);
+    dessous({ id: 'orages-fantomes-contour-layer', type: 'line', source: 'orages-fantomes',
+              paint: { 'line-color': '#1e40af', 'line-width': 1, 'line-dasharray': [3, 2],
+                       'line-opacity': ['interpolate', ['linear'], ['get', 'minutes'], 15, 0.8, 60, 0.3] } } as maplibregl.LayerSpecification);
+    // Les cellules telles que le radar les voit.
+    dessous({ id: 'orages-layer', type: 'fill', source: 'orages',
+              paint: { 'fill-color': couleur, 'fill-opacity': 0.55, 'fill-outline-color': '#450a0a' } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-trajectoires-layer', type: 'line', source: 'orages-trajectoires',
+             layout: { 'line-cap': 'round' },
+             paint: { 'line-color': couleur, 'line-width': 4, 'line-opacity': 0.95 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-estimees-layer', type: 'line', source: 'orages-estimees',
+             paint: { 'line-color': '#1e40af', 'line-width': 2, 'line-dasharray': [1.5, 1.5], 'line-opacity': 0.9 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-trajectoire-points-layer', type: 'circle', source: 'orages-trajectoire-points',
+             paint: { 'circle-radius': 3, 'circle-color': '#ffffff', 'circle-stroke-color': couleur, 'circle-stroke-width': 2 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-communes-estimees-layer', type: 'circle', source: 'orages-communes', filter: ['==', ['get', 'touchee'], false],
+             paint: { 'circle-radius': 4, 'circle-color': 'rgba(255,255,255,0.6)', 'circle-stroke-color': '#1e40af', 'circle-stroke-width': 1.5 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-communes-layer', type: 'circle', source: 'orages-communes', filter: ['==', ['get', 'touchee'], true],
+             paint: { 'circle-radius': 4, 'circle-color': '#0f172a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-communes-etiquettes-layer', type: 'symbol', source: 'orages-communes', minzoom: 9,
+             layout: { ...texte(11), 'text-field': ['get', 'etiquette'], 'text-offset': [0, 0.9], 'text-anchor': 'top' },
+             paint: { ...halo, 'text-color': ['case', ['get', 'touchee'], '#0f172a', '#1e40af'] } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-noyaux-layer', type: 'circle', source: 'orages-noyaux',
+             paint: { 'circle-radius': ['step', ['get', 'seuil'], 3, 50, 5, 100, 7], 'circle-color': couleur,
+                      'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-reperes-layer', type: 'circle', source: 'orages-reperes',
+             paint: { 'circle-radius': 3, 'circle-color': '#1e40af', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-reperes-etiquettes-layer', type: 'symbol', source: 'orages-reperes',
+             layout: { ...texte(11), 'text-field': ['get', 'etiquette'], 'text-offset': [0.8, 0], 'text-anchor': 'left' },
+             paint: { ...halo, 'text-color': '#1e40af' } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-trajectoire-heures-layer', type: 'symbol', source: 'orages-trajectoire-points',
+             layout: { ...texte(10), 'text-field': ['get', 'etiquette'], 'text-offset': [0, -1], 'text-anchor': 'bottom' },
+             paint: { ...halo, 'text-color': '#374151' } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-signatures-layer', type: 'symbol', source: 'orages-signatures',
+             layout: { ...texte(12), 'text-field': ['get', 'etiquette'], 'text-allow-overlap': true },
+             paint: { 'text-color': ['match', ['get', 'type'], ['rotation', 'debris'], '#991b1b', 'grele', '#6d28d9',
+                                     'grele-prevue', '#92400e', '#0f172a'],
+                      'text-halo-color': ['match', ['get', 'type'], ['rotation', 'debris'], '#fee2e2', '#ffffff'],
+                      'text-halo-width': 2.5 } } as maplibregl.LayerSpecification);
+    dessus({ id: 'orages-centres-layer', type: 'symbol', source: 'orages-centres',
+             layout: { 'icon-image': 'orage-fleche', 'icon-rotate': ['get', 'cap'], 'icon-rotation-alignment': 'map',
+                       'icon-allow-overlap': true, 'icon-ignore-placement': true,
+                       // Plus grosse quand elle va vite ; un rond sans flèche quand elle ne bouge pas.
+                       'icon-size': ['case', ['get', 'mobile'], ['interpolate', ['linear'], ['get', 'vitesse'], 0, 0.35, 100, 0.75], 0.001],
+                       ...texte(12), 'text-field': ['get', 'etiquette'], 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-optional': true },
+             paint: { 'icon-color': ['case', ['get', 'renforcement'], '#b91c1c', '#111827'],
+                      'icon-halo-color': '#ffffff', 'icon-halo-width': 2, ...halo, 'text-color': '#111827' } } as maplibregl.LayerSpecification);
+
+    // Choisir une cellule : clic sur son contour ou son centre ; ailleurs, on la relâche.
+    for (const id of ['orages-layer', 'orages-centres-layer']) {
+      carte.on('click', id, (e) => {
+        const proprietes = e.features?.[0]?.properties ?? {};
+        if (!proprietes['identifiant']) return;
+        this.choisirCellule(proprietes['identifiant'] as string);
+        new maplibregl.Popup().setLngLat(e.lngLat).setHTML(proprietes['infobulle'] || '').addTo(carte);
+      });
+      carte.on('mouseenter', id, () => { carte.getCanvas().style.cursor = 'pointer'; });
+      carte.on('mouseleave', id, () => { carte.getCanvas().style.cursor = ''; });
+    }
+    carte.on('click', (e) => {
+      const calques = ['orages-layer', 'orages-centres-layer'].filter(id => carte.getLayer(id));
+      if (this.celluleSelectionnee && !carte.queryRenderedFeatures(e.point, { layers: calques }).length) {
+        this.choisirCellule(null);
+      }
+    });
+  }
+
+  private appliquerVisibiliteOrages(): void {
+    if (!this.map || !this.calquesOragesPoses) return;
+    const releves = this.layerVisibility.orages;
+    const estimations = releves && this.layerVisibility.oragesEstimations;
+    for (const id of MapComponent.CALQUES_RELEVES.concat('orages-trajectoire-heures-layer')) this.applyLayerVisibility(id, releves);
+    for (const id of MapComponent.CALQUES_ESTIMATIONS.concat('orages-reperes-etiquettes-layer')) this.applyLayerVisibility(id, estimations);
+  }
+
+  /** Met une cellule en avant (sa trajectoire, ses estimations, ses communes), estompe les autres.
+   * `centrer` : la carte va la chercher (liste de la carte météo). */
+  choisirCellule(identifiant: string | null, centrer = false): void {
+    const change = identifiant !== this.celluleSelectionnee;
+    this.celluleSelectionnee = identifiant;
+    this.appliquerSelectionOrages();
+    if (centrer && identifiant) {
+      const cellule = this.cellulesOrages.find(c => c.identifiant === identifiant);
+      if (cellule) {
+        const [lon, lat] = dessinOrages.centreCellule(cellule);
+        this.centrerSur(lon, lat, 9);
+      }
+    }
+    if (change) this.celluleChoisie.emit(identifiant);
+  }
+
+  private appliquerSelectionOrages(): void {
+    if (!this.map || !this.calquesOragesPoses) return;
+    const sel = this.celluleSelectionnee;
+    const opacites: [string, string, number | unknown[], number][] = [
+      ['orages-layer', 'fill-opacity', 0.55, 0.12],
+      ['orages-cones-layer', 'fill-opacity', 0.08, 0.015],
+      ['orages-couloirs-layer', 'line-opacity', 0.5, 0.08],
+      ['orages-fantomes-layer', 'fill-opacity', ['interpolate', ['linear'], ['get', 'minutes'], 15, 0.16, 60, 0.04], 0.015],
+      ['orages-fantomes-contour-layer', 'line-opacity', ['interpolate', ['linear'], ['get', 'minutes'], 15, 0.8, 60, 0.3], 0.06],
+      ['orages-trajectoires-layer', 'line-opacity', 0.95, 0.15],
+      ['orages-estimees-layer', 'line-opacity', 0.9, 0.1],
+      ['orages-trajectoire-points-layer', 'circle-opacity', 1, 0.1],
+      ['orages-trajectoire-points-layer', 'circle-stroke-opacity', 1, 0.1],
+      ['orages-communes-layer', 'circle-opacity', 1, 0.1],
+      ['orages-communes-estimees-layer', 'circle-stroke-opacity', 1, 0.1],
+      ['orages-noyaux-layer', 'circle-opacity', 1, 0.1],
+      ['orages-reperes-layer', 'circle-opacity', 1, 0.1],
+      ['orages-reperes-etiquettes-layer', 'text-opacity', 1, 0],
+      ['orages-trajectoire-heures-layer', 'text-opacity', 1, 0],
+      ['orages-signatures-layer', 'text-opacity', 1, 0.2],
+      ['orages-centres-layer', 'icon-opacity', 1, 0.3],
+      ['orages-centres-layer', 'text-opacity', 1, 0.2],
+    ];
+    for (const [id, propriete, normale, estompee] of opacites) {
+      if (this.map.getLayer(id)) {
+        this.map.setPaintProperty(id, propriete, dessinOrages.selonSelection(sel, normale, estompee));
+      }
+    }
+    // Les noms des communes : ceux de la cellule choisie, à toute échelle ; sinon tous, de près.
+    if (this.map.getLayer('orages-communes-etiquettes-layer')) {
+      this.map.setFilter('orages-communes-etiquettes-layer', sel ? ['==', ['get', 'identifiant'], sel] : null);
+      this.map.setLayerZoomRange('orages-communes-etiquettes-layer', sel ? 0 : 9, 24);
+    }
   }
 
   /** Centre la carte sur un point (liste de la carte météo). */
@@ -1449,6 +1709,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.animationVent?.arreter();
     if (this.rafraichissementVent) clearInterval(this.rafraichissementVent);
     if (this.rafraichissementOrages) clearInterval(this.rafraichissementOrages);
+    if (this.minuterieBoucle) clearInterval(this.minuterieBoucle);
     if (this.map) this.map.remove();
   }
 

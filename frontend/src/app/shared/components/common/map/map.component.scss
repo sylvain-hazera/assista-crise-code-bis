@@ -335,3 +335,44 @@
   i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, .25); }
   .unite { color: var(--ac-text-muted, #6b7280); }
 }
+
+// ── Cellules orageuses et boucle du radar (20/11/2026) ──────────────────────
+.orages-estimations-dot { background: transparent; border: 2px dashed #1e40af; }
+.layer-toggle-item.sous-calque { padding-left: 18px; font-size: .92em; }
+
+// La boucle du radar, en haut au centre : la réglette des prévisions Météo-France occupe le bas.
+.radar-temps {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  z-index: 5; width: min(460px, calc(100% - 140px));
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; border-radius: 10px;
+  background: var(--ac-surface, white); color: var(--ac-text, #1f2937);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+  border: 2px solid transparent;
+  &.estimation { border-color: #1e40af; border-style: dashed; }
+
+  .radar-lecture {
+    flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--brand-primary, #1d4ed8); color: #fff;
+    &:focus-visible { outline: 2px solid var(--brand-primary, #1d4ed8); outline-offset: 2px; }
+  }
+  .radar-reglette { flex: 1; min-width: 0; }
+  .radar-heure {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: .8rem;
+    font-variant-numeric: tabular-nums;
+    strong { font-size: .95rem; }
+    span { color: var(--ac-text-muted, #6b7280); }
+    .nature-estimation { color: #1e40af; font-weight: 600; }
+  }
+  .radar-maintenant {
+    margin-left: auto; border: 1px solid var(--ac-border, #d1d5db); border-radius: 999px; cursor: pointer;
+    background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #1f2937); font: inherit; font-size: .72rem; padding: 0 8px;
+  }
+  // Le repère « maintenant » sur la réglette : à gauche les relevés, à droite nos estimations.
+  input[type="range"] {
+    width: 100%; margin: 2px 0; accent-color: var(--brand-primary, #1d4ed8);
+    background: linear-gradient(90deg, transparent calc(var(--maintenant, 100%) - 1px), #1e40af calc(var(--maintenant, 100%) - 1px),
+                #1e40af calc(var(--maintenant, 100%) + 1px), transparent calc(var(--maintenant, 100%) + 1px));
+  }
+}

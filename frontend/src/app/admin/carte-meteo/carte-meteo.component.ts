@@ -86,12 +86,20 @@ export class CarteMeteoComponent implements OnInit, OnDestroy {
     };
   }
 
-  /** Centre approximatif d'une cellule (moyenne des sommets de son contour). */
+  /** Cellule mise en avant, sur la carte comme dans la liste. */
+  choisie: string | null = null;
+
+  /** « Voir » : la carte va chercher la cellule et la met en avant. */
   voirSurLaCarte(cellule: CelluleOrage): void {
-    const anneau = cellule.contour.coordinates[0] ?? [];
-    if (!anneau.length) return;
-    const lon = anneau.reduce((s, p) => s + p[0], 0) / anneau.length;
-    const lat = anneau.reduce((s, p) => s + p[1], 0) / anneau.length;
-    this.carte?.centrerSur(lon, lat, 9);
+    this.choisie = cellule.identifiant;
+    this.carte?.choisirCellule(cellule.identifiant, true);
+  }
+
+  /** Une cellule cliquée sur la carte : sa fiche défile jusqu'à l'écran. */
+  surCelluleChoisie(identifiant: string | null): void {
+    this.choisie = identifiant;
+    if (identifiant && typeof document !== 'undefined') {
+      setTimeout(() => document.getElementById(`cellule-${identifiant}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+    }
   }
 }

@@ -320,6 +320,9 @@ class IndexCommunes:
                       .values_list("code", "nom", "centre_longitude", "centre_latitude"))
         self.codes = [l[0] for l in lignes]
         self.noms = [l[1] or l[0] for l in lignes]
+        # Pour placer les communes sur la carte.
+        self.lons = [round(float(l[2]), 4) for l in lignes]
+        self.lats = [round(float(l[3]), 4) for l in lignes]
         r, c = grille.depuis_geo([l[2] for l in lignes], [l[3] for l in lignes])
         self.lignes = numpy.round(r).astype(int) if len(r) else numpy.array([], dtype=int)
         self.colonnes = numpy.round(c).astype(int) if len(c) else numpy.array([], dtype=int)
@@ -581,14 +584,25 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
         sommets = list(contour.exterior_ring.coords)[:-1]
         echantillon = [centre_geo] + sommets[::max(1, len(sommets) // 12)]
         prevision = prevu_par_meteo_france(echantillon, grille.heure)
-        trace = (trace + [[grille.heure.isoformat(), round(centre_geo[1], 4), round(centre_geo[0], 4)]])[-12:]
+        # [heure, lat, lon, intensité maximale] : l'intensité permet de colorer la trajectoire
+        # (20/11/2026 ; les points plus anciens n'en ont pas).
+        trace = (trace + [[grille.heure.isoformat(), round(centre_geo[1], 4), round(centre_geo[0], 4),
+                           round(cellule["max_mmh"], 1)]])[-12:]
 
         suivi = None
         if noyaux:
             from .suivi_tobac import resumer
             h, w = masque_cellule.shape
-            suivi = resumer([n for n in noyaux if 0 <= round(n["ligne"]) < h and 0 <= round(n["colonne"]) < w
-                             and masque_cellule[int(round(n["ligne"])), int(round(n["colonne"]))]])
+            siens = [n for n in noyaux if 0 <= round(n["ligne"]) < h and 0 <= round(n["colonne"]) < w
+                     and masque_cellule[int(round(n["ligne"])), int(round(n["colonne"]))]]
+            suivi = resumer(siens)
+            if suivi is not None:
+                # Où sont les noyaux, pour la carte.
+                positions = grille.vers_geo([n["ligne"] for n in siens], [n["colonne"] for n in siens])
+                suivi["noyaux_positions"] = [
+                    {"lon": round(lon, 4), "lat": round(lat, 4), "seuil": n["seuil"], "max_mmh": n["max_mmh"],
+                     "fusion": n["fusion"], "division": n["division"]}
+                    for n, (lon, lat) in zip(siens, positions)]
 
         resultat.append({
             "grele_diagnostic_kgm2": None, "suivi": suivi,
@@ -598,8 +612,10 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
             "cap_deg": round(cap) if cap is not None else None, "vitesse_kmh": round(kmh) if kmh is not None else None,
             "longueur_km": round(longueur), "ligne_de_grain": ligne_de_grain,
             "contour": contour, "couloir": couloir, "centre_geo": centre_geo,
-            "communes_touchees": [{"code": index.codes[i], "nom": index.noms[i]} for i in touchees],
-            "communes_estimees": sorted(({"code": index.codes[i], "nom": index.noms[i], "dans_min": m}
+            "communes_touchees": [{"code": index.codes[i], "nom": index.noms[i], "lon": index.lons[i],
+                                   "lat": index.lats[i]} for i in touchees],
+            "communes_estimees": sorted(({"code": index.codes[i], "nom": index.noms[i], "dans_min": m,
+                                          "lon": index.lons[i], "lat": index.lats[i]}
                                          for i, m in estimees.items()), key=lambda x: (x["dans_min"], x["nom"])),
             "grele_prevue": prevision["grele"], "rafale_prevue_kmh": prevision["rafale_kmh"],
             "rafale_mesuree": rafale_mesuree(contour, grille.heure),
@@ -708,6 +724,7 @@ def relever(maintenant=None):
         from . import prevision_immediate
         try:
             prevue = prevision_immediate.extrapoler(grille.taux, champ)
+            prevision_immediate.enregistrer_images(grille, prevue, maintenant)
             prevision_immediate.enregistrer(grille.heure, prevision_immediate.par_commune(prevue, IndexCommunes.pour(grille)),
                                             maintenant)
         except Exception:
