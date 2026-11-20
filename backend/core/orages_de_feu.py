@@ -55,7 +55,10 @@ logger = logging.getLogger(__name__)
 URL_WCS = ("https://public-api.meteofrance.fr/public/arpege/1.0/wcs/"
            "MF-NWP-GLOBAL-ARPEGE-01-EUROPE-WCS/GetCoverage")
 DELAI_REPONSE_S = 60
-PAUSE_ENTRE_GRILLES_S = 0.2
+# Environ vingt appels par minute : la clé Météo-France est partagée avec le radar, le Doppler et
+# les prévisions. Le 20/11/2026, une cinquantaine d'appels en une minute (premier calcul, et les
+# essais qui l'ont précédé) a coïncidé avec des refus de connexion du Doppler et du radar.
+PAUSE_ENTRE_GRILLES_S = 3.0
 
 # Métropole et Corse (ouest, sud, est, nord), au pas d'ARPEGE : 156 × 106 points.
 EMPRISE = (-5.5, 41.0, 10.0, 51.5)
@@ -85,11 +88,10 @@ GRAVITE = 9.80665
 
 # Heures de l'après-midi (TU) calculées, aujourd'hui et demain : les feux violents sont diurnes.
 HEURES_TU = (12, 15, 18)
-# Heures calculées au plus par relevé : une cinquantaine de grilles chacune, au rythme que permet
-# l'API de Météo-France. Le relevé suivant (19 minutes plus tard) prend la suite : un nouveau
-# calcul d'ARPEGE est entièrement intégré en une heure, sans jamais retenir la tâche planifiée
-# plus d'une minute et demie.
-HEURES_PAR_RELEVE = 2
+# Heures calculées au plus par relevé : 54 grilles, environ trois minutes au rythme ci-dessus.
+# Le relevé suivant (19 minutes plus tard) prend la suite : un nouveau calcul d'ARPEGE est
+# intégré en deux heures environ, ce qui suffit pour quatre calculs par jour.
+HEURES_PAR_RELEVE = 1
 JOURS = 2
 ECART_ENTRE_CALCULS = datetime.timedelta(hours=6)
 CALCULS_ESSAYES = 4

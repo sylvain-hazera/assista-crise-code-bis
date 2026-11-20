@@ -131,8 +131,8 @@ class TestReleve:
     def test_le_releve_calcule_chaque_heure_une_fois_par_calcul(self):
         lu = (*grilles(SAUMOS_24_JUILLET), -1.0, 44.9)
         with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=lu) as appel:
-            # Deux heures par relevé, au plus : trois relevés pour les six heures.
-            assert [orages_de_feu.relever(self.MAINTENANT) for _ in range(3)] == [2, 4, 6]
+            # Une heure par relevé, au plus : six relevés pour les six heures.
+            assert [orages_de_feu.relever(self.MAINTENANT) for _ in range(6)] == [1, 2, 3, 4, 5, 6]
             assert appel.call_count == 6
             appel.reset_mock()
             assert orages_de_feu.relever(self.MAINTENANT) == 6

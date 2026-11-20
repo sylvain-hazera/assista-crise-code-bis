@@ -163,7 +163,7 @@ SOURCES = {
                "Bison Futé - directions interdépartementales des routes"),
         # Potentiel d'orage de feu (20/11/2026), nos estimations : profil vertical d'ARPEGE,
         # trois heures par jour, aujourd'hui et demain. 54 grilles de 70 Ko par heure calculée,
-        # deux heures au plus par relevé ; rien entre deux calculs du modèle (quatre par jour). Parmi les
+        # une heure par relevé, appels espacés de 3 s (clé partagée) ; rien entre deux calculs du modèle. Parmi les
         # sources lentes, avant les deux plus lourdes.
         Source("POTENTIEL_ORAGE_FEU", "Potentiel d'orage de feu (nos estimations)", orages_de_feu.relever,
                datetime.timedelta(minutes=19), datetime.timedelta(hours=12), "Météo-France (ARPEGE), nos estimations"),
