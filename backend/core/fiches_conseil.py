@@ -312,6 +312,49 @@ FICHES = [
              "Ne jamais laisser un enfant sans adulte référent identifié ; noter qui s'occupe de qui à l'accueil.",
              "Un mineur arrivé seul : le signaler tout de suite au responsable du centre.",
          )),
+         ("Un bracelet pour chaque enfant", (
+             "Dans la foule d'un centre, un enfant de trois ans qui s'éloigne ne sait pas toujours dire son nom, "
+             "encore moins le téléphone de ses parents. Un bracelet règle la question en une seconde.",
+             "Dès l'accueil, poser au poignet de chaque enfant un bracelet portant son nom, son prénom et le "
+             "téléphone d'un parent (deux numéros si possible).",
+             "Le plus simple suffit : bracelets en papier indéchirable type festival ou hôpital, ou un ruban adhésif "
+             "écrit au feutre indélébile. En prévoir une boîte dans le stock du centre.",
+             "Écrire lisiblement, en capitales, et vérifier le numéro avec le parent avant de le poser.",
+             "Pour les tout-petits, les enfants qui ne parlent pas ou les enfants en situation de handicap, "
+             "ajouter une mention utile : allergie, traitement, « ne parle pas ».",
+             "Le bracelet ne remplace pas la surveillance : il sert le jour où, malgré tout, un enfant se perd. "
+             "On le retire à la sortie du centre, et on ne le jette pas n'importe où (il porte un nom et un numéro).",
+         )),
+     ]},
+    {"code": "astuces-soignants", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
+     "titre": "Prévenir les soignants de la commune",
+     "sections": [
+         ("Pourquoi les appeler tôt", (
+             "Dès qu'un centre d'accueil ouvre en urgence, il réunit en quelques heures des personnes âgées, "
+             "des malades chroniques, des nourrissons, des gens choqués, parfois blessés. Les secours sont pris "
+             "ailleurs : les premiers soignants disponibles, ce sont souvent ceux de la commune.",
+             "Médecins, infirmiers libéraux, pharmaciens, kinés, sages-femmes, aides-soignants, ambulanciers : "
+             "ils connaissent leurs patients, leurs traitements, et savent qui est fragile dans le village.",
+             "Un coup de téléphone au début de la crise vaut mieux qu'une recherche affolée à minuit, "
+             "quand une personne diabétique a oublié son insuline.",
+         )),
+         ("Qui prévenir, et quoi leur dire", (
+             "Le ou les médecins généralistes, les cabinets infirmiers, la pharmacie (et la pharmacie de garde), "
+             "le service de soins infirmiers à domicile, l'EHPAD voisin.",
+             "Leur dire simplement : un centre est ouvert, à telle adresse, depuis telle heure, combien de personnes "
+             "environ, et ce dont on manque. Leur laisser un numéro direct du poste de commandement.",
+             "Les infirmiers libéraux savent quels patients à domicile risquent d'être coupés de leurs soins "
+             "(pansements, injections, oxygène, dialyse) : leur demander de signaler ceux qu'il faut aller voir.",
+             "Ne pas demander l'impossible : chacun dit ce qu'il peut donner (une heure de passage, une permanence, "
+             "un numéro à appeler la nuit). Noter qui vient et quand.",
+         )),
+         ("Les préparer d'avance", (
+             "Tenir à jour la liste des professionnels de santé de la commune dans l'annuaire de crise, avec un "
+             "numéro joignable hors horaires [Annuaire de crise].",
+             "Une infirmerie identifiée dans chaque centre : un coin à l'écart, une table, une chaise, de quoi "
+             "s'asseoir pour un examen, une trousse de secours et un point d'eau.",
+             "Rappeler que ce soutien ne remplace jamais le 15 : une urgence vitale, on appelle le SAMU.",
+         )),
      ]},
     {"code": "astuces-confort", "categorie": "ASTUCES", "source": SOURCE_ASTUCES, "officielle": False,
      "titre": "Le confort et le moral",
