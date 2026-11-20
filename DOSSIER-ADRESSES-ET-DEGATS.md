@@ -133,8 +133,8 @@ fiches côte à côte.
 
 | Lot | Contenu | Essais |
 |---|---|---|
-| **A** | Référentiel `AdresseBAN` : import par fichier départemental, mise à jour hebdomadaire, adresses retirées ; branché sur le registre, les secteurs, la recherche et l'adresse la plus proche | import sur un fichier réduit fabriqué, retraits, rattachements inchangés |
-| **B** | Copie vers le satellite (incrémentale, par pages) | rejeu complet puis incrémental |
+| **A** ✅ | Référentiel `AdresseBAN` : import par fichier départemental, mise à jour hebdomadaire, adresses retirées ; branché sur le registre, les secteurs, la recherche et l'adresse la plus proche | import sur un fichier réduit fabriqué, retraits, rattachements inchangés |
+| **B** ✅ | Copie vers le satellite (incrémentale, par pages ; communes nouvelles copiées en entier) | rejeu complet puis incrémental |
 | **C** | API de l'évaluation : points proches, constat avec identifiant du téléphone, position replacée, nouveau point avec type de bien (liste extensible), photos, propositions de fusion et de rattachement, rapprochement manuel et séparation, écran sur le site | idempotence, fusion jamais automatique, séparation |
 | **D** | Application : la tournée à pied **en ligne** | parcours complet sur émulateur |
 | **E** | Application : **embarquer un secteur**, tournée hors ligne, effacement | parcours en mode avion |

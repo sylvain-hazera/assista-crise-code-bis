@@ -39,7 +39,7 @@ tout remonter au retour du lien.
 | Message du central vers la radio d'un satellite | en ligne seulement | ✅ | — |
 | Demandes, signalements, offres des citoyens | redescendre ; en créer sur place | 🟡 redescendent | celles **créées sur place** ne remontent pas (hors du périmètre de synchronisation) |
 | Fond de carte du département | oui | ✅ PMTiles téléchargé à l'installation | — |
-| **Adresses de la commune** (Base Adresse Nationale) | oui : base de l'évaluation des dégâts et des secteurs vulnérables | ❌ | elles vivent au central ; à redescendre |
+| **Adresses de la commune** (Base Adresse Nationale) | oui : base de l'évaluation des dégâts et des secteurs vulnérables | ✅ copiées du central (lots A et B, 20/11/2026) | — |
 | **Habitations référencées et évaluations des dégâts** | oui | ❌ | hors du périmètre de synchronisation, dans les deux sens |
 | **Photos et pièces jointes** (`Document`) | oui, scellées | ❌ | une photo déposée sur le satellite **ne remonte pas** |
 | Registre des personnes vulnérables | oui, copie chiffrée lisible des seules personnes habilitées (décidé le 20/11/2026) | ❌ | descente chiffrée vers le satellite de la commune ; jamais au-delà |

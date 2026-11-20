@@ -104,6 +104,8 @@ class Command(BaseCommand):
         # Comptes d'abord : les équipes (membres) et les nœuds radio attribués à une personne
         # (core/sync_referentiel.py) ne peuvent citer que des comptes déjà présents localement.
         self._copier_comptes(base, jeton)
+        # Adresses de la commune (core/sync_adresses.py) : rien quand rien n'a changé.
+        self._copier_adresses(base, jeton)
 
         # Production puis zone de démonstration (21/10/2026) : la même copie pour chacune, le
         # central choisit la zone d'après l'en-tête X-Environment (get_active_environment). Une
@@ -193,6 +195,27 @@ class Command(BaseCommand):
                 echecs += 1
         if faits or echecs:
             self.stdout.write(f"Fichiers du plan {environnement} : {faits} rapatrié(s), {echecs} en échec.")
+
+    def _copier_adresses(self, base, jeton):
+        """Référentiel d'adresses (rattachement du registre, secteurs, dégâts hors ligne). Une
+        panne ici n'empêche pas le reste de la synchronisation."""
+        from core import sync_adresses
+
+        def lire(params):
+            reponse = requests.get(f"{base}/adresses/", params=params,
+                                   headers={"Authorization": f"Bearer {jeton}"}, timeout=120)
+            reponse.raise_for_status()
+            return reponse.json()
+
+        try:
+            resultat = sync_adresses.copier(lire)
+            if resultat["ecrites"]:
+                self.stdout.write(f"Adresses : {resultat['ecrites']} copiée(s), "
+                                  f"{resultat['communes_nouvelles']} commune(s) nouvelle(s).")
+        except requests.RequestException as exc:
+            logger.warning("Copie des adresses échouée (%s) — retentée au prochain passage.", exc)
+        except Exception:
+            logger.exception("Échec de la copie des adresses")
 
     def _copier_comptes(self, base, jeton):
         """Comptes de l'institution (connexion locale sans internet, voir core/sync_comptes.py)."""

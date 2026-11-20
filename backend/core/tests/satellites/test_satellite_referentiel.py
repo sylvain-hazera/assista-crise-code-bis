@@ -238,4 +238,6 @@ class TestDemoSurLeSatellite:
 
         call_command("synchroniser_entrant")
 
-        assert demandees == [("comptes", None), ("donnees", "PROD"), ("donnees", "DEMO")]
+        # Les adresses (core/sync_adresses.py) : la liste des communes, puis les changements.
+        assert demandees == [("comptes", None), ("adresses", None), ("adresses", None),
+                             ("donnees", "PROD"), ("donnees", "DEMO")]

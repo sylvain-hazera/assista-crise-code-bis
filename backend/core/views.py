@@ -23497,7 +23497,7 @@ class SatelliteViewSet(
         # mesh_a_emettre / mesh_emis : comme synchroniser, le contrôle d'identité réel est dans
         # l'action (_exiger_compte_service) — le compte de service d'un satellite est un
         # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
-        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
+        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
                            'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants',
@@ -23506,7 +23506,7 @@ class SatelliteViewSet(
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
-        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants',
+        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'synchroniser', 'recuperer_identifiants',
                            'mesh_a_emettre', 'mesh_emis', 'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
@@ -24055,6 +24055,33 @@ class SatelliteViewSet(
             "offres": [construire_payload_pull(o, "Offer") for o in offres_qs],
             "signalements": [construire_payload_pull(s, "Information") for s in signalements_qs],
         })
+
+    @action(detail=True, methods=['get'], url_path='adresses')
+    def adresses(self, request, pk=None):
+        """Référentiel d'adresses des communes du satellite (core/sync_adresses.py) : son
+        territoire et les communes des crises ouvertes qui le concernent. `?communes_voulues=1`
+        rend la liste ; `?communes=a,b` toutes les adresses de ces communes ; `?depuis=&apres=`
+        ce qui a changé, par pages. Compte de service de CE satellite, profil FULL. Donnée
+        publique : rien à masquer, rien de personnel."""
+        from . import sync_adresses
+
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        if satellite.profil != ProfilSatellite.FULL:
+            raise PermissionDenied("Seul un satellite FULL héberge une instance locale.")
+        crises = filter_queryset_to_viewer_zone(
+            request, Crisis.objects.filter(environment=get_active_environment(request), end_date__isnull=True),
+            resolver=_crisis_zone_resolver,
+        )
+        voulues = sync_adresses.communes_pour_satellite(satellite, crises)
+        if request.query_params.get("communes_voulues"):
+            return Response({"communes": sorted(voulues)})
+        try:
+            depuis, apres, communes = sync_adresses.lire_curseur(request.query_params)
+        except ValueError as exc:
+            raise ValidationError({"depuis": str(exc)})
+        perimetre = voulues & set(communes) if communes else voulues
+        return Response(sync_adresses.page(perimetre, depuis, apres))
 
     @action(detail=True, methods=['get'], url_path='comptes')
     def comptes(self, request, pk=None):
