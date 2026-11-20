@@ -199,6 +199,12 @@
               @if (c.releves.communes_sous_la_pluie.length) { Sous la pluie : {{ communesOrage(c) }}. }
               @if (c.releves.rafale_mesuree; as r) { Rafale mesurée : <strong>{{ r.kmh }} km/h</strong> à {{ r.station }}. }
               @if (c.releves.eclairs) { <strong>{{ c.releves.eclairs }} éclair(s)</strong> vus par satellite sous la cellule. }
+              @if (c.releves.suivi; as s) {
+                <br>@if (s.suivie_depuis_min) {Suivie depuis {{ s.suivie_depuis_min }} min} @else {Apparue sur la dernière image}
+                ({{ s.noyaux }} noyau{{ s.noyaux > 1 ? 'x' : '' }}@if (s.noyaux_intenses) {, dont {{ s.noyaux_intenses }} au-delà de 50 mm/h})@if (s.evolution === 'renforcement') {, <strong>en renforcement</strong>}@if (s.evolution === 'affaiblissement') {, en affaiblissement}@if (s.evolution === 'stable') {, stable}@if (s.max_10min_mmh != null && s.surface_10min_km2 != null) { ({{ s.max_10min_mmh > 0 ? '+' : '' }}{{ s.max_10min_mmh | number:'1.0-0' }} mm/h, {{ s.surface_10min_km2 > 0 ? '+' : '' }}{{ s.surface_10min_km2 | number:'1.0-0' }} km² en 10 min)}.
+                @if (s.fusion) { <strong>Fusion de cellules</strong> dans l'heure. }
+                @if (s.division) { Division de cellule dans l'heure. }
+              }
               @if (c.releves.doppler; as d) {
                 @if (d.rotation; as rot) {
                   <br><strong class="alerte-doppler">Rotation détectée</strong> par le radar de {{ rot.radar }}

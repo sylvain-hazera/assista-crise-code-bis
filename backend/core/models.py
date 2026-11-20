@@ -3288,6 +3288,9 @@ class CelluleOrage(models.Model):
     doppler_polarimetrie = models.JSONField(null=True, blank=True)
     doppler_radars = models.JSONField(default=list, blank=True)
     doppler_heure = models.DateTimeField(null=True, blank=True)
+    # Suivi par tobac sur l'heure écoulée (core/suivi_tobac.resumer) : {suivie_depuis_min, noyaux,
+    # noyaux_intenses, surface_10min_km2, max_10min_mmh, evolution, fusion, division}.
+    suivi = models.JSONField(null=True, blank=True)
     releve_le = models.DateTimeField()
 
     class Meta:

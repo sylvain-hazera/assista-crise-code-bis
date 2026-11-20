@@ -453,6 +453,8 @@ class OragesView(APIView):
                     "tendance_mmh": c.tendance_mmh, "communes_sous_la_pluie": c.communes_touchees,
                     "rafale_mesuree": c.rafale_mesuree, "trace": c.trace,
                     "eclairs": c.eclairs,
+                    # Histoire de la cellule sur l'heure écoulée (suivi tobac).
+                    "suivi": c.suivi,
                     # Signatures Doppler, selon les relevés des radars les plus proches.
                     "doppler": {"rotation": c.doppler_rotation, "grele": c.doppler_grele,
                                 "divergence": c.doppler_divergence, "polarimetrie": c.doppler_polarimetrie,

@@ -162,7 +162,9 @@ def relever(maintenant=None):
     entete = {"Authorization": f"Bearer {jeton()}"}
     dernier = ProduitFoudre.objects.order_by("-debut").first()
     depuis = dernier.debut if dernier else maintenant - datetime.timedelta(hours=1)
-    deja = set(ProduitFoudre.objects.filter(debut__gte=depuis).values_list("identifiant", flat=True))
+    # Tous les produits gardés (48 h, moins de 300) : la recherche rend aussi celui qui chevauche
+    # `depuis`, qu'un filtre sur la date faisait retélécharger à chaque relevé.
+    deja = set(ProduitFoudre.objects.values_list("identifiant", flat=True))
     ajoutes = 0
     for identifiant, url, debut, fin in [p for p in produits_depuis(entete, depuis) if p[0] not in deja][:PRODUITS_MAX]:
         r = requests.get(url, headers=entete, timeout=DELAI_REPONSE_S * 2)
@@ -182,7 +184,8 @@ def relever(maintenant=None):
     ImpactFoudre.objects.filter(instant__lt=limite).delete()
     ProduitFoudre.objects.filter(debut__lt=limite).delete()
     dernier = ProduitFoudre.objects.order_by("-fin").first()
-    if dernier is None or maintenant - dernier.fin > FRAICHEUR_MAX:
+    # En retard mais en train de rattraper (service arrêté un moment) : ce n'est pas une panne.
+    if not ajoutes and (dernier is None or maintenant - dernier.fin > FRAICHEUR_MAX):
         raise RuntimeError("Aucun produit de foudre récent chez EUMETSAT.")
     return ajoutes
 

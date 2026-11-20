@@ -156,3 +156,15 @@ def test_les_doublons_deja_en_base_sont_retires():
     ImpactFoudre.objects.create(instant=T0, location=Point(-1.56, 45.64, srid=4326))
     assert foudre.supprimer_doublons() == 2
     assert ImpactFoudre.objects.count() == 2
+
+
+@pytest.mark.django_db
+def test_un_rattrapage_n_est_pas_une_panne(tmp_path, monkeypatch):
+    """Service arrêté deux heures : les produits lus sont anciens, mais il en arrive."""
+    secret = tmp_path / "eumetsat_api"
+    secret.write_text("cle-essai:secret-essai")
+    monkeypatch.setenv("EUMETSAT_API_FILE", str(secret))
+    produits = [("P1", T0, T0 + datetime.timedelta(minutes=10), produit([(45.64, -1.55, T0)]))]
+    get, poste = _reponses(produits)
+    with mock.patch.object(foudre.requests, "get", side_effect=get), mock.patch.object(foudre.requests, "post", poste):
+        assert foudre.relever(T0 + datetime.timedelta(hours=2)) == 1

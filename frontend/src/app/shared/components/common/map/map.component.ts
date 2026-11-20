@@ -1176,6 +1176,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (r.rafale_mesuree) {
       html += `<br>rafale mesurée ${r.rafale_mesuree.kmh} km/h (${this.echapper(r.rafale_mesuree.station)})`;
     }
+    if (r.suivi?.evolution === 'renforcement') {
+      html += `<br><strong>en renforcement</strong> (suivie depuis ${r.suivi.suivie_depuis_min} min)`;
+    }
+    if (r.suivi?.fusion) {
+      html += '<br>fusion de cellules dans l\'heure';
+    }
     if (r.doppler?.rotation) {
       html += `<br><strong>Rotation détectée</strong> (radar de ${this.echapper(r.doppler.rotation.radar)})`;
     }

@@ -5,6 +5,9 @@
 #     méthode de flux optique de référence de pysteps (Lucas-Kanade) en dépend. Comparée le
 #     19/11/2026 sur deux vraies images radar : Lucas-Kanade donne ~70 km/h vers l'est, en accord
 #     avec l'estimation par corrélation de phase ; Proesmans (sans OpenCV) 3 km/h, inutilisable.
+#   - tobac (20/11/2026), le suivi d'objets atmosphériques de référence : noyaux d'orage à
+#     plusieurs seuils, segmentation, suivi trackpy, fusions et divisions. Il tire iris et cartopy
+#     (environ 330 Mo) : c'est la raison pour laquelle il n'est que dans cette image.
 #   - decbufr, le décodeur BUFR radar de BALTRAD (baltrad/bbufr, commit figé), et ses tables :
 #     ce sont elles qui décrivent les descripteurs locaux de Météo-France (centre 85, tables 12
 #     pour le Doppler « PAG »). Vérifié sur un vrai balayage du radar de Bollène.
@@ -33,10 +36,14 @@ RUN git clone -q https://github.com/baltrad/bbufr.git . && git checkout -q "$BBU
 # ── image d'analyse ──────────────────────────────────────────────────────────
 FROM ${BASE}
 USER root
-RUN pip install --no-cache-dir "pysteps==1.21.5" "opencv-python-headless==5.1.0.95"
+RUN pip install --no-cache-dir "pysteps==1.21.5" "opencv-python-headless==5.1.0.95" \
+      "tobac==1.6.4" "trackpy==0.7" "scitools-iris==3.11.1" "cartopy==0.25.0" "xarray==2025.6.1" \
+      "scikit-learn==1.7.2"
 COPY --from=bbufr /opt/bbufr /opt/bbufr
 # Tables de la version 20 (produits multipolarisés « PAM »), absentes de BALTRAD : converties
 # depuis NLradar (voir meteo_tables/LISEZMOI.txt).
 COPY meteo_tables/localtabb_85_20.csv meteo_tables/localtabd_85_20.csv /opt/bbufr/tables/
-ENV BBUFR_DECBUFR=/opt/bbufr/bin/decbufr BBUFR_TABLES=/opt/bbufr/tables
+# MPLCONFIGDIR : matplotlib (importé par pysteps et tobac) veut un cache inscriptible, et
+# l'utilisateur du service n'a pas de dossier personnel.
+ENV BBUFR_DECBUFR=/opt/bbufr/bin/decbufr BBUFR_TABLES=/opt/bbufr/tables MPLCONFIGDIR=/tmp/matplotlib
 USER appuser

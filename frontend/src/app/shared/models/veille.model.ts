@@ -637,6 +637,14 @@ export interface ConfigurationAlerteVigilance {
  * des prévisions — (`estimations`), et ce que Météo-France prévoit (`prevision_meteo_france`). */
 export interface CommuneOrage { code: string; nom: string; dans_min?: number; }
 
+export interface SuiviCellule {
+  suivie_depuis_min: number; noyaux: number; noyaux_intenses: number;
+  /** Évolution du noyau principal depuis l'image d'il y a dix minutes (null sans recul). */
+  surface_10min_km2: number | null; max_10min_mmh: number | null;
+  evolution: 'renforcement' | 'affaiblissement' | 'stable' | null;
+  fusion: boolean; division: boolean;
+}
+
 export interface CelluleOrage {
   identifiant: string;
   distance_km: number | null;
@@ -649,6 +657,8 @@ export interface CelluleOrage {
     rafale_mesuree: { kmh: number; station: string; mesure_le: string | null } | null;
     /** Éclairs vus par le satellite MTG sous la cellule, autour de l'heure de l'image. */
     eclairs: number | null;
+    /** Histoire de la cellule sur l'heure écoulée, suivie par tobac (backend/core/suivi_tobac.py). */
+    suivi: SuiviCellule | null;
     /** Signatures Doppler (backend/core/doppler.py), selon les relevés des radars proches. */
     doppler: {
       rotation: { vrot_ms: number; elevations: number[]; radar: string } | null;

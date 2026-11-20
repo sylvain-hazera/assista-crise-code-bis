@@ -75,7 +75,7 @@ LIGNE_VITESSE_MIN_KMH = 40
 #: Une image plus vieille que cela n'est plus présentée comme actuelle.
 FRAICHEUR_MAX = datetime.timedelta(minutes=20)
 #: Images gardées (pour le déplacement) et analyses gardées (pour régler les seuils).
-IMAGES_GARDEES = 3
+IMAGES_GARDEES = 13     # une heure : le suivi par tobac (core/suivi_tobac.py) la parcourt ; ~60 Ko l'image
 ANALYSES_GARDEES = datetime.timedelta(days=30)
 
 NODATA = 255   # valeur de la grille compacte (mm/h, plafonné à 254) là où le radar ne voit pas
@@ -502,8 +502,11 @@ def _polygone(grille, lignes, colonnes, decalages=((0.0, 0.0),)):
 
 
 def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=(), avec_diagnostic_grele=False,
-             champ_mouvement=None):
-    """Analyse une image : rend la liste des cellules, prêtes à enregistrer."""
+             champ_mouvement=None, noyaux=None):
+    """Analyse une image : rend la liste des cellules, prêtes à enregistrer.
+
+    `noyaux` : les noyaux de la dernière image suivis par tobac sur l'heure (core/suivi_tobac),
+    ou None sans ce suivi."""
     import numpy
     from scipy import ndimage
 
@@ -580,8 +583,15 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
         prevision = prevu_par_meteo_france(echantillon, grille.heure)
         trace = (trace + [[grille.heure.isoformat(), round(centre_geo[1], 4), round(centre_geo[0], 4)]])[-12:]
 
+        suivi = None
+        if noyaux:
+            from .suivi_tobac import resumer
+            h, w = masque_cellule.shape
+            suivi = resumer([n for n in noyaux if 0 <= round(n["ligne"]) < h and 0 <= round(n["colonne"]) < w
+                             and masque_cellule[int(round(n["ligne"])), int(round(n["colonne"]))]])
+
         resultat.append({
-            "grele_diagnostic_kgm2": None,
+            "grele_diagnostic_kgm2": None, "suivi": suivi,
             "identifiant": identifiant, "centre": cellule["centre"], "vitesse": vitesse, "trace": trace,
             "max_mmh": round(cellule["max_mmh"], 1), "moyenne_mmh": round(cellule["moyenne_mmh"], 1),
             "surface_km2": round(cellule["surface_km2"], 1), "tendance_mmh": round(tendance, 1) if tendance is not None else None,
@@ -633,6 +643,7 @@ def enregistrer(grille, analyse, maintenant=None):
             grele_prevue=c["grele_prevue"], rafale_prevue_kmh=c["rafale_prevue_kmh"],
             rafale_mesuree=c["rafale_mesuree"], trace=c["trace"], releve_le=maintenant,
             grele_diagnostic_kgm2=c.get("grele_diagnostic_kgm2"), eclairs=c.get("eclairs"),
+            suivi=c.get("suivi"),
         ) for c in analyse])
         ImageRadarOrage.objects.update_or_create(heure=grille.heure, defaults={
             "largeur": largeur, "hauteur": hauteur, "projdef": grille.projdef,
@@ -647,6 +658,7 @@ def enregistrer(grille, analyse, maintenant=None):
                                             "grele_diagnostic_kgm2")}
                          | {"lat": round(c["centre_geo"][1], 3), "lon": round(c["centre_geo"][0], 3),
                             "rafale_mesuree_kmh": (c["rafale_mesuree"] or {}).get("kmh"),
+                            "evolution": (c.get("suivi") or {}).get("evolution"),
                             "communes": len(c["communes_touchees"])} for c in analyse],
             "releve_le": maintenant})
         AnalyseOrages.objects.filter(heure__lt=maintenant - ANALYSES_GARDEES).delete()
@@ -685,10 +697,12 @@ def relever(maintenant=None):
             champ = prevision_immediate.champ_de_deplacement(successives)
         except Exception:
             logger.exception("Flux optique impossible : repli sur la corrélation de phase.")
+    noyaux = suivre_sur_l_heure(grille, derniere, precedente)
     anciennes = [{"identifiant": c.identifiant, "centre": (c.ligne, c.colonne), "max_mmh": c.max_mmh,
                   "vitesse": (c.vitesse_lignes, c.vitesse_colonnes) if c.vitesse_lignes is not None else None,
                   "trace": c.trace} for c in CelluleOrage.objects.all()] if precedente is not None else []
-    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True, champ_mouvement=champ)
+    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True, champ_mouvement=champ,
+                       noyaux=noyaux)
     nombre = enregistrer(grille, analyse, maintenant)
     if champ is not None:
         from . import prevision_immediate
@@ -704,6 +718,33 @@ def relever(maintenant=None):
         # Les cumuls ne doivent pas faire échouer l'analyse des orages.
         logger.exception("Cumuls de pluie par commune non calculés.")
     return nombre
+
+
+def suivre_sur_l_heure(grille, derniere, precedente):
+    """Noyaux de l'image courante suivis par tobac sur les images consécutives de l'heure
+    écoulée (même grille, pas de cinq minutes), ou None si tobac manque ou échoue."""
+    from . import suivi_tobac
+    from .models import ImageRadarOrage
+
+    if not suivi_tobac.disponible():
+        return None
+    grilles, heures = [grille.taux], [grille.heure]
+    if precedente is not None and derniere is not None and grille.heure - derniere.heure == datetime.timedelta(minutes=5):
+        images = {i.heure: i for i in ImageRadarOrage.objects.filter(
+            heure__gte=grille.heure - datetime.timedelta(minutes=5 * (suivi_tobac.IMAGES_MAX - 1)),
+            heure__lt=grille.heure)}
+        heure = grille.heure - datetime.timedelta(minutes=5)
+        while heure in images and images[heure].largeur == grille.forme[1] and images[heure].hauteur == grille.forme[0]:
+            image = images[heure]
+            grilles.insert(0, precedente if heure == derniere.heure else
+                           GrilleRadar.depuis_compacte(image.grille, image.largeur, image.hauteur))
+            heures.insert(0, heure)
+            heure -= datetime.timedelta(minutes=5)
+    try:
+        return suivi_tobac.suivre(grilles, heures)
+    except Exception:
+        logger.exception("Suivi des cellules par tobac impossible : analyse sans ce suivi.")
+        return None
 
 
 # ── Cumuls de pluie par commune ──────────────────────────────────────────────
