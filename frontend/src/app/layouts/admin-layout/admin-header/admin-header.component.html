@@ -35,9 +35,9 @@
       class="env-toggle"
       [class.demo-mode]="isDemo"
       (click)="toggleEnvironment()"
-      [title]="isDemo ? 'Repasser en production' : 'Passer en zone de démonstration'">
-      <span class="material-icons">{{ isDemo ? 'science' : 'toggle_off' }}</span>
-      {{ isDemo ? 'Démo' : 'Prod' }}
+      [title]="isDemo ? 'Quitter la formation : revenir aux données réelles' : 'Passer en formation (zone de démonstration, données fictives)'">
+      <span class="material-icons">{{ isDemo ? 'school' : 'toggle_off' }}</span>
+      {{ isDemo ? 'Formation' : 'Prod' }}
     </button>
   }
 

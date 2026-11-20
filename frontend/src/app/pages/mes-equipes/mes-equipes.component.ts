@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { TeamService } from '../../services/team.service';
 import { Team, teamDisplayName } from '../../shared/models/team.model';
@@ -37,7 +37,12 @@ export class MesEquipesComponent implements OnInit {
   erreur = '';
   equipes: Team[] = [];
 
-  constructor(private teamService: TeamService) {}
+  constructor(private teamService: TeamService, private router: Router) {}
+
+  /** Dans l'espace terrain (application installée), l'équipe s'ouvre sans en sortir. */
+  lienEquipe(id: string | number | undefined): unknown[] {
+    return this.router.url.startsWith('/terrain') ? ['/terrain/equipe', id] : ['/mon-equipe', id];
+  }
 
   ngOnInit(): void {
     this.teamService.mesEquipes().subscribe({

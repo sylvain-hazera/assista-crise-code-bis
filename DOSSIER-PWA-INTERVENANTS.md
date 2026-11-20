@@ -52,8 +52,8 @@ position (`suivi-position-permanent.service.ts`). Le serveur n'envoie pas de not
 
 | Lot | Contenu | Essais |
 |---|---|---|
-| **1. Installable** | Manifeste par marque (nom, icônes, couleurs selon le domaine, comme `core/branding.py`), icône Apple, balises `apple-mobile-web-app-*`, service worker Angular (coquille et images mises en cache, `/api/` jamais en cache), page « Installer l'application sur iPhone » et bandeau discret sur iPhone, annonce « nouvelle version disponible » | build de production, manifeste par domaine, rien de `/api/` dans le cache |
-| **2. Espace terrain** | Une entrée `/terrain` pensée pour le téléphone : missions et engagements, équipes et messagerie, carte, dossiers, compte ; en reprenant les pages existantes | Karma, gardes, menu |
+| **1. Installable** ✅ | Manifeste par marque (nom, icônes, couleurs selon le domaine, comme `core/branding.py`), icône Apple, balises `apple-mobile-web-app-*`, service worker Angular (coquille et images mises en cache, `/api/` jamais en cache), page « Installer l'application sur iPhone » et bandeau discret sur iPhone, annonce « nouvelle version disponible » | build de production, manifeste par domaine, rien de `/api/` dans le cache |
+| **2. Espace terrain** ✅ | Une entrée `/terrain` pensée pour le téléphone : missions et engagements, équipes et messagerie, carte, dossiers, compte ; en reprenant les pages existantes | Karma, gardes, menu |
 | **3. Hors ligne** | Missions, équipes et dossiers gardés dans IndexedDB **chiffré** ; la file chiffrée existante généralisée (messages, constats, photos) avec identifiants tirés sur le téléphone ; envoi à l'ouverture et au retour du réseau ; indicateur en ligne / hors ligne | idempotence, chiffrement, coupure simulée |
 | **4. Notifications** | Web Push : clé VAPID en secret Docker, abonnement par appareil (adresse d'envoi chiffrée, empreinte pour retrouver), envoi par le même chemin que les notifications Android, désabonnement à la déconnexion | envoi simulé, rien en clair en base |
 | **5. Terrain** | Suivi de position au premier plan avec écran allumé ; photos scellées ; lecture des QR codes ; évaluation des dégâts (tournée, replacer, constat, nouveau point, secteur embarqué) | logique partagée testée sans appareil |
@@ -71,15 +71,33 @@ livrer), puis 4 (les notifications sont ce qu'un intervenant attend le plus), pu
   iOS (c'est le seul chemin), et ne portent qu'un titre et un lien, pas de donnée sensible.
 - Nouvelle page d'administration éventuelle : dans le menu latéral.
 
-## 5. À décider
+## 5. Décisions (20/11/2026)
 
-1. **L'adresse** : `/terrain` sur le site de chaque marque (proposé), ou un sous-domaine.
-2. **Le premier lot à livrer** : lots 1 et 2 (proposé), ou directement jusqu'aux notifications.
-3. **Un iPhone pour essayer** : rien de ce qui touche à iOS ne se vérifie ici ; il faudra un
-   appareil (installation, notifications, caméra, position, hors ligne).
-4. **Le suivi de position** : sur iPhone, seulement application ouverte. Acceptable pour les
-   intervenants, ou faut-il garder l'application native en ligne de mire pour ce point ?
+1. **Adresse** : `/terrain` sur le site de chaque marque.
+2. **Première livraison** : jusqu'aux notifications (lots 1 à 4).
+3. **Essais** : sur un iPhone de l'entourage de Sylvain.
+4. **Suivi de position** seulement application ouverte : accepté.
+5. **Ajout : un poste de pilotage sur iPad** (directeur des opérations) : l'administration du
+   site, installable à part (« Assista-Crise — Pilotage », ouverte sur `/admin`), mise en page
+   pour une tablette, mêmes notifications et même annonce de nouvelle version (lot 6 ci-dessous).
+
+## 6. Lot 6 — le poste de pilotage sur iPad
+
+| Contenu | Essais |
+|---|---|
+| Second manifeste (nom « Pilotage », départ `/admin`, même icône) ; la page installée depuis l'administration prend celui-ci | manifeste servi selon l'espace |
+| Mise en page tablette : menu latéral repliable, tableaux et carte au doigt, rien sous l'encoche | Karma sur les largeurs d'iPad |
+| Notifications du poste (nouvelle demande, dossier, vigilance) par le même Web Push | envoi simulé |
 
 Sources : [WebKit — Safari 26.0](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/),
 [firt.dev — iOS PWA Compatibility](https://firt.dev/notes/pwa-ios/),
 [MagicBell — PWA iOS Limitations](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide).
+
+## 7. Bouton « Formation » (20/11/2026)
+
+Demande : un bouton « Formation » dans les applications installées pour basculer de la
+production à la démonstration. Fait : dans l'en-tête de l'espace terrain (et le bouton Prod /
+Démo de l'administration devient Prod / Formation), proposé seulement aux comptes ayant un
+accès à la démonstration (`demo_role`), avec confirmation. En formation, un bandeau orange
+« Formation — données fictives de démonstration » reste affiché sur le terrain.
+

@@ -4,8 +4,17 @@
   <meta charset="utf-8">
   <title>Assista Crise</title>
   <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="icon" type="image/x-icon" href="logo.ico">
+  <!-- Le site s'installe comme une application (DOSSIER-PWA-INTERVENANTS.md) : manifeste et
+       icône servis par le serveur selon la marque du domaine. Le manifeste « Terrain » est
+       remplacé par « Pilotage » dans l'administration (services/application-installable.service.ts). -->
+  <link rel="manifest" href="/api/pwa/manifeste/?espace=terrain">
+  <link rel="apple-touch-icon" href="/api/pwa/icone/?taille=180">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Terrain">
   <!-- Polices auto-hébergées (voir src/fonts.scss) — plus aucun chargement depuis
        fonts.googleapis.com/fonts.gstatic.com, recommandation CNIL pour éviter la transmission
        de l'adresse IP du visiteur à Google (voir /rgpd, section 7). -->

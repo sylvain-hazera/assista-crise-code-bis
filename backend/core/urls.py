@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .views_menu import CompteursMenuView
+from .views_pwa import IconePwaView, ManifestePwaView
 from .grafana import GrafanaTokenView
 from .views_connexion import (
     ConnexionCodeView, ConnexionDebutView, ConnexionEnvoyerCodeView,
@@ -463,6 +464,9 @@ urlpatterns = [
     path('relais-serie/mesures/', RelaisMesuresView.as_view(), name='relais_mesures'),
     path('branding/', BrandingView.as_view(), name='branding'),
     path('branding/logo/', BrandingLogoView.as_view(), name='branding_logo'),
+    # Le site installable comme une application (DOSSIER-PWA-INTERVENANTS.md).
+    path('pwa/manifeste/', ManifestePwaView.as_view(), name='pwa_manifeste'),
+    path('pwa/icone/', IconePwaView.as_view(), name='pwa_icone'),
     path('sonde/', SondeView.as_view(), name='sonde'),
     path('validate-institution/', InstitutionValidationView.as_view(), name='validate_institution'),
     path('activate-account/<str:uidb64>/<str:token>/', AccountActivationView.as_view(), name='activate_account'),

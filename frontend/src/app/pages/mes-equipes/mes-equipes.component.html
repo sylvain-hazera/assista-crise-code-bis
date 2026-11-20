@@ -31,7 +31,7 @@
         <ul class="equipes">
           @for (e of equipesIntervention; track e.id) {
             <li>
-              <a [routerLink]="['/mon-equipe', e.id]">
+              <a [routerLink]="lienEquipe(e.id)">
                 <span class="nom">{{ nom(e) }}</span>
                 <span class="motif">{{ motifEngagement(e) }}</span>
                 @if (e.regulateur_nom) {
@@ -57,7 +57,7 @@
         <ul class="equipes">
           @for (e of equipesPermanentes; track e.id) {
             <li>
-              <a [routerLink]="['/mon-equipe', e.id]">
+              <a [routerLink]="lienEquipe(e.id)">
                 <span class="nom">{{ nom(e) }}</span>
                 @if (e.echelon_libelle) {
                   <span class="detail">{{ e.echelon_libelle }}</span>

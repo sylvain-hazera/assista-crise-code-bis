@@ -6,6 +6,8 @@ import { BrandingService } from './services/branding.service';
 import { ReferencementService } from './seo/referencement.service';
 import { ThemeService } from './services/theme.service';
 import { RelectureEnvoiComponent } from './shared/components/common/relecture-envoi/relecture-envoi.component';
+import { BandeauApplicationComponent } from './shared/components/common/bandeau-application/bandeau-application.component';
+import { ApplicationInstallableService } from './services/application-installable.service';
 
 @Component({
   selector: 'app-root',
@@ -13,6 +15,7 @@ import { RelectureEnvoiComponent } from './shared/components/common/relecture-en
     RouterOutlet,
     CommonModule,
     RelectureEnvoiComponent,
+    BandeauApplicationComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
@@ -26,6 +29,7 @@ export class AppComponent implements OnInit {
     private referencement: ReferencementService,
     // Injecté dès le démarrage : pose le thème (clair/sombre) avant le premier rendu.
     private theme: ThemeService,
+    private installable: ApplicationInstallableService,
   ) {}
 
   ngOnInit(): void {
@@ -43,5 +47,9 @@ export class AppComponent implements OnInit {
     // Titre, description et adresse canonique de chaque page, pour les moteurs de recherche
     // et l'onglet du navigateur (voir ReferencementService).
     this.referencement.demarrer();
+
+    // Le site installable comme une application : service worker, Terrain ou Pilotage,
+    // annonce d'une nouvelle version (DOSSIER-PWA-INTERVENANTS.md).
+    this.installable.demarrer();
   }
 }
