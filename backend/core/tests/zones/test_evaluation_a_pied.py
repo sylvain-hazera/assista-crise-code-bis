@@ -163,3 +163,40 @@ class TestRapprochement:
     def test_les_types_de_bien_de_depart(self, terrain):
         noms = [t["nom"] for t in terrain["elue"].get("/api/types-bien/").data]
         assert noms[0] == "Logement" and "Véhicule" in noms and noms[-1] == "Autre"
+
+
+@pytest.mark.django_db
+class TestPourLApplication:
+    def test_la_photo_vise_le_constat_et_rejoint_le_bien(self, terrain):
+        import hashlib
+        import io
+
+        from core.models import Document
+
+        r, corps = _constat(terrain["elue"], terrain["feu"], latitude=44.871, longitude=-1.205, description="Grange")
+        contenu = b"\xff\xd8\xff\xe0photo"
+        photo = terrain["elue"].post("/api/habitations/constat-photo/", {"constat": corps["id"], "commentaire": "Toiture",
+                                                                         "fichier": io.BytesIO(contenu)}, format="multipart")
+        assert photo.status_code == 201, photo.data
+        document = Document.objects.get()
+        assert str(document.habitation_id) == r.data["id"] and photo.data["empreinte"] == hashlib.sha256(contenu).hexdigest()
+        inconnu = terrain["elue"].post("/api/habitations/constat-photo/", {"constat": str(uuid.uuid4()),
+                                                                           "fichier": io.BytesIO(contenu)}, format="multipart")
+        assert inconnu.status_code == 404
+        etranger = terrain["autre"].post("/api/habitations/constat-photo/", {"constat": corps["id"],
+                                                                             "fichier": io.BytesIO(contenu)}, format="multipart")
+        assert etranger.status_code == 403
+
+    def test_le_secteur_embarque(self, terrain):
+        un, _ = _constat(terrain["elue"], terrain["feu"], ban_id="33333_0010_00000", statut_evaluation="DETRUITE")
+        with patch("core.views.commune_code_from_point", return_value=COMMUNE):
+            r = terrain["elue"].get("/api/habitations/secteur/", {"crise": str(terrain["feu"].id), "latitude": 44.87,
+                                                                  "longitude": -1.2, "rayon_m": 500})
+        assert r.status_code == 200, r.data
+        assert {a[0] for a in r.data["adresses"]} == {"33333_0010_00000", "33333_0010_00001"}     # le n° 12 est à 800 m
+        assert [b["id"] for b in r.data["biens"]] == [un.data["id"]]
+        assert [d["habitation"] for d in r.data["dossiers"]] == [un.data["id"]]             # détruit : un dossier ouvert
+        assert r.data["cercles"] == [] and r.data["rayon_m"] == 500
+        with patch("core.views.commune_code_from_point", return_value=COMMUNE):
+            assert terrain["autre"].get("/api/habitations/secteur/", {"crise": str(terrain["feu"].id), "latitude": 44.87,
+                                                                      "longitude": -1.2}).status_code == 403

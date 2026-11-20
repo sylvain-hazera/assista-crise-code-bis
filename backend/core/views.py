@@ -8222,6 +8222,105 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                          "constat": str(identifiant), "deja_recu": False, "rapprochements_proposes": len(propositions)},
                         status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['post'], url_path='constat-photo')
+    def constat_photo(self, request):
+        """POST /api/habitations/constat-photo/ (multipart : constat, fichier, commentaire) -- une
+        photo prise pendant un constat. Elle vise le CONSTAT (identifiant tiré sur le téléphone),
+        pas le bien : un point nouveau n'a de fiche qu'une fois son constat reçu. Même traitement
+        que les photos de dossier : empreinte, position lue dans l'image et réservée."""
+        from .models import ConstatTerrain
+
+        try:
+            identifiant = uuid.UUID(str(request.data.get('constat')))
+        except (TypeError, ValueError):
+            identifiant = None
+        constat = ConstatTerrain.objects.select_related('habitation', 'crise').filter(pk=identifiant).first() if identifiant else None
+        if constat is None:
+            return Response({"error": "Constat inconnu : il doit être reçu avant ses photos."}, status=status.HTTP_404_NOT_FOUND)
+        from . import evaluation_terrain as terrain
+        if constat.auteur_id != request.user.id and not terrain.peut_evaluer(request, constat.habitation.commune_code, constat.crise):
+            raise PermissionDenied("Cette photo ne peut être jointe que par l'auteur du constat ou la commune.")
+        fichier = request.FILES.get('fichier')
+        if fichier is None:
+            return Response({"error": "fichier manquant."}, status=status.HTTP_400_BAD_REQUEST)
+        document = Document.objects.create(fichier=fichier, auteur=request.user, habitation=constat.habitation,
+                                           commentaire=" ".join(str(request.data.get('commentaire') or "").split())[:500],
+                                           environment=constat.environment)
+        try:
+            with open(document.fichier.path, "rb") as flux:
+                document.sha256 = hashlib.sha256(flux.read()).hexdigest()
+            document.metadata_publiques, document.metadata_privees = extract_exif_metadata(document.fichier.path)
+            document.save()
+        except Exception:   # noqa: BLE001 - même tolérance que les photos de dossier
+            _logger_sync.exception("Photo de constat : empreinte ou métadonnées illisibles")
+        HabitationHistorique.objects.create(habitation=constat.habitation, auteur=request.user, environment=constat.environment,
+                                            evenement="Photo ajoutée sur le terrain")
+        audit_log(request=request, action_code="CREATION", objet_type="Document", objet_id=document.id,
+                  crise=constat.crise, commentaire="Photo d'un constat de terrain")
+        return Response({"id": str(document.id), "empreinte": document.sha256, "habitation": str(constat.habitation_id)},
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='secteur')
+    def secteur(self, request):
+        """GET /api/habitations/secteur/?crise=&latitude=&longitude=[&rayon_m=] -- ce que
+        l'application embarque pour évaluer hors ligne autour d'un point : les adresses du
+        référentiel, les biens déjà référencés de la crise, ses dossiers ouverts sur ces biens, et
+        les cercles des personnes vulnérables (sans identité). Effacé du téléphone dès la
+        synchronisation de ce qui y a été saisi (décision du 20/11/2026)."""
+        import math
+
+        from django.contrib.gis.geos import Point, Polygon
+
+        from . import evaluation_terrain as terrain
+        from .models import AdresseBAN, PersonneVulnerable
+        from .views_adresses import _flottant
+
+        crise = Crisis.objects.filter(pk=request.query_params.get('crise') or None).first()
+        latitude = _flottant(request.query_params.get('latitude'), -90, 90)
+        longitude = _flottant(request.query_params.get('longitude'), -180, 180)
+        if crise is None or latitude is None or longitude is None:
+            return Response({"error": "crise, latitude et longitude sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
+        commune_code = commune_code_from_point(Point(longitude, latitude, srid=4326))
+        if not terrain.peut_evaluer(request, commune_code, crise):
+            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        rayon = _flottant(request.query_params.get('rayon_m'), 100, self.RAYON_SECTEUR_MAX_M) or self.RAYON_SECTEUR_M
+        ecart_lat = rayon / 111_320
+        ecart_lon = rayon / (111_320 * max(0.1, math.cos(math.radians(latitude))))
+        emprise = Polygon.from_bbox((longitude - ecart_lon, latitude - ecart_lat, longitude + ecart_lon, latitude + ecart_lat))
+        environment = get_active_environment(request)
+        adresses = [[a.ban_id, a.libelle, round(a.location.y, 6), round(a.location.x, 6)]
+                    for a in AdresseBAN.objects.filter(retiree_le__isnull=True, location__within=emprise)[:self.ADRESSES_SECTEUR_MAX]]
+        biens = list(Habitation.objects.filter(crise=crise, environment=environment, fusionne_dans__isnull=True,
+                                               location__within=emprise).select_related('type_bien'))
+        dossiers = Dossier.objects.filter(crise=crise, environment=environment, habitation__in=biens).exclude(
+            statut__in=[Dossier.Statut.RESOLU, Dossier.Statut.CLOTURE])
+        cercles = []
+        if commune_code:
+            from . import secteurs_vulnerables
+            personnes = list(PersonneVulnerable.objects.filter(commune_code=commune_code, actif=True, environment=environment))
+            resultat = secteurs_vulnerables.secteurs(personnes, commune_code, environment)
+            fiches = resultat.pop("_fiches")
+            cercles = [f["geometry"]["coordinates"][0] for f in resultat["features"]]
+            if fiches:
+                audit_log(request=request, action_code="LECTURE", objet_type="PersonneVulnerable", objet_id=None,
+                          exposition=AuditLog.Exposition.LISTE_SANS_COORDONNEES, objets_ids=fiches,
+                          commentaire=f"Secteur embarqué pour l'évaluation des dégâts, commune {commune_code} : {len(cercles)} cercle(s)")
+        return Response({
+            "crise": str(crise.id), "latitude": latitude, "longitude": longitude, "rayon_m": rayon,
+            "genere_le": timezone.now().isoformat(),
+            "adresses": adresses,
+            "biens": [{"id": str(b.id), "ban_id": b.ban_id, "adresse": b.adresse, "latitude": round(b.location.y, 6),
+                       "longitude": round(b.location.x, 6), "statut_evaluation": b.statut_evaluation,
+                       "type_bien": b.type_bien.nom if b.type_bien else None, "position_corrigee": b.position_corrigee}
+                      for b in biens],
+            "dossiers": [{"id": str(d.id), "numero": d.numero, "titre": d.titre, "statut": d.statut,
+                          "habitation": str(d.habitation_id)} for d in dossiers],
+            "cercles": cercles,
+        })
+
+    #: Rayon embarqué par défaut et au plus (un village, un quartier), et plafond d'adresses.
+    RAYON_SECTEUR_M, RAYON_SECTEUR_MAX_M, ADRESSES_SECTEUR_MAX = 1000, 3000, 20000
+
     @action(detail=True, methods=['post'], url_path='rapprocher')
     def rapprocher(self, request, pk=None):
         """POST /api/habitations/<id>/rapprocher/ {autre} -- « c'est le même bien » : `autre` est
