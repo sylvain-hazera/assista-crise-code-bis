@@ -353,6 +353,16 @@ class TestFoyersActifs:
 
         assert [round(f["location"].y, 2) for f in foyers] == [45.5]
 
+    def test_la_reunion_est_gardee_maurice_non(self):
+        # La Réunion arrive par le fichier « Afrique australe », qui contient aussi Maurice.
+        assert any("Southern_Africa" in f for f in foyers_actifs.FICHIERS)
+        foyers = foyers_actifs.analyser([_fichier_viirs(
+            _viirs(-21.07, 55.45, "2026-11-15"),                # Maïdo
+            _viirs(-20.30, 57.55, "2026-11-15"),                # Maurice
+        )], MAINTENANT)
+
+        assert [(round(f["location"].y, 2), round(f["location"].x, 2)) for f in foyers] == [(-21.07, 55.45)]
+
     def test_modis_donne_sa_confiance_en_pourcentage(self):
         modis = "\n".join([ENTETE_MODIS,
                            "45.5,4.5,300.46,1.17,1.07,2026-11-15,1014,A,85,6.1NRT,274.22,11.62,D",
@@ -394,8 +404,8 @@ class TestFoyersActifs:
         bon = mock.Mock(text=_fichier_viirs(_viirs(45.5, 4.5, "2026-11-15")), raise_for_status=lambda: None)
 
         with mock.patch("core.foyers_actifs.requests.get",
-                        side_effect=[requests.ConnectionError("coupé"), bon, bon, requests.ReadTimeout("lent")]):
-            assert len(foyers_actifs.telecharger()) == 2
+                        side_effect=[requests.ConnectionError("coupé"), bon, bon, requests.ReadTimeout("lent")] * 2):
+            assert len(foyers_actifs.telecharger()) == 4      # quatre fichiers Europe, quatre Afrique australe
 
         with mock.patch("core.foyers_actifs.requests.get", side_effect=requests.ConnectionError("coupé")):
             with pytest.raises(requests.ConnectionError):

@@ -58,6 +58,15 @@ def test_seuls_les_eclairs_de_nos_emprises_sont_gardes():
     assert eclairs[0]["duree_ms"] == 120
 
 
+def test_les_eclairs_de_la_reunion_sont_gardes():
+    eclairs = foudre.lire_eclairs(produit([
+        (-21.10, 55.50, T0),                 # sur l'île
+        (-21.90, 54.80, T0),                 # en mer, l'orage arrive
+        (-20.20, 57.50, T0),                 # Maurice : hors emprise
+    ]))
+    assert [(round(e["latitude"], 1), round(e["longitude"], 1)) for e in eclairs] == [(-21.1, 55.5), (-21.9, 54.8)]
+
+
 def _reponses(produits):
     """Faux Data Store : jeton, recherche, téléchargements."""
     def get(url, headers=None, timeout=None, params=None):

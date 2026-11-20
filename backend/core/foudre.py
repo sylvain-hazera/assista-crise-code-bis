@@ -42,9 +42,12 @@ URL_RECHERCHE = "https://api.eumetsat.int/data/search-products/1.0.0/os"
 COLLECTION = "EO:EUM:DAT:0691"
 DELAI_REPONSE_S = 60
 
-#: Emprises gardées : métropole et Corse. Le reste du disque n'a rien à faire dans notre base.
+#: Emprises gardées : métropole et Corse, et La Réunion avec une marge en mer pour voir venir les
+#: orages (le disque de MTG va jusqu'à 60° E, vérifié le 20/11/2026). Le reste n'a rien à faire
+#: dans notre base.
 EMPRISES = (
     (-5.8, 41.0, 10.0, 51.6),
+    (54.5, -22.2, 56.6, -20.0),
 )
 #: Éclairs gardés 48 heures.
 DUREE_GARDEE = datetime.timedelta(hours=48)

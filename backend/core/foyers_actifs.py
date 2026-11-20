@@ -3,8 +3,8 @@ annonce aux institutions qui l'ont demandée.
 
 SOURCE
 FIRMS (Fire Information for Resource Management System, NASA), fichiers publics des détections
-des sept derniers jours en Europe, sans clé : https://firms.modaps.eosdis.nasa.gov. Quatre
-capteurs -- VIIRS sur trois satellites (375 m) et MODIS (1 km) --, soit environ six passages par
+des sept derniers jours en Europe et en Afrique australe (pour La Réunion), sans clé :
+https://firms.modaps.eosdis.nasa.gov. Quatre capteurs -- VIIRS sur trois satellites (375 m) et MODIS (1 km) --, soit environ six passages par
 jour, publiés trois heures après. Données libres, à citer (« NASA FIRMS »). Ce n'est pas un
 service de l'État français : il n'en existe pas d'équivalent.
 
@@ -50,11 +50,19 @@ FICHIERS = (
     "noaa-21-viirs-c2/csv/J2_VIIRS_C2_Europe_7d.csv",
     "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Europe_7d.csv",
     "modis-c6.1/csv/MODIS_C6_1_Europe_7d.csv",
+    # La Réunion est dans le fichier « Afrique australe » (10° E à 58° E, vérifié le 20/11/2026).
+    "noaa-20-viirs-c2/csv/J1_VIIRS_C2_Southern_Africa_7d.csv",
+    "noaa-21-viirs-c2/csv/J2_VIIRS_C2_Southern_Africa_7d.csv",
+    "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Southern_Africa_7d.csv",
+    "modis-c6.1/csv/MODIS_C6_1_Southern_Africa_7d.csv",
 )
 DELAI_REPONSE_S = 60
-# Métropole et Corse : (ouest, sud, est, nord). Le rectangle déborde sur les pays voisins, ce
-# qui sert les communes frontalières.
-EMPRISE = (-5.5, 41.0, 10.0, 51.5)
+# (ouest, sud, est, nord). Métropole et Corse : le rectangle déborde sur les pays voisins, ce qui
+# sert les communes frontalières. La Réunion : l'île seule (Maurice, dans le même fichier, non).
+EMPRISES = (
+    (-5.5, 41.0, 10.0, 51.5),
+    (55.1, -21.5, 56.0, -20.8),
+)
 # Ce qui est gardé en base et montré : les deux derniers jours.
 PROFONDEUR = datetime.timedelta(hours=48)
 # Maille de repérage des sources fixes (environ 2 km) et seuil en jours distincts sur sept.
@@ -115,7 +123,6 @@ def analyser(textes, maintenant=None):
     jours dans l'emprise, de confiance au moins nominale, chacune marquée « source fixe » ou non
     d'après les sept jours du fichier."""
     maintenant = maintenant or timezone.now()
-    ouest, sud, est, nord = EMPRISE
     detections = []
     for texte in textes:
         for ligne in csv.DictReader(io.StringIO(texte)):
@@ -126,7 +133,7 @@ def analyser(textes, maintenant=None):
                 ).replace(tzinfo=datetime.timezone.utc)
             except (KeyError, ValueError, TypeError):
                 continue
-            if not (sud <= latitude <= nord and ouest <= longitude <= est):
+            if not any(s <= latitude <= n and o <= longitude <= e for o, s, e, n in EMPRISES):
                 continue
             confiance = _confiance(ligne.get("confidence"))
             if confiance is None:

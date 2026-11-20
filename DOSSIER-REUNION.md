@@ -28,8 +28,8 @@ coupe) · 🟡 à construire (source trouvée, autre format) · 🔴 pas de sour
 
 | Donnée | Constat | Pourquoi | Piste | État |
 |---|---|---|---|---|
-| **Foudre (MTG)** | 0 | notre emprise s'arrête à la métropole ; le satellite voit jusqu'à 60° E (vérifié) | ajouter l'emprise de l'île | 🟢 |
-| **Foyers de feu (FIRMS)** | 0 | nous ne lisons que le fichier « Europe » | lire aussi le fichier « Southern_Africa » (vérifié, public) | 🟢 |
+| **Foudre (MTG)** | 0 | notre emprise s'arrête à la métropole ; le satellite voit jusqu'à 60° E (vérifié) | emprise de l'île ajoutée, marge en mer (20/11/2026) | ✅ |
+| **Foyers de feu (FIRMS)** | 0 | nous ne lisons que le fichier « Europe » | fichier « Southern_Africa » lu, l'île seule gardée (20/11/2026) | ✅ |
 | **Feux en cours (géostationnaire)** | 0 | MTG ne traite les feux que jusqu'à 50° E (vérifié sur juillet) | **MSG IODC** (océan Indien) : même compte LSA SAF, une liste toutes les 15 min, format HDF5 | 🟡 |
 | **Orages et pluie observée (radar)** | 0 | l'analyse ne lit que la mosaïque métropole | la mosaïque **REUNION** existe chez Météo-France (vérifié) ; autre grille, autres radars | 🟡 |
 | **Doppler** | exclu volontairement | radars d'outre-mer écartés tant que leurs cellules ne sont pas analysées | suit le radar | 🟡 |
