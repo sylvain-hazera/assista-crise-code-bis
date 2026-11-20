@@ -48,12 +48,15 @@ class Command(BaseCommand):
             )
             return
 
+        from core import sync_pieces
+
         evenements = list(
             EvenementSynchronisation.objects
             .filter(etat=EtatEvenementSynchronisation.EN_ATTENTE)
             .order_by("cree_le")
         )
-        if not evenements:
+        # Les photos (core/sync_pieces.py) partent même quand aucun événement n'attend.
+        if not evenements and not sync_pieces.a_envoyer().exists():
             return
 
         try:
@@ -62,7 +65,33 @@ class Command(BaseCommand):
             )
             reponse_token.raise_for_status()
             jeton = reponse_token.json()["access"]
+        except requests.RequestException as exc:
+            logger.warning("Synchronisation sortante échouée (%s) — retentée au prochain passage.", exc)
+            self.stdout.write(f"Échec de connexion au central : {exc}")
+            return
+        if evenements:
+            self._envoyer_evenements(central_url, satellite_id, jeton, evenements)
+        self._envoyer_pieces(central_url, satellite_id, jeton)
 
+    def _envoyer_pieces(self, central_url, satellite_id, jeton):
+        """Les photos des biens et des dossiers, après les événements (le bien d'abord)."""
+        from core import sync_pieces
+
+        def poster(donnees, fichiers):
+            try:
+                reponse = requests.post(f"{central_url.rstrip('/')}/api/satellites/{satellite_id}/pieces/",
+                                        data=donnees, files=fichiers, headers={"Authorization": f"Bearer {jeton}"}, timeout=120)
+            except requests.RequestException as exc:
+                logger.warning("Envoi d'une photo échoué (%s) — retenté au prochain passage.", exc)
+                return 0, {}
+            return reponse.status_code, (reponse.json() if reponse.content else {})
+
+        resultat = sync_pieces.envoyer(poster)
+        if resultat["envoyees"] or resultat["en_attente"]:
+            self.stdout.write(f"Photos : {resultat['envoyees']} envoyée(s), {resultat['en_attente']} en attente.")
+
+    def _envoyer_evenements(self, central_url, satellite_id, jeton, evenements):
+        try:
             reponse = requests.post(
                 f"{central_url.rstrip('/')}/api/satellites/{satellite_id}/synchroniser/",
                 json={"evenements": [_serialiser_evenement(e) for e in evenements]},

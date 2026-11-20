@@ -40,8 +40,8 @@ tout remonter au retour du lien.
 | Demandes, signalements, offres des citoyens | redescendre ; en créer sur place | 🟡 redescendent | celles **créées sur place** ne remontent pas (hors du périmètre de synchronisation) |
 | Fond de carte du département | oui | ✅ PMTiles téléchargé à l'installation | — |
 | **Adresses de la commune** (Base Adresse Nationale) | oui : base de l'évaluation des dégâts et des secteurs vulnérables | ✅ copiées du central (lots A et B, 20/11/2026) | — |
-| **Habitations référencées et évaluations des dégâts** | oui | ❌ | hors du périmètre de synchronisation, dans les deux sens |
-| **Photos et pièces jointes** (`Document`) | oui, scellées | ❌ | une photo déposée sur le satellite **ne remonte pas** |
+| **Habitations référencées et évaluations des dégâts** | oui | ✅ biens, constats, historique, commentaires et types, dans les deux sens (lot F, 20/11/2026) | — |
+| **Photos et pièces jointes** (`Document`) | oui, scellées | ✅ photos des biens et des dossiers, empreinte vérifiée par le central (lot F) | — |
 | Registre des personnes vulnérables | oui, copie chiffrée lisible des seules personnes habilitées (décidé le 20/11/2026) | ❌ | descente chiffrée vers le satellite de la commune ; jamais au-delà |
 | Secteurs vulnérables sur la carte (cercles, sans identité) | oui | ❌ | dépend des adresses et du registre |
 | Vigilance, radar, orages, feux (veille) | impossible par nature | ❌ | au mieux, montrer la **dernière copie** avant la coupure, datée |

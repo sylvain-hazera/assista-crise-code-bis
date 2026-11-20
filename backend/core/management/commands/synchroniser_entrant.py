@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 MODELES_MUTABLES_ENTRANTS = ("Dossier", "Mission")
 MODELES_PULL_SEUL_ENTRANTS = ("Crisis", "Request", "Offer", "Information")
 CLES_JSON_PAR_MODELE = {
-    "Dossier": "dossiers", "Mission": "missions",
+    "Dossier": "dossiers", "Mission": "missions", "Habitation": "habitations",
     "Crisis": "crises", "Request": "demandes", "Offer": "offres", "Information": "signalements",
 }
 
@@ -55,6 +55,16 @@ def appliquer_objet_mutable(apps_get_model, nom_modele, item):
 
     ModeleClasse = apps_get_model('core', nom_modele)
     champs = {k: v for k, v in item.items() if k not in ("id", "modifie_le")}
+    # Une géométrie arrive en GeoJSON : QuerySet.update() ne la convertit pas d'elle-même.
+    from django.contrib.gis.db.models import GeometryField
+    from django.contrib.gis.geos import GEOSGeometry
+    for champ, valeur in list(champs.items()):
+        try:
+            nature = ModeleClasse._meta.get_field(champ[:-3] if champ.endswith("_id") else champ)
+        except Exception:
+            continue
+        if isinstance(nature, GeometryField) and isinstance(valeur, str):
+            champs[champ] = GEOSGeometry(valeur)
     modifie_le_central = item["modifie_le"]
 
     if ModeleClasse.objects.filter(pk=objet_id).exists():
@@ -152,6 +162,25 @@ class Command(BaseCommand):
                 except Exception:
                     logger.exception("Échec application entrante %s %s", nom_modele, item.get("id"))
                     compteurs["erreur"] += 1
+
+        # Biens évalués des crises (core/evaluation_terrain.py) : après les crises qu'ils citent,
+        # et après le catalogue des types de bien (même identifiant partout, TypeBien.id_de).
+        from core.models import TypeBien
+        for item in donnees.get("types_bien", []):
+            try:
+                if not TypeBien.objects.filter(pk=item["id"]).exists():
+                    TypeBien.objects.bulk_create([TypeBien(id=item["id"], nom=item["nom"], cle=item["cle"],
+                                                           a_une_adresse=item["a_une_adresse"], ordre=item["ordre"])],
+                                                 ignore_conflicts=True)
+            except Exception:
+                logger.exception("Échec application entrante TypeBien %s", item.get("id"))
+        for item in donnees.get("habitations", []):
+            try:
+                resultat = appliquer_objet_mutable(apps.get_model, "Habitation", item)
+            except Exception:
+                logger.exception("Échec application entrante Habitation %s", item.get("id"))
+                resultat = "erreur"
+            compteurs[resultat] += 1
 
         # Équipes et radio (core/sync_referentiel.py) : après les crises, missions et annonces,
         # qu'une équipe ou un canal peut citer.

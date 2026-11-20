@@ -26,7 +26,9 @@ def creer_types(apps, schema_editor):
     TypeBien = apps.get_model("core", "TypeBien")
     for nom, adresse, ordre in TYPES_DE_DEPART:
         cle = " ".join(unicodedata.normalize("NFKD", nom).encode("ascii", "ignore").decode().lower().split())
-        TypeBien.objects.get_or_create(cle=cle, defaults={"nom": nom, "a_une_adresse": adresse, "ordre": ordre})
+        # Même identifiant partout (TypeBien.id_de) : central et satellites se comprennent.
+        identifiant = uuid.uuid5(uuid.NAMESPACE_URL, f"assista-crise:type-bien:{cle}")
+        TypeBien.objects.get_or_create(cle=cle, defaults={"id": identifiant, "nom": nom, "a_une_adresse": adresse, "ordre": ordre})
 
 
 class Migration(migrations.Migration):

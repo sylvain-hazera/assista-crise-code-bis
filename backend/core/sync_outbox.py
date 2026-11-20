@@ -82,6 +82,22 @@ CHAMPS_PAR_MODELE = {
         "protocole", "institution_id", "canal_nom", "expediteur_identifiant", "expediteur_nom",
         "contenu", "mot_cle_detecte", "notification_envoyee",
     ],
+    # L'évaluation des dégâts hors ligne (20/11/2026, core/evaluation_terrain.py). Le bien est
+    # modifiable des deux côtés (la commune corrige au central, l'élu évalue sur place) : régime
+    # MUTABLE, avec détection de conflit. Constats, historique, commentaires : des faits datés.
+    # Les types de bien ont le même identifiant partout (TypeBien.id_de).
+    "Habitation": [
+        "crise_id", "zone_id", "adresse", "commune_code", "commune_nom", "location", "parcelle_cadastrale",
+        "ban_id", "statut_evaluation", "statut_chantier", "nature_degats", "evalue_par_id",
+        "date_derniere_evaluation", "surface_habitable_totale", "surface_habitable_impactee",
+        "surface_non_habitable_totale", "surface_non_habitable_impactee", "valeur_estimee", "valeur_source",
+        "type_bien_id", "dangers", "personne_sur_place", "a_reloger", "position_corrigee", "fusionne_dans_id",
+    ],
+    "HabitationHistorique": ["habitation_id", "auteur_id", "evenement", "commentaire"],
+    "HabitationCommentaire": ["habitation_id", "auteur_id", "commentaire"],
+    "ConstatTerrain": ["crise_id", "habitation_id", "auteur_id", "constate_le", "statut_evaluation",
+                       "nature_degats", "nouveau_bien"],
+    "TypeBien": ["nom", "cle", "a_une_adresse", "ordre", "actif"],
 }
 
 # APPEND_ONLY ne suit que les CRÉATIONS (voir enregistrer_evenement) : un message observé sur la
@@ -100,8 +116,9 @@ APPEND_ONLY = {
     # Le stock (17/11/2026, voir core/sync_stock.py) : un journal qui n'ajoute que des lignes, donc
     # sans conflit possible. Dépôts et articles créés sur place remontent avec leurs mouvements.
     "DepotStock", "ArticleStock", "MouvementStock",
+    "HabitationHistorique", "HabitationCommentaire", "ConstatTerrain", "TypeBien",
 }
-MUTABLE = {"Dossier", "Mission"}
+MUTABLE = {"Dossier", "Mission", "Habitation"}
 MODELES_SYNCHRONISABLES = APPEND_ONLY | MUTABLE
 
 # Champs auteur possibles, par ordre de préférence — best-effort : tous les modèles
@@ -110,6 +127,14 @@ CHAMPS_AUTEUR_POSSIBLES = ("auteur", "declare_par", "expediteur")
 
 
 def _valeur_serialisable(valeur):
+    import decimal
+
+    from django.contrib.gis.geos import GEOSGeometry
+
+    if isinstance(valeur, GEOSGeometry):
+        return valeur.geojson
+    if isinstance(valeur, decimal.Decimal):
+        return str(valeur)
     if hasattr(valeur, "isoformat"):
         return valeur.isoformat()
     if isinstance(valeur, uuid.UUID):

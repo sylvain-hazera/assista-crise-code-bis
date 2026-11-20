@@ -23474,9 +23474,8 @@ def _appliquer_evenement_synchronisation(satellite, evenement, request):
                         apps.get_model("core", "ArticleStock").objects.filter(pk=payload.get("article_id")).values_list("institution_id", flat=True).first() or ""))
                     if str(proprietaire) != str(satellite.institution_id):
                         return {"id": evenement_id, "resultat": "erreur", "detail": "Ce stock n'est pas celui de l'institution du satellite."}
-                _, cree = ModeleClasse.objects.get_or_create(
-                    id=objet_id, defaults={**payload, "environment": satellite.environment},
-                )
+                zone = {"environment": satellite.environment} if hasattr(ModeleClasse, "environment") else {}
+                _, cree = ModeleClasse.objects.get_or_create(id=objet_id, defaults={**payload, **zone})
                 if cree and nom_modele in sync_stock.CHAMPS:
                     sync_stock.apres(nom_modele, objet_id)
                 resultat = "applique" if cree else "deja_applique"
@@ -23665,7 +23664,7 @@ class SatelliteViewSet(
         # mesh_a_emettre / mesh_emis : comme synchroniser, le contrôle d'identité réel est dans
         # l'action (_exiger_compte_service) — le compte de service d'un satellite est un
         # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
-        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
+        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'pieces', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
                            'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants',
@@ -23674,7 +23673,7 @@ class SatelliteViewSet(
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
-        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'synchroniser', 'recuperer_identifiants',
+        if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'pieces', 'synchroniser', 'recuperer_identifiants',
                            'mesh_a_emettre', 'mesh_emis', 'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
@@ -24219,10 +24218,38 @@ class SatelliteViewSet(
             "crises": [construire_payload_pull(c, "Crisis") for c in crises_qs],
             "demandes": [construire_payload_pull(d, "Request") for d in demandes_qs],
             "dossiers": [_payload_donnees_mutable(d, "Dossier") for d in dossiers_qs],
+            # L'évaluation des dégâts hors ligne (core/evaluation_terrain.py) : les biens déjà
+            # référencés des crises, et le catalogue des types qu'ils citent.
+            "habitations": [_payload_donnees_mutable(h, "Habitation")
+                            for h in Habitation.objects.filter(environment=env, crise_id__in=crise_ids)]
+                           if satellite.profil == ProfilSatellite.FULL else [],
+            "types_bien": [{"id": str(t.id), "nom": t.nom, "cle": t.cle, "a_une_adresse": t.a_une_adresse, "ordre": t.ordre}
+                           for t in apps.get_model("core", "TypeBien").objects.filter(actif=True)] if satellite.profil == ProfilSatellite.FULL else [],
             "missions": [_payload_donnees_mutable(m, "Mission") for m in missions_qs],
             "offres": [construire_payload_pull(o, "Offer") for o in offres_qs],
             "signalements": [construire_payload_pull(s, "Information") for s in signalements_qs],
         })
+
+    @action(detail=True, methods=['post'], url_path='pieces')
+    def pieces(self, request, pk=None):
+        """POST /api/satellites/<id>/pieces/ (multipart) -- une photo d'un bien ou d'un dossier
+        déposée sur le satellite (core/sync_pieces.py). L'empreinte SHA-256 des octets reçus doit
+        être celle annoncée ; une pièce déjà reçue n'est pas doublée."""
+        from . import sync_pieces
+
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        if satellite.profil != ProfilSatellite.FULL:
+            raise PermissionDenied("Seul un satellite FULL héberge une instance locale.")
+        try:
+            document, cree = sync_pieces.recevoir(satellite, request.data, request.FILES.get("fichier"))
+        except sync_pieces.PieceRefusee as exc:
+            return Response({"error": str(exc)}, status=exc.code)
+        if cree:
+            audit_log(request=request, action_code="CREATION", objet_type="Document", objet_id=document.id,
+                      commentaire=f"Photo reçue du satellite {satellite.nom} (empreinte vérifiée).")
+        return Response({"id": str(document.id), "sha256": document.sha256, "deja_recue": not cree},
+                        status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='adresses')
     def adresses(self, request, pk=None):

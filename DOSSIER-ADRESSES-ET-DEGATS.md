@@ -138,4 +138,4 @@ fiches côte à côte.
 | **C** ✅ | API de l'évaluation : points proches, constat avec identifiant du téléphone, position replacée, nouveau point avec type de bien (liste extensible), photos, propositions de fusion et de rattachement, rapprochement manuel et séparation, écran sur le site | idempotence, fusion jamais automatique, séparation |
 | **D** | Application : la tournée à pied **en ligne** | parcours complet sur émulateur |
 | **E** | Application : **embarquer un secteur**, tournée hors ligne, effacement | parcours en mode avion |
-| **F** | Satellite : biens, constats et photos dans la synchronisation (lot 4 du dossier hors ligne) | coupure simulée |
+| **F** ✅ | Satellite : biens, constats et photos dans la synchronisation (lot 4 du dossier hors ligne) | coupure simulée |

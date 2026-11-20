@@ -4031,9 +4031,18 @@ class TypeBien(models.Model):
         texte = unicodedata.normalize("NFKD", nom or "").encode("ascii", "ignore").decode().lower()
         return " ".join(texte.split())[:80]
 
+    @staticmethod
+    def id_de(cle):
+        """Identifiant déduit du nom : le même type a le même identifiant sur le central et sur
+        chaque satellite, qu'il vienne de la migration ou d'un texte libre saisi sur le terrain --
+        sans cela, un bien remonté d'un satellite pointerait vers un type introuvable."""
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"assista-crise:type-bien:{cle}")
+
     def save(self, *args, **kwargs):
         self.nom = " ".join((self.nom or "").split())[:80]
         self.cle = TypeBien.cle_de(self.nom)
+        if self._state.adding:
+            self.id = TypeBien.id_de(self.cle)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -4058,6 +4067,15 @@ class ConstatTerrain(EnvironmentScopedModel):
 
     class Meta:
         ordering = ["-constate_le"]
+
+
+class PieceEnvoyee(models.Model):
+    """Sur un satellite : une photo (Document d'un bien ou d'un dossier) déjà envoyée au central,
+    avec son empreinte vérifiée par lui. Les fichiers ne passent pas par la file d'événements
+    (core/sync_pieces.py)."""
+
+    document_id = models.UUIDField(primary_key=True)
+    envoyee_le = models.DateTimeField(auto_now_add=True)
 
 
 class StatutRapprochementBien(models.TextChoices):
@@ -11239,6 +11257,12 @@ class ModeleSynchronisable(models.TextChoices):
     DEPOT_STOCK = "DepotStock", "Dépôt de stock"
     ARTICLE_STOCK = "ArticleStock", "Article de stock"
     MOUVEMENT_STOCK = "MouvementStock", "Mouvement de stock"
+    # L'évaluation des dégâts hors ligne (20/11/2026, core/evaluation_terrain.py).
+    HABITATION = "Habitation", "Bien évalué"
+    HABITATION_HISTORIQUE = "HabitationHistorique", "Historique d'un bien"
+    HABITATION_COMMENTAIRE = "HabitationCommentaire", "Commentaire d'un bien"
+    CONSTAT_TERRAIN = "ConstatTerrain", "Constat de terrain"
+    TYPE_BIEN = "TypeBien", "Type de bien"
 
 
 class ActionSynchronisation(models.TextChoices):
