@@ -30,19 +30,25 @@ export class NotificationsPousseesService {
 
   /** À l'ouverture de l'espace terrain : l'état, et l'abonnement redonné au serveur s'il existe
    * (un service de notification peut le renouveler de lui-même). */
-  async actualiser(): Promise<void> {
+  async actualiser(seulementSiAbonne = false): Promise<void> {
+    // `seulementSiAbonne` (administration) : un poste de bureau ne doit pas devenir « joignable
+    // par l'application » du seul fait d'ouvrir le site ; il ne se déclare qu'abonné.
     if (!this.prises()) {
       this.etat.set(ApplicationInstallableService.estAppareilApple() && !this.installable.estInstallee() ? 'a-installer' : 'indisponibles');
       return;
     }
-    if (Notification.permission === 'denied') { this.etat.set('refusees'); this.presenter(false, ''); return; }
+    if (Notification.permission === 'denied') {
+      this.etat.set('refusees');
+      if (!seulementSiAbonne) this.presenter(false, '');
+      return;
+    }
     const abonnement = await this.abonnementActuel();
     if (abonnement && Notification.permission === 'granted') {
       this.etat.set('actives');
       this.presenter(true, abonnement.toJSON());
     } else {
       this.etat.set('inactives');
-      this.presenter(false);
+      if (!seulementSiAbonne) this.presenter(false);
     }
   }
 

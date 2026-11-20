@@ -252,3 +252,54 @@ def bilan(campagne):
         # armée par ces personnes-là.
         "repondu_non": sum(1 for _u, creneaux in repondu if creneaux == 0),
     }
+
+
+# ── Les notifications de l'administration (poste de pilotage sur iPad, lot 6) ─────────────
+
+def lien_relatif(lien, defaut="/admin"):
+    """Une page du site, jamais une adresse extérieure (« //exemple.fr » non plus)."""
+    lien = (lien or "").strip()
+    return lien if lien.startswith("/") and not lien.startswith("//") else defaut
+
+
+def notification_site_creee(sender, instance, created, **kwargs):
+    """Signal : une notification de l'administration vient d'être déposée pour quelqu'un."""
+    from .models import AppareilMobile, PlateformeMobile
+
+    if not created or not AppareilMobile.objects.filter(utilisateur_id=instance.utilisateur_id,
+                                                        plateforme=PlateformeMobile.WEB).exists():
+        return
+    from .tasks import pousser_notification_site_task
+
+    identifiant = str(instance.id)
+    transaction.on_commit(lambda: pousser_notification_site_task.delay(identifiant))
+
+
+def pousser_notification_site(notification_id, envoyer=None):
+    """Comme `pousser`, pour une notification de l'administration : son titre et sa page. En
+    zone de démonstration, le titre le dit (« Formation — »), pour ne jamais être pris pour du réel."""
+    from . import web_push
+    from .models import AppareilMobile, Notification, PlateformeMobile
+
+    notification = Notification.objects.filter(id=notification_id).first()
+    if notification is None:
+        return 0
+    envoyer = envoyer or web_push.envoyer
+    titre = notification.titre or "Nouvelle notification"
+    if notification.environment == "DEMO":
+        titre = f"Formation — {titre}"
+    message = {"titre": titre[:TITRE_POUSSE_MAX], "lien": lien_relatif(notification.lien), "id": str(notification.id)}
+    acceptes = 0
+    for appareil in AppareilMobile.objects.filter(utilisateur_id=notification.utilisateur_id,
+                                                  plateforme=PlateformeMobile.WEB, notifications_autorisees=True):
+        if not appareil.abonnement_push:
+            continue
+        try:
+            acceptes += 1 if envoyer(json.loads(appareil.abonnement_push), message) < 400 else 0
+        except web_push.AbonnementExpire:
+            appareil.abonnement_push = ""
+            appareil.save(update_fields=["abonnement_push"])
+        except Exception:
+            logger.exception("Notification poussée non envoyée (appareil %s).", appareil.id)
+    return acceptes
+

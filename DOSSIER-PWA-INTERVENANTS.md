@@ -81,7 +81,7 @@ livrer), puis 4 (les notifications sont ce qu'un intervenant attend le plus), pu
    site, installable à part (« Assista-Crise — Pilotage », ouverte sur `/admin`), mise en page
    pour une tablette, mêmes notifications et même annonce de nouvelle version (lot 6 ci-dessous).
 
-## 6. Lot 6 — le poste de pilotage sur iPad
+## 6. Lot 6 — le poste de pilotage sur iPad ✅
 
 | Contenu | Essais |
 |---|---|
@@ -100,4 +100,20 @@ production à la démonstration. Fait : dans l'en-tête de l'espace terrain (et 
 Démo de l'administration devient Prod / Formation), proposé seulement aux comptes ayant un
 accès à la démonstration (`demo_role`), avec confirmation. En formation, un bandeau orange
 « Formation — données fictives de démonstration » reste affiché sur le terrain.
+
+## 8. Où en est la construction (21/11/2026)
+
+Lots 1, 2, 3, 4 et 6 faits et poussés ; lot 5 (position au premier plan, photos scellées, QR
+codes, évaluation des dégâts sur le terrain web) à faire.
+
+- **Pilotage sur iPad** : manifeste « Pilotage » ; menu réduit aux icônes au premier lancement
+  sur tablette tactile (jusqu'à 1180 px) ; cibles de 44 px au doigt ; bords de l'écran respectés ;
+  « Recevoir sur cet appareil » dans les notifications de l'administration, qui sont poussées
+  (titre et page seulement ; « Formation — » en démonstration). Un poste de bureau ne se déclare
+  pas comme appareil joignable tant qu'il n'est pas abonné.
+- **Mise en service** : le secret `vapid_prive.pem` doit exister dans `SECRETS_DIR` avant le
+  déploiement (le script de déploiement le crée avec openssl s'il manque).
+
+**Pas encore vérifié** : tout ce qui touche à iOS (installation, notifications, hors ligne,
+iPad) ; à faire sur l'iPhone de l'entourage de Sylvain et un iPad.
 

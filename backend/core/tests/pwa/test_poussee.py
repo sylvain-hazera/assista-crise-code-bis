@@ -106,3 +106,26 @@ def test_la_cle_publique_n_est_donnee_que_si_le_secret_est_pose(client, tmp_path
     monkeypatch.setenv("VAPID_PRIVE_FILE", str(tmp_path / "v.pem"))
     r = client.get("/api/pwa/cle-push/")
     assert r.status_code == 200 and r.json()["cle"] == web_push.cle_publique_b64url(cle)
+
+
+@pytest.mark.django_db
+def test_les_notifications_de_l_administration_sont_poussees_au_poste_de_pilotage(create_user, django_capture_on_commit_callbacks):
+    from core.models import Notification
+    u = create_user(username="dos@essai.test", email="dos@essai.test", type="UTIL_SIMPLE")
+    with django_capture_on_commit_callbacks() as rappels:
+        Notification.objects.create(utilisateur=u, titre="Sans iPad", message="…")
+    assert rappels == []                                                         # aucun appareil web
+    moteur.enregistrer_appareil(u, "i" * 32, "WEB", "pwa", abonnement_push=_abonnement())
+    with django_capture_on_commit_callbacks() as rappels:
+        reelle = Notification.objects.create(utilisateur=u, titre="Nouvelle demande d'hébergement",
+                                             message="Famille de 4 personnes", lien="/admin/demandes?id=12")
+    assert len(rappels) == 1
+    formation = Notification.objects.create(utilisateur=u, titre="Exercice", message="…", lien="//ailleurs.fr/x",
+                                            environment="DEMO")
+    envois = []
+    envoyer = lambda abonnement, message, urgent=False: envois.append(message) or 201
+    assert moteur.pousser_notification_site(reelle.id, envoyer=envoyer) == 1
+    assert moteur.pousser_notification_site(formation.id, envoyer=envoyer) == 1
+    assert envois[0] == {"titre": "Nouvelle demande d'hébergement", "lien": "/admin/demandes?id=12", "id": str(reelle.id)}
+    assert "Famille" not in json.dumps(envois[0])                               # jamais le message
+    assert envois[1]["titre"] == "Formation — Exercice" and envois[1]["lien"] == "/admin"

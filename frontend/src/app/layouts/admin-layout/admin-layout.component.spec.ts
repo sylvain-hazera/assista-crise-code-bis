@@ -172,4 +172,12 @@ describe('AdminLayoutComponent', () => {
       expect(fixture.nativeElement.querySelector('.reduction-btn')).toBeNull();
     });
   });
+
+  it('sur une tablette tactile, le menu démarre réduit aux icônes (poste de pilotage sur iPad)', () => {
+    expect(AdminLayoutComponent.etatParDefaut(820, true)).toBe('reduite');      // iPad Air, portrait
+    expect(AdminLayoutComponent.etatParDefaut(1180, true)).toBe('reduite');     // iPad Air, paysage
+    expect(AdminLayoutComponent.etatParDefaut(1366, true)).toBe('etendue');     // iPad Pro 13", paysage
+    expect(AdminLayoutComponent.etatParDefaut(1024, false)).toBe('etendue');    // ordinateur
+    expect(AdminLayoutComponent.etatParDefaut(700, true)).toBe('etendue');      // téléphone : tiroir
+  });
 });

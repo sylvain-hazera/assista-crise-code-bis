@@ -201,3 +201,10 @@ def pousser_notification_task(notification_id: str):
     from .notifications_application import pousser
     return pousser(notification_id)
 
+
+@shared_task(acks_late=True, time_limit=120, soft_time_limit=100)
+def pousser_notification_site_task(notification_id: str):
+    """Notification de l'administration poussée vers les appareils abonnés (poste de pilotage)."""
+    from .notifications_application import pousser_notification_site
+    return pousser_notification_site(notification_id)
+

@@ -218,3 +218,19 @@
     }
   }
 }
+
+// ==================== TABLETTE ET APPLICATION INSTALLÉE ====================
+// Poste de pilotage sur iPad (DOSSIER-PWA-INTERVENANTS.md, lot 6) : au doigt, des cibles d'au
+// moins 44 px, et rien sous les bords arrondis ni sous l'encoche en paysage.
+.admin-layout {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+  :host ::ng-deep .admin-sidebar .nav-item {
+    min-height: 44px;
+  }
+}
+

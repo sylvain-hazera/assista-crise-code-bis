@@ -17,6 +17,18 @@
       </button>
     </div>
 
+    @if (poussees.etat() === 'inactives') {
+      <!-- Poste de pilotage sur iPad : être prévenu même application fermée. -->
+      <div class="poussees">
+        <span>Être prévenu sur cet appareil, même fermé.</span>
+        <button type="button" (click)="poussees.activer()">Activer</button>
+      </div>
+    } @else if (poussees.etat() === 'a-installer') {
+      <div class="poussees">
+        <span>Sur iPad, installez d'abord l'application : Partager, puis « Sur l'écran d'accueil ».</span>
+      </div>
+    }
+
     @if (fiche; as f) {
       <!-- LA FICHE : qui, quand, quoi, comment. Le résumé de la liste dit qu'il s'est passé
            quelque chose ; c'est ici qu'on comprend quoi, avant de décider d'aller plus loin. -->

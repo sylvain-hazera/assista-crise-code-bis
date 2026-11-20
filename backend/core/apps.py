@@ -61,6 +61,14 @@ class CoreConfig(AppConfig):
             post_save.connect(referentiel_adresses.crise_enregistree, sender=Crisis,
                               dispatch_uid="referentiel_adresses_crise")
 
+            # Notifications de l'administration poussées vers les appareils abonnés (poste de
+            # pilotage installé sur iPad, DOSSIER-PWA-INTERVENANTS.md).
+            from . import notifications_application
+            from .models import Notification
+
+            post_save.connect(notifications_application.notification_site_creee, sender=Notification,
+                              dispatch_uid="poussee_notification_site")
+
             from . import salons_matrix
             from .models import ContactInstitution
 
