@@ -879,6 +879,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun chercherDesRadios() = app.radio.chercher()
     fun arreterLaRecherche() = app.radio.arreterLaRecherche()
     fun connecterLaRadio(radio: LiaisonRadio.RadioTrouvee) = app.radio.connecter(radio)
+    /** Une radio jointe par le réseau (TCP/IP). Rend le motif d'un refus, ou null. */
+    fun connecterLaRadioParLeReseau(protocole: fr.assistacrise.mobile.lien.Protocole, adresse: String): String? =
+        app.radio.connecterParLeReseau(protocole, adresse)
     fun deconnecterLaRadio() = app.radio.deconnecter()
 
     /** Le canal de cette équipe sur la radio connectée, s'il y est configuré. */

@@ -13,7 +13,7 @@ import fr.assistacrise.mobile.lien.u32
  * tests reprennent les mêmes vecteurs.
  *
  * En Bluetooth (service UART Nordic), il n'y a **pas de cadrage** : une trame par écriture
- * GATT. `encadrer` et `Decoupeur` ne servent qu'à la liaison série.
+ * GATT. `encadrer` sert aux liaisons en flux : série et TCP (voir `LiaisonReseau.kt`).
  */
 object MeshCore {
     const val SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -154,7 +154,7 @@ object MeshCore {
         return MessageCanal(canal, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage)
     }
 
-    /** Liaison série seulement : `0x3c`, longueur sur deux octets petit-boutistes, charge. */
+    /** Liaisons en flux (série, TCP) : `0x3c`, longueur sur deux octets petit-boutistes, charge. */
     fun encadrer(charge: ByteArray): ByteArray = ByteArray(3 + charge.size).also {
         it[0] = DEBUT_VERS_RADIO.toByte()
         it[1] = (charge.size and 0xff).toByte()

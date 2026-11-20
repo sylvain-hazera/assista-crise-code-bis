@@ -19,6 +19,8 @@ import android.os.Build
 import android.os.ParcelUuid
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.donnees.EmetteurRadio
+import fr.assistacrise.mobile.lien.AdresseReseau
+import fr.assistacrise.mobile.lien.CadrageFlux
 import fr.assistacrise.mobile.lien.CanalRadio
 import fr.assistacrise.mobile.lien.PiloteMeshCore
 import fr.assistacrise.mobile.lien.PiloteMeshtastic
@@ -36,7 +38,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.UUID
 import kotlin.random.Random
 
@@ -48,9 +53,14 @@ import kotlin.random.Random
  * octets — et on fait ce que le Bluetooth d'Android exige : une seule opération à la fois,
  * chacune attendue avant la suivante.
  *
+ * Elle sait aussi joindre la radio par le réseau (TCP/IP, 20/11/2026) : un nœud relié au Wi-Fi
+ * ouvre un port où passent les mêmes trames, cadrées pour un flux (`CadrageFlux`, partagé avec
+ * iOS). Mêmes pilotes, même reprise après coupure ; seule l'adresse doit être locale, le lien
+ * n'étant pas chiffré.
+ *
  * **Cette classe n'a pas pu être essayée** : l'émulateur n'a pas de Bluetooth, et il n'y
- * avait pas de radio. Elle est écrite d'après les clients de référence ; le premier essai sur
- * du matériel dira ce qui reste à corriger.
+ * avait pas de radio. Elle est écrite d'après les clients de référence et le code des
+ * firmwares ; le premier essai sur du matériel dira ce qui reste à corriger.
  */
 @SuppressLint("MissingPermission")   // chaque entrée publique vérifie `autorise` d'abord
 class LiaisonRadio(private val app: Application) : EmetteurRadio {
@@ -63,9 +73,12 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         val protocole: Protocole? = null,
         val canaux: List<CanalRadio> = emptyList(),
         val erreur: String? = null,
+        /** Jointe par le réseau (TCP/IP) plutôt que par le Bluetooth. */
+        val reseau: Boolean = false,
     )
 
-    data class RadioTrouvee(val adresse: String, val nom: String, val protocole: Protocole)
+    /** `adresse` : celle du Bluetooth, ou « hôte:port » pour une radio jointe par le réseau. */
+    data class RadioTrouvee(val adresse: String, val nom: String, val protocole: Protocole, val reseau: Boolean = false)
 
     private val _etat = MutableStateFlow(Etat())
     val etat: StateFlow<Etat> = _etat
@@ -76,6 +89,9 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     private val adaptateur get() = app.getSystemService(BluetoothManager::class.java)?.adapter
 
     private var gatt: BluetoothGatt? = null
+    /** La prise TCP d'une radio jointe par le réseau, et son cadrage. */
+    @Volatile private var prise: Socket? = null
+    private var cadrage: CadrageFlux? = null
     private var pilote: PiloteRadio? = null
     private var session: Job? = null
     private var operations = Channel<suspend () -> Unit>(Channel.UNLIMITED)
@@ -127,16 +143,31 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     fun connecter(radio: RadioTrouvee) {
         arreterLaRecherche()
         voulue = radio
-        portee.launch { app.magasin.ecrire(FICHIER, "${radio.adresse}|${radio.protocole.name}|${radio.nom}") }
+        val genre = if (radio.reseau) RESEAU else BLUETOOTH
+        portee.launch { app.magasin.ecrire(FICHIER, "${radio.adresse}|${radio.protocole.name}|$genre|${radio.nom}") }
         ouvrir(radio)
+    }
+
+    /** Une radio jointe par le réseau : l'adresse est vérifiée (locale seulement) avant tout. */
+    fun connecterParLeReseau(protocole: Protocole, adresse: String): String? {
+        val lecture = AdresseReseau.lire(adresse, CadrageFlux.pour(protocole).portParDefaut)
+        if (lecture is AdresseReseau.Companion.Lecture.Refusee) return lecture.motif
+        val valide = (lecture as AdresseReseau.Companion.Lecture.Valide).adresse
+        connecter(RadioTrouvee(valide.toString(), valide.toString(), protocole, reseau = true))
+        return null
     }
 
     /** Au démarrage : retrouve la radio choisie la dernière fois. */
     suspend fun reprendre() {
-        if (!autorise(app) || voulue != null) return
-        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 3) ?: return
+        if (voulue != null) return
+        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 4) ?: return
         val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
-        voulue = RadioTrouvee(parties[0], parties.getOrElse(2) { "Radio" }, protocole)
+        // Ancien format « adresse|protocole|nom » : une radio Bluetooth.
+        val reseau = parties.getOrNull(2) == RESEAU
+        val nom = if (parties.getOrNull(2) in setOf(RESEAU, BLUETOOTH)) parties.getOrElse(3) { "Radio" }
+                  else parties.drop(2).joinToString("|").ifEmpty { "Radio" }
+        if (!reseau && !autorise(app)) return
+        voulue = RadioTrouvee(parties[0], nom, protocole, reseau)
         ouvrir(voulue!!)
     }
 
@@ -147,6 +178,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     }
 
     private fun ouvrir(radio: RadioTrouvee) {
+        if (radio.reseau) { ouvrirParLeReseau(radio); return }
         val appareil = runCatching { adaptateur?.takeIf { it.isEnabled }?.getRemoteDevice(radio.adresse) }.getOrNull()
         if (appareil == null || !autorise(app)) {
             _etat.value = Etat(erreur = "Le Bluetooth est éteint ou indisponible sur ce téléphone.")
@@ -170,12 +202,15 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         attente?.complete(null); attente = null
         runCatching { gatt?.disconnect(); gatt?.close() }
         gatt = null
+        val ancienne = prise
+        prise = null; cadrage = null
+        runCatching { ancienne?.close() }
         pilote = null
         app.lien.radio(false)
         _etat.value = Etat(erreur = erreur)
         // La radio s'est éloignée ou éteinte : on y revient, sans insister.
         if (!garderVoulue && erreur != null) voulue?.let { radio ->
-            portee.launch { delay(20_000); if (voulue == radio && gatt == null) ouvrir(radio) }
+            portee.launch { delay(20_000); if (voulue == radio && gatt == null && prise == null) ouvrir(radio) }
         }
     }
 
@@ -262,11 +297,73 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
             }
         }
         p.ouverture(System.currentTimeMillis() / 1000).forEach { ecrire(it) }
-        if (p.periodeBattementMs > 0) {
-            val file = operations
-            portee.launch {
-                while (pilote === p) { delay(p.periodeBattementMs); p.battement()?.let { b -> file.trySend { ecrire(b) } } }
+        battre(p)
+    }
+
+    private fun battre(p: PiloteRadio) {
+        if (p.periodeBattementMs <= 0) return
+        val file = operations
+        portee.launch {
+            while (pilote === p) { delay(p.periodeBattementMs); p.battement()?.let { b -> file.trySend { ecrire(b) } } }
+        }
+    }
+
+    // --- Par le réseau (TCP/IP) ------------------------------------------------------------
+
+    private fun ouvrirParLeReseau(radio: RadioTrouvee) {
+        val c = CadrageFlux.pour(radio.protocole)
+        val adresse = (AdresseReseau.lire(radio.adresse, c.portParDefaut) as? AdresseReseau.Companion.Lecture.Valide)?.adresse
+        if (adresse == null) { _etat.value = Etat(erreur = "Adresse de radio refusée : ${radio.adresse}."); return }
+        fermer(null, garderVoulue = true)
+        val p = when (radio.protocole) {
+            Protocole.MESHCORE -> PiloteMeshCore()
+            Protocole.MESHTASTIC -> PiloteMeshtastic { Random.nextLong(1, 0xffffffffL) }
+        }
+        pilote = p
+        cadrage = c
+        operations = Channel(Channel.UNLIMITED)
+        val file = operations
+        session = portee.launch { for (operation in file) runCatching { operation() } }
+        _etat.value = Etat(phase = Phase.CONNEXION, nom = radio.nom, protocole = radio.protocole, reseau = true)
+        portee.launch(Dispatchers.IO) {
+            val s = Socket()
+            try {
+                s.connect(InetSocketAddress(adresse.hote, adresse.port), 8_000)
+                s.tcpNoDelay = true
+                s.keepAlive = true
+            } catch (e: Exception) {
+                runCatching { s.close() }
+                if (pilote === p) fermer("La radio ne répond pas à $adresse. Vérifiez qu'elle et le téléphone sont sur le même Wi-Fi.")
+                return@launch
             }
+            if (pilote !== p) { runCatching { s.close() }; return@launch }
+            prise = s
+            file.trySend {
+                ecrireBrut(c.reveil())
+                if (c.reveil().isNotEmpty()) delay(100)
+                p.ouverture(System.currentTimeMillis() / 1000).forEach { ecrire(it) }
+                battre(p)
+            }
+            // La radio pousse ses trames d'elle-même : on lit le flux jusqu'à sa fermeture.
+            val decoupeur = c.decoupeur()
+            val tampon = ByteArray(1024)
+            try {
+                val entree = s.getInputStream()
+                while (true) {
+                    val lus = entree.read(tampon)
+                    if (lus < 0) break
+                    decoupeur.pousser(tampon, lus).forEach { trame -> file.trySend { traiter(trame) } }
+                }
+            } catch (_: Exception) { /* prise fermée ou réseau perdu */ }
+            if (prise === s) fermer("La liaison réseau avec la radio est coupée. Nouvelle tentative dans quelques instants.")
+        }
+    }
+
+    private suspend fun ecrireBrut(octets: ByteArray): Boolean {
+        if (octets.isEmpty()) return true
+        val s = prise ?: return false
+        return withContext(Dispatchers.IO) {
+            runCatching { s.getOutputStream().apply { write(octets); flush() } }.isSuccess
         }
     }
 
@@ -279,6 +376,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     }
 
     private suspend fun ecrire(octets: ByteArray): Boolean {
+        cadrage?.let { c -> return ecrireBrut(c.encadrer(octets)) }
         val g = gatt ?: return false
         val p = pilote ?: return false
         val (service, cible) = when (p.protocole) {
@@ -315,7 +413,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         val reaction = p.recevoir(trame)
         _etat.value = _etat.value.copy(
             phase = if (p.prete) Phase.PRETE else Phase.CONNEXION,
-            nom = p.identite ?: _etat.value.nom, canaux = p.canaux, erreur = null,
+            nom = p.identite ?: _etat.value.nom, canaux = p.canaux, erreur = null, reseau = cadrage != null,
         )
         if (p.prete) app.lien.radio(true)
         for (message in reaction.messages) {
@@ -347,6 +445,8 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
 
     companion object {
         private const val FICHIER = "radio"
+        private const val RESEAU = "reseau"
+        private const val BLUETOOTH = "bluetooth"
         private const val CCCD = "00002902-0000-1000-8000-00805f9b34fb"
 
         val PERMISSIONS: Array<String> =

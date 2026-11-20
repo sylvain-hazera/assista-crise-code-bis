@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,7 +14,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,10 +26,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.LiaisonRadio
 import fr.assistacrise.mobile.ModeleApplication
+import fr.assistacrise.mobile.lien.CadrageFlux
+import fr.assistacrise.mobile.lien.Protocole
 
 /**
  * La radio de l'intervenant : la connecter, voir ce qu'elle sait faire, la quitter.
@@ -40,6 +47,7 @@ fun SectionRadio(modele: ModeleApplication) {
     val trouvees by modele.radiosTrouvees.collectAsStateWithLifecycle()
     val equipes by modele.equipes.collectAsStateWithLifecycle()
     var choix by rememberSaveable { mutableStateOf(false) }
+    var parLeReseau by rememberSaveable { mutableStateOf(false) }
     val demande = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { accordees ->
         if (accordees.values.all { it }) { choix = true; modele.chercherDesRadios() }
     }
@@ -50,7 +58,8 @@ fun SectionRadio(modele: ModeleApplication) {
     Spacer(Modifier.height(6.dp))
     when (etat.phase) {
         LiaisonRadio.Phase.PRETE -> {
-            Text("${etat.nom ?: "Radio"} · ${etat.protocole?.libelle ?: ""}", style = MaterialTheme.typography.bodyLarge)
+            Text("${etat.nom ?: "Radio"} · ${etat.protocole?.libelle ?: ""}${if (etat.reseau) " · par le réseau" else ""}",
+                 style = MaterialTheme.typography.bodyLarge)
             Text(
                 "Sans réseau, vos messages d'équipe partent par cette radio, sur le canal de l'équipe.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -69,7 +78,11 @@ fun SectionRadio(modele: ModeleApplication) {
         }
         LiaisonRadio.Phase.CONNEXION -> {
             Text("Connexion à ${etat.nom ?: "la radio"}…", style = MaterialTheme.typography.bodyMedium, color = Attente)
-            Text("Si la radio affiche un code, saisissez-le quand le téléphone le demande.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (etat.reseau) "La radio et le téléphone doivent être sur le même Wi-Fi."
+                else "Si la radio affiche un code, saisissez-le quand le téléphone le demande.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             TextButton(onClick = modele::deconnecterLaRadio) { Text("Annuler") }
         }
         else -> {
@@ -85,8 +98,14 @@ fun SectionRadio(modele: ModeleApplication) {
                 },
                 modifier = Modifier.padding(top = 8.dp),
             ) { Text("Connecter une radio") }
+            // Une radio reliée au Wi-Fi (Heltec V3, T-Deck…) : pas de Bluetooth ni d'autorisation.
+            OutlinedButton(onClick = { parLeReseau = true }, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Connecter par le réseau (Wi-Fi)")
+            }
         }
     }
+
+    if (parLeReseau) DialogueRadioReseau(modele) { parLeReseau = false }
 
     if (choix) {
         AlertDialog(
@@ -109,4 +128,56 @@ fun SectionRadio(modele: ModeleApplication) {
             confirmButton = { TextButton(onClick = { choix = false; modele.arreterLaRecherche() }) { Text("Fermer") } },
         )
     }
+}
+
+/**
+ * Joindre une radio par son adresse sur le réseau local. Le lien TCP n'est pas chiffré, à la
+ * différence du Bluetooth appairé : seule une adresse locale est acceptée, et on le dit.
+ */
+@Composable
+private fun DialogueRadioReseau(modele: ModeleApplication, fermer: () -> Unit) {
+    var protocole by rememberSaveable { mutableStateOf(Protocole.MESHCORE) }
+    var adresse by rememberSaveable { mutableStateOf("") }
+    var refus by rememberSaveable { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = fermer,
+        title = { Text("Radio sur le réseau") },
+        text = {
+            Column {
+                Row {
+                    Protocole.entries.forEach { p ->
+                        FilterChip(
+                            selected = protocole == p, onClick = { protocole = p; refus = null },
+                            label = { Text(p.libelle) }, modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = adresse, onValueChange = { adresse = it; refus = null },
+                    label = { Text("Adresse de la radio") },
+                    placeholder = { Text("192.168.1.42") },
+                    supportingText = { Text("Port ${CadrageFlux.pour(protocole).portParDefaut} par défaut ; « adresse:port » pour un autre.") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                refus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Refus, modifier = Modifier.padding(top = 4.dp)) }
+                Text(
+                    "Le Wi-Fi de la radio doit être activé (MeshCore : firmware « companion » Wi-Fi ; " +
+                        "Meshtastic : réglage Réseau > Wi-Fi). La liaison n'est pas chiffrée : à n'utiliser que sur " +
+                        "un Wi-Fi de confiance, celui de la radio ou du poste de commandement. " +
+                        "Une radio MeshCore ne parle qu'à un appareil à la fois.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                refus = modele.connecterLaRadioParLeReseau(protocole, adresse)
+                if (refus == null) fermer()
+            }) { Text("Connecter") }
+        },
+        dismissButton = { TextButton(onClick = fermer) { Text("Annuler") } },
+    )
 }
