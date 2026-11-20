@@ -164,6 +164,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             app.reseau.present.collect { present ->
                 app.lien.reseau(present)
+                if (present) verifierLaMiseAJour()
                 // Le réseau revient : c'est le moment d'envoyer ce qui attendait.
                 if (present && pret && compte.value != null) synchroniser(force = true, bavard = false)
             }
@@ -874,6 +875,40 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    // --- Mise à jour de l'application (20/11/2026) ------------------------------------------
+
+    /** La mise à jour à proposer, ou null : lue dans /mobile/version.json du site. */
+    var miseAJour by mutableStateOf<fr.assistacrise.mobile.domaine.MiseAJourProposee?>(null)
+        private set
+
+    private var miseAJourVerifieeLe = 0L
+
+    /** Au retour du réseau, une fois par heure au plus : un petit fichier, rien d'autre. */
+    fun verifierLaMiseAJour(force: Boolean = false) {
+        val maintenant = System.currentTimeMillis()
+        if (!force && maintenant - miseAJourVerifieeLe < 3600_000L) return
+        miseAJourVerifieeLe = maintenant
+        viewModelScope.launch {
+            val publiee = app.versionPubliee() ?: return@launch
+            val report = app.magasin.lire(FICHIER_REPORT)?.split("|")
+            val reporteeLe = report?.takeIf { it.firstOrNull() == publiee.version }?.getOrNull(1)?.toLongOrNull()
+            miseAJour = fr.assistacrise.mobile.domaine.MisesAJour.aProposer(
+                publiee, BuildConfig.VERSION_CODE, BuildConfig.CLE_APPLICATION, BuildConfig.URL_SITE,
+                reporteeLe, System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** « Plus tard » : reproposée dans un jour (une heure si elle est obligatoire). */
+    fun reporterLaMiseAJour() {
+        val proposee = miseAJour ?: return
+        miseAJour = null
+        viewModelScope.launch { app.magasin.ecrire(FICHIER_REPORT, "${proposee.versionPubliee}|${System.currentTimeMillis()}") }
+    }
+
+    /** « Mettre à jour » : le téléchargement est confié au navigateur, qui ouvre l'installation. */
+    fun miseAJourLancee() { miseAJour = null }
+
     // --- Radio ----------------------------------------------------------------------------
 
     fun chercherDesRadios() = app.radio.chercher()
@@ -1011,6 +1046,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     companion object {
+        private const val FICHIER_REPORT = "mise-a-jour-reportee"
+
         val Fabrique: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ModeleApplication(this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as Application)

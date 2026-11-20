@@ -17,6 +17,8 @@ import fr.assistacrise.mobile.lien.IndicateurLien
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -30,16 +32,23 @@ class Application : android.app.Application() {
     val magasin by lazy { MagasinChiffre(File(filesDir, "magasin")) }
     val session by lazy { Session(magasin) }
     val file by lazy { FileAttente(magasin) { System.currentTimeMillis() } }
-    val api by lazy {
-        val http = HttpClient(OkHttp) {
+    val http by lazy {
+        HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = 10_000
                 requestTimeoutMillis = 20_000
                 socketTimeoutMillis = 20_000
             }
         }
-        ClientApi(http, BuildConfig.URL_API, session)
     }
+    val api by lazy { ClientApi(http, BuildConfig.URL_API, session) }
+
+    /** La version publiée sur le site (/mobile/version.json), ou null hors réseau. */
+    suspend fun versionPubliee(): fr.assistacrise.mobile.domaine.VersionPubliee? = runCatching {
+        val texte = http.get("${BuildConfig.URL_SITE}/mobile/version.json").bodyAsText()
+        kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString(fr.assistacrise.mobile.domaine.VersionPubliee.serializer(), texte)
+    }.getOrNull()
     val depot by lazy { DepotMissions(api, magasin, file) }
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }

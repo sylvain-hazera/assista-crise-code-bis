@@ -11,8 +11,10 @@ android {
     defaultConfig {
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.9.0"
+        // Chaque APK publié prend un numéro de plus : c'est lui que l'application compare à
+        // /mobile/version.json pour proposer la mise à jour (scripts/publier-mobile.sh).
+        versionCode = 14
+        versionName = "0.10.0"
     }
 
     buildFeatures {
@@ -39,6 +41,9 @@ android {
             manifestPlaceholders["hoteSite"] = site.substringAfter("://").substringBefore("/").substringBefore(":")
             // Sans accent : ce nom part dans les metadonnees des photos (EXIF).
             buildConfigField("String", "NOM_MARQUE", "\"Reserve Resilience\"")
+            // Sa clé dans /mobile/version.json (`applications`).
+            buildConfigField("String", "CLE_APPLICATION", "\"reserve-resilience\"")
+            buildConfigField("String", "NOM_MARQUE_AFFICHE", "\"Réserve Résilience\"")
         }
         // Assista-Crise : la meme application, sous sa propre marque (embleme a la flamme, sarcelle
         // et anthracite), servie par www.assista-crise.fr et qui parle a ce domaine-la. Les deux
@@ -53,6 +58,8 @@ android {
             buildConfigField("String", "URL_API", "\"$site/api\"")
             manifestPlaceholders["hoteSite"] = site.substringAfter("://").substringBefore("/").substringBefore(":")
             buildConfigField("String", "NOM_MARQUE", "\"Assista-Crise\"")
+            buildConfigField("String", "CLE_APPLICATION", "\"assista-crise\"")
+            buildConfigField("String", "NOM_MARQUE_AFFICHE", "\"Assista-Crise\"")
         }
     }
 

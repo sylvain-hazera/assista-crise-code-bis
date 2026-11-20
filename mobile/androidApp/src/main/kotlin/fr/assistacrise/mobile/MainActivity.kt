@@ -2,6 +2,7 @@ package fr.assistacrise.mobile
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import fr.assistacrise.mobile.ui.DialogueMiseAJour
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -108,6 +110,15 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(modele.message) {
                     modele.message?.let { bandeau.showSnackbar(it); modele.messageLu() }
+                }
+
+                // Une version plus récente est publiée sur le site : on le dit, sans jamais
+                // bloquer l'application (elle doit rester utilisable sans réseau ni mise à jour).
+                modele.miseAJour?.let { proposee ->
+                    DialogueMiseAJour(proposee, onMettreAJour = {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(proposee.adresse))) }
+                        modele.miseAJourLancee()
+                    }, onPlusTard = modele::reporterLaMiseAJour)
                 }
 
                 // L'écran affiché découle du compte, pas l'inverse : une session qui expire
