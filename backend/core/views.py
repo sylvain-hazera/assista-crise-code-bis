@@ -7937,6 +7937,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             ids = [h.id for h in qs if recherche_lower in (h.adresse or '').lower()]
             qs = qs.filter(id__in=ids)
         est_admin = self.request.user.is_authenticated and get_effective_role(self.request) == UserRole.ADMINISTRATOR
+        if self.action == 'list':
+            # Un bien rapproché d'un autre (le même, vu deux fois) n'est montré qu'à travers lui.
+            qs = qs.filter(fusionne_dans__isnull=True)
         if self.action in ('list', 'retrieve') and not est_admin:
             # Le module est désactivé par défaut (voir ModuleDegatsCrise.__doc__) : une
             # habitation rattachée à une crise sans module actif pour aucune institution ne doit
@@ -8086,6 +8089,170 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                   commentaire=f"Pointage terrain : {habitation.adresse}")
         return Response({**HabitationSerializer(habitation, context={'request': request}).data, "existante": False},
                         status=status.HTTP_201_CREATED)
+
+    # ── Évaluation à pied depuis l'application (lot C, core/evaluation_terrain.py) ─────────
+
+    @action(detail=False, methods=['get'], url_path='tournee')
+    def tournee(self, request):
+        """GET /api/habitations/tournee/?crise=&latitude=&longitude=[&rayon_m=] -- les points à
+        évaluer autour de moi, du plus proche au plus lointain : adresses du référentiel (avec
+        l'état du bien s'il est déjà référencé) et biens sans adresse de la crise. Calculé chez
+        nous : la position ne sort pas."""
+        from django.contrib.gis.geos import Point
+
+        from . import evaluation_terrain as terrain
+        from .views_adresses import _flottant
+
+        crise = Crisis.objects.filter(pk=request.query_params.get('crise') or None).first()
+        latitude = _flottant(request.query_params.get('latitude'), -90, 90)
+        longitude = _flottant(request.query_params.get('longitude'), -180, 180)
+        if crise is None or latitude is None or longitude is None:
+            return Response({"error": "crise, latitude et longitude sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
+        commune_code = commune_code_from_point(Point(longitude, latitude, srid=4326))
+        if not terrain.peut_evaluer(request, commune_code, crise):
+            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        rayon = _flottant(request.query_params.get('rayon_m'), 1, terrain.RAYON_TOURNEE_MAX_M) or terrain.RAYON_TOURNEE_M
+        return Response({"points": terrain.tournee(crise, get_active_environment(request), latitude, longitude, rayon)})
+
+    @action(detail=False, methods=['post'], url_path='constat')
+    def constat(self, request):
+        """POST /api/habitations/constat/ -- un constat fait à pied, depuis l'application.
+
+        Corps : `id` (identifiant tiré sur le téléphone : un renvoi ne crée jamais deux
+        constats), `crise`, `statut_evaluation`, et soit `ban_id` (une adresse du référentiel ;
+        `latitude`/`longitude` avec `position_corrigee` si le point a été replacé), soit
+        `latitude`/`longitude` d'un point nouveau avec `description`. Facultatifs :
+        `type_bien` (identifiant) ou `type_bien_libre` (ajouté au catalogue), `nature_degats`,
+        `dangers`, `personne_sur_place`, `a_reloger`, `ouvrir_dossier`, `commentaire`,
+        `constate_le` (heure du téléphone). Un point nouveau proche d'un bien du même type est
+        PROPOSÉ au rapprochement, jamais fusionné."""
+        from django.contrib.gis.geos import Point
+
+        from . import evaluation_terrain as terrain
+        from .habitations import commune_dans_zone_module
+        from .models import AdresseBAN, ConstatTerrain, NatureDegatsHabitation
+        from .views_adresses import _flottant
+
+        try:
+            identifiant = uuid.UUID(str(request.data.get('id')))
+        except (TypeError, ValueError, AttributeError):
+            return Response({"error": "id : identifiant (UUID) tiré sur le téléphone attendu."}, status=status.HTTP_400_BAD_REQUEST)
+        deja = ConstatTerrain.objects.filter(pk=identifiant).select_related('habitation').first()
+        if deja is not None:
+            return Response({**HabitationSerializer(deja.habitation, context={'request': request}).data,
+                             "constat": str(identifiant), "deja_recu": True, "rapprochements_proposes": 0})
+
+        crise = Crisis.objects.filter(pk=request.data.get('crise') or None).first()
+        if crise is None:
+            return Response({"error": "crise est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+        statut_evaluation = request.data.get('statut_evaluation')
+        if statut_evaluation not in StatutEvaluationHabitation.values:
+            return Response({"error": "statut_evaluation invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        nature = request.data.get('nature_degats') or NatureDegatsHabitation.pour_la_crise(crise)
+        if nature and nature not in NatureDegatsHabitation.values:
+            return Response({"error": "nature_degats invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if statut_evaluation not in StatutEvaluationHabitation.avec_degats():
+            nature = ""
+
+        ban_id = (request.data.get('ban_id') or "").strip() or None
+        latitude = _flottant(request.data.get('latitude'), -90, 90)
+        longitude = _flottant(request.data.get('longitude'), -180, 180)
+        lieu = Point(longitude, latitude, srid=4326) if latitude is not None and longitude is not None else None
+        adresse_ban = AdresseBAN.objects.filter(pk=ban_id, retiree_le__isnull=True).first() if ban_id else None
+        if ban_id and adresse_ban is None:
+            return Response({"error": "Adresse inconnue du référentiel."}, status=status.HTTP_400_BAD_REQUEST)
+        if adresse_ban is None and lieu is None:
+            return Response({"error": "ban_id, ou latitude et longitude d'un point nouveau."}, status=status.HTTP_400_BAD_REQUEST)
+        commune_code = adresse_ban.commune_code if adresse_ban else commune_code_from_point(lieu)
+        if not terrain.peut_evaluer(request, commune_code, crise):
+            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        modules = list(ModuleDegatsCrise.objects.filter(crise=crise, institution=request.user.institution, actif=True)) \
+            if getattr(request.user, 'institution', None) else []
+        position = lieu or adresse_ban.location
+        if modules and not any(commune_dans_zone_module(commune_code, position, m) for m in modules):
+            raise PermissionDenied("Ce point est hors de la zone définie pour le suivi des dégâts.")
+        try:
+            type_bien = terrain.type_de_bien(request.data.get('type_bien'), request.data.get('type_bien_libre'), request.user)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        environment = get_active_environment(request)
+        constate_le = terrain.heure_du_constat(request.data.get('constate_le'))
+        description = " ".join(str(request.data.get('description') or "").split())[:200]
+        with transaction.atomic():
+            nouveau = adresse_ban is None
+            habitation = None if nouveau else Habitation.objects.filter(
+                crise=crise, environment=environment, ban_id=ban_id, fusionne_dans__isnull=True).first()
+            if habitation is None:
+                if nouveau:
+                    libelle = " — ".join(p for p in ((type_bien.nom if type_bien else ""), description) if p) \
+                        or f"Point sans adresse — {latitude:.5f}, {longitude:.5f}"
+                else:
+                    libelle = adresse_ban.libelle
+                habitation = Habitation.objects.create(
+                    crise=crise, environment=environment, location=position, commune_code=commune_code,
+                    commune_nom=adresse_ban.commune_nom if adresse_ban else None, adresse=libelle, ban_id=ban_id,
+                    parcelle_cadastrale=(adresse_ban.parcelles.split("|")[0] if adresse_ban and adresse_ban.parcelles else None),
+                    type_bien=type_bien)
+                HabitationHistorique.objects.create(
+                    habitation=habitation, auteur=request.user, environment=environment,
+                    evenement="Point ajouté sur le terrain" if nouveau else "Habitation pointée sur le terrain")
+            if not nouveau and lieu is not None and request.data.get('position_corrigee'):
+                habitation.location, habitation.position_corrigee = lieu, True
+                HabitationHistorique.objects.create(habitation=habitation, auteur=request.user, environment=environment,
+                                                    evenement="Position replacée sur le terrain (l'adresse ne change pas)")
+            if type_bien is not None:
+                habitation.type_bien = type_bien
+            habitation.dangers = [d for d in (request.data.get('dangers') or []) if d in terrain.DANGERS]
+            for champ in ('personne_sur_place', 'a_reloger'):
+                if request.data.get(champ) is not None:
+                    setattr(habitation, champ, bool(request.data.get(champ)))
+            habitation.save(update_fields=['location', 'position_corrigee', 'type_bien', 'dangers', 'personne_sur_place',
+                                           'a_reloger', 'modifie_le'])
+            self._appliquer_le_constat(habitation, statut_evaluation, None, nature, request.data.get('commentaire'))
+            Habitation.objects.filter(pk=habitation.pk).update(date_derniere_evaluation=constate_le)
+            ConstatTerrain.objects.create(id=identifiant, crise=crise, habitation=habitation, auteur=request.user,
+                                          constate_le=constate_le, statut_evaluation=statut_evaluation,
+                                          nature_degats=nature or "", nouveau_bien=nouveau, environment=environment)
+            if request.data.get('ouvrir_dossier') or habitation.a_reloger or habitation.personne_sur_place:
+                _dossier_pour_habitation(habitation, request)
+            propositions = terrain.proposer_rapprochements(habitation) if nouveau else []
+        habitation.refresh_from_db()
+        return Response({**HabitationSerializer(habitation, context={'request': request}).data,
+                         "constat": str(identifiant), "deja_recu": False, "rapprochements_proposes": len(propositions)},
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='rapprocher')
+    def rapprocher(self, request, pk=None):
+        """POST /api/habitations/<id>/rapprocher/ {autre} -- « c'est le même bien » : `autre` est
+        rattaché à cette fiche, sans rien effacer."""
+        from . import evaluation_terrain as terrain
+
+        garde = self.get_object()
+        self._refuser_si_non_accede(garde.commune_code, crise=garde.crise)
+        autre = Habitation.objects.filter(pk=request.data.get('autre') or None, environment=garde.environment).first()
+        if autre is None:
+            return Response({"error": "autre : la fiche à rattacher."}, status=status.HTTP_400_BAD_REQUEST)
+        self._refuser_si_non_accede(autre.commune_code, crise=autre.crise)
+        try:
+            terrain.rapprocher_a_la_main(garde, autre, request.user)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(HabitationSerializer(garde, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='separer')
+    def separer(self, request, pk=None):
+        """POST /api/habitations/<id>/separer/ -- deux biens rapprochés par erreur : cette fiche
+        redevient un bien à part entière."""
+        from . import evaluation_terrain as terrain
+
+        rattache = self.get_object()
+        self._refuser_si_non_accede(rattache.commune_code, crise=rattache.crise)
+        try:
+            terrain.separer(rattache, request.user)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(HabitationSerializer(rattache, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def evaluer(self, request, pk=None):
@@ -8436,7 +8603,8 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if crise is None:
             return Response({"error": "crise est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
 
-        qs = Habitation.objects.filter(crise=crise, environment=get_active_environment(request)).select_related('zone')
+        qs = Habitation.objects.filter(crise=crise, environment=get_active_environment(request),
+                                       fusionne_dans__isnull=True).select_related('zone')
         commune_code = request.query_params.get('commune_code')
         if commune_code:
             qs = qs.filter(commune_code=commune_code)
@@ -26796,3 +26964,100 @@ class CreneauEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet)
         if equipe.members.filter(pk=self.request.user.pk).exists():
             return True
         return _appartient_a_equipe(self.request, equipe)
+
+
+
+class TypeBienViewSet(viewsets.ReadOnlyModelViewSet):
+    """GET /api/types-bien/ -- le catalogue des types de bien évalués (logement, véhicule,
+    route…), extensible depuis le terrain (core/evaluation_terrain.type_de_bien)."""
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        from .models import TypeBien
+        return TypeBien.objects.filter(actif=True)
+
+    def get_serializer_class(self):
+        from rest_framework import serializers as drf
+
+        from .models import TypeBien
+
+        class TypeBienSerializer(drf.ModelSerializer):
+            class Meta:
+                model = TypeBien
+                fields = ["id", "nom", "a_une_adresse", "ordre"]
+        return TypeBienSerializer
+
+
+class RapprochementBienViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """GET /api/rapprochements-biens/?crise=[&statut=PROPOSE] -- les biens qui sont peut-être le
+    même, pour les communes que l'appelant gère ; `confirmer` (« même bien ») et `refuser`
+    (« biens différents »). Rien n'est jamais fusionné d'office (décision du 20/11/2026)."""
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        from .habitations import institution_accede_commune
+        from .models import RapprochementBien
+
+        qs = RapprochementBien.objects.select_related('bien', 'autre', 'bien__type_bien', 'autre__type_bien')
+        qs = qs.filter(environment=get_active_environment(self.request))
+        if self.request.query_params.get('crise'):
+            qs = qs.filter(crise_id=self.request.query_params['crise'])
+        qs = qs.filter(statut=self.request.query_params.get('statut') or 'PROPOSE')
+        visibles = [r.id for r in qs if institution_accede_commune(self.request, r.bien.commune_code, crise=r.crise)]
+        return qs.filter(id__in=visibles)
+
+    def get_serializer_class(self):
+        from rest_framework import serializers as drf
+
+        from .models import RapprochementBien
+
+        class FicheCourte(drf.ModelSerializer):
+            latitude = drf.SerializerMethodField()
+            longitude = drf.SerializerMethodField()
+            type_bien_nom = drf.CharField(source="type_bien.nom", read_only=True, default=None)
+            photos = drf.SerializerMethodField()
+
+            class Meta:
+                model = Habitation
+                fields = ["id", "adresse", "statut_evaluation", "nature_degats", "type_bien_nom", "latitude", "longitude",
+                          "date_derniere_evaluation", "photos"]
+
+            def get_latitude(self, obj):
+                return obj.location.y if obj.location else None
+
+            def get_longitude(self, obj):
+                return obj.location.x if obj.location else None
+
+            def get_photos(self, obj):
+                return Document.objects.filter(habitation=obj).count()
+
+        class RapprochementSerializer(drf.ModelSerializer):
+            bien = FicheCourte(read_only=True)
+            autre = FicheCourte(read_only=True)
+
+            class Meta:
+                model = RapprochementBien
+                fields = ["id", "statut", "distance_m", "manuel", "propose_le", "decide_le", "bien", "autre"]
+        return RapprochementSerializer
+
+    def _trancher(self, request, fonction):
+        rapprochement = self.get_object()
+        try:
+            fonction(rapprochement, request.user)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(request=request, action_code="MODIFICATION", objet_type="RapprochementBien", objet_id=rapprochement.id,
+                  crise=rapprochement.crise, commentaire=f"Rapprochement de biens : {rapprochement.get_statut_display()}")
+        return Response(self.get_serializer(rapprochement).data)
+
+    @action(detail=True, methods=['post'])
+    def confirmer(self, request, pk=None):
+        from . import evaluation_terrain as terrain
+        return self._trancher(request, terrain.confirmer)
+
+    @action(detail=True, methods=['post'])
+    def refuser(self, request, pk=None):
+        from . import evaluation_terrain as terrain
+        return self._trancher(request, terrain.refuser)

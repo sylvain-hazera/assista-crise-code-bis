@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   Habitation, HabitationCommentaire, HabitationHistorique, RattachementHabitation,
-  StatutEvaluationHabitation, StatutChantierHabitation, ReleveHabitation, EstimationDvf, NatureDegatsHabitation, PointageTerrain,
+  StatutEvaluationHabitation, StatutChantierHabitation, ReleveHabitation, EstimationDvf, NatureDegatsHabitation, PointageTerrain, RapprochementBien,
 } from '../shared/models/habitation.model';
 
 export interface HabitationFiltres {
@@ -65,6 +65,29 @@ export class HabitationService {
   pointer(crise: string, latitude: number, longitude: number, adresse?: string): Observable<(Habitation & { existante: boolean }) | PointageTerrain> {
     return this.http.post<(Habitation & { existante: boolean }) | PointageTerrain>(`${this.url}/pointer/`,
       { crise, latitude, longitude, ...(adresse ? { adresse } : {}) });
+  }
+
+  /** Les biens peut-être identiques, proposés à la commune (jamais fusionnés d'office). */
+  rapprochements(crise?: string): Observable<RapprochementBien[]> {
+    return this.http.get<RapprochementBien[]>(`${environment.apiUrl}/rapprochements-biens/${crise ? '?crise=' + encodeURIComponent(crise) : ''}`);
+  }
+
+  confirmerRapprochement(id: string): Observable<RapprochementBien> {
+    return this.http.post<RapprochementBien>(`${environment.apiUrl}/rapprochements-biens/${id}/confirmer/`, {});
+  }
+
+  refuserRapprochement(id: string): Observable<RapprochementBien> {
+    return this.http.post<RapprochementBien>(`${environment.apiUrl}/rapprochements-biens/${id}/refuser/`, {});
+  }
+
+  /** « C'est le même bien » : `autre` est rattaché à `id`, sans rien effacer. */
+  rapprocher(id: string, autre: string): Observable<Habitation> {
+    return this.http.post<Habitation>(`${this.url}/${id}/rapprocher/`, { autre });
+  }
+
+  /** Deux biens rapprochés par erreur : la fiche redevient un bien à part entière. */
+  separer(id: string): Observable<Habitation> {
+    return this.http.post<Habitation>(`${this.url}/${id}/separer/`, {});
   }
 
   /** Les pointages d'intervenants : ceux que je peux valider (commune), et les miens. */

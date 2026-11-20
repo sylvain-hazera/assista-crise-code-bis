@@ -80,6 +80,33 @@
     </section>
   }
 
+  @if (rapprochements.length) {
+    <section class="rapprochements" aria-label="Rapprochements proposés">
+      <h2>Le même bien ? ({{ rapprochements.length }})</h2>
+      <p class="explication">Deux fiches du même type, à quelques mètres l'une de l'autre. Rien n'est rapproché sans vous ; un rapprochement fait par erreur se défait depuis la fiche.</p>
+      <ul>
+        @for (r of rapprochements; track r.id) {
+          <li>
+            <div class="rapprochement-paire">
+              @for (f of [r.bien, r.autre]; track f.id) {
+                <button type="button" class="fiche-courte" (click)="ouvrirFicheParId(f.id)">
+                  <strong>{{ f.adresse }}</strong>
+                  <span>{{ f.type_bien_nom || 'Logement' }} — {{ labelsEvaluation[f.statut_evaluation] }}</span>
+                  <span>{{ f.photos }} photo{{ f.photos > 1 ? 's' : '' }}@if (f.date_derniere_evaluation) { · évalué le {{ f.date_derniere_evaluation | date:'dd/MM à HH:mm' }} }</span>
+                </button>
+              }
+            </div>
+            <div class="pointage-actions">
+              @if (r.distance_m != null) { <span class="distance">à {{ r.distance_m | number:'1.0-0' }} m</span> }
+              <button class="btn-primary" [disabled]="rapprochementTraite === r.id" (click)="trancherRapprochement(r, true)">Même bien</button>
+              <button class="btn-secondaire" [disabled]="rapprochementTraite === r.id" (click)="trancherRapprochement(r, false)">Biens différents</button>
+            </div>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
   @if (mesPointages.length) {
     <section class="mes-pointages" aria-label="Mes pointages">
       <h2>Mes pointages ({{ mesPointages.length }})</h2>

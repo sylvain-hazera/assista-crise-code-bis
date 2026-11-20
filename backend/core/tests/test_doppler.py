@@ -122,8 +122,11 @@ def test_releve_met_a_jour_la_cellule_avec_le_radar_proche():
     CelluleOrage.objects.create(identifiant="c1", heure_image=maintenant, centre=zone.centroid, contour=zone,
                                 ligne=0, colonne=0, max_mmh=70, moyenne_mmh=40, surface_km2=20, releve_le=maintenant)
     lus = [balayage("V", 0.5, vitesse_avec_rotation()), balayage("V", 1.5, vitesse_avec_rotation())]
+    # La double polarisation est demandée dès qu'une rotation est vue : sans ce remplacement,
+    # l'essai appelait vraiment Météo-France, et échouait quand le service refusait la connexion.
     with mock.patch.object(doppler, "telecharger_balayage", return_value=b"x") as appel, \
-         mock.patch.object(doppler, "decoder", return_value=lus):
+         mock.patch.object(doppler, "decoder", return_value=lus), \
+         mock.patch.object(doppler, "telecharger_pam", return_value=None):
         assert doppler.relever(maintenant) == 1
     assert {c.args[0] for c in appel.call_args_list} == {99}         # le radar lointain n'est pas lu
     cellule = CelluleOrage.objects.get()

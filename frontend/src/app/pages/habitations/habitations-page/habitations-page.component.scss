@@ -309,3 +309,15 @@ table {
 .pointage-auteur, .etat-pointage { font-size: .85rem; color: var(--ac-text-muted, #6b7280); }
 .etat-pointage[data-statut="VALIDE"] { color: #15803d; }
 .etat-pointage[data-statut="REFUSE"] { color: #b91c1c; }
+
+// Rapprochements proposés : deux fiches côte à côte, « même bien » ou « biens différents ».
+.rapprochements {
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; }
+  .rapprochement-paire { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; flex: 1 1 420px; }
+  .fiche-courte { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 6px; background: var(--ac-surface-2, #f9fafb);
+                  color: var(--ac-text, #111827); text-decoration: none; font: inherit; font-size: .85rem; text-align: left;
+                  border: 1px solid var(--ac-border, #e5e7eb); cursor: pointer;
+                  &:hover, &:focus-visible { outline: 2px solid var(--brand-primary, #1d4ed8); } }
+  .distance { font-size: .8rem; color: var(--ac-text-muted, #4b5563); font-variant-numeric: tabular-nums; }
+}

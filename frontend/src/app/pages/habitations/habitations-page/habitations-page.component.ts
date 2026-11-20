@@ -7,7 +7,7 @@ import { HabitationCarteComponent } from '../habitation-carte/habitation-carte.c
 import { HabitationFicheComponent } from '../habitation-fiche/habitation-fiche.component';
 import { HabitationService, HabitationFiltres } from '../../../services/habitation.service';
 import {
-  Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, EstimationDvf, PointageTerrain,
+  Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, EstimationDvf, PointageTerrain, RapprochementBien,
   LABELS_NATURE_DEGATS, STATUTS_AVEC_DEGATS, StatutEvaluationHabitation, NatureDegatsHabitation,
 } from '../../../shared/models/habitation.model';
 import { AuthService } from '../../../auth/services/auth.service';
@@ -177,6 +177,32 @@ export class HabitationsPageComponent implements OnInit {
 
   chargerPointages(): void {
     this.habitationService.pointages(this.filtres.crise).subscribe({ next: (p) => this.pointages = p, error: () => {} });
+    this.chargerRapprochements();
+  }
+
+  // ── Rapprochements : deux fiches qui sont peut-être le même bien (jamais fusionnées d'office) ──
+  rapprochements: RapprochementBien[] = [];
+  rapprochementTraite = '';
+
+  chargerRapprochements(): void {
+    if (!this.filtres.crise) { this.rapprochements = []; return; }
+    this.habitationService.rapprochements(this.filtres.crise).subscribe({ next: (r) => this.rapprochements = r, error: () => {} });
+  }
+
+  trancherRapprochement(r: RapprochementBien, memeBien: boolean): void {
+    this.rapprochementTraite = r.id;
+    const demande = memeBien ? this.habitationService.confirmerRapprochement(r.id) : this.habitationService.refuserRapprochement(r.id);
+    demande.subscribe({
+      next: () => {
+        this.rapprochementTraite = '';
+        this.rapprochements = this.rapprochements.filter(x => x.id !== r.id);
+        this.messagePointage = memeBien
+          ? `« ${r.autre.adresse} » est rattaché à « ${r.bien.adresse} ». Une erreur se corrige depuis la fiche : « Séparer ».`
+          : 'Gardés comme deux biens différents.';
+        if (memeBien) this.charger();
+      },
+      error: (e) => { this.rapprochementTraite = ''; this.messagePointage = e?.error?.error || e?.error?.detail || 'Ce rapprochement n’a pas pu être tranché.'; },
+    });
   }
 
   private surPointagePropose(pointage: PointageTerrain, precisionM?: number): void {
@@ -309,6 +335,11 @@ export class HabitationsPageComponent implements OnInit {
 
   ouvrirFiche(h: Habitation): void {
     this.habitationSelectionnee = h;
+  }
+
+  /** Une fiche d'un rapprochement : lue à part, elle peut ne pas être dans la liste affichée. */
+  ouvrirFicheParId(id: string): void {
+    this.habitationService.getOne(id).subscribe({ next: (h) => this.ouvrirFiche(h), error: () => {} });
   }
 
   fermerFiche(): void {

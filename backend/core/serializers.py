@@ -4966,13 +4966,14 @@ class HabitationSerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     zone_nom = serializers.CharField(source="zone.nom", read_only=True, default=None)
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
+    type_bien_nom = serializers.CharField(source="type_bien.nom", read_only=True, default=None)
     nb_rattachements_en_attente = serializers.SerializerMethodField()
     peut_gerer = serializers.SerializerMethodField()
 
     class Meta:
         model = Habitation
         fields = "__all__"
-        read_only_fields = ['evalue_par', 'date_derniere_evaluation', 'date_creation', 'modifie_le']
+        read_only_fields = ['evalue_par', 'date_derniere_evaluation', 'date_creation', 'modifie_le', 'fusionne_dans']
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None

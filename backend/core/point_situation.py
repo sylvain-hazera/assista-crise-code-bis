@@ -36,7 +36,7 @@ def construire(crise, institution, environment, nommer=None) -> dict:
         .values_list("point__nom").annotate(n=Sum("nombre")).order_by("point__nom")
     ]
     recherches = RecherchePersonne.objects.filter(crise=crise, environment=environment)
-    habitations = Habitation.objects.filter(crise=crise, environment=environment, **sur_la_commune)
+    habitations = Habitation.objects.filter(crise=crise, environment=environment, fusionne_dans__isnull=True, **sur_la_commune)
     try:
         logement = relogement.synthese(crise, environment)
     except Exception:

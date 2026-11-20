@@ -128,6 +128,8 @@ from .views import (
     ImportMaterielPointView,
     ImportMaterielPointExempleView,
     HabitationViewSet,
+    TypeBienViewSet,
+    RapprochementBienViewSet,
     HabitationCommentaireViewSet,
     HabitationHistoriqueViewSet,
     RattachementHabitationViewSet,
@@ -337,6 +339,8 @@ router.register(r'pcs-moyens-alerte', MoyenAlertePCSViewSet, basename='pcs-moyen
 router.register(r'pcs-exercices', ExercicePCSViewSet, basename='pcs-exercices')
 router.register(r'pcs-pieces', PieceJointePCSViewSet, basename='pcs-pieces')
 router.register(r'habitations', HabitationViewSet)
+router.register(r'types-bien', TypeBienViewSet, basename='type-bien')
+router.register(r'rapprochements-biens', RapprochementBienViewSet, basename='rapprochement-bien')
 router.register(r'habitations-commentaires', HabitationCommentaireViewSet)
 router.register(r'habitations-historique', HabitationHistoriqueViewSet)
 router.register(r'rattachements-habitations', RattachementHabitationViewSet)

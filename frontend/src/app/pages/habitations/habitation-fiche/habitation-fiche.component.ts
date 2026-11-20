@@ -56,6 +56,54 @@ export class HabitationFicheComponent implements OnChanges {
 
   rattachements: RattachementHabitation[] = [];
 
+  // ── Rapprochement : le même bien, vu deux fois (jamais fusionné d'office) ──
+  rapprochementEnCours = false;
+  messageRapprochement = '';
+  voisins: Habitation[] = [];
+  static readonly LIBELLES_DANGERS: Record<string, string> = {
+    STRUCTURE: 'structure', ELECTRICITE: 'électricité', GAZ: 'gaz', EAU: 'eau', AUTRE: 'autre',
+  };
+
+  libellesDangers(dangers: string[]): string {
+    return dangers.map(d => HabitationFicheComponent.LIBELLES_DANGERS[d] || d).join(', ');
+  }
+
+  /** Les fiches de la même crise à moins de 200 m, pour un rapprochement à la main. */
+  chercherVoisins(): void {
+    if (!this.habitation.crise || this.habitation.latitude == null || this.habitation.longitude == null) return;
+    this.habitationService.getAll({ crise: this.habitation.crise }).subscribe({
+      next: (liste) => {
+        const lat = this.habitation.latitude!, lon = this.habitation.longitude!;
+        const distance = (h: Habitation) => Math.hypot((h.longitude! - lon) * 111_320 * Math.cos(lat * Math.PI / 180), (h.latitude! - lat) * 111_320);
+        this.voisins = liste.filter(h => h.id !== this.habitation.id && h.latitude != null && h.longitude != null && distance(h) <= 200)
+          .sort((a, b) => distance(a) - distance(b)).slice(0, 10);
+        if (!this.voisins.length) this.messageRapprochement = 'Aucune autre fiche de cette crise à moins de 200 m.';
+      },
+      error: () => {},
+    });
+  }
+
+  rapprocher(autre: Habitation): void {
+    this.rapprochementEnCours = true;
+    this.habitationService.rapprocher(this.habitation.id, autre.id).subscribe({
+      next: () => {
+        this.rapprochementEnCours = false;
+        this.voisins = this.voisins.filter(v => v.id !== autre.id);
+        this.messageRapprochement = `« ${autre.adresse} » est rattachée à cette fiche. Une erreur se corrige depuis sa fiche : « Séparer ».`;
+        this.misAJour.emit(this.habitation);
+      },
+      error: (e) => { this.rapprochementEnCours = false; this.messageRapprochement = e?.error?.error || 'Rapprochement impossible.'; },
+    });
+  }
+
+  separer(): void {
+    this.rapprochementEnCours = true;
+    this.habitationService.separer(this.habitation.id).subscribe({
+      next: (h) => { this.rapprochementEnCours = false; this.habitation = h; this.misAJour.emit(h); },
+      error: (e) => { this.rapprochementEnCours = false; this.messageRapprochement = e?.error?.error || 'Séparation impossible.'; },
+    });
+  }
+
   photos: DossierDocument[] = [];
   photoUrls: Record<string, string> = {};
   fichierChoisi: File | null = null;

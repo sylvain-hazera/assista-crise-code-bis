@@ -371,3 +371,17 @@
 }
 
 .erreur-releve { margin: 0; color: var(--ac-red-text, #b91c1c); font-size: 0.85rem; }
+
+// Rapprochement : bandeau d'une fiche rattachée, et rapprochement à la main.
+.bandeau-rapproche {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; padding: 10px 12px;
+  border-radius: 8px; background: var(--ac-amber-bg, #fffbeb); color: var(--ac-amber-text, #92400e);
+  border: 1px solid var(--ac-amber-border, #fde68a); font-size: .9rem;
+}
+.rapprochement-manuel {
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--ac-border, #e5e7eb);
+  h3 { margin: 0 0 8px; font-size: .95rem; }
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: .85rem; }
+  .message { margin: 8px 0 0; font-size: .85rem; color: var(--ac-text-muted, #4b5563); }
+}

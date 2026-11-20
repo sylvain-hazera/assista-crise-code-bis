@@ -40,6 +40,34 @@ describe('HabitationsPageComponent — pointage terrain', () => {
     expect(composant.messagePointage).toContain('précise à 80 m seulement');
   });
 
+  it('propose les rapprochements de la crise : « même bien » rattache, « biens différents » écarte', () => {
+    const FICHE = (id: string, adresse: string) => ({ id, adresse, statut_evaluation: 'DETRUITE', nature_degats: 'FEU',
+      type_bien_nom: 'Véhicule', latitude: 44.87, longitude: -1.2, date_derniere_evaluation: null, photos: 1 });
+    const R1 = { id: 'r1', statut: 'PROPOSE', distance_m: 24, manuel: false, propose_le: '', decide_le: null,
+                 bien: FICHE('h1', 'Véhicule — parking'), autre: FICHE('h2', 'Véhicule — isolé') };
+    const R2 = { ...R1, id: 'r2' };
+    composant.filtres.crise = 'c1';
+    composant.chargerRapprochements();
+    http.expectOne(`${api}/rapprochements-biens/?crise=c1`).flush([R1, R2]);
+    expect(composant.rapprochements.length).toBe(2);
+
+    composant.trancherRapprochement(R1 as any, true);
+    http.expectOne(`${api}/rapprochements-biens/r1/confirmer/`).flush({ ...R1, statut: 'CONFIRME' });
+    expect(composant.rapprochements.map(r => r.id)).toEqual(['r2']);
+    expect(composant.messagePointage).toContain('« Véhicule — isolé » est rattaché à « Véhicule — parking »');
+    expect(composant.messagePointage).toContain('Séparer');
+
+    composant.trancherRapprochement(R2 as any, false);
+    http.expectOne(`${api}/rapprochements-biens/r2/refuser/`).flush({ ...R2, statut: 'REFUSE' });
+    expect(composant.rapprochements).toEqual([]);
+    expect(composant.messagePointage).toBe('Gardés comme deux biens différents.');
+
+    // Sans crise choisie, rien n'est demandé.
+    composant.filtres.crise = '';
+    composant.chargerRapprochements();
+    http.expectNone(r => r.url.includes('rapprochements-biens'));
+  });
+
   it('demande la crise quand on ne sait pas laquelle, et la devine quand une seule est ouverte', () => {
     composant.crises = [{ id: 'c1', is_open: true }, { id: 'c2', is_open: true }] as any;
     composant.pointerIci();

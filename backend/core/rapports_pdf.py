@@ -268,7 +268,8 @@ def crise_resume(crise, institution, environment, nommer) -> dict:
     for dossier in dossiers:
         par_mission.setdefault(dossier.mission_id, []).append(dossier)
 
-    habitations = list(Habitation.objects.filter(crise=crise, environment=environment, **({"commune_code": commune} if commune else {})))
+    habitations = list(Habitation.objects.filter(crise=crise, environment=environment, fusionne_dans__isnull=True,
+                                                 **({"commune_code": commune} if commune else {})))
     degats, causes = {}, {}
     for habitation in habitations:
         if habitation.nature_degats:

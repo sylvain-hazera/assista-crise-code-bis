@@ -3985,11 +3985,107 @@ class Habitation(EnvironmentScopedModel):
     valeur_source = models.CharField(max_length=40, null=True, blank=True,
                                      help_text="Origine de la valeur (ex: DVF, saisie manuelle).")
 
+    # ── Évaluation à pied (20/11/2026, DOSSIER-ADRESSES-ET-DEGATS.md) ──
+    #: Ce qu'est le bien : un logement par défaut (vide), sinon un type du catalogue extensible
+    #: (véhicule, ouvrage, réseau…). La fiche reste la même : carte, décomptes, dossiers.
+    type_bien = models.ForeignKey("TypeBien", on_delete=models.SET_NULL, null=True, blank=True, related_name="biens")
+    #: Dangers relevés sur place : STRUCTURE, ELECTRICITE, GAZ, EAU, AUTRE.
+    dangers = models.JSONField(default=list, blank=True)
+    personne_sur_place = models.BooleanField(null=True, blank=True)
+    a_reloger = models.BooleanField(null=True, blank=True)
+    #: Vrai quand l'évaluateur a replacé le point : l'adresse nationale ne change pas.
+    position_corrigee = models.BooleanField(default=False)
+    #: Rapproché d'un autre bien (le même, vu deux fois) : jamais effacé, il est rattaché à
+    #: celui-ci, et la séparation le détache sans rien perdre (RapprochementBien).
+    fusionne_dans = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="rapproches")
+
     date_creation = models.DateTimeField(auto_now_add=True)
     modifie_le = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.adresse
+
+
+class TypeBien(models.Model):
+    """Catalogue partagé et extensible des types de bien évalués (logement, véhicule, route…),
+    comme MaterielCatalogue : un texte libre saisi sur le terrain ajoute une entrée, proposée
+    ensuite à tous dans la liste."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(max_length=80, unique=True)
+    #: Pour reconnaître « véhicule » et « Véhicule » : minuscules, sans accents ni espaces doubles.
+    cle = models.CharField(max_length=80, unique=True)
+    #: Un bien de ce type peut-il avoir une adresse ? (Non pour un véhicule, un arbre.)
+    a_une_adresse = models.BooleanField(default=True)
+    ordre = models.PositiveSmallIntegerField(default=100)
+    actif = models.BooleanField(default=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordre", "nom"]
+
+    @staticmethod
+    def cle_de(nom):
+        import unicodedata
+        texte = unicodedata.normalize("NFKD", nom or "").encode("ascii", "ignore").decode().lower()
+        return " ".join(texte.split())[:80]
+
+    def save(self, *args, **kwargs):
+        self.nom = " ".join((self.nom or "").split())[:80]
+        self.cle = TypeBien.cle_de(self.nom)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.nom
+
+
+class ConstatTerrain(EnvironmentScopedModel):
+    """Un constat fait sur le terrain depuis l'application (évaluation à pied). Son identifiant
+    est tiré SUR LE TÉLÉPHONE : renvoyé deux fois (réseau revenu, file rejouée), il ne crée
+    jamais deux constats. Un fait daté, jamais modifié."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="constats_terrain")
+    habitation = models.ForeignKey(Habitation, on_delete=models.CASCADE, related_name="constats")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="constats_terrain")
+    #: Heure du constat sur le téléphone (il peut arriver des heures plus tard).
+    constate_le = models.DateTimeField()
+    recu_le = models.DateTimeField(auto_now_add=True)
+    statut_evaluation = models.CharField(max_length=20, choices=StatutEvaluationHabitation.choices)
+    nature_degats = models.CharField(max_length=20, blank=True, default="")
+    nouveau_bien = models.BooleanField(default=False, help_text="Point ajouté sur place, sans adresse du référentiel.")
+
+    class Meta:
+        ordering = ["-constate_le"]
+
+
+class StatutRapprochementBien(models.TextChoices):
+    PROPOSE = "PROPOSE", "Proposé"
+    CONFIRME = "CONFIRME", "Même bien"
+    REFUSE = "REFUSE", "Biens différents"
+    SEPARE = "SEPARE", "Séparés après rapprochement"
+
+
+class RapprochementBien(EnvironmentScopedModel):
+    """Deux fiches qui désignent peut-être le même bien (même type, à moins de 50 m sur la même
+    crise, ou rapprochées à la main). JAMAIS fusionnées d'office (décision du 20/11/2026) :
+    confirmer rattache `autre` à `bien` (Habitation.fusionne_dans), séparer l'en détache."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="rapprochements_biens")
+    bien = models.ForeignKey(Habitation, on_delete=models.CASCADE, related_name="rapprochements_garde")
+    autre = models.ForeignKey(Habitation, on_delete=models.CASCADE, related_name="rapprochements_rattache")
+    distance_m = models.FloatField(null=True, blank=True)
+    statut = models.CharField(max_length=10, choices=StatutRapprochementBien.choices, default=StatutRapprochementBien.PROPOSE)
+    manuel = models.BooleanField(default=False)
+    propose_le = models.DateTimeField(auto_now_add=True)
+    decide_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decide_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-propose_le"]
+        indexes = [models.Index(fields=["crise", "statut"])]
 
 
 class HabitationCommentaire(EnvironmentScopedModel):

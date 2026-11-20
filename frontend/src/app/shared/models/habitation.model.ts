@@ -25,6 +25,15 @@ export interface Habitation {
   date_creation: string;
   modifie_le: string;
   nb_rattachements_en_attente: number;
+  /** Évaluation à pied (20/11/2026) : type de bien, dangers, point replacé, rapprochement. */
+  type_bien?: string | null;
+  type_bien_nom?: string | null;
+  dangers?: string[];
+  personne_sur_place?: boolean | null;
+  a_reloger?: boolean | null;
+  position_corrigee?: boolean;
+  /** Rattaché à cette fiche (le même bien, vu deux fois) ; séparable. */
+  fusionne_dans?: string | null;
   peut_gerer: boolean;
   crise_nom: string | null;
   surface_habitable_totale: number | null;
@@ -180,4 +189,29 @@ export interface PointageTerrain {
   habitation: string | null;
   motif_refus: string;
   peut_valider: boolean;
+}
+
+/** Une fiche résumée, dans un rapprochement. */
+export interface FicheRapprochee {
+  id: string;
+  adresse: string;
+  statut_evaluation: StatutEvaluationHabitation;
+  nature_degats: string;
+  type_bien_nom: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  date_derniere_evaluation: string | null;
+  photos: number;
+}
+
+/** Deux fiches qui désignent peut-être le même bien : proposé, jamais fusionné d'office. */
+export interface RapprochementBien {
+  id: string;
+  statut: 'PROPOSE' | 'CONFIRME' | 'REFUSE' | 'SEPARE';
+  distance_m: number | null;
+  manuel: boolean;
+  propose_le: string;
+  decide_le: string | null;
+  bien: FicheRapprochee;
+  autre: FicheRapprochee;
 }

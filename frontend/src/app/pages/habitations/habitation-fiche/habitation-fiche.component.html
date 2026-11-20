@@ -26,8 +26,29 @@
     <div class="fiche-contenu">
 
       @if (onglet === 'details') {
+        @if (habitation.fusionne_dans) {
+          <div class="bandeau-rapproche" role="status">
+            <span>Rattachée à une autre fiche : c'est le même bien, vu deux fois. Elle n'est plus comptée à part.</span>
+            @if (habitation.peut_gerer && !lectureSeule) {
+              <button type="button" class="btn-secondaire" [disabled]="rapprochementEnCours" (click)="separer()">Séparer : ce n'est pas le même bien</button>
+            }
+          </div>
+        }
         <div class="bloc-infos">
           <div class="ligne-info"><span class="label">Adresse</span><span>{{ habitation.adresse }}</span></div>
+          @if (habitation.type_bien_nom) {
+            <div class="ligne-info"><span class="label">Type de bien</span><span>{{ habitation.type_bien_nom }}</span></div>
+          }
+          @if (habitation.dangers?.length) {
+            <div class="ligne-info"><span class="label">Dangers relevés</span><span>{{ libellesDangers(habitation.dangers!) }}</span></div>
+          }
+          @if (habitation.personne_sur_place || habitation.a_reloger) {
+            <div class="ligne-info"><span class="label">Personnes</span>
+              <span>{{ habitation.personne_sur_place ? 'personne sur place' : '' }}{{ habitation.personne_sur_place && habitation.a_reloger ? ', ' : '' }}{{ habitation.a_reloger ? 'à reloger' : '' }}</span></div>
+          }
+          @if (habitation.position_corrigee) {
+            <div class="ligne-info"><span class="label">Position</span><span>replacée sur le terrain (l'adresse ne change pas)</span></div>
+          }
           <div class="ligne-info">
             <span class="label">Coordonnées GPS</span>
             <span>{{ habitation.latitude | number:'1.5-5' }}, {{ habitation.longitude | number:'1.5-5' }}</span>
@@ -177,6 +198,25 @@
             </div>
           }
         }
+      }
+
+      @if (onglet === 'details' && habitation.peut_gerer && !lectureSeule && !habitation.fusionne_dans) {
+        <section class="rapprochement-manuel" aria-label="Rapprocher d'une autre fiche">
+          <h3>Le même bien qu'une autre fiche ?</h3>
+          @if (!voisins.length) {
+            <button type="button" class="btn-secondaire" (click)="chercherVoisins()">Voir les fiches voisines</button>
+          } @else {
+            <ul>
+              @for (v of voisins; track v.id) {
+                <li>
+                  <span>{{ v.adresse }}@if (v.type_bien_nom) { <small>({{ v.type_bien_nom }})</small> }</span>
+                  <button type="button" class="btn-secondaire" [disabled]="rapprochementEnCours" (click)="rapprocher(v)">Rattacher à cette fiche</button>
+                </li>
+              }
+            </ul>
+          }
+          @if (messageRapprochement) { <p class="message" role="status">{{ messageRapprochement }}</p> }
+        </section>
       }
 
       @if (onglet === 'photos') {
