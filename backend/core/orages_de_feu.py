@@ -246,6 +246,24 @@ def pft(P, Z, T, Q, V, blh):
             numpy.where(possible, zfc, numpy.nan))
 
 
+def masque_france(largeur, hauteur, ouest, nord):
+    """Grille booléenne : vrai pour les mailles de la France (une commune dedans ou dans une maille
+    voisine, soit les terres et les communes frontalières). La grille d'ARPEGE déborde sur la mer
+    et les pays voisins : le 20/11/2026, les seuls paliers peints étaient en Ligurie, en Espagne
+    et au large de la Corse. None s'il n'y a aucune commune en base (rien n'est alors masqué)."""
+    import numpy
+
+    from .models import Commune
+
+    masque = numpy.zeros((hauteur, largeur), bool)
+    for latitude, longitude in (Commune.objects.exclude(centre_latitude=None).exclude(centre_longitude=None)
+                                .values_list("centre_latitude", "centre_longitude")):
+        ligne, colonne = round((nord - latitude) / PAS_DEGRES), round((longitude - ouest) / PAS_DEGRES)
+        if 0 <= ligne < hauteur and 0 <= colonne < largeur:
+            masque[max(0, ligne - 1):ligne + 2, max(0, colonne - 1):colonne + 2] = True
+    return masque if masque.any() else None
+
+
 def potentiel(pft_gw, ch, hr2):
     """Palier du potentiel (0 à 3) : seulement là où l'air est sec et instable."""
     import numpy
@@ -400,6 +418,8 @@ def telecharger_echeance(calcul, echeance):
 def relever(maintenant=None):
     """Calcule les échéances qui manquent pour le calcul ARPEGE le plus récent, retire les
     passées. Rend le nombre d'échéances en base."""
+    import numpy
+
     from .models import PotentielOrageFeu
 
     maintenant = maintenant or timezone.now()
@@ -422,6 +442,7 @@ def relever(maintenant=None):
         raise ValueError("aucun calcul du modèle ARPEGE ne répond pour la première échéance")
 
     calculees = 0
+    masque = None
     for echeance in voulues:
         if connues.get(echeance) == calcul:
             continue
@@ -434,6 +455,9 @@ def relever(maintenant=None):
         sol, niveaux, ouest, nord = lu
         grilles = calculer(sol, niveaux)
         hauteur, largeur = sol["ps"].shape
+        masque = masque if masque is not None else masque_france(largeur, hauteur, ouest, nord)
+        if masque is not None:
+            grilles["rang"] = numpy.where(masque, grilles["rang"], 0).astype(numpy.uint8)
         with transaction.atomic():
             PotentielOrageFeu.objects.update_or_create(echeance=echeance, defaults={
                 "calcul": calcul, "largeur": largeur, "hauteur": hauteur, "ouest": ouest, "nord": nord,

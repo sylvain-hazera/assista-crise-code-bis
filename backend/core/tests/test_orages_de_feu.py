@@ -139,6 +139,27 @@ class TestReleve:
             assert appel.call_count == 0                  # rien de nouveau : rien de redemandé
         assert PotentielOrageFeu.objects.first().calcul == datetime.datetime(2026, 7, 24, 6, tzinfo=UTC)
 
+    def test_seule_la_france_est_peinte(self):
+        from core.models import Commune
+
+        # Deux colonnes : la première porte une commune, la seconde est à 50 km (mer, pays voisin).
+        sol, niveaux = grilles(SAUMOS_24_JUILLET, SAUMOS_24_JUILLET)
+        for nom in sol:
+            sol[nom] = numpy.repeat(sol[nom], 3, axis=1)[:, [0, 0, 0, 0, 0, 1]]
+        for champs in niveaux.values():
+            for nom in champs:
+                champs[nom] = champs[nom][:, [0, 0, 0, 0, 0, 1]]
+        Commune.objects.create(code="33500", nom="Saumos", centre_latitude=44.9, centre_longitude=-1.0)
+        lu = (sol, niveaux, -1.0, 44.9)
+        with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=lu):
+            orages_de_feu.relever(self.MAINTENANT)
+        grille = PotentielOrageFeu.objects.first()
+        rang = orages_de_feu.decoder(grille.grilles, grille.largeur, grille.hauteur)["rang"][0]
+        assert rang[0] > 0 and rang[1] > 0                # la commune et sa voisine
+        assert rang[2:].tolist() == [0, 0, 0, 0]          # au-delà : rien de peint
+        valeurs = orages_de_feu.decoder(grille.grilles, grille.largeur, grille.hauteur)["pft"][0]
+        assert numpy.isfinite(valeurs[5])                 # la valeur, elle, reste lisible
+
     def test_sans_calcul_disponible_le_releve_echoue(self):
         with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=None):
             with pytest.raises(ValueError):
