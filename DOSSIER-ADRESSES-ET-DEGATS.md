@@ -136,6 +136,25 @@ fiches côte à côte.
 | **A** ✅ | Référentiel `AdresseBAN` : import par fichier départemental, mise à jour hebdomadaire, adresses retirées ; branché sur le registre, les secteurs, la recherche et l'adresse la plus proche | import sur un fichier réduit fabriqué, retraits, rattachements inchangés |
 | **B** ✅ | Copie vers le satellite (incrémentale, par pages ; communes nouvelles copiées en entier) | rejeu complet puis incrémental |
 | **C** ✅ | API de l'évaluation : points proches, constat avec identifiant du téléphone, position replacée, nouveau point avec type de bien (liste extensible), photos, propositions de fusion et de rattachement, rapprochement manuel et séparation, écran sur le site | idempotence, fusion jamais automatique, séparation |
-| **D** | Application : la tournée à pied **en ligne** | parcours complet sur émulateur |
-| **E** | Application : **embarquer un secteur**, tournée hors ligne, effacement | parcours en mode avion |
+| **D** ✅ | Application : la tournée à pied **en ligne** | essais de la logique partagée ; APK construits ; **pas encore essayé sur un téléphone** |
+| **E** ✅ | Application : **embarquer un secteur**, tournée hors ligne, effacement | essais de la logique partagée (repli hors réseau, ordre constat puis photo, effacement) ; **parcours en mode avion à faire sur un vrai téléphone** |
 | **F** ✅ | Satellite : biens, constats et photos dans la synchronisation (lot 4 du dossier hors ligne) | coupure simulée |
+
+## 8. Ce qui a été construit (20/11/2026)
+
+- **Serveur** : référentiel `AdresseBAN` (lot A) ; copie vers les satellites (lot B) ; tournée,
+  constat idempotent, réévaluation d'un bien sans adresse, types de bien extensibles,
+  rapprochements proposés, manuels et séparables (lot C) ; photo d'un constat et secteur à
+  embarquer ; biens, constats, historique, types et photos synchronisés avec les satellites
+  (lot F).
+- **Site** : « Le même bien ? » dans le suivi des dégâts ; sur la fiche, type, dangers,
+  personnes, point replacé, « Séparer » et rapprochement à la main.
+- **Application** (`EcranDegats`, `DepotDegats`, `Degats.kt`) : entrée « Évaluer les dégâts »
+  pour le personnel municipal et les élus ; tournée par la distance avec « Je suis devant » ;
+  « le point est-il bien placé ? » puis replacer (carte ou ma position) ; évaluation (état,
+  dangers, personne sur place, à reloger, commentaire, photos) ; « Nouveau point ici » avec type
+  de bien (liste ou texte libre) et description ; embarquer le secteur, tournée hors réseau,
+  effacement dès que tout est parti.
+
+**Pas encore vérifié** : le parcours sur un vrai téléphone (GPS en marchant, appareil photo,
+mode avion, carte du « replacer »), et le chargement réel des adresses en production.

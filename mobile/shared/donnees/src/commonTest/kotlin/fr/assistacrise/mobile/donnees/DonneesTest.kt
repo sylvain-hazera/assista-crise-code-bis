@@ -44,9 +44,9 @@ private class Banc(repondre: suspend MockRequestHandleScope.(HttpRequestData) ->
     /** Ce que la radio a émis, par équipe. `radioPresente = false` : pas de radio connectée. */
     val emisParRadio = mutableListOf<Pair<String, String>>()
     var radioPresente = false
-    val synchro = Synchronisation(api, file, depot, equipes) { equipe, texte ->
+    val synchro = Synchronisation(api, file, depot, equipes, radio = EmetteurRadio { equipe, texte ->
         if (radioPresente && equipe.canalMeshCore != null) { emisParRadio += equipe.nom to texte; "MESHCORE" } else null
-    }
+    })
 
     fun chemins() = demandes.map { "${it.method.value} ${it.url.encodedPath.removePrefix("/api/")}" }
 }

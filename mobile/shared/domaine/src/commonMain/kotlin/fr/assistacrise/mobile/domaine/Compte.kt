@@ -41,6 +41,11 @@ data class Compte(
     val peutPiloterLesMissions: Boolean
         get() = type in TYPES_INSTITUTIONNELS
 
+    /** L'évaluation des dégâts à pied : le personnel municipal et les élus (décision du
+     * 20/11/2026), l'administrateur pour dépanner. Le serveur vérifie aussi la commune. */
+    val evalueLesDegats: Boolean
+        get() = type == "AUT_LOCALE" || type == "ADMIN"
+
     companion object {
         const val TYPE_UTILISATEUR_SIMPLE = "UTIL_SIMPLE"
 

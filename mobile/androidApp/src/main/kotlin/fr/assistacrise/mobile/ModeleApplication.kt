@@ -1,5 +1,7 @@
 package fr.assistacrise.mobile
 
+import fr.assistacrise.mobile.domaine.Constat
+import fr.assistacrise.mobile.donnees.DepotDegats
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +64,7 @@ enum class EtapeConnexion { ADRESSE, CODE, MOT_DE_PASSE }
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
-    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE,
+    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -742,6 +744,63 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      * par son empreinte, chiffrée — puis seulement mise en file. Sans position, elle part
      * quand même : une photo sans lieu vaut mieux que pas de photo, et l'écran dit qu'il manque.
      */
+    // ── Évaluation des dégâts à pied (personnel municipal et élus) ─────────────────────────
+
+    val secteurDegats = app.degats.secteur
+    val typesBien = app.degats.types
+    var tournee by mutableStateOf<DepotDegats.Tournee?>(null); private set
+    var tourneeEnCours by mutableStateOf(false); private set
+    var embarquementEnCours by mutableStateOf(false); private set
+
+    fun ouvrirDegats() {
+        aller(Ecran.DEGATS)
+        viewModelScope.launch { app.degats.chargerTypes() }
+    }
+
+    fun chargerTournee(crise: String, ici: Releve) {
+        tourneeEnCours = true
+        viewModelScope.launch {
+            tournee = app.degats.tournee(crise, ici.latitude, ici.longitude)
+            tourneeEnCours = false
+        }
+    }
+
+    fun embarquerSecteur(crise: String, ici: Releve) {
+        embarquementEnCours = true
+        viewModelScope.launch {
+            message = when (val r = app.degats.embarquer(crise, ici.latitude, ici.longitude)) {
+                is Reponse.Ok -> "Secteur embarqué : ${r.valeur.adresses.size} adresses, ${r.valeur.biens.size} biens déjà vus. Il s'effacera de ce téléphone dès que vos constats seront partis."
+                is Reponse.Refus -> r.message
+                is Reponse.Injoignable -> "Pas de réseau : le secteur n'a pas pu être embarqué."
+            }
+            embarquementEnCours = false
+        }
+    }
+
+    fun effacerSecteurDegats() { viewModelScope.launch { app.degats.effacerSecteur() } }
+
+    /**
+     * Un constat fini : il part en file avec ses photos (chacune réduite, datée, située, scellée,
+     * chiffrée), dans cet ordre — le serveur joint les photos au bien du constat.
+     */
+    fun constater(constat: Constat, libelle: String, photos: List<java.io.File>, position: Releve?, apres: () -> Unit) {
+        photoEnCours = true
+        viewModelScope.launch {
+            app.degats.constater(constat, libelle)
+            for (prise in photos) {
+                val prete = Photographe.preparer(prise, position, "", BuildConfig.VERSION_NAME)
+                if (prete == null) message = "Une photo n'a pas pu être lue : elle n'est pas jointe."
+                else app.degats.ajouterPhoto(constat.id, prete.first, prete.second, "Photo — $libelle")
+            }
+            photoEnCours = false
+            verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+            if (file.value.any { it.genre == ActionEnAttente.GENRE_CONSTAT && it.cible == constat.id }) {
+                message = "Constat gardé sur ce téléphone : il partira dès que le réseau reviendra."
+            }
+            apres()
+        }
+    }
+
     fun ajouterPhoto(dossier: Dossier, prise: java.io.File, position: Releve?, commentaire: String) {
         photoEnCours = true
         viewModelScope.launch {

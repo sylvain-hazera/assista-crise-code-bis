@@ -87,9 +87,9 @@ import org.maplibre.geojson.Point
  * clé, pas de style tiers à charger : le style tient dans cette chaîne. Les tuiles déjà
  * vues restent dans le cache de MapLibre et s'affichent sans réseau.
  */
-private const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","tiles":["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],"tileSize":256,"maxzoom":19,"attribution":"© IGN"}},"layers":[{"id":"ign","type":"raster","source":"ign"}]}"""
+internal const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","tiles":["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],"tileSize":256,"maxzoom":19,"attribution":"© IGN"}},"layers":[{"id":"ign","type":"raster","source":"ign"}]}"""
 
-private val FRANCE = LatLng(46.6, 2.4)
+internal val FRANCE = LatLng(46.6, 2.4)
 
 @SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceSuivi.autorise
 @Composable

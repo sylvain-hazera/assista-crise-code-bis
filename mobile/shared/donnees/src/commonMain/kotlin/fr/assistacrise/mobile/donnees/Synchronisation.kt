@@ -21,6 +21,7 @@ class Synchronisation(
     private val equipes: DepotEquipes,
     private val dossiers: DepotDossiers? = null,
     private val radio: EmetteurRadio? = null,
+    private val degats: DepotDegats? = null,
 ) {
     /**
      * Envoie ce qui attend, puis relit ce qui a changé — pour que l'affichage repose sur ce
@@ -65,11 +66,34 @@ class Synchronisation(
                 }
                 ActionEnAttente.GENRE_COMMENTAIRE -> api.commenter(action.cible, action.charge)
                 ActionEnAttente.GENRE_PHOTO -> envoyerPhoto(action)
+                ActionEnAttente.GENRE_CONSTAT -> api.envoyerConstat(action.charge)
+                ActionEnAttente.GENRE_PHOTO_CONSTAT -> envoyerPhotoConstat(action)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }
         }
         if (missionsTouchees) missions.rafraichir()
+        // Tout ce qui a été saisi dans le secteur embarqué est parti : il s'efface (décision du 20/11/2026).
+        degats?.apresSynchronisation()
         return accusees
+    }
+
+    private suspend fun envoyerPhotoConstat(action: ActionEnAttente): Reponse<Unit> {
+        val depot = degats ?: return Reponse.Refus(400, "Action inconnue de cette version de l'application.")
+        val photo = depot.lirePhoto(action) ?: return Reponse.Refus(400, "Photo illisible.")
+        val octets = depot.octets(photo) ?: return Reponse.Refus(400, "Les données de cette photo ne sont plus sur ce téléphone.")
+        return when (val r = api.envoyerPhotoConstat(action.cible, octets, photo.commentaire)) {
+            is Reponse.Ok -> {
+                val recue = r.valeur
+                if (recue != null && !recue.equals(photo.empreinte, ignoreCase = true)) {
+                    Reponse.Refus(409, "L'empreinte de la photo reçue par le serveur ne correspond pas à celle prise ici. Signalez-le à votre encadrement.")
+                } else {
+                    depot.oublierLesOctets(action)
+                    Reponse.Ok(Unit)
+                }
+            }
+            is Reponse.Refus -> r
+            is Reponse.Injoignable -> r
+        }
     }
 
     private suspend fun envoyerPhoto(action: ActionEnAttente): Reponse<Unit> {

@@ -32,6 +32,7 @@ import fr.assistacrise.mobile.ui.BarreDuBas
 import fr.assistacrise.mobile.domaine.Mode
 import fr.assistacrise.mobile.ui.EcranAide
 import fr.assistacrise.mobile.ui.EcranCarte
+import fr.assistacrise.mobile.ui.EcranDegats
 import fr.assistacrise.mobile.ui.EcranDepot
 import fr.assistacrise.mobile.ui.EcranDisponibilites
 import fr.assistacrise.mobile.ui.EcranDossier
@@ -126,6 +127,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.MESSAGERIE) { modele.aller(Ecran.EQUIPES) }
                 BackHandler(enabled = ecran == Ecran.DEPOT) { modele.fermerDepot() }
                 BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
+                BackHandler(enabled = ecran == Ecran.DEGATS) { modele.aller(Ecran.MISSIONS) }
                 BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
                 BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
@@ -152,6 +154,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.EQUIPES -> EcranEquipes(modele)
                             ecran == Ecran.MESSAGERIE -> EcranMessagerie(modele)
                             ecran == Ecran.CARTE -> EcranCarte(modele)
+                            ecran == Ecran.DEGATS -> EcranDegats(modele)
                             ecran == Ecran.AIDE -> EcranAide(modele)
                             ecran == Ecran.DEPOT -> EcranDepot(modele, compte!!)
                             ecran == Ecran.NOTIFICATIONS -> EcranNotifications(modele)

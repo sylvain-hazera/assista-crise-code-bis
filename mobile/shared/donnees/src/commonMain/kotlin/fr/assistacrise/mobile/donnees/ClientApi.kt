@@ -25,6 +25,10 @@ import fr.assistacrise.mobile.domaine.Mission
 import fr.assistacrise.mobile.domaine.Mobilisation
 import fr.assistacrise.mobile.domaine.Verdict
 import fr.assistacrise.mobile.domaine.StatutMission
+import fr.assistacrise.mobile.domaine.AdresseEmbarquee
+import fr.assistacrise.mobile.domaine.PointTournee
+import fr.assistacrise.mobile.domaine.SecteurEmbarque
+import fr.assistacrise.mobile.domaine.TypeBien
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.forms.MultiPartFormDataContent
@@ -302,6 +306,47 @@ class ClientApi(
             })
         }).sansValeur()
     }
+
+    // --- Évaluation des dégâts à pied (personnel municipal et élus) ---------------------
+
+    /** Les points à évaluer autour de moi, du plus proche au plus lointain. */
+    suspend fun tournee(crise: String, latitude: Double, longitude: Double, rayonM: Int = 150): Reponse<List<PointTournee>> =
+        authentifie(HttpMethod.Get, "habitations/tournee/?crise=$crise&latitude=$latitude&longitude=$longitude&rayon_m=$rayonM")
+            .transformer { e -> (e.jsonObject["points"] ?: JsonArray(emptyList())).let { json.decodeFromJsonElement(ListSerializer(PointTournee.serializer()), it) } }
+
+    /** Ce qu'il faut pour évaluer hors réseau autour d'un point (adresses, biens, dossiers, cercles). */
+    suspend fun secteurEmbarque(crise: String, latitude: Double, longitude: Double, rayonM: Int): Reponse<SecteurEmbarque> =
+        authentifie(HttpMethod.Get, "habitations/secteur/?crise=$crise&latitude=$latitude&longitude=$longitude&rayon_m=$rayonM")
+            .transformer { e ->
+                val o = e.jsonObject
+                // Les adresses arrivent compactes : [identifiant, libellé, latitude, longitude].
+                val adresses = (o["adresses"] as? JsonArray).orEmpty().mapNotNull { ligne ->
+                    val l = ligne as? JsonArray ?: return@mapNotNull null
+                    runCatching { AdresseEmbarquee(l[0].jsonPrimitive.content, l[1].jsonPrimitive.content,
+                                                   l[2].jsonPrimitive.content.toDouble(), l[3].jsonPrimitive.content.toDouble()) }.getOrNull()
+                }
+                json.decodeFromJsonElement(SecteurEmbarque.serializer(), JsonObject(o + ("adresses" to JsonArray(emptyList()))))
+                    .copy(adresses = adresses)
+            }
+
+    suspend fun typesBien(): Reponse<List<TypeBien>> = liste("types-bien/", TypeBien.serializer())
+
+    /** Envoie un constat (son identifiant est tiré sur le téléphone : un renvoi ne double rien). */
+    suspend fun envoyerConstat(charge: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(charge).jsonObject }.getOrNull() ?: return Reponse.Refus(400, "Constat illisible.")
+        return authentifie(HttpMethod.Post, "habitations/constat/", objet).sansValeur()
+    }
+
+    /** Joint une photo à un constat déjà reçu ; la réponse porte l'empreinte calculée par le serveur. */
+    suspend fun envoyerPhotoConstat(constat: String, octets: ByteArray, commentaire: String): Reponse<String?> =
+        authentifie(HttpMethod.Post, "habitations/constat-photo/", formulaire = formData {
+            append("constat", constat)
+            append("commentaire", commentaire)
+            append("fichier", octets, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"photo.jpg\"")
+            })
+        }).transformer { (it.jsonObject["empreinte"] as? JsonPrimitive)?.content }
 
     // --- Notifications ------------------------------------------------------------------
 

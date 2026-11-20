@@ -8155,20 +8155,32 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             nature = ""
 
         ban_id = (request.data.get('ban_id') or "").strip() or None
+        # Un bien déjà référencé, sans adresse (une voiture vue la veille) : réévalué, pas doublé.
+        existant = None
+        if request.data.get('habitation'):
+            try:
+                existant = Habitation.objects.filter(pk=uuid.UUID(str(request.data['habitation'])), crise=crise,
+                                                     fusionne_dans__isnull=True).first()
+            except (TypeError, ValueError):
+                existant = None
+            if existant is None:
+                return Response({"error": "Bien inconnu pour cette crise."}, status=status.HTTP_400_BAD_REQUEST)
+            ban_id = existant.ban_id or ban_id
         latitude = _flottant(request.data.get('latitude'), -90, 90)
         longitude = _flottant(request.data.get('longitude'), -180, 180)
         lieu = Point(longitude, latitude, srid=4326) if latitude is not None and longitude is not None else None
         adresse_ban = AdresseBAN.objects.filter(pk=ban_id, retiree_le__isnull=True).first() if ban_id else None
         if ban_id and adresse_ban is None:
             return Response({"error": "Adresse inconnue du référentiel."}, status=status.HTTP_400_BAD_REQUEST)
-        if adresse_ban is None and lieu is None:
+        if adresse_ban is None and lieu is None and existant is None:
             return Response({"error": "ban_id, ou latitude et longitude d'un point nouveau."}, status=status.HTTP_400_BAD_REQUEST)
-        commune_code = adresse_ban.commune_code if adresse_ban else commune_code_from_point(lieu)
+        commune_code = (existant.commune_code if existant else None) or (
+            adresse_ban.commune_code if adresse_ban else commune_code_from_point(lieu))
         if not terrain.peut_evaluer(request, commune_code, crise):
             raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
         modules = list(ModuleDegatsCrise.objects.filter(crise=crise, institution=request.user.institution, actif=True)) \
             if getattr(request.user, 'institution', None) else []
-        position = lieu or adresse_ban.location
+        position = lieu or (adresse_ban.location if adresse_ban else existant.location)
         if modules and not any(commune_dans_zone_module(commune_code, position, m) for m in modules):
             raise PermissionDenied("Ce point est hors de la zone définie pour le suivi des dégâts.")
         try:
@@ -8180,9 +8192,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         constate_le = terrain.heure_du_constat(request.data.get('constate_le'))
         description = " ".join(str(request.data.get('description') or "").split())[:200]
         with transaction.atomic():
-            nouveau = adresse_ban is None
-            habitation = None if nouveau else Habitation.objects.filter(
-                crise=crise, environment=environment, ban_id=ban_id, fusionne_dans__isnull=True).first()
+            nouveau = adresse_ban is None and existant is None
+            habitation = existant or (None if nouveau else Habitation.objects.filter(
+                crise=crise, environment=environment, ban_id=ban_id, fusionne_dans__isnull=True).first())
             if habitation is None:
                 if nouveau:
                     libelle = " — ".join(p for p in ((type_bien.nom if type_bien else ""), description) if p) \

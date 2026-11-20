@@ -62,8 +62,8 @@ tout remonter au retour du lien.
 | Position en mission | ✅ | ❌ | 🟡 gardée | la position par radio |
 | Fond de carte | ✅ IGN | 🟡 tuiles déjà vues | 🟡 tuiles déjà vues | bouton « embarquer ce secteur » ; ou le PMTiles du satellite |
 | Basculer vers le serveur du satellite (Wi-Fi du satellite, adresse locale) | — | ❌ | voir § 5.3 |
-| **Évaluation des dégâts** | ❌ (sur le site seulement) | ❌ | ❌ | tout le § 4 |
-| **Adresses préchargées** | ❌ | ❌ | ❌ | § 4 |
+| **Évaluation des dégâts** | ✅ | 🟡 file d'attente (bascule vers le satellite non faite) | ✅ secteur embarqué, file | essai sur un vrai téléphone |
+| **Adresses préchargées** | ✅ | ✅ dans le secteur embarqué | ✅ dans le secteur embarqué | — |
 | Secteurs des personnes vulnérables | ❌ | ❌ | ❌ | afficher les cercles, sans identité |
 | Notifications (mobilisation, alertes) | ✅ | ❌ | ❌ | par nature ; la radio peut porter une alerte courte |
 

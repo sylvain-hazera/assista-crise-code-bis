@@ -200,3 +200,16 @@ class TestPourLApplication:
         with patch("core.views.commune_code_from_point", return_value=COMMUNE):
             assert terrain["autre"].get("/api/habitations/secteur/", {"crise": str(terrain["feu"].id), "latitude": 44.87,
                                                                       "longitude": -1.2}).status_code == 403
+
+
+@pytest.mark.django_db
+class TestReevaluer:
+    def test_un_bien_sans_adresse_se_reevalue_sans_doublon(self, terrain):
+        vehicule = TypeBien.objects.get(cle="vehicule")
+        premier, _ = _constat(terrain["elue"], terrain["feu"], latitude=44.871, longitude=-1.205, type_bien=str(vehicule.id),
+                              statut_evaluation="DEGATS_FORTS")
+        encore, _ = _constat(terrain["elue"], terrain["feu"], habitation=premier.data["id"], statut_evaluation="DETRUITE")
+        assert encore.status_code == 201, encore.data
+        assert Habitation.objects.count() == 1 and Habitation.objects.get().statut_evaluation == "DETRUITE"
+        assert ConstatTerrain.objects.filter(habitation_id=premier.data["id"]).count() == 2
+        assert encore.data["rapprochements_proposes"] == 0

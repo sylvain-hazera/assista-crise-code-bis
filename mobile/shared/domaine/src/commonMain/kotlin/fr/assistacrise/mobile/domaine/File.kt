@@ -51,6 +51,14 @@ data class ActionEnAttente(
 
         /** Une photo de dossier : `cible` est le dossier, `charge` un `PhotoEnAttente` en JSON. */
         const val GENRE_PHOTO = "PHOTO"
+
+        /** Un constat de dégâts fait à pied : `cible` est l'identifiant du constat (tiré ici),
+         * `charge` le `Constat` en JSON. */
+        const val GENRE_CONSTAT = "CONSTAT"
+
+        /** Une photo prise pendant un constat : `cible` est le constat, `charge` un `PhotoEnAttente`.
+         * Elle part après son constat (la file garde l'ordre) : le serveur la joint au bien. */
+        const val GENRE_PHOTO_CONSTAT = "PHOTO_CONSTAT"
     }
 }
 

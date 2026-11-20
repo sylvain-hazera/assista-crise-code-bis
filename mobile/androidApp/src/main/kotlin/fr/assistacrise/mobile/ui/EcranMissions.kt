@@ -92,6 +92,13 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             }
             OutlinedButton(onClick = modele::ouvrirScanner, modifier = Modifier.weight(1f)) { Text("Lire un QR code") }
         }
+        // Le personnel municipal et les élus évaluent les dégâts à pied.
+        val compteMissions by modele.compte.collectAsStateWithLifecycle()
+        if (compteMissions?.evalueLesDegats == true) {
+            Button(onClick = modele::ouvrirDegats, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+                Text("Évaluer les dégâts")
+            }
+        }
 
         // Ce qui attend d'être envoyé est toujours sous les yeux, pas dans un sous-menu.
         if (enAttente > 0 || refusees > 0) {
