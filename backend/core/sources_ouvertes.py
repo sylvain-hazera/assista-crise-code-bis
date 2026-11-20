@@ -63,6 +63,9 @@ SOURCES = {
         # minute si une image est parue -- pas par le cron de dix minutes, trop lent.
         Source("ORAGES_RADAR", "Orages et pluies intenses (radar)", orages.relever,
                datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
+        # La Réunion (20/11/2026) : sa propre mosaïque, même service, même analyse.
+        Source("ORAGES_RADAR_REUNION", "Orages et pluies intenses (radar, La Réunion)", orages.relever_reunion,
+               datetime.timedelta(minutes=1), orages.FRAICHEUR_MAX, "Météo-France"),
         # Éclairs vus par le satellite MTG (19/11/2026) : même service que les orages, un
         # produit par tranche de dix minutes, paru dix à vingt minutes après coup.
         Source("FOUDRE_MTG", "Éclairs vus par satellite (MTG)", foudre.relever,
@@ -189,7 +192,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR", "FEUX_MTG"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "ORAGES_RADAR_REUNION", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR", "FEUX_MTG"}
 
 
 def etat(code):

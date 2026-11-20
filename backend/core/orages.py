@@ -48,7 +48,22 @@ from . import meteo_france
 
 logger = logging.getLogger(__name__)
 
-URL = "https://public-api.meteofrance.fr/public/DPRadar/v1/mosaiques/METROPOLE/observations/LAME_D_EAU"
+URL_MOSAIQUES = "https://public-api.meteofrance.fr/public/DPRadar/v1/mosaiques"
+URL = f"{URL_MOSAIQUES}/METROPOLE/observations/LAME_D_EAU"
+#: Les mosaïques analysées (20/11/2026). Même produit, même format HDF5 ODIM à 500 m ; seules la
+#: grille et la projection changent, et le fichier les décrit lui-même. La Réunion : deux radars
+#: (Colorado et Piton Villers), Mercator, 2300 × 2000 points de 51° E à 62° E — vérifié sur une
+#: image réelle le 20/11/2026. Ce que Météo-France PRÉVOIT sous une cellule (AROME-PI) n'existe
+#: qu'en métropole, de même que le Doppler et la trace d'analyse gardée trente jours.
+ZONES = {
+    "METROPOLE": {"source": "ORAGES_RADAR", "libelle": "Métropole", "arome_pi": True},
+    "REUNION": {"source": "ORAGES_RADAR_REUNION", "libelle": "La Réunion", "arome_pi": False},
+}
+ZONE_PAR_DEFAUT = "METROPOLE"
+
+
+def url_zone(zone):
+    return f"{URL_MOSAIQUES}/{zone}/observations/LAME_D_EAU"
 DELAI_REPONSE_S = 60
 
 #: Pluie à partir de laquelle on parle de cellule de pluie intense (mm/h). 30 mm/h est le seuil
@@ -139,10 +154,10 @@ class GrilleRadar:
 
 # ── Lecture ──────────────────────────────────────────────────────────────────
 
-def heure_disponible():
+def heure_disponible(zone=ZONE_PAR_DEFAUT):
     """Heure (UTC) de la dernière image publiée, lue dans la fiche — sans la télécharger."""
     cle = meteo_france.lire_cle()
-    r = requests.get(URL, headers={"apikey": cle, "accept": "application/json"}, timeout=DELAI_REPONSE_S)
+    r = requests.get(url_zone(zone), headers={"apikey": cle, "accept": "application/json"}, timeout=DELAI_REPONSE_S)
     r.raise_for_status()
     for lien in r.json().get("links", []):
         if lien.get("type") == "application/x-hdf" and lien.get("validity_time"):
@@ -150,9 +165,9 @@ def heure_disponible():
     raise ValueError("Fiche radar sans heure de validité pour la maille de 500 m.")
 
 
-def telecharger():
+def telecharger(zone=ZONE_PAR_DEFAUT):
     cle = meteo_france.lire_cle()
-    r = requests.get(f"{URL}/produit", params={"maille": "500"},
+    r = requests.get(f"{url_zone(zone)}/produit", params={"maille": "500"},
                      headers={"apikey": cle, "accept": "*/*"}, timeout=DELAI_REPONSE_S)
     r.raise_for_status()
     return r.content
@@ -331,8 +346,18 @@ class IndexCommunes:
     def pour(cls, grille):
         cle = (grille.projdef, round(grille.x0), round(grille.y0), grille.forme)
         if cle not in cls._cache:
-            cls._cache = {cle: cls(grille)}
+            if len(cls._cache) >= len(ZONES):      # une grille par mosaïque, pas davantage
+                cls._cache = {}
+            cls._cache[cle] = cls(grille)
         return cls._cache[cle]
+
+    def codes_dans_la_grille(self, forme):
+        """Codes des communes dont le centre tombe dans la grille : celles dont cette mosaïque
+        répond (les cumuls et estimations des autres mosaïques n'y sont pas touchés)."""
+        import numpy
+        h, w = forme
+        dedans = (self.lignes >= 0) & (self.lignes < h) & (self.colonnes >= 0) & (self.colonnes < w)
+        return {self.codes[i] for i in numpy.nonzero(dedans)[0]}
 
     def dans_masque(self, masque, decalage=(0.0, 0.0), parmi=None):
         """Indices des communes dont le centre tombe dans `masque` décalé de `decalage`."""
@@ -505,7 +530,7 @@ def _polygone(grille, lignes, colonnes, decalages=((0.0, 0.0),)):
 
 
 def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes=(), avec_diagnostic_grele=False,
-             champ_mouvement=None, noyaux=None):
+             champ_mouvement=None, noyaux=None, avec_arome_pi=True):
     """Analyse une image : rend la liste des cellules, prêtes à enregistrer.
 
     `noyaux` : les noyaux de la dernière image suivis par tobac sur l'heure (core/suivi_tobac),
@@ -583,7 +608,8 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
             and orientation is not None and 45 <= abs(((cap - orientation) + 180) % 360 - 180) <= 135)
         sommets = list(contour.exterior_ring.coords)[:-1]
         echantillon = [centre_geo] + sommets[::max(1, len(sommets) // 12)]
-        prevision = prevu_par_meteo_france(echantillon, grille.heure)
+        prevision = (prevu_par_meteo_france(echantillon, grille.heure) if avec_arome_pi
+                     else {"grele": False, "rafale_kmh": None, "echeance": None})
         # [heure, lat, lon, intensité maximale] : l'intensité permet de colorer la trajectoire
         # (20/11/2026 ; les points plus anciens n'en ont pas).
         trace = (trace + [[grille.heure.isoformat(), round(centre_geo[1], 4), round(centre_geo[0], 4),
@@ -635,7 +661,7 @@ def analyser(grille, precedente=None, minutes_ecoulees=5.0, cellules_precedentes
     return resultat
 
 
-def enregistrer(grille, analyse, maintenant=None):
+def enregistrer(grille, analyse, maintenant=None, zone=ZONE_PAR_DEFAUT):
     """Remplace les cellules en cours, garde l'image (pour le prochain déplacement) et une trace
     résumée de l'analyse (pour régler les seuils)."""
     from django.contrib.gis.geos import Point
@@ -645,9 +671,9 @@ def enregistrer(grille, analyse, maintenant=None):
     maintenant = maintenant or timezone.now()
     hauteur, largeur = grille.forme
     with transaction.atomic():
-        CelluleOrage.objects.all().delete()
+        CelluleOrage.objects.filter(zone=zone).delete()
         CelluleOrage.objects.bulk_create([CelluleOrage(
-            identifiant=c["identifiant"], heure_image=grille.heure,
+            identifiant=c["identifiant"], zone=zone, heure_image=grille.heure,
             centre=Point(*c["centre_geo"], srid=4326), contour=c["contour"], couloir=c["couloir"],
             ligne=c["centre"][0], colonne=c["centre"][1],
             vitesse_lignes=c["vitesse"][0] if c["vitesse"] else None,
@@ -661,12 +687,16 @@ def enregistrer(grille, analyse, maintenant=None):
             grele_diagnostic_kgm2=c.get("grele_diagnostic_kgm2"), eclairs=c.get("eclairs"),
             suivi=c.get("suivi"),
         ) for c in analyse])
-        ImageRadarOrage.objects.update_or_create(heure=grille.heure, defaults={
+        ImageRadarOrage.objects.update_or_create(zone=zone, heure=grille.heure, defaults={
             "largeur": largeur, "hauteur": hauteur, "projdef": grille.projdef,
             "x0": grille.x0, "y0": grille.y0, "grille": grille.compacte(),
             "radars": grille.radars, "radars_absents": grille.absents, "releve_le": maintenant})
-        anciennes = ImageRadarOrage.objects.order_by("-heure").values_list("heure", flat=True)[IMAGES_GARDEES:]
-        ImageRadarOrage.objects.filter(heure__in=list(anciennes)).delete()
+        anciennes = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").values_list("heure", flat=True)[IMAGES_GARDEES:]
+        ImageRadarOrage.objects.filter(zone=zone, heure__in=list(anciennes)).delete()
+        if zone != ZONE_PAR_DEFAUT:
+            # La trace de trente jours sert à régler les seuils sur la métropole ; son heure est
+            # sa clé, une autre mosaïque l'écraserait.
+            return len(analyse)
         AnalyseOrages.objects.update_or_create(heure=grille.heure, defaults={
             "radars_absents": grille.absents,
             "cellules": [{k: c[k] for k in ("identifiant", "max_mmh", "surface_km2", "vitesse_kmh", "cap_deg",
@@ -681,19 +711,24 @@ def enregistrer(grille, analyse, maintenant=None):
     return len(analyse)
 
 
-def relever(maintenant=None):
-    """Analyse la dernière image radar si elle est nouvelle. Rend le nombre de cellules en cours. Lève une exception si l'image n'a pas changé depuis trop
+def relever_reunion(maintenant=None):
+    return relever(maintenant, zone="REUNION")
+
+
+def relever(maintenant=None, zone=ZONE_PAR_DEFAUT):
+    """Analyse la dernière image radar de la mosaïque `zone` si elle est nouvelle. Rend le nombre de cellules en cours. Lève une exception si l'image n'a pas changé depuis trop
     longtemps : la trace de la veille le dira, la supervision aussi."""
     from .models import CelluleOrage, ImageRadarOrage
 
     maintenant = maintenant or timezone.now()
-    heure = heure_disponible()
-    derniere = ImageRadarOrage.objects.order_by("-heure").first()
+    heure = heure_disponible(zone)
+    images = ImageRadarOrage.objects.filter(zone=zone)
+    derniere = images.order_by("-heure").first()
     if derniere is not None and derniere.heure >= heure:
         if maintenant - heure > FRAICHEUR_MAX:
             raise RuntimeError(f"Image radar inchangée depuis {heure:%H:%M} UTC.")
-        return CelluleOrage.objects.count()     # déjà analysée : la trace garde le bon compte
-    grille = lire(telecharger())
+        return CelluleOrage.objects.filter(zone=zone).count()     # déjà analysée : la trace garde le bon compte
+    grille = lire(telecharger(zone))
     precedente, minutes = None, 5.0
     if derniere is not None and derniere.largeur == grille.forme[1] and derniere.hauteur == grille.forme[0]:
         minutes = (grille.heure - derniere.heure).total_seconds() / 60
@@ -703,7 +738,7 @@ def relever(maintenant=None):
     successives = []
     if precedente is not None and abs(minutes - 5) < 1:
         successives = [precedente, grille.taux]
-        avant = ImageRadarOrage.objects.filter(heure=derniere.heure - datetime.timedelta(minutes=5)).first()
+        avant = images.filter(heure=derniere.heure - datetime.timedelta(minutes=5)).first()
         if avant is not None and avant.largeur == derniere.largeur and avant.hauteur == derniere.hauteur:
             successives.insert(0, GrilleRadar.depuis_compacte(avant.grille, avant.largeur, avant.hauteur))
     champ = None
@@ -713,31 +748,33 @@ def relever(maintenant=None):
             champ = prevision_immediate.champ_de_deplacement(successives)
         except Exception:
             logger.exception("Flux optique impossible : repli sur la corrélation de phase.")
-    noyaux = suivre_sur_l_heure(grille, derniere, precedente)
+    noyaux = suivre_sur_l_heure(grille, derniere, precedente, zone)
     anciennes = [{"identifiant": c.identifiant, "centre": (c.ligne, c.colonne), "max_mmh": c.max_mmh,
                   "vitesse": (c.vitesse_lignes, c.vitesse_colonnes) if c.vitesse_lignes is not None else None,
-                  "trace": c.trace} for c in CelluleOrage.objects.all()] if precedente is not None else []
-    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=True, champ_mouvement=champ,
-                       noyaux=noyaux)
-    nombre = enregistrer(grille, analyse, maintenant)
+                  "trace": c.trace} for c in CelluleOrage.objects.filter(zone=zone)] if precedente is not None else []
+    arome_pi = ZONES[zone]["arome_pi"]
+    analyse = analyser(grille, precedente, minutes, anciennes, avec_diagnostic_grele=arome_pi, champ_mouvement=champ,
+                       noyaux=noyaux, avec_arome_pi=arome_pi)
+    nombre = enregistrer(grille, analyse, maintenant, zone)
     if champ is not None:
         from . import prevision_immediate
         try:
             prevue = prevision_immediate.extrapoler(grille.taux, champ)
-            prevision_immediate.enregistrer_images(grille, prevue, maintenant)
-            prevision_immediate.enregistrer(grille.heure, prevision_immediate.par_commune(prevue, IndexCommunes.pour(grille)),
-                                            maintenant)
+            prevision_immediate.enregistrer_images(grille, prevue, maintenant, zone)
+            index = IndexCommunes.pour(grille)
+            prevision_immediate.enregistrer(grille.heure, prevision_immediate.par_commune(prevue, index),
+                                            maintenant, codes=index.codes_dans_la_grille(grille.forme))
         except Exception:
             logger.exception("Prévision immédiate par commune non calculée.")
     try:
-        cumuler_pluie(grille, maintenant)
+        cumuler_pluie(grille, maintenant, zone)
     except Exception:
         # Les cumuls ne doivent pas faire échouer l'analyse des orages.
         logger.exception("Cumuls de pluie par commune non calculés.")
     return nombre
 
 
-def suivre_sur_l_heure(grille, derniere, precedente):
+def suivre_sur_l_heure(grille, derniere, precedente, zone=ZONE_PAR_DEFAUT):
     """Noyaux de l'image courante suivis par tobac sur les images consécutives de l'heure
     écoulée (même grille, pas de cinq minutes), ou None si tobac manque ou échoue."""
     from . import suivi_tobac
@@ -748,7 +785,7 @@ def suivre_sur_l_heure(grille, derniere, precedente):
     grilles, heures = [grille.taux], [grille.heure]
     if precedente is not None and derniere is not None and grille.heure - derniere.heure == datetime.timedelta(minutes=5):
         images = {i.heure: i for i in ImageRadarOrage.objects.filter(
-            heure__gte=grille.heure - datetime.timedelta(minutes=5 * (suivi_tobac.IMAGES_MAX - 1)),
+            zone=zone, heure__gte=grille.heure - datetime.timedelta(minutes=5 * (suivi_tobac.IMAGES_MAX - 1)),
             heure__lt=grille.heure)}
         heure = grille.heure - datetime.timedelta(minutes=5)
         while heure in images and images[heure].largeur == grille.forme[1] and images[heure].hauteur == grille.forme[0]:
@@ -773,7 +810,7 @@ FENETRES_CUMUL = {"1h": 12, "3h": 36, "24h": 288}
 SEUILS_CUMUL_MM = {"1h": 30, "3h": 50, "24h": 80}
 
 
-def cumuler_pluie(grille, maintenant=None):
+def cumuler_pluie(grille, maintenant=None, zone=ZONE_PAR_DEFAUT):
     """Pluie tombée en cinq minutes au centre de chaque commune (moyenne sur 3 × 3 km), gardée
     25 heures, puis cumuls glissants 1 h / 3 h / 24 h. Seules les communes où il a plu sont
     écrites : une nuit sèche ne fait pas 35 000 lignes."""
@@ -792,6 +829,11 @@ def cumuler_pluie(grille, maintenant=None):
         mm = float(lissee[index.lignes[i], index.colonnes[i]])
         if mm >= 0.05:
             valeurs[index.codes[i]] = round(mm, 1)
+    # Une ligne par heure pour toutes les mosaïques : les communes de celle-ci y remplacent les
+    # leurs, celles des autres mosaïques (publiées à la même heure) restent.
+    miennes = index.codes_dans_la_grille(grille.forme)
+    existante = PluieCommunesImage.objects.filter(heure=grille.heure).values_list("valeurs", flat=True).first() or {}
+    valeurs = {code: mm for code, mm in existante.items() if code not in miennes} | valeurs
     PluieCommunesImage.objects.update_or_create(heure=grille.heure, defaults={"valeurs": valeurs})
     PluieCommunesImage.objects.filter(heure__lt=grille.heure - datetime.timedelta(hours=25)).delete()
 
@@ -814,15 +856,15 @@ def cumuler_pluie(grille, maintenant=None):
         CumulPluieCommune.objects.bulk_create([CumulPluieCommune(
             commune_code=code, mm_1h=round(s[0], 1), mm_3h=round(s[1], 1), mm_24h=round(s[2], 1),
             heure=grille.heure) for code, s in sommes.items() if s[2] >= 0.5], batch_size=2000)
-    _ecrire_disponibilite(disponibles, grille.heure)
+    _ecrire_disponibilite(disponibles, grille.heure, zone)
     return len(sommes)
 
 
-def _ecrire_disponibilite(disponibles, heure):
+def _ecrire_disponibilite(disponibles, heure, zone=ZONE_PAR_DEFAUT):
     """Combien d'images chaque fenêtre de cumul contient vraiment (un service relancé depuis
     une heure n'a pas de cumul sur 24 h) : gardé sur la dernière image."""
     from .models import ImageRadarOrage
-    ImageRadarOrage.objects.filter(heure=heure).update(images_par_fenetre=disponibles)
+    ImageRadarOrage.objects.filter(zone=zone, heure=heure).update(images_par_fenetre=disponibles)
 
 
 def palier(mmh):

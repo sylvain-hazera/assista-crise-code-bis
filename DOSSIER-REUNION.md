@@ -31,7 +31,7 @@ coupe) · 🟡 à construire (source trouvée, autre format) · 🔴 pas de sour
 | **Foudre (MTG)** | 0 | notre emprise s'arrête à la métropole ; le satellite voit jusqu'à 60° E (vérifié) | emprise de l'île ajoutée, marge en mer (20/11/2026) | ✅ |
 | **Foyers de feu (FIRMS)** | 0 | nous ne lisons que le fichier « Europe » | fichier « Southern_Africa » lu, l'île seule gardée (20/11/2026) | ✅ |
 | **Feux en cours (géostationnaire)** | 0 | MTG ne traite les feux que jusqu'à 50° E (vérifié sur juillet) | **MSG IODC** (océan Indien) : même compte LSA SAF, une liste toutes les 15 min, format HDF5 | 🟡 |
-| **Orages et pluie observée (radar)** | 0 | l'analyse ne lit que la mosaïque métropole | la mosaïque **REUNION** existe chez Météo-France (vérifié) ; autre grille, autres radars | 🟡 |
+| **Orages et pluie observée (radar)** | 0 | l'analyse ne lit que la mosaïque métropole | mosaïque **REUNION** analysée comme la métropole (20/11/2026) : image et boucle sur la carte, cellules, cumuls par commune, nos estimations de l'heure qui vient ; sans AROME-PI ni Doppler | ✅ |
 | **Doppler** | exclu volontairement | radars d'outre-mer écartés tant que leurs cellules ne sont pas analysées | suit le radar | 🟡 |
 | **Pluie, rafales, neige prévues (prévision immédiate)** | 0 | AROME-PI ne couvre que la métropole | AROME outre-mer (océan Indien) : nom du produit à trouver sur le portail Météo-France | 🟡 |
 | **Vent animé** | 0 | ARPEGE Europe | ARPEGE mondial (0,25°) | 🟡 |
@@ -52,7 +52,7 @@ coupe) · 🟡 à construire (source trouvée, autre format) · 🔴 pas de sour
 1. **Les trois corrections faciles** : foudre MTG et foyers FIRMS sur l'île, et la création de
    l'institution réunionnaise (qui charge sites sensibles, Géorisques et, avec le lot A,
    les adresses).
-2. **Radar REUNION** : orages, pluie observée, boucle, puis Doppler.
+2. ~~**Radar REUNION**~~ : fait le 20/11/2026 (Doppler exclu).
 3. **Feux MSG IODC** : même suivi que MTG, autre satellite.
 4. **Prévision immédiate outre-mer et ARPEGE mondial** : après avoir trouvé les produits sur le
    portail Météo-France.

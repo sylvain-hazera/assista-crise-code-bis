@@ -546,7 +546,10 @@ def relever(maintenant=None):
     maintenant = maintenant or timezone.now()
     mettre_a_jour_radars(maintenant)
     radars = list(RadarMeteo.objects.all())
-    cellules = list(CelluleOrage.objects.filter(max_mmh__gte=INTENSITE_MIN_MMH).order_by("-max_mmh")[:CELLULES_MAX])
+    # Radars de métropole seulement (STATIONS_METROPOLE_MAX) : les cellules d'outre-mer n'ont
+    # rien à attendre d'eux et prendraient la place des autres.
+    cellules = list(CelluleOrage.objects.filter(zone="METROPOLE", max_mmh__gte=INTENSITE_MIN_MMH)
+                    .order_by("-max_mmh")[:CELLULES_MAX])
     if not cellules or not radars:
         return 0
     besoins = {}

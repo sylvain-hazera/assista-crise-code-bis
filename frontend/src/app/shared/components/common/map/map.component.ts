@@ -1307,19 +1307,23 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   get imageBoucle() { return this.boucleRadar[this.indiceBoucle] ?? null; }
 
   private chargerPluieRadar(): void {
-    this.veilleService.pluieRadar().subscribe({
+    // La mosaïque de l'endroit que la carte regarde : déplacer la carte vers La Réunion fait
+    // passer à son radar au rafraîchissement suivant.
+    const c = this.map?.getCenter();
+    this.veilleService.pluieRadar(c ? { lat: c.lat, lon: c.lng } : undefined).subscribe({
       next: (reponse) => {
-        const nouvelle = reponse.heure !== this.pluieRadar?.heure;
+        const zone = reponse.zone ?? 'METROPOLE';
+        const nouvelle = reponse.heure !== this.pluieRadar?.heure || zone !== (this.pluieRadar?.zone ?? 'METROPOLE');
         this.pluieRadar = reponse;
         if (!nouvelle || !reponse.heure || !reponse.coins) return;
         const etaitMaintenant = !this.boucleRadar.length || this.indiceBoucle === this.indiceMaintenant;
         const base = reponse.heure;
         this.boucleRadar = [
           ...(reponse.passees?.length ? reponse.passees : [base]).map(h => ({
-            url: this.veilleService.imagePluieRadarUrl(h), instant: new Date(h).getTime(), heure: h,
+            url: this.veilleService.imagePluieRadarUrl(h, zone), instant: new Date(h).getTime(), heure: h,
             estimation: false, minutes: 0 })),
           ...(reponse.estimees ?? []).map(e => ({
-            url: this.veilleService.imagePluieEstimeeUrl(e.minutes, base), instant: new Date(e.echeance).getTime(),
+            url: this.veilleService.imagePluieEstimeeUrl(e.minutes, base, zone), instant: new Date(e.echeance).getTime(),
             heure: e.echeance, estimation: true, minutes: e.minutes })),
         ];
         // Images chargées d'avance : la lecture ne s'arrête pas sur chaque image.

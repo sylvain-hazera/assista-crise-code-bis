@@ -3250,6 +3250,8 @@ class CelluleOrage(models.Model):
     chaque image. Donnée publique partagée PROD/DEMO."""
 
     identifiant = models.CharField(max_length=12, help_text="Stable d'une image à l'autre tant que la cellule est suivie.")
+    # Mosaïque radar d'où vient la cellule (core/orages.ZONES) : métropole, La Réunion…
+    zone = models.CharField(max_length=12, default="METROPOLE", db_index=True)
     heure_image = models.DateTimeField()
     centre = gis_models.PointField(srid=4326)
     contour = gis_models.PolygonField(srid=4326)
@@ -3299,9 +3301,10 @@ class CelluleOrage(models.Model):
 
 class ImageRadarOrage(models.Model):
     """Les dernières images radar, ramenées à 1 km et compactées : il en faut deux pour estimer
-    un déplacement (core/orages.py). Trois lignes au plus."""
+    un déplacement (core/orages.py). Une heure d'images par mosaïque (`zone`)."""
 
-    heure = models.DateTimeField(primary_key=True)
+    zone = models.CharField(max_length=12, default="METROPOLE")
+    heure = models.DateTimeField()
     largeur = models.PositiveIntegerField()
     hauteur = models.PositiveIntegerField()
     projdef = models.CharField(max_length=300)
@@ -3313,6 +3316,9 @@ class ImageRadarOrage(models.Model):
     # Nombre d'images que contient chaque fenêtre de cumul de pluie ({"1h": 12, …}).
     images_par_fenetre = models.JSONField(default=dict, blank=True)
     releve_le = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["zone", "heure"], name="image_radar_zone_heure")]
 
 
 class ImpactFoudre(models.Model):
@@ -3386,7 +3392,8 @@ class ImageRadarEstimee(models.Model):
     par pas de cinq minutes, de +5 à +60, remplacées à chaque image observée. Grille compacte
     comme ImageRadarOrage (mm/h plafonné à 254)."""
 
-    minutes = models.PositiveSmallIntegerField(primary_key=True)
+    zone = models.CharField(max_length=12, default="METROPOLE")
+    minutes = models.PositiveSmallIntegerField()
     heure_base = models.DateTimeField(help_text="Heure de l'image observée dont elle est extrapolée.")
     largeur = models.PositiveIntegerField()
     hauteur = models.PositiveIntegerField()
@@ -3395,6 +3402,9 @@ class ImageRadarEstimee(models.Model):
     y0 = models.FloatField()
     grille = models.BinaryField()
     releve_le = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["zone", "minutes"], name="image_radar_estimee_zone_minutes")]
 
 
 class AdresseBAN(models.Model):

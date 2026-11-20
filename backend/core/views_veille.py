@@ -104,6 +104,41 @@ def _emprise(request, rayon_defaut=None):
     return emprise, {"latitude": latitude, "longitude": longitude}, rayon
 
 
+#: Emprise de chaque mosaïque radar hors métropole (ouest, sud, est, nord), pour choisir celle qui
+#: répond à une position : la grille de La Réunion telle que le fichier la décrit.
+EMPRISES_ZONES_RADAR = {"REUNION": (51.0, -25.0, 62.0, -16.0)}
+
+
+def _zone_radar_au_point(longitude, latitude):
+    for zone, (ouest, sud, est, nord) in EMPRISES_ZONES_RADAR.items():
+        if ouest <= longitude <= est and sud <= latitude <= nord:
+            return zone
+    return "METROPOLE"
+
+
+def _zone_radar(request):
+    """La mosaïque radar qui répond à la demande : `zone` si elle est donnée, sinon celle qui
+    contient la position demandée (`lat`/`lon` ou le centre de `bbox`), sinon celle de la commune
+    de l'institution de l'appelant ; la métropole à défaut."""
+    from . import orages
+    zone = (request.query_params.get("zone") or "").upper()
+    if zone in orages.ZONES:
+        return zone
+    latitude, longitude = _nombre(request.query_params.get("lat")), _nombre(request.query_params.get("lon"))
+    if (latitude is None or longitude is None) and request.query_params.get("bbox"):
+        bornes = [_nombre(v) for v in request.query_params["bbox"].split(",")]
+        if len(bornes) == 4 and None not in bornes:
+            longitude, latitude = (bornes[0] + bornes[2]) / 2, (bornes[1] + bornes[3]) / 2
+    if latitude is None or longitude is None:
+        institution = _institution_de_l_appelant(request)
+        commune = (Commune.objects.filter(code=institution.commune_code).first()
+                   if institution and institution.commune_code else None)
+        if commune is None or commune.centre_latitude is None or commune.centre_longitude is None:
+            return orages.ZONE_PAR_DEFAUT
+        latitude, longitude = commune.centre_latitude, commune.centre_longitude
+    return _zone_radar_au_point(longitude, latitude)
+
+
 def _entete(code, centre, rayon):
     return {**sources_ouvertes.resume(code), "centre": centre, "rayon_km": rayon}
 
@@ -414,7 +449,8 @@ class OragesView(APIView):
         from . import orages
         from .models import CelluleOrage, ImageRadarOrage
 
-        image = ImageRadarOrage.objects.order_by("-heure").first()
+        zone = orages.ZONE_PAR_DEFAUT if request.query_params.get("france") else _zone_radar(request)
+        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first()
         cellules = CelluleOrage.objects.all()
         centre, rayon, couvert, emprise = None, None, None, None
         if not request.query_params.get("france"):
@@ -539,7 +575,8 @@ class OragesView(APIView):
             "blitzortung": blitzortung,
             "foudre": foudre,
             "cumuls": cumuls,
-            **sources_ouvertes.resume("ORAGES_RADAR"),
+            **sources_ouvertes.resume(orages.ZONES[zone]["source"]),
+            "zone": zone,
             "heure_image": image.heure if image else None,
             "radars": len(image.radars) if image else 0,
             "radars_absents": image.radars_absents if image else [],
@@ -609,27 +646,30 @@ class PluieRadarView(APIView):
     - `passees` : les heures des images observées gardées (une heure), pour la boucle ;
     - `estimees` : [{minutes, echeance}] des images de l'heure qui vient extrapolées de la
       dernière image — NOS ESTIMATIONS, pas une prévision ;
+    - `zone` : la mosaïque (voir `_zone_radar` : la position demandée, sinon la commune de
+      l'institution), à rappeler dans l'adresse des images (`&zone=`) ;
     - `legende`. Les images : /api/orages/radar/image/?heure=… ou ?estimee=<minutes>."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         from . import carte_radar, orages
         from .models import ImageRadarEstimee, ImageRadarOrage
-        image = ImageRadarOrage.objects.order_by("-heure").first()
-        reponse = {**sources_ouvertes.resume("ORAGES_RADAR"), "legende": carte_radar.legende(),
-                   "heure": None, "coins": None, "perime": True, "passees": [], "estimees": []}
+        zone = _zone_radar(request)
+        image = ImageRadarOrage.objects.filter(zone=zone).order_by("-heure").first()
+        reponse = {**sources_ouvertes.resume(orages.ZONES[zone]["source"]), "legende": carte_radar.legende(),
+                   "zone": zone, "heure": None, "coins": None, "perime": True, "passees": [], "estimees": []}
         if image is not None:
             _png, coins = carte_radar.rendre(image)
             reponse.update({
                 "heure": image.heure, "coins": coins,
                 "perime": timezone.now() - image.heure > orages.FRAICHEUR_MAX + datetime.timedelta(minutes=10),
                 "passees": list(ImageRadarOrage.objects.filter(
-                    largeur=image.largeur, hauteur=image.hauteur, projdef=image.projdef,
+                    zone=zone, largeur=image.largeur, hauteur=image.hauteur, projdef=image.projdef,
                 ).order_by("heure").values_list("heure", flat=True)),
                 # Seulement celles qui partent de la dernière image : jamais d'estimation d'une image
                 # plus ancienne présentée comme actuelle.
                 "estimees": [{"minutes": m, "echeance": image.heure + datetime.timedelta(minutes=m)}
-                             for m in ImageRadarEstimee.objects.filter(heure_base=image.heure)
+                             for m in ImageRadarEstimee.objects.filter(zone=zone, heure_base=image.heure)
                              .order_by("minutes").values_list("minutes", flat=True)],
             })
         return Response(reponse)
@@ -645,23 +685,26 @@ class ImagePluieRadarView(APIView):
     def get(self, request):
         from django.utils.dateparse import parse_datetime
 
-        from . import carte_radar
+        from . import carte_radar, orages
         from .models import ImageRadarEstimee, ImageRadarOrage
+        zone = (request.query_params.get("zone") or orages.ZONE_PAR_DEFAUT).upper()
+        if zone not in orages.ZONES:
+            return HttpResponseNotFound()
         if request.query_params.get("estimee"):
             try:
                 minutes = int(request.query_params["estimee"])
             except ValueError:
                 return HttpResponseNotFound()
-            image = ImageRadarEstimee.objects.filter(minutes=minutes).first()
+            image = ImageRadarEstimee.objects.filter(zone=zone, minutes=minutes).first()
             if image is None:
                 return HttpResponseNotFound()
-            png, _coins = carte_radar.rendre(image, cle=("estimee", image.heure_base, minutes))
+            png, _coins = carte_radar.rendre(image, cle=("estimee", zone, image.heure_base, minutes))
             reponse = HttpResponse(png, content_type="image/png")
             # Remplacée à chaque nouvelle image observée (cinq minutes).
             reponse["Cache-Control"] = "no-cache"
             return reponse
         heure = parse_datetime(request.query_params.get("heure") or "")
-        image = ImageRadarOrage.objects.filter(heure=heure).first() if heure else None
+        image = ImageRadarOrage.objects.filter(zone=zone, heure=heure).first() if heure else None
         if image is None:
             return HttpResponseNotFound()
         png, _coins = carte_radar.rendre(image)

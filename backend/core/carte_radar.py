@@ -5,7 +5,8 @@ Deux séries, que l'écran ne mélange pas :
 - NOS ESTIMATIONS : les images de l'heure qui vient extrapolées par pysteps
   (core/prevision_immediate, ImageRadarEstimee) — pas une prévision.
 
-Chaque grille (1 km, stéréographique polaire de Météo-France, mm/h) est reprojetée vers le Web
+Chaque grille (1 km, dans la projection de sa mosaïque : stéréographique polaire pour la
+métropole, Mercator pour La Réunion ; mm/h) est reprojetée vers le Web
 Mercator de la carte, puis peinte par paliers. MapLibre pose une image en étirant ses quatre coins
 dans SA projection : sans reprojection, l'écart atteindrait plusieurs kilomètres sur les bords.
 
@@ -71,7 +72,8 @@ def _geometrie(image):
         point = Point(x, y, srid=3857)
         point.transform(vers_geo)
         coins.append([round(point.x, 5), round(point.y, 5)])
-    _GEOMETRIES.clear()                 # une seule géométrie en service à la fois
+    if len(_GEOMETRIES) >= 4:          # une géométrie par mosaïque, avec de la marge
+        _GEOMETRIES.clear()
     _GEOMETRIES[cle] = (correspondance, coins)
     return _GEOMETRIES[cle]
 
@@ -80,7 +82,7 @@ def rendre(image, cle=None):
     """(png, coins) d'une grille compacte (ImageRadarOrage ou ImageRadarEstimee). `coins` :
     haut-gauche, haut-droite, bas-droite, bas-gauche, en (lon, lat) — l'ordre qu'attend une source
     d'image MapLibre. `cle` désigne l'image dans la mémoire (par défaut, son heure)."""
-    cle = cle if cle is not None else image.heure
+    cle = cle if cle is not None else (image.zone, image.heure)
     if cle in _IMAGES:
         return _IMAGES[cle]
 

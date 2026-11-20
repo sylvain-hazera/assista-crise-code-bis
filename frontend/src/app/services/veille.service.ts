@@ -81,18 +81,21 @@ export class VeilleService {
     return this.http.get<OragesRadar>(`${this.api}/orages/`, { params: { france: '1' } });
   }
 
-  /** Dernière pluie observée par le radar : heure, coins et légende de l'image. */
-  pluieRadar(): Observable<PluieRadar> {
-    return this.http.get<PluieRadar>(`${this.api}/orages/radar/`);
+  /** Dernière pluie observée par le radar : heure, coins et légende de l'image. `centre` : où
+   * regarde la carte, pour recevoir la bonne mosaïque (métropole, La Réunion…) ; sans lui, celle
+   * de la commune de l'institution. */
+  pluieRadar(centre?: { lat: number; lon: number }): Observable<PluieRadar> {
+    return this.http.get<PluieRadar>(`${this.api}/orages/radar/`,
+      centre ? { params: { lat: centre.lat.toFixed(3), lon: centre.lon.toFixed(3) } } : {});
   }
 
-  imagePluieRadarUrl(heure: string): string {
-    return `${this.api}/orages/radar/image/?heure=${encodeURIComponent(heure)}`;
+  imagePluieRadarUrl(heure: string, zone = 'METROPOLE'): string {
+    return `${this.api}/orages/radar/image/?heure=${encodeURIComponent(heure)}&zone=${zone}`;
   }
 
   /** Image estimée (+minutes) ; `base` (l'image observée d'origine) rend l'adresse unique. */
-  imagePluieEstimeeUrl(minutes: number, base: string): string {
-    return `${this.api}/orages/radar/image/?estimee=${minutes}&base=${encodeURIComponent(base)}`;
+  imagePluieEstimeeUrl(minutes: number, base: string, zone = 'METROPOLE'): string {
+    return `${this.api}/orages/radar/image/?estimee=${minutes}&base=${encodeURIComponent(base)}&zone=${zone}`;
   }
 
   /** Quarts d'heure pour lesquels une image de rafales prévues est disponible, et la légende.

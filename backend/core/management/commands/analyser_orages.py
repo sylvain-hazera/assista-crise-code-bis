@@ -35,6 +35,7 @@ class Command(BaseCommand):
             while True:
                 # La foudre d'abord : les éclairs servent à l'analyse des cellules.
                 for code, unite in (("FOUDRE_MTG", "éclair(s) ajouté(s)"), ("ORAGES_RADAR", "cellule(s)"),
+                                    ("ORAGES_RADAR_REUNION", "cellule(s) à La Réunion"),
                                     ("DOPPLER_RADAR", "cellule(s) examinée(s) au Doppler"),
                                     # Les feux après les orages : leur contexte lit les cellules.
                                     ("FEUX_MTG", "feu(x) suivi(s) par satellite")):
