@@ -30,7 +30,8 @@ tout remonter au retour du lien.
 | Fonction | Doit marcher hors ligne | Aujourd'hui | Ce qui manque |
 |---|---|---|---|
 | Site de la collectivité servi sur le Wi-Fi / réseau local | oui | ✅ | — |
-| Connexion des agents sans Internet | oui | ❓ | vérifier que l'authentification ne dépend pas du central |
+| Connexion des agents sans Internet | oui | ✅ comptes de l'institution recopiés sur le satellite (empreinte du mot de passe, jamais le clair : `core/sync_comptes.py`) | — |
+| **Créer un compte sur place** pendant la coupure (renfort, bénévole arrivé sur les lieux) | oui (décidé le 20/11/2026) | ❌ | création locale, puis réconciliation au central au retour du lien (même adresse e-mail = même personne, **proposée**, jamais fusionnée d'office) |
 | Dossiers, leur fil (commentaires, historique), missions | créer, modifier ; remonter au retour | ✅ | — |
 | Déclarations « en sécurité » | oui | ✅ | — |
 | Stock (dépôts, articles, mouvements) | oui | ✅ | — |
@@ -41,7 +42,7 @@ tout remonter au retour du lien.
 | **Adresses de la commune** (Base Adresse Nationale) | oui : base de l'évaluation des dégâts et des secteurs vulnérables | ❌ | elles vivent au central ; à redescendre |
 | **Habitations référencées et évaluations des dégâts** | oui | ❌ | hors du périmètre de synchronisation, dans les deux sens |
 | **Photos et pièces jointes** (`Document`) | oui, scellées | ❌ | une photo déposée sur le satellite **ne remonte pas** |
-| Registre des personnes vulnérables | ❓ à décider | ❌ | voir § 5, décision 1 |
+| Registre des personnes vulnérables | oui, copie chiffrée lisible des seules personnes habilitées (décidé le 20/11/2026) | ❌ | descente chiffrée vers le satellite de la commune ; jamais au-delà |
 | Secteurs vulnérables sur la carte (cercles, sans identité) | oui | ❌ | dépend des adresses et du registre |
 | Vigilance, radar, orages, feux (veille) | impossible par nature | ❌ | au mieux, montrer la **dernière copie** avant la coupure, datée |
 | Registre et plan communal imprimables | oui | 🟡 PDF au central | à préparer avant la crise, ou à générer sur place |
@@ -60,7 +61,7 @@ tout remonter au retour du lien.
 | Détresse / SOS | ✅ | 🟡 | 🟡 en file | SOS par radio, SOS grand public |
 | Position en mission | ✅ | ❌ | 🟡 gardée | la position par radio |
 | Fond de carte | ✅ IGN | 🟡 tuiles déjà vues | 🟡 tuiles déjà vues | bouton « embarquer ce secteur » ; ou le PMTiles du satellite |
-| Basculer vers le serveur du satellite (annoncé en mDNS) | — | ❌ non décidé | — | voir § 5, décision 3 |
+| Basculer vers le serveur du satellite (Wi-Fi du satellite, adresse locale) | — | ❌ | voir § 5.3 |
 | **Évaluation des dégâts** | ❌ (sur le site seulement) | ❌ | ❌ | tout le § 4 |
 | **Adresses préchargées** | ❌ | ❌ | ❌ | § 4 |
 | Secteurs des personnes vulnérables | ❌ | ❌ | ❌ | afficher les cercles, sans identité |
@@ -122,24 +123,62 @@ Rien ne se fusionne sans un humain.
 Le même parcours vaut **par le satellite** (mode dégradé) : le téléphone envoie au serveur du
 satellite, qui remonte au central au retour du lien, avec les mêmes règles.
 
-## 5. Décisions à prendre
+## 5. Décisions
 
-1. **Le registre des personnes vulnérables hors ligne.** Les cercles (sans identité) peuvent
-   descendre sur les satellites et les téléphones sans risque. Le registre lui-même (noms,
-   besoins) est la donnée la plus sensible du projet : faut-il qu'un satellite en garde une copie
-   chiffrée, lisible des seules personnes habilitées, pour le jour où la commune est coupée ?
-2. **L'authentification sur un satellite coupé.** À vérifier d'abord ; si elle dépend du central,
-   décider comment un agent se connecte sur place.
-3. **La bascule du téléphone vers le satellite** (proposée en novembre, non décidée). Sans elle,
-   le mode dégradé se limite à la radio, et rien de lourd (photos, constats) ne part avant la 4G.
-4. **Le seuil de fusion des biens sans adresse** (50 m proposé) et les catégories de biens.
+1. **Registre des personnes vulnérables hors ligne : oui** (20/11/2026). Copie chiffrée sur le
+   satellite de la commune, lisible des seules personnes habilitées ; les cercles sans identité
+   descendent aussi sur les téléphones.
+2. **Comptes locaux : oui** (20/11/2026). Les comptes de l'institution sont déjà recopiés ; il
+   reste à pouvoir en **créer** sur place pendant la coupure, et à les réconcilier au retour.
+3. **La bascule du téléphone, précisée.** Sans 4G, le téléphone ne joint pas le central : la
+   bascule vise **le serveur du satellite**, sur son Wi-Fi, qui remonte au central quand lui-même
+   retrouve un lien. Moyens de le trouver et de s'y fier :
+   - **Wi-Fi du satellite + adresse locale** : le satellite s'annonce déjà sur le réseau local
+     (mDNS, `_ac-local._tcp`) ; l'application le découvre seule, ou on lui donne l'adresse.
+   - **QR code d'appairage** affiché par l'écran d'état du satellite : adresse locale et empreinte
+     de son certificat, scannés une fois (avant la crise ou sur place).
+   - **Le certificat**, point délicat : le téléphone refuse un serveur qu'il ne sait pas
+     authentifier. Deux voies : un certificat public pour un nom propre au satellite
+     (`sat-xxx.<domaine>`, obtenu par défi DNS tant qu'il a Internet, renouvelé à chaque
+     reconnexion), ou l'empreinte épinglée par le QR code.
+   - **Le satellite comme point d'accès** (il émet son propre Wi-Fi) quand il n'y a plus de
+     réseau local du tout.
+   - **Un lien de secours du satellite lui-même** (clé 4G d'un autre opérateur, liaison
+     satellitaire) : le téléphone sur le Wi-Fi du satellite atteint alors le central à travers lui.
+   - **Un autre téléphone en partage de connexion**, s'il capte encore : rien à construire, la
+     file part seule.
+   - **La radio** pour l'essentiel en petits messages (SOS, statut, position), jamais les photos.
+4. **Fusion : proposée, jamais automatique** (20/11/2026). Biens, dossiers et comptes.
+5. **Reste à fixer** : le seuil de rapprochement des biens sans adresse (50 m proposé) et leurs
+   catégories.
+
+## 5 bis. Un référentiel d'adresses chargé dès la création
+
+Question de Sylvain (20/11/2026) : charger la liste des adresses de la commune dès sa création,
+et s'appuyer dessus ensuite. Proposition :
+
+- **Une table d'adresses à part entière**, par commune du territoire de chaque institution, au
+  lieu du relevé que remplit aujourd'hui la simulation d'inondation (`AdresseSimuleeInondation`,
+  qui porte aussi ses niveaux d'eau). La simulation y rattache ses niveaux par identifiant
+  national.
+- **Chargée à la création de l'institution** (et quand une commune entre dans son territoire), à
+  partir du **fichier complet du département** publié chaque nuit par la Base Adresse Nationale
+  (Gironde : 27,5 Mo compressés, vérifié le 20/11/2026), au lieu d'un appel par rue.
+- **Rafraîchie chaque semaine** : nouvelles adresses ajoutées, adresses retirées marquées comme
+  telles et jamais effacées (les liens des fiches et des habitations tiennent).
+- **Donnée publique** : pas de chiffrement nécessaire ; ce sont les liens vers une personne qui
+  sont chiffrés, comme aujourd'hui.
+- **Elle sert partout** : rattachement du registre, secteurs vulnérables, pointage et évaluation
+  des dégâts, simulation sans nouveau balayage, recherche d'adresse sans service extérieur,
+  préchargement des téléphones et des satellites.
 
 ## 6. Ordre proposé
 
 | Lot | Contenu | Pourquoi dans cet ordre |
 |---|---|---|
+| 0 | **Référentiel d'adresses** chargé dès la création (§ 5 bis) | tout le reste s'appuie dessus |
 | 1 | Évaluation des dégâts **en ligne** dans l'application (parité avec le pointage du site) | le geste d'abord, avec le circuit de validation existant |
 | 2 | **Préchargement** d'un secteur et évaluation **hors ligne** par la file | c'est l'exemple de référence |
 | 3 | **Rapprochement et fusion** au central (identifiants du téléphone, propositions dans la file de validation) | sans lui, le hors ligne crée des doublons |
-| 4 | Satellite : adresses, habitations, évaluations, photos, et créations citoyennes sur place **dans le périmètre de synchronisation** | ferme les trous du § 2 |
+| 4 | Satellite : adresses, habitations, évaluations, photos, registre chiffré, comptes créés sur place et créations citoyennes **dans le périmètre de synchronisation** | ferme les trous du § 2 |
 | 5 | **Bascule** du téléphone vers le satellite | donne un vrai mode dégradé |
