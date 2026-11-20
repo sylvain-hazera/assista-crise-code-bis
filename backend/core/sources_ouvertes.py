@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from . import (
     antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
-    doppler, foudre, observations_meteo, orages, pluie,
+    doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
@@ -71,6 +71,11 @@ SOURCES = {
         # radar par radar après chaque analyse des orages, par le même service.
         Source("DOPPLER_RADAR", "Rotation, grêle et divergence (radars Doppler)", doppler.relever,
                datetime.timedelta(minutes=4), datetime.timedelta(minutes=30), "Météo-France"),
+        # Feux en cours suivis par le satellite MTG (20/11/2026) : une liste de pixels en feu
+        # toutes les dix minutes (LSA SAF), lue par le même service que les orages, qui croise
+        # chaque feu avec les cellules radar et la foudre.
+        Source("FEUX_MTG", "Feux en cours suivis par satellite (MTG)", feux_mtg.relever,
+               datetime.timedelta(minutes=4), feux_mtg.FRAICHEUR_MAX, feux_mtg.ATTRIBUTION),
         # Impacts Blitzortung, à titre indicatif (19/11/2026) : écoutés en continu par leur propre
         # service (`manage.py ecouter_blitzortung --service`), qui tient cette trace à jour.
         Source("FOUDRE_BLITZORTUNG", "Impacts de foudre Blitzortung (indicatif)", _releve_par_service,
@@ -156,6 +161,12 @@ SOURCES = {
         Source("CIRCULATION", "Circulation sur le réseau routier national", circulation.relever,
                datetime.timedelta(minutes=9), datetime.timedelta(minutes=45),
                "Bison Futé - directions interdépartementales des routes"),
+        # Potentiel d'orage de feu (20/11/2026), nos estimations : profil vertical d'ARPEGE,
+        # trois heures par jour, aujourd'hui et demain. 54 grilles de 70 Ko par heure calculée,
+        # deux heures au plus par relevé ; rien entre deux calculs du modèle (quatre par jour). Parmi les
+        # sources lentes, avant les deux plus lourdes.
+        Source("POTENTIEL_ORAGE_FEU", "Potentiel d'orage de feu (nos estimations)", orages_de_feu.relever,
+               datetime.timedelta(minutes=19), datetime.timedelta(hours=12), "Météo-France (ARPEGE), nos estimations"),
         # Neige, verglas, grêle prévus : même service et même poids que les rafales (treize
         # grilles de 13 Mo par heure). Les deux sources lentes ferment la marche.
         Source("PRECIPITATIONS_HIVER", "Neige, verglas et grêle prévus (prévision immédiate)",
@@ -173,7 +184,7 @@ SOURCES = {
 
 #: Sources relevées par un service à part et non par `relever_sources_ouvertes` : deux
 #: relevés concurrents de la même source doubleraient les appels et se disputeraient la base.
-SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR"}
+SOURCES_EN_CONTINU = {"ORAGES_RADAR", "FOUDRE_MTG", "FOUDRE_BLITZORTUNG", "DOPPLER_RADAR", "FEUX_MTG"}
 
 
 def etat(code):
@@ -216,7 +227,7 @@ def relever_source(code, forcer=False, maintenant=None):
     trace.dernier_essai = maintenant
     try:
         lignes = source.relever()
-    except (meteo_france.CleAbsente, foudre.IdentifiantsAbsents):
+    except (meteo_france.CleAbsente, foudre.IdentifiantsAbsents, feux_mtg.IdentifiantsAbsents):
         trace.erreur = "aucune clé sur cette machine"
         trace.save(update_fields=["dernier_essai", "erreur"])
         return "échec"

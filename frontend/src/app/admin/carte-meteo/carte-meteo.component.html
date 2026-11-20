@@ -94,6 +94,76 @@
           </section>
         }
 
+        <section class="feux">
+          <h2><span class="material-icons" aria-hidden="true">local_fire_department</span> Feux en cours, selon le satellite
+            @if (feux?.rayon_km) { <small>à moins de {{ feux!.rayon_km }} km</small> }
+          </h2>
+          @for (feu of feux?.resultats ?? []; track feu.identifiant) {
+            @let tendance = dessinFeux.tendance(feu);
+            <article class="feu" [class.eteint]="feu.statut !== 'actif'">
+              <header>
+                <strong>
+                  @if (feu.statut === 'actif') { {{ dessinFeux.libellePuissance(feu.puissance_mw) }} rayonnés }
+                  @else { Plus vu depuis {{ feu.dernier_vu | date:'HH:mm' }} }
+                </strong>
+                @if (tendance === 'hausse') { <span class="puce hausse">en hausse</span> }
+                @if (tendance === 'baisse') { <span class="puce">en baisse</span> }
+                @if (!feu.confirme) { <span class="puce">une seule image</span> }
+                <button type="button" class="voir" (click)="voirFeu(feu)" title="Centrer la carte sur ce feu">
+                  <span class="material-icons" aria-hidden="true">my_location</span> Voir
+                </button>
+              </header>
+              <p>
+                Vu depuis {{ feu.premier_vu | date:'HH:mm' }}@if (feu.premier_vu | date:'d/M'; as jour) {@if (jour !== (feu.dernier_vu | date:'d/M')) { le {{ jour }}}}
+                · maximum {{ dessinFeux.libellePuissance(feu.puissance_max_mw) }} à {{ feu.instant_max | date:'HH:mm' }}
+                @if (feu.distance_km != null) { · à {{ feu.distance_km }} km }
+              </p>
+              @if (feu.courbe.length > 1) {
+                <svg class="courbe" viewBox="0 0 240 40" preserveAspectRatio="none" role="img"
+                     [attr.aria-label]="'Puissance du feu sur les dernières 24 heures, maximum ' + dessinFeux.libellePuissance(feu.puissance_max_mw)">
+                  <path [attr.d]="dessinFeux.cheminCourbe(feu, 240, 38)" />
+                </svg>
+              }
+              @for (signal of dessinFeux.signaux(feu); track signal) { <span class="puce signal">{{ signal }}</span> }
+              @if (feu.contexte.potentiel; as p) {
+                <p class="estimation">
+                  Feu estimé à {{ p.puissance_estimee_gw[0] }} à {{ p.puissance_estimee_gw[1] }} GW ;
+                  @if (p.pft_gw != null) { il en faudrait environ {{ p.pft_gw }} pour un orage de feu ici. }
+                  @else { aucun orage de feu possible ici à cette heure. }
+                  <small>(nos estimations)</small>
+                </p>
+              }
+            </article>
+          } @empty {
+            <p class="calme">Aucun feu suivi par le satellite@if (perimetre === 'territoire') { autour de votre territoire} @else { en métropole}.</p>
+          }
+          <small [class.ancien]="feux?.perime">
+            Satellite MTG (EUMETSAT LSA SAF), une image toutes les 10 minutes@if (feux?.releve_le) {, relevé à {{ feux!.releve_le | date:'HH:mm' }}}.
+            Un feu n'est vu qu'une fois assez puissant (souvent plus d'une demi-heure après son départ) et pas sous les nuages.
+            Détection satellite, à confirmer.
+          </small>
+        </section>
+
+        @if (heuresAPotentiel.length) {
+          <section class="potentiel">
+            <h2>Potentiel d'orage de feu <small>(nos estimations)</small></h2>
+            <ul>
+              @for (h of heuresAPotentiel; track h.echeance) {
+                <li>
+                  <i [style.background]="couleurPalier(h.palier)" aria-hidden="true"></i>
+                  <strong>{{ h.echeance | date:'EEEE HH:mm' }}</strong> : {{ libellePalier(h.palier) }}
+                  @if (perimetre === 'territoire' && potentiel?.centre) { <small>à moins de {{ potentiel!.rayon_km }} km</small> }
+                  @if (h.ici?.pft_gw != null && perimetre === 'territoire') {
+                    — un feu d'environ {{ h.ici!.pft_gw }} GW ferait son propre orage sur votre commune
+                  }
+                </li>
+              }
+            </ul>
+            <small>Là où l'air est assez sec et instable pour qu'un grand feu fasse son propre orage (foudre, rafales
+              descendantes). Calculé sur le profil vertical du modèle ARPEGE de Météo-France. Ce ne sont pas des prévisions.</small>
+          </section>
+        }
+
         @if (orages.cumuls; as cumuls) {
           <section class="cumuls">
             <h2>Pluie tombée, selon les relevés du radar</h2>

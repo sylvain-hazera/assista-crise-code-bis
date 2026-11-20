@@ -3397,6 +3397,71 @@ class ImageRadarEstimee(models.Model):
     releve_le = models.DateTimeField()
 
 
+class PotentielOrageFeu(models.Model):
+    """Potentiel d'orage de feu (pyrocumulonimbus) pour une heure de l'après-midi, calculé sur le
+    profil vertical d'ARPEGE (core/orages_de_feu.py) : NOS ESTIMATIONS, pas une prévision.
+    `grilles` : PFT, C-Haines et palier, compressés ; `image` : le palier peint pour la carte.
+    Donnée publique partagée PROD/DEMO."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    calcul = models.DateTimeField(help_text="Heure de référence du calcul ARPEGE.")
+    largeur = models.PositiveIntegerField()
+    hauteur = models.PositiveIntegerField()
+    ouest = models.FloatField(help_text="Longitude du premier point de grille.")
+    nord = models.FloatField(help_text="Latitude du premier point de grille.")
+    grilles = models.BinaryField()
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Potentiel d'orage de feu pour {self.echeance:%d/%m %H:%M}"
+
+
+class ProduitFeuMTG(models.Model):
+    """Liste de pixels en feu du satellite MTG déjà lue (LSA SAF, une toutes les dix minutes) --
+    core/feux_mtg.py. Gardée une semaine."""
+
+    creneau = models.DateTimeField(primary_key=True)
+    detections = models.PositiveIntegerField(default=0, help_text="Pixels retenus dans l'emprise.")
+    releve_le = models.DateTimeField()
+
+
+class DetectionFeuMTG(models.Model):
+    """Un pixel en feu vu par MTG dans l'emprise de la France (core/feux_mtg.py). Gardé une
+    semaine, pour reconnaître les sources fixes. Donnée publique partagée PROD/DEMO."""
+
+    creneau = models.DateTimeField(db_index=True)
+    instant = models.DateTimeField()
+    location = gis_models.PointField(srid=4326)
+    puissance_mw = models.FloatField(help_text="Puissance rayonnée du pixel (FRP), en MW.")
+    incertitude_mw = models.FloatField(default=0)
+    confiance = models.FloatField(default=0)
+
+
+class FeuSuivi(models.Model):
+    """Un feu en cours suivi par le satellite MTG : pixels voisins regroupés, puissance toutes
+    les dix minutes, contexte (orage, foudre, potentiel d'orage de feu) -- core/feux_mtg.py.
+    Recalculés à chaque relevé. Détection satellite, à confirmer ; jamais annoncée."""
+
+    identifiant = models.CharField(max_length=40, primary_key=True)
+    premier_vu = models.DateTimeField()
+    dernier_vu = models.DateTimeField()
+    centre = gis_models.PointField(srid=4326)
+    statut = models.CharField(max_length=10, default="actif", help_text="« actif » ou « plus vu ».")
+    puissance_mw = models.FloatField(help_text="Puissance rayonnée totale à la dernière image où il est vu.")
+    puissance_max_mw = models.FloatField()
+    instant_max = models.DateTimeField()
+    pixels = models.PositiveIntegerField(default=0)
+    confirme = models.BooleanField(default=False, help_text="Vu sur au moins deux images.")
+    source_fixe = models.BooleanField(default=False, db_index=True)
+    courbe = models.JSONField(default=list, blank=True, help_text="[[créneau, MW, pixels]] des dernières 24 h.")
+    contexte = models.JSONField(default=dict, blank=True)
+    calcule_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Feu suivi {self.identifiant}"
+
+
 class CumulPluieCommune(models.Model):
     """Cumuls glissants de pluie par commune, selon le radar (1 h, 3 h, 24 h), recalculés à
     chaque image. Seules les communes où il a plu dans les 24 h ont une ligne."""

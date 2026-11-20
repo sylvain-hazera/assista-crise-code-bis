@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AntennesIndisponibles, ArretesCirculation, Circulation, QualiteAir, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
-  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar, PluieRadar,
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar, PluieRadar, FeuxSuivis, PotentielOrageFeu,
 } from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
@@ -103,6 +103,23 @@ export class VeilleService {
 
   imageRafalesUrl(echeance: string): string {
     return `${this.api}/rafales-prevues/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
+  /** Potentiel d'orage de feu (nos estimations), avec les valeurs au centre du territoire si
+   * l'appelant en a un, ou au point demandé. */
+  potentielOrageFeu(point?: { lat: number; lon: number }): Observable<PotentielOrageFeu> {
+    const params: Record<string, string> = point ? { lat: String(point.lat), lon: String(point.lon) } : {};
+    return this.http.get<PotentielOrageFeu>(`${this.api}/orages-de-feu/`, { params });
+  }
+
+  imagePotentielOrageFeuUrl(echeance: string): string {
+    return `${this.api}/orages-de-feu/image/?echeance=${encodeURIComponent(echeance)}`;
+  }
+
+  /** Feux en cours suivis par le satellite MTG, dans une emprise, ou pour toute la France. */
+  feuxSuivis(emprise: EmpriseVeille | 'france' = {}): Observable<FeuxSuivis> {
+    const params = emprise === 'france' ? { france: '1' } : this.params(emprise);
+    return this.http.get<FeuxSuivis>(`${this.api}/feux-suivis/`, { params });
   }
 
   /** Quarts d'heure pour lesquels une image de neige, verglas et grêle prévus est disponible.

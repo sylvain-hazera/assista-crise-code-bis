@@ -735,3 +735,72 @@ export interface FoudreIci {
   source: string; releve_le: string | null; perime: boolean;
   eclairs_15min: number; eclairs_1h: number; dernier_ici: string | null; derniere_donnee: string;
 }
+
+/** Valeurs du potentiel d'orage de feu en un point (core/orages_de_feu.valeur_au_point). */
+export interface ValeurOrageFeu {
+  /** Puissance de feu nécessaire pour un orage, en GW ; null si aucun orage n'est possible. */
+  pft_gw: number | null;
+  c_haines: number;
+  /** 0 (rien) à 3 (très élevé). */
+  palier: number;
+  potentiel: 'modéré' | 'élevé' | 'très élevé' | null;
+}
+
+/** Potentiel d'orage de feu (pyrocumulonimbus), nos estimations, pour l'après-midi
+ * d'aujourd'hui et de demain (GET /api/orages-de-feu/). */
+export interface PotentielOrageFeu {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  nos_estimations: true;
+  calcul: string | null;
+  coins: [number, number][];
+  legende: { palier: number; libelle: string; pft_jusqua_gw: number; couleur: string }[];
+  centre: { latitude: number; longitude: number } | null;
+  rayon_km: number | null;
+  echeances: {
+    echeance: string;
+    palier_max_france: number;
+    ici?: ValeurOrageFeu | null;
+    palier_max_autour?: number | null;
+  }[];
+}
+
+/** Un feu en cours suivi par le satellite MTG (GET /api/feux-suivis/). */
+export interface FeuSuivi {
+  identifiant: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number | null;
+  premier_vu: string;
+  dernier_vu: string;
+  statut: 'actif' | 'plus vu';
+  /** Puissance rayonnée à la dernière image où il est vu, en MW. */
+  puissance_mw: number;
+  puissance_max_mw: number;
+  instant_max: string;
+  pixels: number;
+  confirme: boolean;
+  source_fixe: boolean;
+  /** [créneau, MW, pixels] des dernières 24 heures. */
+  courbe: [string, number, number][];
+  contexte: {
+    orage?: { identifiant: string; distance_km: number; au_dessus: boolean; intensite_max_mmh: number;
+              eclairs: number | null; rafale_descendante: boolean; rotation: boolean; grele: boolean } | null;
+    eclairs_30_min?: number;
+    masque_par_nuage?: boolean;
+    potentiel?: (ValeurOrageFeu & { echeance: string; puissance_estimee_gw: [number, number];
+                                    atteint_le_seuil: boolean }) | null;
+  };
+}
+
+export interface FeuxSuivis {
+  source: string;
+  releve_le: string | null;
+  perime: boolean;
+  centre: { latitude: number; longitude: number } | null;
+  rayon_km: number | null;
+  emprise_connue: boolean;
+  sources_fixes: number;
+  resultats: FeuSuivi[];
+}

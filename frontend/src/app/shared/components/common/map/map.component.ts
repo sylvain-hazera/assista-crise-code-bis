@@ -26,10 +26,12 @@ import { VeilleService } from '../../../../services/veille.service';
 import {
   EvenementRoutier, LIBELLES_ETAT_CIRCULATION, LIBELLES_ETAT_SURCOTE, LIBELLES_GRAVITE_ANTENNE,
   LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PluieRadar, PrecipitationsHiver, RafalesPrevues, CelluleOrage,
+  FeuxSuivis, PotentielOrageFeu,
   StationCarburant,
   VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
 } from '../../../models/veille.model';
 import * as dessinOrages from './orages-carte';
+import * as dessinFeux from './feux-carte';
 import { AnimationVent, GrilleVent, decoderChampVent } from './vent-anime';
 
 interface LayerVisibility {
@@ -82,6 +84,12 @@ interface LayerVisibility {
   secteursVulnerables: boolean;
   /** Foyers actifs vus par satellite depuis 48 h (NASA FIRMS), sources fixes grisées. */
   foyersActifs: boolean;
+  /** Feux en cours suivis par le satellite MTG (20/11/2026) : puissance toutes les dix minutes,
+   * orage et foudre autour. Détection satellite, à confirmer. */
+  feuxSuivis: boolean;
+  /** Potentiel d'orage de feu (20/11/2026), nos estimations : une image par heure de l'après-midi,
+   * aujourd'hui et demain. */
+  potentielOrageFeu: boolean;
   /** Massifs colorés par risque d'avalanche (bulletins de Météo-France). */
   avalanche: boolean;
   /** Arrêtés de circulation des collectivités (DiaLog) : fermetures, poids lourds, alternats. */
@@ -174,6 +182,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     zonesBrulees: false,
     secteursVulnerables: false,
     foyersActifs: false,
+    feuxSuivis: false,
+    potentielOrageFeu: false,
     avalanche: false,
     arretesCirculation: false,
     circulation: false,
@@ -223,7 +233,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       for (const cle of Object.keys(this.layerVisibility) as (keyof LayerVisibility)[]) {
         this.layerVisibility[cle] = false;
       }
-      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, oragesEstimations: true, eclairs: true });
+      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, oragesEstimations: true, eclairs: true, feuxSuivis: true });
       this.layersPanelOpen = true;
       this.runWhenMapReady(() => this.onLayerToggle());
       return;
@@ -286,8 +296,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.layerVisibility.pluieRadar && this.lectureBoucle) this.basculerLectureBoucle();
     this.applyLayerVisibility('eclairs-layer', this.layerVisibility.eclairs);
     this.applyLayerVisibility('blitzortung-layer', this.layerVisibility.blitzortung);
+    this.applyLayerVisibility('feux-suivis-layer', this.layerVisibility.feuxSuivis);
+    this.applyLayerVisibility('feux-suivis-label', this.layerVisibility.feuxSuivis);
+    this.basculerPotentielOrageFeu();
     if ((this.layerVisibility.orages || this.layerVisibility.eclairs || this.layerVisibility.blitzortung
-         || this.layerVisibility.pluieRadar) && !this.rafraichissementOrages) {
+         || this.layerVisibility.pluieRadar || this.layerVisibility.feuxSuivis) && !this.rafraichissementOrages) {
       // Une image radar toutes les cinq minutes : relire toutes les deux suffit.
       this.rafraichissementOrages = setInterval(() => this.rafraichirVeille(), 120_000);
     }
@@ -322,12 +335,14 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.map) return;
     const { evenementsRoutiers, stationsCarburant, stationsMeteo, vigilanceCrues, zonesBrulees, avalanche,
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
-            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung, pluieRadar } = this.layerVisibility;
+            hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung, pluieRadar,
+            feuxSuivis } = this.layerVisibility;
     if (pluieRadar) this.chargerPluieRadar();
+    this.basculerPotentielOrageFeu();
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
-        && !qualiteAir && !orages && !eclairs && !blitzortung) return;
+        && !qualiteAir && !orages && !eclairs && !blitzortung && !feuxSuivis) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -520,6 +535,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           'line-color': ['match', ['get', 'niveau'], 4, '#c81e1e', 3, '#f97316', 2, '#e6b800', '#2f9e44'],
           'line-width': ['match', ['get', 'niveau'], 1, 2.5, 4.5],
         }, this.layerVisibility.vigilanceCrues),
+        error: () => {},
+      });
+    }
+    if (feuxSuivis) {
+      this.veilleService.feuxSuivis({ bbox }).subscribe({
+        next: (reponse) => this.dessinerFeuxSuivis(reponse),
         error: () => {},
       });
     }
@@ -825,6 +846,102 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Heure du champ de vent en cours d'animation. */
   echeanceVent: string | null = null;
   private animationVent: AnimationVent | null = null;
+  // ── Feux en cours (satellite MTG) et potentiel d'orage de feu (nos estimations) ────────────
+
+  feuxSuivisPerime = false;
+  feuxSuivisReleve: string | null = null;
+  potentielOrageFeu: PotentielOrageFeu | null = null;
+  echeancePotentiel: string | null = null;
+  /** Heure du dernier chargement du potentiel : relu au plus une fois par heure. */
+  private potentielChargeLe = 0;
+
+  /** Un cercle par feu, d'autant plus grand qu'il est puissant ; cerclé de jaune sous un orage. */
+  private dessinerFeuxSuivis(reponse: FeuxSuivis): void {
+    this.feuxSuivisPerime = reponse.perime;
+    this.feuxSuivisReleve = reponse.releve_le;
+    const donnees = dessinFeux.feuxVersGeoJSON(reponse.resultats);
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const source = this.map.getSource('feux-suivis') as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(donnees);
+        return;
+      }
+      const visible = this.layerVisibility.feuxSuivis ? 'visible' : 'none';
+      this.map.addSource('feux-suivis', { type: 'geojson', data: donnees });
+      this.map.addLayer({
+        id: 'feux-suivis-layer', type: 'circle', source: 'feux-suivis', layout: { visibility: visible },
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['ln', ['max', ['get', 'puissance_mw'], 1]], 0, 5, 5, 9, 8.5, 18],
+          'circle-color': ['case', ['get', 'actif'], '#b91c1c', '#9ca3af'],
+          'circle-opacity': 0.85,
+          'circle-stroke-width': ['case', ['get', 'orage'], 3, 1.5],
+          'circle-stroke-color': ['case', ['get', 'orage'], '#facc15', '#ffffff'],
+        },
+      });
+      this.map.addLayer({
+        id: 'feux-suivis-label', type: 'symbol', source: 'feux-suivis', layout: {
+          visibility: visible, 'text-field': ['get', 'etiquette'], 'text-size': 11,
+          'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-font': ['Noto Sans Bold'],
+        },
+        paint: { 'text-color': '#7f1d1d', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+      });
+      this.map.on('click', 'feux-suivis-layer', (e) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const coordinates = (feature.geometry as GeoJSON.Point).coordinates.slice() as [number, number];
+        new maplibregl.Popup().setLngLat(coordinates).setHTML(feature.properties?.['infobulle'] || '').addTo(this.map!);
+      });
+      this.map.on('mouseenter', 'feux-suivis-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+      this.map.on('mouseleave', 'feux-suivis-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+    });
+  }
+
+  /** Charge le potentiel à la première activation et le relit toutes les heures ; montre l'heure
+   * choisie, ou la prochaine heure calculée. */
+  private basculerPotentielOrageFeu(): void {
+    this.applyLayerVisibility('potentiel-orage-feu-layer', this.layerVisibility.potentielOrageFeu);
+    if (!this.layerVisibility.potentielOrageFeu || Date.now() - this.potentielChargeLe < 3_600_000) return;
+    this.potentielChargeLe = Date.now();
+    this.veilleService.potentielOrageFeu().subscribe({
+      next: (potentiel) => {
+        this.potentielOrageFeu = potentiel;
+        if (!this.echeancePotentiel || !potentiel.echeances.some(e => e.echeance === this.echeancePotentiel)) {
+          this.echeancePotentiel = dessinFeux.echeanceParDefaut(potentiel);
+        }
+        this.poserPotentielOrageFeu();
+      },
+      error: () => { this.potentielChargeLe = 0; },
+    });
+  }
+
+  choisirEcheancePotentiel(echeance: string): void {
+    this.echeancePotentiel = echeance;
+    this.poserPotentielOrageFeu();
+  }
+
+  private poserPotentielOrageFeu(): void {
+    const potentiel = this.potentielOrageFeu;
+    if (!potentiel || !this.echeancePotentiel) return;
+    const url = this.veilleService.imagePotentielOrageFeuUrl(this.echeancePotentiel);
+    const coordinates = potentiel.coins as [[number, number], [number, number], [number, number], [number, number]];
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      const source = this.map.getSource('potentiel-orage-feu') as maplibregl.ImageSource | undefined;
+      if (source) {
+        source.updateImage({ url, coordinates });
+        return;
+      }
+      this.map.addSource('potentiel-orage-feu', { type: 'image', url, coordinates });
+      const premierTexte = this.map.getStyle().layers?.find(calque => calque.type === 'symbol')?.id;
+      this.map.addLayer({
+        id: 'potentiel-orage-feu-layer', type: 'raster', source: 'potentiel-orage-feu',
+        layout: { visibility: this.layerVisibility.potentielOrageFeu ? 'visible' : 'none' },
+        paint: { 'raster-opacity': 0.75, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+      }, premierTexte);
+    });
+  }
+
   /** Champs déjà décodés, par calcul et par heure : changer d'heure ne redemande rien. */
   private grillesVent = new Map<string, GrilleVent>();
   private rafraichissementVent: ReturnType<typeof setInterval> | null = null;

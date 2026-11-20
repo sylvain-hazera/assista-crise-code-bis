@@ -206,7 +206,8 @@ services:
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
     # eumetsat_api : « clé:secret » du Data Store d'EUMETSAT, pour la foudre vue par satellite.
-    secrets: [meteofrance_cle_api, eumetsat_api]
+    # lsasaf_identifiants : « identifiant:mot de passe » du LSA SAF, pour les feux suivis par MTG.
+    secrets: [meteofrance_cle_api, eumetsat_api, lsasaf_identifiants]
     networks: [back, db, front]
     depends_on:
       db: { condition: service_healthy }
@@ -603,6 +604,7 @@ secrets:
   meteofrance_cle_api:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meteofrance_cle_api.txt" }
   openweathermap_cle_api:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/openweathermap_cle_api.txt" }
   eumetsat_api:              { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/eumetsat_api.txt" }
+  lsasaf_identifiants:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/lsasaf_identifiants.txt" }
   # Clé de signature des satellites, chiffrée par la phrase de passe (jamais en clair). Produite
   # par scripts/satellites/preparer-signature-web.sh. Le fichier doit exister, même vide : vide,
   # la page Satellites propose seulement le collage d'une signature faite dans un terminal.

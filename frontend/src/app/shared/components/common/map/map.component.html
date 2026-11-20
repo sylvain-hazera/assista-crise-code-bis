@@ -155,6 +155,11 @@
         <span class="layer-dot meteo-dot"></span>
         Stations météo : vent, pluie
       </label>
+      <label class="layer-toggle-item" title="Feux en cours vus par le satellite MTG (EUMETSAT LSA SAF), une image toutes les 10 minutes : puissance rayonnée, cerclé de jaune sous un orage. Un feu n'est vu qu'une fois assez puissant, et pas sous les nuages. Détection satellite, à confirmer.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.feuxSuivis" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot feux-suivis-dot"></span>
+        Feux en cours (satellite MTG)@if (layerVisibility.feuxSuivis && feuxSuivisReleve) { <small [class.ancien]="feuxSuivisPerime">&nbsp;{{ feuxSuivisReleve | date:'HH:mm' }}</small> }
+      </label>
       <div class="layer-toggle-groupe">Selon la prévision Météo-France</div>
       <label class="layer-toggle-item" title="Pluie prévue dans les trois heures, par quart d'heure.">
         <input type="checkbox" [(ngModel)]="layerVisibility.pluie" (ngModelChange)="onLayerToggle()">
@@ -176,6 +181,31 @@
         <span class="layer-dot vent-dot"></span>
         Vent prévu (animé)
       </label>
+      <div class="layer-toggle-groupe">Nos estimations</div>
+      <label class="layer-toggle-item" title="Là où l'air est assez sec et instable pour qu'un grand feu fasse son propre orage (pyrocumulonimbus), et la puissance de feu qu'il y faudrait. Calculé sur le profil vertical du modèle ARPEGE. Nos estimations, qui ne sont pas des prévisions.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.potentielOrageFeu" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot potentiel-orage-feu-dot"></span>
+        Potentiel d'orage de feu
+      </label>
+      @if (layerVisibility.potentielOrageFeu && potentielOrageFeu) {
+        <div class="potentiel-orage-feu">
+          @if (potentielOrageFeu.echeances.length) {
+            <select [ngModel]="echeancePotentiel" (ngModelChange)="choisirEcheancePotentiel($event)" aria-label="Heure du potentiel d'orage de feu">
+              @for (e of potentielOrageFeu.echeances; track e.echeance) {
+                <option [value]="e.echeance">{{ e.echeance | date:'EEE d, HH:mm' }}{{ e.palier_max_france ? '' : ' — rien en France' }}</option>
+              }
+            </select>
+            <div class="rafales-legende" aria-label="Légende du potentiel d'orage de feu">
+              @for (p of potentielOrageFeu.legende; track p.palier) {
+                <span [title]="'Un feu de ' + p.pft_jusqua_gw + ' GW suffirait'"><i [style.background]="p.couleur"></i>{{ p.libelle }}</span>
+              }
+            </div>
+          } @else {
+            <small>Pas encore calculé.</small>
+          }
+          <small class="mention">Nos estimations, qui ne sont pas des prévisions.</small>
+        </div>
+      }
       @if (layerVisibility.pluieRadar && pluieRadar?.legende?.length) {
         <div class="rafales-legende radar-legende" aria-label="Légende de la pluie observée, en mm/h">
           @for (palier of pluieRadar!.legende; track palier.a_partir_de_mmh) {
@@ -306,6 +336,35 @@
         <span class="layer-dot foyers-dot"></span>
         Foyers détectés par satellite (48 h)
       </label>
+      <label class="layer-toggle-item" title="Feux en cours vus par le satellite MTG (EUMETSAT LSA SAF), une image toutes les 10 minutes : puissance rayonnée, cerclé de jaune sous un orage. Un feu n'est vu qu'une fois assez puissant, et pas sous les nuages. Détection satellite, à confirmer.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.feuxSuivis" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot feux-suivis-dot"></span>
+        Feux en cours (satellite MTG)@if (layerVisibility.feuxSuivis && feuxSuivisReleve) { <small [class.ancien]="feuxSuivisPerime">&nbsp;{{ feuxSuivisReleve | date:'HH:mm' }}</small> }
+      </label>
+      <label class="layer-toggle-item" title="Là où l'air est assez sec et instable pour qu'un grand feu fasse son propre orage (pyrocumulonimbus), et la puissance de feu qu'il y faudrait. Calculé sur le profil vertical du modèle ARPEGE. Nos estimations, qui ne sont pas des prévisions.">
+        <input type="checkbox" [(ngModel)]="layerVisibility.potentielOrageFeu" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot potentiel-orage-feu-dot"></span>
+        Potentiel d'orage de feu
+      </label>
+      @if (layerVisibility.potentielOrageFeu && potentielOrageFeu) {
+        <div class="potentiel-orage-feu">
+          @if (potentielOrageFeu.echeances.length) {
+            <select [ngModel]="echeancePotentiel" (ngModelChange)="choisirEcheancePotentiel($event)" aria-label="Heure du potentiel d'orage de feu">
+              @for (e of potentielOrageFeu.echeances; track e.echeance) {
+                <option [value]="e.echeance">{{ e.echeance | date:'EEE d, HH:mm' }}{{ e.palier_max_france ? '' : ' — rien en France' }}</option>
+              }
+            </select>
+            <div class="rafales-legende" aria-label="Légende du potentiel d'orage de feu">
+              @for (p of potentielOrageFeu.legende; track p.palier) {
+                <span [title]="'Un feu de ' + p.pft_jusqua_gw + ' GW suffirait'"><i [style.background]="p.couleur"></i>{{ p.libelle }}</span>
+              }
+            </div>
+          } @else {
+            <small>Pas encore calculé.</small>
+          }
+          <small class="mention">Nos estimations, qui ne sont pas des prévisions.</small>
+        </div>
+      }
       <label class="layer-toggle-item" title="Surfaces brûlées des trente derniers jours, vues par satellite (EFFIS). Pas une alerte.">
         <input type="checkbox" [(ngModel)]="layerVisibility.zonesBrulees" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot brule-dot"></span>

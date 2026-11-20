@@ -136,6 +136,8 @@
 .brule-dot { background: #7c2d12; }
 .secteur-vulnerable-dot { background: rgba(249, 115, 22, .45); border: 1px solid #c2410c; }
 .foyers-dot { background: #dc2626; }
+.feux-suivis-dot { background: #b91c1c; box-shadow: 0 0 0 2px #facc15; }
+.potentiel-orage-feu-dot { background: linear-gradient(90deg, #fdba74, #ea580c, #7f1d1d); }
 .dae-dot { background: #16a34a; }
 .seismes-dot { background: #f97316; }
 .radio-dot { background: #7c3aed; }
@@ -375,4 +377,21 @@
     background: linear-gradient(90deg, transparent calc(var(--maintenant, 100%) - 1px), #1e40af calc(var(--maintenant, 100%) - 1px),
                 #1e40af calc(var(--maintenant, 100%) + 1px), transparent calc(var(--maintenant, 100%) + 1px));
   }
+}
+
+// Potentiel d'orage de feu : heure choisie, légende, mention.
+.potentiel-orage-feu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px 26px;
+
+  select { font-size: 0.8rem; padding: 2px 4px; max-width: 100%; }
+  .rafales-legende {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;
+    font-size: .72rem; color: var(--ac-text, #1f2937);
+    span { display: inline-flex; align-items: center; gap: 3px; }
+    i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, .25); }
+  }
+  .mention { color: var(--ac-text-muted, #6b7280); font-style: italic; }
 }

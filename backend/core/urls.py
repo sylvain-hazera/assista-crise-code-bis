@@ -30,7 +30,7 @@ from .views_pcs import (
 )
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
-    FoyersActifsView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, BlitzortungView, FoudreView, OragesView, PluieRadarView, ImagePluieRadarView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
+    FoyersActifsView, FeuxSuivisView, ImagePotentielOrageFeuView, PotentielOrageFeuView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, BlitzortungView, FoudreView, OragesView, PluieRadarView, ImagePluieRadarView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
     DefibrillateursView, MeteoForetsView, ObservationsMeteoView, PluiePrevueView,
     RadioactiviteView, RestrictionsEauView, SeismesView, VolcansView,
     RisqueAvalancheView, SanteUrgencesView,
@@ -411,6 +411,9 @@ urlpatterns = [
     path('pluie-prevue/', PluiePrevueView.as_view(), name='pluie_prevue'),
     path('pluie-prevue/image/', ImagePluieView.as_view(), name='pluie_prevue_image'),
     path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
+    path('orages-de-feu/', PotentielOrageFeuView.as_view(), name='orages_de_feu'),
+    path('orages-de-feu/image/', ImagePotentielOrageFeuView.as_view(), name='orages_de_feu_image'),
+    path('feux-suivis/', FeuxSuivisView.as_view(), name='feux_suivis'),
     path('orages/', OragesView.as_view(), name='orages'),
     path('orages/radar/', PluieRadarView.as_view(), name='orages_radar'),
     path('orages/radar/image/', ImagePluieRadarView.as_view(), name='orages_radar_image'),

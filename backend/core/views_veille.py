@@ -1452,3 +1452,109 @@ class ConfigurationAlerteFeuViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         if ConfigurationAlerteFeu.objects.filter(institution=institution).exists():
             raise ValidationError("Un réglage d'alerte de feu existe déjà pour cette institution.")
         serializer.save(institution=institution, environment=get_active_environment(self.request))
+
+
+#: Rayon autour de la commune pour le potentiel d'orage de feu : celui d'un grand massif forestier.
+RAYON_POTENTIEL_KM = 50
+
+
+class PotentielOrageFeuView(APIView):
+    """GET /api/orages-de-feu/ : le potentiel d'orage de feu calculé pour les heures de
+    l'après-midi d'aujourd'hui et de demain (core/orages_de_feu.py) -- NOS ESTIMATIONS, qui ne
+    sont pas des prévisions --, où poser les images et la légende.
+
+    Avec `lat` et `lon`, ou pour la commune de l'institution de l'appelant, `ici` donne pour
+    chaque heure les valeurs à cet endroit et le palier le plus fort dans un rayon de 50 km. Lu
+    dans les grilles déjà calculées : aucun appel sortant."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from . import orages_de_feu
+        from .models import PotentielOrageFeu
+
+        ouest, sud, est, nord = orages_de_feu.EMPRISE_IMAGE
+        grilles = list(PotentielOrageFeu.objects.order_by("echeance"))
+        _emprise_inutile, centre, _rayon = _emprise(request, RAYON_POTENTIEL_KM)
+        echeances = []
+        for grille in grilles:
+            rang = orages_de_feu.decoder(grille.grilles, grille.largeur, grille.hauteur)["rang"]
+            ligne = {"echeance": grille.echeance, "palier_max_france": int(rang.max())}
+            if centre:
+                ligne["ici"] = orages_de_feu.valeur_au_point(grille, centre["latitude"], centre["longitude"])
+                ligne["palier_max_autour"] = _palier_max_autour(grille, rang, centre, RAYON_POTENTIEL_KM)
+            echeances.append(ligne)
+        return Response({
+            **sources_ouvertes.resume("POTENTIEL_ORAGE_FEU"),
+            "nos_estimations": True,
+            "calcul": max((g.calcul for g in grilles), default=None),
+            "coins": [[ouest, nord], [est, nord], [est, sud], [ouest, sud]],
+            "legende": orages_de_feu.legende(),
+            "centre": centre, "rayon_km": RAYON_POTENTIEL_KM if centre else None,
+            "echeances": echeances,
+        })
+
+
+def _palier_max_autour(grille, rang, centre, rayon_km):
+    import numpy
+
+    from . import orages_de_feu
+
+    lignes = numpy.arange(grille.hauteur)[:, None]
+    colonnes = numpy.arange(grille.largeur)[None, :]
+    latitudes = grille.nord - lignes * orages_de_feu.PAS_DEGRES
+    longitudes = grille.ouest + colonnes * orages_de_feu.PAS_DEGRES
+    dx = (longitudes - centre["longitude"]) * 111.32 * math.cos(math.radians(centre["latitude"]))
+    dy = (latitudes - centre["latitude"]) * 111.32
+    dedans = numpy.hypot(dx, dy) <= rayon_km
+    return int(rang[dedans].max()) if dedans.any() else None
+
+
+class ImagePotentielOrageFeuView(APIView):
+    """GET /api/orages-de-feu/image/?echeance=… : l'image du potentiel d'une heure (PNG
+    transparent), servie comme celle des rafales."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from .models import PotentielOrageFeu
+
+        return _image_d_une_echeance(PotentielOrageFeu, request)
+
+
+class FeuxSuivisView(APIView):
+    """GET /api/feux-suivis/ : les feux en cours suivis par le satellite MTG (core/feux_mtg.py),
+    dans une emprise (voir `_emprise`) ou, avec `?france=1`, pour toute la France. Les actifs
+    d'abord, du plus puissant au plus faible. Les sources fixes (usines, torchères) ne sont
+    rendues qu'avec `?fixes=1`. Détections satellite, à confirmer : rien n'est annoncé."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from .models import FeuSuivi
+
+        feux = FeuSuivi.objects.all()
+        if request.query_params.get("france") in ("1", "true"):
+            centre, rayon = None, None
+        else:
+            emprise, centre, rayon = _emprise(request)
+            if emprise is None:
+                return Response({**_entete("FEUX_MTG", None, None), "emprise_connue": False,
+                                 "sources_fixes": 0, "resultats": []})
+            feux = feux.filter(centre__within=emprise)
+        fixes = feux.filter(source_fixe=True).count()
+        if request.query_params.get("fixes") not in ("1", "true"):
+            feux = feux.filter(source_fixe=False)
+        liste = sorted(feux, key=lambda f: (f.statut != "actif", -f.puissance_mw))[:RESULTATS_MAX]
+        resultats = []
+        for feu in liste:
+            latitude, longitude = _point(feu.centre)
+            resultats.append({
+                "identifiant": feu.identifiant, "latitude": round(latitude, 4), "longitude": round(longitude, 4),
+                "distance_km": (round(_distance_km(centre["latitude"], centre["longitude"], latitude, longitude), 1)
+                                if centre else None),
+                "premier_vu": feu.premier_vu, "dernier_vu": feu.dernier_vu, "statut": feu.statut,
+                "puissance_mw": feu.puissance_mw, "puissance_max_mw": feu.puissance_max_mw,
+                "instant_max": feu.instant_max, "pixels": feu.pixels, "confirme": feu.confirme,
+                "source_fixe": feu.source_fixe, "courbe": feu.courbe, "contexte": feu.contexte,
+            })
+        return Response({**_entete("FEUX_MTG", centre, rayon), "emprise_connue": True,
+                         "sources_fixes": fixes, "resultats": resultats})

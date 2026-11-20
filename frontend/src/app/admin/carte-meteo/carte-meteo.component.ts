@@ -4,7 +4,8 @@ import { Subscription } from 'rxjs';
 
 import { MapComponent } from '../../shared/components/common/map/map.component';
 import { CelluleOrageComponent } from '../../shared/components/meteo/cellule-orage/cellule-orage.component';
-import { CelluleOrage, OragesRadar } from '../../shared/models/veille.model';
+import { CelluleOrage, FeuSuivi, FeuxSuivis, OragesRadar, PotentielOrageFeu } from '../../shared/models/veille.model';
+import * as dessinFeux from '../../shared/components/common/map/feux-carte';
 import { VeilleService } from '../../services/veille.service';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 
@@ -14,6 +15,9 @@ type Perimetre = 'territoire' | 'france';
  * radar, cellules orageuses, éclairs, prévisions Météo-France — et, à côté, la RETRANSCRIPTION en
  * toutes lettres de ce qu'elle montre : chaque cellule avec ses trois natures d'information
  * (relevés, nos estimations, prévision Météo-France), la foudre et les cumuls de pluie.
+ *
+ * Les feux en cours suivis par le satellite MTG et le potentiel d'orage de feu (nos estimations)
+ * y ont été ajoutés le 20/11/2026.
  *
  * Tout vient de notre serveur, comme la veille du territoire. Rien n'est annoncé d'ici. */
 @Component({
@@ -30,19 +34,30 @@ export class CarteMeteoComponent implements OnInit, OnDestroy {
   perimetre: Perimetre = 'territoire';
   orages: OragesRadar | null = null;
   erreur = false;
+  feux: FeuxSuivis | null = null;
+  potentiel: PotentielOrageFeu | null = null;
+  readonly dessinFeux = dessinFeux;
   private suivi?: Subscription;
+  private suiviFeux?: Subscription;
+  private suiviPotentiel?: Subscription;
   private centree = false;
 
   constructor(private service: VeilleService) {}
 
   ngOnInit(): void { this.charger(); }
 
-  ngOnDestroy(): void { this.suivi?.unsubscribe(); }
+  ngOnDestroy(): void {
+    this.suivi?.unsubscribe();
+    this.suiviFeux?.unsubscribe();
+    this.suiviPotentiel?.unsubscribe();
+  }
 
   choisirPerimetre(perimetre: Perimetre): void {
     if (perimetre === this.perimetre) return;
     this.perimetre = perimetre;
     this.orages = null;
+    this.feux = null;
+    this.potentiel = null;
     this.charger();
   }
 
@@ -65,6 +80,41 @@ export class CarteMeteoComponent implements OnInit, OnDestroy {
       },
       error: () => { this.erreur = true; },
     });
+    this.chargerFeux();
+  }
+
+  /** Rayon des feux autour du territoire : un grand feu se suit de loin. */
+  static readonly RAYON_FEUX_KM = 100;
+
+  private chargerFeux(): void {
+    this.suiviFeux?.unsubscribe();
+    this.suiviPotentiel?.unsubscribe();
+    const france = this.perimetre === 'france';
+    this.suiviFeux = pollWhileVisible(
+      () => this.service.feuxSuivis(france ? 'france' : { rayon_km: CarteMeteoComponent.RAYON_FEUX_KM }), 120_000,
+    ).subscribe({ next: (feux) => { this.feux = feux; }, error: () => { this.feux = null; } });
+    this.suiviPotentiel = pollWhileVisible(() => this.service.potentielOrageFeu(), 3_600_000)
+      .subscribe({ next: (potentiel) => { this.potentiel = potentiel; }, error: () => { this.potentiel = null; } });
+  }
+
+  /** Les heures où le potentiel n'est pas nul : autour du territoire, ou en France. */
+  get heuresAPotentiel() {
+    const parTerritoire = this.perimetre === 'territoire' && !!this.potentiel?.centre;
+    return (this.potentiel?.echeances ?? [])
+      .map(e => ({ ...e, palier: parTerritoire ? (e.palier_max_autour ?? 0) : e.palier_max_france }))
+      .filter(e => e.palier > 0);
+  }
+
+  libellePalier(palier: number): string {
+    return this.potentiel?.legende.find(p => p.palier === palier)?.libelle ?? '';
+  }
+
+  couleurPalier(palier: number): string {
+    return this.potentiel?.legende.find(p => p.palier === palier)?.couleur ?? 'transparent';
+  }
+
+  voirFeu(feu: FeuSuivi): void {
+    this.carte?.centrerSur(feu.longitude, feu.latitude, 10);
   }
 
   /** Cellules par intensité décroissante (le serveur les trie par distance autour d'un centre). */
