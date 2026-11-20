@@ -2,6 +2,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { NotificationTerrain, TerrainService } from '../terrain.service';
 import { NotificationsPousseesService } from '../notifications-poussees.service';
+import { EtapeNotification } from '../terrain.service';
+import { HorsLigneService } from '../hors-ligne.service';
 
 /**
  * Mes notifications (mobilisations, consignes), comme dans l'application Android. Les accusés
@@ -34,6 +36,9 @@ import { NotificationsPousseesService } from '../notifications-poussees.service'
       }
     }
     @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
+    @if (copieDu()) {
+      <p class="copie" role="status">Hors ligne : alertes telles qu'elles étaient le {{ copieDu() | date:'d MMM à HH:mm' }}.</p>
+    }
     @if (!chargement() && !notifications().length) {
       <p class="discret">Aucune notification ces derniers jours.</p>
     }
@@ -64,6 +69,8 @@ import { NotificationsPousseesService } from '../notifications-poussees.service'
     .corps { white-space: pre-line; margin: 8px 0 0; }
     .discret { color: var(--ac-text-muted, #6b7280); font-size: .85rem; margin: 4px 0 0; }
     .erreur { color: var(--ac-red-text, #b91c1c); }
+    .copie { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); border-radius: 8px;
+             padding: 8px 10px; font-size: .85rem; }
     .encart { background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af);
               border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
     .encart p { margin: 0 0 8px; font-size: .9rem; }
@@ -75,6 +82,8 @@ import { NotificationsPousseesService } from '../notifications-poussees.service'
 export class TerrainAlertesComponent implements OnInit {
   private terrain = inject(TerrainService);
   readonly poussees = inject(NotificationsPousseesService);
+  private horsLigne = inject(HorsLigneService);
+  readonly copieDu = signal<string | null>(null);
   readonly notifications = signal<NotificationTerrain[]>([]);
   readonly chargement = signal(true);
   readonly erreur = signal<string | null>(null);
@@ -83,24 +92,43 @@ export class TerrainAlertesComponent implements OnInit {
   ngOnInit(): void {
     this.terrain.notifications().subscribe({
       next: (liste) => {
+        this.horsLigne.garder('alertes', liste).catch(() => {});
+        this.copieDu.set(null);
         this.notifications.set(liste);
         this.chargement.set(false);
         const nouvelles = liste.filter(n => !n.date_vue).map(n => n.id);
-        if (nouvelles.length) this.terrain.accuser(nouvelles, 'VUE').subscribe({ error: () => {} });
+        if (nouvelles.length) this.accuser(nouvelles, 'VUE');
       },
-      error: () => {
+      error: async (e) => {
+        const copie = HorsLigneService.estHorsLigne(e) ? await this.horsLigne.relire<NotificationTerrain[]>('alertes') : null;
         this.chargement.set(false);
-        this.erreur.set('Impossible de charger les notifications. Vérifiez le réseau.');
+        if (copie) {
+          this.copieDu.set(copie.enregistree_le);
+          this.notifications.set(copie.valeur);
+        } else {
+          this.erreur.set('Impossible de charger les notifications. Vérifiez le réseau.');
+        }
       },
     });
   }
 
   activer(): void { this.poussees.activer().catch(() => {}); }
 
+  /** Un accusé qui ne part pas faute de réseau attend dans la file : « lu » doit arriver. */
+  private accuser(ids: string[], etape: EtapeNotification): void {
+    this.terrain.accuser(ids, etape).subscribe({
+      error: (e) => {
+        if (HorsLigneService.estHorsLigne(e)) {
+          this.horsLigne.differer({ genre: 'accuse', ids, etape, faite_le: new Date().toISOString() }).catch(() => {});
+        }
+      },
+    });
+  }
+
   ouvrir(n: NotificationTerrain): void {
     this.ouverte.set(this.ouverte() === n.id ? null : n.id);
     if (!n.date_lue) {
-      this.terrain.accuser([n.id], 'LUE').subscribe({ error: () => {} });
+      this.accuser([n.id], 'LUE');
       this.notifications.update(l => l.map(x => (x.id === n.id ? { ...x, date_lue: new Date().toISOString() } : x)));
     }
   }

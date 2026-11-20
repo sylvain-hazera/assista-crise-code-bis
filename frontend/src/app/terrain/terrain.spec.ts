@@ -28,7 +28,7 @@ describe('Espace terrain', () => {
     requete.flush({});
   });
 
-  it('montre les missions en cours d\'abord, et enregistre « Je commence »', () => {
+  it('montre les missions en cours d\'abord, et enregistre « Je commence »', async () => {
     const fixture = TestBed.createComponent(TerrainMissionsComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/missions/`).flush([
@@ -36,6 +36,7 @@ describe('Espace terrain', () => {
       { id: 'b', titre: 'Sacs de sable', crise: 'c', equipe_ids: [], statut: 'EN_PREPARATION' },
       { id: 'c', titre: 'Évacuation', crise: 'c', equipe_ids: [], statut: 'EN_COURS' },
     ]);
+    await new Promise(r => setTimeout(r, 60));          // la file locale est relue (IndexedDB)
     fixture.detectChanges();
     const titres = Array.from(fixture.nativeElement.querySelectorAll('h2')).map((h: any) => h.textContent.trim());
     expect(titres).toEqual(['Évacuation', 'Sacs de sable', 'Ronde']);

@@ -5,6 +5,7 @@ import { BrandingService } from '../services/branding.service';
 import { AuthService } from '../auth/services/auth.service';
 import { BoutonFormationComponent } from '../shared/components/common/bouton-formation/bouton-formation.component';
 import { NotificationsPousseesService } from './notifications-poussees.service';
+import { HorsLigneService } from './hors-ligne.service';
 
 /**
  * L'espace terrain, pensé pour le téléphone (DOSSIER-PWA-INTERVENANTS.md, lot 2) : un en-tête
@@ -19,6 +20,11 @@ import { NotificationsPousseesService } from './notifications-poussees.service';
       <header class="entete">
         <img [src]="logo()" alt="" class="logo">
         <span class="marque">{{ nom() }}</span>
+        @if (!horsLigne.enLigne() || horsLigne.enAttente()) {
+          <span class="etat-reseau" [class.hors]="!horsLigne.enLigne()" role="status">
+            {{ horsLigne.enLigne() ? 'Envoi en cours' : 'Hors ligne' }}@if (horsLigne.enAttente()) { · {{ horsLigne.enAttente() }} en attente }
+          </span>
+        }
         <span class="espace">Terrain</span>
         <app-bouton-formation />
       </header>
@@ -57,6 +63,11 @@ import { NotificationsPousseesService } from './notifications-poussees.service';
       margin-left: auto; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase;
       color: var(--ac-text-muted, #6b7280);
     }
+    .etat-reseau {
+      font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+      background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af);
+    }
+    .etat-reseau.hors { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); }
     .bandeau-formation {
       position: sticky; top: calc(44px + env(safe-area-inset-top, 0px)); z-index: 9;
       display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px;
@@ -81,6 +92,7 @@ import { NotificationsPousseesService } from './notifications-poussees.service';
 export class TerrainLayoutComponent implements OnInit {
   private branding = inject(BrandingService);
   private notifications = inject(NotificationsPousseesService);
+  readonly horsLigne = inject(HorsLigneService);
   private auth = inject(AuthService);
 
   enFormation(): boolean { return this.auth.getEnvironment() === 'DEMO'; }
@@ -100,5 +112,7 @@ export class TerrainLayoutComponent implements OnInit {
   ngOnInit(): void {
     // Joignable par l'application dès l'ouverture de l'espace terrain, abonnement compris.
     this.notifications.actualiser().catch(() => {});
+    // Ce qui a été fait sans réseau part dès l'ouverture, puis à chaque retour du réseau.
+    this.horsLigne.demarrer();
   }
 }

@@ -1,7 +1,8 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Mission } from '../../shared/models/mission.model';
 import { TerrainService } from '../terrain.service';
+import { HorsLigneService } from '../hors-ligne.service';
 
 const LIBELLES: Record<Mission['statut'], string> = {
   EN_PREPARATION: 'En préparation', EN_COURS: 'En cours', TERMINEE: 'Terminée',
@@ -16,6 +17,9 @@ const LIBELLES: Record<Mission['statut'], string> = {
     @if (erreur()) {
       <p class="erreur" role="alert">{{ erreur() }}</p>
     }
+    @if (copieDu()) {
+      <p class="copie" role="status">Hors ligne : missions telles qu'elles étaient le {{ copieDu() | date:'d MMM à HH:mm' }}.</p>
+    }
     @if (chargement()) {
       <p class="discret">Chargement…</p>
     } @else if (!missions().length) {
@@ -27,6 +31,9 @@ const LIBELLES: Record<Mission['statut'], string> = {
           <h2>{{ m.titre }}</h2>
           <span class="statut" [attr.data-statut]="m.statut">{{ libelle(m.statut) }}</span>
         </div>
+        @if (enAttente().has(m.id!)) {
+          <p class="attente">Enregistré sur ce téléphone : partira au retour du réseau.</p>
+        }
         @if (m.crise_nom) { <p class="crise">{{ m.crise_nom }}</p> }
         @if (m.description) { <p class="description">{{ m.description }}</p> }
         <p class="discret">
@@ -63,6 +70,9 @@ const LIBELLES: Record<Mission['statut'], string> = {
     .description { margin: 6px 0; white-space: pre-line; }
     .discret { color: var(--ac-text-muted, #6b7280); font-size: .85rem; margin: 4px 0; }
     .erreur { color: var(--ac-red-text, #b91c1c); }
+    .copie { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); border-radius: 8px;
+             padding: 8px 10px; font-size: .85rem; }
+    .attente { color: var(--ac-amber-text, #92400e); font-size: .82rem; margin: 4px 0 0; font-weight: 600; }
     .actions { display: flex; gap: 8px; margin-top: 8px; }
     .principal {
       flex: 1; border: 0; border-radius: 10px; padding: 12px; font: inherit; font-weight: 600; cursor: pointer;
@@ -73,7 +83,19 @@ const LIBELLES: Record<Mission['statut'], string> = {
 })
 export class TerrainMissionsComponent implements OnInit {
   private terrain = inject(TerrainService);
+  private horsLigne = inject(HorsLigneService);
   readonly missions = signal<Mission[]>([]);
+  /** Sans réseau : la date de la copie affichée. */
+  readonly copieDu = signal<string | null>(null);
+  /** Missions dont un changement attend d'être envoyé. */
+  readonly enAttente = signal<Set<string>>(new Set());
+
+  constructor() {
+    // La file s'est vidée (réseau revenu) : on relit le serveur, qui a maintenant tout.
+    effect(() => {
+      if (this.horsLigne.enAttente() === 0 && this.enAttente().size) setTimeout(() => this.charger());
+    });
+  }
   readonly chargement = signal(true);
   readonly erreur = signal<string | null>(null);
   readonly enCours = signal<string | null>(null);
@@ -85,16 +107,34 @@ export class TerrainMissionsComponent implements OnInit {
   charger(): void {
     this.terrain.missions().subscribe({
       next: (missions) => {
-        const ordre = { EN_COURS: 0, EN_PREPARATION: 1, TERMINEE: 2 } as const;
-        this.missions.set([...missions].sort((a, b) => ordre[a.statut] - ordre[b.statut]));
-        this.chargement.set(false);
-        this.erreur.set(null);
+        this.horsLigne.garder('missions', missions).catch(() => {});
+        this.copieDu.set(null);
+        this.afficher(missions);
       },
-      error: () => {
-        this.chargement.set(false);
-        this.erreur.set('Impossible de charger les missions. Vérifiez le réseau, puis réessayez.');
+      error: async (e) => {
+        const copie = HorsLigneService.estHorsLigne(e) ? await this.horsLigne.relire<Mission[]>('missions') : null;
+        if (copie) {
+          this.copieDu.set(copie.enregistree_le);
+          await this.afficher(copie.valeur);
+        } else {
+          this.chargement.set(false);
+          this.erreur.set('Impossible de charger les missions. Vérifiez le réseau, puis réessayez.');
+        }
       },
     });
+  }
+
+  /** Les missions, corrigées de ce qui a été fait ici et attend d'être envoyé. */
+  private async afficher(missions: Mission[]): Promise<void> {
+    const actions = await this.horsLigne.enFile().catch(() => []);
+    const statuts = new Map<string, Mission['statut']>();
+    for (const { valeur } of actions) if (valeur.genre === 'statut_mission') statuts.set(valeur.mission, valeur.statut as Mission['statut']);
+    const ordre = { EN_COURS: 0, EN_PREPARATION: 1, TERMINEE: 2 } as const;
+    this.missions.set(missions.map(m => (m.id && statuts.has(m.id) ? { ...m, statut: statuts.get(m.id)! } : m))
+      .sort((a, b) => ordre[a.statut] - ordre[b.statut]));
+    this.enAttente.set(new Set(statuts.keys()));
+    this.chargement.set(false);
+    this.erreur.set(null);
   }
 
   changer(mission: Mission, statut: Mission['statut']): void {
@@ -105,9 +145,16 @@ export class TerrainMissionsComponent implements OnInit {
         this.missions.update(liste => liste.map(m => (m.id === mission.id ? { ...m, ...a_jour, statut } : m)));
         this.enCours.set(null);
       },
-      error: () => {
+      error: async (e) => {
         this.enCours.set(null);
-        this.erreur.set('Le changement n\'a pas été enregistré : réessayez quand le réseau revient.');
+        if (!HorsLigneService.estHorsLigne(e)) {
+          this.erreur.set('Le changement n\'a pas été accepté par le serveur.');
+          return;
+        }
+        // Sans réseau : gardé sur le téléphone, envoyé au retour du réseau.
+        await this.horsLigne.differer({ genre: 'statut_mission', mission: mission.id!, statut, faite_le: new Date().toISOString() });
+        this.missions.update(liste => liste.map(m => (m.id === mission.id ? { ...m, statut } : m)));
+        this.enAttente.update(s => new Set(s).add(mission.id!));
       },
     });
   }

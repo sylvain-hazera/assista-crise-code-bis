@@ -4,6 +4,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import { ApplicationInstallableService } from '../../services/application-installable.service';
 import { TerrainService } from '../terrain.service';
 import { NotificationsPousseesService } from '../notifications-poussees.service';
+import { HorsLigneService } from '../hors-ligne.service';
 
 /** Mon compte, côté terrain : ma fiche, mes réglages, l'installation, la déconnexion. */
 @Component({
@@ -47,6 +48,7 @@ export class TerrainMoiComponent {
   private terrain = inject(TerrainService);
   private router = inject(Router);
   private notifications = inject(NotificationsPousseesService);
+  private horsLigne = inject(HorsLigneService);
   readonly installable = inject(ApplicationInstallableService);
 
   prenom(): string { return this.auth.getCurrentUser()?.first_name || 'Mon compte'; }
@@ -59,6 +61,8 @@ export class TerrainMoiComponent {
   }
 
   private fin(): void {
+    // Rien de la personne ne reste sur le téléphone : copies et file effacées, clés comprises.
+    this.horsLigne.effacer().catch(() => {});
     this.auth.logout();
     this.router.navigate(['/login'], { queryParams: { returnUrl: '/terrain' } });
   }
