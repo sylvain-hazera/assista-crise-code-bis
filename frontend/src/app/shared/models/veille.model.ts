@@ -753,6 +753,8 @@ export interface PotentielOrageFeu {
   releve_le: string | null;
   perime: boolean;
   nos_estimations: true;
+  /** Croisé avec la météo des forêts : rien n'est peint hors saison, ni sous le danger « élevé ». */
+  meteo_forets: { en_saison: boolean; danger_minimum: string };
   calcul: string | null;
   coins: [number, number][];
   legende: { palier: number; libelle: string; pft_jusqua_gw: number; couleur: string }[];

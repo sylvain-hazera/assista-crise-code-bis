@@ -1486,6 +1486,10 @@ class PotentielOrageFeuView(APIView):
         return Response({
             **sources_ouvertes.resume("POTENTIEL_ORAGE_FEU"),
             "nos_estimations": True,
+            # Croisé avec la météo des forêts : rien n'est peint hors saison, ni là où le danger
+            # reste en dessous d'« élevé » (core/orages_de_feu.masque_vegetation).
+            "meteo_forets": {"en_saison": bool(ReleveMeteoForets.objects.filter(pk=1, en_saison=True).exists()),
+                             "danger_minimum": "élevé"},
             "calcul": max((g.calcul for g in grilles), default=None),
             "coins": [[ouest, nord], [est, nord], [est, sud], [ouest, sud]],
             "legende": orages_de_feu.legende(),

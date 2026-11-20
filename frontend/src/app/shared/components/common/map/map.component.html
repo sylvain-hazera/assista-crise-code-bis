@@ -203,7 +203,14 @@
           } @else {
             <small>Pas encore calculé.</small>
           }
-          <small class="mention">Nos estimations, qui ne sont pas des prévisions.</small>
+          <small class="mention">
+            @if (potentielOrageFeu.meteo_forets.en_saison) {
+              Peint seulement où la météo des forêts annonce un danger {{ potentielOrageFeu.meteo_forets.danger_minimum }} ou plus.
+            } @else {
+              Hors saison de la météo des forêts (octobre à mai) : rien n'est peint.
+            }
+            Nos estimations, qui ne sont pas des prévisions.
+          </small>
         </div>
       }
       @if (layerVisibility.pluieRadar && pluieRadar?.legende?.length) {
@@ -362,7 +369,14 @@
           } @else {
             <small>Pas encore calculé.</small>
           }
-          <small class="mention">Nos estimations, qui ne sont pas des prévisions.</small>
+          <small class="mention">
+            @if (potentielOrageFeu.meteo_forets.en_saison) {
+              Peint seulement où la météo des forêts annonce un danger {{ potentielOrageFeu.meteo_forets.danger_minimum }} ou plus.
+            } @else {
+              Hors saison de la météo des forêts (octobre à mai) : rien n'est peint.
+            }
+            Nos estimations, qui ne sont pas des prévisions.
+          </small>
         </div>
       }
       <label class="layer-toggle-item" title="Surfaces brûlées des trente derniers jours, vues par satellite (EFFIS). Pas une alerte.">

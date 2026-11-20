@@ -140,7 +140,7 @@ class TestReleve:
         assert PotentielOrageFeu.objects.first().calcul == datetime.datetime(2026, 7, 24, 6, tzinfo=UTC)
 
     def test_seule_la_france_est_peinte(self):
-        from core.models import Commune
+        from core.models import Commune, DangerFeuForet
 
         # Deux colonnes : la première porte une commune, la seconde est à 50 km (mer, pays voisin).
         sol, niveaux = grilles(SAUMOS_24_JUILLET, SAUMOS_24_JUILLET)
@@ -149,7 +149,10 @@ class TestReleve:
         for champs in niveaux.values():
             for nom in champs:
                 champs[nom] = champs[nom][:, [0, 0, 0, 0, 0, 1]]
-        Commune.objects.create(code="33500", nom="Saumos", centre_latitude=44.9, centre_longitude=-1.0)
+        Commune.objects.create(code="33500", nom="Saumos", centre_latitude=44.9, centre_longitude=-1.0,
+                               departement_code="33")
+        DangerFeuForet.objects.create(departement_code="33", niveau_demain=4, niveau_apres_demain=3,
+                                      releve_le=self.MAINTENANT)
         lu = (sol, niveaux, -1.0, 44.9)
         with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=lu):
             orages_de_feu.relever(self.MAINTENANT)
@@ -159,6 +162,28 @@ class TestReleve:
         assert rang[2:].tolist() == [0, 0, 0, 0]          # au-delà : rien de peint
         valeurs = orages_de_feu.decoder(grille.grilles, grille.largeur, grille.hauteur)["pft"][0]
         assert numpy.isfinite(valeurs[5])                 # la valeur, elle, reste lisible
+
+    @pytest.mark.parametrize("niveaux_meteo_forets, peint", [
+        (None, False),                    # hors saison : table vide
+        ((2, 2), False),                  # danger modéré
+        ((2, 3), True),                   # élevé après-demain
+        ((4, None), True),                # très élevé demain
+    ])
+    def test_croise_avec_la_meteo_des_forets(self, niveaux_meteo_forets, peint):
+        from core.models import Commune, DangerFeuForet
+
+        Commune.objects.create(code="33500", nom="Saumos", centre_latitude=44.9, centre_longitude=-1.0,
+                               departement_code="33")
+        if niveaux_meteo_forets:
+            DangerFeuForet.objects.create(departement_code="33", niveau_demain=niveaux_meteo_forets[0],
+                                          niveau_apres_demain=niveaux_meteo_forets[1], releve_le=self.MAINTENANT)
+        lu = (*grilles(SAUMOS_24_JUILLET), -1.0, 44.9)
+        with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=lu):
+            orages_de_feu.relever(self.MAINTENANT)
+        grille = PotentielOrageFeu.objects.first()
+        valeurs = orages_de_feu.decoder(grille.grilles, 1, 1)
+        assert bool(valeurs["rang"][0, 0] > 0) is peint
+        assert valeurs["pft"][0, 0] > 0                   # le seuil reste lisible
 
     def test_sans_calcul_disponible_le_releve_echoue(self):
         with mock.patch.object(orages_de_feu, "telecharger_echeance", return_value=None):
@@ -189,6 +214,7 @@ class TestAPI:
         self._creer(echeance)
         r = client.get("/api/orages-de-feu/", {"lat": 44.9, "lon": -1.0}).json()
         assert r["nos_estimations"] is True
+        assert r["meteo_forets"] == {"en_saison": False, "danger_minimum": "élevé"}
         assert [p["libelle"] for p in r["legende"]] == ["très élevé", "élevé", "modéré"]
         (heure,) = r["echeances"]
         assert heure["palier_max_france"] in (1, 2) and heure["palier_max_autour"] == heure["palier_max_france"]

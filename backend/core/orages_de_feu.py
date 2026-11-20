@@ -26,6 +26,14 @@ Le PFT seul ne suffit pas : il est au plus bas les jours humides, où les orages
 toute façon. Le potentiel n'est donc peint que là où l'air est sec et instable (C-Haines ≥ 8 et
 humidité au sol ≤ 40 %), par paliers de PFT.
 
+Et l'air ne dit rien de la végétation : en novembre, il peut être sec et instable au-dessus de
+forêts détrempées. Le potentiel est donc CROISÉ AVEC LA MÉTÉO DES FORÊTS de Météo-France
+(core/meteo_forets.py) : il n'est peint que dans les départements où le danger de feu atteint
+au moins « élevé » (le plus fort des deux jours publiés). Hors saison (octobre à mai), rien
+n'est peint ; le seuil et le C-Haines restent lisibles au point. Le croisement se fait au calcul :
+la météo des forêts change une fois par jour, vers 17 h, et le calcul quatre fois, d'où au plus
+six heures de décalage.
+
 COMMENT LES SEUILS ONT ÉTÉ CHOISIS (20/11/2026)
 Sur trois cas rejoués avec l'archive des modèles (Open-Meteo) : Saumos le 24/07/2026 (orage de
 feu observé : PFT 255 puis 152 GW de 15 h à 18 h TU, C-Haines 9 à 10, 14 à 31 % d'humidité),
@@ -246,22 +254,51 @@ def pft(P, Z, T, Q, V, blh):
             numpy.where(possible, zfc, numpy.nan))
 
 
-def masque_france(largeur, hauteur, ouest, nord):
-    """Grille booléenne : vrai pour les mailles de la France (une commune dedans ou dans une maille
-    voisine, soit les terres et les communes frontalières). La grille d'ARPEGE déborde sur la mer
-    et les pays voisins : le 20/11/2026, les seuls paliers peints étaient en Ligurie, en Espagne
-    et au large de la Corse. None s'il n'y a aucune commune en base (rien n'est alors masqué)."""
+def departements(largeur, hauteur, ouest, nord):
+    """Grille des codes de département (chaîne vide hors de France) : la maille d'une commune
+    prend son département, puis les mailles voisines encore libres (communes frontalières, côte).
+    La grille d'ARPEGE déborde sur la mer et les pays voisins : le 20/11/2026, les seuls paliers
+    peints étaient en Ligurie, en Espagne et au large de la Corse. None s'il n'y a aucune commune
+    en base."""
     import numpy
 
     from .models import Commune
 
-    masque = numpy.zeros((hauteur, largeur), bool)
-    for latitude, longitude in (Commune.objects.exclude(centre_latitude=None).exclude(centre_longitude=None)
-                                .values_list("centre_latitude", "centre_longitude")):
+    codes = numpy.full((hauteur, largeur), "", dtype=object)
+    voisines = []
+    for latitude, longitude, departement in (Commune.objects.exclude(centre_latitude=None)
+                                             .exclude(centre_longitude=None).exclude(departement_code=None)
+                                             .values_list("centre_latitude", "centre_longitude", "departement_code")):
         ligne, colonne = round((nord - latitude) / PAS_DEGRES), round((longitude - ouest) / PAS_DEGRES)
         if 0 <= ligne < hauteur and 0 <= colonne < largeur:
-            masque[max(0, ligne - 1):ligne + 2, max(0, colonne - 1):colonne + 2] = True
-    return masque if masque.any() else None
+            codes[ligne, colonne] = departement
+            voisines.append((ligne, colonne, departement))
+    if not voisines:
+        return None
+    for ligne, colonne, departement in voisines:
+        bloc = codes[max(0, ligne - 1):ligne + 2, max(0, colonne - 1):colonne + 2]
+        bloc[bloc == ""] = departement
+    return codes
+
+
+#: Danger de feu de la météo des forêts à partir duquel le potentiel est peint (3 : « élevé »).
+DANGER_FEU_MIN = 3
+
+
+def masque_vegetation(largeur, hauteur, ouest, nord):
+    """Grille booléenne : vrai là où le potentiel peut être peint -- en France, dans un
+    département où la météo des forêts annonce un danger « élevé » ou « très élevé ». Tout faux
+    hors saison. None s'il n'y a aucune commune en base (rien n'est alors masqué)."""
+    import numpy
+
+    from .models import DangerFeuForet
+
+    codes = departements(largeur, hauteur, ouest, nord)
+    if codes is None:
+        return None
+    dangereux = {d.departement_code for d in DangerFeuForet.objects.all()
+                 if max(d.niveau_demain or 0, d.niveau_apres_demain or 0) >= DANGER_FEU_MIN}
+    return numpy.isin(codes, list(dangereux)) if dangereux else numpy.zeros(codes.shape, bool)
 
 
 def potentiel(pft_gw, ch, hr2):
@@ -455,7 +492,7 @@ def relever(maintenant=None):
         sol, niveaux, ouest, nord = lu
         grilles = calculer(sol, niveaux)
         hauteur, largeur = sol["ps"].shape
-        masque = masque if masque is not None else masque_france(largeur, hauteur, ouest, nord)
+        masque = masque if masque is not None else masque_vegetation(largeur, hauteur, ouest, nord)
         if masque is not None:
             grilles["rang"] = numpy.where(masque, grilles["rang"], 0).astype(numpy.uint8)
         with transaction.atomic():

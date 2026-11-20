@@ -36,6 +36,7 @@ const AUCUN_FEU: FeuxSuivis = { source: 'EUMETSAT LSA SAF [FRP-PIXEL, LSA-509]',
                                  centre: null, rayon_km: 100, emprise_connue: true, sources_fixes: 0, resultats: [] };
 const SANS_POTENTIEL: PotentielOrageFeu = {
   source: 'Météo-France (ARPEGE), nos estimations', releve_le: null, perime: false, nos_estimations: true, calcul: null,
+  meteo_forets: { en_saison: true, danger_minimum: 'élevé' },
   coins: [], legende: [{ palier: 2, libelle: 'élevé', pft_jusqua_gw: 250, couleur: '#ea580c' }],
   centre: { latitude: 44.87, longitude: -0.98 }, rayon_km: 50, echeances: [],
 };
