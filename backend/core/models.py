@@ -6025,6 +6025,23 @@ class DelegationGestion(EnvironmentScopedModel):
         return f"{self.collectivite} → {self.aasc} ({self.statut})"
 
 
+class AmorcageDepartement(EnvironmentScopedModel):
+    """Amorçage d'un département par une AASC sous convention départementale (21/11/2026) :
+    répertoires officiels, adresses, risques, sites sensibles (voir core/amorcage_departement.py).
+    Une ligne par lancement ; `etapes` garde, pour chacune, son statut, ses comptes et son
+    erreur — l'écran le relit, et chaque étape se relance seule."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    delegation = models.ForeignKey("DelegationGestion", on_delete=models.CASCADE, related_name="amorcages")
+    lance_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    debut = models.DateTimeField(auto_now_add=True)
+    fin = models.DateTimeField(null=True, blank=True)
+    etapes = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-debut"]
+
+
 class PointType(models.Model):
 
     id = models.UUIDField(

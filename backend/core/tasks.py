@@ -165,9 +165,14 @@ def relever_zonages_officiels_task(commune_code: str, environment: str, forcer: 
 
 
 @shared_task(acks_late=True, time_limit=1800, soft_time_limit=1770)
-def charger_adresses_task(communes: list):
+def charger_adresses_departement_task(communes: list):
     """Charge les adresses de ces communes depuis le fichier départemental de la Base Adresse
-    Nationale (core/referentiel_adresses.py) : un téléchargement par département."""
+    Nationale (core/referentiel_adresses.py) : un téléchargement par département.
+
+    Renommée le 21/11/2026 : elle s'appelait aussi `charger_adresses_task`, comme la tâche de
+    la simulation d'inondation plus haut, qu'elle écrasait — le worker l'annonçait
+    (DuplicateTaskNameWarning) et la simulation appelait alors cette fonction-ci avec trois
+    arguments au lieu d'un."""
     from .referentiel_adresses import charger_communes
 
     return charger_communes(communes)
@@ -208,3 +213,17 @@ def pousser_notification_site_task(notification_id: str):
     from .notifications_application import pousser_notification_site
     return pousser_notification_site(notification_id)
 
+
+
+@shared_task(acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
+def amorcer_departement_task(amorcage_id: str, etapes=None):
+    """Amorçage d'un département (core/amorcage_departement.py) : annuaire officiel commune par
+    commune, adresses, risques, sites sensibles. Long par nature (un appel à l'Annuaire et à
+    Géorisques par commune) : quatre heures de budget, chaque étape consignée au fil de l'eau."""
+    from .amorcage_departement import ETAPES, executer
+    from .models import AmorcageDepartement
+
+    amorcage = AmorcageDepartement.objects.select_related("delegation__collectivite").filter(pk=amorcage_id).first()
+    if amorcage is None:
+        return
+    executer(amorcage, [e for e in (etapes or ETAPES) if e in ETAPES])

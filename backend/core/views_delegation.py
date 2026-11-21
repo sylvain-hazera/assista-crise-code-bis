@@ -320,6 +320,50 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         return Response(resultat)
 
     @action(detail=True, methods=["post"])
+    def amorcer(self, request, pk=None):
+        """Délégation départementale : lance l'amorçage du département (répertoires officiels,
+        adresses, risques, sites sensibles), toutes les étapes ou celles demandées."""
+        from .amorcage_departement import ETAPES
+        from .models import AmorcageDepartement
+        from .tasks import amorcer_departement_task
+
+        delegation = self.get_object()
+        if not agit_pour(request.user, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        cg = delegation.collectivite
+        if (cg.secteur_niveau_effectif or "") != "departement" or not cg.departement_code:
+            return Response({"error": "L'amorçage concerne une délégation départementale."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        en_cours = delegation.amorcages.filter(fin__isnull=True).first()
+        if en_cours is not None:
+            return Response({"error": "Un amorçage est déjà en cours pour ce département."},
+                            status=status.HTTP_409_CONFLICT)
+        etapes = [e for e in (request.data.get("etapes") or ETAPES) if e in ETAPES] or list(ETAPES)
+        amorcage = AmorcageDepartement.objects.create(
+            delegation=delegation, lance_par=request.user, environment=delegation.environment,
+            etapes={e: {"statut": "EN_ATTENTE"} for e in etapes})
+        transaction.on_commit(lambda: amorcer_departement_task.delay(str(amorcage.id), etapes))
+        audit_log(request=request, action_code="IMPORT_LISTE", objet_type="DelegationGestion",
+                  objet_id=delegation.id,
+                  commentaire=f"Amorçage du département {cg.departement_code} lancé ({', '.join(etapes)})")
+        return Response(self._etat_amorcage(amorcage), status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"])
+    def amorcage(self, request, pk=None):
+        """Où en est le dernier amorçage, et les imports de sites sensibles du département."""
+        delegation = self.get_object()
+        dernier = delegation.amorcages.first()
+        return Response(self._etat_amorcage(dernier) if dernier else None)
+
+    def _etat_amorcage(self, amorcage):
+        from .models import ImportOpenData
+        imports = ImportOpenData.objects.filter(institution=amorcage.delegation.collectivite)
+        return {
+            "id": str(amorcage.id), "debut": amorcage.debut, "fin": amorcage.fin, "etapes": amorcage.etapes,
+            "sites": [{"source": i.source, "statut": i.statut, "date_fin": i.date_fin} for i in imports],
+        }
+
+    @action(detail=True, methods=["post"])
     def inviter(self, request, pk=None):
         """Invite les personnes de la mairie à ouvrir leur compte (autorité locale, rattaché à la
         collectivité) pour compléter et vérifier ce que l'AASC a saisi, et garder la main."""

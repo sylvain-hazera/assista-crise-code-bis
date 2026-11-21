@@ -35,6 +35,15 @@ export interface RepertoireEpci {
   annuaire: { nom: string; organisme: string; categorie: string; email: string; telephone: string }[];
 }
 
+/** Amorçage d'un département : où en est chaque étape. */
+export interface EtatAmorcage {
+  id: string;
+  debut: string;
+  fin: string | null;
+  etapes: Record<string, { statut: string; comptes?: Record<string, number>; erreur?: string; erreurs?: string[] }>;
+  sites: { source: string; statut: string; date_fin: string | null }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class DelegationGestionService {
   private url = `${environment.apiUrl}/delegations-gestion`;
@@ -53,6 +62,14 @@ export class DelegationGestionService {
   /** `forcer` : confirmer un retrait pendant une crise ouverte sur le territoire. */
   retirer(id: string, motif: string, forcer = false): Observable<DelegationGestion> {
     return this.http.post<DelegationGestion>(`${this.url}/${id}/retirer/`, { motif, forcer });
+  }
+
+  amorcer(id: string, etapes?: string[]): Observable<EtatAmorcage> {
+    return this.http.post<EtatAmorcage>(`${this.url}/${id}/amorcer/`, etapes ? { etapes } : {});
+  }
+
+  amorcage(id: string): Observable<EtatAmorcage | null> {
+    return this.http.get<EtatAmorcage | null>(`${this.url}/${id}/amorcage/`);
   }
 
   repertoires(id: string): Observable<RepertoireEpci[]> {

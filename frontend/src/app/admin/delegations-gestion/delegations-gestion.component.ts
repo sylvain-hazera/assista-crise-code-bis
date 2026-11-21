@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
 
 import {
-  DelegationGestion, DelegationGestionService, PersonneQuiAgit, RepertoireEpci,
+  DelegationGestion, DelegationGestionService, EtatAmorcage, PersonneQuiAgit, RepertoireEpci,
 } from '../../services/delegation-gestion.service';
 import { Commune, LocationService } from '../../services/location.service';
 
@@ -49,6 +49,15 @@ export class DelegationsGestionComponent implements OnInit {
   retraitForce: Record<string, boolean> = {};
   crisesOuvertes: Record<string, string[]> = {};
   repertoires: Record<string, RepertoireEpci[]> = {};
+  amorcages: Record<string, EtatAmorcage | null> = {};
+
+  /** Libellés des étapes de l'amorçage, dans leur ordre. */
+  readonly etapesAmorcage: { code: string; libelle: string }[] = [
+    { code: 'annuaire', libelle: 'Répertoires officiels (mairies, EPCI, services de crise)' },
+    { code: 'adresses', libelle: 'Adresses de toutes les communes' },
+    { code: 'risques', libelle: 'Risques de chaque commune (Géorisques)' },
+    { code: 'sites', libelle: 'Sites sensibles du département' },
+  ];
 
   constructor(private service: DelegationGestionService, private lieux: LocationService) {}
 
@@ -143,6 +152,21 @@ export class DelegationsGestionComponent implements OnInit {
       },
       error: e => this.erreur = this.texteErreur(e),
     });
+  }
+
+  voirAmorcage(d: DelegationGestion): void {
+    this.service.amorcage(d.id).subscribe({ next: a => this.amorcages[d.id] = a, error: e => this.erreur = this.texteErreur(e) });
+  }
+
+  amorcer(d: DelegationGestion, etape?: string): void {
+    this.service.amorcer(d.id, etape ? [etape] : undefined).subscribe({
+      next: a => { this.amorcages[d.id] = a; this.message = 'Amorçage lancé : il se poursuit en tâche de fond, revenez voir son avancement.'; },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  comptesLisibles(comptes?: Record<string, number>): string {
+    return comptes ? Object.entries(comptes).map(([k, v]) => `${k.replace(/_/g, ' ')} : ${v}`).join(' · ') : '';
   }
 
   voirRepertoires(d: DelegationGestion): void {

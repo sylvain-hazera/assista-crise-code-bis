@@ -890,7 +890,22 @@ la convention, elle ne peut plus qu'exporter ses données ».
   appartient à l'institution par un champ `institution` ou `collectivite` (calculé : un modèle
   ajouté demain est exporté), plus `LISEZMOI.txt`. Ouvert aux membres (même en export seul) et
   aux délégués ; journalisé (EXPORT). Le registre n'en fait pas partie (`institution_declarante`).
+- **Amorçage départemental** (`core/amorcage_departement.py`, `AmorcageDepartement`, migration
+  `0369`, tâche `amorcer_departement_task`, actions `amorcer` / `amorcage`) : « une division
+  départementale crée son conseil départemental, récupère les répertoires officiels intégraux de
+  tous les EPCI et collectivités du département, télécharge toutes les adresses ventilées par
+  commune, la liste de tous les risques, les sites sensibles ». Quatre étapes relançables :
+  annuaire (Annuaire de l'administration commune par commune — pas de filtre départemental,
+  vérifié le 21/11/2026 ; mairies et EPCI créés ou complétés sans doublon, services de crise
+  versés à l'annuaire PCS du conseil départemental), adresses (fichier BAN départemental),
+  risques (Géorisques par commune), sites sensibles (imports open data au périmètre du
+  département). Seules des données publiques circulent.
 - Écran `/admin/delegations-gestion` (menu Administration).
+
+**Tâche Celery en double (corrigé le 21/11/2026)** : `tasks.charger_adresses_task` était défini
+deux fois ; la seconde définition (chargement BAN départemental, une liste de communes) écrasait
+celle de la simulation d'inondation (commune, environnement, forcer), et le worker l'annonçait à
+chaque démarrage (`DuplicateTaskNameWarning`). Renommée `charger_adresses_departement_task`.
 
 **Failles corrigées en préparant ce lot** (aucune exploitée : aucune délégation n'existait en
 production) : `DelegationCompetence` créable par n'importe quel compte d'institution au nom de

@@ -223,9 +223,9 @@ def demander(communes):
     """Charge en tâche de fond les communes qui n'ont encore aucune adresse. Rend celles demandées."""
     manquantes = sorted(communes_manquantes(communes))
     if manquantes and getattr(settings, "CHARGEMENT_ADRESSES_AUTO", True):
-        from .tasks import charger_adresses_task
+        from .tasks import charger_adresses_departement_task
 
-        transaction.on_commit(lambda: charger_adresses_task.delay(manquantes))
+        transaction.on_commit(lambda: charger_adresses_departement_task.delay(manquantes))
     return manquantes
 
 

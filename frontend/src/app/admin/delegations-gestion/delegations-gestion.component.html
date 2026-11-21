@@ -69,8 +69,30 @@
           <button type="button" class="lien" (click)="voirPresence(d)">Personnes vulnérables (présence)</button>
           @if (d.en_vigueur) { <button type="button" class="lien" (click)="ouvrirInvitation(d)">Inviter la mairie</button> }
           <button type="button" class="lien" (click)="voirRepertoires(d)">Répertoires des intercommunalités</button>
+          <button type="button" class="lien" (click)="voirAmorcage(d)">Amorçage du département</button>
           <button type="button" class="lien" (click)="exporter(d)">Exporter les données de la collectivité</button>
         </div>
+        @if (amorcages[d.id] !== undefined) {
+          <div class="amorcage">
+            <p class="aide">Récupère en une fois les répertoires officiels de toutes les collectivités et intercommunalités
+              du département, les adresses ventilées par commune, les risques et les sites sensibles. Données publiques seulement.</p>
+            <table>
+              @for (e of etapesAmorcage; track e.code) {
+                <tr>
+                  <td>{{ e.libelle }}</td>
+                  <td>{{ amorcages[d.id]?.etapes?.[e.code]?.statut ?? '—' }}</td>
+                  <td class="comptes">{{ comptesLisibles(amorcages[d.id]?.etapes?.[e.code]?.comptes) }}{{ amorcages[d.id]?.etapes?.[e.code]?.erreur ? ' — ' + amorcages[d.id]?.etapes?.[e.code]?.erreur : '' }}</td>
+                  <td><button type="button" class="lien" (click)="amorcer(d, e.code)">Relancer</button></td>
+                </tr>
+              }
+            </table>
+            @if (amorcages[d.id]?.sites?.length) {
+              <p class="aide">Sites sensibles : @for (s of amorcages[d.id]!.sites; track s.source) { {{ s.source }} ({{ s.statut }}) }</p>
+            }
+            <button type="button" class="btn-primary" (click)="amorcer(d)">Amorcer tout le département</button>
+            <button type="button" class="lien" (click)="voirAmorcage(d)">Actualiser</button>
+          </div>
+        }
         @if (repertoires[d.id]; as reps) {
           <div class="repertoires">
             @for (r of reps; track r.id) {

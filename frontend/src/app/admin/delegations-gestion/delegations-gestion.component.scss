@@ -26,3 +26,6 @@ input, textarea { padding: .45rem .6rem; border: 1px solid var(--ac-border, #cbd
 .portee { display: flex; gap: 1.2rem; flex-wrap: wrap; label { flex-direction: row; align-items: center; gap: .35rem; } }
 .repertoires details { margin: .3rem 0; } .repertoires summary { cursor: pointer; }
 .case { flex-direction: row; align-items: center; gap: .4rem; }
+.amorcage { display: flex; flex-direction: column; gap: .5rem; table { border-collapse: collapse; width: 100%; }
+  td { padding: .3rem .5rem; border-bottom: 1px solid var(--ac-border, #e5e7eb); font-size: .9rem; vertical-align: top; }
+  .comptes { color: var(--ac-text-muted, #5b6275); } }

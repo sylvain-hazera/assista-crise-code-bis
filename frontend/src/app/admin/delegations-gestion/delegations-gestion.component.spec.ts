@@ -56,4 +56,14 @@ describe('DelegationsGestionComponent', () => {
     c.retirer({ id: 'd1', collectivite_nom: 'Mairie' } as any);
     expect(c.crisesOuvertes['d1']).toEqual(['Crue du Gier']);
   });
+
+  it("lance l'amorçage d'une étape et garde son état", () => {
+    const amorcer = spyOn(service, 'amorcer').and.returnValue(of({ id: 'a', debut: '', fin: null,
+      etapes: { annuaire: { statut: 'EN_ATTENTE' } }, sites: [] }));
+    const c = TestBed.createComponent(DelegationsGestionComponent).componentInstance;
+    c.amorcer({ id: 'd1' } as any, 'annuaire');
+    expect(amorcer).toHaveBeenCalledWith('d1', ['annuaire']);
+    expect(c.amorcages['d1']?.etapes['annuaire'].statut).toBe('EN_ATTENTE');
+    expect(c.comptesLisibles({ mairies_creees: 3 })).toBe('mairies creees : 3');
+  });
 });

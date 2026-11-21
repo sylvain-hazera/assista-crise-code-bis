@@ -113,13 +113,13 @@ class TestQuellesCommunes:
         settings.CHARGEMENT_ADRESSES_AUTO = True
         AdresseBAN.objects.create(ban_id="x", commune_code=LE_PORGE, location=Point(-1.2, 44.87, srid=4326),
                                   modifie_le=datetime.datetime(2026, 11, 1, tzinfo=UTC))
-        with patch("core.tasks.charger_adresses_task.delay") as charger:
+        with patch("core.tasks.charger_adresses_departement_task.delay") as charger:
             with django_capture_on_commit_callbacks(execute=True):
                 Crisis.objects.create(name="Feu", type="INCENDIE", location=Point(-1.2, 44.87, srid=4326),
                                       zone_communes=[LE_PORGE, VOISINE])
         charger.assert_called_once_with([VOISINE])
         # Close : plus rien n'est chargé à chaque modification.
-        with patch("core.tasks.charger_adresses_task.delay") as charger:
+        with patch("core.tasks.charger_adresses_departement_task.delay") as charger:
             with django_capture_on_commit_callbacks(execute=True):
                 Crisis.objects.create(name="Close", type="INCENDIE", location=Point(-1.2, 44.87, srid=4326),
                                       zone_communes=["40001"], end_date=datetime.datetime(2026, 11, 2, tzinfo=UTC))
@@ -128,14 +128,14 @@ class TestQuellesCommunes:
     def test_une_mairie_creee_charge_sa_commune(self, settings, django_capture_on_commit_callbacks):
         settings.CHARGEMENT_ADRESSES_AUTO = True
         itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
-        with patch("core.tasks.charger_adresses_task.delay") as charger, \
+        with patch("core.tasks.charger_adresses_departement_task.delay") as charger, \
              patch.object(referentiel_adresses, "communes_d_institution", return_value={LE_PORGE}):
             with django_capture_on_commit_callbacks(execute=True):
                 Institution.objects.create(nom="Mairie du Porge", type=itype, commune_code=LE_PORGE)
         charger.assert_called_once_with([LE_PORGE])
 
     def test_rien_n_est_charge_pendant_les_essais(self, django_capture_on_commit_callbacks):
-        with patch("core.tasks.charger_adresses_task.delay") as charger:
+        with patch("core.tasks.charger_adresses_departement_task.delay") as charger:
             with django_capture_on_commit_callbacks(execute=True):
                 Crisis.objects.create(name="Feu", type="INCENDIE", location=Point(-1.2, 44.87, srid=4326), zone_communes=[LE_PORGE])
         charger.assert_not_called()
