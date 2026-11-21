@@ -774,23 +774,13 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return this.dossiers.filter(d => d.crise === this.selectedRow!.crisis);
   }
 
+  /** Même action que la cellule de crise et le mode « choisir pour une équipe » : engagement,
+   * invitation de l'offreur, lien de confirmation, offre retirée des disponibles. */
   submitAssignTeam(): void {
     if (!this.selectedRow || !this.assignTeamId) return;
     const team = this.teams.find(t => t.id === this.assignTeamId);
     if (!team) return;
-
-    const offerIds = team.assigned_offer_ids.includes(this.selectedRow.id)
-      ? team.assigned_offer_ids
-      : [...team.assigned_offer_ids, this.selectedRow.id];
-
-    // Affecter l'offre ajoute aussi son auteur à l'équipe.
-    let memberIds = team.member_ids ?? [];
-    const authorId = this.selectedRow.author;
-    if (authorId && !memberIds.includes(authorId)) {
-      memberIds = [...memberIds, authorId];
-    }
-
-    this.teamService.patch(team.id!, { assigned_offer_ids: offerIds, member_ids: memberIds }).subscribe({
+    this.teamService.assignerRessource(team.id!, this.selectedRow.id).subscribe({
       next: (updated) => {
         const idx = this.teams.findIndex(t => t.id === updated.id);
         if (idx !== -1) this.teams[idx] = updated;

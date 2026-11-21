@@ -548,15 +548,18 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     return e ? teamDisplayName(e.team) : '';
   }
 
+  /**
+   * Passe par l'action dédiée (assigner-ressource), comme la page Signalements : l'offre devient
+   * indisponible, la personne qui l'a déposée (souvent sans compte) est invitée et ajoutée à
+   * l'équipe, l'engagement est créé et le lien de confirmation lui est envoyé. Un simple PATCH
+   * des offres de l'équipe sautait tout cela : le bénévole n'était jamais prévenu et l'offre
+   * restait proposée aux autres équipes (constaté le 21/11/2026).
+   */
   affecterOffre(o: Offer): void {
     const equipe = this.equipes.find(e => e.team.id === this.equipeOffre[o.id])?.team;
     if (!equipe || this.affectationEnCours) return;
-    const offres = (equipe.assigned_offer_ids || []).includes(o.id) ? equipe.assigned_offer_ids : [...(equipe.assigned_offer_ids || []), o.id];
-    // Comme la page Signalements : affecter l'offre ajoute aussi son auteur à l'équipe.
-    let membres = equipe.member_ids ?? [];
-    if (o.author && !membres.includes(o.author)) membres = [...membres, o.author];
     this.affectationEnCours = true;
-    this.teamService.patch(equipe.id!, { assigned_offer_ids: offres, member_ids: membres }).subscribe({
+    this.teamService.assignerRessource(equipe.id!, o.id!).subscribe({
       next: (maj) => {
         this.affectationEnCours = false;
         const e = this.equipes.find(x => x.team.id === maj.id);
