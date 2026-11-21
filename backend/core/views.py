@@ -19157,12 +19157,81 @@ class ContactInstitutionViewSet(
             grant_institution_and_demo_access(contact.utilisateur, contact.institution,
                                               self.request)
 
+    # Champs de gouvernance : qui est au bureau, et le suivi d'adhésion. Ils décident de qui
+    # administre l'association (annuaire complet, candidatures, clés d'envoi, modèles de
+    # messages) : seuls le bureau de l'institution et l'administrateur les écrivent.
+    CHAMPS_GOUVERNANCE = ("membre_bureau", "statut", "date_adhesion",
+                          "adhesion_valide_jusquau", "aptitude_valide_jusquau")
+
+    def _est_admin(self):
+        return get_effective_role(self.request) == UserRole.ADMINISTRATOR
+
+    def _bureau_de(self, institution):
+        return ContactInstitution.objects.filter(
+            institution=institution, utilisateur=self.request.user, actif=True, membre_bureau=True,
+        ).exists()
+
+    def _verifier_ecriture(self, institution, valeurs, instance=None):
+        """Contrôle d'écriture d'un rattachement (21/11/2026).
+
+        Jusque-là, aucun : la vue n'avait que le défaut « connecté ». Un simple bénévole
+        rattaché à son association pouvait se cocher « Bureau », et désactiver ou supprimer le
+        rattachement de n'importe quel autre membre — y compris du bureau.
+
+        - administrateur : tout ;
+        - bureau de l'institution : tout, sur ses rattachements ;
+        - autre compte institutionnel actif dans l'institution (agent de mairie, encadrant) :
+          ajouter ou modifier un collègue, mais ni les champs de gouvernance, ni le
+          rattachement d'un membre du bureau. Exception : une institution qui n'a encore
+          aucun bureau peut s'en désigner un, sinon elle ne pourrait jamais en avoir ;
+        - la personne elle-même : seulement quitter (se désactiver).
+        """
+        if self._est_admin():
+            return
+        if self._bureau_de(institution):
+            return
+        user = self.request.user
+        if instance is not None and instance.utilisateur_id == user.id \
+                and set(valeurs) <= {"actif"} and valeurs.get("actif") is False:
+            return
+        actif_ici = ContactInstitution.objects.filter(
+            institution=institution, utilisateur=user, actif=True,
+        ).exists()
+        if user.type not in INSTITUTIONAL_TYPES or not actif_ici:
+            raise PermissionDenied("Seuls le bureau de l'institution, ses agents et "
+                                   "l'administrateur peuvent modifier ses rattachements.")
+        if instance is not None and instance.membre_bureau:
+            raise PermissionDenied("Le rattachement d'un membre du bureau ne se modifie que "
+                                   "par le bureau ou l'administrateur.")
+        touches = {c for c in self.CHAMPS_GOUVERNANCE if c in valeurs
+                   and (instance is None or getattr(instance, c) != valeurs[c])}
+        if not touches:
+            return
+        sans_bureau = not ContactInstitution.objects.filter(
+            institution=institution, actif=True, membre_bureau=True,
+        ).exists()
+        if touches == {"membre_bureau"} and sans_bureau:
+            return
+        raise PermissionDenied("Le bureau et le suivi d'adhésion ne se modifient que par le "
+                               "bureau de l'institution ou l'administrateur.")
+
     def perform_update(self, serializer):
+        instance = serializer.instance
+        institution = serializer.validated_data.get('institution', instance.institution)
+        self._verifier_ecriture(instance.institution, serializer.validated_data, instance)
+        if institution != instance.institution:
+            self._verifier_ecriture(institution, serializer.validated_data)
         # Aussi à la mise à jour : réactiver un contact (actif False → True) est un
         # rattachement comme un autre, et laissait le même trou.
         self._ouvrir_les_droits(self._enregistrer(serializer))
 
+    def perform_destroy(self, instance):
+        if not (instance.utilisateur_id == self.request.user.id):
+            self._verifier_ecriture(instance.institution, {"supprimer": True}, instance)
+        instance.delete()
+
     def perform_create(self, serializer):
+        self._verifier_ecriture(serializer.validated_data['institution'], serializer.validated_data)
         contact = self._enregistrer(serializer, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,

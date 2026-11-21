@@ -546,13 +546,19 @@ class TestContactInstitutionPrincipalUniqueness:
     refusée, et proprement (400 avec message exploitable), pas via une IntegrityError brute
     remontée en 500."""
 
-    def _institution(self):
+    def _institution(self, acteur=None):
+        # Ces essais portent sur l'unicité du contact principal, pas sur les droits : l'acteur
+        # est administrateur. Depuis le 21/11/2026, un simple compte ne peut plus écrire les
+        # rattachements d'une institution (voir test_contacts_droits_ecriture.py).
+        if acteur is not None:
+            acteur.type = "ADMIN"
+            acteur.save(update_fields=["type"])
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
         return Institution.objects.create(nom="Mairie de Test", type=institution_type)
 
     def test_second_principal_contact_replaces_the_first(self, authenticated_client):
         client, admin = authenticated_client
-        institution = self._institution()
+        institution = self._institution(admin)
         first = User.objects.create_user(username="premier@mairie.fr", email="premier@mairie.fr", password="Test1234!")
         second = User.objects.create_user(username="second@mairie.fr", email="second@mairie.fr", password="Test1234!")
         ancien = ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
@@ -571,7 +577,7 @@ class TestContactInstitutionPrincipalUniqueness:
 
     def test_promoting_existing_contact_replaces_the_principal(self, authenticated_client):
         client, admin = authenticated_client
-        institution = self._institution()
+        institution = self._institution(admin)
         first = User.objects.create_user(username="p1@mairie.fr", email="p1@mairie.fr", password="Test1234!")
         second = User.objects.create_user(username="p2@mairie.fr", email="p2@mairie.fr", password="Test1234!")
         ancien = ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
@@ -593,7 +599,7 @@ class TestContactInstitutionPrincipalUniqueness:
 
     def test_multiple_secondary_contacts_are_allowed(self, authenticated_client):
         client, admin = authenticated_client
-        institution = self._institution()
+        institution = self._institution(admin)
         principal = User.objects.create_user(username="principal@mairie.fr", email="principal@mairie.fr", password="Test1234!")
         secondaire1 = User.objects.create_user(username="s1@gmail.com", email="s1@gmail.com", password="Test1234!")
         secondaire2 = User.objects.create_user(username="s2@gmail.com", email="s2@gmail.com", password="Test1234!")
