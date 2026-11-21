@@ -5,6 +5,8 @@ import { ApplicationInstallableService } from '../../services/application-instal
 import { TerrainService } from '../terrain.service';
 import { NotificationsPousseesService } from '../notifications-poussees.service';
 import { HorsLigneService } from '../hors-ligne.service';
+import { SuiviTerrainService } from '../position/suivi-terrain.service';
+import { DegatsService } from '../degats/degats.service';
 
 /** Mon compte, côté terrain : ma fiche, mes réglages, l'installation, la déconnexion. */
 @Component({
@@ -18,6 +20,18 @@ import { HorsLigneService } from '../hors-ligne.service';
       <a routerLink="/settings"><span class="material-icons" aria-hidden="true">settings</span>Mes réglages</a>
       <a routerLink="/securite-du-compte"><span class="material-icons" aria-hidden="true">lock</span>Sécurité du compte</a>
     </nav>
+    <section class="partage">
+      <h2>Partage de position en mission</h2>
+      @if (suivi.etat().consentement) {
+        <p>Activé : votre position est partagée avec vos équipes pendant leurs engagements, application ouverte,
+           douze heures au plus. Le serveur ne garde que la dernière.</p>
+        <button type="button" class="secondaire" (click)="suivi.retirerConsentement()">Ne plus partager ma position</button>
+      } @else {
+        <p>Désactivé. Vous pouvez l'activer : votre position ne partira que pendant les engagements de votre équipe,
+           application ouverte (l'écran reste alors allumé).</p>
+        <button type="button" class="secondaire" (click)="suivi.consentir()">Partager ma position en mission</button>
+      }
+    </section>
     @if (!installable.estInstallee()) {
       <section class="installer">
         <h2>Installer l'application</h2>
@@ -39,6 +53,12 @@ import { HorsLigneService } from '../hors-ligne.service';
                  color: var(--ac-blue-text, #1e40af); }
     .installer h2 { font-size: 1rem; margin: 0 0 4px; }
     .installer p { margin: 0; font-size: .9rem; }
+    .partage { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--ac-surface, #fff);
+               border: 1px solid var(--ac-border, #e5e7eb); }
+    .partage h2 { font-size: 1rem; margin: 0 0 4px; }
+    .partage p { margin: 0 0 8px; font-size: .9rem; }
+    .secondaire { width: 100%; min-height: 44px; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer;
+                  border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); }
     .deconnexion { margin-top: 20px; width: 100%; padding: 12px; border-radius: 10px; font: inherit; cursor: pointer;
                    border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface, #fff); color: var(--ac-red-text, #b91c1c); }
   `],
@@ -49,6 +69,8 @@ export class TerrainMoiComponent {
   private router = inject(Router);
   private notifications = inject(NotificationsPousseesService);
   private horsLigne = inject(HorsLigneService);
+  private degats = inject(DegatsService);
+  readonly suivi = inject(SuiviTerrainService);
   readonly installable = inject(ApplicationInstallableService);
 
   prenom(): string { return this.auth.getCurrentUser()?.first_name || 'Mon compte'; }
@@ -63,6 +85,8 @@ export class TerrainMoiComponent {
   private fin(): void {
     // Rien de la personne ne reste sur le téléphone : copies et file effacées, clés comprises.
     this.horsLigne.effacer().catch(() => {});
+    this.suivi.toutEffacer().catch(() => {});
+    this.degats.oublier();
     this.auth.logout();
     this.router.navigate(['/login'], { queryParams: { returnUrl: '/terrain' } });
   }

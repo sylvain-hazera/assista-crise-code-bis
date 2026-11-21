@@ -26,6 +26,7 @@
     "@ng-select/ng-select": "^20.7.0",
     "@protomaps/basemaps": "5.7.2",
     "@turf/turf": "^7.3.4",
+    "jsqr": "1.4.0",
     "maplibre-gl": "^5.16.0",
     "pmtiles": "4.5.0",
     "rxjs": "~7.8.0",

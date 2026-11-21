@@ -1,5 +1,9 @@
 import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { AuthService } from '../../auth/services/auth.service';
+import { SuiviTerrainService } from '../position/suivi-terrain.service';
+import { evalueLesDegats } from '../droits';
 import { Mission } from '../../shared/models/mission.model';
 import { TerrainService } from '../terrain.service';
 import { HorsLigneService } from '../hors-ligne.service';
@@ -11,8 +15,27 @@ const LIBELLES: Record<Mission['statut'], string> = {
 /** Les missions de mes équipes, en cours d'abord ; je dis où j'en suis (comme sur Android). */
 @Component({
   selector: 'app-terrain-missions',
-  imports: [DatePipe],
+  imports: [DatePipe, RouterLink],
   template: `
+    <nav class="outils" aria-label="Outils de terrain">
+      <a routerLink="/terrain/dossiers"><span class="material-icons" aria-hidden="true">folder_open</span>Dossiers</a>
+      <a routerLink="/terrain/qr"><span class="material-icons" aria-hidden="true">qr_code_2</span>QR codes</a>
+      @if (evalueLesDegats) {
+        <a routerLink="/terrain/degats"><span class="material-icons" aria-hidden="true">home_repair_service</span>Dégâts</a>
+      }
+    </nav>
+    @if (suivi.engagementEnCours() && !suivi.actif()) {
+      <section class="partage">
+        @if (!suivi.etat().consentement) {
+          <p><strong>Votre équipe est engagée.</strong> Partager votre position avec vos équipes pendant l'engagement ?
+             Sur iPhone, elle ne part que l'application ouverte : l'écran restera allumé.</p>
+          <button type="button" class="principal" (click)="suivi.consentir()">Partager ma position</button>
+        } @else if (suivi.arreteALaMain()) {
+          <p>Partage de position arrêté pour cet engagement.</p>
+          <button type="button" class="principal" (click)="suivi.reprendre()">Reprendre le partage</button>
+        }
+      </section>
+    }
     <h1>Mes missions</h1>
     @if (erreur()) {
       <p class="erreur" role="alert">{{ erreur() }}</p>
@@ -53,6 +76,15 @@ const LIBELLES: Record<Mission['statut'], string> = {
   `,
   styles: [`
     h1 { font-size: 1.25rem; margin: 4px 0 12px; }
+    .outils { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .outils a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; min-height: 44px;
+                border-radius: 12px; background: var(--ac-surface, #fff); border: 1px solid var(--ac-border, #e5e7eb);
+                color: inherit; text-decoration: none; font-size: .82rem; font-weight: 600; }
+    .outils a .material-icons { color: var(--brand-primary, #2563eb); }
+    .outils a:focus-visible { outline: 2px solid var(--brand-primary, #2563eb); outline-offset: 2px; }
+    .partage { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px 14px; border-radius: 12px;
+               background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af); font-size: .9rem; }
+    .partage p { margin: 0; }
     .mission {
       background: var(--ac-surface, #fff); border: 1px solid var(--ac-border, #e5e7eb);
       border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
@@ -84,6 +116,8 @@ const LIBELLES: Record<Mission['statut'], string> = {
 export class TerrainMissionsComponent implements OnInit {
   private terrain = inject(TerrainService);
   private horsLigne = inject(HorsLigneService);
+  readonly suivi = inject(SuiviTerrainService);
+  readonly evalueLesDegats = evalueLesDegats(inject(AuthService));
   readonly missions = signal<Mission[]>([]);
   /** Sans réseau : la date de la copie affichée. */
   readonly copieDu = signal<string | null>(null);

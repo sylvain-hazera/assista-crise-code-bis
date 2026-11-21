@@ -56,7 +56,7 @@ position (`suivi-position-permanent.service.ts`). Le serveur n'envoie pas de not
 | **2. Espace terrain** ✅ | Une entrée `/terrain` pensée pour le téléphone : missions et engagements, équipes et messagerie, carte, dossiers, compte ; en reprenant les pages existantes | Karma, gardes, menu |
 | **3. Hors ligne** ✅ | Missions, équipes et dossiers gardés dans IndexedDB **chiffré** ; la file chiffrée existante généralisée (messages, constats, photos) avec identifiants tirés sur le téléphone ; envoi à l'ouverture et au retour du réseau ; indicateur en ligne / hors ligne | idempotence, chiffrement, coupure simulée |
 | **4. Notifications** ✅ | Web Push : clé VAPID en secret Docker, abonnement par appareil (adresse d'envoi chiffrée, empreinte pour retrouver), envoi par le même chemin que les notifications Android, désabonnement à la déconnexion | envoi simulé, rien en clair en base |
-| **5. Terrain** | Suivi de position au premier plan avec écran allumé ; photos scellées ; lecture des QR codes ; évaluation des dégâts (tournée, replacer, constat, nouveau point, secteur embarqué) | logique partagée testée sans appareil |
+| **5. Terrain** ✅ | Suivi de position au premier plan avec écran allumé ; photos scellées ; lecture des QR codes ; évaluation des dégâts (tournée, replacer, constat, nouveau point, secteur embarqué) | logique partagée testée sans appareil |
 
 Ordre conseillé : 1 et 2 d'abord (une application installable et utilisable en ligne, rapide à
 livrer), puis 4 (les notifications sont ce qu'un intervenant attend le plus), puis 3 et 5.
@@ -103,8 +103,28 @@ accès à la démonstration (`demo_role`), avec confirmation. En formation, un b
 
 ## 8. Où en est la construction (21/11/2026)
 
-Lots 1, 2, 3, 4 et 6 faits et poussés ; lot 5 (position au premier plan, photos scellées, QR
-codes, évaluation des dégâts sur le terrain web) à faire.
+Les six lots sont faits et poussés.
+
+- **Terrain (lot 5, 21/11/2026)** :
+  - *Partage de position en mission* : mêmes règles qu'Android (`terrain/position/regles-suivi.ts` :
+    accord explicite, engagement de l'équipe, 12 h au plus, 30 s / 5 min / 25 m) ; écran maintenu
+    allumé (Wake Lock, repris au retour au premier plan) ; bandeau « Position partagée… Gardez
+    l'application ouverte » ; sans réseau, seule la dernière position attend. Accord dans « Moi ».
+  - *Photos scellées* (`terrain/photo/photo-scellee.ts`) : réduites à 2048 px, EXIF écrit à la main
+    (heure, logiciel, position GPS avec heure UTC et précision ; relu par Pillow comme sur le
+    serveur), empreinte SHA-256 calculée sur le téléphone et comparée à celle du serveur au retour ;
+    un écart est signalé, jamais effacé en silence. Octets gardés chiffrés jusqu'à l'envoi. Page
+    « Dossiers » (dossiers de mes équipes, lisibles sans réseau) et photos des constats.
+  - *QR codes* : lecture par la caméra sur iPhone grâce à `jsqr` 1.4.0 (Apache-2.0, sans
+    dépendance, chargé seulement si le navigateur n'a pas `BarcodeDetector`) — profite aussi au
+    lecteur de la page d'accueil ; « Mon QR code » gardé chiffré pour s'afficher sans réseau, écran
+    maintenu allumé.
+  - *Évaluation des dégâts* (`terrain/degats/`) : portage de `Degats.kt` / `DepotDegats.kt` :
+    tournée, « le point est-il bien placé ? », replacer sur la carte, constat, nouveau point,
+    secteur embarqué effacé après envoi. Réservée au personnel municipal et aux élus (et à
+    l'administrateur) ; le serveur vérifie la commune.
+  - Les envois refusés par le serveur sont désormais signalés dans l'en-tête (avant : retirés en
+    silence).
 
 - **Pilotage sur iPad** : manifeste « Pilotage » ; menu réduit aux icônes au premier lancement
   sur tablette tactile (jusqu'à 1180 px) ; cibles de 44 px au doigt ; bords de l'écran respectés ;

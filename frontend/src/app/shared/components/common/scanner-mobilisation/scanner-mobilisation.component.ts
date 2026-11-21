@@ -8,16 +8,7 @@ import {
   VerdictMobilisation, VerificationMobilisationService,
 } from '../../../../services/verification-mobilisation.service';
 import { VerdictMobilisationComponent } from '../verdict-mobilisation/verdict-mobilisation.component';
-
-/** `BarcodeDetector` n'est pas dans les types TypeScript du DOM : il est déclaré ici pour ne
- * pas avoir à désactiver le typage sur tout le fichier. */
-interface DetecteurCodes {
-  detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
-}
-declare const BarcodeDetector: {
-  new (options?: { formats?: string[] }): DetecteurCodes;
-  getSupportedFormats?: () => Promise<string[]>;
-} | undefined;
+import { LecteurQr, cameraDisponible, creerLecteurQr } from '../../../../services/lecteur-qr';
 
 /**
  * Scanner de QR code d'attestation de mobilisation, avec la caméra du téléphone.
@@ -26,16 +17,10 @@ declare const BarcodeDetector: {
  * scanner un qrcode d'une demande de mobilisation, et que ça dise si la demande est validée ou
  * non ».
  *
- * **Le décodage utilise `BarcodeDetector`, l'API du navigateur, et aucune bibliothèque.** Le
- * choix est assumé et il a une limite qu'il faut connaître : cette API existe sur Chrome et
- * Edge (Android et bureau), **pas sur Safari ni sur iOS**. Embarquer un décodeur JavaScript
- * aurait couvert l'iPhone au prix d'une dépendance de plus dans un projet qui n'en a aucune de
- * ce genre.
- *
- * La solution de repli n'est donc pas un message d'excuse : l'appareil photo **natif** d'un
- * iPhone lit déjà ce QR et ouvre la page de vérification publique, qui dit la même chose. Et
- * la saisie manuelle de la référence reste ouverte à tous. Un agent sur le terrain n'est jamais
- * bloqué — il passe simplement par un chemin différent.
+ * **Le décodage** passe par `services/lecteur-qr.ts` : `BarcodeDetector` quand le navigateur
+ * l'a (Chrome, Edge), sinon un décodeur intégré au site, chargé à la demande (Safari et iPhone,
+ * depuis le 21/11/2026 — avant, l'iPhone n'avait que son appareil photo natif ou la saisie). La
+ * saisie manuelle de la référence reste ouverte à tous.
  *
  * Deux garde-fous :
  *
@@ -61,16 +46,15 @@ export class ScannerMobilisationComponent implements OnDestroy {
   etat = signal<'inactif' | 'demarrage' | 'scan' | 'verdict'>('inactif');
   erreur = signal('');
   verdict = signal<VerdictMobilisation | null>(null);
-  /** Saisie manuelle : le chemin de repli, et le seul disponible sur iOS. */
+  /** Saisie manuelle : le chemin de repli (pas de caméra, ou caméra refusée). */
   saisieManuelle = '';
 
-  /** Vrai quand le navigateur sait décoder un code-barres. Lu une fois : l'absence de l'API
-   * ne change pas en cours de route, et l'écran doit pouvoir proposer autre chose
-   * immédiatement plutôt qu'après un échec. */
-  readonly decodageDisponible = typeof BarcodeDetector !== 'undefined';
+  /** Vrai quand le navigateur donne accès à une caméra : le décodage, lui, est toujours
+   * possible (décodeur du navigateur ou décodeur intégré). Lu une fois. */
+  readonly decodageDisponible = cameraDisponible();
 
   private flux: MediaStream | null = null;
-  private detecteur: DetecteurCodes | null = null;
+  private detecteur: LecteurQr | null = null;
   private boucle: number | null = null;
 
   constructor(private service: VerificationMobilisationService) {}
@@ -84,7 +68,7 @@ export class ScannerMobilisationComponent implements OnDestroy {
     this.verdict.set(null);
     if (!this.decodageDisponible) {
       this.erreur.set(
-        "Ce navigateur ne sait pas décoder un QR code. Utilisez l'appareil photo de votre "
+        "Ce navigateur ne donne pas accès à la caméra. Utilisez l'appareil photo de votre "
         + 'téléphone — il ouvrira directement la page de vérification — ou saisissez la '
         + 'référence ci-dessous.');
       return;
@@ -97,7 +81,7 @@ export class ScannerMobilisationComponent implements OnDestroy {
         video: { facingMode: { ideal: 'environment' } },
         audio: false,
       });
-      this.detecteur = new BarcodeDetector!({ formats: ['qr_code'] });
+      this.detecteur = await creerLecteurQr();
       this.etat.set('scan');
       // Après le changement d'état : l'élément <video> n'existe dans le DOM qu'une fois
       // `etat` à 'scan'.
@@ -129,8 +113,7 @@ export class ScannerMobilisationComponent implements OnDestroy {
     this.boucle = window.setInterval(async () => {
       if (this.etat() !== 'scan' || !this.detecteur) { return; }
       try {
-        const codes = await this.detecteur.detect(element);
-        const brut = codes[0]?.rawValue;
+        const brut = await this.detecteur.lire(element);
         if (brut) { this.traiter(brut); }
       } catch {
         // Une image illisible n'est pas une erreur : on attend la suivante. Afficher un

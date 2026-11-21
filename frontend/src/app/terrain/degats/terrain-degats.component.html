@@ -1,0 +1,141 @@
+<div class="titre">
+  <h1>Évaluer les dégâts</h1>
+  @if (etape().nom !== 'accueil') {
+    <button type="button" class="lien" (click)="retour()">Retour</button>
+  }
+</div>
+
+@if (message()) { <p class="info" role="status">{{ message() }}</p> }
+
+@if (positionRefusee()) {
+  <p class="erreur" role="alert">
+    La position du téléphone est nécessaire pour trouver les points autour de vous. Autorisez-la dans les
+    réglages du téléphone (sur iPhone : Réglages &gt; Confidentialité &gt; Service de localisation), puis rouvrez cette page.
+  </p>
+}
+
+@switch (etape().nom) {
+  @case ('accueil') {
+    <section class="bloc">
+      <h2>Crise</h2>
+      @if (!crises().length) { <p class="discret">Aucune crise ouverte.</p> }
+      @for (c of crises(); track c.id) {
+        <label class="choix">
+          <input type="radio" name="crise" [value]="c.id" [checked]="crise() === c.id" (change)="crise.set(c.id)">
+          {{ c.nom || 'Crise' }}
+        </label>
+      }
+    </section>
+    <section class="bloc">
+      <h2>Sans réseau</h2>
+      @if (resumeSecteur(); as s) {
+        <p>Secteur embarqué le {{ s.genere_le | date:'d MMM à HH:mm' }} : {{ s.adresses }} adresses, {{ s.biens }} biens déjà vus@if (s.constats) {, {{ s.constats }} constat(s) à envoyer}.</p>
+      } @else {
+        <p>Avant de partir, embarquez le secteur : adresses, biens déjà vus et dossiers ouverts, à 1 km autour de vous. Il s'efface de ce téléphone dès que vos constats sont partis.</p>
+      }
+      <button type="button" class="secondaire" (click)="embarquer()" [disabled]="!crise() || !position() || embarquement()">
+        {{ embarquement() ? 'Embarquement…' : (resumeSecteur() ? 'Réembarquer ici' : 'Embarquer ce secteur') }}
+      </button>
+      @if (resumeSecteur()) {
+        <button type="button" class="secondaire" (click)="effacerSecteur()">Effacer le secteur embarqué</button>
+      }
+    </section>
+    <button type="button" class="principal grand" (click)="commencer()" [disabled]="!crise() || !position()">
+      {{ position() ? 'Commencer la tournée' : 'Localisation en cours…' }}
+    </button>
+  }
+
+  @case ('tournee') {
+    @if (tournee()?.horsLigne) { <p class="hors">Sans réseau : points du secteur embarqué.</p> }
+    @if (tournee()?.refus) { <p class="erreur" role="alert">{{ tournee()?.refus }}</p> }
+    @if (suivant(); as s) {
+      <button type="button" class="principal grand" (click)="choisirPoint(s)">
+        Je suis devant : {{ s.libelle }} ({{ s.distance_m | number:'1.0-0' }} m)
+      </button>
+    }
+    <button type="button" class="secondaire" (click)="nouveauPoint()" [disabled]="!position()">Nouveau point ici (sans adresse)</button>
+    @if (tourneeEnCours() && !tournee()?.points?.length) { <p class="discret">Recherche des points autour de vous…</p> }
+    <ul class="points">
+      @for (p of tournee()?.points ?? []; track cle(p)) {
+        <li>
+          <button type="button" (click)="choisirPoint(p)">
+            <span class="libelle">
+              <strong>{{ p.libelle }}</strong>
+              <small>{{ p.type_bien ? p.type_bien + ' · ' : '' }}{{ libelleEtat(p) }}</small>
+            </span>
+            <span class="distance">{{ p.distance_m | number:'1.0-0' }} m</span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  @case ('position') {
+    @if (etape(); as e) { @if (e.nom === 'position') {
+      <h2 class="point">{{ e.point.libelle }}</h2>
+      <p>{{ ecart(e.point) !== null ? 'Le point est à ' + ecart(e.point) + ' m de vous.' : 'Localisation en cours…' }}</p>
+      <h3>Le point est-il bien placé par rapport au bâtiment ?</h3>
+      <button type="button" class="principal grand" (click)="ouvrirEvaluation(e.point, null, false)">Oui, évaluer</button>
+      <button type="button" class="secondaire grand" (click)="replacer(e.point)">Non, le replacer</button>
+    } }
+  }
+
+  @case ('replacer') {
+    @if (etape(); as e) { @if (e.nom === 'replacer') {
+      <p>Touchez la carte là où est le bâtiment, ou placez-le à votre position. L'adresse ne change pas.</p>
+      <app-point-picker [latitude]="e.lieu.latitude" [longitude]="e.lieu.longitude" [zoom]="18"
+                        (positionChange)="deplacer($event)" />
+      <button type="button" class="secondaire" (click)="aMaPosition()" [disabled]="!position()">À ma position</button>
+      <button type="button" class="principal grand" (click)="ouvrirEvaluation(e.point, e.lieu, true)">Valider la position</button>
+    } }
+  }
+
+  @case ('evaluer') {
+    @if (etape(); as e) { @if (e.nom === 'evaluer') {
+      <h2 class="point">{{ e.point?.libelle ?? 'Nouveau point ici' }}</h2>
+      @if (e.point === null) {
+        <h3>Ce que c'est</h3>
+        <div class="puces">
+          @for (t of typesSansAdresse(); track t.id) {
+            <button type="button" class="puce" [class.choisie]="type === t.id" [attr.aria-pressed]="type === t.id"
+                    (click)="type = t.id; typeLibre = ''">{{ t.nom }}</button>
+          }
+        </div>
+        <label class="champ">Autre type (ajouté à la liste)
+          <input type="text" maxlength="80" [ngModel]="typeLibre" (ngModelChange)="surTypeLibre($event)">
+        </label>
+        <label class="champ">Description (ex. voiture isolée sur le parking)
+          <input type="text" maxlength="200" [(ngModel)]="description">
+        </label>
+        @if (!e.lieu) { <p class="erreur">Position inconnue : attendez la localisation pour ajouter un point.</p> }
+      }
+      <h3>État</h3>
+      <div class="etats">
+        @for (x of ETATS; track x.code) {
+          <button type="button" class="etat" [class.choisi]="etat === x.code" [attr.aria-pressed]="etat === x.code"
+                  (click)="etat = x.code">{{ x.libelle }}</button>
+        }
+      </div>
+      <h3>Dangers</h3>
+      <div class="puces">
+        @for (d of DANGERS; track d.code) {
+          <button type="button" class="puce" [class.choisie]="dangers.has(d.code)" [attr.aria-pressed]="dangers.has(d.code)"
+                  (click)="basculerDanger(d.code)">{{ d.libelle }}</button>
+        }
+      </div>
+      <label class="case"><input type="checkbox" [(ngModel)]="personne"> Personne sur place</label>
+      <label class="case"><input type="checkbox" [(ngModel)]="reloger"> À reloger (ouvre un dossier)</label>
+      <label class="champ">Commentaire
+        <textarea rows="3" maxlength="500" [(ngModel)]="commentaire"></textarea>
+      </label>
+      <label class="secondaire photo">
+        <input type="file" accept="image/*" capture="environment" (change)="ajouterPhoto($event)">
+        <span class="material-icons" aria-hidden="true">photo_camera</span>
+        {{ photos().length ? 'Prendre une photo (' + photos().length + ' prise(s))' : 'Prendre une photo' }}
+      </label>
+      <button type="button" class="principal grand" (click)="enregistrer()" [disabled]="!peutEnregistrer()">
+        {{ enregistrement() ? 'Enregistrement…' : 'Enregistrer l\'évaluation' }}
+      </button>
+    } }
+  }
+}

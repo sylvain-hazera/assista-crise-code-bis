@@ -6,6 +6,7 @@ import { AuthService } from '../auth/services/auth.service';
 import { BoutonFormationComponent } from '../shared/components/common/bouton-formation/bouton-formation.component';
 import { NotificationsPousseesService } from './notifications-poussees.service';
 import { HorsLigneService } from './hors-ligne.service';
+import { SuiviTerrainService } from './position/suivi-terrain.service';
 
 /**
  * L'espace terrain, pensé pour le téléphone (DOSSIER-PWA-INTERVENANTS.md, lot 2) : un en-tête
@@ -32,6 +33,28 @@ import { HorsLigneService } from './hors-ligne.service';
         <div class="bandeau-formation" role="status">
           <span class="material-icons" aria-hidden="true">school</span>
           Formation — données fictives de démonstration
+        </div>
+      }
+      @if (suivi.actif()) {
+        <div class="bandeau-partage" role="status">
+          <span class="material-icons" aria-hidden="true">my_location</span>
+          <span>Position partagée avec vos équipes{{ suivi.ecranMaintenu() ? ' · écran maintenu allumé' : '' }}.
+                Gardez l'application ouverte.</span>
+          <button type="button" (click)="suivi.arreterALaMainMaintenant()">Arrêter</button>
+        </div>
+      }
+      @if (suivi.message(); as m) {
+        <div class="bandeau-info" role="status">
+          <span>{{ m }}</span>
+          <button type="button" aria-label="Fermer" (click)="suivi.message.set(null)"><span class="material-icons" aria-hidden="true">close</span></button>
+        </div>
+      }
+      @if (horsLigne.refus().length) {
+        <div class="bandeau-refus" role="alert">
+          <ul>
+            @for (r of horsLigne.refus(); track $index) { <li><strong>{{ r.libelle }}</strong> : {{ r.motif }}</li> }
+          </ul>
+          <button type="button" aria-label="Fermer" (click)="horsLigne.oublierLesRefus()"><span class="material-icons" aria-hidden="true">close</span></button>
         </div>
       }
       <main class="contenu"><router-outlet /></main>
@@ -74,6 +97,18 @@ import { HorsLigneService } from './hors-ligne.service';
       background: #f97316; color: #fff; font-size: .82rem; font-weight: 600;
     }
     .bandeau-formation .material-icons { font-size: 1.05rem; }
+    .bandeau-partage, .bandeau-info, .bandeau-refus {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: .82rem;
+    }
+    .bandeau-partage { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #166534); }
+    .bandeau-info { background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af); }
+    .bandeau-refus { background: var(--ac-red-bg, #fee2e2); color: var(--ac-red-text, #b91c1c); }
+    .bandeau-partage span:nth-child(2), .bandeau-info span:first-child, .bandeau-refus ul { flex: 1; }
+    .bandeau-refus ul { margin: 0; padding-left: 16px; }
+    .bandeau-partage button, .bandeau-info button, .bandeau-refus button {
+      min-height: 36px; border: 0; border-radius: 8px; padding: 0 10px; font: inherit; font-weight: 600; cursor: pointer;
+      background: rgba(255,255,255,.6); color: inherit;
+    }
     .contenu { flex: 1; padding: 12px 12px calc(76px + env(safe-area-inset-bottom, 0px)); }
     .onglets {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
@@ -93,6 +128,7 @@ export class TerrainLayoutComponent implements OnInit {
   private branding = inject(BrandingService);
   private notifications = inject(NotificationsPousseesService);
   readonly horsLigne = inject(HorsLigneService);
+  readonly suivi = inject(SuiviTerrainService);
   private auth = inject(AuthService);
 
   enFormation(): boolean { return this.auth.getEnvironment() === 'DEMO'; }
@@ -114,5 +150,7 @@ export class TerrainLayoutComponent implements OnInit {
     this.notifications.actualiser().catch(() => {});
     // Ce qui a été fait sans réseau part dès l'ouverture, puis à chaque retour du réseau.
     this.horsLigne.demarrer();
+    // Le partage de position reprend s'il était en cours (jamais sans accord donné ici).
+    this.suivi.demarrer().catch(() => {});
   }
 }
