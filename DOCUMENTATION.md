@@ -341,6 +341,23 @@ secteur en silence. Trois tests verrouillent la règle, dont celui qui reproduit
 Le rôle applicatif `ADMINISTRATOR` contourne toujours ce filtrage. Ce module généralise un
 filtrage que l'audit de sécurité avait trouvé absent de la plupart des vues.
 
+**Une institution sans commune : ses propres objets, toujours (21/11/2026).** Une association
+agréée n'a pas de territoire à elle ; son périmètre n'est fait que des communes qui l'ont
+acceptée (`viewer_perimetre`). Deux listes l'ignoraient et la laissaient sans rien :
+
+- **Équipes** : `TeamViewSet.get_queryset` (liste) unit au filtre de zone les équipes de
+  l'institution regardée (`institution_regardee` : la sienne, ou celle où un administrateur
+  s'est placé). Sans cela un coordinateur ne voyait pas l'arborescence de sa propre association,
+  seulement les équipes des mairies qui l'avaient acceptée — et la page Membres et le poste de
+  pilotage, qui lisent la même liste, étaient vidés avec elle.
+- **Points opérationnels** : `_filter_points_to_viewer_zone` lit `viewer_perimetre` (et non la
+  seule zone propre), plus les points des équipes de l'institution. « Tous les centres » et
+  « Logement intervenants » étaient vides, même sur la commune qui venait d'accepter l'aide.
+  « Mes centres » (`?mine=true`) compte aussi les responsables et les équipes de gestion
+  supplémentaires.
+
+Tests : `test_team_zones.py`, `test_point_modal_institution_scoping.py`.
+
 **Référentiel `Commune`.** Chargé par `import_communes` (codes administratifs, population) et
 complété à la demande par geo.api.gouv.fr (nom, centroïde) et Géorisques (risques). Chaque
 tentative est datée (`derniere_tentative`, cooldown) : un code introuvable n'est pas
@@ -715,12 +732,40 @@ formulaire public de déclaration sont inchangés — ils filtraient déjà sur 
 rattachements, et deux tests de non-régression reproduisent leurs filtres côté client pour que
 le cadrage ne leur retire rien.
 
+**Écriture : qui modifie un rattachement (21/11/2026).** Borner le queryset le 28/10 avait fermé
+les écritures *entre* institutions, pas *à l'intérieur* d'une institution. Vérifié sur une
+instance d'essai : un simple bénévole rattaché à son association pouvait se cocher
+`membre_bureau` (et obtenir l'annuaire complet, les candidatures, les clés d'envoi, les modèles
+de messages), et désactiver ou supprimer le rattachement de n'importe quel membre, bureau
+compris. `ContactInstitutionViewSet._verifier_ecriture`, appelée par `perform_create`,
+`perform_update` et `perform_destroy` :
+
+| Qui | Peut |
+|---|---|
+| Administrateur | tout |
+| Bureau de l'institution | tout, sur ses rattachements |
+| Autre compte institutionnel actif dans l'institution | gérer ses collègues, mais ni les champs de gouvernance (`membre_bureau`, `statut`, dates d'adhésion et d'aptitude), ni le rattachement d'un membre du bureau |
+| La personne elle-même | quitter (se désactiver ou supprimer son rattachement), rien d'autre |
+| Un compte qui n'est pas membre actif de l'institution | rien, pas même y rattacher quelqu'un |
+
+Une exception, pour ne pas enfermer une institution : **celle qui n'a encore aucun bureau** peut
+s'en désigner un (`membre_bureau` seul). Tests : `test_contacts_droits_ecriture.py` ; les trois
+essais d'unicité du contact principal, qui agissaient avec un compte simple, agissent désormais
+en administrateur.
+
 ### 5.12 bis Associations agréées de sécurité civile (AASC)
 
 Premier partenaire en marque blanche : « Réserve Résilience - Casques Jaunes », semée par la
 migration 0199 avec son branding et ses deux hostnames (`cj.assista-crise.fr` et
 `app.reserve-resilience.org`, pointé en CNAME par le partenaire). Portée nationale, donc pas de
 `commune_code`.
+
+**Sur le domaine du partenaire, rien ne dit Assista-Crise** (21/11/2026, trouvé en refaisant le
+manuel). L'en-tête de l'administration affichait « Assista Crise » en dur : il prend désormais
+le nom et le logo de `BrandingService`. Le pied de page prend le nom de la marque dans le
+copyright et son adresse de contact, servie par `/api/branding/` (`email_contact`, tiré de
+`email_reply_to` puis de l'adresse de l'institution ; absent = celle d'Assista-Crise). L'aide de
+l'onglet Envois ne nomme plus la plateforme.
 
 - **On rejoint une AASC, on ne la fabrique pas en la nommant.** `attach_secours_user_to_institution`
   faisait un `get_or_create` sur le nom saisi à l'inscription : un bénévole tapant « Casques
@@ -1215,6 +1260,40 @@ décide de qui lit un salon. L'appel remplace la liste entière (`set`), donc il
 un retrait ne demande pas d'action séparée ; en revanche un corps **sans** `membres_encadrement`
 est refusé, pour que « je n'ai rien envoyé » ne soit jamais lu comme « retire tout ».
 
+#### Qui gère une équipe : la règle de l'arbre (21/11/2026)
+
+Demande de Sylvain : « un membre du bureau départemental ne peut pas modifier un membre du
+bureau régional (sauf s'il a des droits supérieurs) ». Avant, la seule condition était « être de
+la même institution » (`_appartient_a_equipe`) : le coordinateur de la Loire pouvait changer les
+cadres du national. `core/gestion_equipes.py::peut_gerer_equipe`, **pour une institution qui a
+un bureau** (une association) :
+
+- l'administrateur et le **bureau de l'institution** (ou de l'institution délégataire) : toutes
+  ses équipes — les « droits supérieurs » ;
+- un **cadre** (membre de l'encadrement, ou chef d'équipe) : son équipe — il peut y nommer ses
+  pairs, décision de Sylvain — et toutes celles en dessous. Jamais au-dessus, jamais une branche
+  voisine.
+
+**Une institution sans bureau garde la règle d'avant** : une mairie n'a ni bureau ni arbre, ses
+agents gèrent ses équipes.
+
+Ce qui relève de la règle : la **structure** (modifier, désactiver, supprimer, réactiver), la
+**composition** (inviter, ajouter des membres, `definir-encadrement`), la **mission**, et la
+place dans l'arbre (rattacher, détacher, créer sous une équipe). Rattacher sous soi l'équipe
+d'une autre institution (une entreprise, une mairie voisine) reste permis ; déplacer une équipe
+d'association qu'on ne gère pas, non (`est_hierarchique`). Le travail opérationnel au quotidien
+(ressources, dossiers, points, canaux) reste ouvert à l'institution.
+
+Le contexte (contacts, bureaux, carte des parents, équipes encadrées) est calculé **une fois par
+requête** : la liste en évalue 127 d'un coup. `TeamSerializer.peut_administrer` le sert à
+l'écran, qui ouvre en **lecture seule** (bandeau, boutons désactivés) une équipe que l'on ne
+gère pas ; `peut_gerer`, plus large, garde son sens (accepter des affectations).
+
+**Libellé** : l'encadrement d'un échelon de coordination (national, zone, région, département)
+s'affiche « Bureau de la coordination » (`libelleEncadrementEquipe`), celui d'une équipe de
+terrain reste « Encadrement » ; la page Membres suit (« Bureau de la coordination » / « Cadres
+de l'équipe »). Tests : `test_gestion_arbre.py`.
+
 #### Enrôlement d'un bénévole, de l'import à sa fiche
 
 Déroulé validé le 11/11/2026, de bout en bout :
@@ -1265,6 +1344,27 @@ fondue dedans, et jamais lue par la grille — un test le vérifie.
 
 Elle ne conditionne pas non plus `est_complete` : une fiche est exploitable dès qu'on sait
 joindre la personne et où elle est.
+
+**Les compétences du membre** (21/11/2026, migration `0366`). Un membre n'avait nulle part où dire
+ce qu'il sait faire : sa ressource n'avait jamais de compétence, et une campagne filtrée sur
+« Pompage » ne trouvait aucun membre (le « taper large » les prenait tous, ce qui revenait à ne
+pas filtrer). `FicheBenevole.competences` reprend **le même catalogue** `Competence` que
+« Proposer mon aide », thèmes et sous-thèmes :
+
+- saisi sur la fiche (« Ce que je sais faire ») par le composant partagé
+  `app-competences-arbre`, que le formulaire « Proposer mon aide » utilise aussi — un seul arbre,
+  plus de copie ; seules les compétences actives sont proposées ;
+- recopié sur la ressource de **chaque** association par `ressource_du_benevole`, à chaque
+  enregistrement : c'est la ressource que lisent le ciblage des campagnes
+  (`ciblage_benevoles`) et la constitution d'équipe ;
+- repris à l'import (colonne « Compétences », noms séparés par `;`, rapprochés sans accents ni
+  casse). Une compétence inconnue est **signalée, jamais créée** : le catalogue est commun à
+  toute la plateforme ;
+- présent dans l'application Android à partir de la version 0.11.0.
+
+Les diplômes et permis n'en sont pas : ils restent des titres justifiés
+(`QualificationMembre`). Elles ne conditionnent pas `est_complete`, mais l'écran rappelle qu'une
+fiche sans compétence n'est proposée sur aucune mission qui en demande une.
 
 **Dette de sécurité corrigée au passage sur l'ancien modèle à la journée**
 (`DisponibiliteOperationnelle`, toujours exposé mais plus utilisé par les membres) : le ViewSet
@@ -3019,6 +3119,10 @@ par marque ; il en a deux : `reserveResilience` (identifiant `org.reserve_resili
 saveur). Les deux s'installent côte à côte. `scripts/publier-mobile.sh` dépose
 `reserve-resilience.apk` et `assista-crise.apk` dans `frontend/public/mobile`, et la page
 d'accueil propose l'un ou l'autre selon le domaine visité (`lienDeLApplication`).
+
+**Version 0.11.0 (versionCode 15, 21/11/2026)** : « Ce que je sais faire » sur l'écran Ma fiche,
+même arbre que le site (`Competence.arbre`, catalogue `GET /api/competences/`, envoi des
+identifiants dans `PATCH /api/ma-fiche-benevole/`).
 
 Ce qui n'existe pas encore : des modèles d'arrêtés pré-remplis (réquisition, interdiction),
 l'export cartographique en annexe.
@@ -6335,6 +6439,15 @@ fichier — le texte entre balises parle à l'utilisateur, le commentaire au mai
 ## 15. Chantiers ouverts
 
 - Corriger le dernier test en échec puis retirer `allow_failure` de la CI.
+- **Responsables supplémentaires d'un point** : ils n'ont pas accès à son stock ni à son
+  registre (`_peut_gerer_stock_point` ne lit que `responsable`, l'équipe et l'administrateur),
+  alors que l'écran les appelle responsables. Limite d'origine, assumée dans le code ; à
+  trancher par Sylvain avant de l'étendre.
+- **Ouvrir la cellule de crise d'une crise crée une équipe** « Cellule de crise » dans
+  l'institution de celui qui regarde, même pour une association non acceptée sur cette crise :
+  un effet de bord à une simple lecture.
+- **Compétences des membres déjà inscrits** : aucune n'est enregistrée (le champ date du
+  21/11/2026). Les inviter à compléter leur fiche.
 - **Clés de chiffrement en production** : documenter leur injection et vérifier qu'elles
   sont sauvegardées hors de la machine (sans elles, les données personnelles sont perdues).
 - Commentaires historiques encore longs dans `views.py` et les ponts : les réduire selon les
