@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 
 import { AdminHeaderComponent } from './admin-header.component';
 import { AuthService } from '../../../auth/services/auth.service';
+import { BrandingService } from '../../../services/branding.service';
 
 describe('AdminHeaderComponent', () => {
   let component: AdminHeaderComponent;
@@ -77,5 +78,20 @@ describe('AdminHeaderComponent', () => {
     spyOn(TestBed.inject(AuthService), 'getEnvironment').and.returnValue('DEMO');
     fixture.detectChanges();
     expect(fixture.nativeElement.classList).toContain('demo-mode');
+  });
+
+  it('l\'en-tête porte le nom et le logo de la marque du domaine visité, jamais « Assista Crise » en dur', () => {
+    const texte = () => fixture.nativeElement.querySelector('.logo-text').textContent.trim();
+    expect(texte()).toBe('Assista-Crise');
+    expect(fixture.nativeElement.querySelector('.logo-image')).toBeNull();
+
+    (TestBed.inject(BrandingService) as any).brandingSubject.next({
+      nom_affichage: 'Réserve Résilience - Casques Jaunes', logo_url: '/media/branding/logo.png',
+      couleur_primaire: '#3c4d81', couleur_secondaire: '#2ea3f2', police_titre: '', police_texte: '', reserve_active: true,
+    });
+    fixture.detectChanges();
+    expect(texte()).toBe('Réserve Résilience - Casques Jaunes');
+    expect(fixture.nativeElement.querySelector('.logo-image').getAttribute('src')).toBe('/media/branding/logo.png');
+    expect(fixture.nativeElement.querySelector('.logo-icon')).toBeNull();
   });
 });

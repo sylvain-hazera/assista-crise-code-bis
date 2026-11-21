@@ -125,6 +125,7 @@ from .zone_scoping import (
     apply_zone,
     filter_queryset_to_viewer_zone,
     object_in_viewer_zone,
+    viewer_perimetre,
     viewer_zone_code,
     widen_zone_from_request,
 )
@@ -9376,12 +9377,22 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # consulter SA propre équipe même hors de sa zone) — seule la liste est réduite à
             # la zone de compétence de l'appelant, généralisant le filtre déjà appliqué par
             # vue_mairie (qui ne couvrait que le niveau commune) à tous les niveaux.
-            qs = filter_queryset_to_viewer_zone(
+            dans_la_zone = filter_queryset_to_viewer_zone(
                 self.request, qs,
                 resolver=lambda niveau, code: Q(**{
                     f"institution__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code
                 }),
             )
+            # Les équipes de sa propre institution, toujours (21/11/2026) : une association
+            # agréée n'a pas de commune à elle, et le filtre par zone ne lui montrait que les
+            # équipes des mairies qui l'avaient acceptée — jamais son arborescence de
+            # coordination (national, zones, régions, départements) ni ses équipes de terrain.
+            # Celle dont l'appelant adopte le point de vue : pour un administrateur placé dans
+            # une autre institution, celle-là et non la sienne (core/perimetre_admin.py).
+            institution = institution_regardee(self.request)
+            if institution is not None:
+                return qs.filter(Q(pk__in=dans_la_zone.values('pk')) | Q(institution=institution))
+            return dans_la_zone
         return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
@@ -13079,6 +13090,7 @@ class BrandingView(APIView):
             "police_titre": branding.police_titre,
             "police_texte": branding.police_texte,
             "reserve_active": branding.reserve_active,
+            "email_contact": branding.email_contact,
         })
         # Appelée à CHAQUE ouverture du site, avant tout affichage (19/11/2026, « le site
         # rame ») : le navigateur la garde 5 minutes. Une charte changée dans l'administration
@@ -16852,8 +16864,12 @@ class PointOperationnelViewSet(
         qs = super().get_queryset()
         if self.request.query_params.get("mine") == "true":
             user = self.request.user
+            # Les responsables supplémentaires (roulement jour/nuit) et les équipes de gestion
+            # en plus de l'équipe principale tiennent le point eux aussi : sans eux, un
+            # coordinateur ajouté en responsable ne retrouvait pas le point dans « Mes centres ».
             return qs.filter(
                 Q(responsable=user) | Q(equipe__leader=user) | Q(equipe__members=user)
+                | Q(responsables=user) | Q(equipes_gestion__leader=user) | Q(equipes_gestion__members=user)
             ).distinct()
         if self.action == 'list':
             qs = self._filter_points_to_viewer_zone(qs)
@@ -16866,17 +16882,26 @@ class PointOperationnelViewSet(
         (`Q(equipe__institution__{champ}=code)`, comme DossierViewSet.vue_mairie) et, pour les
         points sans équipe ou dont l'équipe n'a pas d'institution, un géocodage inverse point
         par point (`commune_code_from_point`, même mécanisme que vue_mairie) résolu au niveau
-        de secteur de l'appelant via le référentiel Commune."""
+        de secteur de chaque zone de l'appelant via le référentiel Commune.
+
+        Le périmètre est `viewer_perimetre` et non la seule zone propre (21/11/2026) : une
+        association agréée n'a pas de commune à elle, et `viewer_zone_code` la laissait sans
+        aucun point — « Tous les centres » et « Logement intervenants » vides, y compris sur la
+        commune qui venait de l'accepter. Elle voit désormais les points des communes qui l'ont
+        acceptée, et toujours ceux de ses propres équipes (son point de regroupement des moyens
+        n'est rattaché à aucune commune par son équipe)."""
         if admin_sans_filtre(self.request, self):
             return qs
-        zone = viewer_zone_code(self.request)
-        if zone is None:
-            return qs.none()
-        niveau, code = zone
-        if niveau == "national":
+        zones = viewer_perimetre(self.request)
+        institution = institution_regardee(self.request)
+        propres = Q(equipe__institution=institution) if institution is not None else Q(pk__in=[])
+        if not zones:
+            return qs.filter(propres)
+        if any(niveau == "national" for niveau, _code in zones):
             return qs
-        champ = SECTEUR_CHAMP_PAR_NIVEAU[niveau]
-        direct = Q(**{f"equipe__institution__{champ}": code})
+        direct = Q(pk__in=[])
+        for niveau, code in zones:
+            direct |= Q(**{f"equipe__institution__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
         sans_institution = qs.filter(
             Q(equipe__isnull=True) | Q(equipe__institution__isnull=True),
             location__isnull=False,
@@ -16886,14 +16911,18 @@ class PointOperationnelViewSet(
             point_commune_code = commune_code_from_point(point.location)
             if not point_commune_code:
                 continue
-            if niveau == "commune":
-                point_code = point_commune_code
-            else:
-                commune = Commune.objects.filter(code=point_commune_code).first()
-                point_code = getattr(commune, champ, None) if commune else None
-            if point_code == code:
-                matching_ids.append(point.id)
-        return qs.filter(direct | Q(id__in=matching_ids))
+            commune = None
+            for niveau, code in zones:
+                if niveau == "commune":
+                    point_code = point_commune_code
+                else:
+                    if commune is None:
+                        commune = Commune.objects.filter(code=point_commune_code).first() or False
+                    point_code = getattr(commune, SECTEUR_CHAMP_PAR_NIVEAU[niveau], None) if commune else None
+                if point_code == code:
+                    matching_ids.append(point.id)
+                    break
+        return qs.filter(direct | propres | Q(id__in=matching_ids))
 
     def get_permissions(self):
         # Avant ce correctif, seul `create` était restreint : n'importe quel compte connecté

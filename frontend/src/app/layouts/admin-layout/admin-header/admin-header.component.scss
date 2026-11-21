@@ -98,8 +98,17 @@
       color: #667eea;
     }
 
+    .logo-image {
+      height: 32px;
+      width: auto;
+    }
+
     .logo-text {
       color: var(--ac-text, #333);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 22rem;
     }
   }
 }

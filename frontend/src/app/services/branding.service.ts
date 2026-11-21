@@ -13,6 +13,8 @@ export interface Branding {
   police_titre: string;
   police_texte: string;
   reserve_active: boolean;
+  /** Adresse de contact de la marque (pied de page) ; absente = celle d'Assista-Crise. */
+  email_contact?: string | null;
 }
 
 const BRANDING_ASSISTA_CRISE: Branding = {

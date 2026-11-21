@@ -1,6 +1,8 @@
-import { Component, EventEmitter, HostBinding, Input, Output } from '@angular/core';
+import { Component, EventEmitter, HostBinding, Input, Output, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../auth/services/auth.service';
+import { BrandingService } from '../../../services/branding.service';
 import { SuiviPositionPermanentService } from '../../../services/suivi-position-permanent.service';
 import { ThemeService } from '../../../services/theme.service';
 import { User, UserRole } from '../../../shared/models/user.model';
@@ -30,6 +32,11 @@ export class AdminHeaderComponent {
 
   showNotifications = false;
   showUserMenu = false;
+
+  /** Le nom et le logo du domaine visité : sur app.reserve-resilience.org, un bénévole ne doit
+   * jamais lire « Assista Crise » dans son en-tête. */
+  private branding = inject(BrandingService);
+  readonly marque = toSignal(this.branding.branding$, { initialValue: this.branding.valeurActuelle });
 
   constructor(
     private authService: AuthService,

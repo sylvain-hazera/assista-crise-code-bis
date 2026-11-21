@@ -50,8 +50,9 @@
       <h5 class="col-title">Contact</h5>
       <ul class="link-list">
         <li>
-          <a (click)="openEmail(contact.email)" class="row-link clickable">
-            contact&#64;assista-crise.fr
+          @let emailContact = (branding$ | async)?.email_contact || contact.email;
+          <a (click)="openEmail(emailContact)" class="row-link clickable">
+            {{ emailContact }}
           </a>
         </li>
       </ul>
@@ -68,7 +69,7 @@
 
   <!-- ── Bottom ───────────────────────────────────────────── -->
   <div class="footer-bottom">
-    <span>&copy; {{ currentYear }} Assista Crise. Tous droits réservés.</span>
+    <span>&copy; {{ currentYear }} {{ (branding$ | async)?.nom_affichage || 'Assista Crise' }}. Tous droits réservés.</span>
     <span class="sep">·</span>
     <span>Université Grenoble Alpes — Projet Info5</span>
   </div>

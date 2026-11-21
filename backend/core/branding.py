@@ -32,6 +32,9 @@ class Branding:
     police_texte: str
     reserve_active: bool
     institution_id: Optional[str] = None
+    # Adresse de contact affichée au pied du site : sur app.reserve-resilience.org, un visiteur
+    # ne doit pas lire contact@assista-crise.fr. None = celle d'Assista-Crise (frontend).
+    email_contact: Optional[str] = None
 
 
 DEFAULT_BRANDING = Branding(
@@ -125,6 +128,7 @@ def branding_for_institution(institution) -> Branding:
         police_texte=institution.police_texte,
         reserve_active=institution.reserve_active,
         institution_id=str(institution.id),
+        email_contact=institution.email_reply_to or institution.email or None,
     )
 
 

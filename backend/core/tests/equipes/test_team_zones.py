@@ -142,6 +142,25 @@ class TestTeamListZoneScoping:
         assert response.status_code == status.HTTP_200_OK
         assert response.data == []
 
+    def test_association_sans_commune_voit_toute_son_arborescence(self, create_user, commune_a, commune_b):
+        """Une association agréée n'a pas de commune à elle : elle voit toujours ses propres
+        équipes (arborescence de coordination comprise), jamais celles d'une mairie qui ne
+        l'a pas acceptée."""
+        itype, _ = InstitutionType.objects.get_or_create(code="aasc", defaults={"libelle": "AASC"})
+        asso = Institution.objects.create(nom="Association test arborescence", type=itype)
+        nationale = Team.objects.create(name="Coordination nationale", institution=asso, echelon="NATIONAL")
+        Team.objects.create(name="Coordination départementale", institution=asso, echelon="DEPARTEMENTAL", equipe_parente=nationale)
+        Team.objects.create(name="Equipe mairie voisine", institution=self._make_institution("MAIRIE_TEAM_ZONE_H", commune_b))
+
+        user = create_user(username="coord-arbo@test.fr", email="coord-arbo@test.fr", type="AUT_LOCALE")
+        user.institution = asso
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        names = {t['name'] for t in client.get(reverse('team-list')).data}
+        assert names == {"Coordination nationale", "Coordination départementale"}
+
 
 @pytest.mark.django_db
 class TestRequestCommuneCode:

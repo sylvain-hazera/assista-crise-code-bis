@@ -196,3 +196,50 @@ class TestPointOperationnelListZoneScoping:
         assert response.status_code == status.HTTP_200_OK
         names = {p['nom'] for p in response.data}
         assert {"Point D", "Point E"}.issubset(names)
+
+    def test_association_acceptee_voit_les_points_de_la_commune_et_ceux_de_ses_equipes(self, create_user, commune_a, commune_b, crisis, point_type):
+        """Une association agréée n'a pas de commune à elle : elle voit les points des communes
+        qui l'ont acceptée sur une crise en cours, et ceux de ses propres équipes — jamais ceux
+        d'une commune qui ne l'a pas acceptée."""
+        from core.models import ImplicationInstitution
+        mairie_a = self._make_institution("POINT_ZONE_MA", commune_a)
+        mairie_b = self._make_institution("POINT_ZONE_MB", commune_b)
+        itype, _ = InstitutionType.objects.get_or_create(code="aasc", defaults={"libelle": "AASC"})
+        asso = Institution.objects.create(nom="Association agréée test", type=itype)
+        PointOperationnel.objects.create(nom="Centre de la commune A", type=point_type, crise=crisis,
+                                         equipe=Team.objects.create(name="Equipe mairie A", institution=mairie_a))
+        PointOperationnel.objects.create(nom="Centre de la commune B", type=point_type, crise=crisis,
+                                         equipe=Team.objects.create(name="Equipe mairie B", institution=mairie_b))
+        PointOperationnel.objects.create(nom="Regroupement de l'association", type=point_type, crise=crisis,
+                                         equipe=Team.objects.create(name="Equipe asso", institution=asso))
+        user = create_user(username="coord-asso@test.fr", email="coord-asso@test.fr", type="AUT_LOCALE")
+        user.institution = asso
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        noms = {p['nom'] for p in client.get(reverse('pointoperationnel-list')).data}
+        assert noms == {"Regroupement de l'association"}
+
+        ImplicationInstitution.objects.create(crise=crisis, institution=asso, type_implication="ACTEUR",
+                                              statut="VALIDEE", communes=[commune_a.code])
+        noms = {p['nom'] for p in client.get(reverse('pointoperationnel-list')).data}
+        assert noms == {"Centre de la commune A", "Regroupement de l'association"}
+
+    def test_mes_centres_compte_les_responsables_et_equipes_de_gestion_supplementaires(self, create_user, commune_a, crisis, point_type):
+        institution = self._make_institution("POINT_ZONE_MINE", commune_a)
+        coord = create_user(username="coord-mine@test.fr", email="coord-mine@test.fr", type="AUT_LOCALE")
+        logisticien = create_user(username="log-mine@test.fr", email="log-mine@test.fr", type="UTIL_SIMPLE")
+        autre = create_user(username="autre-mine@test.fr", email="autre-mine@test.fr", type="UTIL_SIMPLE")
+        point = PointOperationnel.objects.create(nom="Point roulement", type=point_type, crise=crisis,
+                                                 equipe=Team.objects.create(name="Equipe principale", institution=institution))
+        point.responsables.add(coord)
+        gestion = Team.objects.create(name="Equipe de gestion", institution=institution)
+        gestion.members.add(logisticien)
+        point.equipes_gestion.add(gestion)
+        for qui, attendu in [(coord, True), (logisticien, True), (autre, False)]:
+            client = APIClient()
+            client.force_authenticate(user=qui)
+            noms = {p['nom'] for p in client.get(reverse('pointoperationnel-list'), {"mine": "true"}).data}
+            assert ("Point roulement" in noms) is attendu, qui.email
+

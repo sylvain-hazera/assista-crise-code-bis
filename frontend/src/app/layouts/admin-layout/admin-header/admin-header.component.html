@@ -6,8 +6,13 @@
   }
 
   <div class="logo">
-    <span class="logo-icon">&#64;</span>
-    <span class="logo-text">Assista Crise</span>
+    <!-- Marque blanche : le nom et le logo de l'institution du domaine visité (core/branding.py). -->
+    @if (marque().logo_url; as logo) {
+      <img class="logo-image" [src]="logo" alt="">
+    } @else {
+      <span class="logo-icon">&#64;</span>
+    }
+    <span class="logo-text">{{ marque().nom_affichage }}</span>
   </div>
 </div>
 
