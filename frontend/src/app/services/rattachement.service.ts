@@ -16,7 +16,15 @@ export interface PageRattachements {
 /** Les institutions où JE suis membre, et celle pour laquelle je travaille en ce moment. */
 export interface InstitutionActive {
   active: string | null;
-  institutions: { id: string; nom: string; nom_affichage: string; type_libelle: string }[];
+  institutions: {
+    id: string; nom: string; nom_affichage: string; type_libelle: string;
+    /** Collectivité pour laquelle j'agis par délégation de gestion (21/11/2026). */
+    par_delegation?: { aasc: string } | null;
+  }[];
+  /** J'agis en ce moment pour une collectivité, par délégation de gestion. */
+  delegation_en_cours?: { id: string; collectivite: string; aasc: string } | null;
+  /** Convention rompue avec l'AASC qui fournissait l'accès : seul l'export reste. */
+  export_seul?: boolean;
 }
 
 /**

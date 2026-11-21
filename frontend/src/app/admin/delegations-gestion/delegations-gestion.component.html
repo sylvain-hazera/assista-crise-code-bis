@@ -1,0 +1,128 @@
+<div class="page">
+  <h1><span class="material-icons" aria-hidden="true">handshake</span> Délégations de gestion</h1>
+  <p class="chapeau">
+    Une association agréée de sécurité civile exploite la plateforme pour une collectivité, dans le cadre
+    d'une convention signée à l'avance. Ceux qui agissent pour l'association — son bureau et l'encadrement
+    des coordinations qui couvrent la commune — basculent sur la mairie depuis « Je travaille pour » et y ont
+    tous ses droits, <strong>registre des personnes vulnérables excepté</strong>. La collectivité reste
+    propriétaire de ses données : elle peut les exporter, et mettre fin à la délégation.
+  </p>
+
+  @if (message) { <p class="ok" role="status">{{ message }}</p> }
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+
+  <section class="carte">
+    <h2>Engager un territoire</h2>
+    <p class="aide">La convention se signe d'abord avec le département ; une commune peut aussi signer seule.
+      Si la collectivité n'existe pas encore sur la plateforme, elle est créée à partir du référentiel officiel.</p>
+    <div class="portee" role="radiogroup">
+      <label><input type="radio" name="portee" value="departement" [(ngModel)]="portee"> Un département (conseil départemental)</label>
+      <label><input type="radio" name="portee" value="commune" [(ngModel)]="portee"> Une commune (mairie)</label>
+    </div>
+    <div class="grille">
+      @if (portee === 'departement') {
+        <label>Département (numéro) <input type="text" [(ngModel)]="departementCode" placeholder="42" maxlength="3"></label>
+      } @else {
+      <label class="large">Commune
+        <input type="text" [ngModel]="recherche" (ngModelChange)="chercher($event)" placeholder="Nom de la commune" autocomplete="off">
+        @if (propositions.length) {
+          <ul class="propositions">
+            @for (c of propositions; track c.code) {
+              <li><button type="button" (click)="choisir(c)">{{ c.name }} <span class="code">{{ c.codesPostaux[0] }}</span></button></li>
+            }
+          </ul>
+        }
+      </label>
+      }
+      <label>Référence de la convention <input type="text" [(ngModel)]="saisie.reference" placeholder="CONV-2026-12"></label>
+      <label>Signée le * <input type="date" [(ngModel)]="saisie.signeeLe"></label>
+      <label>Signataire pour la mairie <input type="text" [(ngModel)]="saisie.signataire" placeholder="Prénom Nom"></label>
+      <label>Qualité <input type="text" [(ngModel)]="saisie.qualite"></label>
+      <label>Échéance <input type="date" [(ngModel)]="saisie.dateFin"></label>
+      <label class="large">Convention signée (PDF, facultatif) <input type="file" accept="application/pdf" (change)="choisirDocument($event)"></label>
+    </div>
+    <button type="button" class="btn-primary" [disabled]="!peutEngager" (click)="engager()">
+      {{ envoi ? 'Enregistrement…' : 'Enregistrer la délégation' }}
+    </button>
+  </section>
+
+  <section>
+    <h2>Délégations</h2>
+    @if (chargement) { <p class="aide">Chargement…</p> }
+    @else if (!delegations.length) { <p class="aide">Aucune délégation pour vos institutions.</p> }
+    @for (d of delegations; track d.id) {
+      <article class="carte delegation" [class.inactive]="!d.en_vigueur">
+        <header>
+          <h3>{{ d.collectivite_nom }} <span class="fleche">→</span> {{ d.aasc_nom }}</h3>
+          <span class="pastille" [class.active]="d.en_vigueur">{{ d.en_vigueur ? 'En vigueur' : (d.statut === 'RETIREE' ? 'Retirée' : 'Échue') }}</span>
+        </header>
+        <p class="convention">
+          Convention {{ d.convention_reference || 'sans référence' }}, signée le {{ d.convention_signee_le | date:'dd/MM/yyyy' }}
+          @if (d.convention_signataire) { par {{ d.convention_signataire }} ({{ d.convention_signataire_qualite }}) }
+          @if (d.date_fin) { — échéance le {{ d.date_fin | date:'dd/MM/yyyy' }} }
+          @if (d.a_un_document) { — document joint }
+        </p>
+        @if (d.date_retrait) { <p class="aide">Retirée le {{ d.date_retrait | date:'dd/MM/yyyy' }}{{ d.motif_retrait ? ' : ' + d.motif_retrait : '' }}</p> }
+
+        <div class="actions">
+          <button type="button" class="lien" (click)="voirPersonnes(d)">Qui agit pour l'association</button>
+          <button type="button" class="lien" (click)="voirPresence(d)">Personnes vulnérables (présence)</button>
+          @if (d.en_vigueur) { <button type="button" class="lien" (click)="ouvrirInvitation(d)">Inviter la mairie</button> }
+          <button type="button" class="lien" (click)="voirRepertoires(d)">Répertoires des intercommunalités</button>
+          <button type="button" class="lien" (click)="exporter(d)">Exporter les données de la collectivité</button>
+        </div>
+        @if (repertoires[d.id]; as reps) {
+          <div class="repertoires">
+            @for (r of reps; track r.id) {
+              <details>
+                <summary>{{ r.nom }} — {{ r.contacts.length }} contact(s), {{ r.annuaire.length }} dans l'annuaire de crise</summary>
+                <ul>
+                  @for (c of r.contacts; track $index) { <li>{{ c.nom }} — {{ c.fonction }} — {{ c.telephone }} — {{ c.email }}</li> }
+                  @for (a of r.annuaire; track $index) { <li>{{ a.nom }} ({{ a.organisme }}) — {{ a.telephone }} — {{ a.email }}</li> }
+                </ul>
+              </details>
+            } @empty { <p class="aide">Aucune intercommunalité enregistrée pour ce département (ou délégation communale).</p> }
+          </div>
+        }
+
+        @if (personnes[d.id]; as liste) {
+          <ul class="personnes">
+            @for (p of liste; track p.id) { <li>{{ p.nom }} — {{ p.titre }}</li> }
+            @empty { <li>Personne pour l'instant : désignez l'encadrement de la coordination qui couvre la commune.</li> }
+          </ul>
+        }
+        @if (presence[d.id] !== undefined) {
+          <p class="presence">
+            @if (presence[d.id]; as p) {
+              {{ p.situees + p.non_situees }} personne(s) inscrite(s) au registre de la commune
+              ({{ p.situees }} située(s) sur la carte par un cercle anonymisé). Le détail reste réservé
+              aux personnes habilitées par le maire.
+            } @else { Information indisponible. }
+          </p>
+        }
+        @if (invitation[d.id]; as inv) {
+          <div class="invitation">
+            <label>Adresses (mairie, cadres, responsables)
+              <textarea rows="2" [(ngModel)]="inv.emails" placeholder="mairie@commune.fr, secretariat@commune.fr"></textarea></label>
+            <label>Fonction <input type="text" [(ngModel)]="inv.fonction"></label>
+            <button type="button" class="btn-primary" (click)="inviter(d)">Envoyer les invitations</button>
+          </div>
+        }
+        @if (d.en_vigueur) {
+          <details class="retrait">
+            <summary>Mettre fin à la délégation</summary>
+            <p class="aide">L'association perd l'accès. Si elle fournissait l'accès à la plateforme, la collectivité ne
+              pourra plus qu'exporter ses données. Pendant une crise ouverte, une confirmation et un motif sont demandés.</p>
+            @if (crisesOuvertes[d.id]?.length) {
+              <p class="erreur">Crise ouverte sur ce territoire : {{ crisesOuvertes[d.id].join(', ') }}. Le retrait se décide au cas
+                par cas, dans l'intérêt de la population : confirmez et indiquez le motif.</p>
+              <label class="case"><input type="checkbox" [(ngModel)]="retraitForce[d.id]"> Je confirme le retrait malgré la crise ouverte</label>
+            }
+            <input type="text" [(ngModel)]="retrait[d.id]" placeholder="Motif">
+            <button type="button" class="btn-danger" (click)="retirer(d)">Retirer la délégation</button>
+          </details>
+        }
+      </article>
+    }
+  </section>
+</div>

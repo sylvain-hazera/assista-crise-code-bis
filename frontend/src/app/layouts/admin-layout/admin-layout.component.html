@@ -51,7 +51,10 @@
   <main class="admin-content">
     <app-invitation-demo></app-invitation-demo>
     <app-rappel-second-facteur></app-rappel-second-facteur>
-    <router-outlet></router-outlet>
+    <app-bandeau-delegation (exportSeul)="exportSeul = $event"></app-bandeau-delegation>
+    @if (!exportSeul) {
+      <router-outlet></router-outlet>
+    }
   </main>
 
 </div>

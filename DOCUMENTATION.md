@@ -845,6 +845,61 @@ Non tranché : une mairie qui se déclare acteur SANS cocher « renfort » voit 
 crise, communes voisines comprises, sans l'accord de leurs maires. C'est le comportement
 d'origine, laissé tel quel.
 
+#### Délégation de gestion : une AASC exploite la plateforme pour une collectivité (21/11/2026)
+
+Demande de Sylvain : « Nous, Réserve Résilience, proposons la solution aux mairies, solution que
+nous exploitons pour eux » ; « la Réserve crée aussi la collectivité et rentre toutes ses
+informations ; la collectivité reste propriétaire de ses données » ; « les conventions sont
+signées à l'avance » ; « la Réserve signe par défaut avec le département » ; « si la mairie rompt
+la convention, elle ne peut plus qu'exporter ses données ».
+
+- **Modèle** `DelegationGestion` (migration `0368`) : collectivité (mairie, EPCI ou conseil
+  départemental `cg`), AASC, communes facultatives, statut ACTIVE / RETIREE, convention signée
+  hors plateforme (référence, date, signataire chiffré, qualité, échéance, PDF chiffré).
+  `Institution.acces_fourni_par` : l'AASC qui fournit l'accès à une collectivité qu'elle a créée
+  ou amenée.
+- **Qui agit** (`core/delegation_gestion.py`, jamais recopié) : le bureau de l'AASC et
+  l'encadrement (`leader`, `membres_encadrement`) de ses équipes actives qui couvrent le
+  territoire délégué — `equipe_couvre_zone` lit l'échelon (nationale, zone de défense, région,
+  département) puis la zone d'intervention. Une délégation départementale (`zones_de` →
+  département) fait agir la coordination départementale et celles au-dessus.
+- **Agir pour la collectivité, c'est le contexte existant** : la collectivité apparaît dans « Je
+  travaille pour » (« (délégation) ») ; y basculer pose `User.institution`, et les contrôles
+  d'appartenance acceptent la délégation (`institution_courante.est_membre`,
+  `_appartient_a_institution`, `institutions_visibles`, `IsInstitutionMemberOrAdministrator`,
+  `gestion_equipes._contexte`, `is_regulateur_aut_locale_de_la_crise`). En contexte délégué,
+  `get_effective_role` rend LOCAL_AUTHORITY (mémorisé par requête) ; chaque ligne de main
+  courante porte « par délégation — <AASC> » ; un bandeau permanent le rappelle.
+- **Registre des personnes vulnérables : exclu.** Un délégué ne peut ni se désigner ni désigner
+  (`_collectivite_du_designant`), et l'habilitation nominative reste exigée. Seule la présence
+  non détaillée est donnée : les cercles anonymisés et leur nombre
+  (`/api/personnes-vulnerables/secteurs/`, désormais limité au périmètre de l'appelant et aux
+  délégations où il agit — le paramètre `commune_code` était libre).
+- **Création** : la Réserve crée la mairie depuis le référentiel des communes, ou le conseil
+  départemental depuis le numéro du département (ancré sur la commune la plus peuplée, faute de
+  chef-lieu au référentiel) — jamais par simple saisie d'un nom. Puis elle invite la mairie
+  (`inviter` : comptes LOCAL_AUTHORITY inactifs, lien d'activation) à compléter et vérifier.
+- **Répertoires des EPCI** (`repertoires`) : pour une délégation départementale, contacts et
+  annuaire PCS/PICS de chaque intercommunalité du département, en lecture seule, journalisé.
+- **Rupture au cas par cas** : pas de blocage d'office ; pendant une crise ouverte sur le
+  territoire, `retirer` exige `forcer` et un motif. Quand l'AASC fournissait l'accès, la
+  collectivité passe en **export seul** : `institution_regardee` → None, `institutions_visibles`
+  l'exclut, rôle effectif UTIL_SIMPLE, et l'administration n'affiche plus que « Exporter toutes
+  nos données ».
+- **Réversibilité** : `GET /api/institutions/<id>/export-donnees/` — ZIP, un JSON par modèle qui
+  appartient à l'institution par un champ `institution` ou `collectivite` (calculé : un modèle
+  ajouté demain est exporté), plus `LISEZMOI.txt`. Ouvert aux membres (même en export seul) et
+  aux délégués ; journalisé (EXPORT). Le registre n'en fait pas partie (`institution_declarante`).
+- Écran `/admin/delegations-gestion` (menu Administration).
+
+**Failles corrigées en préparant ce lot** (aucune exploitée : aucune délégation n'existait en
+production) : `DelegationCompetence` créable par n'importe quel compte d'institution au nom de
+n'importe quelle mairie, sans crise ni secteur (lecture du registre de toutes les communes) ;
+`?institution=` qui court-circuitait le périmètre des plans et zones ; institution du payload non
+vérifiée (annuaire PCS, création d'équipe) ; modification de n'importe quelle crise par
+n'importe quel acteur (désormais l'auteur, le responsable d'une implication, les institutions
+impliquées validées, l'administrateur).
+
 #### La zone d'une crise s'agrandit par deux chemins (17/11/2026)
 
 `core/zones_crise.py`. Une commune qui rejoint une crise y fait entrer **tout son territoire**

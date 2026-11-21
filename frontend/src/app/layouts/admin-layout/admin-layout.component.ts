@@ -21,14 +21,18 @@ const CLE_STOCKAGE_SIDEBAR = 'admin-sidebar-affichage';
  * <router-outlet>. En-tête, menu et cloche sont des composants enfants ; les entrées du menu
  * sont dans admin-nav.config.ts (DOCUMENTATION.md, § 6.4). Sur grand écran, le menu se
  * redimensionne par sa poignée, se réduit aux icônes ou se masque ; préférence locale. */
+import { BandeauDelegationComponent } from '../../shared/components/common/bandeau-delegation/bandeau-delegation.component';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent, RappelSecondFacteurComponent, InvitationDemoComponent],
+  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent, RappelSecondFacteurComponent, InvitationDemoComponent, BandeauDelegationComponent],
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })
 export class AdminLayoutComponent implements OnInit {
+  /** Convention rompue : seule la page d'export s'affiche (voir BandeauDelegationComponent). */
+  exportSeul = false;
+
   @ViewChild(AdminHeaderComponent) private header?: AdminHeaderComponent;
 
   readonly largeurs = LARGEUR_SIDEBAR;

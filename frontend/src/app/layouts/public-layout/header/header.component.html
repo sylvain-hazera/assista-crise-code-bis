@@ -117,7 +117,7 @@
                 <select [ngModel]="institutionActive"
                         (ngModelChange)="changerInstitutionActive($event)">
                   @for (i of institutionsRattachees; track i.id) {
-                    <option [value]="i.id">{{ i.nom_affichage }}</option>
+                    <option [value]="i.id">{{ i.nom_affichage }}{{ i.par_delegation ? ' (délégation)' : '' }}</option>
                   }
                 </select>
                 <span class="dropdown-institution-aide">

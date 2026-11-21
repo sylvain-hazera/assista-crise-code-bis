@@ -45,9 +45,11 @@ def _contexte(request):
     cadre_de |= set(Team.objects.filter(leader_id=user.id).values_list("id", flat=True))
     avec_bureau = set(ContactInstitution.objects.filter(actif=True, membre_bureau=True)
                       .values_list("institution_id", flat=True).distinct())
+    from .delegation_gestion import collectivites_deleguees
     cache = {
         "admin": admin,
-        "membre_de": {i for i, _ in contacts},
+        # Une collectivité pour laquelle il agit par délégation de gestion vaut appartenance.
+        "membre_de": {i for i, _ in contacts} | {c.id for c in collectivites_deleguees(user)},
         "bureau_de": {i for i, b in contacts if b},
         "avec_bureau": avec_bureau,
         "parents": parents,

@@ -5,7 +5,7 @@ import { AuthService } from '../../../auth/services/auth.service';
 import { User, UserRole } from '../../../shared/models/user.model';
 import { FormsModule } from '@angular/forms';
 
-import { RattachementService } from '../../../services/rattachement.service';
+import { InstitutionActive, RattachementService } from '../../../services/rattachement.service';
 import { TeamService } from '../../../services/team.service';
 import { UserAvatarComponent } from '../../../shared/components/common/user-avatar/user-avatar.component';
 import { Observable } from 'rxjs';
@@ -106,7 +106,7 @@ export class HeaderComponent {
   // sélecteur n'apparaît qu'au-delà d'une institution : pour tous les autres, il n'y a rien à
   // choisir et un menu de plus serait du bruit.
 
-  institutionsRattachees: { id: string; nom: string; nom_affichage: string; type_libelle: string }[] = [];
+  institutionsRattachees: InstitutionActive['institutions'] = [];
   institutionActive: string | null = null;
 
   private chargerInstitutions(): void {

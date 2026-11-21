@@ -31,9 +31,14 @@ def institutions_de(utilisateur):
     basculer dessus rendrait un périmètre à quelqu'un qu'on vient d'en sortir."""
     from .models import ContactInstitution, Institution
 
-    ids = (ContactInstitution.objects
-           .filter(utilisateur=utilisateur, actif=True, institution__actif=True)
-           .values_list("institution_id", flat=True))
+    from .delegation_gestion import collectivites_deleguees
+
+    ids = set(ContactInstitution.objects
+              .filter(utilisateur=utilisateur, actif=True, institution__actif=True)
+              .values_list("institution_id", flat=True))
+    # Les collectivités pour lesquelles il agit par délégation de gestion (21/11/2026) : elles
+    # apparaissent dans le sélecteur de contexte, et y basculer donne les droits de la mairie.
+    ids.update(c.id for c in collectivites_deleguees(utilisateur) if c.actif)
     return list(Institution.objects.filter(id__in=list(ids)).order_by("nom"))
 
 
@@ -44,11 +49,13 @@ def est_membre(utilisateur, institution_id):
     deuxième institution d'un compte multi-appartenance."""
     from .models import ContactInstitution
 
+    from .delegation_gestion import est_delegue
+
     if not institution_id:
         return False
     return ContactInstitution.objects.filter(
         utilisateur=utilisateur, institution_id=institution_id, actif=True,
-    ).exists()
+    ).exists() or est_delegue(utilisateur, institution_id)
 
 
 def definir_institution_active(utilisateur, institution_id):

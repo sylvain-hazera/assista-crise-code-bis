@@ -121,6 +121,11 @@ def institution_regardee(request):
         mode, institution = _memo(request, "choix", lambda: _choix(request))
         if mode != TOUT:
             return institution
+    # Collectivité en mode export seul (convention rompue avec l'AASC qui lui fournissait
+    # l'accès) : plus aucun périmètre, seul l'export de ses données reste ouvert (21/11/2026).
+    from .delegation_gestion import utilisateur_en_export_seul
+    if utilisateur_en_export_seul(user):
+        return None
     return getattr(user, "institution", None)
 
 
@@ -142,9 +147,22 @@ def institutions_visibles(request):
             return []
         return _memo(request, "regardee_et_filles",
                      lambda: list(institutions_descendantes({institution.id})))
-    return _memo(request, "membre_de", lambda: list(
-        ContactInstitution.objects.filter(utilisateur=request.user, actif=True)
-        .values_list("institution_id", flat=True)))
+    return _memo(request, "membre_de", lambda: _membre_ou_delegue(request.user))
+
+
+def _membre_ou_delegue(user):
+    """Ses rattachements actifs, plus les collectivités pour lesquelles il agit par délégation
+    de gestion ; moins une collectivité en mode export seul (ses objets ne se consultent plus
+    que par l'export)."""
+    from .delegation_gestion import collectivites_deleguees, en_mode_export_seul
+    from .models import ContactInstitution, Institution
+
+    ids = set(ContactInstitution.objects.filter(utilisateur=user, actif=True)
+              .values_list("institution_id", flat=True))
+    ids.update(c.id for c in collectivites_deleguees(user))
+    exclues = {i.id for i in Institution.objects.filter(id__in=ids, acces_fourni_par__isnull=False)
+               if en_mode_export_seul(i)}
+    return list(ids - exclues)
 
 
 def etat(request):

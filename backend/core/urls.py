@@ -152,6 +152,7 @@ from .views import (
     FicheIntervenantView,
 )
 
+from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView
 router = DefaultRouter()
 router.register(
     r'institution-types',
@@ -241,6 +242,7 @@ router.register(
     r'delegations-competences',
     DelegationCompetenceViewSet
 )
+router.register(r'delegations-gestion', DelegationGestionViewSet, basename='delegationgestion')
 
 router.register(
     r'disponibilites',
@@ -476,6 +478,7 @@ urlpatterns = [
     # Contexte de travail d'un compte multi-appartenance (mairie ET association) : voir
     # core/institution_courante.py. Hors du routeur — c'est toujours celui de l'appelant.
     path('me/institution-active/', InstitutionActiveView.as_view(), name='institution_active'),
+    path('institutions/<uuid:pk>/export-donnees/', ExportDonneesInstitutionView.as_view(), name='export_donnees_institution'),
     path('me/perimetre/', PerimetreAdminView.as_view(), name='perimetre_admin'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
     # Le meme verdict en JSON, pour le scanner integre a l'application (voir

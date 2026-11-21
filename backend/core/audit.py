@@ -65,6 +65,15 @@ def audit_log(
         if crise is not None and perimetre is None:
             perimetre = AuditLog.Perimetre.CRISE
 
+        # Délégation de gestion (21/11/2026) : ce qui est fait pour la mairie par une AASC le
+        # dit, ligne par ligne — la mairie relit sa main courante et sait qui a agi à quel titre.
+        if is_authenticated and request is not None:
+            from .delegation_gestion import contexte_delegue
+            delegation = contexte_delegue(request)
+            if delegation is not None:
+                mention = f"par délégation — {delegation.aasc.nom_affichage or delegation.aasc.nom}"
+                commentaire = f"{commentaire} ({mention})" if commentaire else mention
+
         ligne = AuditLog.objects.create(
             utilisateur=request.user if is_authenticated else None,
             # `institution` imposée par l'appelant quand l'auteur n'en porte pas (le compte de

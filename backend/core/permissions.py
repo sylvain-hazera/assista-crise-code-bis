@@ -68,7 +68,28 @@ def get_effective_role(request):
         if not request.user.demo_role:
             raise PermissionDenied("Vous n'avez pas accès à la zone de démonstration.")
         return request.user.demo_role
-    return request.user.type
+    role = request.user.type
+    if role == UserRole.ADMINISTRATOR or not getattr(request.user, "is_authenticated", False):
+        return role
+    memo = getattr(request, "_role_effectif_memo", None)
+    if memo is not None:
+        return memo
+    from .delegation_gestion import contexte_delegue, utilisateur_en_export_seul
+    if utilisateur_en_export_seul(request.user):
+        # Convention rompue avec l'AASC qui fournissait l'accès : plus aucun droit
+        # institutionnel, seul l'export reste (vue dédiée, contrôle propre).
+        role = UserRole.SIMPLE_USER
+    elif contexte_delegue(request) is not None:
+        # Agir pour une collectivité par délégation de gestion, c'est agir avec ses droits
+        # (21/11/2026). Le registre des personnes vulnérables reste fermé : il exige une
+        # habilitation nominative, qu'un délégué ne peut pas se donner (voir
+        # HabilitationRegistreVulnerablesViewSet._collectivite_du_designant).
+        role = UserRole.LOCAL_AUTHORITY
+    try:
+        request._role_effectif_memo = role
+    except AttributeError:
+        pass
+    return role
 
 
 def effective_role_or_none(request):
@@ -109,6 +130,8 @@ def is_regulateur_aut_locale_de_la_crise(request, crise) -> bool:
     institution_ids = ContactInstitution.objects.filter(
         utilisateur=request.user, actif=True,
     ).values_list('institution_id', flat=True)
+    from .delegation_gestion import collectivites_deleguees
+    institution_ids = list(institution_ids) + [c.id for c in collectivites_deleguees(request.user)]
     return ImplicationInstitution.objects.filter(
         crise=crise, institution_id__in=institution_ids, statut=StatutImplication.VALIDEE, actif=True,
     ).exists()
@@ -183,11 +206,12 @@ class IsInstitutionMemberOrAdministrator(BasePermission):
     def has_object_permission(self, request, view, obj):
         if get_effective_role(request) == UserRole.ADMINISTRATOR:
             return True
+        from .delegation_gestion import est_delegue
         from .models import ContactInstitution
         return ContactInstitution.objects.filter(
             institution=obj, utilisateur=request.user, actif=True,
             environment=get_active_environment(request),
-        ).exists()
+        ).exists() or est_delegue(request.user, obj)
 
 
 class IsSelfOrInstitutional(BasePermission):

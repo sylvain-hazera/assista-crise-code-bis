@@ -5570,15 +5570,47 @@ def _filter_actif(request, queryset):
     return queryset.filter(actif=True)
 
 
+def _commune_consultable_pour_secteurs(request, commune_code) -> bool:
+    """La commune est-elle dans le périmètre de l'appelant, ou d'une délégation de gestion où il
+    agit ? (Cercles anonymisés des personnes vulnérables.)"""
+    from .delegation_gestion import delegations_de, zones_de
+    from .geo_lookup import commune_secteur_codes
+    from .zone_scoping import viewer_perimetre
+
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return True
+    zones = list(viewer_perimetre(request) or [])
+    for d in delegations_de(request.user):
+        zones.extend(zones_de(d))
+    if not zones:
+        return False
+    secteur = None
+    for niveau, code in zones:
+        if niveau == "national":
+            return True
+        if niveau == "commune":
+            if code == commune_code:
+                return True
+            continue
+        if secteur is None:
+            secteur = commune_secteur_codes(commune_code) or {}
+            secteur.setdefault("departement_code", commune_code[:3] if commune_code[:2] in ("97", "98") else commune_code[:2])
+        if code and secteur.get(f"{niveau}_code") == code:
+            return True
+    return False
+
+
 def _appartient_a_institution(request, institution) -> bool:
     """Un admin plateforme n'est jamais limité par cette vérification ; sinon, l'appelant doit
     être un contact actif de l'institution donnée — même garde-fou territorial que
     approve_account/reject_account, appliqué ici aux actions qui agissent sur une équipe."""
     if get_effective_role(request) == UserRole.ADMINISTRATOR:
         return True
+    from .delegation_gestion import est_delegue
+    # Ou il agit pour cette collectivité par délégation de gestion (21/11/2026).
     return ContactInstitution.objects.filter(
         institution=institution, utilisateur=request.user, actif=True,
-    ).exists()
+    ).exists() or est_delegue(request.user, institution)
 
 
 def _appartient_a_equipe(request, team) -> bool:
@@ -6486,11 +6518,16 @@ def _resolve_institution_or_400(request):
     institution_id = request.data.get('institution')
     if institution_id:
         candidate = Institution.objects.filter(pk=institution_id).first()
-        is_own = candidate and ContactInstitution.objects.filter(
-            utilisateur=request.user, institution=candidate, actif=True
-        ).exists()
+        is_own = candidate and _appartient_a_institution(request, candidate)
         if candidate and (is_own or get_effective_role(request) == UserRole.ADMINISTRATOR):
             institution = candidate
+
+    # Le contexte courant d'abord (21/11/2026) : pour un délégué qui agit pour une mairie, ou
+    # un compte membre de plusieurs institutions, « le premier rattachement » désignait au
+    # hasard une autre institution que celle pour laquelle il travaille.
+    courante = getattr(request.user, "institution", None)
+    if institution is None and courante is not None and _appartient_a_institution(request, courante):
+        institution = courante
 
     if institution is None:
         contact = ContactInstitution.objects.filter(
@@ -7306,6 +7343,11 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
                         or getattr(institution, "commune_code", None) or "").strip()
         if not commune_code:
             raise ValidationError({"commune_code": "Précisez la commune."})
+        if not _commune_consultable_pour_secteurs(request, commune_code):
+            # Le paramètre était libre (21/11/2026) : n'importe quel acteur obtenait les cercles
+            # de n'importe quelle commune. Désormais : son périmètre (sa zone, les communes que
+            # lui ouvre une crise ou une convention) et les délégations de gestion où il agit.
+            raise PermissionDenied("Cette commune n'est pas dans votre périmètre.")
 
         environment = get_active_environment(request)
         personnes = list(PersonneVulnerable.objects.filter(
@@ -7438,6 +7480,13 @@ class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, view
                 "(art. R. 121-7 du CASF). Un administrateur de la plateforme, qui n'est que "
                 "sous-traitant au sens du RGPD, ne peut pas se substituer au maire."
             )
+        from .delegation_gestion import contexte_delegue
+        if contexte_delegue(self.request) is not None:
+            # Une AASC qui agit pour la mairie n'est pas « la collectivité » au sens de
+            # R. 121-7 : elle ne peut ni se désigner ni désigner quelqu'un pour le registre.
+            raise PermissionDenied(
+                "Le registre des personnes vulnérables n'est pas compris dans la délégation de "
+                "gestion : seuls le maire ou les agents qu'il désigne peuvent désigner qui le tient.")
         return institution
 
     def _qualite_et_attestation(self):
@@ -14021,15 +14070,39 @@ class InstitutionActiveView(APIView):
     def _etat(self, request):
         from .institution_courante import institutions_de
 
+        from .delegation_gestion import (
+            contexte_delegue, delegation_pour, utilisateur_en_export_seul,
+        )
+
         institutions = institutions_de(request.user)
+        membre_de = set(ContactInstitution.objects.filter(utilisateur=request.user, actif=True)
+                        .values_list("institution_id", flat=True))
+        en_cours = contexte_delegue(request)
+
+        def par_delegation(i):
+            if i.id in membre_de:
+                return None
+            d = delegation_pour(request.user, i)
+            return {"aasc": d.aasc.nom_affichage or d.aasc.nom} if d else None
+
         return {
             "active": str(request.user.institution_id) if request.user.institution_id else None,
             "institutions": [
                 {"id": str(i.id), "nom": i.nom,
                  "nom_affichage": i.nom_affichage or i.nom,
-                 "type_libelle": i.type.libelle if i.type_id else ""}
+                 "type_libelle": i.type.libelle if i.type_id else "",
+                 # Agir pour cette collectivité par délégation de gestion (21/11/2026).
+                 "par_delegation": par_delegation(i)}
                 for i in institutions
             ],
+            # Bandeau permanent de l'administration : « vous agissez pour la mairie de X, par
+            # délégation à <AASC> », et page unique d'export quand la convention est rompue.
+            "delegation_en_cours": None if en_cours is None else {
+                "id": str(en_cours.id),
+                "collectivite": en_cours.collectivite.nom,
+                "aasc": en_cours.aasc.nom_affichage or en_cours.aasc.nom,
+            },
+            "export_seul": utilisateur_en_export_seul(request.user),
         }
 
     def get(self, request):

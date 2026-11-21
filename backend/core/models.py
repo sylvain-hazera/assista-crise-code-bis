@@ -1651,6 +1651,15 @@ class Institution(EnvironmentScopedModel):
     # institution.
     reserve_active = models.BooleanField(default=False)
 
+    # Délégation de gestion (core/delegation_gestion.py, 21/11/2026) : une collectivité créée ou
+    # amenée sur la plateforme par une AASC qui l'exploite pour elle. Rompre la convention ne
+    # lui laisse alors que l'export de ses données (elle en reste propriétaire). Vide : la
+    # collectivité utilise la plateforme par elle-même, une délégation retirée ne lui coupe rien.
+    acces_fourni_par = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="institutions_fournies",
+        help_text="AASC qui fournit l'accès à la plateforme à cette collectivité.",
+    )
+
     def __str__(self):
         return self.nom
 
@@ -5960,6 +5969,61 @@ class DelegationCompetence(EnvironmentScopedModel):
             f"{self.institution_cible.nom}"
             f" ({self.competence.nom})"
         )
+
+class DelegationGestion(EnvironmentScopedModel):
+    """Une collectivité confie l'exploitation de la plateforme, sur son territoire, à une AASC.
+
+    Demande de Sylvain du 21/11/2026 : « Nous, Réserve Résilience, proposons la solution aux
+    mairies, solution que nous exploitons pour eux » ; « les conventions avec la mairie sont
+    signées à l'avance » ; « si la mairie rompt la convention, elle ne peut plus qu'exporter ses
+    données et ne peut plus utiliser la plateforme ».
+
+    Distincte de DelegationCompetence, qui délègue UNE compétence (souvent sur une crise) : ici
+    l'AASC agit avec TOUS les droits de la collectivité, registre des personnes vulnérables
+    excepté. Qui agit pour l'AASC n'est jamais recopié : c'est son bureau et l'encadrement de
+    ses coordinations qui couvrent la commune, calculés à chaque requête (voir
+    delegation_gestion.personnes_qui_agissent). La convention, signée hors plateforme, est
+    enregistrée ici comme preuve (référence, date, signataire, document chiffré)."""
+
+    class Statut(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        RETIREE = "RETIREE", "Retirée"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    collectivite = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="delegations_gestion_emises")
+    aasc = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="delegations_gestion_recues")
+    communes = models.JSONField(default=list, blank=True,
+                                help_text="Codes INSEE délégués ; vide = tout le territoire de la collectivité.")
+    statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.ACTIVE)
+
+    convention_reference = models.CharField(max_length=120, blank=True, default="")
+    convention_signee_le = models.DateField(null=True, blank=True)
+    convention_signataire = EncryptedTextField(max_length=200, blank=True, default="")
+    convention_signataire_qualite = models.CharField(max_length=120, blank=True, default="")
+    date_fin = models.DateField(null=True, blank=True, help_text="Échéance de la convention ; vide = sans échéance.")
+    convention_document = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        null=True, blank=True, validators=[validate_identity_document_file],
+    )
+
+    creee_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    retiree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_retrait = models.DateTimeField(null=True, blank=True)
+    motif_retrait = EncryptedTextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-date_creation"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["collectivite", "aasc"], condition=models.Q(statut="ACTIVE"),
+                name="une_delegation_gestion_active_par_couple",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.collectivite} → {self.aasc} ({self.statut})"
+
 
 class PointType(models.Model):
 
