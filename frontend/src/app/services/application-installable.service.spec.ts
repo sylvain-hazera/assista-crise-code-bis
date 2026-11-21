@@ -16,11 +16,11 @@ describe('ApplicationInstallableService', () => {
   });
   afterEach(() => { lien.remove(); titre.remove(); });
 
-  it('installe Terrain sur le terrain, Pilotage dans l\'administration', () => {
+  it('installe Terrain sur le terrain, Pilotage sur le poste de pilotage', () => {
     service.suivreLEspace('/terrain/missions');
     expect(lien.getAttribute('href')).toBe('/api/pwa/manifeste/?espace=terrain');
     expect(titre.getAttribute('content')).toBe('Terrain');
-    service.suivreLEspace('/admin/crises');
+    service.suivreLEspace('/pilotage/situation');
     expect(lien.getAttribute('href')).toBe('/api/pwa/manifeste/?espace=pilotage');
     expect(titre.getAttribute('content')).toBe('Pilotage');
     expect(service.espace()).toBe('pilotage');
@@ -40,8 +40,12 @@ describe('ApplicationInstallableService', () => {
     expect(service.installationProposee()).toBeFalse();            // page d'accueil publique : non
     service.suivreLEspace('/terrain');
     expect(service.installationProposee()).toBeTrue();
-    service.ecarterLInstallation();
+    service.suivreLEspace('/pilotage');
+    expect(service.installationProposee()).toBeTrue();
     service.suivreLEspace('/admin');
+    expect(service.installationProposee()).toBeFalse();            // l'administration n'invite à rien
+    service.ecarterLInstallation();
+    service.suivreLEspace('/terrain');
     expect(service.installationProposee()).toBeFalse();
   });
 

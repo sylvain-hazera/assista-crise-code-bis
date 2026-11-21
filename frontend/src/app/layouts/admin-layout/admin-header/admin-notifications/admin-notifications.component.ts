@@ -1,5 +1,4 @@
-import { Component, EventEmitter, Input, OnDestroy, OnInit, Output, inject } from '@angular/core';
-import { NotificationsPousseesService } from '../../../../terrain/notifications-poussees.service';
+import { Component, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { NotificationService } from '../../../../services/notification.service';
@@ -31,16 +30,12 @@ export class AdminNotificationsComponent implements OnInit, OnDestroy {
   // null avant le premier résumé : pas de notification navigateur au premier chargement.
   private dernierResume: ResumeNotifications | null = null;
 
-  /** Notifications poussées sur cet appareil (poste de pilotage sur iPad, DOSSIER-PWA-INTERVENANTS.md). */
-  readonly poussees = inject(NotificationsPousseesService);
-
   constructor(
     private notificationService: NotificationService,
     private router: Router,
   ) {}
 
   ngOnInit(): void {
-    this.poussees.actualiser(true).catch(() => {});
     demanderPermissionNotificationNavigateur();
     this.demarrerPolling();
   }

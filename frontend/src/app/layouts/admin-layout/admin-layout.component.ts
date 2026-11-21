@@ -195,24 +195,12 @@ export class AdminLayoutComponent implements OnInit {
   private lirePreference(): void {
     try {
       const sauvegarde = JSON.parse(localStorage.getItem(CLE_STOCKAGE_SIDEBAR) ?? 'null');
-      // Rien de choisi encore : sur une tablette (poste de pilotage sur iPad), le menu réduit
-      // aux icônes laisse la place au contenu.
-      if (!sauvegarde) {
-        this.etatSidebar = AdminLayoutComponent.etatParDefaut(window.innerWidth,
-          typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
-      }
       if (['etendue', 'reduite', 'fermee'].includes(sauvegarde?.etat)) this.etatSidebar = sauvegarde.etat;
       if (['etendue', 'reduite'].includes(sauvegarde?.avantFermeture)) this.etatAvantFermeture = sauvegarde.avantFermeture;
       if (typeof sauvegarde?.largeur === 'number') this.largeurSidebar = this.borner(sauvegarde.largeur);
     } catch {
       // localStorage indisponible ou valeur illisible : affichage par défaut.
     }
-  }
-
-  /** État du menu à la première ouverture : réduit aux icônes sur une tablette tactile (iPad,
-   * jusqu'à 1180 px : un iPad Air en paysage), étendu ailleurs. */
-  static etatParDefaut(largeur: number, tactile: boolean): EtatSidebar {
-    return tactile && largeur > 768 && largeur <= 1180 ? 'reduite' : 'etendue';
   }
 
   private sauvegarderPreference(): void {

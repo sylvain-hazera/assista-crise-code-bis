@@ -29,9 +29,9 @@ def test_manifeste_terrain_par_defaut(client):
 
 
 @pytest.mark.django_db
-def test_manifeste_pilotage_s_ouvre_sur_l_administration(client):
+def test_manifeste_pilotage_s_ouvre_sur_son_espace(client):
     m = client.get("/api/pwa/manifeste/", {"espace": "pilotage"}).json()
-    assert m["start_url"] == "/admin" and m["id"] == "/admin" and m["short_name"] == "Pilotage"
+    assert m["start_url"] == "/pilotage" and m["id"] == "/pilotage" and m["short_name"] == "Pilotage"
     assert client.get("/api/pwa/manifeste/", {"espace": "ailleurs"}).status_code == 404
 
 

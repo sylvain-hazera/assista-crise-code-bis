@@ -256,15 +256,3 @@
     .material-icons { font-size: 1rem; }
   }
 }
-
-// Notifications poussées sur cet appareil (poste de pilotage installé).
-.poussees {
-  display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: .82rem;
-  background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af);
-  span { flex: 1; }
-  button {
-    border: 0; border-radius: 6px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer;
-    background: var(--brand-primary, #2563eb); color: #fff;
-  }
-}
-

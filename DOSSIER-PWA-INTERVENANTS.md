@@ -77,17 +77,22 @@ livrer), puis 4 (les notifications sont ce qu'un intervenant attend le plus), pu
 2. **Première livraison** : jusqu'aux notifications (lots 1 à 4).
 3. **Essais** : sur un iPhone de l'entourage de Sylvain.
 4. **Suivi de position** seulement application ouverte : accepté.
-5. **Ajout : un poste de pilotage sur iPad** (directeur des opérations) : l'administration du
-   site, installable à part (« Assista-Crise — Pilotage », ouverte sur `/admin`), mise en page
-   pour une tablette, mêmes notifications et même annonce de nouvelle version (lot 6 ci-dessous).
+5. **Ajout : un poste de pilotage sur iPad** (directeur des opérations), installable à part
+   (« Assista-Crise — Pilotage »), mêmes notifications et même annonce de nouvelle version
+   (lot 6 ci-dessous). **Correction du 21/11/2026, à la demande de Sylvain** : la première
+   version n'était que l'administration retouchée pour la tablette (« ça me gêne que tu aies
+   fait l'espace admin purement pour le pilotage »). Le poste de pilotage est désormais un
+   **espace à part, `/pilotage`**, et l'administration est revenue à ce qu'elle était.
 
 ## 6. Lot 6 — le poste de pilotage sur iPad ✅
 
 | Contenu | Essais |
 |---|---|
-| Second manifeste (nom « Pilotage », départ `/admin`, même icône) ; la page installée depuis l'administration prend celui-ci | manifeste servi selon l'espace |
-| Mise en page tablette : menu latéral repliable, tableaux et carte au doigt, rien sous l'encoche | Karma sur les largeurs d'iPad |
-| Notifications du poste (nouvelle demande, dossier, vigilance) par le même Web Push | envoi simulé |
+| Second manifeste (nom « Pilotage », départ `/pilotage`, même icône) | manifeste servi selon l'espace |
+| Espace `/pilotage` (rôles institutionnels ; les autres vont sur Terrain) : rail à gauche sur iPad, onglets en bas sur écran étroit, crise suivie choisie dans l'en-tête et retenue, bouton Formation, lien vers l'administration complète | Karma |
+| **Situation** (écrite pour le DO) : en attente d'affectation, urgent et important, dossiers ouverts sans équipe, équipes engagées depuis combien de temps, main courante lue et écrite sur place ; relue chaque minute ; « Garder l'écran allumé » | Karma |
+| Cellule de crise, carte, dossiers, point de situation : les pages de l'administration, sans son menu | — |
+| **Alertes** : notifications du site avec leur fiche, et « Me prévenir sur cet appareil » (Web Push, titre et page seulement ; ouvre les alertes du Pilotage par défaut) | Karma, envoi simulé |
 
 Sources : [WebKit — Safari 26.0](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/),
 [firt.dev — iOS PWA Compatibility](https://firt.dev/notes/pwa-ios/),
@@ -126,11 +131,10 @@ Les six lots sont faits et poussés.
   - Les envois refusés par le serveur sont désormais signalés dans l'en-tête (avant : retirés en
     silence).
 
-- **Pilotage sur iPad** : manifeste « Pilotage » ; menu réduit aux icônes au premier lancement
-  sur tablette tactile (jusqu'à 1180 px) ; cibles de 44 px au doigt ; bords de l'écran respectés ;
-  « Recevoir sur cet appareil » dans les notifications de l'administration, qui sont poussées
-  (titre et page seulement ; « Formation — » en démonstration). Un poste de bureau ne se déclare
-  pas comme appareil joignable tant qu'il n'est pas abonné.
+- **Pilotage sur iPad** : espace `/pilotage` à part (voir § 6) ; l'administration n'a plus de
+  retouche propre au pilotage (menu, bandeau de notifications : retirés le 21/11/2026). Les
+  notifications du site sont poussées aux appareils abonnés depuis les Alertes du Pilotage
+  (titre et page ; « Formation — » en démonstration). Un poste ne se déclare joignable qu'abonné.
 - **Mise en service** : le secret `vapid_prive.pem` doit exister dans `SECRETS_DIR` avant le
   déploiement (le script de déploiement le crée avec openssl s'il manque).
 

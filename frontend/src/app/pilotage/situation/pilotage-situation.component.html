@@ -1,0 +1,97 @@
+@if (!pilotage.crise()) {
+  <p class="vide">Aucune crise ouverte à suivre.</p>
+} @else {
+  <div class="entete">
+    <div>
+      <h1>{{ pilotage.crise()!.name }}</h1>
+      <p class="discret">
+        @if (misAJourLe()) { Situation relue à {{ misAJourLe() | date:'HH:mm' }}, mise à jour chaque minute. }
+        @else { Chargement de la situation… }
+      </p>
+    </div>
+    <button type="button" class="bascule" [class.actif]="ecranAllume()" [attr.aria-pressed]="ecranAllume()" (click)="basculerEcran()">
+      <span class="material-icons" aria-hidden="true">{{ ecranAllume() ? 'light_mode' : 'brightness_low' }}</span>
+      {{ ecranAllume() ? 'Écran maintenu allumé' : 'Garder l\'écran allumé' }}
+    </button>
+  </div>
+
+  @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
+
+  <section class="chiffres" aria-label="Chiffres clés">
+    <a class="chiffre" routerLink="/pilotage/cellule" [queryParams]="{ crise: pilotage.criseId() }" [class.alerte]="(aAffecter() ?? 0) > 0">
+      <strong>{{ aAffecter() ?? '—' }}</strong><span>en attente d'affectation</span>
+    </a>
+    <a class="chiffre" routerLink="/pilotage/dossiers" [class.alerte]="prioritaires().length > 0">
+      <strong>{{ prioritaires().length }}</strong><span>dossiers urgents ou importants</span>
+    </a>
+    <a class="chiffre" routerLink="/pilotage/dossiers">
+      <strong>{{ ouverts().length }}</strong><span>dossiers ouverts, dont {{ sansEquipe() }} sans équipe</span>
+    </a>
+    <a class="chiffre" routerLink="/pilotage/cellule" [queryParams]="{ crise: pilotage.criseId() }">
+      <strong>{{ engagees().length }}<small> / {{ equipes().length }}</small></strong><span>équipes engagées</span>
+    </a>
+  </section>
+
+  <div class="colonnes">
+    <section class="bloc">
+      <h2>Urgent et important</h2>
+      @if (!prioritaires().length) {
+        <p class="discret">{{ chargement() ? 'Chargement…' : 'Aucun dossier urgent ou important en ce moment.' }}</p>
+      }
+      <ul class="liste">
+        @for (d of prioritaires().slice(0, 8); track d.id) {
+          <li>
+            <span class="pastille" [class.urgente]="d.priorite === 'URGENTE'">{{ d.priorite === 'URGENTE' ? 'Urgent' : 'Important' }}</span>
+            <span class="texte">
+              <strong>{{ d.numero }} · {{ d.titre }}</strong>
+              <small>{{ d.equipe_nom || 'Sans équipe' }}@if (d.commune) { · {{ d.commune }} } · {{ libelleStatut(d.statut) }}</small>
+            </span>
+          </li>
+        }
+      </ul>
+      @if (prioritaires().length > 8) {
+        <a class="suite" routerLink="/pilotage/dossiers">Les {{ prioritaires().length }} dossiers</a>
+      }
+    </section>
+
+    <section class="bloc">
+      <h2>Équipes engagées</h2>
+      @if (!engagees().length) {
+        <p class="discret">{{ chargement() ? 'Chargement…' : 'Aucune équipe engagée sur cette crise.' }}</p>
+      }
+      <ul class="liste">
+        @for (e of engagees(); track e.id) {
+          <li>
+            <span class="couleur" [style.background]="e.color || '#6b7280'" aria-hidden="true"></span>
+            <span class="texte">
+              <strong>{{ e.name }}</strong>
+              <small>{{ sousTitre(e) }}</small>
+            </span>
+            <span class="duree" title="Engagée sans repos depuis">{{ dureeDepuis(e.engagement_debut) }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section class="bloc main-courante">
+      <h2>Main courante</h2>
+      <form class="ecrire" (submit)="$event.preventDefault(); ecrire()">
+        <label class="masque" for="entree-main-courante">Nouvelle entrée de la main courante</label>
+        <textarea id="entree-main-courante" rows="2" maxlength="2000" [(ngModel)]="nouvelleEntree" name="entree"
+                  placeholder="Décision, point de situation, information reçue…"></textarea>
+        <button type="submit" [disabled]="!nouvelleEntree.trim() || ecriture()">{{ ecriture() ? 'Enregistrement…' : 'Ajouter' }}</button>
+      </form>
+      @if (!journal().length) {
+        <p class="discret">{{ chargement() ? 'Chargement…' : 'Aucune entrée pour cette crise.' }}</p>
+      }
+      <ol class="entrees">
+        @for (j of journal(); track j.id) {
+          <li>
+            <time [attr.datetime]="j.date_creation">{{ j.date_creation | date:'d MMM HH:mm' }}</time>
+            <span><strong>{{ j.auteur_nom }}</strong> — {{ j.contenu }}</span>
+          </li>
+        }
+      </ol>
+    </section>
+  </div>
+}

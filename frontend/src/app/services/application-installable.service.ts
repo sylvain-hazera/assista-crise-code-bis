@@ -6,8 +6,10 @@ import { environment } from '../../environments/environment';
 /**
  * Le site installable comme une application (DOSSIER-PWA-INTERVENANTS.md, 20/11/2026).
  *
- * - Deux applications sur le même site : « Terrain » (`/terrain`) et « Pilotage » (`/admin`,
- *   pour un poste de commandement sur iPad). La page dit lequel installer selon où l'on est.
+ * - Deux applications sur le même site : « Terrain » (`/terrain`) et « Pilotage » (`/pilotage`,
+ *   le poste du directeur des opérations sur iPad). La page dit laquelle installer selon où
+ *   l'on est. L'administration (`/admin`) n'invite à rien installer : si on l'installe quand
+ *   même depuis Safari, c'est Pilotage qui s'installe, et il mène à l'administration.
  * - « Une nouvelle version est disponible » : la page publiée est relue de temps en temps ;
  *   si son code a changé, on le dit (un bouton recharge).
  * - Sur iPhone et iPad, Safari ne propose pas l'installation de lui-même : on explique comment.
@@ -46,12 +48,12 @@ export class ApplicationInstallableService {
 
   /** Terrain ou Pilotage : le manifeste et le nom de l'icône suivent l'espace affiché. */
   suivreLEspace(url: string): void {
-    const espace = url.startsWith('/admin') ? 'pilotage' : 'terrain';
+    const espace = url.startsWith('/pilotage') || url.startsWith('/admin') ? 'pilotage' : 'terrain';
     this.espace.set(espace);
     document.querySelector('link[rel="manifest"]')?.setAttribute('href', `/api/pwa/manifeste/?espace=${espace}`);
     document.querySelector('meta[name="apple-mobile-web-app-title"]')
       ?.setAttribute('content', espace === 'pilotage' ? 'Pilotage' : 'Terrain');
-    const concerne = url.startsWith('/admin') || url.startsWith('/terrain');
+    const concerne = url.startsWith('/pilotage') || url.startsWith('/terrain');
     this.installationProposee.set(concerne && ApplicationInstallableService.estAppareilApple() && !this.estInstallee()
       && localStorage.getItem(ApplicationInstallableService.ECARTEE) !== '1');
   }

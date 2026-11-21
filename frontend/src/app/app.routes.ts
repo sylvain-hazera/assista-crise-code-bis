@@ -4,6 +4,7 @@ import { AdminLayoutComponent } from './layouts/admin-layout/admin-layout.compon
 import { adminGuard } from './core/guards/admin.guard';
 import { enableGuard } from './core/guards/enable.guard';
 import { authGuard } from './core/guards/auth.guard';
+import { pilotageGuard } from './pilotage/pilotage.guard';
 
 export const routes: Routes = [
   {
@@ -17,6 +18,14 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./terrain/terrain-layout.component').then(m => m.TerrainLayoutComponent),
     loadChildren: () => import('./terrain/terrain.routes').then(m => m.TERRAIN_ROUTES),
+  },
+  {
+    // L'application « Pilotage » du directeur des opérations, installable sur iPad
+    // (DOSSIER-PWA-INTERVENANTS.md, § 6) : un espace à part, pas l'administration.
+    path: 'pilotage',
+    canActivate: [authGuard, pilotageGuard],
+    loadComponent: () => import('./pilotage/pilotage-layout.component').then(m => m.PilotageLayoutComponent),
+    loadChildren: () => import('./pilotage/pilotage.routes').then(m => m.PILOTAGE_ROUTES),
   },
   {
     path: 'admin',

@@ -128,4 +128,4 @@ def test_les_notifications_de_l_administration_sont_poussees_au_poste_de_pilotag
     assert moteur.pousser_notification_site(formation.id, envoyer=envoyer) == 1
     assert envois[0] == {"titre": "Nouvelle demande d'hébergement", "lien": "/admin/demandes?id=12", "id": str(reelle.id)}
     assert "Famille" not in json.dumps(envois[0])                               # jamais le message
-    assert envois[1]["titre"] == "Formation — Exercice" and envois[1]["lien"] == "/admin"
+    assert envois[1]["titre"] == "Formation — Exercice" and envois[1]["lien"] == "/pilotage/alertes"

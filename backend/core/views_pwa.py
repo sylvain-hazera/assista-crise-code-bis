@@ -3,7 +3,8 @@
 Voir DOSSIER-PWA-INTERVENANTS.md. Deux applications sur le même site, chacune avec son
 manifeste :
 - « Terrain » (intervenants), qui s'ouvre sur `/terrain` ;
-- « Pilotage » (poste de commandement, directeur des opérations sur iPad), sur `/admin`.
+- « Pilotage » (poste de commandement, directeur des opérations sur iPad), sur `/pilotage` :
+  un espace écrit pour lui, distinct de l'administration (décision du 21/11/2026).
 
 Nom, couleur et icône suivent la marque du domaine visité, comme le reste du site
 (core/branding.py : le Host seul fait foi, jamais un paramètre du client). Rien de personnel :
@@ -27,7 +28,7 @@ TAILLES = {180, 192, 512}
 
 ESPACES = {
     "terrain": {"suffixe": "Terrain", "depart": "/terrain", "court": None},
-    "pilotage": {"suffixe": "Pilotage", "depart": "/admin", "court": "Pilotage"},
+    "pilotage": {"suffixe": "Pilotage", "depart": "/pilotage", "court": "Pilotage"},
 }
 
 

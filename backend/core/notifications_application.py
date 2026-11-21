@@ -256,8 +256,9 @@ def bilan(campagne):
 
 # ── Les notifications de l'administration (poste de pilotage sur iPad, lot 6) ─────────────
 
-def lien_relatif(lien, defaut="/admin"):
-    """Une page du site, jamais une adresse extérieure (« //exemple.fr » non plus)."""
+def lien_relatif(lien, defaut="/pilotage/alertes"):
+    """Une page du site, jamais une adresse extérieure (« //exemple.fr » non plus). Sans page
+    précise, la liste des alertes de l'espace Pilotage."""
     lien = (lien or "").strip()
     return lien if lien.startswith("/") and not lien.startswith("//") else defaut
 
