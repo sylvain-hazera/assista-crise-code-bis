@@ -41,6 +41,11 @@ class Command(BaseCommand):
                             help="UUID de l'institution qui survit.")
         parser.add_argument("--absorber", required=True,
                             help="UUID de l'institution dont tout est transféré.")
+        parser.add_argument(
+            "--ignorer-commune", action="store_true",
+            help="Fusionne malgré des codes commune différents. Réservé aux institutions qui ne "
+                 "sont pas des communes (association nationale) : le code commune d'un doublon "
+                 "créé à l'inscription n'est alors que l'adresse de la personne inscrite.")
         parser.add_argument("--a-blanc", action="store_true",
                             help="N'écrit rien : affiche le plan de fusion et s'arrête.")
         parser.add_argument(
@@ -54,7 +59,15 @@ class Command(BaseCommand):
         absorber = self._institution(options["absorber"], "--absorber")
         if garder.pk == absorber.pk:
             raise CommandError("--garder et --absorber désignent la même institution.")
-        if garder.commune_code != absorber.commune_code:
+        if options.get("ignorer_commune") and garder.commune_code:
+            raise CommandError(
+                "--ignorer-commune est réservé à une institution gardée SANS commune (association "
+                f"nationale) ; « {garder.nom} » est rattachée à la commune {garder.commune_code}.")
+        if garder.commune_code != absorber.commune_code and options.get("ignorer_commune"):
+            self.stdout.write(self.style.WARNING(
+                f"Codes commune différents ({garder.commune_code!r} / {absorber.commune_code!r}) : "
+                "ignorés à la demande (--ignorer-commune). Celui de l'institution gardée ne change pas."))
+        elif garder.commune_code != absorber.commune_code:
             raise CommandError(
                 f"Codes commune différents ({garder.commune_code!r} contre "
                 f"{absorber.commune_code!r}) : ce ne sont pas deux doublons de la même "

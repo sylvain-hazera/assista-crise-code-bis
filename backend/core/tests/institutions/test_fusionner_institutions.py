@@ -311,3 +311,38 @@ class TestPierreTombale:
         assert compte.institution_id == nouvelle.pk
         assert Team.objects.get(name="Cellule de crise").institution_id == nouvelle.pk
         assert ancienne.nom.count("fusionnée dans") == 1
+
+
+@pytest.mark.django_db
+class TestAssociationNationale:
+    """Le doublon d'une association nationale créé à l'inscription (21/11/2026) : la vraie AASC
+    n'a pas de commune, le doublon porte celle de la personne inscrite."""
+
+    def _paire(self):
+        aasc = _institution("Réserve exemple - Casques Jaunes", "aasc", commune=None)
+        doublon = _institution("RESERVE EXEMPLE", "association", commune="33293")
+        return aasc, doublon
+
+    def test_refuse_sans_option(self):
+        aasc, doublon = self._paire()
+        with pytest.raises(CommandError):
+            _fusionner(aasc, doublon)
+
+    def test_fusionne_avec_option_sans_toucher_la_commune(self):
+        aasc, doublon = self._paire()
+        compte = _compte("inscrit@courriel.exemple", "Inscrit", institution=doublon)
+        ContactInstitution.objects.create(institution=doublon, utilisateur=compte, contact_principal=True)
+
+        _fusionner(aasc, doublon, ignorer_commune=True)
+
+        aasc.refresh_from_db(); doublon.refresh_from_db(); compte.refresh_from_db()
+        assert compte.institution_id == aasc.pk
+        assert ContactInstitution.objects.filter(institution=aasc, utilisateur=compte).exists()
+        assert not aasc.commune_code
+        assert doublon.actif is False and "[fusionnée dans" in doublon.nom
+
+    def test_option_refusee_si_l_institution_gardee_a_une_commune(self):
+        mairie = _institution("Mairie A")
+        autre = _institution("Mairie B", commune="33293")
+        with pytest.raises(CommandError):
+            _fusionner(mairie, autre, ignorer_commune=True)
