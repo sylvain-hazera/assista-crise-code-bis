@@ -6042,6 +6042,46 @@ class AmorcageDepartement(EnvironmentScopedModel):
         ordering = ["-debut"]
 
 
+def _jeton_collectivite():
+    import secrets
+    return secrets.token_urlsafe(32)
+
+
+class InvitationCollectivite(EnvironmentScopedModel):
+    """« Rejoindre votre collectivité » (21/11/2026) : l'AASC qui exploite la plateforme pour le
+    département invite une mairie ou une intercommunalité, déjà créée par l'amorçage, à ouvrir
+    ses comptes puis à compléter ce qui prépare la gestion de crise.
+
+    Envoyée à l'adresse officielle (Annuaire de l'administration). Le lien sert à plusieurs
+    personnes de la collectivité, borné (`MAX_COMPTES`) et daté (30 jours) ; chaque compte créé
+    est signalé à l'adresse officielle, pour qu'un lien transféré à tort se voie."""
+
+    MAX_COMPTES = 5
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="invitations_collectivite")
+    delegation = models.ForeignKey("DelegationGestion", on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="invitations_collectivite")
+    jeton = EncryptedTextField(max_length=64, default=_jeton_collectivite, editable=False)
+    jeton_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
+    email = EncryptedEmailField(null=True, blank=True)
+    invite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_envoi = models.DateTimeField(auto_now_add=True)
+    date_relance = models.DateTimeField(null=True, blank=True)
+    date_expiration = models.DateField()
+    comptes_crees = models.PositiveSmallIntegerField(default=0)
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["-date_envoi"]
+
+    @property
+    def utilisable(self):
+        from django.utils import timezone
+        return (self.actif and self.date_expiration >= timezone.localdate()
+                and self.comptes_crees < self.MAX_COMPTES and self.institution.actif)
+
+
 class PointType(models.Model):
 
     id = models.UUIDField(
@@ -12871,6 +12911,7 @@ JETONS_CHIFFRES = {
     "DemandeMobilisation": ("jeton_verification",),
     "AffectationPointBenevole": ("token_confirmation",),
     "InvitationAssociation": ("jeton",),
+    "InvitationCollectivite": ("jeton",),
     "JetonEnrolementSatellite": ("jeton",),
     "DemandeRapport": ("jeton",),
 }

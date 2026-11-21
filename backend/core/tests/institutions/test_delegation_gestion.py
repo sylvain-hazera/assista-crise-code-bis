@@ -208,6 +208,30 @@ class TestConventionDepartementale:
         assert est_delegue(departement["cadre"], cg)
         assert not est_delegue(departement["cadre_ailleurs"], cg)
 
+    def test_l_amorcage_part_aussitot(self, departement):
+        from core.models import AmorcageDepartement
+        self._deleguer_departement(departement)
+        amorcage = AmorcageDepartement.objects.get()
+        assert set(amorcage.etapes) == {"referentiel", "annuaire", "adresses", "risques", "sites", "simulations"}
+
+    def test_l_arborescence_du_departement(self, departement):
+        Commune.objects.filter(code__in=["42218", "42186"]).update(epci_code="244200770")
+        Institution.objects.filter(type__code="epci").update(epci_code="244200770")
+        mairie = Institution.objects.create(nom="Mairie - Rive-de-Gier", type=_type("mairie"), commune_code="42186",
+                                            telephone="04 77 83 07 80")
+        self._deleguer_departement(departement)
+        d = DelegationGestion.objects.get()
+        r = _client(departement["cadre"]).get(reverse("delegationgestion-arborescence", args=[d.id]))
+        assert r.status_code == 200, r.data
+        assert r.data["departement"]["code"] == "42"
+        branche = r.data["epcis"][0]
+        assert branche["nom"] == "Saint-Étienne Métropole"
+        communes = {c["code"]: c for c in branche["communes"]}
+        assert communes["42186"]["mairie"]["telephone"] == "04 77 83 07 80"
+        assert communes["42218"]["mairie"] is None
+        assert r.data["totaux"]["communes"] == 2
+        assert _client(departement["simple"]).get(reverse("delegationgestion-arborescence", args=[d.id])).status_code == 403
+
     def test_un_cadre_d_un_autre_departement_n_engage_pas_le_42(self, departement):
         assert self._deleguer_departement(departement, "cadre_ailleurs").status_code == 403
 

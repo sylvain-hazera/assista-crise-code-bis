@@ -44,6 +44,24 @@ export interface EtatAmorcage {
   sites: { source: string; statut: string; date_fin: string | null }[];
 }
 
+/** Une institution dans l'arborescence du département. */
+export interface FicheArbre {
+  id: string; nom: string; email: string | null; telephone: string | null; adresse: string | null;
+  membres: number; delegation: boolean;
+  /** Dernière invitation envoyée à la collectivité (« Rejoindre votre collectivité »). */
+  invitee_le?: string | null;
+}
+
+/** Le département, ses intercommunalités et leurs communes. */
+export interface Arborescence {
+  departement: { code: string; nom: string; institution: FicheArbre | null };
+  epcis: {
+    code: string; nom: string; institution: FicheArbre | null;
+    communes: { code: string; nom: string; population: number | null; mairie: FicheArbre | null }[];
+  }[];
+  totaux: { communes: number; mairies_sur_la_plateforme: number; epcis: number };
+}
+
 @Injectable({ providedIn: 'root' })
 export class DelegationGestionService {
   private url = `${environment.apiUrl}/delegations-gestion`;
@@ -70,6 +88,16 @@ export class DelegationGestionService {
 
   amorcage(id: string): Observable<EtatAmorcage | null> {
     return this.http.get<EtatAmorcage | null>(`${this.url}/${id}/amorcage/`);
+  }
+
+  /** Invite les collectivités choisies (mairies, EPCI) à rejoindre la plateforme. */
+  inviterCollectivites(id: string, institutions: string[]): Observable<{ envoyees: number; sans_email: string[]; deja_membres: number }> {
+    return this.http.post<{ envoyees: number; sans_email: string[]; deja_membres: number }>(
+      `${this.url}/${id}/inviter-collectivites/`, { institutions });
+  }
+
+  arborescence(id: string): Observable<Arborescence | null> {
+    return this.http.get<Arborescence | null>(`${this.url}/${id}/arborescence/`);
   }
 
   repertoires(id: string): Observable<RepertoireEpci[]> {

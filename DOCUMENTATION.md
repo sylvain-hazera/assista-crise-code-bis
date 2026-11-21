@@ -899,7 +899,24 @@ la convention, elle ne peut plus qu'exporter ses données ».
   vérifié le 21/11/2026 ; mairies et EPCI créés ou complétés sans doublon, services de crise
   versés à l'annuaire PCS du conseil départemental), adresses (fichier BAN départemental),
   risques (Géorisques par commune), sites sensibles (imports open data au périmètre du
-  département). Seules des données publiques circulent.
+  département), et deux étapes ajoutées le même jour (« tout ce qui est récupération à l'avance
+  doit l'être ») : le référentiel des communes en premier (`import_communes`), et le pré-calcul des
+  simulations d'inondation et de ruissellement en dernier (grille IGN, paliers, accumulation, seuil
+  par adresse ; une commune par minute pour ménager l'IGN). Les risques comprennent zonages
+  officiels, plans de prévention et Géoportail de l'urbanisme (`relever_tout`). Seules des données publiques circulent. **Lancé aussitôt** à l'enregistrement d'une
+  délégation départementale. Action `arborescence` : le département, ses intercommunalités et
+  leurs communes (depuis le référentiel, complet avant l'amorçage), avec pour chaque mairie ses
+  coordonnées, ses comptes et une délégation communale éventuelle.
+- **« Rejoindre votre collectivité »** (`core/invitation_collectivite.py`, `InvitationCollectivite`,
+  migration `0370`) : depuis l'arborescence, on coche des mairies et intercommunalités (« toutes
+  celles sans compte ») et `inviter-collectivites` envoie le lien à leur adresse officielle (les
+  collectivités du territoire délégué seulement ; une invitation valable est relancée avec le même
+  lien). Page publique `/rejoindre-collectivite/<jeton>` : la personne saisit nom, courriel,
+  fonction, accepte la convention de sous-traitance si la collectivité ne l'a pas encore fait ; son
+  compte (autorité locale, inactif jusqu'à l'activation) est rattaché à la collectivité existante —
+  jamais d'institution créée — et le lien d'activation mène à « Mon plan de sauvegarde ». Jeton
+  chiffré retrouvé par empreinte, 30 jours, cinq comptes au plus, chaque compte signalé à l'adresse
+  officielle. L'arbre affiche « invitée le… » / « a rejoint » / « pas d'adresse officielle ».
 - Écran `/admin/delegations-gestion` (menu Administration).
 
 **Tâche Celery en double (corrigé le 21/11/2026)** : `tasks.charger_adresses_task` était défini

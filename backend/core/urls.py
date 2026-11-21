@@ -152,7 +152,7 @@ from .views import (
     FicheIntervenantView,
 )
 
-from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView
+from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView, RejoindreCollectiviteView
 router = DefaultRouter()
 router.register(
     r'institution-types',
@@ -479,6 +479,7 @@ urlpatterns = [
     # core/institution_courante.py. Hors du routeur — c'est toujours celui de l'appelant.
     path('me/institution-active/', InstitutionActiveView.as_view(), name='institution_active'),
     path('institutions/<uuid:pk>/export-donnees/', ExportDonneesInstitutionView.as_view(), name='export_donnees_institution'),
+    path('rejoindre-collectivite/<str:jeton>/', RejoindreCollectiviteView.as_view(), name='rejoindre_collectivite'),
     path('me/perimetre/', PerimetreAdminView.as_view(), name='perimetre_admin'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
     # Le meme verdict en JSON, pour le scanner integre a l'application (voir

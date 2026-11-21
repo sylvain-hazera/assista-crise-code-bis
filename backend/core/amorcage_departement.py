@@ -5,17 +5,27 @@ ensuite les répertoires officiels intégraux de tous les EPCI / collectivités 
 télécharge toutes les adresses ventilées par commune, la liste de tous les risques, les sites
 sensibles… »
 
-Quatre étapes, chacune relançable seule, chacune consignée dans `AmorcageDepartement.etapes` :
+« Tout ce qui est récupération à l'avance doit l'être » (21/11/2026). Six étapes, chacune
+relançable seule, chacune consignée dans `AmorcageDepartement.etapes` :
 
+0. **referentiel** — le référentiel des communes du département (geo.api.gouv.fr, commande
+   `import_communes`) : la table `Commune` n'est qu'un cache, l'amorçage ne doit oublier
+   personne.
 1. **annuaire** — l'Annuaire de l'administration (api-lannuaire.service-public.gouv.fr), commune
    par commune : il ne se filtre pas par département (vérifié le 21/11/2026, un joker sur le code
    INSEE ne rend rien). Chaque enregistrement porte `pivot.type_service_local`. La mairie et
    l'EPCI deviennent des institutions (créées ou complétées, jamais en double) ; les services
    utiles en crise rejoignent l'annuaire PCS du conseil départemental (dédoublonnés).
 2. **adresses** — le fichier départemental de la Base Adresse Nationale, un seul téléchargement.
-3. **risques** — Géorisques pour chaque commune (`releve_georisques.relever_tout`).
+3. **risques** — pour chaque commune, `releve_georisques.relever_tout` : les rubriques de
+   Géorisques, les zonages officiels, les plans de prévention, et leur périmètre et leur acte au
+   Géoportail de l'urbanisme.
 4. **sites** — les imports open data de sites sensibles, au périmètre du département, lancés en
    tâche de fond et suivis par leur propre trace (`ImportOpenData`).
+5. **simulations** — le pré-calcul de la simulation d'inondation et de ruissellement de chaque
+   commune (grille d'altitude IGN, paliers d'eau, accumulation, seuil par adresse), programmé une
+   commune par minute ; chaque calcul consigne son état (`TacheSimulationInondation`) et la page
+   de simulation le trouve déjà fait.
 
 Seules des données publiques circulent : des codes de commune et de département.
 """
@@ -27,7 +37,8 @@ import urllib.request
 from django.utils import timezone
 
 URL_ANNUAIRE = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/search/"
-ETAPES = ("annuaire", "adresses", "risques", "sites")
+ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "simulations")
+ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son débit
 
 # Type de service de l'Annuaire → catégorie de l'annuaire de crise. Ce qui n'est pas ici n'est
 # pas versé : l'annuaire de crise n'est pas l'annuaire de l'administration.
@@ -195,7 +206,36 @@ def etape_sites(cg, communes) -> dict:
     return {"comptes": {"sources_lancees": len(lancees)}, "sources": lancees}
 
 
-FONCTIONS = {"annuaire": etape_annuaire, "adresses": etape_adresses, "risques": etape_risques, "sites": etape_sites}
+def etape_referentiel(cg, communes) -> dict:
+    from django.core.management import call_command
+    from .models import Commune
+    avant = len(communes)
+    call_command("import_communes", cg.departement_code)
+    apres = Commune.objects.filter(departement_code=cg.departement_code).count()
+    return {"comptes": {"communes_avant": avant, "communes_apres": apres}}
+
+
+def etape_simulations(cg, communes) -> dict:
+    """Programme, commune par commune, les calculs de la page de simulation : ils tournent ensuite
+    seuls, espacés, et chacun consigne son état."""
+    from .models import StatutTacheInondation, TacheSimulationInondation, TypeTacheInondation
+    from .tasks import calculer_paliers_task, calculer_ruissellement_task, charger_adresses_task
+
+    taches = ((TypeTacheInondation.PALIERS, calculer_paliers_task),
+              (TypeTacheInondation.RUISSELLEMENT, calculer_ruissellement_task),
+              (TypeTacheInondation.ADRESSES, charger_adresses_task))
+    for rang, code in enumerate(communes):
+        for type_tache, tache in taches:
+            TacheSimulationInondation.objects.update_or_create(
+                commune_code=code, environment=cg.environment, type_tache=type_tache,
+                defaults={"statut": StatutTacheInondation.EN_COURS, "erreur": None})
+            tache.apply_async(args=[code, cg.environment, False], countdown=rang * ESPACEMENT_SIMULATIONS)
+    return {"comptes": {"communes_programmees": len(communes),
+                        "duree_estimee_minutes": len(communes) * ESPACEMENT_SIMULATIONS // 60}}
+
+
+FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "adresses": etape_adresses,
+             "risques": etape_risques, "sites": etape_sites, "simulations": etape_simulations}
 
 
 def executer(amorcage, etapes=ETAPES) -> None:
@@ -204,7 +244,11 @@ def executer(amorcage, etapes=ETAPES) -> None:
     from .models import Commune
 
     cg = amorcage.delegation.collectivite
-    communes = sorted(Commune.objects.filter(departement_code=cg.departement_code).values_list("code", flat=True))
+
+    def communes_du_departement():
+        return sorted(Commune.objects.filter(departement_code=cg.departement_code).values_list("code", flat=True))
+
+    communes = communes_du_departement()
     for nom in etapes:
         amorcage.etapes[nom] = {"statut": "EN_COURS", "debut": timezone.now().isoformat()}
         amorcage.save(update_fields=["etapes"])
@@ -214,5 +258,7 @@ def executer(amorcage, etapes=ETAPES) -> None:
         except Exception as exc:
             amorcage.etapes[nom] = {"statut": "ECHEC", "fin": timezone.now().isoformat(), "erreur": str(exc)[:500]}
         amorcage.save(update_fields=["etapes"])
+        if nom == "referentiel":
+            communes = communes_du_departement()  # le référentiel vient d'être complété
     amorcage.fin = timezone.now()
     amorcage.save(update_fields=["fin"])

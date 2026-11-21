@@ -174,6 +174,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MesInterventionsComponent)
       },
       {
+        path: 'rejoindre-collectivite/:jeton',
+        loadComponent: () => import('./rejoindre-collectivite/rejoindre-collectivite.component')
+          .then(m => m.RejoindreCollectiviteComponent)
+      },
+      {
         path: 'depot-enregistre',
         loadComponent: () => import('./depot-enregistre/depot-enregistre.component')
           .then(m => m.DepotEnregistreComponent)

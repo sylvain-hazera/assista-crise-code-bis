@@ -106,3 +106,26 @@ def test_la_tache_de_la_simulation_garde_sa_signature():
     from core import tasks
     assert list(inspect.signature(tasks.charger_adresses_task.run).parameters)[:2] == ["commune_code", "environment"]
     assert list(inspect.signature(tasks.charger_adresses_departement_task.run).parameters) == ["communes"]
+
+
+@pytest.mark.django_db
+def test_les_simulations_sont_programmees_commune_par_commune(cg):
+    from core.amorcage_departement import ESPACEMENT_SIMULATIONS, etape_simulations
+    from core.models import TacheSimulationInondation
+    with mock.patch("core.tasks.calculer_paliers_task.apply_async") as paliers, \
+         mock.patch("core.tasks.calculer_ruissellement_task.apply_async") as ruissellement, \
+         mock.patch("core.tasks.charger_adresses_task.apply_async") as adresses:
+        resultat = etape_simulations(cg, ["42186", "42218"])
+    assert resultat["comptes"]["communes_programmees"] == 2
+    assert paliers.call_count == ruissellement.call_count == adresses.call_count == 2
+    assert paliers.call_args_list[1].kwargs["countdown"] == ESPACEMENT_SIMULATIONS
+    assert TacheSimulationInondation.objects.filter(statut="EN_COURS").count() == 6
+
+
+@pytest.mark.django_db
+def test_le_referentiel_recharge_le_departement(cg):
+    from core.amorcage_departement import etape_referentiel
+    with mock.patch("django.core.management.call_command") as commande:
+        resultat = etape_referentiel(cg, ["42186"])
+    commande.assert_called_once_with("import_communes", "42")
+    assert resultat["comptes"]["communes_avant"] == 1

@@ -229,6 +229,10 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                   commentaire=(f"Délégation de gestion {collectivite.nom} → {aasc.nom}, convention "
                                f"{delegation.convention_reference or 'sans référence'} signée le "
                                f"{delegation.convention_signee_le}"))
+        # Délégation départementale : l'amorçage part aussitôt (« ça devrait lancer l'amorçage
+        # aussitôt », 21/11/2026) — répertoires, adresses, risques, sites sensibles.
+        if (collectivite.secteur_niveau_effectif or "") == "departement" and collectivite.departement_code:
+            self._lancer_amorcage(delegation, None)
 
     def perform_update(self, serializer):
         delegation = serializer.instance
@@ -323,10 +327,6 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
     def amorcer(self, request, pk=None):
         """Délégation départementale : lance l'amorçage du département (répertoires officiels,
         adresses, risques, sites sensibles), toutes les étapes ou celles demandées."""
-        from .amorcage_departement import ETAPES
-        from .models import AmorcageDepartement
-        from .tasks import amorcer_departement_task
-
         delegation = self.get_object()
         if not agit_pour(request.user, delegation):
             raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
@@ -338,15 +338,118 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         if en_cours is not None:
             return Response({"error": "Un amorçage est déjà en cours pour ce département."},
                             status=status.HTTP_409_CONFLICT)
-        etapes = [e for e in (request.data.get("etapes") or ETAPES) if e in ETAPES] or list(ETAPES)
+        amorcage = self._lancer_amorcage(delegation, request.data.get("etapes"))
+        return Response(self._etat_amorcage(amorcage), status=status.HTTP_202_ACCEPTED)
+
+    def _lancer_amorcage(self, delegation, etapes):
+        from .amorcage_departement import ETAPES
+        from .models import AmorcageDepartement
+        from .tasks import amorcer_departement_task
+
+        etapes = [e for e in (etapes or ETAPES) if e in ETAPES] or list(ETAPES)
         amorcage = AmorcageDepartement.objects.create(
-            delegation=delegation, lance_par=request.user, environment=delegation.environment,
+            delegation=delegation, lance_par=self.request.user, environment=delegation.environment,
             etapes={e: {"statut": "EN_ATTENTE"} for e in etapes})
         transaction.on_commit(lambda: amorcer_departement_task.delay(str(amorcage.id), etapes))
-        audit_log(request=request, action_code="IMPORT_LISTE", objet_type="DelegationGestion",
+        audit_log(request=self.request, action_code="IMPORT_LISTE", objet_type="DelegationGestion",
                   objet_id=delegation.id,
-                  commentaire=f"Amorçage du département {cg.departement_code} lancé ({', '.join(etapes)})")
-        return Response(self._etat_amorcage(amorcage), status=status.HTTP_202_ACCEPTED)
+                  commentaire=(f"Amorçage du département {delegation.collectivite.departement_code} "
+                               f"lancé ({', '.join(etapes)})"))
+        return amorcage
+
+    @action(detail=True, methods=["post"], url_path="inviter-collectivites")
+    def inviter_collectivites(self, request, pk=None):
+        """Invite les mairies et intercommunalités choisies dans l'arborescence à rejoindre la
+        plateforme (« Rejoindre votre collectivité »). Seulement dans le territoire délégué."""
+        from .delegation_gestion import zones_de
+        from .invitation_collectivite import inviter
+
+        delegation = self.get_object()
+        if not agit_pour(request.user, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
+        ids = [i for i in (request.data.get("institutions") or []) if i][:1000]
+        cibles = Institution.objects.filter(id__in=ids, actif=True)
+        resultat = {"envoyees": 0, "sans_email": [], "deja_membres": 0, "hors_territoire": 0}
+        for inst in cibles:
+            departement = inst.departement_code or (
+                inst.commune_code[:3] if (inst.commune_code or "")[:2] in ("97", "98") else (inst.commune_code or "")[:2])
+            if _code_type(inst) not in ("mairie", "epci") or not dep or departement != dep:
+                resultat["hors_territoire"] += 1
+                continue
+            etat = inviter(inst, delegation, request)
+            if etat == "envoyee":
+                resultat["envoyees"] += 1
+            elif etat == "sans_email":
+                resultat["sans_email"].append(inst.nom)
+            else:
+                resultat["deja_membres"] += 1
+        audit_log(request=request, action_code="ENVOI_MASSE", objet_type="DelegationGestion", objet_id=delegation.id,
+                  commentaire=(f"Invitations « Rejoindre votre collectivité » : {resultat['envoyees']} envoyée(s), "
+                               f"{len(resultat['sans_email'])} sans adresse officielle"))
+        return Response(resultat)
+
+    @action(detail=True, methods=["get"])
+    def arborescence(self, request, pk=None):
+        """Le département, ses intercommunalités et leurs communes, avec pour chacune sa mairie
+        (ses coordonnées officielles, ses membres sur la plateforme, une délégation communale
+        éventuelle). Construit depuis le référentiel des communes : l'arbre est complet avant
+        même l'amorçage, qui le remplit ensuite de coordonnées."""
+        from .delegation_gestion import est_en_vigueur
+        from .geo_reference import DEPARTEMENTS
+
+        delegation = self.get_object()
+        if not agit_pour(request.user, delegation) and get_effective_role(request) != UserRole.ADMINISTRATOR \
+                and not _membre(request.user, delegation.collectivite):
+            raise PermissionDenied("Réservé à ceux qui agissent pour ce territoire.")
+        cg = delegation.collectivite
+        dep = cg.departement_code
+        if (cg.secteur_niveau_effectif or "") != "departement" or not dep:
+            return Response(None)
+
+        communes = list(Commune.objects.filter(departement_code=dep).order_by("nom")
+                        .values("code", "nom", "population", "epci_code"))
+        codes = [c["code"] for c in communes]
+        mairies = {}
+        for m in Institution.objects.filter(commune_code__in=codes, type__code__iexact="mairie").order_by("date_creation"):
+            mairies.setdefault(m.commune_code, m)
+        epci_codes = sorted({c["epci_code"] for c in communes if c["epci_code"]})
+        epcis = {e.epci_code: e for e in Institution.objects.filter(type__code__iexact="epci", epci_code__in=epci_codes)}
+        ids = [i.id for i in list(mairies.values()) + list(epcis.values())]
+        membres = {}
+        for inst_id in ContactInstitution.objects.filter(institution_id__in=ids, actif=True).values_list("institution_id", flat=True):
+            membres[inst_id] = membres.get(inst_id, 0) + 1
+        deleguees = {d.collectivite_id for d in DelegationGestion.objects.filter(collectivite_id__in=ids) if est_en_vigueur(d)}
+        from .models import InvitationCollectivite
+        invitees = {}
+        for inv in InvitationCollectivite.objects.filter(institution_id__in=ids, actif=True).order_by("date_envoi"):
+            invitees[inv.institution_id] = inv.date_relance or inv.date_envoi
+
+        def fiche(inst):
+            if inst is None:
+                return None
+            return {"id": str(inst.id), "nom": inst.nom, "email": inst.email, "telephone": inst.telephone,
+                    "adresse": inst.adresse, "membres": membres.get(inst.id, 0), "delegation": inst.id in deleguees,
+                    "invitee_le": invitees.get(inst.id)}
+
+        par_epci = {}
+        for c in communes:
+            par_epci.setdefault(c["epci_code"] or "", []).append({
+                "code": c["code"], "nom": c["nom"], "population": c["population"], "mairie": fiche(mairies.get(c["code"])),
+            })
+        branches = []
+        for code in epci_codes + ([""] if "" in par_epci else []):
+            inst = epcis.get(code)
+            branches.append({
+                "code": code, "nom": (inst.nom if inst else (f"Intercommunalité {code}" if code else "Sans intercommunalité")),
+                "institution": fiche(inst), "communes": par_epci.get(code, []),
+            })
+        return Response({
+            "departement": {"code": dep, "nom": DEPARTEMENTS.get(dep, dep), "institution": fiche(cg)},
+            "epcis": branches,
+            "totaux": {"communes": len(communes), "mairies_sur_la_plateforme": len(mairies),
+                       "epcis": len(epci_codes)},
+        })
 
     @action(detail=True, methods=["get"])
     def amorcage(self, request, pk=None):
@@ -491,3 +594,40 @@ class ExportDonneesInstitutionView(APIView):
         reponse["Content-Disposition"] = f'attachment; filename="donnees-{institution.pk}.zip"'
         return reponse
 
+
+
+class RejoindreCollectiviteView(APIView):
+    """`/api/rejoindre-collectivite/<jeton>/` : GET dit à quoi invite le lien ; POST crée le compte.
+    Public (la personne n'a pas encore de compte), borné par l'invitation elle-même : jeton
+    chiffré retrouvé par empreinte, 30 jours, cinq comptes au plus, chacun signalé à l'adresse
+    officielle et inactif jusqu'à l'activation par courriel."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, jeton=None):
+        from .convention_sous_traitance import institution_necessite_convention
+        from .invitation_collectivite import trouver
+
+        invitation = trouver(jeton)
+        if invitation is None:
+            return Response({"error": "Lien expiré ou invalide."}, status=status.HTTP_404_NOT_FOUND)
+        aasc = invitation.delegation.aasc if invitation.delegation else None
+        return Response({
+            "institution": invitation.institution.nom, "type": _code_type(invitation.institution),
+            "invite_par": (aasc.nom_affichage or aasc.nom) if aasc else "La plateforme",
+            "convention_requise": institution_necessite_convention(invitation.institution),
+        })
+
+    def post(self, request, jeton=None):
+        from .invitation_collectivite import rejoindre, trouver
+
+        invitation = trouver(jeton)
+        if invitation is None:
+            return Response({"error": "Lien expiré ou invalide."}, status=status.HTTP_404_NOT_FOUND)
+        with transaction.atomic():
+            user = rejoindre(invitation, request.data, request)
+        audit_log(request=request, action_code="CREATION", objet_type="User", objet_id=user.id,
+                  institution=invitation.institution,
+                  commentaire=f"Compte ouvert pour {invitation.institution.nom} par invitation")
+        return Response({"ok": True}, status=status.HTTP_201_CREATED)
