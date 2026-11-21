@@ -649,3 +649,18 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   position: static; box-shadow: none;
   .panel-titre { margin: .4rem .8rem .2rem; font-size: .72rem; font-weight: 700; color: var(--muted); }
 }
+
+// Règle de l'arbre : fiche consultable, modifications réservées au niveau au-dessus.
+.lecture-seule {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: var(--ac-amber-bg, #fef3c7);
+  color: var(--ac-amber-text, #92400e);
+  font-size: 0.88rem;
+  .material-icons { font-size: 1.1rem; }
+}
+.user-pick-item.verrouille { cursor: default; }

@@ -73,7 +73,7 @@
                     <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner des demandes">
                       <span class="material-icons">assignment</span>
                     </button>
-                    <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier">
+                    <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier" [disabled]="team.peut_administrer === false">
                       <span class="material-icons">edit</span>
                     </button>
                     <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Désactiver ou supprimer">
@@ -235,6 +235,16 @@
 
       <div class="modal-body detail-body">
 
+        <!-- Règle de l'arbre (core/gestion_equipes.py) : on montre la fiche, mais pas des
+             boutons que le serveur refuserait. -->
+        @if (lectureSeule) {
+          <p class="lecture-seule" role="status">
+            <span class="material-icons" aria-hidden="true">lock</span>
+            Équipe gérée par le niveau au-dessus du vôtre : seuls ses cadres, ceux des équipes
+            au-dessus d'elle et le bureau de l'association peuvent la modifier.
+          </p>
+        }
+
         @if (selectedTeam.description) {
           <p class="detail-desc">{{ selectedTeam.description }}</p>
         }
@@ -327,7 +337,7 @@
             <p class="empty-pick">Cette équipe n'est rattachée à aucune institution : aucun membre à proposer.</p>
           } @else {
 
-          <button type="button" class="btn-link-invite" (click)="showInviteForm = !showInviteForm">
+          <button type="button" class="btn-link-invite" (click)="showInviteForm = !showInviteForm" [disabled]="lectureSeule">
             <span class="material-icons">person_add</span>
             {{ showInviteForm ? 'Annuler' : "Inviter un nouveau membre" }}
           </button>
@@ -372,7 +382,8 @@
               <div class="user-pick-item"
                    [class.selected]="isMember(u.id)"
                    [style.--ac]="selectedTeam.color"
-                   (click)="toggleMember(u.id)">
+                   [class.verrouille]="lectureSeule"
+                   (click)="!lectureSeule && toggleMember(u.id)">
                 <div class="up-avatar"
                      [style.background]="isMember(u.id) ? selectedTeam.color : '#e2e8f0'">
                   {{ userInitials(u.id) }}
@@ -412,13 +423,13 @@
                 @if (isMember(u.id)) {
                   <button type="button" class="btn-encadrement"
                           [class.actif]="estEncadrant(u.id)"
-                          [disabled]="enregistrantEncadrement"
+                          [disabled]="enregistrantEncadrement || lectureSeule"
                           (click)="$event.stopPropagation(); basculerEncadrement(u.id)"
                           [title]="estEncadrant(u.id)
                             ? 'Retirer de l\'encadrement — sortira du salon « Encadrement » de cette équipe et de celui de l\'équipe parente'
                             : 'Désigner comme encadrement — entrera dans le salon « Encadrement » de cette équipe et dans celui de l\'équipe parente, un seul niveau au-dessus'">
                     <span class="material-icons">shield</span>
-                    {{ estEncadrant(u.id) ? 'Encadrement' : 'Intervenant' }}
+                    {{ estEncadrant(u.id) ? libelleEncadrement : 'Intervenant' }}
                   </button>
                 }
                 @if (u.id === selectedTeam.leader) {
@@ -981,7 +992,7 @@
               <span class="count-badge">{{ selectedTeam.sous_equipes_info?.length || 0 }}</span>
             </h3>
             @if (!showAttachTeamForm) {
-              <button class="btn-link-invite" (click)="ouvrirAttacheEquipe()">
+              <button class="btn-link-invite" (click)="ouvrirAttacheEquipe()" [disabled]="lectureSeule">
                 <span class="material-icons">add_link</span> Rattacher une équipe
               </button>
             }
@@ -1153,9 +1164,11 @@
         <button class="btn-secondary" (click)="modal = 'assign'">
           <span class="material-icons">assignment</span> Missions
         </button>
-        <button class="btn-primary" (click)="openEdit(selectedTeam)">
-          <span class="material-icons">edit</span> Modifier
-        </button>
+        @if (!lectureSeule) {
+          <button class="btn-primary" (click)="openEdit(selectedTeam)">
+            <span class="material-icons">edit</span> Modifier
+          </button>
+        }
       </div>
     </div>
   </div>

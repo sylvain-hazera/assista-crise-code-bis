@@ -118,6 +118,7 @@ from .imports import (
 )
 from .pagination import OptionalPageNumberPagination, InstitutionPagination, MainCourantePagination
 from .main_courante import TYPES_FICHES, appliquer_filtres, libelles as libelles_fiches, rechercher_fiches
+from .gestion_equipes import MESSAGE_REFUS, est_hierarchique, peut_gerer_equipe
 from .zone_scoping import (
     SECTEUR_CHAMP_PAR_NIVEAU,
     _institution_commune_or_400,
@@ -9399,6 +9400,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     def reactiver(self, request, pk=None):
         """Réactive une équipe désactivée (voir perform_destroy)."""
         team = self.get_object()
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
         team.actif = True
         team.save(update_fields=['actif'])
         audit_log(
@@ -9474,6 +9477,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(queryset, many=True).data)
 
     def perform_destroy(self, instance):
+        if not peut_gerer_equipe(self.request, instance):
+            raise PermissionDenied(MESSAGE_REFUS)
         instance.actif = False
         instance.save(update_fields=['actif'])
         audit_log(
@@ -9485,6 +9490,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
+        parente = serializer.validated_data.get('equipe_parente')
+        if parente is not None and not peut_gerer_equipe(self.request, parente):
+            raise PermissionDenied(MESSAGE_REFUS)
         # Une équipe ne doit pas rester livrée à elle-même : rattachée par défaut à
         # l'institution du créateur si aucune n'est explicitement fournie — pas d'erreur si le
         # créateur lui-même n'en a pas (compte encore non rattaché), l'équipe reste alors sans
@@ -9530,6 +9538,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             raise PermissionDenied(
                 "Vous ne pouvez modifier que les équipes de votre institution (ou de l'institution déléguée)."
             )
+        if not peut_gerer_equipe(self.request, instance):
+            raise PermissionDenied(MESSAGE_REFUS)
 
         # Changer l'institution responsable est une décision structurante : réservée à
         # l'institution ACTUELLE de l'équipe (jamais à la déléguée, ni à une institution tierce)
@@ -9887,6 +9897,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
+
         email = (request.data.get('email') or '').strip().lower()
         first_name = (request.data.get('first_name') or '').strip()
         last_name = (request.data.get('last_name') or '').strip()
@@ -9965,6 +9978,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
+
         titre = (request.data.get('titre') or '').strip()
         if not titre:
             return Response({"error": "Le titre de la mission est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
@@ -10039,6 +10055,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                           "institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
 
         demandes = request.data.get('utilisateurs') or []
         if not isinstance(demandes, list) or not demandes:
@@ -10188,6 +10207,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     {"error": "Équipe parente inconnue pour cette association."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            if not peut_gerer_equipe(request, parente):
+                return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
 
         crise = None
         crise_id = request.data.get('crise_id')
@@ -10448,6 +10469,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 {"error": "Seule l'institution responsable de l'équipe peut la supprimer."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
 
         with transaction.atomic():
             for offer in team.assigned_offers.all():
@@ -10876,6 +10900,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                           "institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
 
         ids = request.data.get('membres_encadrement')
         if ids is None:
@@ -11421,6 +11448,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 )
             ancetre = ancetre.equipe_parente
 
+        if not peut_gerer_equipe(request, team) or (
+                est_hierarchique(request, sous_equipe) and not peut_gerer_equipe(request, sous_equipe)):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
+
         sous_equipe.equipe_parente = team
         sous_equipe.save(update_fields=['equipe_parente'])
 
@@ -11449,6 +11480,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 {"error": "Vous ne pouvez détacher une équipe que pour les équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if not peut_gerer_equipe(request, team):
+            return Response({"error": MESSAGE_REFUS}, status=status.HTTP_403_FORBIDDEN)
 
         equipe_id = request.data.get('equipe_id')
         try:

@@ -66,6 +66,8 @@ data class Fiche(
     @SerialName("frequence_engagement") val frequence: String = "",
     val message: String = "",
     @SerialName("diplome_premier_secours") val premiersSecours: Boolean = false,
+    /** Ce que je sais faire : le même arbre que « Proposer mon aide » sur le site. */
+    @SerialName("competences_detail") val competences: List<Competence> = emptyList(),
     val avertissement: String? = null,
     /** Faux pour un compte créé par import : il n'a pas encore de mot de passe, seulement son lien. */
     @SerialName("mot_de_passe_defini") val motDePasseDefini: Boolean = true,
@@ -239,6 +241,24 @@ fun rangerParEquipe(equipes: List<Equipe>, missions: List<MissionAffichee>, doss
     val autres = missions.filter { it.mission.id !in rangees }.map { MissionDEquipe(it, emptyList()) }
     return parEquipe.filter { it.missions.isNotEmpty() || it.sansMission.isNotEmpty() } +
         if (autres.isEmpty()) emptyList() else listOf(TravailDEquipe(null, autres, emptyList()))
+}
+
+/** Une compétence du catalogue partagé (`Competence`) : un thème, ou un sous-thème rangé sous
+ * son `parent`. Jamais plus d'un niveau. */
+@Serializable
+data class Competence(
+    val id: String,
+    val nom: String = "",
+    val parent: String? = null,
+    val active: Boolean = true,
+) {
+    companion object {
+        /** Les thèmes et leurs sous-thèmes, dans l'ordre du catalogue, compétences actives seulement. */
+        fun arbre(catalogue: List<Competence>): List<Pair<Competence, List<Competence>>> {
+            val actives = catalogue.filter { it.active }
+            return actives.filter { it.parent == null }.map { theme -> theme to actives.filter { it.parent == theme.id } }
+        }
+    }
 }
 
 /** Un titre du catalogue (permis, diplôme, pièce) pour lequel on peut déposer un justificatif. */

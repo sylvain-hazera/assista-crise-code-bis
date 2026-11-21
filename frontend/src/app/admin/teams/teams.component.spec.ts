@@ -28,6 +28,22 @@ describe('TeamsComponent', () => {
    *
    * Sans ce tri, 127 equipes s'affichent dans l'ordre alphabetique et la Coordination
    * Nationale se retrouve entre deux departements. */
+  describe('regle de l\'arbre', () => {
+    it('une equipe que l\'on ne gere pas s\'ouvre en lecture seule', () => {
+      component.selectedTeam = { id: 'r', name: 'Region', echelon: 'REGIONAL', peut_administrer: false } as unknown as Team;
+      expect(component.lectureSeule).toBeTrue();
+      component.selectedTeam = { id: 'd', name: 'Departement', echelon: 'DEPARTEMENTAL', peut_administrer: true } as unknown as Team;
+      expect(component.lectureSeule).toBeFalse();
+    });
+
+    it('le bureau d\'une coordination s\'appelle ainsi, l\'encadrement d\'une equipe de terrain reste l\'encadrement', () => {
+      component.selectedTeam = { id: 'd', name: 'Departement', echelon: 'DEPARTEMENTAL' } as unknown as Team;
+      expect(component.libelleEncadrement).toBe('Bureau de la coordination');
+      component.selectedTeam = { id: 't', name: 'Terrain', echelon: '' } as unknown as Team;
+      expect(component.libelleEncadrement).toBe('Encadrement');
+    });
+  });
+
   describe('tri par echelon', () => {
 
     function equipe(nom: string, echelon: Team['echelon'], territoire = ''): Team {

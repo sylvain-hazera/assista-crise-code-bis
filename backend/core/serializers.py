@@ -1956,6 +1956,19 @@ class TeamSerializer(serializers.ModelSerializer):
             obj.institution_delegataire_id is not None and obj.institution_delegataire_id in mes_institutions
         )
 
+    # Peut-il en modifier la STRUCTURE (composition, encadrement, mission, place dans l'arbre) ?
+    # Plus étroit que `peut_gerer` dans une association : seuls le bureau et les cadres de
+    # l'équipe ou d'une équipe au-dessus d'elle (core/gestion_equipes.py). L'écran s'en sert
+    # pour griser ce qu'on ne peut pas faire, au lieu de laisser cliquer puis refuser.
+    peut_administrer = serializers.SerializerMethodField()
+
+    def get_peut_administrer(self, obj):
+        from .gestion_equipes import peut_gerer_equipe
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        return peut_gerer_equipe(request, obj)
+
     def get_canal_meshcore_provisionne(self, obj):
         canal = getattr(obj, 'canal_meshcore', None)
         return canal is not None and canal.provisions.exists()
@@ -1968,6 +1981,7 @@ class TeamSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Team
         fields = [
+            'peut_administrer',
             'id', 'name', 'description', 'color', 'created_at', 'actif',
             'est_equipe_rcsc',
             'institution',

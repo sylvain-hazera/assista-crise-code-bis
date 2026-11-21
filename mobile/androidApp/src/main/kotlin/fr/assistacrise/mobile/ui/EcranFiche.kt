@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +22,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,11 +31,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
+import fr.assistacrise.mobile.domaine.Competence
 import fr.assistacrise.mobile.domaine.Fiche
 
 /** « Ma fiche de bénévole » : ce que la personne relit et corrige d'elle-même, et ses titres. */
@@ -95,6 +100,15 @@ private fun Formulaire(fiche: Fiche, modele: ModeleApplication) {
             Text("J'ai un diplôme de premiers secours", style = MaterialTheme.typography.bodyLarge)
         }
 
+        TitreDeSection("Ce que je sais faire")
+        Text("Les mêmes compétences que dans « Proposer mon aide ». C'est sur elles que votre encadrement vous retrouve quand une mission ou une campagne demande un savoir-faire. Les diplômes et permis se déposent dans « Mes documents ».",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (saisie.competences.isEmpty()) {
+            Text("Aucune compétence indiquée : vous ne serez proposé sur aucune mission qui en demande une.", style = MaterialTheme.typography.bodySmall, color = Attente)
+        }
+        val catalogue by modele.catalogueCompetences.collectAsStateWithLifecycle()
+        ArbreCompetences(catalogue, saisie.competences) { saisie = saisie.copy(competences = it) }
+
         etat.erreur?.let { Spacer(Modifier.height(8.dp)); Text(it, color = Refus, style = MaterialTheme.typography.bodyMedium) }
         Spacer(Modifier.height(16.dp))
         Button(onClick = { modele.enregistrerFiche(saisie) }, enabled = !etat.enCours, modifier = Modifier.fillMaxWidth().height(50.dp)) {
@@ -103,6 +117,45 @@ private fun Formulaire(fiche: Fiche, modele: ModeleApplication) {
 
         Spacer(Modifier.height(16.dp))
         Text("Vos justificatifs (permis, diplômes) sont dans « Mon compte », rubrique Mes documents.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** L'arbre des compétences : un thème coche ou décoche tous ses sous-thèmes ; la flèche déplie. */
+@Composable
+private fun ArbreCompetences(catalogue: List<Competence>, choisies: List<Competence>, surChange: (List<Competence>) -> Unit) {
+    val arbre = Competence.arbre(catalogue)
+    if (arbre.isEmpty()) {
+        Text(if (catalogue.isEmpty()) "Catalogue indisponible sans réseau." else "Aucune compétence définie.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    val ids = choisies.map { it.id }.toSet()
+    var deplies by remember { mutableStateOf(setOf<String>()) }
+    arbre.forEach { (theme, sousThemes) ->
+        val groupe = listOf(theme) + sousThemes
+        val coches = groupe.count { it.id in ids }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            if (sousThemes.isNotEmpty()) {
+                TextButton(onClick = { deplies = if (theme.id in deplies) deplies - theme.id else deplies + theme.id }) {
+                    Text(if (theme.id in deplies) "▾" else "▸")
+                }
+            } else Spacer(Modifier.width(48.dp))
+            TriStateCheckbox(
+                state = when (coches) { 0 -> ToggleableState.Off; groupe.size -> ToggleableState.On; else -> ToggleableState.Indeterminate },
+                onClick = {
+                    surChange(if (coches == groupe.size) choisies.filter { c -> groupe.none { it.id == c.id } }
+                              else choisies + groupe.filter { it.id !in ids })
+                },
+            )
+            Text(theme.nom, style = MaterialTheme.typography.bodyLarge)
+        }
+        if (theme.id in deplies) sousThemes.forEach { c ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 48.dp)
+                .clickable { surChange(if (c.id in ids) choisies.filter { it.id != c.id } else choisies + c) }) {
+                Checkbox(c.id in ids, onCheckedChange = { surChange(if (it) choisies + c else choisies.filter { x -> x.id != c.id }) })
+                Text(c.nom, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 

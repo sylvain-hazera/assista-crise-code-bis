@@ -517,7 +517,7 @@
                     {{ cadreOuvert(noeud.equipe.id + ':cadres') ? 'expand_more' : 'chevron_right' }}
                   </span>
                   <span class="material-icons icone">military_tech</span>
-                  <span class="titre">Cadres de l'équipe</span>
+                  <span class="titre">{{ libelleCadres(noeud.equipe.echelon) }}</span>
                   <span class="compte">{{ noeud.cadres.length }}</span>
                 </button>
                 @if (cadreOuvert(noeud.equipe.id + ':cadres')) {
@@ -525,7 +525,7 @@
                     <p class="vide-inline">
                       @if (filtreActif) { Aucun cadre ne correspond au filtre. }
                       @else {
-                        Aucun cadre désigné. L'encadrement se définit depuis la page Équipes.
+                        Aucun cadre désigné. Il se désigne depuis la fiche de l'équipe, page Équipes.
                       }
                     </p>
                   } @else {

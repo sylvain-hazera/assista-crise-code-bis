@@ -89,6 +89,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val typesOffre = app.citoyen.typesOffre
     val mobilisations = app.benevole.mobilisations
     val catalogue = app.benevole.catalogue
+    val catalogueCompetences = app.benevole.competences
     val commentaires = app.dossiers.commentaires
     val photos = app.dossiers.photos
     val missions: StateFlow<List<MissionAffichee>> =

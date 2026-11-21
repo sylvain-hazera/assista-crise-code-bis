@@ -8,6 +8,7 @@ import fr.assistacrise.mobile.domaine.Compte
 import fr.assistacrise.mobile.domaine.Photo
 import fr.assistacrise.mobile.domaine.Profil
 import fr.assistacrise.mobile.domaine.TitreDuCatalogue
+import fr.assistacrise.mobile.domaine.Competence
 import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Defi
 import fr.assistacrise.mobile.domaine.resoudreDefi
@@ -425,6 +426,7 @@ class ClientApi(
             put("frequence_engagement", f.frequence)
             put("message", f.message.trim())
             put("diplome_premier_secours", f.premiersSecours)
+            put("competences", buildJsonArray { f.competences.forEach { add(JsonPrimitive(it.id)) } })
         }).transformer { json.decodeFromJsonElement(Fiche.serializer(), it) }
 
     // --- Mon compte ----------------------------------------------------------------------------
@@ -440,6 +442,9 @@ class ClientApi(
         else authentifie(HttpMethod.Post, "change-password/", buildJsonObject { put("old_password", ancien); put("new_password", nouveau) }).sansValeur()
 
     suspend fun catalogueDesTitres(): Reponse<List<TitreDuCatalogue>> = liste("qualifications/", TitreDuCatalogue.serializer())
+
+    /** Le catalogue des compétences, le même que celui de « Proposer mon aide ». */
+    suspend fun catalogueDesCompetences(): Reponse<List<Competence>> = liste("competences/", Competence.serializer())
 
     /**
      * Dépose la pièce d'un titre. `idTitreDeclare` : la déclaration existe déjà (pièce refusée,

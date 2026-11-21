@@ -13,7 +13,7 @@ import {
   MembreAnnuaire, MembreGrille, Qualification, QualificationMembre,
   QualificationsAVerifier, RoleDansEquipe, StatutMembre,
 } from '../../shared/models/association.model';
-import { Team, rangEchelon } from '../../shared/models/team.model';
+import { Team, libelleEncadrementEquipe, rangEchelon } from '../../shared/models/team.model';
 import { CreneauPointe, TeamService } from '../../services/team.service';
 import { CrisisService } from '../../services/crisis.service';
 import { Crisis } from '../../shared/models/crisis.model';
@@ -229,6 +229,12 @@ export class MembresAssociationComponent implements OnInit {
     private crisisService: CrisisService,
     private conservationService: ConservationPiecesService,
   ) {}
+
+  /** « Bureau de la coordination » pour un échelon de coordination, « Cadres de l'équipe » pour
+   * une équipe de terrain (décision du 21/11/2026). */
+  libelleCadres(echelon: string | null | undefined): string {
+    return libelleEncadrementEquipe(echelon) === 'Bureau de la coordination' ? 'Bureau de la coordination' : "Cadres de l'équipe";
+  }
 
   ngOnInit(): void {
     this.charger();

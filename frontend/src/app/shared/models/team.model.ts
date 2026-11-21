@@ -85,6 +85,9 @@ export interface Team {
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   vehicules_count?:     number;            // Offres de type Transport affectées à l'équipe (lecture seule)
+  /** Peut en modifier la structure, la composition et l'encadrement (règle de l'arbre,
+   * backend/core/gestion_equipes.py) — plus étroit que `peut_gerer` dans une association. */
+  peut_administrer?:    boolean;
   peut_gerer?:          boolean;           // L'utilisateur courant peut y affecter des ressources (son institution ou déléguée, lecture seule)
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];
@@ -134,4 +137,11 @@ export interface SalonMatrixEquipe {
 /** Nom préfixé par l'institution responsable, pour les listes mêlant plusieurs institutions. */
 export function teamDisplayName(team: Pick<Team, 'name' | 'institution_nom'>): string {
   return team.institution_nom ? `${team.institution_nom} - ${team.name}` : team.name;
+}
+
+/** Échelons de coordination : leur encadrement s'appelle « Bureau de la coordination ». */
+export const ECHELONS_COORDINATION = ['NATIONAL', 'ZONE_DEFENSE', 'REGIONAL', 'DEPARTEMENTAL'];
+
+export function libelleEncadrementEquipe(echelon: string | null | undefined): string {
+  return echelon && ECHELONS_COORDINATION.includes(echelon) ? 'Bureau de la coordination' : 'Encadrement';
 }

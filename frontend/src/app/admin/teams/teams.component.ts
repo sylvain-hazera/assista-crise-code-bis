@@ -32,7 +32,7 @@ import { PointModalComponent } from '../crises/point-modal/point-modal.component
 import { MatrixSalonChatComponent } from './matrix-salon-chat/matrix-salon-chat.component';
 import { environment } from '../../../environments/environment';
 
-import { Team, TeamMission, SalonMatrixEquipe, rangEchelon }  from '../../shared/models/team.model';
+import { Team, TeamMission, SalonMatrixEquipe, rangEchelon, libelleEncadrementEquipe }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
 import { RoleOperationnel, AffectationRoleOperationnel } from '../../shared/models/institution.model';
 import { Crisis }              from '../../shared/models/crisis.model';
@@ -1389,6 +1389,18 @@ export class TeamsComponent implements OnInit {
       if (parEchelon !== 0) return parEchelon;
       return (a.territoire_libelle || a.name).localeCompare(b.territoire_libelle || b.name, 'fr');
     });
+  }
+
+  /** La fiche ouverte est-elle hors de ce que l'appelant gère ? Règle de l'arbre, calculée par
+   * le serveur (`peut_administrer`) : absent = ancien serveur, on ne verrouille rien. */
+  get lectureSeule(): boolean {
+    return this.selectedTeam?.peut_administrer === false;
+  }
+
+  /** « Bureau de la coordination » pour un échelon de coordination (national, zone, région,
+   * département) — décision du 21/11/2026 ; « Encadrement » pour une équipe de terrain. */
+  get libelleEncadrement(): string {
+    return libelleEncadrementEquipe(this.selectedTeam?.echelon);
   }
 
   get teamMembers(): User[] {

@@ -251,6 +251,20 @@ class BenevoleTest {
         assertFalse("departement_code" in corps)
         assertEquals("Bordeaux", corps.getValue("ville").jsonPrimitive.content)
     }
+
+    @Test fun laFicheRelitSesCompetencesEtLesRenvoieParIdentifiant() = runTest {
+        val banc = BancBenevole().connecte()
+        banc.repond("competences/", """[{"id":"t","nom":"Technique","parent":null,"active":true},{"id":"p","nom":"Pompage","parent":"t","active":true}]""")
+        banc.repond("ma-fiche-benevole/", """{"adresse":"1 rue des Lilas","competences_detail":[{"id":"p","nom":"Pompage","parent":"t"}]}""")
+        banc.benevole.chargerLaFiche("u1")
+        assertEquals(listOf("Pompage"), banc.benevole.fiche.value!!.competences.map { it.nom })
+        assertEquals(2, banc.benevole.competences.value.size)
+        val fiche = banc.benevole.fiche.value!!
+        banc.benevole.enregistrerLaFiche(fiche.copy(competences = fiche.competences + banc.benevole.competences.value.first()))
+        val envoi = banc.demandes.last { it.method == HttpMethod.Patch }
+        val corps = Json.parseToJsonElement((envoi.body as TextContent).text).jsonObject
+        assertEquals(listOf("p", "t"), corps.getValue("competences").jsonArray.map { it.jsonPrimitive.content })
+    }
 }
 
 class MobilisationTest {

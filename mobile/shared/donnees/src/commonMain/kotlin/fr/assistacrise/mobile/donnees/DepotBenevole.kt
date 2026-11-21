@@ -1,5 +1,6 @@
 package fr.assistacrise.mobile.donnees
 
+import fr.assistacrise.mobile.domaine.Competence
 import fr.assistacrise.mobile.domaine.Creneau
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.Fiche
@@ -109,7 +110,12 @@ class DepotBenevole(
         return r
     }
 
+    private val _competences = MutableStateFlow<List<Competence>>(emptyList())
+    /** Le catalogue des compétences, pour l'arbre « Ce que je sais faire ». */
+    val competences: StateFlow<List<Competence>> = _competences
+
     suspend fun chargerLaFiche(idCompte: String): Reponse<Unit> {
+        (api.catalogueDesCompetences() as? Reponse.Ok)?.let { _competences.value = it.valeur }
         (api.mesTitres(idCompte) as? Reponse.Ok)?.let { garder("titres", ListSerializer(Titre.serializer()), it.valeur); _titres.value = it.valeur }
         return when (val r = api.maFiche()) {
             is Reponse.Ok -> { garder("fiche", Fiche.serializer(), r.valeur); _fiche.value = r.valeur; Reponse.Ok(Unit) }
