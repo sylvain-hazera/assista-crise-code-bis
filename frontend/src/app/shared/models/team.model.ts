@@ -36,7 +36,7 @@ export interface TeamMemberInfo {
 export interface Team {
   id?:                  string;
   name:                 string;
-  description:          string;
+  description:          string | null;
   color:                string;
   leader:               string | null;      // UUID du chef d'équipe (terrain)
   leader_nom?:          string | null;

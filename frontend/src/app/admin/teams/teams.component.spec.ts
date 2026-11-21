@@ -75,6 +75,15 @@ describe('TeamsComponent', () => {
       expect(component.filteredTeams.length).toBe(1);
     });
 
+    it('la recherche supporte une equipe sans description', () => {
+      // Les 125 equipes de creer_arborescence_coordination n'ont pas de description (null) :
+      // taper une lettre levait une TypeError qui figeait toute la page.
+      const sansDescription = { ...equipe('Coordination Nationale', 'NATIONAL', 'France'), description: null } as unknown as Team;
+      component.teams = [sansDescription, equipe("Equipe d'intervention Gier", '')];
+      component.searchQuery = 'gier';
+      expect(component.filteredTeams.map(t => t.name)).toEqual(["Equipe d'intervention Gier"]);
+    });
+
     it('rangEchelon place une valeur inconnue avec les equipes sans echelon', () => {
       // Un echelon ajoute cote serveur et pas encore connu du frontend ne doit pas remonter en
       // tete par accident.

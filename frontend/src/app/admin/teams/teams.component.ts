@@ -1377,7 +1377,10 @@ export class TeamsComponent implements OnInit {
     const q = this.searchQuery.trim().toLowerCase();
     const base = !q ? this.teams : this.teams.filter(t =>
       t.name.toLowerCase().includes(q)
-      || t.description.toLowerCase().includes(q)
+      // Une équipe peut n'avoir aucune description (les 125 équipes de coordination créées par
+      // creer_arborescence_coordination) : sans ce repli, taper une lettre levait une erreur
+      // qui figeait toute la page, fiche d'équipe comprise.
+      || (t.description || '').toLowerCase().includes(q)
       || (t.territoire_libelle || '').toLowerCase().includes(q)
       || (t.territoire_code || '').toLowerCase().includes(q)
     );
