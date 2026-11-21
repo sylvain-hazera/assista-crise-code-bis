@@ -11,6 +11,7 @@ Voir core/delegation_gestion.py pour les règles (qui agit, contexte délégué,
 """
 import io
 import json
+import uuid
 import zipfile
 
 from django.apps import apps
@@ -389,6 +390,96 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                                f"{len(resultat['sans_email'])} sans adresse officielle"))
         return Response(resultat)
 
+    @action(detail=True, methods=["post"])
+    def coordonnees(self, request, pk=None):
+        """Corrige les coordonnées d'une collectivité du territoire délégué, et indique la
+        personne à joindre (« tel salarié ciblé, dont le conseil départemental donnerait
+        l'adresse »). Référent vide : il est retiré, l'invitation repart à l'adresse officielle."""
+        from .delegation_gestion import zones_de
+        from .models import ReferentCollectivite
+
+        delegation = self.get_object()
+        if not agit_pour(request.user, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        inst = Institution.objects.filter(pk=request.data.get("institution"), actif=True).first()
+        dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
+        departement = (inst.departement_code or (inst.commune_code or "")[:2]) if inst else None
+        if inst is None or _code_type(inst) not in ("mairie", "epci") or not dep or departement != dep:
+            return Response({"error": "Collectivité hors du territoire délégué."}, status=status.HTTP_400_BAD_REQUEST)
+
+        officiel = request.data.get("officiel") or {}
+        modifies = []
+        for champ in ("email", "telephone", "adresse"):
+            if champ in officiel:
+                setattr(inst, champ, (officiel.get(champ) or "").strip() or None)
+                modifies.append(champ)
+        if modifies:
+            inst.save(update_fields=modifies)
+
+        r = request.data.get("referent")
+        if r is not None:
+            nom, email = (r.get("nom") or "").strip(), (r.get("email") or "").strip().lower()
+            if email and "@" not in email:
+                return Response({"error": "Adresse du référent invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            if not nom and not email and not (r.get("telephone") or "").strip():
+                ReferentCollectivite.objects.filter(institution=inst).delete()
+            else:
+                ReferentCollectivite.objects.update_or_create(institution=inst, defaults={
+                    "nom": nom[:200], "fonction": (r.get("fonction") or "").strip()[:120], "email": email or None,
+                    "telephone": (r.get("telephone") or "").strip()[:40] or None, "indique_par": request.user,
+                    "environment": inst.environment})
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Institution", objet_id=inst.id,
+                  commentaire=f"Coordonnées de {inst.nom} mises à jour (délégation de gestion)")
+        return Response({"ok": True})
+
+    @action(detail=True, methods=["get"])
+    def suivi(self, request, pk=None):
+        """Suivi départemental. Sans paramètre : chaque intercommunalité avec ses comptes
+        d'enrôlement. `?epci=<code>` : ses communes, l'enrôlement et l'avancement du PCS de
+        chacune, et le PICS de l'intercommunalité (calculé à la demande, branche par branche)."""
+        from .suivi_departement import avancement, enrolement
+
+        reponse = self.arborescence(request, pk)
+        arbre = reponse.data
+        if not arbre:
+            return reponse
+        code = request.query_params.get("epci")
+        if code is None:
+            branches = []
+            for b in arbre["epcis"]:
+                etats = [enrolement(c["mairie"]) for c in b["communes"]]
+                branches.append({
+                    "code": b["code"], "nom": b["nom"], "institution": b["institution"],
+                    "enrolement": enrolement(b["institution"]) if b["code"] else None,
+                    "communes": len(etats), "ont_rejoint": etats.count("a_rejoint"),
+                    "invitees": etats.count("invitee"), "sans_adresse": etats.count("pas_d_adresse"),
+                })
+            tous = [enrolement(c["mairie"]) for b in arbre["epcis"] for c in b["communes"]]
+            return Response({"departement": arbre["departement"], "epcis": branches, "totaux": {
+                **arbre["totaux"], "ont_rejoint": tous.count("a_rejoint"), "invitees": tous.count("invitee"),
+                "sans_adresse": tous.count("pas_d_adresse")}})
+
+        branche = next((b for b in arbre["epcis"] if b["code"] == code), None)
+        if branche is None:
+            return Response({"error": "Intercommunalité inconnue dans ce département."}, status=status.HTTP_404_NOT_FOUND)
+        env = self.get_object().environment
+        par_id = {i.id: i for i in Institution.objects.filter(
+            id__in=[c["mairie"]["id"] for c in branche["communes"] if c["mairie"]]
+            + ([branche["institution"]["id"]] if branche["institution"] else []))}
+        communes = []
+        for c in branche["communes"]:
+            m = c["mairie"]
+            inst = par_id.get(uuid.UUID(m["id"])) if m else None
+            communes.append({**c, "enrolement": enrolement(m), "pcs": avancement(inst, env) if inst else None})
+        epci = branche["institution"]
+        epci_inst = par_id.get(uuid.UUID(epci["id"])) if epci else None
+        return Response({
+            "code": branche["code"], "nom": branche["nom"], "institution": epci,
+            "enrolement": enrolement(epci) if epci else None,
+            "pics": avancement(epci_inst, env) if epci_inst else None,
+            "communes": communes,
+        })
+
     @action(detail=True, methods=["get"])
     def arborescence(self, request, pk=None):
         """Le département, ses intercommunalités et leurs communes, avec pour chacune sa mairie
@@ -420,7 +511,8 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         for inst_id in ContactInstitution.objects.filter(institution_id__in=ids, actif=True).values_list("institution_id", flat=True):
             membres[inst_id] = membres.get(inst_id, 0) + 1
         deleguees = {d.collectivite_id for d in DelegationGestion.objects.filter(collectivite_id__in=ids) if est_en_vigueur(d)}
-        from .models import InvitationCollectivite
+        from .models import InvitationCollectivite, ReferentCollectivite
+        referents = {r.institution_id: r for r in ReferentCollectivite.objects.filter(institution_id__in=ids)}
         invitees = {}
         for inv in InvitationCollectivite.objects.filter(institution_id__in=ids, actif=True).order_by("date_envoi"):
             invitees[inv.institution_id] = inv.date_relance or inv.date_envoi
@@ -430,7 +522,9 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                 return None
             return {"id": str(inst.id), "nom": inst.nom, "email": inst.email, "telephone": inst.telephone,
                     "adresse": inst.adresse, "membres": membres.get(inst.id, 0), "delegation": inst.id in deleguees,
-                    "invitee_le": invitees.get(inst.id)}
+                    "invitee_le": invitees.get(inst.id),
+                    "referent": ({"nom": r.nom, "fonction": r.fonction, "email": r.email, "telephone": r.telephone}
+                                 if (r := referents.get(inst.id)) else None)}
 
         par_epci = {}
         for c in communes:

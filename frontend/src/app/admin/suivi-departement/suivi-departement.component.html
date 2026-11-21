@@ -1,0 +1,133 @@
+<div class="page">
+  <h1><span class="material-icons" aria-hidden="true">account_tree</span> Suivi du département</h1>
+  <p class="chapeau">Chaque intercommunalité, puis chacune de ses communes : leur arrivée sur la plateforme, et l'avancement
+    de leur plan (PCS pour une commune, PICS pour une intercommunalité). L'avancement compte les parties du plan qui n'ont
+    plus rien à compléter.</p>
+
+  @if (chargement) { <p class="aide">Chargement…</p> }
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="ok" role="status">{{ message }}</p> }
+  @if (!chargement && !departements.length) {
+    <p class="aide">Aucun département suivi : une délégation départementale s'enregistre depuis
+      <a routerLink="/admin/delegations-gestion">Délégations de gestion</a>.</p>
+  }
+
+  @if (departements.length > 1) {
+    <div class="cartes">
+      @for (d of departements; track d.delegation.id) {
+        <button type="button" class="carte" [class.active]="d === choisi" (click)="choisir(d)">
+          <span class="material-icons">map</span>
+          <strong>{{ d.suivi.departement.nom }} ({{ d.suivi.departement.code }})</strong>
+          <span>{{ d.suivi.totaux.ont_rejoint }} / {{ d.suivi.totaux.communes }} communes ont rejoint</span>
+        </button>
+      }
+    </div>
+  }
+
+  @if (choisi; as d) {
+    <h2>{{ d.suivi.departement.nom }} ({{ d.suivi.departement.code }})</h2>
+    <div class="chiffres">
+      <div class="chiffre"><strong>{{ d.suivi.totaux.communes | number }}</strong><span>communes</span></div>
+      <div class="chiffre"><strong>{{ d.suivi.totaux.epcis }}</strong><span>intercommunalités</span></div>
+      <div class="chiffre ok"><strong>{{ d.suivi.totaux.ont_rejoint }}</strong><span>ont rejoint ({{ part(d.suivi.totaux.ont_rejoint, d.suivi.totaux.communes) }} %)</span></div>
+      <div class="chiffre"><strong>{{ d.suivi.totaux.invitees }}</strong><span>invitées, en attente</span></div>
+      <div class="chiffre alerte"><strong>{{ d.suivi.totaux.sans_adresse }}</strong><span>sans adresse officielle</span></div>
+    </div>
+
+    <h3>Intercommunalités</h3>
+    <div class="cartes">
+      @for (e of d.suivi.epcis; track e.code) {
+        <button type="button" class="carte" [class.active]="epciOuvert === e.code" (click)="ouvrir(e.code)"
+                [attr.aria-expanded]="epciOuvert === e.code">
+          <span class="material-icons">{{ e.code ? 'hub' : 'more_horiz' }}</span>
+          <strong>{{ e.nom }}</strong>
+          <span>{{ e.ont_rejoint }} / {{ e.communes }} communes ont rejoint</span>
+          <span class="jauge" [attr.aria-label]="part(e.ont_rejoint, e.communes) + ' %'">
+            <span class="rempli" [class]="niveau(part(e.ont_rejoint, e.communes))" [style.width.%]="part(e.ont_rejoint, e.communes)"></span>
+          </span>
+          @if (e.enrolement) { <span class="pastille" [class]="e.enrolement">Intercommunalité : {{ libelles[e.enrolement] }}</span> }
+        </button>
+      }
+    </div>
+
+    @if (epciOuvert) {
+      <section class="branche">
+        @if (chargementBranche) { <p class="aide">Calcul de l'avancement des plans…</p> }
+        @if (branche; as b) {
+          <header>
+            <h3>{{ b.nom }}</h3>
+            @if (b.pics; as pics) {
+              <div class="plan">
+                <span>PICS : {{ pics.parties_faites }} / {{ pics.parties_total }} parties</span>
+                <span class="jauge"><span class="rempli" [class]="niveau(pics.pourcentage)" [style.width.%]="pics.pourcentage"></span></span>
+                <span class="aide">{{ pics.arrete_date ? 'Arrêté le ' + (pics.arrete_date | date:'dd/MM/yyyy') : 'Pas encore arrêté' }}</span>
+              </div>
+            }
+          </header>
+          @if (b.institution; as epci) {
+            <div class="actions-epci">
+              <button type="button" class="lien" (click)="modifierCoordonnees(epci)">Coordonnées de l'intercommunalité</button>
+              @if (!epci.membres) { <button type="button" class="lien" (click)="inviterMaintenant(epci)">Inviter l'intercommunalité</button> }
+            </div>
+            @if (saisie?.institution === epci.id) { <ng-container *ngTemplateOutlet="formulaire"></ng-container> }
+          }
+          <div class="cartes communes">
+            @for (c of b.communes; track c.code) {
+              <div class="carte" [class.active]="communeOuverte === c.code">
+                <button type="button" class="entete" (click)="basculerCommune(c.code)" [attr.aria-expanded]="communeOuverte === c.code">
+                  <span class="titre"><strong>{{ c.nom }}</strong> <span class="code">{{ c.population ? (c.population | number) + ' hab.' : c.code }}</span></span>
+                  <span class="pastille" [class]="c.enrolement">{{ libelles[c.enrolement] }}</span>
+                  @if (c.pcs; as pcs) {
+                    <span>PCS : {{ pcs.pourcentage }} % ({{ pcs.parties_faites }} / {{ pcs.parties_total }})</span>
+                    <span class="jauge"><span class="rempli" [class]="niveau(pcs.pourcentage)" [style.width.%]="pcs.pourcentage"></span></span>
+                    <span class="aide">{{ pcs.arrete_date ? 'Arrêté le ' + (pcs.arrete_date | date:'dd/MM/yyyy') : 'Pas encore arrêté' }}</span>
+                  } @else {
+                    <span class="aide">Pas encore de mairie sur la plateforme.</span>
+                  }
+                </button>
+                @if (communeOuverte === c.code) {
+                  <div class="detail">
+                    @if (c.pcs; as pcs) {
+                      <span class="restantes">{{ pcs.restantes.length ? 'Reste à compléter : ' + pcs.restantes.join(', ') : 'Plan complet.' }}</span>
+                    }
+                    @if (c.mairie; as m) {
+                      <span class="coord">Officiel : {{ m.email || 'pas d\'adresse' }}{{ m.telephone ? ' · ' + m.telephone : '' }}</span>
+                      @if (m.referent; as r) {
+                        <span class="coord">Référent : {{ r.nom }}{{ r.fonction ? ' (' + r.fonction + ')' : '' }}{{ r.email ? ' · ' + r.email : '' }}{{ r.telephone ? ' · ' + r.telephone : '' }}</span>
+                      }
+                      <span class="actions">
+                        <button type="button" class="lien" (click)="modifierCoordonnees(m)">Modifier les coordonnées</button>
+                        @if (!m.membres) { <button type="button" class="lien" (click)="inviterMaintenant(m)">{{ m.invitee_le ? 'Relancer' : 'Inviter maintenant' }}</button> }
+                      </span>
+                      @if (saisie?.institution === m.id) { <ng-container *ngTemplateOutlet="formulaire"></ng-container> }
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      </section>
+    }
+  }
+</div>
+
+<ng-template #formulaire>
+  @if (saisie; as s) {
+    <div class="formulaire">
+      <p class="aide">L'invitation part à la personne référente si elle a une adresse, sinon à l'adresse officielle.</p>
+      <div class="grille">
+        <label>Courriel officiel <input type="email" [(ngModel)]="s.email"></label>
+        <label>Téléphone officiel <input type="tel" [(ngModel)]="s.telephone"></label>
+        <label>Personne référente <input type="text" [(ngModel)]="s.refNom" placeholder="Prénom Nom"></label>
+        <label>Fonction <input type="text" [(ngModel)]="s.refFonction" placeholder="Secrétaire de mairie, DGS…"></label>
+        <label>Courriel du référent <input type="email" [(ngModel)]="s.refEmail"></label>
+        <label>Téléphone du référent <input type="tel" [(ngModel)]="s.refTelephone"></label>
+      </div>
+      <span class="actions">
+        <button type="button" class="btn-primary" (click)="enregistrerCoordonnees()">Enregistrer</button>
+        <button type="button" class="lien" (click)="saisie = null">Annuler</button>
+      </span>
+    </div>
+  }
+</ng-template>

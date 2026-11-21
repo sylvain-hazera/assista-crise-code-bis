@@ -369,6 +369,15 @@ def paragraphes(compte: dict) -> list[dict]:
     ]
 
 
+#: Les parties que vérifie `_manques`, dans l'ordre du document : sert à dire « 11 parties sur 16 »
+#: (suivi départemental, 21/11/2026). Un test vérifie que chaque manque nomme une de ces parties.
+PARTIES = (
+    "Arrêté", "Organisation", "Poste de commandement", "Moyens humains", "Annuaire de crise", "Activation",
+    "Risques", "Enjeux", "Enjeux exposés", "Zones", "Alerte de la population", "Soutien de la population",
+    "Dispositifs", "Missions", "Exercices", "Mises à jour",
+)
+
+
 def _manques(c: dict, categories_presentes: set) -> list[dict]:
     """Ce que le plan ne dit pas encore, avec l'écran où le dire. L'ordre est celui du document."""
     manques = []

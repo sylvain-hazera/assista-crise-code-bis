@@ -122,3 +122,38 @@ def test_le_jeton_est_chiffre_en_base(monde):
     with connection.cursor() as cur:
         cur.execute("select jeton from core_invitationcollectivite where id=%s", [str(inv.id)])
         assert inv.jeton not in cur.fetchone()[0]
+
+
+@pytest.mark.django_db
+def test_le_referent_indique_recoit_l_invitation(monde):
+    c = _client(monde["cadre"])
+    url = reverse("delegationgestion-coordonnees", args=[monde["d"].id])
+    r = c.post(url, {"institution": str(monde["muette"].id),
+                     "referent": {"nom": "Julie Martin", "fonction": "Secrétaire de mairie", "email": "j.martin@commune.exemple"}},
+               format="json")
+    assert r.status_code == 200, r.data
+    r, envoi = _inviter(monde, monde["muette"])
+    assert r.data["envoyees"] == 1 and r.data["sans_email"] == []
+    assert envoi.call_args.kwargs["recipient_list"] == ["j.martin@commune.exemple"]
+    assert envoi.call_args.kwargs["message"].startswith("Bonjour Julie Martin,")
+
+
+@pytest.mark.django_db
+def test_corriger_les_coordonnees_officielles_et_retirer_le_referent(monde):
+    from core.models import ReferentCollectivite
+    c = _client(monde["cadre"])
+    url = reverse("delegationgestion-coordonnees", args=[monde["d"].id])
+    c.post(url, {"institution": str(monde["mairie"].id), "officiel": {"telephone": "04 77 00 00 00"},
+                 "referent": {"nom": "Paul", "email": "paul@ville.exemple"}}, format="json")
+    monde["mairie"].refresh_from_db()
+    assert monde["mairie"].telephone == "04 77 00 00 00"
+    assert ReferentCollectivite.objects.filter(institution=monde["mairie"]).exists()
+    c.post(url, {"institution": str(monde["mairie"].id), "referent": {"nom": "", "email": ""}}, format="json")
+    assert not ReferentCollectivite.objects.filter(institution=monde["mairie"]).exists()
+
+
+@pytest.mark.django_db
+def test_coordonnees_hors_territoire_refusees(monde):
+    r = _client(monde["cadre"]).post(reverse("delegationgestion-coordonnees", args=[monde["d"].id]),
+                                     {"institution": str(monde["ailleurs"].id), "referent": {"nom": "X"}}, format="json")
+    assert r.status_code == 400

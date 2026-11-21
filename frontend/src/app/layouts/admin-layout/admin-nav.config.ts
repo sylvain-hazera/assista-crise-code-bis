@@ -244,6 +244,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Qui est membre de quelle institution, par la personne.
   { icon: 'switch_account', label: 'Rattachements', route: '/admin/rattachements', groupe: 'administration' },
   { icon: 'handshake', label: 'Délégations de gestion', route: '/admin/delegations-gestion', groupe: 'administration' },
+  { icon: 'query_stats', label: 'Suivi du département', route: '/admin/suivi-departement', groupe: 'administration' },
   { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs', groupe: 'administration', visibilite: 'sysadmin' },
   // Comptes Secours en attente de validation (accountValidationGuard).
   { icon: 'how_to_reg', label: 'Validations de comptes', route: '/admin/validations-comptes', groupe: 'administration', visibilite: 'validation-comptes' },

@@ -50,7 +50,11 @@ export interface FicheArbre {
   membres: number; delegation: boolean;
   /** Dernière invitation envoyée à la collectivité (« Rejoindre votre collectivité »). */
   invitee_le?: string | null;
+  /** La personne à joindre, quand ce n'est pas l'adresse officielle. */
+  referent?: Referent | null;
 }
+
+export interface Referent { nom: string; fonction: string; email: string | null; telephone: string | null; }
 
 /** Le département, ses intercommunalités et leurs communes. */
 export interface Arborescence {
@@ -60,6 +64,27 @@ export interface Arborescence {
     communes: { code: string; nom: string; population: number | null; mairie: FicheArbre | null }[];
   }[];
   totaux: { communes: number; mairies_sur_la_plateforme: number; epcis: number };
+}
+
+/** Avancement d'un plan (PCS d'une commune, PICS d'une intercommunalité). */
+export interface Avancement {
+  parties_faites: number; parties_total: number; pourcentage: number; restantes: string[];
+  arrete_date: string | null; date_maj: string | null;
+}
+
+export type Enrolement = 'non_creee' | 'pas_d_adresse' | 'non_invitee' | 'invitee' | 'a_rejoint';
+
+/** Suivi départemental : vue d'ensemble. */
+export interface SuiviDepartement {
+  departement: { code: string; nom: string };
+  totaux: { communes: number; epcis: number; mairies_sur_la_plateforme: number; ont_rejoint: number; invitees: number; sans_adresse: number };
+  epcis: { code: string; nom: string; enrolement: Enrolement | null; communes: number; ont_rejoint: number; invitees: number; sans_adresse: number }[];
+}
+
+/** Suivi départemental : une intercommunalité dépliée. */
+export interface SuiviBranche {
+  code: string; nom: string; enrolement: Enrolement | null; pics: Avancement | null; institution: FicheArbre | null;
+  communes: { code: string; nom: string; population: number | null; enrolement: Enrolement; pcs: Avancement | null; mairie: FicheArbre | null }[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -94,6 +119,23 @@ export class DelegationGestionService {
   inviterCollectivites(id: string, institutions: string[]): Observable<{ envoyees: number; sans_email: string[]; deja_membres: number }> {
     return this.http.post<{ envoyees: number; sans_email: string[]; deja_membres: number }>(
       `${this.url}/${id}/inviter-collectivites/`, { institutions });
+  }
+
+  /** Corrige les coordonnées officielles d'une collectivité et/ou indique sa personne référente. */
+  coordonnees(id: string, institution: string, officiel: { email?: string; telephone?: string } | null,
+              referent: Referent | null): Observable<{ ok: boolean }> {
+    const corps: any = { institution };
+    if (officiel) corps.officiel = officiel;
+    if (referent) corps.referent = referent;
+    return this.http.post<{ ok: boolean }>(`${this.url}/${id}/coordonnees/`, corps);
+  }
+
+  suivi(id: string): Observable<SuiviDepartement | null> {
+    return this.http.get<SuiviDepartement | null>(`${this.url}/${id}/suivi/`);
+  }
+
+  suiviBranche(id: string, epci: string): Observable<SuiviBranche> {
+    return this.http.get<SuiviBranche>(`${this.url}/${id}/suivi/`, { params: { epci } });
   }
 
   arborescence(id: string): Observable<Arborescence | null> {

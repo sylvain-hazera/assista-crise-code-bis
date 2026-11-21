@@ -917,6 +917,17 @@ la convention, elle ne peut plus qu'exporter ses données ».
   jamais d'institution créée — et le lien d'activation mène à « Mon plan de sauvegarde ». Jeton
   chiffré retrouvé par empreinte, 30 jours, cinq comptes au plus, chaque compte signalé à l'adresse
   officielle. L'arbre affiche « invitée le… » / « a rejoint » / « pas d'adresse officielle ».
+- **Suivi du département** (`/admin/suivi-departement`, `core/suivi_departement.py`, action `suivi`) :
+  pour un comité départemental, des cartes par intercommunalité (communes qui ont rejoint,
+  invitées, sans adresse) ; déplier une carte calcule, pour chaque commune, l'enrôlement et
+  l'avancement de son PCS (parties de `document_pcs.PARTIES` sans manque, date de l'arrêté), et le
+  PICS de l'intercommunalité. Calcul branche par branche : `rassembler` lit une dizaine de tables
+  par institution.
+- **Coordonnées et personne référente** (`ReferentCollectivite`, migration `0371`, action
+  `coordonnees`) : depuis le suivi, on corrige les coordonnées officielles d'une collectivité et on
+  indique la personne à joindre (« la mairie ne répondra peut-être pas sur l'adresse par défaut,
+  mais tel salarié ciblé, dont le conseil départemental donnerait l'adresse ») ; l'invitation part
+  au référent en priorité, nommément. Données chiffrées ; référent vide = retiré.
 - Écran `/admin/delegations-gestion` (menu Administration).
 
 **Tâche Celery en double (corrigé le 21/11/2026)** : `tasks.charger_adresses_task` était défini

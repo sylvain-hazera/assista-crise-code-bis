@@ -6082,6 +6082,23 @@ class InvitationCollectivite(EnvironmentScopedModel):
                 and self.comptes_crees < self.MAX_COMPTES and self.institution.actif)
 
 
+class ReferentCollectivite(EnvironmentScopedModel):
+    """La personne à joindre dans une collectivité, quand ce n'est pas l'adresse officielle
+    (21/11/2026) : « peut-être que la mairie ne répondra pas sur l'adresse par défaut, mais tel
+    salarié ciblé, dont le conseil départemental donnerait l'adresse, lui répondrait ».
+    L'invitation « Rejoindre votre collectivité » part à cette personne en priorité. Données
+    personnelles : chiffrées."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.OneToOneField(Institution, on_delete=models.CASCADE, related_name="referent_collectivite")
+    nom = EncryptedTextField(max_length=200, blank=True, default="")
+    fonction = models.CharField(max_length=120, blank=True, default="")
+    email = EncryptedEmailField(null=True, blank=True)
+    telephone = EncryptedTextField(null=True, blank=True)
+    indique_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_maj = models.DateTimeField(auto_now=True)
+
+
 class PointType(models.Model):
 
     id = models.UUIDField(

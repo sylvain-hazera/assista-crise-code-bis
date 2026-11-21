@@ -26,26 +26,34 @@ def inviter(institution, delegation, request):
     from .branding import branding_for_institution, send_branded_mail
     from .models import ContactInstitution, InvitationCollectivite
 
+    from .models import ReferentCollectivite
+
     if ContactInstitution.objects.filter(institution=institution, actif=True).exists():
         return "deja_membre"
-    if not institution.email:
+    # La personne référente indiquée (par le conseil départemental, l'AASC) en priorité : c'est
+    # souvent elle qui répond, pas l'adresse officielle (21/11/2026).
+    referent = ReferentCollectivite.objects.filter(institution=institution).first()
+    destinataire = (referent.email if referent and referent.email else None) or institution.email
+    if not destinataire:
         return "sans_email"
     maintenant = timezone.now()
     invitation = (InvitationCollectivite.objects.filter(institution=institution, actif=True)
                   .order_by("-date_envoi").first())
     if invitation is not None and invitation.utilisable:
         invitation.date_relance = maintenant
+        invitation.email = destinataire
         invitation.date_expiration = timezone.localdate() + datetime.timedelta(days=DUREE_JOURS)
-        invitation.save(update_fields=["date_relance", "date_expiration"])
+        invitation.save(update_fields=["date_relance", "email", "date_expiration"])
     else:
         invitation = InvitationCollectivite.objects.create(
-            institution=institution, delegation=delegation, email=institution.email,
+            institution=institution, delegation=delegation, email=destinataire,
             invite_par=request.user, environment=institution.environment,
             date_expiration=timezone.localdate() + datetime.timedelta(days=DUREE_JOURS))
     aasc = delegation.aasc if delegation else None
     nom_aasc = branding_for_institution(aasc).nom_affichage if aasc else "La plateforme"
+    salutation = f"Bonjour {referent.nom}," if referent and referent.nom and destinataire == referent.email else "Bonjour,"
     message = (
-        "Bonjour,\n\n"
+        f"{salutation}\n\n"
         f"{nom_aasc} exploite la plateforme de gestion de crise pour votre département, dans le cadre "
         f"de la convention signée avec le conseil départemental. L'espace de {institution.nom} y est "
         "prêt : coordonnées officielles, risques de la commune, adresses et sites sensibles ont déjà "
@@ -58,7 +66,7 @@ def inviter(institution, delegation, request):
         "Chaque compte créé vous est signalé à cette adresse.\n\n{signature}"
     )
     send_branded_mail(request, aasc or institution, subject=f"Votre espace {institution.nom} est prêt",
-                      message=message, recipient_list=[institution.email], fail_silently=True)
+                      message=message, recipient_list=[destinataire], fail_silently=True)
     return "envoyee"
 
 
