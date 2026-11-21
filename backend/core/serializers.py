@@ -575,7 +575,7 @@ class UserSerializer(serializers.ModelSerializer):
         # secret soit signé : c'est la page du registre qui fait signer, la masquer rendrait
         # l'engagement impossible à prendre. Les fiches, elles, restent fermées jusqu'à la
         # signature (filter_personnes_vulnerables_queryset).
-        from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES, habilitation_active
+        from .vulnerabilites import _delegations_actives, habilitation_active
 
         # ADMINISTRATOR d'abord, et sans exiger de rattachement : la garde de lecture lui ouvre
         # tout indépendamment de son institution, le menu doit dire la même chose.
@@ -586,11 +586,9 @@ class UserSerializer(serializers.ModelSerializer):
             return False
         if obj.type == UserRole.LOCAL_AUTHORITY:
             return habilitation_active(obj, institution) is not None
-        return DelegationCompetence.objects.filter(
-            institution_cible=institution,
-            competence__nom=NOM_COMPETENCE_VULNERABILITES,
-            active=True,
-        ).exists()
+        # Même requête que la garde de lecture, donc date_fin comprise : une délégation échue
+        # ne doit plus faire apparaître le menu.
+        return _delegations_actives(institution).exists()
 
     class Meta:
         model = User

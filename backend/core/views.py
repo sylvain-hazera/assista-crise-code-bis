@@ -3516,6 +3516,9 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         précise, ex. un admin élargissant la zone de réponse) reste librement retirable —
         aucune protection à réinventer pour ce cas, il n'y a juste personne à protéger."""
         crise = serializer.instance
+        if not self._peut_modifier(self.request, crise):
+            raise PermissionDenied(
+                "Seules les institutions impliquées sur cette crise (ou son auteur) peuvent la modifier.")
         anciens_codes = set(crise.zone_communes)
         nouveaux_codes = serializer.validated_data.get('zone_communes')
 
@@ -3575,6 +3578,24 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         ):
             return Response(status=403)
         return FileResponse(open(crise.photo.path, "rb"))
+
+    def _peut_modifier(self, request, crise) -> bool:
+        """Qui peut modifier une crise (21/11/2026) : n'importe quel acteur institutionnel le
+        pouvait, y compris une institution étrangère à la crise. Désormais l'administrateur,
+        l'auteur, le responsable d'une implication, ou un membre d'une institution impliquée
+        (acteur ou concernée) dont l'implication est validée."""
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
+            return True
+        user = request.user
+        if crise.author_id and crise.author_id == user.id:
+            return True
+        implications = crise.implications.filter(actif=True)
+        if implications.filter(responsable=user).exists():
+            return True
+        for implication in implications.filter(statut=StatutImplication.VALIDEE).select_related("institution"):
+            if _appartient_a_institution(request, implication.institution):
+                return True
+        return False
 
     def _peut_cloturer(self, request, crise) -> bool:
         return (crise.implications.filter(responsable=request.user, actif=True).exists()
@@ -6695,9 +6716,12 @@ class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = _filter_actif(self.request, super().get_queryset())
+        # `?institution=` RESTREINT, il n'élargit jamais (21/11/2026) : il court-circuitait le
+        # filtre, et tout acteur institutionnel pouvait alors lire, modifier ou supprimer le
+        # plan ou le découpage d'une autre institution.
         institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
         if institution_ids:
-            return qs.filter(institution_id__in=institution_ids)
+            qs = qs.filter(institution_id__in=institution_ids)
         if admin_sans_filtre(self.request, self):
             return qs
         # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
@@ -6813,6 +6837,10 @@ class InterlocuteurAlertePCSViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
     def perform_create(self, serializer):
         institution_id = self.request.data.get('institution')
         institution = Institution.objects.filter(pk=institution_id).first() if institution_id else None
+        # L'institution du payload n'était pas vérifiée (21/11/2026) : on pouvait inscrire un
+        # interlocuteur dans l'annuaire de n'importe quelle collectivité.
+        if institution is not None and not _appartient_a_institution(self.request, institution):
+            raise PermissionDenied("Vous ne pouvez compléter que l'annuaire de votre institution.")
         if institution is None:
             institution = _resolve_institution_or_400(self.request)
         # Annuaire PCS/PICS -- réservé aux collectivités (même critère que ZoneViewSet/
@@ -9152,9 +9180,12 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = _filter_actif(self.request, super().get_queryset())
+        # `?institution=` RESTREINT, il n'élargit jamais (21/11/2026) : il court-circuitait le
+        # filtre, et tout acteur institutionnel pouvait alors lire, modifier ou supprimer le
+        # plan ou le découpage d'une autre institution.
         institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
         if institution_ids:
-            return qs.filter(institution_id__in=institution_ids)
+            qs = qs.filter(institution_id__in=institution_ids)
         if admin_sans_filtre(self.request, self):
             return qs
         # Ses rattachements actifs ; pour un administrateur, l'institution qu'il regarde.
@@ -9497,7 +9528,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # l'institution du créateur si aucune n'est explicitement fournie — pas d'erreur si le
         # créateur lui-même n'en a pas (compte encore non rattaché), l'équipe reste alors sans
         # institution comme avant ce changement, plutôt que de bloquer sa création.
-        institution = serializer.validated_data.get('institution') or getattr(self.request.user, 'institution', None)
+        demandee = serializer.validated_data.get('institution')
+        # L'institution du payload n'était pas vérifiée (21/11/2026) : on pouvait créer une
+        # équipe chez n'importe quelle institution, et y entrer par ses salons.
+        if demandee is not None and not _appartient_a_institution(self.request, demandee):
+            raise PermissionDenied("Vous ne pouvez créer une équipe que pour votre institution.")
+        institution = demandee or getattr(self.request.user, 'institution', None)
         team = serializer.save(environment=get_active_environment(self.request), institution=institution)
         if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
             _synchroniser_competences_des_domaines(team, [])
@@ -16503,6 +16539,21 @@ class AffectationRoleOperationnelViewSet(
 class DelegationCompetenceViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
+    """Délégations de compétence : sur une crise, ou « convention » de longue durée (sans crise).
+
+    Durci le 21/11/2026. Seul le rôle était vérifié : tout compte d'institution pouvait créer une
+    délégation au nom de n'importe quelle mairie vers sa propre institution, sans crise et sans
+    secteur — avec la compétence « Recensement personnes vulnérables », il lisait le registre de
+    toutes les communes. La liste entière était lisible par tout compte connecté, et n'importe
+    quelle délégation modifiable ou supprimable. Règles désormais :
+      - on ne voit que les délégations dont son institution est la source ou la cible ;
+      - on ne délègue qu'au nom d'une institution dont on est membre ;
+      - on ne délègue que son propre territoire (« je ne donne pas les droits sur une commune sur
+        laquelle je n'ai pas les droits ») ; hors crise, les communes ou départements sont
+        obligatoires ;
+      - le registre des personnes vulnérables ne se délègue que par la collectivité de la
+        commune, par un compte d'autorité locale — l'administrateur n'est pas exempté, il n'est
+        pas responsable de traitement."""
 
     queryset = (
         DelegationCompetence.objects.all()
@@ -16519,7 +16570,82 @@ class DelegationCompetenceViewSet(
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("institution_source", "institution_cible", "competence")
+        if admin_sans_filtre(self.request, self):
+            return qs
+        mes_institutions = institutions_visibles(self.request)
+        return qs.filter(
+            Q(institution_source_id__in=mes_institutions) | Q(institution_cible_id__in=mes_institutions)
+        )
+
+    def _verifier(self, source, competence, crise, communes, departements, zone_precise):
+        from .habitations import _institution_couvre_commune, _institution_couvre_departement
+        from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES
+
+        request = self.request
+        role = get_effective_role(request)
+        est_admin = role == UserRole.ADMINISTRATOR
+        registre = competence is not None and competence.nom == NOM_COMPETENCE_VULNERABILITES
+
+        if registre:
+            if role != UserRole.LOCAL_AUTHORITY or not _appartient_a_institution(request, source) or est_admin:
+                raise PermissionDenied(
+                    "Le registre des personnes vulnérables ne se délègue que par la collectivité "
+                    "de la commune, depuis un compte d'autorité locale.")
+            if not _institution_est_autorite_locale(source):
+                raise ValidationError({"institution_source": (
+                    "Seule une collectivité (mairie, intercommunalité) peut déléguer son registre.")})
+        elif not est_admin and not _appartient_a_institution(request, source):
+            raise PermissionDenied(
+                "Vous ne pouvez déléguer qu'au nom d'une institution dont vous êtes membre.")
+
+        communes = [c for c in (communes or []) if c]
+        departements = [d for d in (departements or []) if d]
+        if crise is None and not communes and not departements:
+            raise ValidationError({"communes": (
+                "Hors crise, précisez les communes ou les départements délégués.")})
+        hors = [c for c in communes if not _institution_couvre_commune(source, c)]
+        hors += [d for d in departements if not _institution_couvre_departement(source, d)]
+        if hors:
+            raise ValidationError({"communes": (
+                "Hors du territoire de l'institution qui délègue : " + ", ".join(hors)
+                + ". On ne délègue que son propre territoire.")})
+        if crise is not None and not communes and not departements and zone_precise is None:
+            non_couvertes = [c for c in (crise.zone_communes or []) if not _institution_couvre_commune(source, c)]
+            if non_couvertes or (crise.zone_departements or []):
+                raise ValidationError({"communes": (
+                    "La crise déborde du territoire de l'institution qui délègue : précisez les "
+                    "communes déléguées.")})
+
+    def perform_create(self, serializer):
+        d = serializer.validated_data
+        self._verifier(d.get("institution_source"), d.get("competence"), d.get("crise"),
+                       d.get("communes"), d.get("departements"), d.get("zone_precise"))
+        delegation = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="DELEGATION_COMPETENCE",
+            objet_type="DelegationCompetence",
+            objet_id=delegation.id,
+            crise=delegation.crise,
+            commentaire=(
+                f"{delegation.institution_source}"
+                f" -> "
+                f"{delegation.institution_cible}"
+            )
+        )
+
     def perform_update(self, serializer):
+        instance = serializer.instance
+        # On doit pouvoir gérer la délégation telle qu'elle est ET telle qu'elle deviendra.
+        self._verifier(instance.institution_source, instance.competence, instance.crise,
+                       instance.communes, instance.departements, instance.zone_precise)
+        d = serializer.validated_data
+        def valeur(champ):
+            return d[champ] if champ in d else getattr(instance, champ)
+        self._verifier(valeur("institution_source"), valeur("competence"), valeur("crise"),
+                       valeur("communes"), valeur("departements"), valeur("zone_precise"))
         delegation = serializer.save()
         audit_log(
             request=self.request,
@@ -16533,25 +16659,21 @@ class DelegationCompetenceViewSet(
             )
         )
 
-    def perform_create(
-        self,
-        serializer
-    ):
-
-        delegation = serializer.save(environment=get_active_environment(self.request))
-
+    def perform_destroy(self, instance):
+        self._verifier(instance.institution_source, instance.competence, instance.crise,
+                       instance.communes, instance.departements, instance.zone_precise)
         audit_log(
             request=self.request,
             action_code="DELEGATION_COMPETENCE",
             objet_type="DelegationCompetence",
-            objet_id=delegation.id,
-            crise=delegation.crise,
+            objet_id=instance.id,
+            crise=instance.crise,
             commentaire=(
-                f"{delegation.institution_source}"
-                f" -> "
-                f"{delegation.institution_cible}"
+                f"Suppression délégation {instance.institution_source} -> {instance.institution_cible}"
+                f" ({instance.competence})"
             )
         )
+        instance.delete()
 
 # Les quatre créneaux dans l'ordre de la journée, et la construction de la grille, vivent
 # désormais dans `core/grille_disponibilites.py` : l'action assemblait cinq tables dans le

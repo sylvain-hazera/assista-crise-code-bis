@@ -36,10 +36,16 @@ def _delegation_couvre_commune(delegation: DelegationCompetence, commune_code: s
     if delegation.departements and _departement_code(commune_code) in delegation.departements:
         return True
     if not delegation.communes and not delegation.departements and delegation.zone_precise is None:
-        # Aucune restriction posée sur la délégation = toute la crise associée (cohérent avec
-        # le commentaire du modèle : "la mairie peut déléguer une compétence sur toute la
-        # crise, ou la restreindre").
-        return True
+        # Aucune restriction posée = toute la crise associée (« la mairie peut déléguer une
+        # compétence sur toute la crise, ou la restreindre »). SANS crise, ce n'était plus
+        # « toute la crise » mais tout le pays : une délégation hors crise sans secteur ouvrait
+        # le registre de toutes les communes (constaté le 21/11/2026). Elle ne couvre plus que
+        # le territoire de l'institution qui délègue.
+        if delegation.crise_id:
+            crise = delegation.crise
+            return (commune_code in (crise.zone_communes or [])
+                    or _departement_code(commune_code) in (crise.zone_departements or []))
+        return _institution_couvre_commune(delegation.institution_source, commune_code)
     if delegation.zone_precise is not None:
         from .models import Commune
         commune = Commune.objects.filter(code=commune_code).first()
@@ -70,6 +76,22 @@ def _institution_couvre_commune(institution, commune_code: str) -> bool:
         return False
     code_institution = getattr(institution, champ, None)
     return bool(code_institution) and code_institution == secteurs.get(champ)
+
+
+def _institution_couvre_departement(institution, departement_code: str) -> bool:
+    """Vrai si le département entier tombe dans le secteur de l'institution : national, ce
+    département, ou la région qui le contient. Une commune ou un EPCI ne couvre jamais un
+    département entier."""
+    niveau = institution.secteur_niveau_effectif
+    if niveau == "national":
+        return True
+    if niveau == "departement":
+        return bool(institution.departement_code) and institution.departement_code == departement_code
+    if niveau == "region" and institution.region_code:
+        from .models import Commune
+        return Commune.objects.filter(
+            departement_code=departement_code, region_code=institution.region_code).exists()
+    return False
 
 
 def peut_simuler_commune(request, commune_code: str) -> bool:

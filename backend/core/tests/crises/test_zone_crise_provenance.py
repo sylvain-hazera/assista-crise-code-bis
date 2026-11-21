@@ -49,6 +49,13 @@ def user_mairie_b(create_user, mairie_b):
 
 
 @pytest.fixture
+def mairie_a_impliquee(crisis, mairie_a):
+    """Depuis le 21/11/2026, seule une institution impliquée (validée) peut modifier la crise."""
+    return ImplicationInstitution.objects.create(
+        crise=crisis, institution=mairie_a, type_implication="ACTEUR", statut="VALIDEE", actif=True)
+
+
+@pytest.fixture
 def admin_user(create_user):
     return create_user(username="admin-zone@test.fr", email="admin-zone@test.fr", type="ADMIN")
 
@@ -143,7 +150,7 @@ class TestProtectionRetraitZone:
     def _url(self, crisis):
         return reverse('crisis-detail', args=[crisis.id])
 
-    def test_ne_peut_pas_retirer_la_contribution_dune_autre_collectivite(self, user_mairie_a, mairie_a, mairie_b, crisis):
+    def test_ne_peut_pas_retirer_la_contribution_dune_autre_collectivite(self, user_mairie_a, mairie_a_impliquee, mairie_a, mairie_b, crisis):
         crisis.zone_communes = ["33390", "33200"]
         crisis.save(update_fields=['zone_communes'])
         ContributionZoneCommune.objects.create(crise=crisis, commune_code="33200", institution=mairie_b)
@@ -156,7 +163,7 @@ class TestProtectionRetraitZone:
         crisis.refresh_from_db()
         assert "33200" in crisis.zone_communes
 
-    def test_peut_retirer_sa_propre_contribution(self, user_mairie_a, mairie_a, crisis):
+    def test_peut_retirer_sa_propre_contribution(self, user_mairie_a, mairie_a_impliquee, mairie_a, crisis):
         crisis.zone_communes = ["33390"]
         crisis.save(update_fields=['zone_communes'])
         ContributionZoneCommune.objects.create(crise=crisis, commune_code="33390", institution=mairie_a)
@@ -170,7 +177,7 @@ class TestProtectionRetraitZone:
         assert crisis.zone_communes == []
         assert not ContributionZoneCommune.objects.filter(crise=crisis, commune_code="33390").exists()
 
-    def test_peut_retirer_une_commune_sans_proprietaire_trace(self, user_mairie_a, crisis):
+    def test_peut_retirer_une_commune_sans_proprietaire_trace(self, user_mairie_a, mairie_a_impliquee, crisis):
         crisis.zone_communes = ["12345"]
         crisis.save(update_fields=['zone_communes'])
         # Pas de ContributionZoneCommune pour "12345" — jamais tracée, librement retirable.
@@ -190,7 +197,7 @@ class TestProtectionRetraitZone:
         response = client.patch(self._url(crisis), {"zone_communes": []}, format='json')
         assert response.status_code == status.HTTP_200_OK, response.data
 
-    def test_ajout_manuel_de_sa_propre_commune_trace_la_provenance(self, user_mairie_a, mairie_a, crisis):
+    def test_ajout_manuel_de_sa_propre_commune_trace_la_provenance(self, user_mairie_a, mairie_a_impliquee, mairie_a, crisis):
         client = APIClient()
         client.force_authenticate(user=user_mairie_a)
         response = client.patch(self._url(crisis), {"zone_communes": ["33390"]}, format='json')
@@ -198,7 +205,7 @@ class TestProtectionRetraitZone:
         contribution = ContributionZoneCommune.objects.get(crise=crisis, commune_code="33390")
         assert contribution.institution == mairie_a
 
-    def test_ajout_manuel_dune_commune_tierce_ne_trace_aucun_proprietaire(self, user_mairie_a, crisis):
+    def test_ajout_manuel_dune_commune_tierce_ne_trace_aucun_proprietaire(self, user_mairie_a, mairie_a_impliquee, crisis):
         client = APIClient()
         client.force_authenticate(user=user_mairie_a)
         response = client.patch(self._url(crisis), {"zone_communes": ["99999"]}, format='json')

@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 
 from core.models import (
     Competence,
+    ContactInstitution,
     Crisis,
     DelegationCompetence,
     ImplicationInstitution,
@@ -20,8 +21,12 @@ def crisis(db):
 
 @pytest.fixture
 def mairie(db):
+    # Un territoire est nécessaire depuis le 21/11/2026 : on ne délègue que le sien. Secteur
+    # départemental (Isère), pour pouvoir déléguer une commune ou le département entier.
     itype = InstitutionType.objects.create(code="MAIRIE_DELEG_SECTEUR_TEST", libelle="Mairie")
-    return Institution.objects.create(nom="Mairie delegation secteur test", type=itype)
+    return Institution.objects.create(
+        nom="Mairie delegation secteur test", type=itype, commune_code="38185",
+        departement_code="38", secteur_override="departement")
 
 
 @pytest.fixture
@@ -45,6 +50,8 @@ def competence(db):
 @pytest.fixture
 def mairie_client(create_user, crisis, mairie):
     user = create_user(username="mairie-deleg-secteur@test.fr", email="mairie-deleg-secteur@test.fr", type="AUT_LOCALE")
+    # On ne délègue qu'au nom d'une institution dont on est membre (21/11/2026).
+    ContactInstitution.objects.create(institution=mairie, utilisateur=user, actif=True)
     ImplicationInstitution.objects.create(
         crise=crisis, institution=mairie, type_implication="ACTEUR",
         responsable=user, actif=True,
@@ -64,12 +71,12 @@ class TestDelegationCompetenceSecteur:
             {
                 "institution_source": str(mairie.id), "institution_cible": str(association.id),
                 "competence": str(competence.id), "crise": str(crisis.id),
-                "departements": ["38", "73"],
+                "departements": ["38"],
             },
             format='json',
         )
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["departements"] == ["38", "73"]
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data["departements"] == ["38"]
 
     def test_create_with_communes(self, mairie_client, crisis, mairie, association, competence):
         client, _ = mairie_client

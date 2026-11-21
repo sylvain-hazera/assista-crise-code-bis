@@ -276,12 +276,51 @@ def filter_personnes_vulnerables_queryset(request, queryset):
     ):
         filtre |= Q(commune_code=institution.commune_code)
 
-    for d in _delegations_actives(institution):
-        if not d.communes and not d.departements and d.zone_precise is None:
-            return queryset  # délégation sans restriction = accès à tout (rare)
-        if d.communes:
-            filtre |= Q(commune_code__in=d.communes)
-        for dep in d.departements or []:
-            filtre |= Q(commune_code__startswith=dep)
+    for d in _delegations_actives(institution).select_related("crise", "institution_source"):
+        filtre |= _q_lecture_delegation(d)
 
     return queryset.filter(filtre)
+
+
+def _q_lecture_delegation(d):
+    """Ce qu'une délégation ouvre en LECTURE, aligné sur l'écriture (`_delegation_couvre_commune`).
+
+    Deux écarts corrigés le 21/11/2026 : une délégation sans secteur ouvrait tout le registre
+    (« return queryset ») — sans crise, cela voulait dire toutes les communes du pays ; et un
+    secteur dessiné seul (`zone_precise`) autorisait l'écriture mais rien en lecture."""
+    filtre = Q(pk__in=[])
+    if d.communes:
+        filtre |= Q(commune_code__in=d.communes)
+    for dep in d.departements or []:
+        filtre |= Q(commune_code__startswith=dep)
+    if d.communes or d.departements:
+        return filtre
+    # Pas de liste : la crise entière, ou le territoire de la source, éventuellement réduit au
+    # secteur dessiné.
+    from .habitations import _delegation_couvre_commune
+    candidates = _communes_candidates(d)
+    return Q(commune_code__in=[c for c in candidates if _delegation_couvre_commune(d, c)])
+
+
+def _communes_candidates(d) -> list:
+    """Communes à tester pour une délégation sans liste : celles de la crise, sinon celles du
+    secteur de l'institution qui délègue (une commune, ou les communes de son EPCI, de son
+    département, de sa région)."""
+    from .models import Commune
+    if d.crise_id:
+        codes = set(d.crise.zone_communes or [])
+        deps = d.crise.zone_departements or []
+        if deps:
+            codes.update(Commune.objects.filter(departement_code__in=deps).values_list("code", flat=True))
+        return sorted(codes)
+    source = d.institution_source
+    niveau = source.secteur_niveau_effectif or "commune"
+    if niveau == "commune":
+        return [source.commune_code] if source.commune_code else []
+    if niveau == "national":
+        return []  # jamais « tout le pays » sans liste explicite
+    champ = {"epci": "epci_code", "departement": "departement_code", "region": "region_code"}.get(niveau)
+    code = getattr(source, champ, None) if champ else None
+    if not code:
+        return []
+    return list(Commune.objects.filter(**{champ: code}).values_list("code", flat=True))
