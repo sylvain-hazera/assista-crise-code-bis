@@ -143,10 +143,25 @@
             </span>
           </label>
 
+          <div class="large competences">
+            <span class="titre-champ">Ce que je sais faire</span>
+            <p class="aide">
+              Les mêmes compétences que dans « Proposer mon aide ». C'est sur elles que votre
+              encadrement vous retrouve quand une mission ou une campagne demande un savoir-faire
+              (pompage, logistique, accueil…). Les diplômes et permis, eux, se déposent dans
+              « Mes justificatifs ».
+            </p>
+            @if (!competences.length) {
+              <p class="a-completer"><span class="material-icons" aria-hidden="true">priority_high</span>
+                Aucune compétence indiquée : vous ne serez proposé sur aucune mission qui en demande une.</p>
+            }
+            <app-competences-arbre [selection]="competences" (selectionChange)="competences = $event"></app-competences-arbre>
+          </div>
+
           <label class="large">
             <span>Ce que vous souhaitez faire savoir</span>
             <textarea name="message" rows="4" [(ngModel)]="saisie.message"
-                      placeholder="Compétences, contraintes, moyens dont vous disposez…"></textarea>
+                      placeholder="Contraintes, moyens dont vous disposez, précisions…"></textarea>
           </label>
 
           <div class="actions">

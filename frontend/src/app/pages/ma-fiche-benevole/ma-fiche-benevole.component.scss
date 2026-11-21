@@ -484,3 +484,24 @@ label {
     color: var(--ac-green-text, #166534);
   }
 }
+
+// « Ce que je sais faire » : l'arbre des compétences, sur toute la largeur du formulaire.
+.competences {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  .titre-champ { font-size: 0.85rem; font-weight: 600; color: var(--ac-text, #333); }
+
+  .a-completer {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--ac-orange-text, #e65100);
+    .material-icons { font-size: 1.05rem; }
+  }
+}

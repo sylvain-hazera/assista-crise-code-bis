@@ -1,0 +1,50 @@
+<div class="theme-dropdown">
+  <button type="button" class="theme-dropdown-toggle" (click)="ouvert = !ouvert" [attr.aria-expanded]="ouvert">
+    <span class="material-icons" aria-hidden="true">{{ ouvert ? 'expand_less' : 'expand_more' }}</span>
+    {{ selection.length > 0 ? (selection.length + ' compétence(s) sélectionnée(s)') : 'Choisir des compétences' }}
+  </button>
+  @if (ouvert) {
+    <div class="theme-dropdown-panel">
+      @for (g of groupes; track g.parent.id) {
+        <div class="theme-check-item theme-parent-item">
+          @if (g.children.length > 0) {
+            <button type="button" class="theme-group-expand-btn" (click)="basculerDeplie(g.parent.id)"
+                    [attr.aria-label]="estDeplie(g.parent.id) ? 'Replier' : 'Déplier'">
+              <span class="material-icons">{{ estDeplie(g.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
+            </button>
+          }
+          <label class="checkbox-label">
+            <input type="checkbox" class="form-checkbox"
+                   [checked]="etat(g) === 'all'" [indeterminate]="etat(g) === 'some'"
+                   (change)="basculerGroupe(g)">
+            <span class="checkbox-text">{{ g.parent.nom }}</span>
+          </label>
+        </div>
+        @if (g.children.length > 0 && estDeplie(g.parent.id)) {
+          @for (c of g.children; track c.id) {
+            <label class="checkbox-label theme-check-item theme-child-item">
+              <input type="checkbox" class="form-checkbox" [checked]="estCoche(c.id)" (change)="basculer(c)">
+              <span class="checkbox-text">{{ c.nom }}</span>
+            </label>
+          }
+        }
+      }
+      @if (catalogue.length === 0) {
+        <p class="theme-empty">Aucune compétence définie.</p>
+      }
+      <div class="theme-check-item">
+        <button type="button" class="btn-link-invite" (click)="autre = !autre">Autre (préciser)…</button>
+      </div>
+    </div>
+  }
+</div>
+@if (autre) {
+  <app-tag-search-input placeholder="Chercher ou créer une compétence..."
+                        [searchFn]="chercher" [createFn]="creer" (itemSelected)="ajouter($event)">
+  </app-tag-search-input>
+}
+<div class="chip-list">
+  @for (c of selection; track c.id) {
+    <span class="chip">{{ c.nom }}<button type="button" (click)="retirer(c.id)" [attr.aria-label]="'Retirer ' + c.nom">×</button></span>
+  }
+</div>

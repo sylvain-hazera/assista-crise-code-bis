@@ -714,67 +714,8 @@
                   Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
                   utile pour être recruté sur les besoins qui vous correspondent.
                   </p>
-                  <div class="theme-dropdown">
-                      <button type="button" class="theme-dropdown-toggle" (click)="competencesDropdownOpen = !competencesDropdownOpen">
-                          <span class="material-icons">{{ competencesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
-                          {{ selectedCompetences.length > 0 ? (selectedCompetences.length + ' compétence(s) sélectionnée(s)') : 'Choisir des compétences' }}
-                      </button>
-                      @if (competencesDropdownOpen) {
-                          <div class="theme-dropdown-panel">
-                              @for (group of competenceGroups; track group.parent.id) {
-                                  <div class="theme-check-item theme-parent-item">
-                                      @if (group.children.length > 0) {
-                                          <button type="button" class="theme-group-expand-btn" (click)="toggleCompetenceGroupExpand(group.parent.id)"
-                                                  [attr.aria-label]="isCompetenceGroupExpanded(group.parent.id) ? 'Replier' : 'Déplier'">
-                                              <span class="material-icons">{{ isCompetenceGroupExpanded(group.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
-                                          </button>
-                                      }
-                                      <label class="checkbox-label">
-                                          <input type="checkbox" class="form-checkbox"
-                                                 [checked]="competenceGroupState(group) === 'all'"
-                                                 [indeterminate]="competenceGroupState(group) === 'some'"
-                                                 (change)="toggleCompetenceGroupChecked(group)">
-                                          <span class="checkbox-text">{{ group.parent.nom }}</span>
-                                      </label>
-                                  </div>
-                                  @if (group.children.length > 0 && isCompetenceGroupExpanded(group.parent.id)) {
-                                      @for (child of group.children; track child.id) {
-                                          <label class="checkbox-label theme-check-item theme-child-item">
-                                              <input type="checkbox" class="form-checkbox"
-                                                     [checked]="isCompetenceChecked(child.id)"
-                                                     (change)="toggleCompetenceChecked(child)">
-                                              <span class="checkbox-text">{{ child.nom }}</span>
-                                          </label>
-                                      }
-                                  }
-                              }
-                              @if (allCompetences.length === 0) {
-                                  <p class="theme-empty">Aucune compétence définie.</p>
-                              }
-                              <div class="theme-check-item">
-                                  <button type="button" class="btn-link-invite" (click)="showCompetenceAutre = !showCompetenceAutre">
-                                      Autre (préciser)…
-                                  </button>
-                              </div>
-                          </div>
-                      }
-                  </div>
-                  @if (showCompetenceAutre) {
-                    <app-tag-search-input
-                      placeholder="Chercher ou créer une compétence..."
-                      [searchFn]="competenceSearchFn"
-                      [createFn]="competenceCreateFn"
-                      (itemSelected)="onCompetenceSelected($event)">
-                    </app-tag-search-input>
-                  }
-                  <div class="chip-list">
-                    @for (c of selectedCompetences; track c.id) {
-                      <span class="chip">
-                        {{ c.nom }}
-                        <button type="button" (click)="removeCompetence(c.id)">×</button>
-                      </span>
-                    }
-                  </div>
+                  <app-competences-arbre [selection]="selectedCompetences"
+                                         (selectionChange)="selectedCompetences = $event"></app-competences-arbre>
               </div>
 
               <!-- Disponibilités sur les 8 prochains jours -->

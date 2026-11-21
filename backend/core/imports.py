@@ -28,7 +28,7 @@ CHAMPS_BENEVOLES = [
     "prenom", "nom", "email", "telephone",
     "adresse", "code_postal", "ville",
     "metier", "situation", "disponibilite", "date_naissance",
-    "diplome_premier_secours", "message", "date_adhesion",
+    "diplome_premier_secours", "message", "date_adhesion", "competences",
 ]
 
 LABELS_BENEVOLES = {
@@ -46,6 +46,7 @@ LABELS_BENEVOLES = {
     "diplome_premier_secours": "Diplôme de premier secours déclaré (oui/non)",
     "message": "Message laissé à l'adhésion",
     "date_adhesion": "Date d'adhésion",
+    "competences": "Compétences (noms du catalogue, séparés par « ; »)",
 }
 
 #: RACINES cherchées dans le texte normalisé, et non valeurs exactes. Les formulaires écrivent
@@ -860,9 +861,12 @@ def importer_benevoles_association(request, institution, lignes, mapping,
     from .fiches_benevoles import (
         departement_de_la_fiche, geolocaliser_fiche, ressource_du_benevole,
     )
-    from .institution_attachment import _affecter_role
+    import re
+
+    from .institution_attachment import _affecter_role, nom_comparable
     from .models import (
-        ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User, UserRole,
+        Competence, ContactInstitution, EchelonEquipe, Environment, FicheBenevole, Team, User,
+        UserRole,
     )
     from .permissions import get_active_environment
     from .views import send_benevole_account_email
@@ -976,6 +980,20 @@ def importer_benevoles_association(request, institution, lignes, mapping,
                 erreurs.append({"ligne": numero,
                                 "message": f"Adresse non géolocalisée : {motif_geo}"})
         fiche.save()
+
+        # Compétences : rapprochées du catalogue par leur nom (sans accents ni casse). Une
+        # compétence inconnue n'est JAMAIS créée en douce — le catalogue est partagé par toute
+        # la plateforme — mais signalée, pour que le bureau la corrige ou l'ajoute.
+        noms = [n.strip() for n in re.split(r"[;,]", _valeur(ligne, mapping, "competences") or "") if n.strip()]
+        if noms:
+            catalogue = {nom_comparable(c.nom): c for c in Competence.objects.filter(active=True)}
+            trouvees = [catalogue[nom_comparable(n)] for n in noms if nom_comparable(n) in catalogue]
+            inconnues = [n for n in noms if nom_comparable(n) not in catalogue]
+            if trouvees:
+                fiche.competences.add(*trouvees)
+            if inconnues:
+                erreurs.append({"ligne": numero, "message": "Compétence(s) absente(s) du catalogue, "
+                                                            "non reprise(s) : " + ", ".join(inconnues)})
 
         # La RESSOURCE : une offre « Bénévolat » INTERNE à l'association. C'est elle qui porte
         # les créneaux de disponibilité (DisponibiliteOffre), donc c'est elle qui fait entrer

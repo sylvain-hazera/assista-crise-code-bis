@@ -98,6 +98,18 @@ describe('MaFicheBenevoleComponent', () => {
     requete.flush(FICHE);
   });
 
+  it('reprend les compétences enregistrées et envoie celles choisies dans l\'arbre', () => {
+    const pompage = { id: 'c2', nom: 'Pompage', parent: 'c1', active: true };
+    charger({ ...FICHE, competences_detail: [pompage] });
+    expect(composant.competences.map(c => c.nom)).toEqual(['Pompage']);
+
+    composant.competences = [pompage, { id: 'c3', nom: 'Logistique', parent: null, active: true }];
+    composant.enregistrer();
+    const requete = http.expectOne(r => r.url === `${api}/ma-fiche-benevole/` && r.method === 'PATCH');
+    expect(requete.request.body.competences).toEqual(['c2', 'c3']);
+    requete.flush(FICHE);
+  });
+
   it('remonte l\'avertissement quand l\'adresse n\'a pas pu être géolocalisée', () => {
     charger();
     composant.saisie.adresse = '99 rue introuvable';

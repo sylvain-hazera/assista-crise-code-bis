@@ -1,3 +1,5 @@
+import { CompetencesArbreComponent } from '../../shared/components/common/competences-arbre/competences-arbre.component';
+import { Competence } from '../../shared/models/competence.model';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
@@ -41,7 +43,7 @@ import {
 @Component({
   selector: 'app-ma-fiche-benevole',
   standalone: true,
-  imports: [CommonModule, FormsModule, MesJustificatifsComponent],
+  imports: [CommonModule, FormsModule, MesJustificatifsComponent, CompetencesArbreComponent],
   templateUrl: './ma-fiche-benevole.component.html',
   styleUrl: './ma-fiche-benevole.component.scss',
 })
@@ -159,7 +161,11 @@ export class MaFicheBenevoleComponent implements OnInit {
       message: fiche.message ?? '',
       diplome_premier_secours: !!fiche.diplome_premier_secours,
     };
+    this.competences = [...(fiche.competences_detail ?? [])];
   }
+
+  /** Ce que la personne sait faire (arbre partagé avec « Proposer mon aide »). */
+  competences: Competence[] = [];
 
   /** Vrai quand l'adresse saisie diffère de celle enregistrée : l'écran annonce alors le
    * regéocodage, qui peut changer d'équipe départementale. Une personne doit savoir qu'en
@@ -184,6 +190,7 @@ export class MaFicheBenevoleComponent implements OnInit {
     const corps: Partial<FicheBenevole> = {
       ...this.saisie,
       date_naissance: this.saisie.date_naissance || null,
+      competences: this.competences.map(c => c.id),
     };
     this.ficheService.enregistrer(corps).subscribe({
       next: (fiche) => {

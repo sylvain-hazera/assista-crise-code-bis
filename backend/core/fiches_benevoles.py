@@ -132,6 +132,9 @@ def ressource_du_benevole(fiche, institution):
     offre.departement_code = fiche.departement_code
     offre.region_code = fiche.region_code
     offre.save()
+    # Les compétences de la fiche, telles quelles : c'est sur la ressource que tournent le
+    # ciblage des campagnes (ciblage_benevoles) et le rapprochement avec les points.
+    offre.competences.set(fiche.competences.all())
     return offre, creee
 
 

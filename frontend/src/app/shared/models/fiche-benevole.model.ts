@@ -1,3 +1,5 @@
+import { Competence } from './competence.model';
+
 /** Fiche d'un bénévole d'association.
  *
  * Alignée sur le modèle des ressources (`Offer`, `Habitation`) : adresse texte, point géocodé,
@@ -37,6 +39,11 @@ export interface FicheBenevole {
    * son justificatif : les confondre ferait passer une case cochée pour un diplôme contrôlé. */
   diplome_premier_secours: boolean;
   date_adhesion: string | null;
+  /** Ce que la personne sait faire : le même arbre que « Proposer mon aide ». En écriture, des
+   * identifiants ; en lecture, aussi le détail pour cocher les cases sans recharger. */
+  competences?: string[];
+  competences_libelles?: string[];
+  competences_detail?: Competence[];
 
   /** Nul tant que la personne n'a pas relu sa fiche. */
   completee_le: string | null;

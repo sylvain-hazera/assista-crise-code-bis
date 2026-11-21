@@ -6034,6 +6034,12 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
     est_complete = serializers.BooleanField(read_only=True)
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    # Même catalogue que « Proposer mon aide » ; seules les compétences actives se choisissent.
+    competences = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, queryset=Competence.objects.filter(active=True))
+    competences_libelles = serializers.SerializerMethodField()
+    # Pour que l'écran affiche les cases cochées sans recharger le catalogue à part.
+    competences_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = FicheBenevole
@@ -6043,6 +6049,7 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
                   'date_naissance', 'metier', 'situation', 'situation_libelle',
                   'frequence_engagement', 'frequence_engagement_libelle', 'message',
                   'diplome_premier_secours', 'date_adhesion', 'completee_le',
+                  'competences', 'competences_libelles', 'competences_detail',
                   'est_complete', 'date_modification']
         read_only_fields = ['id', 'utilisateur', 'latitude', 'longitude',
                             'commune_code', 'epci_code', 'departement_code', 'region_code',
@@ -6053,6 +6060,13 @@ class FicheBenevoleSerializer(serializers.ModelSerializer):
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_competences_libelles(self, obj):
+        return [c.nom for c in obj.competences.all()]
+
+    def get_competences_detail(self, obj):
+        return [{"id": str(c.id), "nom": c.nom, "parent": str(c.parent_id) if c.parent_id else None,
+                 "active": c.active} for c in obj.competences.all()]
 
 
 class MesDisponibilitesSerializer(serializers.Serializer):

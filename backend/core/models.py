@@ -8389,6 +8389,17 @@ class FicheBenevole(EnvironmentScopedModel):
         help_text="Date d'adhésion déclarée par le fichier d'origine, quand elle est connue.",
     )
 
+    # Ce que la personne sait faire, dans le MÊME arbre que « Proposer mon aide » (catalogue
+    # Competence, thèmes et sous-thèmes) — 21/11/2026. Avant, un membre n'avait nulle part où
+    # le dire : sa ressource n'avait aucune compétence, et une campagne filtrée sur une
+    # compétence ne trouvait aucun membre. Recopié sur la ressource de chaque association
+    # (core/fiches_benevoles.py::ressource_du_benevole), qui est ce que lisent le ciblage et la
+    # constitution d'équipe.
+    competences = models.ManyToManyField(
+        "Competence", blank=True, related_name="fiches_benevoles",
+        help_text="Compétences déclarées par la personne (catalogue partagé avec les offres).",
+    )
+
     # Posée par la page de complétion : tant qu'elle est nulle, la personne n'a pas relu sa
     # fiche, et l'écran le lui redemande à la connexion.
     completee_le = models.DateTimeField(null=True, blank=True)

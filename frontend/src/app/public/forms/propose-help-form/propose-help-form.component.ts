@@ -15,7 +15,7 @@ import { Creneau } from '../../../shared/models/disponibilite-offre.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
-import { CompetenceService } from '../../../services/competence.service';
+import { CompetencesArbreComponent } from '../../../shared/components/common/competences-arbre/competences-arbre.component';
 import { Competence } from '../../../shared/models/competence.model';
 import { MaterielCatalogueService } from '../../../services/materiel-catalogue.service';
 import { MaterielCatalogue } from '../../../shared/models/materiel-catalogue.model';
@@ -83,7 +83,7 @@ function transportAnimauxPrecisionValidator(control: AbstractControl): Validatio
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent, CriseLieuThemeComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent, CriseLieuThemeComponent, CompetencesArbreComponent],
   templateUrl: './propose-help-form.component.html',
   styleUrl: './propose-help-form.component.scss'
 })
@@ -245,8 +245,6 @@ export class ProposeHelpFormComponent implements OnInit {
 
   // ── Compétences que le bénévole peut apporter (filtre côté recrutement) ─
   selectedCompetences: Competence[] = [];
-  competenceSearchFn = (q: string) => this.competenceService.search(q);
-  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
   // Catalogue partagé : un matériel « Autre » saisi une fois est proposé à tous ensuite.
   allMateriels: MaterielCatalogue[] = [];
@@ -274,7 +272,6 @@ export class ProposeHelpFormComponent implements OnInit {
     private offerService: OfferService,
     private disponibiliteOffreService: DisponibiliteOffreService,
     private authService: AuthService,
-    private competenceService: CompetenceService,
     private materielCatalogueService: MaterielCatalogueService,
   ) {}
 
@@ -347,67 +344,6 @@ export class ProposeHelpFormComponent implements OnInit {
     this.materielDropdownOpenRows.delete(row);
   }
 
-  onCompetenceSelected(item: Competence): void {
-    if (this.selectedCompetences.some(c => c.id === item.id)) return;
-    this.selectedCompetences = [...this.selectedCompetences, item];
-  }
-
-  removeCompetence(id: string): void {
-    this.selectedCompetences = this.selectedCompetences.filter(c => c.id !== id);
-  }
-
-  allCompetences: Competence[] = [];
-  // « Autre (préciser) » ouvre la recherche/création libre, pour une compétence non listée.
-  showCompetenceAutre = false;
-
-  // ── Menu catégorie/sous-catégorie pliable (Competence.parent), sélection multiple ──
-  competencesDropdownOpen = false;
-  expandedCompetenceGroups = new Set<string>();
-
-  get competenceGroups(): { parent: Competence; children: Competence[] }[] {
-    const topLevel = this.allCompetences.filter(c => !c.parent);
-    return topLevel.map(parent => ({
-      parent,
-      children: this.allCompetences.filter(c => c.parent === parent.id),
-    }));
-  }
-
-  toggleCompetenceGroupExpand(parentId: string): void {
-    if (this.expandedCompetenceGroups.has(parentId)) this.expandedCompetenceGroups.delete(parentId);
-    else this.expandedCompetenceGroups.add(parentId);
-  }
-
-  isCompetenceGroupExpanded(parentId: string): boolean {
-    return this.expandedCompetenceGroups.has(parentId);
-  }
-
-  isCompetenceChecked(id: string): boolean {
-    return this.selectedCompetences.some(c => c.id === id);
-  }
-
-  toggleCompetenceChecked(item: Competence): void {
-    if (this.isCompetenceChecked(item.id)) this.removeCompetence(item.id);
-    else this.onCompetenceSelected(item);
-  }
-
-  competenceGroupState(group: { parent: Competence; children: Competence[] }): 'all' | 'some' | 'none' {
-    const ids = [group.parent.id, ...group.children.map(c => c.id)];
-    const selected = ids.filter(id => this.isCompetenceChecked(id)).length;
-    if (selected === 0) return 'none';
-    return selected === ids.length ? 'all' : 'some';
-  }
-
-  /** Coche ou décoche le thème parent et tous ses sous-thèmes. */
-  toggleCompetenceGroupChecked(group: { parent: Competence; children: Competence[] }): void {
-    const groupItems = [group.parent, ...group.children];
-    const tout = groupItems.every(c => this.isCompetenceChecked(c.id));
-    for (const item of groupItems) {
-      const checked = this.isCompetenceChecked(item.id);
-      if (tout && checked) this.removeCompetence(item.id);
-      else if (!tout && !checked) this.onCompetenceSelected(item);
-    }
-  }
-
   /** Non nul quand le standard de crise remplit ce formulaire pour quelqu'un qui téléphone. */
   saisieStandard: SaisieStandard | null = null;
 
@@ -432,10 +368,6 @@ export class ProposeHelpFormComponent implements OnInit {
     this.initForm();
     this.loadTypesOffre();
     this.buildJoursDispo();
-    this.competenceService.getAll().subscribe({
-      next: (list) => this.allCompetences = list,
-      error: () => {},
-    });
     this.materielCatalogueService.getAll().subscribe({
       // Les engins ont leur propre rubrique (loadEngineCatalogue).
       next: (list) => this.allMateriels = list.filter(m => m.categorie !== 'ENGIN'),
