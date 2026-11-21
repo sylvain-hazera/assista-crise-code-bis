@@ -197,6 +197,9 @@ class InformationTypeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class BesoinSerializer(serializers.ModelSerializer):
+    # Nom de la famille : les formulaires publics groupent les thèmes à l'écoute par famille, y
+    # compris un sous-besoin écouté seul dont la famille ne l'est pas (21/11/2026).
+    parent_nom = serializers.CharField(source="parent.nom", read_only=True, default=None)
 
     class Meta:
         model = Besoin

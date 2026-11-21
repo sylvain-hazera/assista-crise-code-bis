@@ -52,6 +52,7 @@ function emptyHebergementDetails(): HebergementDetails {
   };
 }
 
+import { titreDepot } from '../../../shared/utils/titre-depot.util';
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -308,7 +309,6 @@ export class RequestHelpFormComponent implements OnInit {
     if (this.formErrorsStep2.length > 0) return;
 
     const crisisId = this.requestForm.get('crisisId')?.value;
-    const crisisLabel = this.criseSelectionnee ? `${this.criseSelectionnee.name} - ${this.criseSelectionnee.type_display || this.criseSelectionnee.type}` : 'non liée à une crise';
     const localisation = { type: 'Point', coordinates: [this.longitude, this.latitude] };
 
     const creations: Observable<Request>[] = this.needsType.controls.map((needControl, i) => {
@@ -318,7 +318,8 @@ export class RequestHelpFormComponent implements OnInit {
       const hd = this.hebergementDetails[i];
       const formData = new FormData();
 
-      formData.append('title', `Demande d'aide - ${crisisLabel} - ${needType}`);
+      const lieu = topLevelType === TYPE_HEBERGEMENT ? hd?.zoneCommunes?.[0]?.name : this.selectedAddress?.city;
+      formData.append('title', titreDepot(needType, lieu));
       formData.append('first_name_request', this.informationForm.get('firstName')?.value);
       formData.append('last_name_request', this.informationForm.get('lastName')?.value);
       formData.append('email_request', this.informationForm.get('email')?.value ?? '');
@@ -379,8 +380,12 @@ export class RequestHelpFormComponent implements OnInit {
             });
           });
         });
-        alert(this.saisieStandard ? 'Demande enregistrée pour l\'appelant.' : 'Votre demande a été enregistrée avec succès !');
-        this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
+        if (this.saisieStandard) {
+          alert('Demande enregistrée pour l\'appelant.');
+          this.router.navigate([RETOUR_STANDARD]);
+        } else {
+          this.router.navigate(['/depot-enregistre'], { queryParams: { type: 'demande' } });
+        }
       },
       error: (err) => {
         console.error('Erreur création demande:', err);

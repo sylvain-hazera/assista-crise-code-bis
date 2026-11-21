@@ -5385,6 +5385,32 @@ def _creer_equipe_pour_point(point, nom, institution, request):
     (PointOperationnelViewSet.perform_create) et son édition ultérieure (perform_update),
     qui permettent toutes deux de créer une équipe à la volée plutôt que d'imposer un
     aller-retour séparé par l'écran équipes."""
+    from .institution_attachment import nom_comparable as normaliser_nom
+    cellule = bool(point.type_id and point.type.code == "CELLULE_CRISE")
+    # Une équipe de même nom dans l'institution (casse, accents, espaces ignorés) est REPRISE
+    # au lieu d'être recréée (21/11/2026) : relancer l'assistant ou retaper un nom existant
+    # fabriquait des homonymes sans avertissement. Exception : la cellule de crise reste propre
+    # à sa crise (elle porte le salon de la crise) ; si son nom est déjà pris ailleurs, elle
+    # prend le nom de la crise en plus, pour qu'on les distingue dans les listes.
+    existante = None
+    if institution is not None:
+        cle = normaliser_nom(nom)
+        homonymes = [e for e in Team.objects.filter(institution=institution, actif=True,
+                                                     environment=point.environment)
+                     if normaliser_nom(e.name) == cle]
+        if cellule:
+            existante = next((e for e in homonymes
+                              if point.crise_id and e.points_operationnels.filter(crise_id=point.crise_id).exists()), None)
+            if existante is None and homonymes and point.crise_id:
+                nom = f"{nom} — {point.crise.name}"[:100]
+        else:
+            existante = homonymes[0] if homonymes else None
+    if existante is not None:
+        point.equipe = existante
+        point.save(update_fields=['equipe'])
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Team", objet_id=existante.id,
+                  crise=point.crise, commentaire=f"Équipe existante reprise pour le point {point.nom}")
+        return existante
     team = Team.objects.create(name=nom, institution=institution, environment=point.environment)
     point.equipe = team
     point.save(update_fields=['equipe'])
@@ -26724,6 +26750,23 @@ class MesDisponibilitesView(generics.GenericAPIView):
             ).select_related("institution")
         )
 
+    def _ressources_pour_repondre(self, request):
+        """Ses ressources ; à défaut, si une campagne dont il est la cible le sollicite, la
+        ressource est créée maintenant pour l'institution de la campagne, depuis sa fiche
+        (même chemin que l'enregistrement de la fiche : fiches_benevoles.ressource_du_benevole).
+        Répondre à une campagne ne doit pas exiger de remplir d'abord une autre page."""
+        ressources = self._mes_ressources(request)
+        if ressources:
+            return ressources
+        campagne = self._campagne_demandee(request)
+        if campagne is None:
+            return []
+        from .fiches_benevoles import ressource_du_benevole
+        fiche, _ = FicheBenevole.objects.get_or_create(
+            utilisateur=request.user, defaults={"environment": get_active_environment(request)})
+        ressource_du_benevole(fiche, campagne.institution)
+        return self._mes_ressources(request)
+
     def get(self, request):
         """Les quinze prochains jours, quatre créneaux chacun.
 
@@ -26732,17 +26775,21 @@ class MesDisponibilitesView(generics.GenericAPIView):
         est sa règle depuis l'origine, et inventer un « non renseigné » ici ferait croire à une
         nuance que le modèle ne sait pas stocker."""
         ressources = self._mes_ressources(request)
-        if not ressources:
+        campagne = self._campagne_demandee(request)
+        if not ressources and campagne is None:
             # Pas une erreur : quelqu'un qui n'est membre d'aucune association n'a pas de
             # ressource, donc rien à déclarer. L'écran doit pouvoir le dire plutôt que
             # d'afficher une grille vide inexpliquée.
             return Response({"ressources": [], "jours": [], "creneaux": CRENEAUX_ORDONNES})
+        # Sollicité par une campagne SANS fiche de ressource (21/11/2026) : la demande
+        # restait invisible, remplacée par « complétez d'abord votre fiche » — le membre visé
+        # ne voyait pas qu'on lui demandait quelque chose. On affiche la demande et sa période ;
+        # la ressource est créée à sa première réponse (voir post et _ressources_pour_repondre).
 
         # Une campagne impose SA période : c'est la question posée, et le bénévole doit y
         # répondre sans avoir à chercher les bonnes dates. Sans ce paramètre, il arriverait sur
         # ses quinze prochains jours et répondrait à autre chose (voir
         # campagnes_disponibilite.envoyer_campagne, qui pose `?campagne=` dans le lien).
-        campagne = self._campagne_demandee(request)
         if campagne is not None:
             jours = [
                 campagne.periode_debut + datetime.timedelta(days=i)
@@ -26766,7 +26813,7 @@ class MesDisponibilitesView(generics.GenericAPIView):
             DisponibiliteOffre.objects.filter(
                 offer__in=ressources, date__gte=jours[0], date__lte=jours[-1],
             ).values_list("date", "creneau")
-        )
+        ) if ressources else set()
 
         return Response({
             "ressources": [
@@ -26817,7 +26864,7 @@ class MesDisponibilitesView(generics.GenericAPIView):
         creneau = serializer.validated_data.get("creneau") or None
         disponible = serializer.validated_data["disponible"]
 
-        ressources = self._mes_ressources(request)
+        ressources = self._ressources_pour_repondre(request)
         if not ressources:
             return Response(
                 {"error": "Vous n'avez pas de fiche de ressource : il n'y a pas de "

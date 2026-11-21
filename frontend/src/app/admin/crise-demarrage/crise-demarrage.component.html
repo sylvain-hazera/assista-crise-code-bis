@@ -227,6 +227,16 @@
             <input type="text" class="form-input" [(ngModel)]="etape.nouvelleEquipeNom"
                    [disabled]="!!etape.equipeId" placeholder="ou nom d'une nouvelle équipe...">
           </span>
+          @if (equipeHomonyme(etape.nouvelleEquipeNom); as homonyme) {
+            <span class="hint-homonyme" role="status">
+              <span class="material-icons" aria-hidden="true">info</span>
+              @if (etape.pointTypeCode === 'CELLULE_CRISE') {
+                « {{ homonyme.name }} » existe déjà : la cellule de cette crise prendra en plus le nom de la crise.
+              } @else {
+                Une équipe porte déjà ce nom (« {{ homonyme.name }} ») : elle sera reprise, pas recréée.
+              }
+            </span>
+          }
         </div>
       }
 

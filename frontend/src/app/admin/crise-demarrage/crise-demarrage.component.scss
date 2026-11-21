@@ -469,3 +469,6 @@
   .material-icons { font-size: 1.05rem; color: var(--ac-green-text, #166534); margin-top: .1rem; }
   small { color: var(--ac-text-muted, #6b7280); }
 }
+
+.hint-homonyme { display: flex; align-items: center; gap: .3rem; flex-basis: 100%; font-size: .85rem;
+  color: var(--ac-text-muted, #5b6275); .material-icons { font-size: 1rem; } }

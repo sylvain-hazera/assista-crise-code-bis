@@ -160,6 +160,13 @@
         </button>
       }
     </div>
+    @if (filterKind === 'Offer' && !pickerModeActive) {
+      <p class="overview-hint">
+        <span class="material-icons">info</span>
+        Les propositions de bénévolat n'apparaissent pas ici : elles sont dans la cellule de crise
+        (onglet Offres) et dans l'annuaire des bénévoles, au moment de constituer une équipe.
+      </p>
+    }
     @if (isOverview) {
       <p class="overview-hint">
         <span class="material-icons">info</span>

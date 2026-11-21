@@ -228,7 +228,9 @@ export class MaFicheBenevoleComponent implements OnInit {
   /** Vrai quand la personne n'a pas encore de ressource : elle n'a alors rien à déclarer, et
    * il faut le dire plutôt que de montrer une grille vide. */
   get sansRessource(): boolean {
-    return !!this.disponibilites && this.disponibilites.ressources.length === 0;
+    // Une campagne qui le sollicite s'affiche même sans fiche de ressource (21/11/2026) : la
+    // ressource est créée côté serveur à sa première réponse.
+    return !!this.disponibilites && this.disponibilites.ressources.length === 0 && !this.disponibilites.campagne;
   }
 
   estCoche(jour: JourCreneaux, creneau: Creneau): boolean {

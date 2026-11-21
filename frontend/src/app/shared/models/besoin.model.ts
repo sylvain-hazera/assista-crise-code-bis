@@ -13,6 +13,9 @@ export interface Besoin {
    * Competence.parent, même patron. */
   parent: string | null;
 
+  /** Nom de la famille (servi en lecture seule par l'API). */
+  parent_nom?: string | null;
+
   /** Ce que le besoin mobilise pour être satisfait — détermine quel(s) type(s) de
    * correspondance (besoin-compétence / besoin-matériel) proposer. Peut rester vide pour
    * un besoin pas encore qualifié, ou une catégorie purement groupante. */

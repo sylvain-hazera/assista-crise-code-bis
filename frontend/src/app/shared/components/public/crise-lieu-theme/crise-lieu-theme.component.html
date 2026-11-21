@@ -50,8 +50,8 @@
     } @else {
       <p class="section-description">Thèmes actuellement à l'écoute pour cette crise{{ sansRestrictionGeo ? '' : ', à cet endroit' }} :</p>
       <ul class="liste-themes">
-        @for (besoin of besoins; track besoin.id) {
-          <li>{{ besoin.nom }}</li>
+        @for (famille of familles; track famille.nom) {
+          <li><strong>{{ famille.nom }}</strong>@if (famille.sousBesoins.length) {<span class="sous-besoins"> : {{ famille.sousBesoins.join(', ') }}</span>}</li>
         }
       </ul>
     }

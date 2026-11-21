@@ -150,14 +150,17 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ── Échelle géographique (par défaut : ma zone) ─────────────
   // 'zone' = ?scope=zone ; 'rayon' = ?scope=zone&rayon_km= (offres seulement) ; autres = ?echelle=.
   echelleOptions: { value: EchelleFilter; label: string }[] = [
-    { value: 'zone',        label: 'Ma zone' },
-    { value: 'rayon',       label: 'Rayon (km)' },
+    { value: 'rayon',       label: 'Ma zone + rayon (km)' },
+    { value: 'zone',        label: 'Ma zone seule' },
     { value: 'departement', label: 'Mon département' },
     { value: 'region',      label: 'Ma région' },
     { value: 'national',    label: 'Toute la France' },
   ];
-  echelle: EchelleFilter = 'zone';
-  rayonKm = 25;
+  // Par défaut, ma zone + 15 km (décision du 21/11/2026) : une offre de matériel d'une commune
+  // voisine restait cachée derrière « Ma zone ». Le rayon n'élargit que les offres ; demandes,
+  // signalements et crises restent sur la zone.
+  echelle: EchelleFilter = 'rayon';
+  rayonKm = 15;
 
   competences: Competence[] = [];
 

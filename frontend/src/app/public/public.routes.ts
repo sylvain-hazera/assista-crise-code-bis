@@ -174,6 +174,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MesInterventionsComponent)
       },
       {
+        path: 'depot-enregistre',
+        loadComponent: () => import('./depot-enregistre/depot-enregistre.component')
+          .then(m => m.DepotEnregistreComponent)
+      },
+      {
         path: 'help-proposal',
         loadComponent: () => import('./forms/propose-help-form/propose-help-form.component')
           .then(m => m.ProposeHelpFormComponent)

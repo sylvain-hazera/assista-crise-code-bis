@@ -43,6 +43,30 @@ export class CriseLieuThemeComponent implements OnInit {
 
   chargementThemes = false;
   besoins: Besoin[] = [];
+
+  /**
+   * Les thèmes à l'écoute groupés par famille (21/11/2026) : la liste à plat mêlait une
+   * vingtaine de familles et de sous-besoins (« Pompage & citernes », puis « Pompage », puis
+   * « Cuve / citerne mobile »…). Une famille écoutée affiche ses sous-besoins sur la même ligne ;
+   * un sous-besoin écouté seul se range sous le nom de sa famille.
+   */
+  get familles(): { nom: string; sousBesoins: string[] }[] {
+    const parId = new Map(this.besoins.map(b => [b.id, b]));
+    const groupes = new Map<string, string[]>();
+    for (const b of this.besoins) {
+      if (!b.parent) {
+        if (!groupes.has(b.nom)) groupes.set(b.nom, []);
+      }
+    }
+    for (const b of this.besoins) {
+      if (!b.parent) continue;
+      const famille = parId.get(b.parent)?.nom ?? b.parent_nom ?? 'Autres';
+      groupes.set(famille, [...(groupes.get(famille) ?? []), b.nom]);
+    }
+    return [...groupes.entries()]
+      .map(([nom, sousBesoins]) => ({ nom, sousBesoins: sousBesoins.sort((a, c) => a.localeCompare(c)) }))
+      .sort((a, c) => a.nom.localeCompare(c.nom));
+  }
   /** Le backend n'a trouvé aucun type correspondant aux thèmes déclarés et a renvoyé tout le
    * catalogue : le dépôt reste possible, on le dit au visiteur au lieu de le bloquer. */
   repli = false;

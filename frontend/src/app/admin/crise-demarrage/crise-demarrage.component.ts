@@ -81,6 +81,11 @@ interface EtapePoint {
 /** Assistant de démarrage de crise : points stratégiques, équipes, récapitulatif.
  * Simple index `step` et panneaux conditionnels ; uniquement des endpoints existants
  * (PointOperationnelViewSet, TeamViewSet). Voir DOCUMENTATION.md, § 6.2. */
+
+/** Même normalisation que le serveur (institution_attachment.nom_comparable). */
+function comparable(valeur: string | null | undefined): string {
+  return (valeur ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+}
 @Component({
   selector: 'app-crise-demarrage',
   standalone: true,
@@ -94,6 +99,14 @@ export class CriseDemarrageComponent implements OnInit {
   crise: Crisis | null = null;
   pointTypes: PointType[] = [];
   teams: Team[] = [];
+
+  /** L'équipe de l'institution qui porte déjà ce nom (casse, accents, espaces ignorés) : le
+   * serveur la reprend au lieu de créer un homonyme (21/11/2026), on le dit dès la saisie. */
+  equipeHomonyme(nom: string | null | undefined): Team | null {
+    const cle = comparable(nom);
+    if (!cle) return null;
+    return this.teams.find(t => comparable(t.name) === cle) ?? null;
+  }
   roles: RoleOperationnel[] = [];
   besoins: Besoin[] = [];
   competences: Competence[] = [];

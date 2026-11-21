@@ -25,6 +25,15 @@ describe('ReportingComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('élargit par défaut les offres à 15 km autour de ma zone, pas les demandes', () => {
+    expect(component.echelle).toBe('rayon');
+    expect(component.rayonKm).toBe(15);
+    const offres = (component as any).buildEchelleParams(true);
+    const demandes = (component as any).buildEchelleParams(false);
+    expect(offres).toEqual({ scope: 'zone', rayon_km: '15' });
+    expect(demandes).toEqual({ scope: 'zone' });
+  });
+
   it("affecte une offre par l'action dédiée, jamais par un PATCH de l'équipe", () => {
     const equipes = TestBed.inject(TeamService);
     const equipe = { id: 'eq-1', name: 'Services techniques', assigned_offer_ids: [], member_ids: [] } as any;

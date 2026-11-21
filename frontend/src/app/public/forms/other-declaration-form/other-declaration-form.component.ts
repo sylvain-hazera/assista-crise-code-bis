@@ -24,6 +24,7 @@ enum StateForm {
   OtherDeclaration
 }
 
+import { titreDepot } from '../../../shared/utils/titre-depot.util';
 @Component({
   selector: 'app-other-declaration-form',
   standalone: true,
@@ -410,8 +411,7 @@ export class OtherDeclarationFormComponent implements OnInit {
           // Pas de redirection : le popup « trouver un centre » propose d'abord des suggestions.
           this.openCentrePopup();
         } else {
-          alert('Votre déclaration a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
+          this.router.navigate(['/depot-enregistre'], { queryParams: { type: 'securite' } });
         }
       },
       error: (err) => {
@@ -500,7 +500,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   private submitOtherInformationForm(): void {
     const formData = new FormData();
 
-    formData.append('title', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
+    formData.append('title', titreDepot(this.selectedInformationType?.type, this.selectedAddressOther?.city)); // la description reste à part
     formData.append('first_name_information', this.otherInformationForm.get('firstName')?.value);
     formData.append('last_name_information', this.otherInformationForm.get('lastName')?.value);
     formData.append('email_information', this.otherInformationForm.get('email')?.value ?? '');
@@ -540,8 +540,12 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
-        alert(this.saisieStandard ? 'Signalement enregistré pour l\'appelant.' : 'Votre information a été enregistrée avec succès !');
-        this.router.navigate([this.saisieStandard ? RETOUR_STANDARD : '/accueil']);
+        if (this.saisieStandard) {
+          alert('Signalement enregistré pour l\'appelant.');
+          this.router.navigate([RETOUR_STANDARD]);
+        } else {
+          this.router.navigate(['/depot-enregistre'], { queryParams: { type: 'signalement' } });
+        }
       },
       error: (err) => {
         console.error('Erreur création information:', err);
