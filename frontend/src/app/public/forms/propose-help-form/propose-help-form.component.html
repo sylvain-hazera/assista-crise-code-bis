@@ -646,7 +646,7 @@
                     id="email" 
                     formControlName="email"
                     class="form-input"
-                    placeholder="Placeholder"
+                    placeholder="prenom.nom@exemple.fr"
                     [class.invalid]="informationForm.get('email')?.invalid && informationForm.get('email')?.touched">
                     @if(informationForm.get('email')?.invalid && informationForm.get('email')?.touched) {
                         <div class="error-message">
@@ -664,7 +664,7 @@
                     id="phone" 
                     formControlName="phoneNumber"
                     class="form-input"
-                    placeholder="Placeholder"
+                    placeholder="06 12 34 56 78"
                     [class.invalid]="informationForm.get('phoneNumber')?.invalid && informationForm.get('phoneNumber')?.touched">
                     @if(informationForm.get('phoneNumber')?.invalid && informationForm.get('phoneNumber')?.touched) {
                         <div class="error-message">

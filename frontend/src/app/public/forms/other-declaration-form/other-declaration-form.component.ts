@@ -49,6 +49,17 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.selectedAddressOther = addr;
   }
 
+  /**
+   * Lieu choisi dans l'étape « crise, lieu, thèmes » : il suffit à localiser le signalement.
+   * Le second sélecteur d'adresse plus bas restait affiché, vide et marqué obligatoire, et
+   * faisait saisir deux fois la même adresse (constaté le 21/11/2026).
+   */
+  lieuChoisiEnHaut = false;
+  onLieuSelectionneOther(addr: AddressResult | null): void {
+    this.lieuChoisiEnHaut = !!addr;
+    this.onAddressSelectedOther(addr);
+  }
+
   onAddressSelectedSafe(addr: AddressResult | null): void {
     this.selectedAddressSafe = addr;
   }
@@ -124,7 +135,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     const moi = this.authService.getCurrentUser();
     // Ses coordonnées, pas les miennes ; et l'inverse quand on décoche.
     f.patchValue(coche ? { lastName: '', firstName: '', email: '', phoneNumber: '' }
-      : { lastName: '', firstName: '', email: '', phoneNumber: '' });
+      : { lastName: moi?.last_name ?? '', firstName: moi?.first_name ?? '', email: moi?.email ?? '', phoneNumber: moi?.phone_number ?? '' });
     f.get('email')?.setValidators(coche ? [Validators.email] : [Validators.required, Validators.email]);
     f.get('email')?.updateValueAndValidity();
   }
@@ -177,14 +188,17 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   initForm(): void {
+    // Comme la demande d'aide : une personne connectée n'a pas à retaper ses coordonnées
+    // (sauf saisie par le standard pour quelqu'un qui téléphone).
+    const moi = this.saisieStandard ? null : this.authService.getCurrentUser();
     this.declareSafeForm = this.formBuilder.group({
       crisisId: ['', Validators.required],
       situation: ['RELOGE', Validators.required],
       typeDeclarant: ['PERSONNE_SEULE', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
-      email: ['', [Validators.required, Validators.email]],
+      lastName: [moi?.last_name ?? '', Validators.required],
+      firstName: [moi?.first_name ?? '', Validators.required],
+      phoneNumber: [moi?.phone_number ?? '', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
+      email: [moi?.email ?? '', [Validators.required, Validators.email]],
       nombreAdultes: [1, [Validators.required, Validators.min(1)]],
       nombreEnfants: [0, [Validators.required, Validators.min(0)]],
       centreAccueil: [''],
@@ -196,10 +210,10 @@ export class OtherDeclarationFormComponent implements OnInit {
       description: ['', [Validators.required, Validators.minLength(10)]],
       addressVisible: [false],
       image: [null],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
-      email: ['', this.saisieStandard ? [Validators.email] : [Validators.required, Validators.email]],
+      lastName: [moi?.last_name ?? '', Validators.required],
+      firstName: [moi?.first_name ?? '', Validators.required],
+      phoneNumber: [moi?.phone_number ?? '', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
+      email: [moi?.email ?? '', this.saisieStandard ? [Validators.email] : [Validators.required, Validators.email]],
     });
   }
 

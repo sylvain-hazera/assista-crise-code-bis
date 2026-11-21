@@ -165,7 +165,7 @@
           id="phone" 
           formControlName="phone"
           class="form-input"
-          placeholder="Placeholder"
+          placeholder="06 12 34 56 78"
           [class.invalid]="isFieldInvalid('phone')">
         <div class="error-message" *ngIf="isFieldInvalid('phone')">
           {{ getFieldError('phone') }}
@@ -182,7 +182,7 @@
           id="email" 
           formControlName="email"
           class="form-input"
-          placeholder="Placeholder"
+          placeholder="prenom.nom@exemple.fr"
           [class.invalid]="isFieldInvalid('email')">
         <div class="error-message" *ngIf="isFieldInvalid('email')">
           {{ getFieldError('email') }}

@@ -95,12 +95,22 @@ export class RequestHelpFormComponent implements OnInit {
     { value: '', label: 'Dropdown' }
   ];
 
-  /** Types de premier niveau limités aux thèmes à l'écoute ; leurs sous-catégories restent visibles. */
+  /** Un type est à l'écoute s'il figure dans la liste servie par types-a-lecoute. */
+  private estAutorise(type: string): boolean {
+    const id = this.typesDemandeMap.get(type);
+    return !!id && this.typesDemandeAutorises.includes(id);
+  }
+
+  /**
+   * Types de premier niveau limités aux thèmes à l'écoute. Un type parent est aussi proposé
+   * quand seule une de ses sous-catégories est à l'écoute : « Pompage » est rangé sous
+   * « Matériel », et une mairie qui écoute « Pompage & citernes » sans écouter « Matériel
+   * divers » ne proposait plus rien pour une cave inondée (constaté le 21/11/2026).
+   */
   get needTypeOptionsFiltrees(): { value: string; label: string }[] {
-    return this.needTypeOptions.slice(1).filter(opt => {
-      const id = this.typesDemandeMap.get(opt.value);
-      return id && this.typesDemandeAutorises.includes(id);
-    });
+    return this.needTypeOptions.slice(1).filter(opt =>
+      this.estAutorise(opt.value)
+      || (this.childrenByParentType.get(opt.value) ?? []).some(c => this.estAutorise(c.value)));
   }
 
   personTypeOptions: { value: string; label: string }[] = [
@@ -209,9 +219,15 @@ export class RequestHelpFormComponent implements OnInit {
     details.zoneCommunes = details.zoneCommunes.filter(c => c.code !== code);
   }
 
+  /**
+   * Sous-catégories proposées : toutes si le type parent est lui-même à l'écoute, sinon
+   * seulement celles qui le sont (le parent n'apparaît alors que grâce à elles).
+   */
   childrenFor(index: number): { value: string; label: string }[] {
     const topLevel = this.needsType.at(index)?.value;
-    return topLevel ? (this.childrenByParentType.get(topLevel) ?? []) : [];
+    if (!topLevel) return [];
+    const enfants = this.childrenByParentType.get(topLevel) ?? [];
+    return this.estAutorise(topLevel) ? enfants : enfants.filter(c => this.estAutorise(c.value));
   }
 
   onTopLevelTypeChange(index: number): void {

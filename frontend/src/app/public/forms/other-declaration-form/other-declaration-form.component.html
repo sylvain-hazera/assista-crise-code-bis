@@ -294,7 +294,7 @@
         <app-crise-lieu-theme
           axe="information"
           (criseSelectionnee)="onCriseSelectionneeOther($event)"
-          (adresseSelectionnee)="onAddressSelectedOther($event)"
+          (adresseSelectionnee)="onLieuSelectionneOther($event)"
           (typesAutorises)="onTypesAutorisesOther($event)">
         </app-crise-lieu-theme>
 
@@ -387,6 +387,8 @@
 
         <!-- Address Section (repli si pas de position capturée) -->
         <div class="form-section">
+          <!-- Le lieu choisi en haut (app-crise-lieu-theme) suffit : ne pas le redemander. -->
+          @if (!lieuChoisiEnHaut) {
           <h2 class="section-title">
             Adresse @if (!(capturedLatitude != null && capturedLongitude != null)) {<span class="required">*</span>}
           </h2>
@@ -407,6 +409,7 @@
               </div>
             }
           </div>
+          }
 
           <!-- Address Visible Checkbox -->
           <div class="checkbox-group">
