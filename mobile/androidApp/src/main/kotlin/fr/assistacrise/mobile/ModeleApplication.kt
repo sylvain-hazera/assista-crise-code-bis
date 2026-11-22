@@ -343,6 +343,51 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    // --- Formation (22/11/2026) -------------------------------------------------------------
+
+    /** « PROD » ou « DEMO » : la zone de travail, comme la bascule « Formation » du site. */
+    val zone = app.session.environnement
+
+    /**
+     * Passe en formation (données fictives de démonstration) ou revient aux données réelles.
+     * Refusé tant que des envois attendent : ils appartiennent à la zone où ils ont été écrits.
+     * Les copies locales de l'autre zone sont effacées, puis tout est relu ; le suivi en cours
+     * est coupé (un engagement de la nouvelle zone le relancera). La radio, elle, reste : c'est
+     * la même radio réelle, et ses canaux de démonstration sont déjà ceux des équipes fictives.
+     */
+    fun basculerFormation(oui: Boolean) {
+        viewModelScope.launch {
+            val zoneVoulue = if (oui) fr.assistacrise.mobile.donnees.Session.DEMO else fr.assistacrise.mobile.donnees.Session.PROD
+            if (zone.value == zoneVoulue) return@launch
+            if (oui && compte.value?.peutSeFormer != true) { message = "La formation n'est pas ouverte à votre compte."; return@launch }
+            if (app.file.actions.value.any { it.etat == fr.assistacrise.mobile.domaine.EtatAction.EN_ATTENTE }) {
+                message = "Des envois attendent encore le réseau : ils doivent partir avant de changer de zone."
+                return@launch
+            }
+            verrouSynchro.withLock {
+                app.suivi.couper()
+                app.session.changerDEnvironnement(zoneVoulue)
+                app.notifications.toutEffacer()
+                app.depot.toutEffacer()
+                app.equipes.toutEffacer()
+                app.terrain.toutEffacer()
+                app.points.toutEffacer()
+                app.citoyen.toutEffacer()
+                app.alertes.toutRetirer()
+                app.veille.toutEffacer()
+                app.dossiers.toutEffacer(file.value)
+                vignettes.clear()
+                app.benevole.toutEffacer()
+                app.file.toutEffacer()
+                nonVues = 0
+                positions = emptyList()
+            }
+            ServiceTerrain.actualiser(app)
+            message = if (oui) "Formation : vous travaillez sur des données fictives." else "Retour aux données réelles."
+            synchroniser(force = true, bavard = true)
+        }
+    }
+
     fun deconnecter() {
         viewModelScope.launch {
             // Tant que la session vit : dire au serveur que ce téléphone ne joint plus ce compte.

@@ -21,7 +21,12 @@ data class Compte(
     @SerialName("phone_number") val telephone: String? = null,
     /** L'identifiant de connexion, quand il diffère de l'adresse e-mail. */
     @SerialName("username") val identifiant: String = "",
+    /** Rôle dans la zone de démonstration, ouvert par un administrateur : sans lui, pas de formation. */
+    @SerialName("demo_role") val roleDemo: String? = null,
 ) {
+    /** La bascule « Formation » n'est proposée qu'aux comptes à qui la démonstration est ouverte. */
+    val peutSeFormer: Boolean get() = !roleDemo.isNullOrBlank()
+
     val nomComplet: String
         get() = listOf(prenom, nom).filter { it.isNotBlank() }.joinToString(" ").ifBlank { email }
 

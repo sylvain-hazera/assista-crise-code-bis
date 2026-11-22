@@ -100,6 +100,10 @@ fun EcranRadioAvancee(modele: ModeleApplication) {
             Text("Connectez d'abord une radio (écran Compte).", modifier = Modifier.padding(16.dp))
             return@Column
         }
+        if (modele.zone.collectAsStateWithLifecycle().value == fr.assistacrise.mobile.donnees.Session.DEMO) {
+            Text("Formation : la radio est réelle. Ce que vous modifiez ici est vraiment écrit sur la radio.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
+        }
         avance.derniereReponse?.let { Text("Dernière réponse de la radio : $it", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp)) }
         TabRow(selectedTabIndex = onglet) {
             listOf("Canaux", "Contacts", "Réglages", "Outils").forEachIndexed { i, nom ->

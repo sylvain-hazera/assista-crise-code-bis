@@ -50,6 +50,9 @@ class MessageTerrainViewSet(viewsets.GenericViewSet):
         return mission
 
     def create(self, request):
+        # En formation (X-Environment: DEMO), le compte doit avoir un rôle de démonstration :
+        # get_effective_role refuse sinon, comme partout ailleurs.
+        get_effective_role(request)
         d = request.data
         type_ = d.get("type")
         if type_ not in MessageTerrain.Type.values:

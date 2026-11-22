@@ -177,7 +177,7 @@ class ServiceTerrain : Service(), LocationListener {
             )
             constructeur
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                .setContentTitle("En mission — votre position est partagée")
+                .setContentTitle(if (app.session.enFormation) "Formation — votre position est partagée" else "En mission — votre position est partagée")
                 .setContentText(listOfNotNull(equipe?.let { "Équipe $it" }, texteRadio).joinToString(" · ")
                     .ifEmpty { "Le suivi s'arrête seul à votre libération." })
                 .addAction(Notification.Action.Builder(null, "Arrêter le suivi", arreter).build())

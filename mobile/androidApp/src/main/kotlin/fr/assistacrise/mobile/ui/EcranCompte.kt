@@ -94,6 +94,7 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
                 }
             }
 
+            SectionFormation(modele)
             SectionRadio(modele)
 
             Spacer(Modifier.height(28.dp))

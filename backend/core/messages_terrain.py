@@ -151,6 +151,13 @@ def alerter(message, request=None):
              f"{'Motif' if message.type == 'PREMIERS_SECOURS' else 'Précision'} : {message.texte or 'non précisé'}\n"
              f"{'Position : ' + message.latitude + ', ' + message.longitude if message.latitude else 'Position non transmise'}\n"
              f"Reçu par : {message.get_canal_display()}")
+    from .models import Environment
+    if message.environment == Environment.DEMO:
+        # Formation : jamais de vraie alerte à de vraies personnes. Comme send_mail_env_aware,
+        # l'auteur seul reçoit ce que l'application aurait envoyé, marqué [DEMO] (22/11/2026).
+        destinataires = {message.auteur}
+        titre = f"[DEMO] {titre}"
+        corps = f"[DEMO] {corps}"
     emails = [u.email for u in destinataires if u.email]
     if emails:
         send_mail_logged(request, f"[assista-crise] {titre}", corps, settings.DEFAULT_FROM_EMAIL, emails)

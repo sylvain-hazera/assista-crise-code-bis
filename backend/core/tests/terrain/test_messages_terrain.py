@@ -120,3 +120,24 @@ def test_le_message_radio_entrant_d_un_canal_meshcore_est_reconnu(terrain):
             "contenu": f"Léa: ⚑FIN {mission.id.hex[:6]}.{benevole.id.hex[:6]}.c0ffee Intervention terminée"}, format="json")
     assert r.status_code in (200, 201), r.data
     assert MessageTerrain.objects.filter(type="TERMINEE", canal="MESHCORE").exists()
+
+
+@pytest.mark.django_db
+def test_en_formation_l_alerte_ne_part_qu_a_l_auteur(terrain):
+    mission = terrain["mission"]
+    mission.environment = "DEMO"
+    mission.save(update_fields=["environment"])
+    sans_role = _client(terrain["benevole"]).post(reverse("messageterrain-list"), {
+        "mission": str(mission.id), "type": "ARRIVE", "identifiant_client": "s4n5r0"}, format="json", HTTP_X_ENVIRONMENT="DEMO")
+    assert sans_role.status_code == 403
+    terrain["benevole"].demo_role = "UTIL_SIMPLE"
+    terrain["benevole"].save(update_fields=["demo_role"])
+    with mock.patch("core.matrix.envoyer_dm") as dm:
+        r = _client(terrain["benevole"]).post(reverse("messageterrain-list"), {
+            "mission": str(mission.id), "type": "DANGER", "texte": "toit instable", "identifiant_client": "d3m0d3"},
+            format="json", HTTP_X_ENVIRONMENT="DEMO")
+    assert r.status_code == 201, r.data
+    (courriel,) = mail.outbox
+    assert courriel.to == ["benevole-t@test.fr"] and courriel.subject.startswith("[assista-crise] [DEMO]")
+    assert {c.args[0] for c in dm.call_args_list} <= {terrain["benevole"]}
+    assert MessageTerrain.objects.get().environment == "DEMO"

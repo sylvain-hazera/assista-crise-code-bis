@@ -506,7 +506,9 @@ class ClientApi(
     /** Les octets d'une photo du dossier. Chaque lecture est journalisée par le serveur. */
     suspend fun octetsDePhoto(idPhoto: String): Reponse<ByteArray> {
         suspend fun lire(jeton: String): Reponse<ByteArray> = try {
-            val reponse = http.request("$urlApi/documents/$idPhoto/preview/") { header(HttpHeaders.Authorization, "Bearer $jeton") }
+            val reponse = http.request("$urlApi/documents/$idPhoto/preview/") {
+                header(HttpHeaders.Authorization, "Bearer $jeton"); header("X-Environment", session.environnement.value)
+            }
             val code = reponse.status.value
             when {
                 code in 200..299 -> Reponse.Ok(reponse.readRawBytes())
@@ -589,6 +591,8 @@ class ClientApi(
                 method = methode
                 header(HttpHeaders.Accept, "application/json")
                 jeton?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                // Zone de travail, comme le site : PROD, ou DEMO en formation.
+                header("X-Environment", session.environnement.value)
                 corps?.let { poserCorps(it) }
                 formulaire?.let { setBody(MultiPartFormDataContent(it)) }
             }

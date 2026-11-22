@@ -51,6 +51,10 @@ class DepotSuivi(
         garder(_etat.value.copy(depuis = null, engagementArrete = ReglesSuivi.engagementCourant(equipes)))
     }
 
+    /** Coupe le suivi en cours sans rien retenir (changement de zone, formation) : un engagement
+     * de l'autre zone le relancera selon les règles habituelles. */
+    suspend fun couper() = garder(_etat.value.copy(depuis = null))
+
     /** Reprise à la main, après un arrêt à la main. */
     suspend fun reprendre() = garder(_etat.value.copy(engagementArrete = null))
 

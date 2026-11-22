@@ -493,10 +493,22 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     override suspend fun envoyerAEquipe(equipe: Equipe, texte: String): String? {
         val p = pilote?.takeIf { it.prete } ?: return null
         val canal = p.canalNomme(canalDe(equipe, p.protocole)) ?: return null
-        val trames = p.envoyerSurCanal(canal.index, texte, System.currentTimeMillis() / 1000)
+        val trames = p.envoyerSurCanal(canal.index, texteSelonLaZone(texte), System.currentTimeMillis() / 1000)
         val fin = CompletableDeferred<Boolean>()
         if (operations.trySend { fin.complete(trames.all { ecrire(it) }) }.isFailure) return null
         return if (withTimeoutOrNull(20_000) { fin.await() } == true) p.protocole.name else null
+    }
+
+    /**
+     * En formation, la règle du serveur pour la démo (`_contenu_message_mesh_demo`) : la radio
+     * est réelle et ses voisins aussi, donc le message est préfixé « [démo] » et gardé court.
+     */
+    private fun texteSelonLaZone(texte: String): String {
+        if (!app.session.enFormation) return texte
+        val propre = texte.trim()
+        val prefixe = if (propre.lowercase().startsWith("[démo]")) "" else "[démo] "
+        val disponible = 100 - prefixe.length
+        return prefixe + if (propre.length > disponible) propre.take(disponible - 1).trimEnd() + "…" else propre
     }
 
     /** Le canal de cette équipe sur la radio connectée, s'il y est. */

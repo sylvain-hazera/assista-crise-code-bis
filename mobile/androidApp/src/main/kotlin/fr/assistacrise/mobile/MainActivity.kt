@@ -151,6 +151,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
+                    topBar = { fr.assistacrise.mobile.ui.BandeauFormation(modele) },
                     snackbarHost = { SnackbarHost(bandeau) },
                     bottomBar = {
                         if (compte != null && modele.pret && ecran !in ECRANS_SANS_BARRE) BarreDuBas(ecran, intervenant, modele.nonVues, modele::aller)

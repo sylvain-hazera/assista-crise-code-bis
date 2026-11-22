@@ -24,6 +24,21 @@ class Session(private val magasin: Magasin) {
     private val _compte = MutableStateFlow<Compte?>(null)
     val compte: StateFlow<Compte?> = _compte
 
+    /**
+     * Zone de travail : « PROD » (données réelles) ou « DEMO » (formation, données fictives).
+     * Envoyée avec chaque requête (en-tête X-Environment), comme la bascule du site ; gardée sur
+     * le téléphone, pour que la tâche de fond et le service de terrain travaillent dans la même.
+     */
+    private val _environnement = MutableStateFlow(PROD)
+    val environnement: StateFlow<String> = _environnement
+    val enFormation: Boolean get() = _environnement.value == DEMO
+
+    suspend fun changerDEnvironnement(zone: String) {
+        require(zone == PROD || zone == DEMO)
+        _environnement.value = zone
+        if (zone == PROD) magasin.effacer(FICHIER_ZONE) else magasin.ecrire(FICHIER_ZONE, zone)
+    }
+
     internal val jetonAcces: String? get() = courante?.acces
     internal val jetonRafraichissement: String? get() = courante?.rafraichissement
 
@@ -34,6 +49,8 @@ class Session(private val magasin: Magasin) {
         // déconnexion : on redemande le mot de passe plutôt que de planter au démarrage.
         courante = runCatching { json.decodeFromString<SessionEnregistree>(texte) }.getOrNull()
         _compte.value = courante?.compte
+        // La formation ne survit pas à un compte qui n'y a plus droit.
+        _environnement.value = if (magasin.lire(FICHIER_ZONE) == DEMO && courante?.compte?.peutSeFormer == true) DEMO else PROD
     }
 
     internal suspend fun ouvrir(acces: String, rafraichissement: String, compte: Compte) {
@@ -55,6 +72,7 @@ class Session(private val magasin: Magasin) {
         courante = null
         _compte.value = null
         magasin.effacer(FICHIER)
+        changerDEnvironnement(PROD)
     }
 
     /**
@@ -75,8 +93,11 @@ class Session(private val magasin: Magasin) {
         _compte.value = s.compte
     }
 
-    private companion object {
-        const val FICHIER = "session"
-        const val FICHIER_APPAREIL = "appareil"
+    companion object {
+        const val PROD = "PROD"
+        const val DEMO = "DEMO"
+        private const val FICHIER_ZONE = "zone"
+        private const val FICHIER = "session"
+        private const val FICHIER_APPAREIL = "appareil"
     }
 }
