@@ -180,6 +180,27 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_started }
 
+  # Travaux lourds (22/11/2026) : amorçage départemental, chargements d'adresses en masse,
+  # imports et simulations qu'il déclenche (file « lourd », voir core/tasks.FILE_LOURDE). Un seul
+  # processus, priorité processeur basse : il ne prend jamais la place des alertes et des
+  # notifications, que celery-worker traite seul sur la file par défaut.
+  celery-worker-lourd:
+    <<: *service
+    image: assista-crise-backend:prod
+    container_name: ac_celery_worker_lourd
+    entrypoint: ["celery"]
+    command: ["-A", "config", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "lourd",
+              "-n", "lourd@%h", "--prefetch-multiplier=1"]
+    cpu_shares: 256
+    env_file:
+      - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    volumes:
+      - media_volume:/app/media
+    networks: [back, db, front]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
   # Observateurs MeshCore publiés sur MQTT (19/11/2026) : une connexion par broker déclaré sur
   # la page « Brokers MQTT MeshCore ». Même image que le backend ; un seul exemplaire (deux
   # compteraient chaque observation deux fois). Attend seul qu'une source soit déclarée.

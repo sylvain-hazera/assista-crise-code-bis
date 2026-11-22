@@ -910,6 +910,12 @@ la convention, elle ne peut plus qu'exporter ses données ».
   Avancement lu en direct dans les relevés. Pendant l'annuaire, pas de chargement d'adresses par
   mairie créée (448 téléchargements du fichier de la Gironde le 22/11/2026), et
   `charger_adresses_departement_task` ignore les communes déjà chargées.
+- **File des travaux lourds** (22/11/2026) : `core/tasks.FILE_LOURDE` (« lourd ») reçoit l'amorçage,
+  son enchaînement, les chargements d'adresses en masse, et les imports et simulations lancés par
+  l'amorçage. Consommée par `ac_celery_worker_lourd` (service `celery-worker-lourd` de
+  `docker-compose.114.yml` : un processus, `cpu_shares` 256, redéployé avec le backend par
+  `scripts/114/deployer.sh`). `ac_celery_worker` garde la file par défaut (alertes, notifications,
+  simulations demandées depuis la page) : un amorçage ne la retarde jamais.
   Un amorçage sans fin au-delà de 5 h est tenu pour interrompu et se relance. Les notifications
   « Nouvelle institution » sont suspendues pendant l'annuaire (plusieurs centaines de courriels
   pour la Gironde), remplacées par un récapitulatif. Les risques comprennent zonages

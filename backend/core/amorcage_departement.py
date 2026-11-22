@@ -240,10 +240,11 @@ def avancement_risques(amorcage) -> dict:
 def etape_sites(cg, communes) -> dict:
     from .opendata import CONNECTEURS
     from .sites_sensibles import lancer_import
+    from .tasks import FILE_LOURDE
     lancees = []
     for source in CONNECTEURS:
         lancer_import(cg, source, {"niveau": "departement", "code": cg.departement_code},
-                      environment=cg.environment)
+                      environment=cg.environment, file=FILE_LOURDE)
         lancees.append(str(source))
     return {"comptes": {"sources_lancees": len(lancees)}, "sources": lancees}
 
@@ -270,7 +271,7 @@ def etape_simulations(cg, communes) -> dict:
 def simulations_commune(code, environment):
     """Lance les trois calculs de la page de simulation pour une commune."""
     from .models import StatutTacheInondation, TacheSimulationInondation, TypeTacheInondation
-    from .tasks import calculer_paliers_task, calculer_ruissellement_task, charger_adresses_task
+    from .tasks import FILE_LOURDE, calculer_paliers_task, calculer_ruissellement_task, charger_adresses_task
 
     for type_tache, tache in ((TypeTacheInondation.PALIERS, calculer_paliers_task),
                               (TypeTacheInondation.RUISSELLEMENT, calculer_ruissellement_task),
@@ -278,7 +279,7 @@ def simulations_commune(code, environment):
         TacheSimulationInondation.objects.update_or_create(
             commune_code=code, environment=environment, type_tache=type_tache,
             defaults={"statut": StatutTacheInondation.EN_COURS, "erreur": None})
-        tache.delay(code, environment, False)
+        tache.apply_async(args=[code, environment, False], queue=FILE_LOURDE)
 
 
 def enchainer(etape, communes, environment, suivante):

@@ -115,9 +115,9 @@ def test_les_simulations_s_enchainent_commune_par_commune(cg):
     from core.amorcage_departement import ESPACEMENT_SIMULATIONS, etape_simulations
     from core.models import TacheSimulationInondation
     from core.tasks import enchainer_amorcage_task
-    with mock.patch("core.tasks.calculer_paliers_task.delay") as paliers, \
-         mock.patch("core.tasks.calculer_ruissellement_task.delay") as ruissellement, \
-         mock.patch("core.tasks.charger_adresses_task.delay") as adresses, \
+    with mock.patch("core.tasks.calculer_paliers_task.apply_async") as paliers, \
+         mock.patch("core.tasks.calculer_ruissellement_task.apply_async") as ruissellement, \
+         mock.patch("core.tasks.charger_adresses_task.apply_async") as adresses, \
          mock.patch("core.tasks.enchainer_amorcage_task.delay") as premiere, \
          mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
         resultat = etape_simulations(cg, ["42186", "42218"])
@@ -125,6 +125,7 @@ def test_les_simulations_s_enchainent_commune_par_commune(cg):
         premiere.assert_called_once_with("simulations", ["42186", "42218"], "PROD")
         enchainer_amorcage_task.run("simulations", ["42186", "42218"], "PROD")
     assert paliers.call_count == ruissellement.call_count == adresses.call_count == 1
+    assert paliers.call_args.kwargs["queue"] == "lourd"
     assert suivante.call_args.kwargs == {"args": ["simulations", ["42218"], "PROD"], "countdown": ESPACEMENT_SIMULATIONS}
     assert TacheSimulationInondation.objects.filter(statut="EN_COURS", commune_code="42186").count() == 3
 
@@ -191,3 +192,23 @@ def test_un_amorcage_interrompu_ne_bloque_pas_la_relance(cg):
     AmorcageDepartement.objects.filter(pk=a.pk).update(debut=timezone.now() - datetime.timedelta(hours=6))
     a.refresh_from_db()
     assert est_interrompu(a)
+
+
+def test_les_travaux_lourds_ont_leur_file():
+    """Ils ne doivent jamais retarder les alertes et notifications de la file par défaut."""
+    from core import tasks
+    for tache in (tasks.amorcer_departement_task, tasks.enchainer_amorcage_task,
+                  tasks.charger_adresses_departement_task):
+        assert tache.queue == tasks.FILE_LOURDE == "lourd"
+    for tache in (tasks.pousser_notification_task, tasks.calculer_paliers_task, tasks.importer_sites_sensibles_task):
+        assert getattr(tache, "queue", None) is None
+
+
+@pytest.mark.django_db
+def test_les_sites_de_l_amorcage_partent_dans_la_file_lourde(cg):
+    from core.amorcage_departement import etape_sites
+    with mock.patch("core.tasks.importer_sites_sensibles_task.apply_async") as importer:
+        etape_sites(cg, ["42186"])
+    assert importer.call_count >= 1
+    assert all(c.kwargs["queue"] == "lourd" for c in importer.call_args_list)
+

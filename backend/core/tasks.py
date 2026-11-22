@@ -21,6 +21,13 @@ def _marquer_tache(commune_code, environment, type_tache, statut, erreur=None):
     )
 
 
+#: File des travaux lourds (amorçage départemental, chargements d'adresses en masse et ce qu'ils
+#: déclenchent), consommée par son propre worker (ac_celery_worker_lourd, un processus, priorité
+#: basse) : ils ne retardent jamais les alertes, notifications et tâches de crise de la file
+#: par défaut. Décidé le 22/11/2026, après l'amorçage de la Gironde.
+FILE_LOURDE = "lourd"
+
+
 @shared_task(acks_late=True, time_limit=300, soft_time_limit=270)
 def calculer_paliers_task(commune_code: str, environment: str, forcer: bool = False):
     """Grille d'altitude + paliers d'eau -- toujours borné (grille plafonnée, voir
@@ -164,7 +171,7 @@ def relever_zonages_officiels_task(commune_code: str, environment: str, forcer: 
     return relever_tout(commune_code, environment, forcer=forcer)
 
 
-@shared_task(acks_late=True, time_limit=1800, soft_time_limit=1770)
+@shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=1800, soft_time_limit=1770)
 def charger_adresses_departement_task(communes: list):
     """Charge les adresses de ces communes depuis le fichier départemental de la Base Adresse
     Nationale (core/referentiel_adresses.py) : un téléchargement par département.
@@ -218,7 +225,7 @@ def pousser_notification_site_task(notification_id: str):
 
 
 
-@shared_task(acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
+@shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
 def amorcer_departement_task(amorcage_id: str, etapes=None):
     """Amorçage d'un département (core/amorcage_departement.py) : annuaire officiel commune par
     commune, adresses, risques, sites sensibles. Long par nature (un appel à l'Annuaire et à
@@ -232,7 +239,7 @@ def amorcer_departement_task(amorcage_id: str, etapes=None):
     executer(amorcage, [e for e in (etapes or ETAPES) if e in ETAPES])
 
 
-@shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
+@shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=900, soft_time_limit=870)
 def enchainer_amorcage_task(etape: str, communes: list, environment: str):
     """Amorçage départemental, étapes longues (« risques », « simulations ») : une commune, puis
     la tâche se reprogramme pour les suivantes (core/amorcage_departement.enchainer)."""

@@ -548,7 +548,7 @@ def executer_import(institution, source, perimetre, commune_nom=None, environmen
 
 
 def lancer_import(institution, source, perimetre, commune_nom=None, environment=None,
-                  options=None):
+                  options=None, file=None):
     """Lance un import : synchrone pour une commune, délégué à Celery dès que ça dépasse.
     Rend (resultat, asynchrone).
 
@@ -578,13 +578,14 @@ def lancer_import(institution, source, perimetre, commune_nom=None, environment=
             # et l'écran daterait le recensement en cours du tout premier, l'an dernier.
             date_lancement=timezone.now(),
         )
-        importer_sites_sensibles_task.delay(
-            # Seuls le niveau et le code voyagent : la liste des communes se reconstruit côté
-            # tâche (voir construire_perimetre).
-            str(institution.id), source,
-            {"niveau": territoire.niveau, "code": territoire.code},
-            commune_nom, environment, options,
-        )
+        # Seuls le niveau et le code voyagent : la liste des communes se reconstruit côté tâche
+        # (voir construire_perimetre). `file` : la file des travaux lourds pour l'amorçage.
+        arguments = [str(institution.id), source, {"niveau": territoire.niveau, "code": territoire.code},
+                     commune_nom, environment, options]
+        if file:
+            importer_sites_sensibles_task.apply_async(args=arguments, queue=file)
+        else:
+            importer_sites_sensibles_task.delay(*arguments)
         return None, True
     return (executer_import(institution, source, territoire, commune_nom, environment, options),
             False)
