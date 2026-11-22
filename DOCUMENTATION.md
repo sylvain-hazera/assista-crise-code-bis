@@ -910,6 +910,11 @@ la convention, elle ne peut plus qu'exporter ses données ».
   Avancement lu en direct dans les relevés. Pendant l'annuaire, pas de chargement d'adresses par
   mairie créée (448 téléchargements du fichier de la Gironde le 22/11/2026), et
   `charger_adresses_departement_task` ignore les communes déjà chargées.
+- **Annuaire des entreprises commune par commune** (22/11/2026) : à l'échelle d'un département,
+  l'import SIRENE est plafonné (1 500 établissements par thème ; constaté sur la Gironde : élevages,
+  hébergements, transport, commerces tronqués). L'amorçage l'enchaîne commune par commune
+  (`enchainer_amorcage_task` « sirene »), les autres sources restent départementales. L'écran
+  d'amorçage affiche pour chaque source le nombre trouvé, les échecs et les incomplétudes.
 - **File des travaux lourds** (22/11/2026) : `core/tasks.FILE_LOURDE` (« lourd ») reçoit l'amorçage,
   son enchaînement, les chargements d'adresses en masse, et les imports et simulations lancés par
   l'amorçage. Consommée par `ac_celery_worker_lourd` (service `celery-worker-lourd` de

@@ -39,3 +39,6 @@ input, textarea { padding: .45rem .6rem; border: 1px solid var(--ac-border, #cbd
   .badge.absent { background: #f1f5f9; color: #475569; }
   input[type=search] { max-width: 24rem; } }
 .barre-arbre { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+
+.sites-amorcage { margin: 0 0 .5rem; padding-left: 1.2rem; font-size: .85rem;
+  .erreur { display: block; } }

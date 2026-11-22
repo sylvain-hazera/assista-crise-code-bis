@@ -577,7 +577,11 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         return {
             "id": str(amorcage.id), "debut": amorcage.debut, "fin": amorcage.fin, "etapes": amorcage.etapes,
             "interrompu": est_interrompu(amorcage), "risques": avancement_risques(amorcage),
-            "sites": [{"source": i.source, "statut": i.statut, "date_fin": i.date_fin} for i in imports],
+            # `incomplet` et `erreur` : un import tronqué ou en échec doit se voir (22/11/2026).
+            "sites": [{"source": i.source, "statut": i.statut, "date_fin": i.date_fin,
+                       "crees": (i.resultat or {}).get("crees"), "total": (i.resultat or {}).get("total"),
+                       "incomplet": (i.resultat or {}).get("incomplet") or [], "erreur": i.erreur or None}
+                      for i in imports],
         }
 
     @action(detail=True, methods=["post"])

@@ -207,8 +207,22 @@ def test_les_travaux_lourds_ont_leur_file():
 @pytest.mark.django_db
 def test_les_sites_de_l_amorcage_partent_dans_la_file_lourde(cg):
     from core.amorcage_departement import etape_sites
-    with mock.patch("core.tasks.importer_sites_sensibles_task.apply_async") as importer:
+    with mock.patch("core.tasks.importer_sites_sensibles_task.apply_async") as importer, \
+         mock.patch("core.tasks.enchainer_amorcage_task.delay") as par_commune:
         etape_sites(cg, ["42186"])
     assert importer.call_count >= 1
     assert all(c.kwargs["queue"] == "lourd" for c in importer.call_args_list)
+    assert all(c.kwargs["args"][1] != "SIRENE" for c in importer.call_args_list)
+    par_commune.assert_called_once_with("sirene", ["42186"], "PROD", str(cg.id))
+
+
+@pytest.mark.django_db
+def test_l_annuaire_des_entreprises_s_importe_commune_par_commune(cg):
+    from core.amorcage_departement import ESPACEMENT_SIRENE
+    from core.tasks import enchainer_amorcage_task
+    with mock.patch("core.sites_sensibles.executer_import") as importer, \
+         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
+        enchainer_amorcage_task.run("sirene", ["42186", "42218"], "PROD", str(cg.id))
+    assert importer.call_args.args[1:3] == ("SIRENE", {"niveau": "commune", "code": "42186"})
+    assert suivante.call_args.kwargs == {"args": ["sirene", ["42218"], "PROD", str(cg.id)], "countdown": ESPACEMENT_SIRENE}
 

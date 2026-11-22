@@ -151,7 +151,15 @@
               <p class="erreur">Cet amorçage a été interrompu : relancez-le, ce qui est déjà récupéré n'est pas refait.</p>
             }
             @if (amorcages[d.id]?.sites?.length) {
-              <p class="aide">Sites sensibles : @for (s of amorcages[d.id]!.sites; track s.source) { {{ s.source }} ({{ s.statut }}) }</p>
+              <p class="aide">Sites sensibles :</p>
+              <ul class="sites-amorcage">
+                @for (s of amorcages[d.id]!.sites; track s.source) {
+                  <li>{{ s.source }} : {{ s.statut }}@if (s.total != null) { — {{ s.total }} trouvés, {{ s.crees }} nouveaux }
+                    @if (s.erreur) { <span class="erreur">Échec : {{ s.erreur }}</span> }
+                    @for (i of s.incomplet ?? []; track i) { <span class="erreur">Incomplet : {{ i }}</span> }
+                  </li>
+                }
+              </ul>
             }
             <button type="button" class="btn-primary" (click)="amorcer(d)">Amorcer tout le département</button>
             <button type="button" class="lien" (click)="voirAmorcage(d)">Actualiser</button>

@@ -240,9 +240,11 @@ def amorcer_departement_task(amorcage_id: str, etapes=None):
 
 
 @shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=900, soft_time_limit=870)
-def enchainer_amorcage_task(etape: str, communes: list, environment: str):
-    """Amorçage départemental, étapes longues (« risques », « simulations ») : une commune, puis
-    la tâche se reprogramme pour les suivantes (core/amorcage_departement.enchainer)."""
+def enchainer_amorcage_task(etape: str, communes: list, environment: str, institution_id=None):
+    """Amorçage départemental, étapes longues (« risques », « simulations », « sirene ») : une
+    commune, puis la tâche se reprogramme pour les suivantes (core/amorcage_departement.enchainer)."""
     from .amorcage_departement import enchainer
+    suite = [institution_id] if institution_id else []
     enchainer(etape, communes, environment,
-              lambda reste, delai: enchainer_amorcage_task.apply_async(args=[etape, reste, environment], countdown=delai))
+              lambda reste, delai: enchainer_amorcage_task.apply_async(args=[etape, reste, environment, *suite], countdown=delai),
+              institution_id)

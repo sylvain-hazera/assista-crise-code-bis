@@ -47,6 +47,9 @@ ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son d
 # Redis, une tâche dont le départ dépasse le délai de visibilité (1 h) est redistribuée, donc
 # exécutée plusieurs fois.
 ESPACEMENT_RISQUES = 10
+#: Source importée commune par commune (voir etape_sites).
+SOURCE_PAR_COMMUNE = "SIRENE"
+ESPACEMENT_SIRENE = 5
 #: Au-delà, un amorçage sans fin consignée est tenu pour interrompu (la tâche a été tuée).
 DUREE_MAX_HEURES = 5
 
@@ -241,10 +244,19 @@ def etape_sites(cg, communes) -> dict:
     from .opendata import CONNECTEURS
     from .sites_sensibles import lancer_import
     from .tasks import FILE_LOURDE
+    from .tasks import enchainer_amorcage_task
     lancees = []
     for source in CONNECTEURS:
-        lancer_import(cg, source, {"niveau": "departement", "code": cg.departement_code},
-                      environment=cg.environment, file=FILE_LOURDE)
+        if str(source) == SOURCE_PAR_COMMUNE:
+            # L'annuaire des entreprises plafonne ses réponses : à l'échelle d'un département,
+            # 1 500 établissements au plus par thème (constaté le 22/11/2026 sur la Gironde :
+            # élevages, hébergements, transport, commerces tronqués). Commune par commune, le
+            # plafond n'est jamais atteint.
+            if communes:
+                enchainer_amorcage_task.delay("sirene", list(communes), cg.environment, str(cg.id))
+        else:
+            lancer_import(cg, source, {"niveau": "departement", "code": cg.departement_code},
+                          environment=cg.environment, file=FILE_LOURDE)
         lancees.append(str(source))
     return {"comptes": {"sources_lancees": len(lancees)}, "sources": lancees}
 
@@ -282,7 +294,14 @@ def simulations_commune(code, environment):
         tache.apply_async(args=[code, environment, False], queue=FILE_LOURDE)
 
 
-def enchainer(etape, communes, environment, suivante):
+def sirene_commune(code, environment, institution_id):
+    from .models import Institution
+    from .sites_sensibles import executer_import
+    institution = Institution.objects.get(pk=institution_id)
+    executer_import(institution, SOURCE_PAR_COMMUNE, {"niveau": "commune", "code": code}, environment=environment)
+
+
+def enchainer(etape, communes, environment, suivante, institution_id=None):
     """Traite la première commune, puis confie le reste à `suivante(reste, délai)`. Une erreur
     sur une commune n'arrête pas les autres."""
     import logging
@@ -292,12 +311,14 @@ def enchainer(etape, communes, environment, suivante):
     try:
         if etape == "risques":
             relever_tout(code, environment)
+        elif etape == "sirene":
+            sirene_commune(code, environment, institution_id)
         else:
             simulations_commune(code, environment)
     except Exception:
         logging.getLogger(__name__).exception("Amorçage %s : échec pour %s", etape, code)
     if reste:
-        suivante(reste, ESPACEMENT_RISQUES if etape == "risques" else ESPACEMENT_SIMULATIONS)
+        suivante(reste, {"risques": ESPACEMENT_RISQUES, "sirene": ESPACEMENT_SIRENE}.get(etape, ESPACEMENT_SIMULATIONS))
 
 
 FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "adresses": etape_adresses,
