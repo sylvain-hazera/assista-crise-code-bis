@@ -136,7 +136,8 @@ class PilotesTest {
         assertEquals("1f02", pilote.recevoir(ficheCanal(1, "")).aEcrire.single().enHex())          // emplacement libre
         assertEquals("1f03", pilote.recevoir(ficheCanal(2, "#alpha")).aEcrire.single().enHex())
         // La radio n'a pas d'emplacement 3 : fin de lecture, on vide les messages en attente.
-        assertEquals("0a", pilote.recevoir(byteArrayOf(1)).aEcrire.single().enHex())
+        // Puis les contacts, pour la messagerie radio (22/11/2026).
+        assertEquals(listOf("0a", "04"), pilote.recevoir(byteArrayOf(1)).aEcrire.map { it.enHex() })
         assertEquals(true, pilote.prete)
         assertEquals(listOf(CanalRadio(0, "Public"), CanalRadio(2, "#alpha")), pilote.canaux)
         assertEquals(2, pilote.canalNomme("Alpha")?.index)

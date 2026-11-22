@@ -14,6 +14,9 @@ data class CanalRadio(val index: Int, val nom: String)
 /** Un message entendu par la radio sur un canal. */
 data class MessageRadio(val canal: Int, val texte: String)
 
+/** Un message direct reçu (22/11/2026). `de` : « !1a2b3c4d » (Meshtastic) ou le préfixe de clé (MeshCore). */
+data class MessageDirect(val de: String, val texte: String)
+
 enum class Protocole(val libelle: String) { MESHCORE("MeshCore"), MESHTASTIC("Meshtastic") }
 
 /**
@@ -55,7 +58,11 @@ abstract class PiloteRadio(val protocole: Protocole) {
         return canaux.firstOrNull { it.nom.trim().removePrefix("#").lowercase() == cherche }
     }
 
-    class Reaction(val aEcrire: List<ByteArray> = emptyList(), val messages: List<MessageRadio> = emptyList())
+    class Reaction(
+        val aEcrire: List<ByteArray> = emptyList(),
+        val messages: List<MessageRadio> = emptyList(),
+        val directs: List<MessageDirect> = emptyList(),
+    )
 
     /**
      * « Utilisateur radio avancé » (22/11/2026) : tout ce que la radio a décrit d'elle-même,
@@ -126,14 +133,17 @@ class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
                 val m = MeshCore.lireMessageCanal(trame)
                 Reaction(listOf(suivant()), listOfNotNull(m?.let { MessageRadio(it.canal, it.texte) }))
             }
-            // Un message direct : pas notre affaire ici, mais il faut continuer de vider.
-            MeshCore.Rep.CONTACT_MSG_RECV, MeshCore.Rep.CONTACT_MSG_RECV_V3 -> Reaction(listOf(suivant()))
+            // Un message direct : il entre dans la messagerie radio, et on continue de vider.
+            MeshCore.Rep.CONTACT_MSG_RECV, MeshCore.Rep.CONTACT_MSG_RECV_V3 -> {
+                val m = MeshCore.lireMessageRecu(trame)
+                Reaction(listOf(suivant()), directs = listOfNotNull(m?.let { MessageDirect(it.prefixeExpediteurHex, it.texte) }))
+            }
             else -> Reaction()
         }
     }
 
     /** Les canaux sont connus : on vide ce que la radio a reçu pendant qu'on n'écoutait pas. */
-    private fun finDeLecture(): Reaction { prete = true; return Reaction(listOf(suivant())) }
+    private fun finDeLecture(): Reaction { prete = true; return Reaction(listOf(suivant(), AdminMeshCore.demanderContacts())) }
 
     private fun suivant() = MeshCore.commandeSimple(MeshCore.Cmd.SYNC_NEXT_MESSAGE)
 
@@ -178,8 +188,9 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
                 else -> Reaction()
             }
             is Meshtastic.Evenement.Texte ->
-                // Seuls les messages de canal nous intéressent : adressés à tous.
                 if (evenement.vers == Meshtastic.DIFFUSION) Reaction(messages = listOf(MessageRadio(evenement.canal, evenement.texte)))
+                // Adressé à mon nœud : un message direct.
+                else if (evenement.vers == avance.monNoeud) Reaction(directs = listOf(MessageDirect("!" + evenement.de.toString(16).padStart(8, '0'), evenement.texte)))
                 else Reaction()
             else -> Reaction()
         }

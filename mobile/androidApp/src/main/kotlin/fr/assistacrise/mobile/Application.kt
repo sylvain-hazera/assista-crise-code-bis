@@ -71,6 +71,7 @@ class Application : android.app.Application() {
     val veille by lazy { Veille(magasin, notifications, equipes, depot) }
     val alertes by lazy { Alertes(this) }
     val chef by lazy { ChefDeMission(this) }
+    val messagerieRadio by lazy { MessagerieRadio(this) }
 
     private val verrouRestauration = Mutex()
     private var restaure = false
@@ -93,6 +94,7 @@ class Application : android.app.Application() {
         benevole.restaurer()
         terrain.restaurer()
         points.restaurer()
+        messagerieRadio.restaurer()
         restaure = true
     }
 }

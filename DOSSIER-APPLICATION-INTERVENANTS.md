@@ -1397,3 +1397,12 @@ remplacent pas.
   - Confirmation résumée de chaque écriture, renforcée pour ce qui peut couper la radio du
     réseau ; relecture après écriture. Non fait : traceroute Meshtastic.
 - **Rien n'a été essayé sur une vraie radio** : à valider sur le matériel de Sylvain.
+
+## 18. Version 0.15.0 (22/11/2026) : messagerie radio
+
+Pour l'utilisateur radio avancé, l'écran Équipes montre la radio du nœud : **tous ses canaux**
+(pas seulement ceux des équipes) et **ses contacts** (nœuds Meshtastic, contacts MeshCore),
+avec recherche par nom. Chacun ouvre une conversation : parler sur un canal, ou en **message
+direct**, émis et reçu (les pilotes remontent désormais les messages adressés au nœud). Les
+conversations sont gardées dans le magasin chiffré, 200 messages chacune ; en formation, les
+messages émis suivent la règle « [démo] ». Pas d'accusé de réception affiché pour l'instant.

@@ -65,7 +65,7 @@ enum class EtapeConnexion { ADRESSE, CODE, MOT_DE_PASSE }
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
-    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE,
+    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -401,6 +401,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.suivi.toutEffacer()
             app.terrain.toutEffacer()
             app.points.toutEffacer()
+            app.messagerieRadio.toutEffacer()
             app.citoyen.toutEffacer()
             app.alertes.toutRetirer()
             app.veille.toutEffacer()
@@ -459,6 +460,36 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             val ok = app.radio.envoyerAdmin(trames)
             message = if (ok) "$resume : envoyé à la radio." else "$resume : la radio n'a pas pris la commande."
             if (ok && relire) { kotlinx.coroutines.delay(1_500); app.radio.relireAvance() }
+        }
+    }
+
+    // --- Messagerie radio (22/11/2026) ---------------------------------------------------------
+
+    val conversationsRadio = app.messagerieRadio.conversations
+    val nonLusRadio = app.messagerieRadio.nonLus
+    var conversationRadio by mutableStateOf<String?>(null); private set
+
+    fun ouvrirConversationRadio(cle: String) {
+        conversationRadio = cle
+        app.messagerieRadio.ouverte = cle
+        app.messagerieRadio.marquerLue(cle)
+        aller(Ecran.RADIO_CONVERSATION)
+    }
+
+    fun fermerConversationRadio() {
+        app.messagerieRadio.ouverte = null
+        aller(Ecran.EQUIPES)
+    }
+
+    fun nomDuContactRadio(contact: String) = app.messagerieRadio.nomDuContact(contact)
+
+    fun ecrireALaRadio(cle: String, texte: String) {
+        viewModelScope.launch {
+            val ok = when {
+                cle.startsWith("c:") -> app.messagerieRadio.envoyerSurCanal(cle.removePrefix("c:").toInt(), texte)
+                else -> app.messagerieRadio.envoyerDirect(cle.removePrefix("d:"), texte)
+            }
+            if (!ok) message = "La radio n'a pas pris le message (radio déconnectée, ou contact inconnu)."
         }
     }
 

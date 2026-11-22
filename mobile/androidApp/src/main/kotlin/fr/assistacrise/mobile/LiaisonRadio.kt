@@ -459,6 +459,8 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
             val equipe = app.equipes.equipes.value.firstOrNull { p.canalNomme(canalDe(it, p.protocole))?.index == canal.index } ?: continue
             app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis())
         }
+        // Tous les canaux du nœud et les messages directs, pour la messagerie radio (22/11/2026).
+        app.messagerieRadio.recevoir(reaction.messages, reaction.directs, p)
         reaction.aEcrire.forEach { ecrire(it) }
     }
 
@@ -503,7 +505,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
      * En formation, la règle du serveur pour la démo (`_contenu_message_mesh_demo`) : la radio
      * est réelle et ses voisins aussi, donc le message est préfixé « [démo] » et gardé court.
      */
-    private fun texteSelonLaZone(texte: String): String {
+    fun texteSelonLaZone(texte: String): String {
         if (!app.session.enFormation) return texte
         val propre = texte.trim()
         val prefixe = if (propre.lowercase().startsWith("[démo]")) "" else "[démo] "

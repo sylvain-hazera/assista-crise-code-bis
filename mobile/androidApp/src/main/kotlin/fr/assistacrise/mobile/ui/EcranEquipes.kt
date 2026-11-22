@@ -59,6 +59,10 @@ fun EcranEquipes(modele: ModeleApplication) {
             Text("Mes équipes", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             PastilleLien(lien)
         }
+        // La radio du nœud (utilisateur radio avancé) : canaux, contacts, messages directs.
+        if (equipes.isEmpty() && modele.modeRadioAvance) {
+            Column(Modifier.padding(16.dp)) { PanneauRadio(modele) }
+        }
         if (equipes.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Aucune équipe pour l'instant", style = MaterialTheme.typography.titleMedium)
@@ -75,6 +79,7 @@ fun EcranEquipes(modele: ModeleApplication) {
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
                 item { CarteSuivi(modele, suivi, equipes) }
+                item { PanneauRadio(modele) }
                 items(equipes, key = { it.id }) { equipe -> CarteEquipe(equipe) { modele.ouvrirMessagerie(equipe) } }
             }
         }

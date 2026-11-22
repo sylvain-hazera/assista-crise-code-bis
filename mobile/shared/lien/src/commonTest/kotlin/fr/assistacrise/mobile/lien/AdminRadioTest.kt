@@ -101,3 +101,23 @@ class AdminMeshCoreTest {
         assertEquals(869.525, m.frequenceMhz, 1e-9); assertEquals("Lea", m.nom); assertEquals(2, m.telemetriePosition)
     }
 }
+
+class MessagesDirectsTest {
+    @Test fun meshtasticUnMessageAdresseAMonNoeudEstUnDirect() {
+        val p = PiloteMeshtastic { 7L }
+        // FromRadio{my_info{my_node_num = 0x1234}} puis FromRadio{packet{from, to = mon nœud, decoded{port 1, "salut"}}}
+        p.recevoir(fr.assistacrise.mobile.lien.meshtastic.Ecrivain().message(3, fr.assistacrise.mobile.lien.meshtastic.Ecrivain().varint(1, 0x1234)).fin())
+        val donnees = fr.assistacrise.mobile.lien.meshtastic.Ecrivain().varint(1, 1).brut(2, "salut".encodeToByteArray())
+        val paquet = fr.assistacrise.mobile.lien.meshtastic.Ecrivain().fixe32(1, 0xabcdefL).fixe32(2, 0x1234).message(4, donnees).fixe32(6, 99)
+        val r = p.recevoir(fr.assistacrise.mobile.lien.meshtastic.Ecrivain().message(2, paquet).fin())
+        assertEquals(listOf(MessageDirect("!00abcdef", "salut")), r.directs)
+        assertTrue(r.messages.isEmpty())
+    }
+
+    @Test fun meshcoreUnMessageDeContactEstUnDirect() {
+        val p = PiloteMeshCore()
+        val trame = byteArrayOf(7) + "a1b2c3d4e5f6".depuisHex() + byteArrayOf(0, 0) + byteArrayOf(0x10, 0, 0, 0) + "coucou".encodeToByteArray()
+        val r = p.recevoir(trame)
+        assertEquals(listOf(MessageDirect("a1b2c3d4e5f6", "coucou")), r.directs)
+    }
+}
