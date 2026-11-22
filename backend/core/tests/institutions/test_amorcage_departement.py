@@ -69,6 +69,22 @@ def test_mairies_epci_et_annuaire_de_crise_sans_doublon(cg):
 
 
 @pytest.mark.django_db
+def test_l_administrateur_relance_l_amorcage_mais_pas_un_inconnu(cg):
+    """22/11/2026 : l'administrateur engageait la délégation mais se voyait refuser la relance."""
+    aasc = Institution.objects.create(nom="Réserve essai", type=_type("aasc"))
+    d = DelegationGestion.objects.create(collectivite=cg, aasc=aasc, convention_signee_le="2026-10-01", environment="PROD")
+    admin = User.objects.create_user(username="admin42@test.fr", email="admin42@test.fr", password="x", type="ADMIN")
+    inconnu = User.objects.create_user(username="inconnu42@test.fr", email="inconnu42@test.fr", password="x", type="SECOURS")
+    c = APIClient()
+    c.force_authenticate(user=inconnu)
+    assert c.post(reverse("delegationgestion-amorcer", args=[d.id]), {}, format="json").status_code in (403, 404)
+    c.force_authenticate(user=admin)
+    with mock.patch("core.tasks.amorcer_departement_task.delay"), \
+         mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        assert c.post(reverse("delegationgestion-amorcer", args=[d.id]), {}, format="json").status_code == 202
+
+
+@pytest.mark.django_db
 def test_une_commune_en_panne_n_arrete_pas_le_departement(cg):
     def interroger(code):
         if code == "42186":

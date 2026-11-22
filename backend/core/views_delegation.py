@@ -346,7 +346,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         """Délégation départementale : lance l'amorçage du département (répertoires officiels,
         adresses, risques, sites sensibles), toutes les étapes ou celles demandées."""
         delegation = self.get_object()
-        if not agit_pour(request.user, delegation):
+        if not self._peut_agir(request, delegation):
             raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
         cg = delegation.collectivite
         if (cg.secteur_niveau_effectif or "") != "departement" or not cg.departement_code:
@@ -384,7 +384,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         from .invitation_collectivite import inviter
 
         delegation = self.get_object()
-        if not agit_pour(request.user, delegation):
+        if not self._peut_agir(request, delegation):
             raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
         dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
         ids = [i for i in (request.data.get("institutions") or []) if i][:1000]
@@ -417,7 +417,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         from .models import ReferentCollectivite
 
         delegation = self.get_object()
-        if not agit_pour(request.user, delegation):
+        if not self._peut_agir(request, delegation):
             raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
         inst = Institution.objects.filter(pk=request.data.get("institution"), actif=True).first()
         dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
@@ -573,6 +573,12 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         dernier = delegation.amorcages.first()
         return Response(self._etat_amorcage(dernier) if dernier else None)
 
+    @staticmethod
+    def _peut_agir(request, delegation) -> bool:
+        """Ceux qui agissent pour l'AASC sur ce territoire, et l'administrateur de la plateforme
+        (22/11/2026 : il pouvait engager une délégation, mais pas relancer son amorçage)."""
+        return get_effective_role(request) == UserRole.ADMINISTRATOR or agit_pour(request.user, delegation)
+
     def _etat_amorcage(self, amorcage):
         from .amorcage_departement import avancement_risques, est_interrompu
         from .models import ImportOpenData
@@ -597,7 +603,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         from .views import build_magic_link
 
         delegation = self.get_object()
-        if not agit_pour(request.user, delegation):
+        if not self._peut_agir(request, delegation):
             raise PermissionDenied("Seuls ceux qui agissent pour l'association invitent la mairie.")
         emails = [e.strip().lower() for e in (request.data.get("emails") or []) if e and "@" in e]
         if not emails:
