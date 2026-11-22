@@ -26,6 +26,8 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+import logging
+
 from .audit import audit_log
 from .delegation_gestion import (
     agit_pour, crise_touche, est_en_vigueur, personnes_qui_agissent,
@@ -38,6 +40,24 @@ from .permissions import get_active_environment, get_effective_role
 
 CODES_COLLECTIVITE = {"mairie", "epci", "cg"}
 CODE_AASC = "aasc"
+
+
+logger = logging.getLogger(__name__)
+
+
+def _etapes_lisibles(etapes):
+    """Les étapes pour l'écran : sans la liste des communes restantes ni les jetons, mais avec
+    le nombre qui reste et la dernière activité."""
+    resultat = {}
+    for nom, etat in (etapes or {}).items():
+        if nom.startswith("_") or not isinstance(etat, dict):
+            continue
+        propre = {k: v for k, v in etat.items() if k not in ("restantes", "jeton")}
+        if "restantes" in etat:
+            propre.setdefault("comptes", {})
+            propre["comptes"] = {**propre["comptes"], "restantes": len(etat["restantes"] or [])}
+        resultat[nom] = propre
+    return resultat
 
 
 def _dans_le_departement(inst, dep) -> bool:
@@ -784,6 +804,15 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         """Où en est le dernier amorçage, et les imports de sites sensibles du département."""
         delegation = self.get_object()
         dernier = delegation.amorcages.first()
+        if dernier is not None:
+            # Une étape longue muette depuis 30 min s'est arrêtée sans qu'un worker redémarre :
+            # la regarder suffit à la relancer, là où elle en était.
+            from .amorcage_departement import reprendre
+            try:
+                if reprendre(amorcage=dernier):
+                    dernier.refresh_from_db()
+            except Exception:
+                logger.exception("Reprise de l'amorçage %s impossible.", dernier.pk)
         return Response(self._etat_amorcage(dernier) if dernier else None)
 
     @staticmethod
@@ -797,7 +826,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         from .models import ImportOpenData
         imports = ImportOpenData.objects.filter(institution=amorcage.delegation.collectivite)
         return {
-            "id": str(amorcage.id), "debut": amorcage.debut, "fin": amorcage.fin, "etapes": amorcage.etapes,
+            "id": str(amorcage.id), "debut": amorcage.debut, "fin": amorcage.fin, "etapes": _etapes_lisibles(amorcage.etapes),
             "interrompu": est_interrompu(amorcage), "risques": avancement_risques(amorcage),
             # `incomplet` et `erreur` : un import tronqué ou en échec doit se voir (22/11/2026).
             "sites": [{"source": i.source, "statut": i.statut, "date_fin": i.date_fin,

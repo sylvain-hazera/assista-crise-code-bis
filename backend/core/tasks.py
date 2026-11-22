@@ -226,29 +226,52 @@ def pousser_notification_site_task(notification_id: str):
 
 
 @shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
-def amorcer_departement_task(amorcage_id: str, etapes=None):
+def amorcer_departement_task(amorcage_id: str, etapes=None, jeton=None):
     """Amorçage d'un département (core/amorcage_departement.py) : annuaire officiel commune par
     commune, adresses, risques, sites sensibles. Long par nature (un appel à l'Annuaire et à
-    Géorisques par commune) : quatre heures de budget, chaque étape consignée au fil de l'eau."""
+    Géorisques par commune) : quatre heures de budget, chaque étape consignée au fil de l'eau.
+    `jeton` : posé par une reprise ; un message d'avant la reprise (sans le bon jeton) est ignoré."""
     from .amorcage_departement import ETAPES, executer
     from .models import AmorcageDepartement
 
     amorcage = AmorcageDepartement.objects.select_related("delegation__collectivite").filter(pk=amorcage_id).first()
     if amorcage is None:
         return
+    attendu = ((amorcage.etapes or {}).get("_principal") or {}).get("jeton")
+    if attendu and jeton != attendu:
+        return
     executer(amorcage, [e for e in (etapes or ETAPES) if e in ETAPES])
 
 
 @shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=900, soft_time_limit=870)
-def enchainer_amorcage_task(etape: str, communes: list, environment: str, reference=None):
-    """Amorçage départemental, étapes longues (« risques », « simulations », « sirene ») : une
-    commune, puis la tâche se reprogramme pour les suivantes (core/amorcage_departement.enchainer).
-    `reference` : l'amorçage, pour compter l'avancement des entreprises."""
+def enchainer_amorcage_task(etape: str, communes: list, environment: str, reference=None, jeton=None):
+    """Amorçage départemental, étapes longues : une commune, puis la tâche se reprogramme
+    (core/amorcage_departement.enchainer). L'avancement est en base ; `communes` n'est plus
+    lu (gardé pour la forme des anciens messages, qui sont ignorés faute de jeton)."""
     from .amorcage_departement import enchainer
-    suite = [reference] if reference else []
-    enchainer(etape, communes, environment,
-              lambda reste, delai: enchainer_amorcage_task.apply_async(args=[etape, reste, environment, *suite], countdown=delai),
-              reference)
+    if not reference or not jeton:
+        return
+    enchainer("entreprises" if etape == "sirene" else etape, reference, jeton, environment)
+
+
+@shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=600, soft_time_limit=570)
+def reprendre_amorcages_task(silence_minutes: int = 30):
+    """Relance les amorçages arrêtés (core/amorcage_departement.reprendre)."""
+    from .amorcage_departement import reprendre
+    return reprendre(silence_minutes)
+
+
+def _reprise_au_demarrage(sender=None, **kwargs):
+    """Au démarrage du worker des travaux lourds (redéploiement, redémarrage de la machine) :
+    tout ce qui tournait a été coupé, on le reprend là où il en était (22/11/2026)."""
+    nom = str(getattr(sender, "hostname", "") or "")
+    if nom.startswith("lourd@"):
+        reprendre_amorcages_task.apply_async(args=[0], countdown=30)
+
+
+from celery.signals import worker_ready  # noqa: E402
+
+worker_ready.connect(_reprise_au_demarrage, weak=False)
 
 
 #: Pause entre deux courriels d'une campagne : un SMTP d'institution n'accepte pas 500 messages d'un coup.

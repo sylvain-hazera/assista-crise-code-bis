@@ -125,49 +125,12 @@ def test_la_tache_de_la_simulation_garde_sa_signature():
 
 
 @pytest.mark.django_db
-def test_les_simulations_s_enchainent_commune_par_commune(cg):
-    """Une commune, puis la suivante après un court délai : jamais des centaines de tâches
-    programmées à des heures d'écart (redistribuées par Redis au-delà d'une heure)."""
-    from core.amorcage_departement import ESPACEMENT_SIMULATIONS, etape_simulations
-    from core.models import TacheSimulationInondation
-    from core.tasks import enchainer_amorcage_task
-    with mock.patch("core.tasks.calculer_paliers_task.apply_async") as paliers, \
-         mock.patch("core.tasks.calculer_ruissellement_task.apply_async") as ruissellement, \
-         mock.patch("core.tasks.charger_adresses_task.apply_async") as adresses, \
-         mock.patch("core.tasks.enchainer_amorcage_task.delay") as premiere, \
-         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
-        resultat = etape_simulations(cg, ["42186", "42218"])
-        assert resultat["comptes"]["communes_programmees"] == 2
-        premiere.assert_called_once_with("simulations", ["42186", "42218"], "PROD")
-        enchainer_amorcage_task.run("simulations", ["42186", "42218"], "PROD")
-    assert paliers.call_count == ruissellement.call_count == adresses.call_count == 1
-    assert paliers.call_args.kwargs["queue"] == "lourd"
-    assert suivante.call_args.kwargs == {"args": ["simulations", ["42218"], "PROD"], "countdown": ESPACEMENT_SIMULATIONS}
-    assert TacheSimulationInondation.objects.filter(statut="EN_COURS", commune_code="42186").count() == 3
-
-
-@pytest.mark.django_db
 def test_le_referentiel_recharge_le_departement(cg):
     from core.amorcage_departement import etape_referentiel
     with mock.patch("django.core.management.call_command") as commande:
         resultat = etape_referentiel(cg, ["42186"])
     commande.assert_called_once_with("import_communes", "42")
     assert resultat["comptes"]["communes_avant"] == 1
-
-
-@pytest.mark.django_db
-def test_les_risques_s_enchainent_et_une_erreur_n_arrete_pas_la_suite(cg):
-    from core.amorcage_departement import ESPACEMENT_RISQUES
-    from core.tasks import enchainer_amorcage_task
-    with mock.patch("core.releve_georisques.relever_tout", side_effect=RuntimeError("Géorisques muet")) as relever, \
-         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
-        enchainer_amorcage_task.run("risques", ["42186", "42218"], "PROD")
-    relever.assert_called_once_with("42186", "PROD")
-    assert suivante.call_args.kwargs == {"args": ["risques", ["42218"], "PROD"], "countdown": ESPACEMENT_RISQUES}
-    with mock.patch("core.releve_georisques.relever_tout"), \
-         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
-        enchainer_amorcage_task.run("risques", ["42218"], "PROD")
-    suivante.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -230,26 +193,105 @@ def test_les_sites_de_l_amorcage_partent_dans_la_file_lourde(cg):
     assert all(c.kwargs["args"][1] != "SIRENE" for c in importer.call_args_list)
 
 
-@pytest.mark.django_db
-def test_les_entreprises_sont_une_etape_a_part_commune_par_commune(cg):
-    from core.amorcage_departement import ESPACEMENT_SIRENE, etape_entreprises
-    from core.tasks import enchainer_amorcage_task
+# ── Étapes longues : avancement en base, reprise après redéploiement (22/11/2026) ──
+
+def _amorcage(cg, etapes=None):
     aasc = Institution.objects.create(nom="Réserve essai", type=_type("aasc"))
     d = DelegationGestion.objects.create(collectivite=cg, aasc=aasc, convention_signee_le="2026-10-01", environment="PROD")
-    a = AmorcageDepartement.objects.create(delegation=d, environment="PROD", etapes={"entreprises": {"statut": "EN_COURS"}})
-    with mock.patch("core.tasks.enchainer_amorcage_task.delay") as premiere:
-        resultat = etape_entreprises(cg, ["42186", "42218"])
-    premiere.assert_called_once_with("sirene", ["42186", "42218"], "PROD", str(a.id))
-    a.etapes["entreprises"] = {"statut": "PROGRAMMEE", **resultat}
-    a.save()
-    with mock.patch("core.sites_sensibles.executer_import", return_value={"crees": 7}) as importer, \
-         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
-        enchainer_amorcage_task.run("sirene", ["42186", "42218"], "PROD", str(a.id))
-        assert importer.call_args.args[1:3] == ("SIRENE", {"niveau": "commune", "code": "42186"})
-        assert suivante.call_args.kwargs == {"args": ["sirene", ["42218"], "PROD", str(a.id)], "countdown": ESPACEMENT_SIRENE}
+    return AmorcageDepartement.objects.create(delegation=d, environment="PROD", etapes=etapes or {})
+
+
+def _sur_place():
+    """Exécute aussitôt les tâches programmées, comme un worker, sans Redis."""
+    from core import tasks
+    file = []
+    return file, mock.patch("core.tasks.enchainer_amorcage_task.apply_async", side_effect=lambda args, countdown=0: file.append(args))
+
+
+@pytest.mark.django_db
+def test_une_etape_longue_tient_son_avancement_en_base_et_va_jusqu_au_bout(cg):
+    from core.amorcage_departement import executer
+    from core.tasks import enchainer_amorcage_task
+    a = _amorcage(cg)
+    file, patch = _sur_place()
+    with patch, mock.patch("django.db.transaction.on_commit", lambda f: f()), \
+         mock.patch("core.releve_georisques.relever_tout") as relever:
+        executer(a, ["risques"])
         a.refresh_from_db()
-        assert a.etapes["entreprises"]["comptes"]["faites"] == 1 and a.etapes["entreprises"]["statut"] == "PROGRAMMEE"
-        enchainer_amorcage_task.run("sirene", ["42218"], "PROD", str(a.id))
+        assert a.etapes["risques"]["restantes"] == ["42186", "42218"] and a.etapes["risques"]["statut"] == "PROGRAMMEE"
+        while file:
+            enchainer_amorcage_task.run(*file.pop(0))
     a.refresh_from_db()
-    assert a.etapes["entreprises"]["comptes"]["faites"] == 2 and a.etapes["entreprises"]["comptes"]["crees"] == 14
+    assert [c.args[0] for c in relever.call_args_list] == ["42186", "42218"]
+    assert a.etapes["risques"]["statut"] == "TERMINEE" and a.etapes["risques"]["restantes"] == []
+
+
+@pytest.mark.django_db
+def test_apres_un_redemarrage_on_reprend_la_ou_on_en_etait_et_l_ancien_message_est_ignore(cg):
+    from core.amorcage_departement import reprendre
+    from core.tasks import enchainer_amorcage_task
+    a = _amorcage(cg, {"entreprises": {"statut": "PROGRAMMEE", "restantes": ["42218"], "jeton": "ancien",
+                                       "battement": "2026-11-22T08:00:00+00:00", "comptes": {"total": 2, "faites": 1, "crees": 5}}})
+    file, patch = _sur_place()
+    with patch, mock.patch("django.db.transaction.on_commit", lambda f: f()), \
+         mock.patch("core.sites_sensibles.executer_import", return_value={"crees": 3}) as importer:
+        assert reprendre(0) == 1
+        a.refresh_from_db()
+        nouveau = a.etapes["entreprises"]["jeton"]
+        assert nouveau != "ancien" and a.etapes["entreprises"]["reprises"] == 1
+        # Le message d'avant le redémarrage, rendu plus tard par Redis : ignoré.
+        enchainer_amorcage_task.run("entreprises", [], "PROD", str(a.id), "ancien")
+        importer.assert_not_called()
+        # Celui de la reprise : il fait la commune qui restait, et seulement elle.
+        enchainer_amorcage_task.run(*file.pop(0))
+    a.refresh_from_db()
+    assert importer.call_args.args[2] == {"niveau": "commune", "code": "42218"}
     assert a.etapes["entreprises"]["statut"] == "TERMINEE"
+    assert a.etapes["entreprises"]["comptes"]["faites"] == 2 and a.etapes["entreprises"]["comptes"]["crees"] == 8
+
+
+@pytest.mark.django_db
+def test_une_etape_vivante_n_est_pas_relancee_sauf_au_demarrage_du_worker(cg):
+    from django.utils import timezone
+    from core.amorcage_departement import reprendre
+    a = _amorcage(cg, {"risques": {"statut": "PROGRAMMEE", "restantes": ["42218"], "jeton": "j1",
+                                   "battement": timezone.now().isoformat()}})
+    with mock.patch("core.tasks.enchainer_amorcage_task.apply_async"), mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        assert reprendre(30) == 0
+        assert reprendre(0) == 1
+
+
+@pytest.mark.django_db
+def test_la_tache_principale_coupee_en_route_reprend_ses_etapes_restantes(cg):
+    from core.amorcage_departement import reprendre
+    from core.tasks import amorcer_departement_task
+    a = _amorcage(cg, {"annuaire": {"statut": "EN_COURS"}, "adresses": {"statut": "EN_ATTENTE"}, "referentiel": {"statut": "TERMINEE"}})
+    with mock.patch("core.tasks.amorcer_departement_task.apply_async") as relance, mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        assert reprendre(0) == 1
+    args = relance.call_args.kwargs["args"]
+    assert args[0] == str(a.id) and args[1] == ["annuaire", "adresses"]
+    a.refresh_from_db()
+    # L'ancien message de la tâche principale (sans le jeton) ne refait rien.
+    with mock.patch("core.amorcage_departement.executer") as executer:
+        amorcer_departement_task.run(str(a.id), ["annuaire"])
+        executer.assert_not_called()
+        amorcer_departement_task.run(str(a.id), ["annuaire"], args[2])
+        executer.assert_called_once()
+
+
+def test_le_worker_lourd_reprend_au_demarrage():
+    from types import SimpleNamespace
+    from core import tasks
+    with mock.patch("core.tasks.reprendre_amorcages_task.apply_async") as reprise:
+        tasks._reprise_au_demarrage(SimpleNamespace(hostname="celery@abc"))
+        reprise.assert_not_called()
+        tasks._reprise_au_demarrage(SimpleNamespace(hostname="lourd@abc"))
+        assert reprise.call_args.kwargs["args"] == [0]
+
+
+@pytest.mark.django_db
+def test_l_ecran_ne_recoit_ni_la_liste_des_communes_ni_le_jeton(cg):
+    from core.views_delegation import _etapes_lisibles
+    lisibles = _etapes_lisibles({"risques": {"statut": "PROGRAMMEE", "restantes": ["1", "2"], "jeton": "x", "comptes": {"a": 1}},
+                                 "_principal": {"jeton": "y"}})
+    assert lisibles == {"risques": {"statut": "PROGRAMMEE", "comptes": {"a": 1, "restantes": 2}}}

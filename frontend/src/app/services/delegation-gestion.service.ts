@@ -67,13 +67,13 @@ export interface EtatAmorcage {
   id: string;
   debut: string;
   fin: string | null;
-  etapes: Record<string, { statut: string; comptes?: Record<string, number>; erreur?: string; erreurs?: string[] }>;
+  etapes: Record<string, { statut: string; comptes?: Record<string, number>; erreur?: string; erreurs?: string[]; battement?: string; reprises?: number }>;
   sites: { source: string; statut: string; date_fin: string | null; crees?: number | null; total?: number | null;
            incomplet?: string[]; erreur?: string | null }[];
   /** La tâche a été interrompue (relance possible). */
   interrompu?: boolean;
   /** Communes du département dont les risques sont relevés depuis le lancement. */
-  risques?: { faites: number; total: number;
+  risques?: { faites: number; total: number; dernier_releve?: string | null;
              geoportail?: { servitudes: number; communes_avec_servitudes: number; zones_plu: number; communes_avec_plu: number } };
 }
 

@@ -6660,3 +6660,10 @@ fichier — le texte entre balises parle à l'utilisateur, le commentaire au mai
   Fiche de mission (administration) : statut de chacun et fil.
 - **GPS hors ligne** : régions IGN embarquées (`CartesHorsLigne`, style `asset://style-ign.json`), points de
   la crise (`points-operationnels`) embarqués, « Autour de moi », « Aller vers » (flèche, distance, cap).
+
+- **Reprise automatique de l'amorçage** (22/11/2026) : l'avancement des étapes longues (risques,
+  entreprises, simulations) vit en base sur l'amorçage (communes restantes, battement, jeton).
+  Au démarrage du worker des travaux lourds (`worker_ready`, nom `lourd@…`), `reprendre(0)` relance
+  chaque étape inachevée avec un nouveau jeton, et la tâche principale coupée en route ; un message
+  d'avant (ancien jeton) est ignoré. Lire l'amorçage relance aussi une étape muette depuis 30 min.
+  Compteur des risques : total en base et date du dernier relevé.

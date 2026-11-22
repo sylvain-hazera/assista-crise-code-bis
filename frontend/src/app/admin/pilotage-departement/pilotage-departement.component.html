@@ -96,14 +96,18 @@
               <tr>
                 <td>{{ e.libelle }}</td>
                 <td>{{ amorcages[d.id]?.etapes?.[e.code]?.statut ?? '—' }}</td>
-                <td class="comptes">{{ comptesLisibles(amorcages[d.id]?.etapes?.[e.code]?.comptes) }}{{ amorcages[d.id]?.etapes?.[e.code]?.erreur ? ' — ' + amorcages[d.id]?.etapes?.[e.code]?.erreur : '' }}</td>
+                <td class="comptes">{{ comptesLisibles(amorcages[d.id]?.etapes?.[e.code]?.comptes) }}{{ amorcages[d.id]?.etapes?.[e.code]?.erreur ? ' — ' + amorcages[d.id]?.etapes?.[e.code]?.erreur : '' }}
+                  @if (amorcages[d.id]?.etapes?.[e.code]?.battement; as b) {
+                    <br><span class="activite">Dernière activité : {{ b | date:'dd/MM HH:mm' }}@if (amorcages[d.id]?.etapes?.[e.code]?.reprises; as n) { · repris {{ n }} fois après un arrêt }</span>
+                  }</td>
                 <td><button type="button" class="lien" (click)="amorcer(d, e.code)">Relancer</button></td>
               </tr>
             }
           </table>
           @if (amorcages[d.id]?.risques; as r) {
-            <p class="aide">Risques relevés : {{ r.faites }} / {{ r.total }} communes (une toutes les 100 secondes environ,
-              Géorisques limite son débit).</p>
+            <p class="aide">Risques en base : {{ r.faites }} / {{ r.total }} communes@if (r.dernier_releve) { , dernier relevé le {{ r.dernier_releve | date:'dd/MM HH:mm' }} }
+              (une commune toutes les 100 secondes environ, Géorisques limite son débit). Un redéploiement ou un redémarrage
+              ne perd rien : l'amorçage reprend seul là où il en était.</p>
               @if (r.geoportail; as g) {
                 <p class="aide">Géoportail de l'urbanisme, dans la même passe : {{ g.servitudes }} servitudes
                   (plans de prévention, lignes électriques, monuments, voies ferrées…) sur {{ g.communes_avec_servitudes }} communes,

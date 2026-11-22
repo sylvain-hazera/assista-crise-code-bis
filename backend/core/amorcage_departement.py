@@ -252,30 +252,31 @@ def etape_adresses(cg, communes) -> dict:
 
 
 def etape_risques(cg, communes) -> dict:
-    """Programme le relevé de chaque commune (une tâche chacune, espacées) : l'avancement se lit
-    ensuite en direct dans les relevés (voir avancement_risques)."""
-    from .tasks import enchainer_amorcage_task
-    if communes:
-        enchainer_amorcage_task.delay("risques", list(communes), cg.environment)
+    """Géorisques et Géoportail de l'urbanisme, commune par commune : l'enchaînement est lancé
+    par `executer` (voir CHAINES), qui en tient l'avancement en base."""
     return {"comptes": {"communes_programmees": len(communes),
                         "duree_estimee_heures": round(len(communes) * 100 / 3600, 1)}}
 
 
 def avancement_risques(amorcage) -> dict:
-    """Communes du département relevées depuis le lancement de l'amorçage."""
+    """Communes du département dont les risques sont en base, quelle que soit la relance qui les
+    a relevées (22/11/2026 : compter « depuis cette relance » affichait 3 / 534 alors que 78
+    communes étaient déjà faites), et la date du dernier relevé."""
+    from django.db.models import Max
+
     from .models import Commune, ReleveGeorisques
     cg = amorcage.delegation.collectivite
     total = Commune.objects.filter(departement_code=cg.departement_code).count()
-    faites = (ReleveGeorisques.objects.filter(commune_code__startswith=cg.departement_code,
-                                              releve_le__gte=amorcage.debut, environment=cg.environment)
-              .values("commune_code").distinct().count())
+    releves = ReleveGeorisques.objects.filter(commune_code__startswith=cg.departement_code, environment=cg.environment)
+    faites = releves.values("commune_code").distinct().count()
+    dernier = releves.aggregate(m=Max("releve_le"))["m"]
     # Géoportail de l'urbanisme, dans la même passe : ce qui en est déjà gardé (22/11/2026 :
     # « je vois Géorisques, scannes-tu le Géoportail aussi ? »).
     from .models import ServitudePPR, ZoneUrbanisme
     filtre = {"commune_code__startswith": cg.departement_code, "environment": cg.environment}
     servitudes = ServitudePPR.objects.filter(**filtre)
     zones = ZoneUrbanisme.objects.filter(**filtre)
-    return {"faites": faites, "total": total,
+    return {"faites": faites, "total": total, "dernier_releve": dernier.isoformat() if dernier else None,
             "geoportail": {"servitudes": servitudes.count(),
                            "communes_avec_servitudes": servitudes.values("commune_code").distinct().count(),
                            "zones_plu": zones.count(),
@@ -300,13 +301,7 @@ def etape_entreprises(cg, communes) -> dict:
     """Annuaire des entreprises (élevages, hébergements, transport, commerces…), commune par
     commune et au long cours : à l'échelle d'un département, l'annuaire plafonne ses réponses
     (1 500 établissements par thème, constaté le 22/11/2026 sur la Gironde) ; par commune, jamais.
-    L'avancement se lit dans l'étape (faites / total, établissements créés)."""
-    from .models import AmorcageDepartement
-    from .tasks import enchainer_amorcage_task
-    amorcage = (AmorcageDepartement.objects.filter(delegation__collectivite=cg, fin__isnull=True)
-                .order_by("-debut").first())
-    if communes and amorcage is not None:
-        enchainer_amorcage_task.delay("sirene", list(communes), cg.environment, str(amorcage.id))
+    Enchaîné par `executer` (voir CHAINES)."""
     return {"comptes": {"faites": 0, "total": len(communes), "crees": 0,
                         "duree_estimee_heures": round(len(communes) * (ESPACEMENT_SIRENE + 20) / 3600, 1)}}
 
@@ -321,11 +316,7 @@ def etape_referentiel(cg, communes) -> dict:
 
 
 def etape_simulations(cg, communes) -> dict:
-    """Programme, commune par commune, les calculs de la page de simulation : ils tournent ensuite
-    seuls, espacés, et chacun consigne son état."""
-    from .tasks import enchainer_amorcage_task
-    if communes:
-        enchainer_amorcage_task.delay("simulations", list(communes), cg.environment)
+    """Les calculs de la page de simulation, commune par commune : enchaînés par `executer`."""
     return {"comptes": {"communes_programmees": len(communes),
                         "duree_estimee_minutes": len(communes) * ESPACEMENT_SIMULATIONS // 60}}
 
@@ -344,50 +335,135 @@ def simulations_commune(code, environment):
         tache.apply_async(args=[code, environment, False], queue=FILE_LOURDE)
 
 
-def sirene_commune(code, environment, amorcage_id):
-    """Importe les entreprises d'une commune et compte l'avancement dans l'étape « entreprises »."""
+def sirene_commune(code, environment, institution):
+    """Importe les entreprises d'une commune. Rend le nombre d'établissements créés."""
+    from .sites_sensibles import executer_import
+    resultat = executer_import(institution, SOURCE_PAR_COMMUNE, {"niveau": "commune", "code": code},
+                               environment=environment) or {}
+    return int(resultat.get("crees") or 0)
+
+
+# ── Les étapes longues, et leur reprise (22/11/2026) ──
+#
+# « Si on redéploie ou reboot pendant un amorçage quelconque, ça reprend ensuite là où ça en
+# était. » L'avancement d'une étape longue vit EN BASE, sur l'amorçage : les communes qui
+# restent, un battement (dernière activité), et un jeton. Le message Celery ne porte que
+# l'étape, l'amorçage et le jeton :
+#   - au démarrage du worker des travaux lourds (redéploiement, reboot), `reprendre` relance
+#     chaque étape longue inachevée avec un NOUVEAU jeton ;
+#   - un message d'avant (rendu plus tard par Redis, ou en attente d'un délai) porte l'ancien
+#     jeton : il est ignoré. Aucune commune n'est traitée deux fois en parallèle.
+
+#: Étape -> espacement entre deux communes (secondes).
+CHAINES = {"risques": ESPACEMENT_RISQUES, "entreprises": ESPACEMENT_SIRENE, "simulations": ESPACEMENT_SIMULATIONS}
+#: Sans battement depuis ce délai, une étape longue est tenue pour arrêtée (reprise à la lecture).
+SILENCE_MINUTES = 30
+
+
+def _nouveau_jeton():
+    import uuid
+    return uuid.uuid4().hex[:12]
+
+
+def _lancer_chaine(amorcage_id, etape, environment, jeton, delai=5):
+    from django.db import transaction
+    from .tasks import enchainer_amorcage_task
+    transaction.on_commit(lambda: enchainer_amorcage_task.apply_async(
+        args=[etape, [], environment, str(amorcage_id), jeton], countdown=delai))
+
+
+def enchainer(etape, amorcage_id, jeton, environment):
+    """Traite la prochaine commune de l'étape, la retire des restantes, et programme la suivante.
+    Ignore un message dont le jeton n'est plus le bon. Une erreur sur une commune n'arrête pas
+    les autres."""
+    import logging
     from django.db import transaction
     from .models import AmorcageDepartement
-    from .sites_sensibles import executer_import
-
-    amorcage = AmorcageDepartement.objects.select_related("delegation__collectivite").get(pk=amorcage_id)
-    try:
-        resultat = executer_import(amorcage.delegation.collectivite, SOURCE_PAR_COMMUNE,
-                                   {"niveau": "commune", "code": code}, environment=environment) or {}
-        erreur = None
-    except Exception as exc:
-        resultat, erreur = {}, f"{code} : {exc}"[:200]
-    with transaction.atomic():
-        a = AmorcageDepartement.objects.select_for_update().get(pk=amorcage_id)
-        etape = a.etapes.setdefault("entreprises", {"statut": "PROGRAMMEE"})
-        comptes = etape.setdefault("comptes", {"faites": 0, "total": 0, "crees": 0})
-        comptes["faites"] = comptes.get("faites", 0) + 1
-        comptes["crees"] = comptes.get("crees", 0) + int((resultat or {}).get("crees") or 0)
-        if erreur:
-            etape["erreurs"] = (etape.get("erreurs") or [])[-19:] + [erreur]
-        if comptes["faites"] >= comptes.get("total", 0):
-            etape["statut"], etape["fin"] = "TERMINEE", timezone.now().isoformat()
-        a.save(update_fields=["etapes"])
-
-
-def enchainer(etape, communes, environment, suivante, reference=None):
-    """Traite la première commune, puis confie le reste à `suivante(reste, délai)`. Une erreur
-    sur une commune n'arrête pas les autres."""
-    import logging
     from .releve_georisques import relever_tout
 
-    code, reste = communes[0], communes[1:]
+    a = AmorcageDepartement.objects.select_related("delegation__collectivite").filter(pk=amorcage_id).first()
+    etat = (a.etapes or {}).get(etape) if a else None
+    if not etat or etat.get("jeton") != jeton or not etat.get("restantes"):
+        return
+    code = etat["restantes"][0]
+    crees, erreur = 0, None
     try:
         if etape == "risques":
             relever_tout(code, environment)
-        elif etape == "sirene":
-            sirene_commune(code, environment, reference)
+        elif etape == "entreprises":
+            crees = sirene_commune(code, environment, a.delegation.collectivite)
         else:
             simulations_commune(code, environment)
-    except Exception:
+    except Exception as exc:
+        erreur = f"{code} : {exc}"[:200]
         logging.getLogger(__name__).exception("Amorçage %s : échec pour %s", etape, code)
-    if reste:
-        suivante(reste, {"risques": ESPACEMENT_RISQUES, "sirene": ESPACEMENT_SIRENE}.get(etape, ESPACEMENT_SIMULATIONS))
+    with transaction.atomic():
+        a = AmorcageDepartement.objects.select_for_update().get(pk=amorcage_id)
+        etat = a.etapes.get(etape) or {}
+        if etat.get("jeton") != jeton:
+            return
+        restantes = [c for c in etat.get("restantes", []) if c != code]
+        etat["restantes"] = restantes
+        etat["battement"] = timezone.now().isoformat()
+        comptes = etat.setdefault("comptes", {})
+        if etape == "entreprises":
+            comptes["faites"] = comptes.get("total", 0) - len(restantes)
+            comptes["crees"] = comptes.get("crees", 0) + crees
+        if erreur:
+            etat["erreurs"] = (etat.get("erreurs") or [])[-19:] + [erreur]
+        if not restantes:
+            etat["statut"], etat["fin"] = "TERMINEE", timezone.now().isoformat()
+        a.etapes[etape] = etat
+        a.save(update_fields=["etapes"])
+    if restantes:
+        _lancer_chaine(amorcage_id, etape, environment, jeton, delai=CHAINES.get(etape, 10))
+
+
+def reprendre(silence_minutes=SILENCE_MINUTES, amorcage=None) -> int:
+    """Relance ce qui s'est arrêté : les étapes longues inachevées sans battement depuis
+    `silence_minutes` (0 au démarrage du worker : rien ne peut tourner), et un amorçage dont la
+    tâche principale a été coupée en route. Rend le nombre d'étapes relancées."""
+    import datetime
+    from django.db import transaction
+    from django.utils.dateparse import parse_datetime
+    from .models import AmorcageDepartement
+    from .tasks import amorcer_departement_task
+
+    limite = timezone.now() - datetime.timedelta(minutes=silence_minutes)
+    candidats = [amorcage] if amorcage is not None else AmorcageDepartement.objects.filter(
+        debut__gte=timezone.now() - datetime.timedelta(days=14)).select_related("delegation__collectivite")
+    relancees = 0
+    for a in candidats:
+        with transaction.atomic():
+            a = AmorcageDepartement.objects.select_for_update().select_related("delegation__collectivite").get(pk=a.pk)
+            env = a.delegation.collectivite.environment
+            modifie = False
+            for etape in CHAINES:
+                etat = (a.etapes or {}).get(etape)
+                if not etat or etat.get("statut") not in ("PROGRAMMEE", "EN_COURS") or not etat.get("restantes"):
+                    continue
+                battement = parse_datetime(etat.get("battement") or "") if etat.get("battement") else None
+                if battement is not None and battement > limite:
+                    continue
+                etat["jeton"], etat["battement"] = _nouveau_jeton(), timezone.now().isoformat()
+                etat["reprises"] = int(etat.get("reprises") or 0) + 1
+                a.etapes[etape] = etat
+                _lancer_chaine(a.pk, etape, env, etat["jeton"])
+                modifie, relancees = True, relancees + 1
+            # La tâche principale (étapes courtes, puis lancement des longues) coupée en route.
+            if a.fin is None:
+                principal = (a.etapes or {}).get("_principal") or {}
+                battement = parse_datetime(principal.get("battement") or "") if principal.get("battement") else None
+                restent = [e for e in ETAPES if (a.etapes.get(e) or {}).get("statut") in ("EN_ATTENTE", "EN_COURS")]
+                if restent and (battement is None or battement <= limite):
+                    jeton = _nouveau_jeton()
+                    a.etapes["_principal"] = {"jeton": jeton, "battement": timezone.now().isoformat()}
+                    transaction.on_commit(lambda ident=str(a.pk), r=restent, j=jeton:
+                                          amorcer_departement_task.apply_async(args=[ident, r, j], countdown=5))
+                    modifie, relancees = True, relancees + 1
+            if modifie:
+                a.save(update_fields=["etapes"])
+    return relancees
 
 
 FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "repertoires": etape_repertoires,
@@ -408,12 +484,25 @@ def executer(amorcage, etapes=ETAPES) -> None:
 
     communes = communes_du_departement()
     for nom in etapes:
+        principal = amorcage.etapes.get("_principal") or {}
+        amorcage.etapes["_principal"] = {**principal, "battement": timezone.now().isoformat()}
         amorcage.etapes[nom] = {"statut": "EN_COURS", "debut": timezone.now().isoformat()}
         amorcage.save(update_fields=["etapes"])
         try:
             resultat = FONCTIONS[nom](cg, communes)
-            statut = "PROGRAMMEE" if nom in ("risques", "entreprises", "simulations") else "TERMINEE"
-            amorcage.etapes[nom] = {"statut": statut, "fin": timezone.now().isoformat(), **resultat}
+            if nom in CHAINES:
+                # L'avancement vit en base (communes restantes, jeton) : c'est ce qui permet de
+                # reprendre après un redéploiement ou un redémarrage.
+                jeton = _nouveau_jeton()
+                amorcage.etapes[nom] = {"statut": "PROGRAMMEE", "fin": timezone.now().isoformat(), **resultat,
+                                        "restantes": list(communes), "jeton": jeton,
+                                        "battement": timezone.now().isoformat()}
+                if communes:
+                    _lancer_chaine(amorcage.pk, nom, cg.environment, jeton)
+                else:
+                    amorcage.etapes[nom]["statut"] = "TERMINEE"
+            else:
+                amorcage.etapes[nom] = {"statut": "TERMINEE", "fin": timezone.now().isoformat(), **resultat}
         except Exception as exc:
             amorcage.etapes[nom] = {"statut": "ECHEC", "fin": timezone.now().isoformat(), "erreur": str(exc)[:500]}
         amorcage.save(update_fields=["etapes"])
