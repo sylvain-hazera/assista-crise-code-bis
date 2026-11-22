@@ -33,9 +33,8 @@ describe('PilotageDepartementComponent', () => {
     expect(c.communesFiltrees({ id: 'd1' } as any, communes).map(x => x.code)).toEqual(['42186']);
   });
 
-  it('coche les collectivités sans compte et les invite', () => {
-    spyOn(window, 'confirm').and.returnValue(true);
-    const inviter = spyOn(service, 'inviterCollectivites').and.returnValue(of({ envoyees: 2, sans_email: ['Mairie X'], deja_membres: 0 }));
+  it("coche les collectivités sans compte et ouvre la fenêtre d'invitation, sans rien envoyer", () => {
+    const inviter = spyOn(service, 'inviterCollectivites');
     spyOn(service, 'arborescence').and.returnValue(of(null));
     const c = TestBed.createComponent(PilotageDepartementComponent).componentInstance;
     const d = { id: 'd1' } as any;
@@ -46,8 +45,8 @@ describe('PilotageDepartementComponent', () => {
     c.cocherToutesSansCompte(d);
     expect([...c.selection['d1']].sort()).toEqual(['epci', 'm1']);
     c.inviterSelection(d);
-    expect(inviter.calls.mostRecent().args[1].sort()).toEqual(['epci', 'm1']);
-    expect(c.message).toContain('Sans adresse officielle : Mairie X');
+    expect(inviter).not.toHaveBeenCalled();
+    expect([...c.fenetreInvitation!].sort()).toEqual(['epci', 'm1']);
   });
 
   it('exporte les coordonnées de la sélection en CSV', () => {
@@ -73,12 +72,14 @@ describe('PilotageDepartementComponent', () => {
     expect(c.historique?.length).toBe(1);
   });
 
-  it("n'envoie rien sans confirmation", () => {
-    spyOn(window, 'confirm').and.returnValue(false);
-    const inviter = spyOn(service, 'inviterCollectivites');
+  it('après le lancement, vide la sélection et suit la campagne', () => {
+    const campagnes = spyOn(service, 'campagnes').and.returnValue(of([]));
     const c = TestBed.createComponent(PilotageDepartementComponent).componentInstance;
     c.selection['d1'] = new Set(['m1']);
-    c.inviterSelection({ id: 'd1' } as any);
-    expect(inviter).not.toHaveBeenCalled();
+    c.fenetreInvitation = ['m1'];
+    c.campagneLancee({ id: 'd1' } as any, { prevues: 1, connecteur: 'SMTP de la plateforme' } as any);
+    expect(c.fenetreInvitation).toBeNull();
+    expect(c.selection['d1'].size).toBe(0);
+    expect(campagnes).toHaveBeenCalledWith('d1');
   });
 });

@@ -249,3 +249,62 @@ def enchainer_amorcage_task(etape: str, communes: list, environment: str, refere
     enchainer(etape, communes, environment,
               lambda reste, delai: enchainer_amorcage_task.apply_async(args=[etape, reste, environment, *suite], countdown=delai),
               reference)
+
+
+#: Pause entre deux courriels d'une campagne : un SMTP d'institution n'accepte pas 500 messages d'un coup.
+PAUSE_CAMPAGNE_S = 0.5
+
+
+@shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
+def envoyer_campagne_invitation_task(campagne_id: str, institution_ids: list):
+    """Campagne « Rejoindre votre collectivité » préparée dans la fenêtre de rédaction : un
+    courriel à la fois, par le connecteur choisi, sans passer par la relecture (c'était la
+    fenêtre). Un échec n'arrête pas les autres ; tout est compté sur la campagne."""
+    import time
+
+    from django.utils import timezone
+
+    from . import invitation_collectivite as ic
+    from .audit import audit_log
+    from .branding import get_mail_branding
+    from .envoi_connecteurs import EchecEnvoi, envoyer
+    from .models import CampagneInvitation, Environment, Institution
+
+    campagne = CampagneInvitation.objects.select_related("delegation__aasc", "delegation__collectivite", "cree_par").get(pk=campagne_id)
+    delegation = campagne.delegation
+    permises = [delegation.aasc, delegation.collectivite]
+    reply_to = get_mail_branding(delegation.aasc)["reply_to"]
+    institutions = {str(i.id): i for i in Institution.objects.filter(id__in=institution_ids, actif=True)}
+    erreurs = list(campagne.erreurs or [])
+    for rang, inst_id in enumerate(institution_ids):
+        inst = institutions.get(str(inst_id))
+        if inst is None:
+            continue
+        preparation = ic.preparer(inst)
+        if preparation["etat"] == "deja_membre":
+            campagne.deja_membres += 1
+        elif preparation["etat"] == "sans_email":
+            campagne.sans_adresse += 1
+        else:
+            invitation = ic.invitation_pour(inst, delegation, preparation["destinataire"], campagne.cree_par)
+            champs = ic.valeurs(inst, delegation, preparation, ic.lien(invitation))
+            sujet, corps = ic.rendre(campagne.sujet, champs), ic.rendre(campagne.corps, champs)
+            destinataire = preparation["destinataire"]
+            if campagne.environment == Environment.DEMO and campagne.cree_par and campagne.cree_par.email:
+                destinataire, sujet = campagne.cree_par.email, f"[DEMO] {sujet}"
+            try:
+                envoyer(campagne.connecteur, sujet, corps, destinataire, reply_to=reply_to, institutions_permises=permises)
+                campagne.envoyees += 1
+            except EchecEnvoi as echec:
+                campagne.echecs += 1
+                erreurs.append({"collectivite": inst.nom, "motif": str(echec)[:300]})
+            if PAUSE_CAMPAGNE_S and rang < len(institution_ids) - 1:
+                time.sleep(PAUSE_CAMPAGNE_S)
+        campagne.erreurs = erreurs[-200:]
+        campagne.save(update_fields=["envoyees", "echecs", "sans_adresse", "deja_membres", "erreurs"])
+    campagne.statut, campagne.date_fin = CampagneInvitation.Statut.TERMINEE, timezone.now()
+    campagne.save(update_fields=["statut", "date_fin"])
+    audit_log(request=None, action_code="ENVOI_MASSE", objet_type="DelegationGestion", objet_id=delegation.id,
+              commentaire=(f"Campagne « Rejoindre votre collectivité » par {campagne.connecteur_libelle} : "
+                           f"{campagne.envoyees} envoyée(s), {campagne.echecs} échec(s), "
+                           f"{campagne.sans_adresse} sans adresse, {campagne.deja_membres} déjà présente(s)"))

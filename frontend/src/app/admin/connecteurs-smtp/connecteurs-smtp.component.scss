@@ -1,0 +1,23 @@
+.connecteurs-smtp { display: flex; flex-direction: column; gap: .6rem; color: var(--ac-text, #1f2937); }
+.aide { color: var(--ac-text-muted, #5b6275); font-size: .86rem; margin: 0; line-height: 1.5; }
+.ok { color: var(--ac-green-text, #166534); margin: 0; } .erreur { color: var(--ac-red-text, #991b1b); }
+.liste { list-style: none; margin: 0; padding: 0;
+  li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .45rem 0;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb); font-size: .9rem; overflow-wrap: anywhere; }
+  .detail { display: block; font-size: .8rem; color: var(--ac-text-muted, #5b6275); }
+  .detail.ok { color: var(--ac-green-text, #166534); } .detail.erreur { color: var(--ac-red-text, #991b1b); } }
+.actions { display: flex; flex-wrap: wrap; gap: .4rem .9rem; align-items: center; }
+.lien { background: none; border: 0; padding: 0; font: inherit; font-size: .86rem; cursor: pointer; text-decoration: underline;
+  color: var(--brand-primary-lisible, #1d4ed8); &.danger { color: var(--ac-red-text, #991b1b); } }
+.formulaire { display: flex; flex-direction: column; gap: .5rem; padding: .7rem; border-radius: 8px;
+  border: 1px solid var(--ac-border, #e5e7eb); background: var(--ac-surface, #fff); }
+.grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .5rem; }
+label { display: flex; flex-direction: column; gap: .2rem; font-size: .84rem; font-weight: 600; }
+label.case { flex-direction: row; align-items: center; font-weight: 400; }
+input, select { padding: .4rem .5rem; border-radius: 6px; border: 1px solid var(--ac-border, #d1d5db);
+  background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); font: inherit; font-weight: 400; }
+input[type=checkbox] { padding: 0; }
+.btn-primary, .btn-secondary { align-self: flex-start; padding: .45rem .85rem; border-radius: 6px; font: inherit; font-size: .86rem;
+  font-weight: 600; cursor: pointer; }
+.btn-primary { border: none; background: #1d4ed8; color: #fff; }
+.btn-secondary { border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); }

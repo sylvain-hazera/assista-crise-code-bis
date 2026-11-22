@@ -45,9 +45,9 @@ describe('SuiviDepartementComponent', () => {
     expect(c.branche).toBeNull();
   });
 
-  it("enregistre la personne référente puis invite à son adresse", () => {
+  it("enregistre la personne référente puis ouvre la fenêtre d'invitation", () => {
     const coord = spyOn(service, 'coordonnees').and.returnValue(of({ ok: true }));
-    const inviter = spyOn(service, 'inviterCollectivites').and.returnValue(of({ envoyees: 1, sans_email: [], deja_membres: 0 }));
+    const inviter = spyOn(service, 'inviterCollectivites');
     spyOn(service, 'suiviBranche').and.returnValue(of({ code: 'e', nom: 'M', enrolement: null, pics: null, institution: null, communes: [] } as any));
     const f = TestBed.createComponent(SuiviDepartementComponent);
     f.detectChanges();
@@ -60,7 +60,7 @@ describe('SuiviDepartementComponent', () => {
     c.enregistrerCoordonnees();
     expect(coord.calls.mostRecent().args[3]).toEqual({ nom: 'Julie Martin', fonction: '', email: 'j.martin@commune.exemple', telephone: null });
     c.inviterMaintenant(mairie);
-    expect(inviter).toHaveBeenCalledWith('d1', ['m1']);
-    expect(c.message).toContain('Invitation envoyée');
+    expect(inviter).not.toHaveBeenCalled();
+    expect(c.fenetreInvitation).toEqual(['m1']);
   });
 });

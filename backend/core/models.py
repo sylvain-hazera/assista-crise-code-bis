@@ -6068,6 +6068,70 @@ def _jeton_collectivite():
     return secrets.token_urlsafe(32)
 
 
+class ConnecteurSMTP(EnvironmentScopedModel):
+    """Une messagerie SMTP propre à une institution (22/11/2026) : « Messagerie du CD33 »,
+    serveur de l'association… pour envoyer depuis SON adresse, à côté de Brevo
+    (`ConfigurationEnvoiInstitution`) et du SMTP de la plateforme. Choisi au moment d'envoyer
+    (campagne d'invitation des collectivités : core/envoi_connecteurs.py).
+
+    Identifiant et mot de passe **chiffrés, jamais relus par l'API** (comme la clé Brevo).
+    Réservé au bureau de l'institution et à l'administrateur."""
+
+    class Chiffrement(models.TextChoices):
+        STARTTLS = "STARTTLS", "STARTTLS (port 587)"
+        SSL = "SSL", "SSL/TLS (port 465)"
+        AUCUN = "AUCUN", "Aucun (déconseillé)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="connecteurs_smtp")
+    nom = models.CharField(max_length=120)
+    hote = models.CharField(max_length=255)
+    port = models.PositiveIntegerField(default=587)
+    chiffrement = models.CharField(max_length=10, choices=Chiffrement.choices, default=Chiffrement.STARTTLS)
+    identifiant = EncryptedTextField(blank=True, default="")
+    mot_de_passe = EncryptedTextField(blank=True, default="")
+    expediteur_email = EncryptedEmailField()
+    expediteur_nom = models.CharField(max_length=120, blank=True, default="")
+    actif = models.BooleanField(default=True)
+    dernier_succes = models.DateTimeField(null=True, blank=True)
+    dernier_echec = models.DateTimeField(null=True, blank=True)
+    dernier_echec_motif = models.CharField(max_length=300, blank=True, default="")
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+
+class CampagneInvitation(EnvironmentScopedModel):
+    """Un envoi groupé « Rejoindre votre collectivité », préparé dans la fenêtre de rédaction
+    (22/11/2026) : le texte relu, le connecteur choisi, et ce qui en est sorti."""
+
+    class Statut(models.TextChoices):
+        EN_COURS = "EN_COURS", "En cours"
+        TERMINEE = "TERMINEE", "Terminée"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    delegation = models.ForeignKey("DelegationGestion", on_delete=models.CASCADE, related_name="campagnes_invitation")
+    connecteur = models.CharField(max_length=80)
+    connecteur_libelle = models.CharField(max_length=255, blank=True, default="")
+    sujet = EncryptedTextField()
+    corps = EncryptedTextField()
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+    statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.EN_COURS)
+    prevues = models.PositiveIntegerField(default=0)
+    envoyees = models.PositiveIntegerField(default=0)
+    echecs = models.PositiveIntegerField(default=0)
+    sans_adresse = models.PositiveIntegerField(default=0)
+    deja_membres = models.PositiveIntegerField(default=0)
+    #: Collectivité et motif de chaque échec : chiffré, il peut citer une adresse.
+    erreurs = EncryptedJSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+
 class InvitationCollectivite(EnvironmentScopedModel):
     """« Rejoindre votre collectivité » (21/11/2026) : l'AASC qui exploite la plateforme pour le
     département invite une mairie ou une intercommunalité, déjà créée par l'amorçage, à ouvrir

@@ -1,9 +1,11 @@
 import { Component, Input, OnChanges } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { PreparerInvitationComponent } from '../preparer-invitation/preparer-invitation.component';
 
 import {
-  Arborescence, DelegationGestion, DelegationGestionService, EtatAmorcage, EvenementDelegation, RepertoireEpci,
+  Arborescence, CampagneInvitation, DelegationGestion, DelegationGestionService, EtatAmorcage, EvenementDelegation,
+  RepertoireEpci,
 } from '../../services/delegation-gestion.service';
 
 export type VuePilotage = 'invitations' | 'amorcage' | 'repertoires' | 'historique';
@@ -22,7 +24,7 @@ function sansAccent(v: string): string {
 @Component({
   selector: 'app-pilotage-departement',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, PreparerInvitationComponent],
   templateUrl: './pilotage-departement.component.html',
   styleUrl: '../delegations-gestion/delegations-gestion.component.scss',
 })
@@ -39,6 +41,9 @@ export class PilotageDepartementComponent implements OnChanges {
   /** Collectivités cochées dans l'arborescence. */
   selection: Record<string, Set<string>> = {};
   historique: EvenementDelegation[] | null = null;
+  /** Collectivités dont on prépare l'invitation (fenêtre ouverte), ou null. */
+  fenetreInvitation: string[] | null = null;
+  campagnes: CampagneInvitation[] = [];
 
   /** Libellés des étapes de l'amorçage, dans leur ordre. */
   readonly etapesAmorcage: { code: string; libelle: string }[] = [
@@ -58,7 +63,7 @@ export class PilotageDepartementComponent implements OnChanges {
   ngOnChanges(): void {
     const d = this.delegation;
     if (!d) return;
-    if (this.vue === 'invitations' && this.arbres[d.id] === undefined) this.voirArborescence(d);
+    if (this.vue === 'invitations' && this.arbres[d.id] === undefined) { this.voirArborescence(d); this.voirCampagnes(d); }
     if (this.vue === 'amorcage' && this.amorcages[d.id] === undefined) this.voirAmorcage(d);
     if (this.vue === 'repertoires' && this.repertoires[d.id] === undefined) this.voirRepertoires(d);
     if (this.vue === 'historique') this.voirHistorique(d);
@@ -114,22 +119,21 @@ export class PilotageDepartementComponent implements OnChanges {
     });
   }
 
+  /** Ouvre la fenêtre « Préparer l'invitation » : rien ne part sans elle (22/11/2026). */
   inviterSelection(d: DelegationGestion): void {
     const ids = [...(this.selection[d.id] ?? [])];
-    if (!ids.length) return;
-    // 22/11/2026 : 556 courriels partis d'un clic, sans le vouloir. Un envoi groupé se confirme.
-    if (!window.confirm(`Envoyer maintenant le courriel « Rejoindre votre collectivité » à ${ids.length} collectivité(s) ? `
-      + 'Un courriel envoyé ne peut pas être rappelé.')) return;
-    this.service.inviterCollectivites(d.id, ids).subscribe({
-      next: r => {
-        this.message = `${r.envoyees} invitation(s) envoyée(s)`
-          + (r.deja_membres ? `, ${r.deja_membres} collectivité(s) déjà présente(s)` : '')
-          + (r.sans_email.length ? `. Sans adresse officielle : ${r.sans_email.join(', ')}` : '.');
-        this.selection[d.id] = new Set();
-        this.voirArborescence(d);
-      },
-      error: e => this.erreur = this.texteErreur(e),
-    });
+    if (ids.length) this.fenetreInvitation = ids;
+  }
+
+  campagneLancee(d: DelegationGestion, c: CampagneInvitation): void {
+    this.fenetreInvitation = null;
+    this.selection[d.id] = new Set();
+    this.message = `Envoi lancé à ${c.prevues} collectivité(s) par ${c.connecteur} : il se poursuit en tâche de fond.`;
+    this.voirCampagnes(d);
+  }
+
+  voirCampagnes(d: DelegationGestion): void {
+    this.service.campagnes(d.id).subscribe({ next: c => this.campagnes = c, error: () => {} });
   }
 
   voirAmorcage(d: DelegationGestion): void {

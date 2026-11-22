@@ -7,6 +7,10 @@
   @if (chargement) { <p class="aide">Chargement…</p> }
   @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
   @if (message) { <p class="ok" role="status">{{ message }}</p> }
+  @if (fenetreInvitation && choisi) {
+    <app-preparer-invitation [delegationId]="choisi.delegation.id" [institutions]="fenetreInvitation"
+                             (fermee)="fenetreInvitation = null" (lancee)="campagneLancee()"></app-preparer-invitation>
+  }
   @if (!chargement && !departements.length) {
     <p class="aide">Aucun département suivi : une délégation départementale s'enregistre depuis
       <a routerLink="/admin/delegations-gestion">Délégations de gestion</a>.</p>

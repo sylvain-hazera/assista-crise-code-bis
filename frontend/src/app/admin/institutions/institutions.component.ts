@@ -1,3 +1,4 @@
+import { ConnecteursSmtpComponent } from '../connecteurs-smtp/connecteurs-smtp.component';
 import { PcsRisquesComponent } from '../pcs-risques/pcs-risques.component';
 import { PcsAnnuaireComponent } from '../pcs-annuaire/pcs-annuaire.component';
 import { Component, OnInit } from '@angular/core';
@@ -58,7 +59,7 @@ import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [PcsRisquesComponent, PcsAnnuaireComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent],
+  imports: [PcsRisquesComponent, PcsAnnuaireComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent, ConnecteursSmtpComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })

@@ -27,8 +27,30 @@ export interface DelegationGestion {
   departementale?: boolean;
 }
 
+/** Un connecteur d'envoi proposé : Brevo, SMTP d'une institution, SMTP de la plateforme. */
+export interface ConnecteurEnvoi {
+  cle: string; type: 'brevo' | 'smtp' | 'plateforme'; libelle: string; adresse: string; institution: string;
+  dernier_succes: string | null; dernier_echec: string | null; dernier_echec_motif: string;
+}
+
+/** Ce que la fenêtre « Préparer l'invitation » affiche avant tout envoi. */
+export interface PreparationInvitation {
+  resume: { vers_referent: number; vers_officielle: number; sans_adresse: string[]; deja_membres: number };
+  pretes: { id: string; nom: string }[];
+  sujet: string; corps: string; champs: string[];
+  connecteurs: ConnecteurEnvoi[];
+}
+
+export interface ApercuInvitation { etat: string; destinataire?: string; vers_referent?: boolean; sujet?: string; corps?: string; }
+
+export interface CampagneInvitation {
+  id: string; date: string; date_fin: string | null; statut: 'EN_COURS' | 'TERMINEE'; connecteur: string;
+  prevues: number; envoyees: number; echecs: number; sans_adresse: number; deja_membres: number;
+  erreurs: { collectivite: string; motif: string }[];
+}
+
 /** Un évènement de l'historique d'une délégation. */
-export interface EvenementDelegation { date: string; type: 'journal' | 'amorcage' | 'invitation'; action: string; par: string; texte: string; }
+export interface EvenementDelegation { date: string; type: 'journal' | 'amorcage' | 'invitation' | 'campagne'; action: string; par: string; texte: string; }
 
 export interface PersonneQuiAgit { id: string; nom: string; titre: string; }
 
@@ -144,6 +166,22 @@ export class DelegationGestionService {
   /** Coordonnées des collectivités cochées, en tableur CSV (journalisé côté serveur). */
   exporterCoordonnees(id: string, institutions: string[]): Observable<Blob> {
     return this.http.post(`${this.url}/${id}/export-coordonnees/`, { institutions }, { responseType: 'blob' });
+  }
+
+  preparerInvitation(id: string, institutions: string[]): Observable<PreparationInvitation> {
+    return this.http.post<PreparationInvitation>(`${this.url}/${id}/preparer-invitation/`, { institutions });
+  }
+
+  apercuInvitation(id: string, institution: string, sujet: string, corps: string, connecteur: string): Observable<ApercuInvitation> {
+    return this.http.post<ApercuInvitation>(`${this.url}/${id}/campagne-invitation/`, { apercu: institution, sujet, corps, connecteur });
+  }
+
+  lancerCampagne(id: string, institutions: string[], sujet: string, corps: string, connecteur: string): Observable<CampagneInvitation> {
+    return this.http.post<CampagneInvitation>(`${this.url}/${id}/campagne-invitation/`, { institutions, sujet, corps, connecteur });
+  }
+
+  campagnes(id: string): Observable<CampagneInvitation[]> {
+    return this.http.get<CampagneInvitation[]>(`${this.url}/${id}/campagnes/`);
   }
 
   historique(id: string): Observable<EvenementDelegation[]> {

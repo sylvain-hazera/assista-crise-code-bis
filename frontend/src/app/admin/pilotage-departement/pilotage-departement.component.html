@@ -3,6 +3,24 @@
   @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
   @switch (vue) {
     @case ('invitations') {
+      @if (fenetreInvitation) {
+        <app-preparer-invitation [delegationId]="d.id" [institutions]="fenetreInvitation"
+                                 (fermee)="fenetreInvitation = null" (lancee)="campagneLancee(d, $event)"></app-preparer-invitation>
+      }
+      @if (campagnes.length) {
+        <div class="campagnes">
+          @for (c of campagnes.slice(0, 3); track c.id) {
+            <p class="aide">
+              <strong>{{ c.date | date:'dd/MM/yyyy HH:mm' }}</strong> — {{ c.connecteur }} :
+              {{ c.envoyees }} / {{ c.prevues }} envoyée(s)@if (c.echecs) { , <span class="erreur">{{ c.echecs }} échec(s)</span> }
+              @if (c.sans_adresse) { , {{ c.sans_adresse }} sans adresse }
+              {{ c.statut === 'EN_COURS' ? '— en cours' : '' }}
+              @for (e of c.erreurs.slice(0, 5); track $index) { <br><span class="erreur">{{ e.collectivite }} : {{ e.motif }}</span> }
+            </p>
+          }
+          <button type="button" class="lien" (click)="voirCampagnes(d)">Actualiser</button>
+        </div>
+      }
       @if (arbres[d.id] === undefined) { <p class="aide">Chargement de l'arborescence…</p> }
       @if (arbres[d.id]; as arbre) {
         <div class="arbre">
@@ -15,15 +33,15 @@
             <input type="search" [(ngModel)]="filtreArbre[d.id]" placeholder="Filtrer une commune (nom ou code)">
             <button type="button" class="lien" (click)="cocherToutesSansCompte(d)">Cocher toutes les collectivités sans compte</button>
             <button type="button" class="btn-primary" [disabled]="!selection[d.id]?.size" (click)="inviterSelection(d)">
-              Inviter la sélection ({{ selection[d.id]?.size ?? 0 }})
+              Préparer l'invitation ({{ selection[d.id]?.size ?? 0 }})
             </button>
             <button type="button" class="btn-secondary" [disabled]="!selection[d.id]?.size" (click)="exporterSelection(d)">
               Exporter la sélection (CSV)
             </button>
           </div>
-          <p class="aide">« Inviter » envoie à chaque collectivité cochée le courriel « Rejoindre votre collectivité »
-            (à la personne référente si elle est indiquée, sinon à l'adresse officielle). « Exporter » donne leurs
-            coordonnées en tableur, pour un publipostage ou des appels.</p>
+          <p class="aide">« Préparer l'invitation » ouvre la fenêtre de rédaction : texte, aperçu, et choix du connecteur
+            d'envoi (Brevo, SMTP de l'association ou de la plateforme), avec l'adresse utilisée. Rien ne part sans votre
+            confirmation. « Exporter » donne leurs coordonnées en tableur, pour un publipostage ou des appels.</p>
           @for (e of arbre.epcis; track e.code) {
             @if (communesFiltrees(d, e.communes); as communes) {
               @if (communes.length) {

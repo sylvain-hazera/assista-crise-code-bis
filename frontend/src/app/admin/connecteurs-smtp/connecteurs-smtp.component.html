@@ -1,0 +1,55 @@
+<div class="connecteurs-smtp">
+  <p class="aide">Une messagerie de l'institution (serveur de l'association, du conseil départemental…), pour envoyer depuis
+    son adresse. Elle est proposée au moment d'envoyer une campagne d'invitation, à côté de Brevo et du SMTP de la
+    plateforme. Identifiant et mot de passe sont chiffrés et ne sont jamais réaffichés.</p>
+  @if (message) { <p class="ok" role="status">{{ message }}</p> }
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+
+  <ul class="liste">
+    @for (c of connecteurs; track c.id) {
+      <li>
+        <span>
+          <strong>{{ c.nom }}</strong> — {{ c.expediteur_nom ? c.expediteur_nom + ' ' : '' }}&lt;{{ c.expediteur_email }}&gt;
+          <span class="detail">{{ c.hote }}:{{ c.port }} ({{ c.chiffrement }}){{ c.actif ? '' : ' — désactivé' }}</span>
+          @if (c.dernier_echec_motif) { <span class="detail erreur">Dernier échec : {{ c.dernier_echec_motif }}</span> }
+          @else if (c.dernier_succes) { <span class="detail ok">Dernier envoi réussi le {{ c.dernier_succes | date:'dd/MM/yyyy HH:mm' }}</span> }
+        </span>
+        <span class="actions">
+          <button type="button" class="lien" (click)="essayer(c)">Envoyer un essai</button>
+          <button type="button" class="lien" (click)="modifier(c)">Modifier</button>
+          <button type="button" class="lien danger" (click)="supprimer(c)">Supprimer</button>
+        </span>
+      </li>
+    } @empty {
+      <li class="aide">Aucun connecteur SMTP.</li>
+    }
+  </ul>
+
+  @if (saisie; as s) {
+    <div class="formulaire">
+      <div class="grille">
+        <label>Nom <input type="text" [(ngModel)]="s.nom" placeholder="Messagerie de l'association"></label>
+        <label>Serveur <input type="text" [(ngModel)]="s.hote" placeholder="smtp.exemple.fr"></label>
+        <label>Chiffrement
+          <select [ngModel]="s.chiffrement" (ngModelChange)="changerChiffrement($event)">
+            <option value="STARTTLS">STARTTLS (587)</option><option value="SSL">SSL/TLS (465)</option><option value="AUCUN">Aucun</option>
+          </select>
+        </label>
+        <label>Port <input type="number" [(ngModel)]="s.port"></label>
+        <label>Identifiant <input type="text" [(ngModel)]="s.identifiant" autocomplete="off"
+                                  [placeholder]="s.identifiant_renseigne ? 'Renseigné — laisser vide pour le garder' : ''"></label>
+        <label>Mot de passe <input type="password" [(ngModel)]="s.mot_de_passe" autocomplete="new-password"
+                                   [placeholder]="s.mot_de_passe_renseigne ? 'Renseigné — laisser vide pour le garder' : ''"></label>
+        <label>Adresse d'expédition <input type="email" [(ngModel)]="s.expediteur_email"></label>
+        <label>Nom affiché <input type="text" [(ngModel)]="s.expediteur_nom" placeholder="Réserve Résilience"></label>
+      </div>
+      <label class="case"><input type="checkbox" [(ngModel)]="s.actif"> Actif</label>
+      <span class="actions">
+        <button type="button" class="btn-primary" (click)="enregistrer()">Enregistrer</button>
+        <button type="button" class="lien" (click)="saisie = null">Annuler</button>
+      </span>
+    </div>
+  } @else {
+    <button type="button" class="btn-secondary" (click)="nouveau()">Ajouter un connecteur SMTP</button>
+  }
+</div>

@@ -426,6 +426,105 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                                f"{len(resultat['sans_email'])} sans adresse officielle"))
         return Response(resultat)
 
+    def _cibles_du_departement(self, request, delegation, limite=2000):
+        from .delegation_gestion import zones_de
+        dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
+        ids = [str(i) for i in (request.data.get("institutions") or []) if i][:limite]
+        rang = {ident: n for n, ident in enumerate(ids)}
+        cibles = [i for i in Institution.objects.filter(id__in=ids, actif=True).select_related("type")
+                  if _dans_le_departement(i, dep)]
+        return sorted(cibles, key=lambda i: rang.get(str(i.id), 0))  # l'ordre de la sélection
+
+    @action(detail=True, methods=["post"], url_path="preparer-invitation")
+    def preparer_invitation(self, request, pk=None):
+        """Ce que la fenêtre « Préparer l'invitation » affiche (22/11/2026) : où ira chaque
+        courriel (référent, adresse officielle, aucune adresse), le texte proposé à champs, et
+        les connecteurs d'envoi utilisables avec leur adresse."""
+        from . import invitation_collectivite as ic
+        from .envoi_connecteurs import connecteurs_pour
+
+        delegation = self.get_object()
+        if not self._peut_agir(request, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        cibles = self._cibles_du_departement(request, delegation)
+        resume = {"vers_referent": 0, "vers_officielle": 0, "sans_adresse": [], "deja_membres": 0}
+        pretes = []
+        for inst in cibles:
+            p = ic.preparer(inst)
+            if p["etat"] == "deja_membre":
+                resume["deja_membres"] += 1
+            elif p["etat"] == "sans_email":
+                resume["sans_adresse"].append(inst.nom)
+            else:
+                resume["vers_referent" if p["vers_referent"] else "vers_officielle"] += 1
+                pretes.append({"id": str(inst.id), "nom": inst.nom})
+        sujet, corps = ic.modele(delegation.aasc)
+        return Response({"resume": resume, "pretes": pretes, "sujet": sujet, "corps": corps, "champs": list(ic.CHAMPS),
+                         "connecteurs": connecteurs_pour([delegation.aasc, delegation.collectivite])})
+
+    @action(detail=True, methods=["post"], url_path="campagne-invitation")
+    def campagne_invitation(self, request, pk=None):
+        """Avec `apercu` (une collectivité) : le courriel tel qu'elle le recevra, lien masqué,
+        rien n'est envoyé ni créé. Sans : crée la campagne et la lance en tâche de fond (file
+        des travaux lourds), par le connecteur choisi."""
+        from . import invitation_collectivite as ic
+        from .envoi_connecteurs import connecteurs_pour, libelle
+        from .models import CampagneInvitation
+        from .tasks import envoyer_campagne_invitation_task
+
+        delegation = self.get_object()
+        if not self._peut_agir(request, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        sujet = (request.data.get("sujet") or "").strip()
+        corps = (request.data.get("corps") or "").strip()
+        if not sujet or not corps:
+            return Response({"error": "L'objet et le texte sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
+        if "[LIEN]" not in corps:
+            return Response({"error": "Le texte doit contenir [LIEN] : c'est le lien qui permet à la collectivité de "
+                                      "créer ses comptes."}, status=status.HTTP_400_BAD_REQUEST)
+        permises = [delegation.aasc, delegation.collectivite]
+        cle = request.data.get("connecteur") or ""
+        if cle not in {c["cle"] for c in connecteurs_pour(permises)}:
+            return Response({"error": "Connecteur d'envoi inconnu ou indisponible."}, status=status.HTTP_400_BAD_REQUEST)
+
+        apercu = request.data.get("apercu")
+        if apercu:
+            inst = Institution.objects.filter(pk=apercu, actif=True).first()
+            if inst is None:
+                return Response({"error": "Collectivité introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+            p = ic.preparer(inst)
+            if p["etat"] != "prete":
+                return Response({"etat": p["etat"]})
+            champs = ic.valeurs(inst, delegation, p, ic.LIEN_MASQUE)
+            return Response({"etat": "prete", "destinataire": p["destinataire"], "vers_referent": p["vers_referent"],
+                             "sujet": ic.rendre(sujet, champs), "corps": ic.rendre(corps, champs)})
+
+        cibles = self._cibles_du_departement(request, delegation)
+        if not cibles:
+            return Response({"error": "Aucune collectivité du territoire dans la sélection."}, status=status.HTTP_400_BAD_REQUEST)
+        campagne = CampagneInvitation.objects.create(
+            delegation=delegation, connecteur=cle, connecteur_libelle=libelle(cle, permises)[:255], sujet=sujet,
+            corps=corps, cree_par=request.user, prevues=len(cibles), environment=get_active_environment(request))
+        ids = [str(i.id) for i in cibles]
+        transaction.on_commit(lambda: envoyer_campagne_invitation_task.delay(str(campagne.id), ids))
+        audit_log(request=request, action_code="ENVOI_MASSE", objet_type="DelegationGestion", objet_id=delegation.id,
+                  commentaire=f"Campagne « Rejoindre votre collectivité » lancée : {len(cibles)} collectivité(s), "
+                              f"par {campagne.connecteur_libelle}")
+        return Response(self._etat_campagne(campagne), status=status.HTTP_202_ACCEPTED)
+
+    @staticmethod
+    def _etat_campagne(c):
+        return {"id": str(c.id), "date": c.date_creation, "date_fin": c.date_fin, "statut": c.statut,
+                "connecteur": c.connecteur_libelle, "prevues": c.prevues, "envoyees": c.envoyees, "echecs": c.echecs,
+                "sans_adresse": c.sans_adresse, "deja_membres": c.deja_membres, "erreurs": c.erreurs or []}
+
+    @action(detail=True, methods=["get"])
+    def campagnes(self, request, pk=None):
+        delegation = self.get_object()
+        if not self._peut_agir(request, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        return Response([self._etat_campagne(c) for c in delegation.campagnes_invitation.all()[:20]])
+
     @action(detail=True, methods=["post"], url_path="export-coordonnees")
     def export_coordonnees(self, request, pk=None):
         """Les coordonnées des collectivités cochées, en tableur (CSV, point-virgule, lisible par
@@ -551,6 +650,13 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
             evenements.append({"date": a.debut, "type": "amorcage", "action": "Amorçage", "par": "",
                                "texte": "Terminé le " + timezone.localtime(a.fin).strftime("%d/%m/%Y %H:%M") if a.fin
                                else "En cours"})
+        for c in delegation.campagnes_invitation.all()[:50]:
+            evenements.append({"date": c.date_creation, "type": "campagne", "action": "Campagne d'invitation",
+                               "par": (f"{c.cree_par.first_name} {c.cree_par.last_name}".strip() or c.cree_par.username)
+                               if c.cree_par else "",
+                               "texte": (f"{c.connecteur_libelle} : {c.envoyees}/{c.prevues} envoyée(s), {c.echecs} échec(s), "
+                                         f"{c.sans_adresse} sans adresse, {c.deja_membres} déjà présente(s)"
+                                         + (" — en cours" if c.statut == c.Statut.EN_COURS else ""))})
         noms = dict(Institution.objects.filter(id__in=territoire).values_list("id", "nom"))
         for inv in InvitationCollectivite.objects.filter(delegation=delegation).order_by("-date_envoi")[:500]:
             evenements.append({"date": inv.date_relance or inv.date_envoi, "type": "invitation",

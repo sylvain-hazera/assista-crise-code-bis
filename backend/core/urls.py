@@ -153,6 +153,7 @@ from .views import (
 )
 
 from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView, RejoindreCollectiviteView
+from .views_envoi import ConnecteurSMTPViewSet
 router = DefaultRouter()
 router.register(
     r'institution-types',
@@ -243,6 +244,7 @@ router.register(
     DelegationCompetenceViewSet
 )
 router.register(r'delegations-gestion', DelegationGestionViewSet, basename='delegationgestion')
+router.register(r'connecteurs-smtp', ConnecteurSMTPViewSet, basename='connecteursmtp')
 
 router.register(
     r'disponibilites',

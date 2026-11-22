@@ -1,0 +1,15 @@
+.connecteurs { border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; padding: .5rem .7rem; margin: 0;
+  display: flex; flex-direction: column; gap: .35rem;
+  legend { font-weight: 600; font-size: .9rem; padding: 0 .3rem; } }
+.connecteur { display: flex; flex-direction: row !important; gap: .5rem; align-items: flex-start; padding: .35rem .4rem;
+  border-radius: 6px; cursor: pointer; font-weight: 400;
+  &.choisi { background: var(--ac-blue-bg, #eff6ff); }
+  input { margin-top: .25rem; } }
+.etat { display: block; font-size: .8rem;
+  &.ok { color: var(--ac-green-text, #166534); } &.echec { color: var(--ac-red-text, #991b1b); } }
+.apercu { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end;
+  select { padding: .35rem .5rem; border-radius: 6px; border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); font: inherit; } }
+.rendu { border: 1px dashed var(--ac-border, #d1d5db); border-radius: 8px; padding: .6rem .8rem; font-size: .88rem;
+  p { margin: 0 0 .3rem; }
+  pre { white-space: pre-wrap; font: inherit; margin: .3rem 0 0; } }

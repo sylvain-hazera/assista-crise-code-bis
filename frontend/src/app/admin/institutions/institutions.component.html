@@ -1049,6 +1049,9 @@
                 </p>
               </div>
 
+              <h4 class="bloc-titre"><span class="material-icons">dns</span> Email (connecteurs SMTP)</h4>
+              <app-connecteurs-smtp [institutionId]="selectedInstitution!.id!"></app-connecteurs-smtp>
+
               <h4 class="bloc-titre"><span class="material-icons">sms</span> SMS</h4>
               @if (configEnvoi.derniere_erreur_sms) {
                 <div class="alert alert-error">

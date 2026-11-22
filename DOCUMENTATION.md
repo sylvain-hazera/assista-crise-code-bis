@@ -917,6 +917,19 @@ la convention, elle ne peut plus qu'exporter ses données ».
   seule, avancement compté dans l'étape (faites / total, créés) ; les autres sources restent
   départementales. L'écran
   d'amorçage affiche pour chaque source le nombre trouvé, les échecs et les incomplétudes.
+- **Fenêtre « Préparer l'invitation » et connecteurs d'envoi** (22/11/2026, migration `0373`) :
+  « Préparer l'invitation » (carte Invitations du suivi, et « Inviter maintenant » d'une commune)
+  n'envoie plus rien directement. La fenêtre (`admin/preparer-invitation`, styles de la relecture)
+  montre où ira chaque courriel (référent, adresse officielle, sans adresse), un texte à champs
+  (`[COLLECTIVITE]`, `[SALUTATION]`, `[LIEN]` jamais affiché, `[DUREE]`, `[COMPTES_MAX]`,
+  `[ASSOCIATION]` ; refus sans `[LIEN]`), un aperçu exact, et le **connecteur d'envoi** avec son
+  adresse (`core/envoi_connecteurs.py` : `brevo:<institution>`, `smtp:<connecteur>`, `plateforme`,
+  pour l'AASC et le conseil départemental ; pas de repli silencieux). Après confirmation,
+  `CampagneInvitation` et `envoyer_campagne_invitation_task` (file lourde, 0,5 s entre deux
+  courriels), sans brouillon : la relecture, c'est la fenêtre. Suivi dans les cartes Invitations
+  et Historique. **Connecteurs SMTP par institution** (`ConnecteurSMTP`, identifiant et mot de
+  passe chiffrés, jamais relus ; `/api/connecteurs-smtp/`, bureau ou administrateur, « Envoyer un
+  essai » à son compte) dans l'onglet Envois de la fiche institution, sous Brevo.
 - **Répertoires redistribués** (22/11/2026, `core/repertoires_departement.py`, migration `0372`) :
   pendant l'étape « annuaire », chaque service est rattaché aussi aux mairies et EPCI qu'il sert
   (échelle départementale : tous ; sous-préfecture : son arrondissement d'après le COG de l'INSEE ;

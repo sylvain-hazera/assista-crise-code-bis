@@ -70,6 +70,95 @@ def inviter(institution, delegation, request):
     return "envoyee"
 
 
+# ── Campagne préparée dans la fenêtre de rédaction (22/11/2026) ──
+#
+# « Inviter la sélection » ouvrait 556 brouillons séparés : la relecture ne sait regrouper que
+# les messages adressés à des comptes. La campagne part d'UN texte, relu une fois, à champs
+# remplis par collectivité, et d'un connecteur choisi (core/envoi_connecteurs.py).
+
+CHAMPS = ("COLLECTIVITE", "SALUTATION", "LIEN", "DUREE", "COMPTES_MAX", "ASSOCIATION")
+LIEN_MASQUE = "[lien personnel d'invitation]"
+
+
+def modele(aasc):
+    """Le texte proposé dans la fenêtre : celui d'aujourd'hui, en champs."""
+    from .branding import get_mail_branding
+
+    signature = get_mail_branding(aasc)["signature"]
+    sujet = "Votre espace [COLLECTIVITE] est prêt"
+    corps = (
+        "[SALUTATION]\n\n"
+        "[ASSOCIATION] exploite la plateforme de gestion de crise pour votre département, dans le cadre "
+        "de la convention signée avec le conseil départemental. L'espace de [COLLECTIVITE] y est "
+        "prêt : coordonnées officielles, risques de la commune, adresses et sites sensibles ont déjà "
+        "été récupérés.\n\n"
+        "Pour l'ouvrir, chaque personne concernée (maire, adjoints, secrétariat, services) crée son "
+        "compte avec ce lien, puis complète ce qui prépare la gestion de crise : organisation, "
+        "annuaire, lieux d'accueil, moyens d'alerte.\n\n"
+        "- Rejoindre [COLLECTIVITE] : [LIEN]\n\n"
+        "Ce lien est valable [DUREE] jours et sert à [COMPTES_MAX] comptes au plus. "
+        "Chaque compte créé vous est signalé à cette adresse.\n\n"
+        f"Cordialement,\n{signature}"
+    )
+    return sujet, corps
+
+
+def preparer(institution):
+    """Où irait l'invitation de cette collectivité, sans rien créer : 'deja_membre',
+    'sans_email', ou 'prete' avec le destinataire et le référent éventuel."""
+    from .models import ContactInstitution, ReferentCollectivite
+
+    if ContactInstitution.objects.filter(institution=institution, actif=True).exists():
+        return {"etat": "deja_membre"}
+    referent = ReferentCollectivite.objects.filter(institution=institution).first()
+    destinataire = (referent.email if referent and referent.email else None) or institution.email
+    if not destinataire:
+        return {"etat": "sans_email"}
+    return {"etat": "prete", "destinataire": destinataire, "referent": referent,
+            "vers_referent": bool(referent and referent.email and destinataire == referent.email)}
+
+
+def invitation_pour(institution, delegation, destinataire, auteur):
+    """L'invitation à envoyer : celle encore valable (relancée, prolongée), sinon une nouvelle."""
+    from .models import InvitationCollectivite
+
+    invitation = (InvitationCollectivite.objects.filter(institution=institution, actif=True)
+                  .order_by("-date_envoi").first())
+    if invitation is not None and invitation.utilisable:
+        invitation.date_relance = timezone.now()
+        invitation.email = destinataire
+        invitation.date_expiration = timezone.localdate() + datetime.timedelta(days=DUREE_JOURS)
+        invitation.save(update_fields=["date_relance", "email", "date_expiration"])
+        return invitation
+    return InvitationCollectivite.objects.create(
+        institution=institution, delegation=delegation, email=destinataire, invite_par=auteur,
+        environment=institution.environment,
+        date_expiration=timezone.localdate() + datetime.timedelta(days=DUREE_JOURS))
+
+
+def valeurs(institution, delegation, preparation, lien_ou_masque):
+    from .branding import branding_for_institution
+    from .models import InvitationCollectivite
+
+    aasc = delegation.aasc if delegation else None
+    referent = preparation.get("referent")
+    return {
+        "COLLECTIVITE": institution.nom,
+        "SALUTATION": f"Bonjour {referent.nom}," if preparation.get("vers_referent") and referent.nom else "Bonjour,",
+        "LIEN": lien_ou_masque,
+        "DUREE": str(DUREE_JOURS),
+        "COMPTES_MAX": str(InvitationCollectivite.MAX_COMPTES),
+        "ASSOCIATION": branding_for_institution(aasc).nom_affichage if aasc else "La plateforme",
+    }
+
+
+def rendre(texte, champs):
+    resultat = texte or ""
+    for nom, valeur in champs.items():
+        resultat = resultat.replace(f"[{nom}]", valeur)
+    return resultat
+
+
 def trouver(jeton):
     from .crypto_fields import empreinte_jeton
     from .models import InvitationCollectivite

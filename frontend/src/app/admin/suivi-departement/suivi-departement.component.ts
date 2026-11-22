@@ -8,6 +8,7 @@ import {
   DelegationGestion, DelegationGestionService, Enrolement, FicheArbre, SuiviBranche, SuiviDepartement,
 } from '../../services/delegation-gestion.service';
 import { PilotageDepartementComponent, VuePilotage } from '../pilotage-departement/pilotage-departement.component';
+import { PreparerInvitationComponent } from '../preparer-invitation/preparer-invitation.component';
 
 interface DepartementSuivi { delegation: DelegationGestion; suivi: SuiviDepartement; }
 
@@ -20,7 +21,7 @@ interface DepartementSuivi { delegation: DelegationGestion; suivi: SuiviDepartem
 @Component({
   selector: 'app-suivi-departement',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, RouterLink, FormsModule, NgTemplateOutlet, PilotageDepartementComponent],
+  imports: [DatePipe, DecimalPipe, RouterLink, FormsModule, NgTemplateOutlet, PilotageDepartementComponent, PreparerInvitationComponent],
   templateUrl: './suivi-departement.component.html',
   styleUrl: './suivi-departement.component.scss',
 })
@@ -34,6 +35,8 @@ export class SuiviDepartementComponent implements OnInit {
   chargementBranche = false;
   communeOuverte: string | null = null;
   message = '';
+  /** Collectivités dont on prépare l'invitation (fenêtre ouverte), ou null. */
+  fenetreInvitation: string[] | null = null;
   /** Saisie des coordonnées de la collectivité ouverte (commune ou intercommunalité). */
   saisie: { institution: string; email: string; telephone: string; refNom: string; refFonction: string; refEmail: string; refTelephone: string } | null = null;
 
@@ -119,16 +122,13 @@ export class SuiviDepartementComponent implements OnInit {
     });
   }
 
-  inviterMaintenant(f: FicheArbre): void {
-    if (!this.choisi) return;
-    this.service.inviterCollectivites(this.choisi.delegation.id, [f.id]).subscribe({
-      next: r => {
-        this.message = r.envoyees ? `Invitation envoyée à ${f.nom}.`
-          : r.sans_email.length ? `${f.nom} : aucune adresse, indiquez une personne référente.` : `${f.nom} a déjà des comptes.`;
-        this.recharger();
-      },
-      error: e => this.erreur = e?.error?.error ?? "Envoi impossible.",
-    });
+  /** Ouvre la fenêtre « Préparer l'invitation » pour cette collectivité. */
+  inviterMaintenant(f: FicheArbre): void { this.fenetreInvitation = [f.id]; }
+
+  campagneLancee(): void {
+    this.fenetreInvitation = null;
+    this.message = "Invitation lancée : son suivi est dans la carte Historique.";
+    this.recharger();
   }
 
   /** Recharge la branche ouverte sans la replier. */

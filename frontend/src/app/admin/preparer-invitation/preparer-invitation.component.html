@@ -1,0 +1,82 @@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="titre-preparer">
+  <div class="fenetre">
+    <header>
+      <h2 id="titre-preparer"><span class="material-icons">forward_to_inbox</span> Préparer l'invitation</h2>
+      @if (preparation; as p) {
+        <p class="sous-titre">
+          « Rejoindre votre collectivité » — <strong>{{ nombre }} collectivité(s)</strong> recevront ce texte, personnalisé :
+          {{ p.resume.vers_referent }} à la personne référente, {{ p.resume.vers_officielle }} à l'adresse officielle.
+        </p>
+        @if (p.resume.sans_adresse.length) {
+          <details class="destinataires">
+            <summary>{{ p.resume.sans_adresse.length }} sans aucune adresse : exclues</summary>
+            <p>{{ p.resume.sans_adresse.join(', ') }}</p>
+          </details>
+        }
+        @if (p.resume.deja_membres) { <p class="sous-titre">{{ p.resume.deja_membres }} ont déjà des comptes : exclues.</p> }
+      } @else if (!erreur) {
+        <p class="sous-titre">Préparation…</p>
+      }
+    </header>
+
+    <div class="corps">
+      @if (erreur) { <div class="alerte erreur"><span class="material-icons">warning</span> {{ erreur }}</div> }
+
+      @if (preparation; as p) {
+        <fieldset class="connecteurs">
+          <legend>Envoyer par</legend>
+          @for (c of p.connecteurs; track c.cle) {
+            <label class="connecteur" [class.choisi]="connecteur === c.cle">
+              <input type="radio" name="connecteur" [value]="c.cle" [(ngModel)]="connecteur">
+              <span>
+                <strong>{{ c.libelle }}</strong> — {{ c.adresse || 'adresse non renseignée' }}
+                @if (c.dernier_echec_motif) { <span class="etat echec">dernier échec : {{ c.dernier_echec_motif }}</span> }
+                @else if (c.dernier_succes) { <span class="etat ok">dernier envoi réussi le {{ c.dernier_succes | date:'dd/MM/yyyy HH:mm' }}</span> }
+              </span>
+            </label>
+          }
+        </fieldset>
+
+        <label>Objet <input type="text" [(ngModel)]="sujet"></label>
+        <label>Message <textarea rows="14" [(ngModel)]="corps"></textarea></label>
+
+        @if (!lienPresent) {
+          <div class="alerte erreur"><span class="material-icons">link_off</span>
+            [LIEN] a été retiré : sans lui, la collectivité ne peut pas créer ses comptes. L'envoi sera refusé.</div>
+        }
+        <p class="note"><span class="material-icons">edit_note</span>
+          @for (champ of p.champs; track champ) { <code>[{{ champ }}]</code> }
+          sont remplis pour chaque collectivité. [SALUTATION] devient « Bonjour Julie Martin, » quand une personne référente est
+          indiquée, « Bonjour, » sinon.</p>
+        <p class="note"><span class="material-icons">lock</span>
+          [LIEN] est le lien personnel de chaque collectivité : il n'est pas affiché ici, il est ajouté au moment de l'envoi.</p>
+
+        @if (p.pretes.length) {
+          <div class="apercu">
+            <label>Aperçu pour
+              <select [(ngModel)]="apercuPour">
+                @for (c of p.pretes; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+              </select>
+            </label>
+            <button type="button" class="lien" (click)="voirApercu()">Voir l'aperçu</button>
+          </div>
+          @if (apercu?.sujet) {
+            <div class="rendu">
+              <p><strong>À :</strong> {{ apercu!.destinataire }}@if (apercu!.vers_referent) { (personne référente) }</p>
+              <p><strong>Objet :</strong> {{ apercu!.sujet }}</p>
+              <pre>{{ apercu!.corps }}</pre>
+            </div>
+          }
+        }
+      }
+    </div>
+
+    <footer>
+      <button type="button" class="lien" (click)="fermee.emit()">Annuler</button>
+      <button type="button" class="principal" [disabled]="enCours || !nombre || !lienPresent || !connecteur" (click)="envoyer()">
+        <span class="material-icons">send</span>
+        {{ enCours ? 'Envoi…' : 'Envoyer à ' + nombre + ' collectivité(s)' }}
+      </button>
+    </footer>
+  </div>
+</div>
