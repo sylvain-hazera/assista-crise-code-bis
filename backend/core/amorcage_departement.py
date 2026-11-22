@@ -37,7 +37,7 @@ import urllib.request
 from django.utils import timezone
 
 URL_ANNUAIRE = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/search/"
-ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "simulations")
+ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "entreprises", "simulations")
 ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son débit
 # Une commune demande ~18 appels à Géorisques, espacés de 5 s pour toute la plateforme
 # (zonages_officiels.PAUSE_S) : ~90 s. Le 22/11/2026, la Gironde (534 communes) en une seule
@@ -49,7 +49,7 @@ ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son d
 ESPACEMENT_RISQUES = 10
 #: Source importée commune par commune (voir etape_sites).
 SOURCE_PAR_COMMUNE = "SIRENE"
-ESPACEMENT_SIRENE = 5
+ESPACEMENT_SIRENE = 30  # au long cours : l'annuaire des entreprises est un service partagé
 #: Au-delà, un amorçage sans fin consignée est tenu pour interrompu (la tâche a été tuée).
 DUREE_MAX_HEURES = 5
 
@@ -244,21 +244,29 @@ def etape_sites(cg, communes) -> dict:
     from .opendata import CONNECTEURS
     from .sites_sensibles import lancer_import
     from .tasks import FILE_LOURDE
-    from .tasks import enchainer_amorcage_task
     lancees = []
     for source in CONNECTEURS:
         if str(source) == SOURCE_PAR_COMMUNE:
-            # L'annuaire des entreprises plafonne ses réponses : à l'échelle d'un département,
-            # 1 500 établissements au plus par thème (constaté le 22/11/2026 sur la Gironde :
-            # élevages, hébergements, transport, commerces tronqués). Commune par commune, le
-            # plafond n'est jamais atteint.
-            if communes:
-                enchainer_amorcage_task.delay("sirene", list(communes), cg.environment, str(cg.id))
-        else:
-            lancer_import(cg, source, {"niveau": "departement", "code": cg.departement_code},
-                          environment=cg.environment, file=FILE_LOURDE)
+            continue  # étape « entreprises », à part, commune par commune
+        lancer_import(cg, source, {"niveau": "departement", "code": cg.departement_code},
+                      environment=cg.environment, file=FILE_LOURDE)
         lancees.append(str(source))
     return {"comptes": {"sources_lancees": len(lancees)}, "sources": lancees}
+
+
+def etape_entreprises(cg, communes) -> dict:
+    """Annuaire des entreprises (élevages, hébergements, transport, commerces…), commune par
+    commune et au long cours : à l'échelle d'un département, l'annuaire plafonne ses réponses
+    (1 500 établissements par thème, constaté le 22/11/2026 sur la Gironde) ; par commune, jamais.
+    L'avancement se lit dans l'étape (faites / total, établissements créés)."""
+    from .models import AmorcageDepartement
+    from .tasks import enchainer_amorcage_task
+    amorcage = (AmorcageDepartement.objects.filter(delegation__collectivite=cg, fin__isnull=True)
+                .order_by("-debut").first())
+    if communes and amorcage is not None:
+        enchainer_amorcage_task.delay("sirene", list(communes), cg.environment, str(amorcage.id))
+    return {"comptes": {"faites": 0, "total": len(communes), "crees": 0,
+                        "duree_estimee_heures": round(len(communes) * (ESPACEMENT_SIRENE + 20) / 3600, 1)}}
 
 
 def etape_referentiel(cg, communes) -> dict:
@@ -294,14 +302,33 @@ def simulations_commune(code, environment):
         tache.apply_async(args=[code, environment, False], queue=FILE_LOURDE)
 
 
-def sirene_commune(code, environment, institution_id):
-    from .models import Institution
+def sirene_commune(code, environment, amorcage_id):
+    """Importe les entreprises d'une commune et compte l'avancement dans l'étape « entreprises »."""
+    from django.db import transaction
+    from .models import AmorcageDepartement
     from .sites_sensibles import executer_import
-    institution = Institution.objects.get(pk=institution_id)
-    executer_import(institution, SOURCE_PAR_COMMUNE, {"niveau": "commune", "code": code}, environment=environment)
+
+    amorcage = AmorcageDepartement.objects.select_related("delegation__collectivite").get(pk=amorcage_id)
+    try:
+        resultat = executer_import(amorcage.delegation.collectivite, SOURCE_PAR_COMMUNE,
+                                   {"niveau": "commune", "code": code}, environment=environment) or {}
+        erreur = None
+    except Exception as exc:
+        resultat, erreur = {}, f"{code} : {exc}"[:200]
+    with transaction.atomic():
+        a = AmorcageDepartement.objects.select_for_update().get(pk=amorcage_id)
+        etape = a.etapes.setdefault("entreprises", {"statut": "PROGRAMMEE"})
+        comptes = etape.setdefault("comptes", {"faites": 0, "total": 0, "crees": 0})
+        comptes["faites"] = comptes.get("faites", 0) + 1
+        comptes["crees"] = comptes.get("crees", 0) + int((resultat or {}).get("crees") or 0)
+        if erreur:
+            etape["erreurs"] = (etape.get("erreurs") or [])[-19:] + [erreur]
+        if comptes["faites"] >= comptes.get("total", 0):
+            etape["statut"], etape["fin"] = "TERMINEE", timezone.now().isoformat()
+        a.save(update_fields=["etapes"])
 
 
-def enchainer(etape, communes, environment, suivante, institution_id=None):
+def enchainer(etape, communes, environment, suivante, reference=None):
     """Traite la première commune, puis confie le reste à `suivante(reste, délai)`. Une erreur
     sur une commune n'arrête pas les autres."""
     import logging
@@ -312,7 +339,7 @@ def enchainer(etape, communes, environment, suivante, institution_id=None):
         if etape == "risques":
             relever_tout(code, environment)
         elif etape == "sirene":
-            sirene_commune(code, environment, institution_id)
+            sirene_commune(code, environment, reference)
         else:
             simulations_commune(code, environment)
     except Exception:
@@ -322,7 +349,8 @@ def enchainer(etape, communes, environment, suivante, institution_id=None):
 
 
 FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "adresses": etape_adresses,
-             "risques": etape_risques, "sites": etape_sites, "simulations": etape_simulations}
+             "risques": etape_risques, "sites": etape_sites, "entreprises": etape_entreprises,
+             "simulations": etape_simulations}
 
 
 def executer(amorcage, etapes=ETAPES) -> None:
@@ -341,7 +369,7 @@ def executer(amorcage, etapes=ETAPES) -> None:
         amorcage.save(update_fields=["etapes"])
         try:
             resultat = FONCTIONS[nom](cg, communes)
-            statut = "PROGRAMMEE" if nom in ("risques", "simulations") else "TERMINEE"
+            statut = "PROGRAMMEE" if nom in ("risques", "entreprises", "simulations") else "TERMINEE"
             amorcage.etapes[nom] = {"statut": statut, "fin": timezone.now().isoformat(), **resultat}
         except Exception as exc:
             amorcage.etapes[nom] = {"statut": "ECHEC", "fin": timezone.now().isoformat(), "erreur": str(exc)[:500]}

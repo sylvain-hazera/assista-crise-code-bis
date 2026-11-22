@@ -207,22 +207,33 @@ def test_les_travaux_lourds_ont_leur_file():
 @pytest.mark.django_db
 def test_les_sites_de_l_amorcage_partent_dans_la_file_lourde(cg):
     from core.amorcage_departement import etape_sites
-    with mock.patch("core.tasks.importer_sites_sensibles_task.apply_async") as importer, \
-         mock.patch("core.tasks.enchainer_amorcage_task.delay") as par_commune:
+    with mock.patch("core.tasks.importer_sites_sensibles_task.apply_async") as importer:
         etape_sites(cg, ["42186"])
     assert importer.call_count >= 1
     assert all(c.kwargs["queue"] == "lourd" for c in importer.call_args_list)
     assert all(c.kwargs["args"][1] != "SIRENE" for c in importer.call_args_list)
-    par_commune.assert_called_once_with("sirene", ["42186"], "PROD", str(cg.id))
 
 
 @pytest.mark.django_db
-def test_l_annuaire_des_entreprises_s_importe_commune_par_commune(cg):
-    from core.amorcage_departement import ESPACEMENT_SIRENE
+def test_les_entreprises_sont_une_etape_a_part_commune_par_commune(cg):
+    from core.amorcage_departement import ESPACEMENT_SIRENE, etape_entreprises
     from core.tasks import enchainer_amorcage_task
-    with mock.patch("core.sites_sensibles.executer_import") as importer, \
+    aasc = Institution.objects.create(nom="Réserve essai", type=_type("aasc"))
+    d = DelegationGestion.objects.create(collectivite=cg, aasc=aasc, convention_signee_le="2026-10-01", environment="PROD")
+    a = AmorcageDepartement.objects.create(delegation=d, environment="PROD", etapes={"entreprises": {"statut": "EN_COURS"}})
+    with mock.patch("core.tasks.enchainer_amorcage_task.delay") as premiere:
+        resultat = etape_entreprises(cg, ["42186", "42218"])
+    premiere.assert_called_once_with("sirene", ["42186", "42218"], "PROD", str(a.id))
+    a.etapes["entreprises"] = {"statut": "PROGRAMMEE", **resultat}
+    a.save()
+    with mock.patch("core.sites_sensibles.executer_import", return_value={"crees": 7}) as importer, \
          mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
-        enchainer_amorcage_task.run("sirene", ["42186", "42218"], "PROD", str(cg.id))
-    assert importer.call_args.args[1:3] == ("SIRENE", {"niveau": "commune", "code": "42186"})
-    assert suivante.call_args.kwargs == {"args": ["sirene", ["42218"], "PROD", str(cg.id)], "countdown": ESPACEMENT_SIRENE}
-
+        enchainer_amorcage_task.run("sirene", ["42186", "42218"], "PROD", str(a.id))
+        assert importer.call_args.args[1:3] == ("SIRENE", {"niveau": "commune", "code": "42186"})
+        assert suivante.call_args.kwargs == {"args": ["sirene", ["42218"], "PROD", str(a.id)], "countdown": ESPACEMENT_SIRENE}
+        a.refresh_from_db()
+        assert a.etapes["entreprises"]["comptes"]["faites"] == 1 and a.etapes["entreprises"]["statut"] == "PROGRAMMEE"
+        enchainer_amorcage_task.run("sirene", ["42218"], "PROD", str(a.id))
+    a.refresh_from_db()
+    assert a.etapes["entreprises"]["comptes"]["faites"] == 2 and a.etapes["entreprises"]["comptes"]["crees"] == 14
+    assert a.etapes["entreprises"]["statut"] == "TERMINEE"

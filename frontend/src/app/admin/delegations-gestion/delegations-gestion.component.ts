@@ -65,7 +65,8 @@ export class DelegationsGestionComponent implements OnInit {
     { code: 'annuaire', libelle: 'Répertoires officiels (mairies, EPCI, services de crise)' },
     { code: 'adresses', libelle: 'Adresses de toutes les communes' },
     { code: 'risques', libelle: 'Risques de chaque commune (Géorisques, zonages, plans de prévention, Géoportail de l\'urbanisme)' },
-    { code: 'sites', libelle: 'Sites sensibles du département (écoles, santé, ICPE, DAE, équipements, entreprises)' },
+    { code: 'sites', libelle: 'Sites sensibles du département (écoles, santé, ICPE, DAE, équipements sportifs)' },
+    { code: 'entreprises', libelle: 'Entreprises (élevages, hébergements, transport, commerces), commune par commune, au long cours' },
     { code: 'simulations', libelle: 'Pré-calcul des simulations d\'inondation et de ruissellement (une commune par minute)' },
   ];
 

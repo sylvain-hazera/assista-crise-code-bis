@@ -912,8 +912,10 @@ la convention, elle ne peut plus qu'exporter ses données ».
   `charger_adresses_departement_task` ignore les communes déjà chargées.
 - **Annuaire des entreprises commune par commune** (22/11/2026) : à l'échelle d'un département,
   l'import SIRENE est plafonné (1 500 établissements par thème ; constaté sur la Gironde : élevages,
-  hébergements, transport, commerces tronqués). L'amorçage l'enchaîne commune par commune
-  (`enchainer_amorcage_task` « sirene »), les autres sources restent départementales. L'écran
+  hébergements, transport, commerces tronqués). Étape à part, « entreprises », au long cours :
+  commune par commune (`enchainer_amorcage_task` « sirene », 30 s entre deux communes), relançable
+  seule, avancement compté dans l'étape (faites / total, créés) ; les autres sources restent
+  départementales. L'écran
   d'amorçage affiche pour chaque source le nombre trouvé, les échecs et les incomplétudes.
 - **File des travaux lourds** (22/11/2026) : `core/tasks.FILE_LOURDE` (« lourd ») reçoit l'amorçage,
   son enchaînement, les chargements d'adresses en masse, et les imports et simulations lancés par
