@@ -42,6 +42,10 @@ export interface EtatAmorcage {
   fin: string | null;
   etapes: Record<string, { statut: string; comptes?: Record<string, number>; erreur?: string; erreurs?: string[] }>;
   sites: { source: string; statut: string; date_fin: string | null }[];
+  /** La tâche a été interrompue (relance possible). */
+  interrompu?: boolean;
+  /** Communes du département dont les risques sont relevés depuis le lancement. */
+  risques?: { faites: number; total: number };
 }
 
 /** Une institution dans l'arborescence du département. */

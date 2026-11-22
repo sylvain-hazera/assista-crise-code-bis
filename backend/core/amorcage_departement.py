@@ -39,6 +39,13 @@ from django.utils import timezone
 URL_ANNUAIRE = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/search/"
 ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "simulations")
 ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son débit
+# Une commune demande ~18 appels à Géorisques, espacés de 5 s pour toute la plateforme
+# (zonages_officiels.PAUSE_S) : ~90 s. Une tâche par commune, programmées à 100 s d'écart.
+# Le 22/11/2026, la Gironde (534 communes) en une seule tâche aurait demandé ~13 h, bien
+# au-delà de la limite de 4 h : la tâche aurait été tuée avant les sites et les simulations.
+ESPACEMENT_RISQUES = 100
+#: Au-delà, un amorçage sans fin consignée est tenu pour interrompu (la tâche a été tuée).
+DUREE_MAX_HEURES = 5
 
 # Type de service de l'Annuaire → catégorie de l'annuaire de crise. Ce qui n'est pas ici n'est
 # pas versé : l'annuaire de crise n'est pas l'annuaire de l'administration.
@@ -121,6 +128,25 @@ def _completer(institution, fiche):
 
 
 def etape_annuaire(cg, communes, interroger=interroger_annuaire, pause=PAUSE_ENTRE_APPELS) -> dict:
+    """Une notification « Nouvelle institution » par mairie créée, c'était plusieurs centaines de
+    courriels aux administrateurs pour un département (constaté le 22/11/2026 sur la Gironde) :
+    elles sont suspendues, et un seul récapitulatif part à la fin."""
+    from .notifications_admin import notifications_institution_suspendues, notifier_administrateurs
+
+    with notifications_institution_suspendues():
+        resultat = _etape_annuaire(cg, communes, interroger, pause)
+    c = resultat["comptes"]
+    if c["mairies_creees"] or c["epci_crees"]:
+        notifier_administrateurs(
+            f"Amorçage du département {cg.departement_code} : {c['mairies_creees']} mairie(s) et "
+            f"{c['epci_crees']} intercommunalité(s) créées",
+            f"L'amorçage de {cg.nom} a créé {c['mairies_creees']} mairie(s) et {c['epci_crees']} "
+            f"intercommunalité(s) depuis l'Annuaire de l'administration, et versé "
+            f"{c['annuaire_ajoutes']} service(s) de crise à l'annuaire du conseil départemental.")
+    return resultat
+
+
+def _etape_annuaire(cg, communes, interroger, pause) -> dict:
     from .models import Commune, Institution, InstitutionType, InterlocuteurAlertePCS
 
     type_mairie = InstitutionType.objects.filter(code__iexact="mairie").first() or \
@@ -183,16 +209,24 @@ def etape_adresses(cg, communes) -> dict:
 
 
 def etape_risques(cg, communes) -> dict:
-    from .releve_georisques import relever_tout
-    comptes, erreurs = {"communes": 0, "echecs": 0}, []
-    for code in communes:
-        try:
-            relever_tout(code, cg.environment)
-            comptes["communes"] += 1
-        except Exception as exc:
-            comptes["echecs"] += 1
-            erreurs.append(f"{code} : {exc}"[:200])
-    return {"comptes": comptes, "erreurs": erreurs[:20]}
+    """Programme le relevé de chaque commune (une tâche chacune, espacées) : l'avancement se lit
+    ensuite en direct dans les relevés (voir avancement_risques)."""
+    from .tasks import relever_risques_commune_task
+    for rang, code in enumerate(communes):
+        relever_risques_commune_task.apply_async(args=[code, cg.environment], countdown=rang * ESPACEMENT_RISQUES)
+    return {"comptes": {"communes_programmees": len(communes),
+                        "duree_estimee_heures": round(len(communes) * ESPACEMENT_RISQUES / 3600, 1)}}
+
+
+def avancement_risques(amorcage) -> dict:
+    """Communes du département relevées depuis le lancement de l'amorçage."""
+    from .models import Commune, ReleveGeorisques
+    cg = amorcage.delegation.collectivite
+    total = Commune.objects.filter(departement_code=cg.departement_code).count()
+    faites = (ReleveGeorisques.objects.filter(commune_code__startswith=cg.departement_code,
+                                              releve_le__gte=amorcage.debut, environment=cg.environment)
+              .values("commune_code").distinct().count())
+    return {"faites": faites, "total": total}
 
 
 def etape_sites(cg, communes) -> dict:
@@ -254,7 +288,8 @@ def executer(amorcage, etapes=ETAPES) -> None:
         amorcage.save(update_fields=["etapes"])
         try:
             resultat = FONCTIONS[nom](cg, communes)
-            amorcage.etapes[nom] = {"statut": "TERMINEE", "fin": timezone.now().isoformat(), **resultat}
+            statut = "PROGRAMMEE" if nom in ("risques", "simulations") else "TERMINEE"
+            amorcage.etapes[nom] = {"statut": statut, "fin": timezone.now().isoformat(), **resultat}
         except Exception as exc:
             amorcage.etapes[nom] = {"statut": "ECHEC", "fin": timezone.now().isoformat(), "erreur": str(exc)[:500]}
         amorcage.save(update_fields=["etapes"])
@@ -262,3 +297,9 @@ def executer(amorcage, etapes=ETAPES) -> None:
             communes = communes_du_departement()  # le référentiel vient d'être complété
     amorcage.fin = timezone.now()
     amorcage.save(update_fields=["fin"])
+
+
+def est_interrompu(amorcage) -> bool:
+    """Sans fin consignée bien après la limite de la tâche : elle a été tuée."""
+    import datetime
+    return amorcage.fin is None and timezone.now() - amorcage.debut > datetime.timedelta(hours=DUREE_MAX_HEURES)

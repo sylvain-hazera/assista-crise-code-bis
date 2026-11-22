@@ -902,7 +902,13 @@ la convention, elle ne peut plus qu'exporter ses données ».
   département), et deux étapes ajoutées le même jour (« tout ce qui est récupération à l'avance
   doit l'être ») : le référentiel des communes en premier (`import_communes`), et le pré-calcul des
   simulations d'inondation et de ruissellement en dernier (grille IGN, paliers, accumulation, seuil
-  par adresse ; une commune par minute pour ménager l'IGN). Les risques comprennent zonages
+  par adresse ; une commune par minute pour ménager l'IGN). **Risques programmés commune par commune**
+  (22/11/2026, Gironde) : ~18 appels à Géorisques par commune espacés de 5 s pour toute la plateforme,
+  soit ~90 s ; 534 communes en une tâche dépassaient la limite de 4 h. Une tâche
+  `relever_risques_commune_task` par commune, à 100 s d'écart, avancement lu en direct dans les relevés.
+  Un amorçage sans fin au-delà de 5 h est tenu pour interrompu et se relance. Les notifications
+  « Nouvelle institution » sont suspendues pendant l'annuaire (plusieurs centaines de courriels
+  pour la Gironde), remplacées par un récapitulatif. Les risques comprennent zonages
   officiels, plans de prévention et Géoportail de l'urbanisme (`relever_tout`). Seules des données publiques circulent. **Lancé aussitôt** à l'enregistrement d'une
   délégation départementale. Action `arborescence` : le département, ses intercommunalités et
   leurs communes (depuis le référentiel, complet avant l'amorçage), avec pour chaque mairie ses

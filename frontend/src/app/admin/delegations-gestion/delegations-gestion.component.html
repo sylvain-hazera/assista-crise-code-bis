@@ -143,6 +143,13 @@
                 </tr>
               }
             </table>
+            @if (amorcages[d.id]?.risques; as r) {
+              <p class="aide">Risques relevés : {{ r.faites }} / {{ r.total }} communes (une toutes les 100 secondes environ,
+                Géorisques limite son débit).</p>
+            }
+            @if (amorcages[d.id]?.interrompu) {
+              <p class="erreur">Cet amorçage a été interrompu : relancez-le, ce qui est déjà récupéré n'est pas refait.</p>
+            }
             @if (amorcages[d.id]?.sites?.length) {
               <p class="aide">Sites sensibles : @for (s of amorcages[d.id]!.sites; track s.source) { {{ s.source }} ({{ s.statut }}) }</p>
             }

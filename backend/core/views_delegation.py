@@ -352,7 +352,8 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         if (cg.secteur_niveau_effectif or "") != "departement" or not cg.departement_code:
             return Response({"error": "L'amorçage concerne une délégation départementale."},
                             status=status.HTTP_400_BAD_REQUEST)
-        en_cours = delegation.amorcages.filter(fin__isnull=True).first()
+        from .amorcage_departement import est_interrompu
+        en_cours = next((a for a in delegation.amorcages.filter(fin__isnull=True) if not est_interrompu(a)), None)
         if en_cours is not None:
             return Response({"error": "Un amorçage est déjà en cours pour ce département."},
                             status=status.HTTP_409_CONFLICT)
@@ -570,10 +571,12 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         return Response(self._etat_amorcage(dernier) if dernier else None)
 
     def _etat_amorcage(self, amorcage):
+        from .amorcage_departement import avancement_risques, est_interrompu
         from .models import ImportOpenData
         imports = ImportOpenData.objects.filter(institution=amorcage.delegation.collectivite)
         return {
             "id": str(amorcage.id), "debut": amorcage.debut, "fin": amorcage.fin, "etapes": amorcage.etapes,
+            "interrompu": est_interrompu(amorcage), "risques": avancement_risques(amorcage),
             "sites": [{"source": i.source, "statut": i.statut, "date_fin": i.date_fin} for i in imports],
         }
 

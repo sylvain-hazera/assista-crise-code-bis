@@ -227,3 +227,11 @@ def amorcer_departement_task(amorcage_id: str, etapes=None):
     if amorcage is None:
         return
     executer(amorcage, [e for e in (etapes or ETAPES) if e in ETAPES])
+
+
+@shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
+def relever_risques_commune_task(commune_code: str, environment: str):
+    """Relevé complet d'une commune (Géorisques, zonages, plans de prévention, Géoportail de
+    l'urbanisme), programmé par l'amorçage départemental : une commune par tâche."""
+    from .releve_georisques import relever_tout
+    return relever_tout(commune_code, environment)

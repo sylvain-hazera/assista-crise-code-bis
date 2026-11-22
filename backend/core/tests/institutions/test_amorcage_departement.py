@@ -129,3 +129,36 @@ def test_le_referentiel_recharge_le_departement(cg):
         resultat = etape_referentiel(cg, ["42186"])
     commande.assert_called_once_with("import_communes", "42")
     assert resultat["comptes"]["communes_avant"] == 1
+
+
+@pytest.mark.django_db
+def test_les_risques_sont_programmes_commune_par_commune(cg):
+    from core.amorcage_departement import ESPACEMENT_RISQUES, etape_risques
+    with mock.patch("core.tasks.relever_risques_commune_task.apply_async") as tache:
+        resultat = etape_risques(cg, ["42186", "42218"])
+    assert tache.call_count == 2
+    assert tache.call_args_list[1].kwargs["countdown"] == ESPACEMENT_RISQUES
+    assert resultat["comptes"]["communes_programmees"] == 2
+
+
+@pytest.mark.django_db
+def test_une_seule_notification_pour_tout_l_annuaire(cg):
+    with mock.patch("core.notifications_admin.notifier_administrateurs") as notifier, \
+         mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        etape_annuaire(cg, ["42186", "42218"], interroger=lambda c: ANNUAIRE[c], pause=0)
+    assert notifier.call_count == 1
+    assert "2 mairie(s)" in notifier.call_args.args[0]
+
+
+@pytest.mark.django_db
+def test_un_amorcage_interrompu_ne_bloque_pas_la_relance(cg):
+    import datetime
+    from django.utils import timezone
+    from core.amorcage_departement import est_interrompu
+    aasc = Institution.objects.create(nom="Réserve essai", type=_type("aasc"))
+    d = DelegationGestion.objects.create(collectivite=cg, aasc=aasc, convention_signee_le="2026-10-01", environment="PROD")
+    a = AmorcageDepartement.objects.create(delegation=d, environment="PROD", etapes={"risques": {"statut": "EN_COURS"}})
+    assert not est_interrompu(a)
+    AmorcageDepartement.objects.filter(pk=a.pk).update(debut=timezone.now() - datetime.timedelta(hours=6))
+    a.refresh_from_db()
+    assert est_interrompu(a)
