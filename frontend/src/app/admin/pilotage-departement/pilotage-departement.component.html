@@ -86,6 +86,11 @@
           @if (amorcages[d.id]?.risques; as r) {
             <p class="aide">Risques relevés : {{ r.faites }} / {{ r.total }} communes (une toutes les 100 secondes environ,
               Géorisques limite son débit).</p>
+              @if (r.geoportail; as g) {
+                <p class="aide">Géoportail de l'urbanisme, dans la même passe : {{ g.servitudes }} servitudes
+                  (plans de prévention, lignes électriques, monuments, voies ferrées…) sur {{ g.communes_avec_servitudes }} communes,
+                  {{ g.zones_plu }} zones de PLU sur {{ g.communes_avec_plu }} communes.</p>
+              }
           }
           @if (amorcages[d.id]?.interrompu) {
             <p class="erreur">Cet amorçage a été interrompu : relancez-le, ce qui est déjà récupéré n'est pas refait.</p>

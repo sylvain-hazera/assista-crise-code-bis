@@ -117,6 +117,9 @@ export class PilotageDepartementComponent implements OnChanges {
   inviterSelection(d: DelegationGestion): void {
     const ids = [...(this.selection[d.id] ?? [])];
     if (!ids.length) return;
+    // 22/11/2026 : 556 courriels partis d'un clic, sans le vouloir. Un envoi groupé se confirme.
+    if (!window.confirm(`Envoyer maintenant le courriel « Rejoindre votre collectivité » à ${ids.length} collectivité(s) ? `
+      + 'Un courriel envoyé ne peut pas être rappelé.')) return;
     this.service.inviterCollectivites(d.id, ids).subscribe({
       next: r => {
         this.message = `${r.envoyees} invitation(s) envoyée(s)`

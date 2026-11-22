@@ -269,7 +269,17 @@ def avancement_risques(amorcage) -> dict:
     faites = (ReleveGeorisques.objects.filter(commune_code__startswith=cg.departement_code,
                                               releve_le__gte=amorcage.debut, environment=cg.environment)
               .values("commune_code").distinct().count())
-    return {"faites": faites, "total": total}
+    # Géoportail de l'urbanisme, dans la même passe : ce qui en est déjà gardé (22/11/2026 :
+    # « je vois Géorisques, scannes-tu le Géoportail aussi ? »).
+    from .models import ServitudePPR, ZoneUrbanisme
+    filtre = {"commune_code__startswith": cg.departement_code, "environment": cg.environment}
+    servitudes = ServitudePPR.objects.filter(**filtre)
+    zones = ZoneUrbanisme.objects.filter(**filtre)
+    return {"faites": faites, "total": total,
+            "geoportail": {"servitudes": servitudes.count(),
+                           "communes_avec_servitudes": servitudes.values("commune_code").distinct().count(),
+                           "zones_plu": zones.count(),
+                           "communes_avec_plu": zones.values("commune_code").distinct().count()}}
 
 
 def etape_sites(cg, communes) -> dict:

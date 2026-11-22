@@ -51,7 +51,8 @@ export interface EtatAmorcage {
   /** La tâche a été interrompue (relance possible). */
   interrompu?: boolean;
   /** Communes du département dont les risques sont relevés depuis le lancement. */
-  risques?: { faites: number; total: number };
+  risques?: { faites: number; total: number;
+             geoportail?: { servitudes: number; communes_avec_servitudes: number; zones_plu: number; communes_avec_plu: number } };
 }
 
 /** Une institution dans l'arborescence du département. */

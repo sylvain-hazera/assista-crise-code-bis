@@ -34,6 +34,7 @@ describe('PilotageDepartementComponent', () => {
   });
 
   it('coche les collectivités sans compte et les invite', () => {
+    spyOn(window, 'confirm').and.returnValue(true);
     const inviter = spyOn(service, 'inviterCollectivites').and.returnValue(of({ envoyees: 2, sans_email: ['Mairie X'], deja_membres: 0 }));
     spyOn(service, 'arborescence').and.returnValue(of(null));
     const c = TestBed.createComponent(PilotageDepartementComponent).componentInstance;
@@ -70,5 +71,14 @@ describe('PilotageDepartementComponent', () => {
     c.ngOnChanges();
     expect(historique).toHaveBeenCalledWith('d1');
     expect(c.historique?.length).toBe(1);
+  });
+
+  it("n'envoie rien sans confirmation", () => {
+    spyOn(window, 'confirm').and.returnValue(false);
+    const inviter = spyOn(service, 'inviterCollectivites');
+    const c = TestBed.createComponent(PilotageDepartementComponent).componentInstance;
+    c.selection['d1'] = new Set(['m1']);
+    c.inviterSelection({ id: 'd1' } as any);
+    expect(inviter).not.toHaveBeenCalled();
   });
 });
