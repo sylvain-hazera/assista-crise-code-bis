@@ -917,6 +917,22 @@ la convention, elle ne peut plus qu'exporter ses données ».
   seule, avancement compté dans l'étape (faites / total, créés) ; les autres sources restent
   départementales. L'écran
   d'amorçage affiche pour chaque source le nombre trouvé, les échecs et les incomplétudes.
+- **Répertoires redistribués** (22/11/2026, `core/repertoires_departement.py`, migration `0372`) :
+  pendant l'étape « annuaire », chaque service est rattaché aussi aux mairies et EPCI qu'il sert
+  (échelle départementale : tous ; sous-préfecture : son arrondissement d'après le COG de l'INSEE ;
+  autres : la compétence publiée par l'Annuaire, `pivot[].code_insee_commune`, à défaut la commune).
+  Nouvelle étape « répertoires » : fiche de l'EPCI à ses mairies, des mairies à leur EPCI et au
+  conseil départemental, et à chaque mairie ses **communes voisines** (contours de geo.api.gouv.fr
+  qui se touchent, catégorie `COMMUNE_VOISINE`). Les copies prennent le référent s'il y en a un et
+  suivent l'action `coordonnees`. Rejouable sans doublon : `InterlocuteurAlertePCS.cle_source`
+  (identifiant Annuaire, `institution:` ou `voisine:` + uuid) ; une fiche saisie à la main n'est
+  jamais touchée. Les données territoriales (adresses, risques, servitudes, sites) étaient déjà
+  partagées par code commune.
+- **Servitudes et zones du PLU** (22/11/2026) : en plus des plans de prévention, le relevé de chaque
+  commune garde toutes les servitudes d'utilité publique publiées (`relever_servitudes`, un appel,
+  libellés `LIBELLES_SERVITUDES` : lignes électriques, monuments, voies ferrées, cours d'eau…) et les
+  zones du PLU (`ZoneUrbanisme`, `relever_zones`, `wfs_du:zone_urba`). Liste tronquée signalée.
+  Couches de carte `servitudes` et `zones-urbanisme` ; les écrans des PPR ne voient que pm1/pm3.
 - **File des travaux lourds** (22/11/2026) : `core/tasks.FILE_LOURDE` (« lourd ») reçoit l'amorçage,
   son enchaînement, les chargements d'adresses en masse, et les imports et simulations lancés par
   l'amorçage. Consommée par `ac_celery_worker_lourd` (service `celery-worker-lourd` de

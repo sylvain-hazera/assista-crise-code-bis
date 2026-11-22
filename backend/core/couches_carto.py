@@ -45,6 +45,8 @@ COUCHES = {
     "inondation-simulee": "Zones inondées simulées, par niveau d'eau",
     "zonages-officiels": "Zones inondables officielles (Géorisques)",
     "perimetres-ppr": "Périmètres des plans de prévention des risques (Géoportail de l'urbanisme)",
+    "servitudes": "Servitudes d'utilité publique : réseaux, patrimoine, transports (Géoportail de l'urbanisme)",
+    "zones-urbanisme": "Zones du plan local d'urbanisme (Géoportail de l'urbanisme)",
     "enjeux-exposes": "Enjeux et niveau d'eau qui les atteint",
 }
 
@@ -98,12 +100,35 @@ def _zonages(institution, environment):
                    source="Géorisques", releve_le=z.releve_le.date().isoformat()) for z in zonages]
 
 
+from .geoportail_urbanisme import CATEGORIES as CATEGORIES_PPR  # noqa: E402
+
+
 def _perimetres_ppr(institution, environment):
     from .models import ServitudePPR
 
     return [_objet(s.polygone, nom=s.nom, type=s.type_assiette, acte=s.url_acte, source="Géoportail de l'urbanisme",
                    releve_le=s.releve_le.date().isoformat())
-            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment)]
+            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment,
+                                                 categorie__in=list(CATEGORIES_PPR))]
+
+
+def _servitudes(institution, environment):
+    from .geoportail_urbanisme import LIBELLES_SERVITUDES
+    from .models import ServitudePPR
+
+    return [_objet(s.polygone, nom=s.nom, categorie=LIBELLES_SERVITUDES.get(s.categorie, s.categorie.upper()),
+                   type=s.type_assiette, acte=s.url_acte, source="Géoportail de l'urbanisme",
+                   releve_le=s.releve_le.date().isoformat())
+            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment)
+            .exclude(categorie__in=list(CATEGORIES_PPR))]
+
+
+def _zones_urbanisme(institution, environment):
+    from .models import ZoneUrbanisme
+
+    return [_objet(z.polygone, type=z.type_zone, nom=z.libelle, description=z.libelle_long, reglement=z.url_reglement,
+                   source="Géoportail de l'urbanisme", releve_le=z.releve_le.date().isoformat())
+            for z in ZoneUrbanisme.objects.filter(commune_code=institution.commune_code or "", environment=environment)]
 
 
 def _enjeux(institution, environment):
@@ -126,7 +151,8 @@ def _enjeux(institution, environment):
 
 
 _EXPORTS = {"quartiers": _quartiers, "sites-sensibles": _sites, "points-du-plan": _points,
-            "inondation-simulee": _inondation, "zonages-officiels": _zonages, "perimetres-ppr": _perimetres_ppr, "enjeux-exposes": _enjeux}
+            "inondation-simulee": _inondation, "zonages-officiels": _zonages, "perimetres-ppr": _perimetres_ppr, "enjeux-exposes": _enjeux,
+            "servitudes": _servitudes, "zones-urbanisme": _zones_urbanisme}
 
 
 def exporter(couche: str, institution, environment) -> dict:

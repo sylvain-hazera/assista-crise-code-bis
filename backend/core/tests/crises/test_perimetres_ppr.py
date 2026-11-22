@@ -82,3 +82,51 @@ class TestReleve:
         gpu.relever("42186", "PROD", interroger=faux, contour=CONTOUR)
         monkeypatch.setattr(gpu, "contour_de_la_commune", lambda code: None)
         assert "contour" in gpu.relever("42186", "PROD", interroger=faux)["erreurs"] and ServitudePPR.objects.count() == 1
+
+
+def _sup(categorie, coins, nom="", fichier=""):
+    return {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": [[[list(c) for c in coins]]]},
+            "properties": {"suptype": categorie, "nomass": nom, "typeass": "Zone de protection", "fichier": fichier,
+                           "partition": "444619258_SUP_R75_I4", "gpu_doc_id": "c444"}}
+
+
+@pytest.mark.django_db
+class TestServitudesEtZonesDuPLU:
+    """22/11/2026 : toutes les servitudes, et les zones du PLU, en plus des plans de prévention."""
+
+    def test_toutes_les_servitudes_sauf_les_ppr_releves_a_part(self, interroger, monkeypatch):
+        _, faux = interroger
+        gpu.relever("42186", "PROD", interroger=faux, contour=CONTOUR)
+        bilan = gpu.relever_servitudes("42186", "PROD", CONTOUR, interroger=lambda emprise: {
+            "numberMatched": 3, "features": [_sup("i4", DANS, "I4_ligne_ass", "I4_act.pdf"), _sup("ac1", DANS), _sup("i4", HORS)]})
+        assert bilan == {"releves": 2, "erreurs": {}}
+        assert sorted(ServitudePPR.objects.values_list("categorie", flat=True)) == ["ac1", "i4", "pm1"]
+        # Les écrans des plans de prévention ne voient que les plans de prévention.
+        assert [p["nom"] for p in gpu.etat("42186", "PROD")] == ["PPRNPI du Gier"]
+        assert gpu.plans_au_point(Point(4.61, 45.52, srid=4326), "42186", "PROD") == ["PPRNPI du Gier"]
+        # Rejouer remplace, sans toucher aux plans de prévention.
+        gpu.relever_servitudes("42186", "PROD", CONTOUR, interroger=lambda emprise: {"features": [_sup("t1", DANS)]})
+        assert sorted(ServitudePPR.objects.values_list("categorie", flat=True)) == ["pm1", "t1"]
+
+    def test_couches_servitudes_et_zones(self):
+        gpu.relever_servitudes("42186", "PROD", CONTOUR, interroger=lambda emprise: {"features": [_sup("i4", DANS)]})
+        zone = {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": [[[list(c) for c in DANS]]]},
+                "properties": {"typezone": "U", "libelle": "UP24", "libelong": "Zones de projet", "urlfic": "https://exemple.fr/r.pdf"}}
+        hors = dict(zone, geometry={"type": "MultiPolygon", "coordinates": [[[list(c) for c in HORS]]]})
+        bilan = gpu.relever_zones("42186", "PROD", CONTOUR, interroger=lambda emprise: {"numberMatched": 2, "features": [zone, hors]})
+        assert bilan == {"releves": 1, "erreurs": {}}
+        itype, _c = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
+        mairie = Institution.objects.create(nom="Mairie", type=itype, commune_code="42186")
+        (s,) = couches_carto.exporter("servitudes", mairie, "PROD")["features"]
+        assert s["properties"]["categorie"] == "Lignes électriques"
+        (z,) = couches_carto.exporter("zones-urbanisme", mairie, "PROD")["features"]
+        assert z["properties"]["type"] == "U" and z["properties"]["reglement"] == "https://exemple.fr/r.pdf"
+        assert couches_carto.exporter("perimetres-ppr", mairie, "PROD")["features"] == []
+
+    def test_liste_tronquee_et_panne_signalees(self):
+        bilan = gpu.relever_zones("42186", "PROD", CONTOUR, interroger=lambda e: {"numberMatched": 5000, "features": []})
+        assert "incomplet" in bilan["erreurs"]
+
+        def en_panne(emprise):
+            raise OSError("muet")
+        assert "servitudes" in gpu.relever_servitudes("42186", "PROD", CONTOUR, interroger=en_panne)["erreurs"]

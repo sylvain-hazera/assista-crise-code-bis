@@ -5,7 +5,7 @@
 export type CategorieInterlocuteurPCS =
   | 'PREFECTURE' | 'SOUS_PREFECTURE' | 'GENDARMERIE_POLICE' | 'SDIS' | 'SAMU' | 'ARS'
   | 'SERVICES_ETAT' | 'ELU_PERSONNEL_COMMUNAL' | 'EPCI_INTERCOMMUNALITE' | 'GESTIONNAIRE_RESEAU'
-  | 'ETABLISSEMENT_SENSIBLE' | 'ASSOCIATION_SECURITE_CIVILE' | 'MEDIA' | 'AUTRE';
+  | 'ETABLISSEMENT_SENSIBLE' | 'ASSOCIATION_SECURITE_CIVILE' | 'MEDIA' | 'COMMUNE_VOISINE' | 'AUTRE';
 
 export type ModeAlertePCS = 'EMAIL' | 'MATRIX' | 'TELEPHONE' | 'SMS' | 'API_TIERCE' | 'AUCUN';
 
@@ -23,6 +23,7 @@ export const CATEGORIES_INTERLOCUTEUR_PCS: { value: CategorieInterlocuteurPCS; l
   { value: 'ETABLISSEMENT_SENSIBLE', label: 'Établissement sensible (école, EHPAD...)' },
   { value: 'ASSOCIATION_SECURITE_CIVILE', label: 'Association agréée de sécurité civile' },
   { value: 'MEDIA', label: 'Média local' },
+  { value: 'COMMUNE_VOISINE', label: 'Commune voisine' },
   { value: 'AUTRE', label: 'Autre' },
 ];
 

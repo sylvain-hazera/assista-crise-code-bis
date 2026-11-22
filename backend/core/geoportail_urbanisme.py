@@ -135,15 +135,145 @@ def relever(commune_code: str, environment, forcer: bool = False, interroger=_in
     return bilan
 
 
+# ── Toutes les autres servitudes, et les zones du PLU (22/11/2026) ──
+#
+# Vérifié à la main le 22/11/2026 autour du Haillan et de Mérignac : `assiette_sup_s` porte aussi
+# les lignes électriques (i4), monuments historiques (ac1), cours d'eau (a4), voies ferrées (t1),
+# halage (el3)… On prend ce que chaque gestionnaire a déposé, sans promettre davantage (ni gaz
+# ni captage publiés sur cette emprise). `wfs_du:zone_urba` porte les zones des PLU et PLUi.
+
+#: Libellés des catégories de servitudes d'utilité publique (nomenclature nationale).
+LIBELLES_SERVITUDES = {
+    "ac1": "Monuments historiques", "ac2": "Sites inscrits et classés", "ac4": "Sites patrimoniaux remarquables",
+    "a4": "Cours d'eau (passage, entretien)", "a5": "Canalisations d'eau et d'assainissement",
+    "as1": "Captages d'eau potable", "el3": "Halage et marchepied", "el7": "Alignement des voies",
+    "el11": "Voies express et déviations", "i1": "Canalisations d'hydrocarbures", "i3": "Canalisations de gaz",
+    "i4": "Lignes électriques", "i6": "Mines et carrières", "int1": "Voisinage des cimetières",
+    "js1": "Installations sportives", "pm1": "Risques naturels ou miniers", "pm2": "Installations classées",
+    "pm3": "Risques technologiques", "pt1": "Télécommunications (perturbations)", "pt2": "Télécommunications (obstacles)",
+    "pt3": "Réseaux de télécommunications", "t1": "Voies ferrées", "t4": "Aérodromes (balisage)",
+    "t5": "Aérodromes (dégagement)", "t7": "Hors des aérodromes (dégagement)",
+}
+MAX_SERVITUDES = 500
+MAX_ZONES = 2000
+
+
+def _wfs(couche: str, filtre: str, nombre: int) -> dict:
+    params = urllib.parse.urlencode({
+        "service": "WFS", "version": "2.0.0", "request": "GetFeature", "typeNames": couche,
+        "outputFormat": "application/json", "srsName": "EPSG:4326", "count": nombre, "cql_filter": filtre})
+    requete = urllib.request.Request(f"{WFS}?{params}", headers={"Accept": "application/json"})
+    derniere = None
+    for tentative in range(2):
+        if tentative:
+            time.sleep(6)
+        with urllib.request.urlopen(requete, timeout=90) as reponse:
+            if "json" not in (reponse.headers.get("Content-Type") or "").lower():
+                derniere = ValueError("Le service cartographique n'a pas rendu de données (réponse inattendue).")
+                continue
+            return json.loads(reponse.read().decode("utf-8"))
+    raise derniere
+
+
+def _boite(emprise) -> str:
+    ouest, sud, est, nord = emprise
+    return f"BBOX(the_geom,{ouest:.5f},{sud:.5f},{est:.5f},{nord:.5f},'EPSG:4326')"
+
+
+def interroger_servitudes(emprise) -> dict:
+    """Toutes les servitudes hors plans de prévention (relevés à part), en un appel."""
+    exclues = ",".join(f"'{c}'" for c in CATEGORIES)
+    return _wfs("wfs_sup:assiette_sup_s", f"suptype NOT IN ({exclues}) AND {_boite(emprise)}", MAX_SERVITUDES)
+
+
+def interroger_zones(emprise) -> dict:
+    return _wfs("wfs_du:zone_urba", _boite(emprise), MAX_ZONES)
+
+
+def _formes_dans(reponse, contour):
+    """Les objets dont la surface touche vraiment la commune (l'emprise est un rectangle)."""
+    for objet in (reponse or {}).get("features") or []:
+        try:
+            surface = _surface(GEOSGeometry(json.dumps(objet.get("geometry")), srid=4326))
+        except Exception:  # noqa: BLE001
+            surface = None
+        if surface is not None and surface.intersects(contour):
+            yield objet.get("properties") or {}, surface
+
+
+def _tronque(reponse, plafond) -> bool:
+    n = (reponse or {}).get("numberMatched")
+    return isinstance(n, int) and n > plafond
+
+
+def relever_servitudes(commune_code: str, environment, contour, interroger=interroger_servitudes) -> dict:
+    """Les servitudes autres que les plans de prévention. Une panne garde ce qu'on avait."""
+    from .zonages_officiels import _attendre_son_tour
+
+    _attendre_son_tour()
+    try:
+        reponse = interroger(contour.extent)
+    except Exception as erreur:  # noqa: BLE001
+        return {"releves": 0, "erreurs": {"servitudes": str(erreur)[:200]}}
+    gardes = []
+    for proprietes, surface in _formes_dans(reponse, contour):
+        categorie = (proprietes.get("suptype") or "")[:5]
+        if not categorie or categorie in CATEGORIES:
+            continue
+        gardes.append(ServitudePPR(
+            commune_code=commune_code, environment=environment, categorie=categorie,
+            identifiant=(proprietes.get("idass") or proprietes.get("idgen") or "")[:120],
+            nom=(proprietes.get("nomsuplitt") or proprietes.get("nomass")
+                 or LIBELLES_SERVITUDES.get(categorie, categorie.upper()))[:255],
+            type_assiette=(proprietes.get("typeass") or "")[:120],
+            fichier=(proprietes.get("fichier") or "")[:255],
+            url_acte=adresse_de_l_acte(proprietes.get("partition") or "", proprietes.get("gpu_doc_id") or "",
+                                       proprietes.get("fichier") or "")[:500] if proprietes.get("fichier") else "",
+            polygone=surface,
+        ))
+    ServitudePPR.objects.filter(commune_code=commune_code, environment=environment).exclude(
+        categorie__in=list(CATEGORIES)).delete()
+    ServitudePPR.objects.bulk_create(gardes)
+    bilan = {"releves": len(gardes), "erreurs": {}}
+    if _tronque(reponse, MAX_SERVITUDES):
+        bilan["erreurs"]["incomplet"] = f"plus de {MAX_SERVITUDES} servitudes sur l'emprise : liste tronquée"
+    return bilan
+
+
+def relever_zones(commune_code: str, environment, contour, interroger=interroger_zones) -> dict:
+    """Les zones du document d'urbanisme (PLU, PLUi) qui touchent la commune."""
+    from .models import ZoneUrbanisme
+    from .zonages_officiels import _attendre_son_tour
+
+    _attendre_son_tour()
+    try:
+        reponse = interroger(contour.extent)
+    except Exception as erreur:  # noqa: BLE001
+        return {"releves": 0, "erreurs": {"zones": str(erreur)[:200]}}
+    gardes = [ZoneUrbanisme(
+        commune_code=commune_code, environment=environment, type_zone=(p.get("typezone") or "")[:10],
+        libelle=(p.get("libelle") or "")[:120], libelle_long=(p.get("libelong") or "")[:255],
+        url_reglement=(p.get("urlfic") or "")[:500] if str(p.get("urlfic") or "").startswith("http") else "",
+        polygone=surface) for p, surface in _formes_dans(reponse, contour)]
+    ZoneUrbanisme.objects.filter(commune_code=commune_code, environment=environment).delete()
+    ZoneUrbanisme.objects.bulk_create(gardes)
+    bilan = {"releves": len(gardes), "erreurs": {}}
+    if _tronque(reponse, MAX_ZONES):
+        bilan["erreurs"]["incomplet"] = f"plus de {MAX_ZONES} zones sur l'emprise : liste tronquée"
+    return bilan
+
+
 def etat(commune_code: str, environment) -> list:
     """Les plans relevés pour la commune, pour l'écran : leur nom, ce qu'ils couvrent, leur acte."""
     return [{"nom": s.nom, "categorie": CATEGORIES.get(s.categorie, s.categorie), "type_assiette": s.type_assiette,
              "fichier": s.fichier, "url_acte": s.url_acte, "releve_le": s.releve_le}
-            for s in ServitudePPR.objects.filter(commune_code=commune_code, environment=environment).order_by("nom")
+            for s in ServitudePPR.objects.filter(commune_code=commune_code, environment=environment,
+                                                 categorie__in=list(CATEGORIES)).order_by("nom")
             ] if commune_code else []
 
 
 def plans_au_point(point, commune_code: str, environment) -> list:
     """Les plans de prévention dont le périmètre contient ce point."""
-    return list(ServitudePPR.objects.filter(commune_code=commune_code, environment=environment, polygone__contains=point)
+    return list(ServitudePPR.objects.filter(commune_code=commune_code, environment=environment, polygone__contains=point,
+                                            categorie__in=list(CATEGORIES))
                 .values_list("nom", flat=True)) if point is not None else []

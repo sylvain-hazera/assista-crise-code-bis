@@ -82,10 +82,14 @@ export class PcsAnnuaireComponent implements OnInit {
     });
   }
 
-  /** L'annuaire rangé par catégorie, dans l'ordre du plan ; les catégories vides n'apparaissent pas. */
+  /** L'annuaire rangé par catégorie, dans l'ordre du plan, et par nom dans chaque catégorie
+   * (22/11/2026 : dans un ordre quelconque, la liste semblait coupée) ; les catégories vides
+   * n'apparaissent pas. */
   get parCategorie(): { libelle: string; fiches: InterlocuteurAlertePCS[] }[] {
+    const parNom = (a: InterlocuteurAlertePCS, b: InterlocuteurAlertePCS) =>
+      (a.nom ?? '').localeCompare(b.nom ?? '', 'fr', { sensitivity: 'base', numeric: true });
     return this.categories
-      .map(c => ({ libelle: c.label, fiches: this.interlocuteurs.filter(i => i.categorie === c.value) }))
+      .map(c => ({ libelle: c.label, fiches: this.interlocuteurs.filter(i => i.categorie === c.value).sort(parNom) }))
       .filter(groupe => groupe.fiches.length);
   }
 

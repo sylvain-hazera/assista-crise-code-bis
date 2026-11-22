@@ -134,7 +134,8 @@ class TestExportDesCouches:
 
         inventaire = {ligne["couche"]: ligne["objets"] for ligne in client.get("/api/couches-carto/").data}
         assert inventaire == {"quartiers": 1, "sites-sensibles": 1, "points-du-plan": 1, "inondation-simulee": 1,
-                              "zonages-officiels": 1, "perimetres-ppr": 1, "enjeux-exposes": 2}
+                              "zonages-officiels": 1, "perimetres-ppr": 1, "enjeux-exposes": 2,
+                              "servitudes": 0, "zones-urbanisme": 0}
 
         tout = ""
         for couche in inventaire:

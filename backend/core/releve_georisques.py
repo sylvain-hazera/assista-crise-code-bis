@@ -94,11 +94,22 @@ def relever_tout(commune_code: str, environment, forcer: bool = False, interroge
     # Le tracé et l'acte des plans de prévention ne sont pas chez Géorisques : ils sont au
     # Géoportail de l'urbanisme. Même geste, pour que l'écran ait tout d'un coup.
     from . import geoportail_urbanisme
+    contour = geoportail_urbanisme.contour_de_la_commune(commune_code)  # lu une fois pour les trois
     try:
-        bilan["perimetres_ppr"] = geoportail_urbanisme.relever(commune_code, environment, forcer=forcer)
+        bilan["perimetres_ppr"] = geoportail_urbanisme.relever(commune_code, environment, forcer=forcer,
+                                                                contour=contour)
     except Exception as erreur:  # noqa: BLE001 -- ne doit pas faire échouer le reste du relevé
         logger.exception("Relevé des périmètres de plans de prévention : échec pour %s", commune_code)
         bilan["perimetres_ppr"] = {"releves": 0, "erreurs": {"general": str(erreur)[:200]}}
+    # Les autres servitudes (réseaux, patrimoine, transports) et les zones du PLU (22/11/2026).
+    if contour is not None:
+        for cle, fonction in (("servitudes", geoportail_urbanisme.relever_servitudes),
+                              ("zones_urbanisme", geoportail_urbanisme.relever_zones)):
+            try:
+                bilan[cle] = fonction(commune_code, environment, contour)
+            except Exception as erreur:  # noqa: BLE001
+                logger.exception("Relevé %s : échec pour %s", cle, commune_code)
+                bilan[cle] = {"releves": 0, "erreurs": {"general": str(erreur)[:200]}}
     return bilan
 
 

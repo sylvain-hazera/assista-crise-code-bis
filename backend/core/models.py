@@ -3675,6 +3675,7 @@ class CategorieInterlocuteurPCS(models.TextChoices):
     ETABLISSEMENT_SENSIBLE = "ETABLISSEMENT_SENSIBLE", "Établissement sensible (école, EHPAD...)"
     ASSOCIATION_SECURITE_CIVILE = "ASSOCIATION_SECURITE_CIVILE", "Association agréée de sécurité civile"
     MEDIA = "MEDIA", "Média local"
+    COMMUNE_VOISINE = "COMMUNE_VOISINE", "Commune voisine"
     AUTRE = "AUTRE", "Autre"
 
 
@@ -3745,6 +3746,11 @@ class InterlocuteurAlertePCS(EnvironmentScopedModel):
     actif = models.BooleanField(default=True)
     ordre = models.PositiveIntegerField(default=0)
     date_creation = models.DateTimeField(auto_now_add=True)
+    #: D'où vient la fiche quand l'amorçage départemental l'a créée (22/11/2026) : identifiant de
+    #: la fiche à l'Annuaire de l'administration, ou `institution:<uuid>` pour la copie des
+    #: coordonnées d'une mairie ou d'un EPCI. Rend l'import rejouable sans doublon. Vide pour
+    #: une fiche saisie à la main, que l'import ne touche jamais. Pas une donnée personnelle.
+    cle_source = models.CharField(max_length=80, blank=True, default="", db_index=True)
 
     class Meta:
         ordering = ["ordre", "categorie"]
@@ -4693,6 +4699,21 @@ class ServitudePPR(EnvironmentScopedModel):
     type_assiette = models.CharField(max_length=120, blank=True, default="")
     fichier = models.CharField(max_length=255, blank=True, default="")
     url_acte = models.CharField(max_length=500, blank=True, default="")
+    polygone = gis_models.MultiPolygonField(srid=4326)
+    releve_le = models.DateTimeField(auto_now=True)
+
+
+class ZoneUrbanisme(EnvironmentScopedModel):
+    """Une zone du document d'urbanisme (PLU, PLUi) d'une commune, telle que le Géoportail de
+    l'urbanisme la publie (`wfs_du:zone_urba`, core/geoportail_urbanisme.py) : urbaine (U), à
+    urbaniser (AU…), agricole (A), naturelle (N). Donnée publique (22/11/2026)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    commune_code = models.CharField(max_length=10, db_index=True)
+    type_zone = models.CharField(max_length=10)
+    libelle = models.CharField(max_length=120, blank=True, default="")
+    libelle_long = models.CharField(max_length=255, blank=True, default="")
+    url_reglement = models.CharField(max_length=500, blank=True, default="")
     polygone = gis_models.MultiPolygonField(srid=4326)
     releve_le = models.DateTimeField(auto_now=True)
 

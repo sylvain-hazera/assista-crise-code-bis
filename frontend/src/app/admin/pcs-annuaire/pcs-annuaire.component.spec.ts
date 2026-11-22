@@ -66,4 +66,15 @@ describe('PcsAnnuaireComponent', () => {
     requete.flush(SIDPC);
     http.expectOne(r => r.url === `${api}/interlocuteurs-alerte-pcs/` && r.method === 'GET').flush([]);
   });
+
+  it('range les fiches par nom dans chaque rubrique, et affiche les communes voisines', () => {
+    demarrer();
+    const c = fixture.componentInstance;
+    const fiche = (id: string, nom: string, categorie: string) => ({ ...SIDPC, id, nom, categorie } as any);
+    c.interlocuteurs = [fiche('a', 'CCAS - Talence', 'ELU_PERSONNEL_COMMUNAL'), fiche('b', 'CCAS - Arès', 'ELU_PERSONNEL_COMMUNAL'),
+                        fiche('c', 'Mairie - Le Haillan', 'COMMUNE_VOISINE')];
+    const groupes = c.parCategorie;
+    expect(groupes.find(g => g.libelle === 'Élu ou personnel communal')!.fiches.map(f => f.nom)).toEqual(['CCAS - Arès', 'CCAS - Talence']);
+    expect(groupes.find(g => g.libelle === 'Commune voisine')!.fiches.length).toBe(1);
+  });
 });

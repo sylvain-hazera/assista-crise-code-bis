@@ -34,6 +34,7 @@ def sans_reseau(monkeypatch):
     monkeypatch.setattr(plans_prevention, "relever", lambda *a, **k: appels.append("plans") or {"relevees": [], "ignorees": [], "erreurs": {}})
     from core import geoportail_urbanisme
     monkeypatch.setattr(geoportail_urbanisme, "relever", lambda *a, **k: appels.append("perimetres") or {"releves": 0, "erreurs": {}})
+    monkeypatch.setattr(geoportail_urbanisme, "contour_de_la_commune", lambda code: None)
 
     def interroger(chemin, commune_code):
         appels.append(chemin)

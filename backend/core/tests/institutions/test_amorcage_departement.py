@@ -51,7 +51,7 @@ def test_lecture_d_un_enregistrement_reel():
     fiche = lire_enregistrement(_rec("mairie", "Mairie - Rive-de-Gier", "42186", email="mairie@ville.fr", tel="04 77 83 07 80"))
     assert fiche == {"type": "mairie", "nom": "Mairie - Rive-de-Gier", "email": "mairie@ville.fr",
                      "telephone": "04 77 83 07 80", "adresse": "Rue de l'Hôtel-de-Ville 42800 Rive-de-Gier",
-                     "site": "https://www.exemple.fr/", "siret": None}
+                     "site": "https://www.exemple.fr/", "siret": None, "id": ""}
 
 
 @pytest.mark.django_db

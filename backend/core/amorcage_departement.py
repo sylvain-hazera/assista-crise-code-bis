@@ -37,7 +37,7 @@ import urllib.request
 from django.utils import timezone
 
 URL_ANNUAIRE = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/search/"
-ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "entreprises", "simulations")
+ETAPES = ("referentiel", "annuaire", "repertoires", "adresses", "risques", "sites", "entreprises", "simulations")
 ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son débit
 # Une commune demande ~18 appels à Géorisques, espacés de 5 s pour toute la plateforme
 # (zonages_officiels.PAUSE_S) : ~90 s. Le 22/11/2026, la Gironde (534 communes) en une seule
@@ -108,6 +108,8 @@ def lire_enregistrement(record: dict) -> dict:
         "adresse": ligne_adresse,
         "site": _premier(f.get("site_internet")),
         "siret": f.get("siret"),
+        # Identifiant de la fiche à l'Annuaire : rend l'import rejouable sans doublon.
+        "id": str(f.get("id") or (record or {}).get("recordid") or "")[:80],
     }
 
 
@@ -164,10 +166,16 @@ def _etape_annuaire(cg, communes, interroger, pause) -> dict:
         InstitutionType.objects.create(code="mairie", libelle="Mairie")
     type_epci = InstitutionType.objects.filter(code__iexact="epci").first() or \
         InstitutionType.objects.create(code="epci", libelle="Communauté de communes / Métropole")
-    deja = {(i.nom, i.organisme) for i in InterlocuteurAlertePCS.objects.filter(institutions=cg)}
+    from .repertoires_departement import competence, rattacher_services
+
+    # Fiches déjà là : par identifiant Annuaire, ou (anciens imports, sans identifiant) par nom et
+    # type — le nom est chiffré, la comparaison se fait ici et non en base.
+    par_cle = {i.cle_source: i for i in InterlocuteurAlertePCS.objects.filter(institutions=cg).exclude(cle_source="")}
+    anciennes = {(i.nom, i.organisme): i for i in InterlocuteurAlertePCS.objects.filter(institutions=cg, cle_source="")}
+    services = {}
     epci_par_commune = dict(Commune.objects.filter(code__in=communes).values_list("code", "epci_code"))
     comptes = {"communes": 0, "mairies_creees": 0, "mairies_completees": 0, "epci_crees": 0,
-               "epci_completes": 0, "annuaire_ajoutes": 0, "echecs": 0}
+               "epci_completes": 0, "annuaire_ajoutes": 0, "rattachements": 0, "echecs": 0}
     echecs = []
     for code in communes:
         try:
@@ -200,18 +208,42 @@ def _etape_annuaire(cg, communes, interroger, pause) -> dict:
                     comptes["epci_crees"] += 1
                 elif _completer(epci, fiche):
                     comptes["epci_completes"] += 1
-            if fiche["type"] in SERVICES_CRISE and (fiche["nom"], fiche["type"]) not in deja:
-                contact = InterlocuteurAlertePCS.objects.create(
-                    nom=fiche["nom"], organisme=fiche["type"], categorie=SERVICES_CRISE[fiche["type"]],
-                    email=fiche["email"], telephone=fiche["telephone"], departement_code=cg.departement_code,
-                    notes=fiche["adresse"] or None, prevenir_ouverture_crise=False, environment=cg.environment,
-                )
-                contact.institutions.add(cg)
-                deja.add((fiche["nom"], fiche["type"]))
-                comptes["annuaire_ajoutes"] += 1
+            if fiche["type"] in SERVICES_CRISE:
+                contact = par_cle.get(fiche["id"]) if fiche["id"] else None
+                if contact is None:
+                    contact = anciennes.pop((fiche["nom"], fiche["type"]), None)
+                    if contact is not None and fiche["id"]:
+                        contact.cle_source = fiche["id"]
+                        contact.save(update_fields=["cle_source"])
+                if contact is None:
+                    contact = InterlocuteurAlertePCS.objects.create(
+                        nom=fiche["nom"], organisme=fiche["type"], categorie=SERVICES_CRISE[fiche["type"]],
+                        email=fiche["email"], telephone=fiche["telephone"], departement_code=cg.departement_code,
+                        notes=fiche["adresse"] or None, prevenir_ouverture_crise=False, environment=cg.environment,
+                        cle_source=fiche["id"],
+                    )
+                    contact.institutions.add(cg)
+                    comptes["annuaire_ajoutes"] += 1
+                if fiche["id"]:
+                    par_cle[fiche["id"]] = contact
+                # Le même service revient pour chaque commune qu'il sert : on cumule.
+                deja_vu = services.get(contact.id)
+                servies = set(competence(record, fiche["type"])) | (set(deja_vu[3]) if deja_vu else set())
+                services[contact.id] = (contact, fiche["type"], deja_vu[2] if deja_vu else code, sorted(servies))
         if pause:
             time.sleep(pause)
+    # Redistribution : chaque service aussi aux mairies et EPCI qu'il sert (repertoires_departement).
+    comptes["rattachements"] = rattacher_services(cg, list(services.values()))
     return {"comptes": comptes, "erreurs": echecs[:20]}
+
+
+def etape_repertoires(cg, communes) -> dict:
+    """Fiches des EPCI et des mairies dans les répertoires les uns des autres, et communes
+    voisines (core/repertoires_departement.distribuer)."""
+    from .repertoires_departement import distribuer
+    resultat = distribuer(cg)
+    erreurs = resultat.pop("erreurs", [])
+    return {"comptes": resultat, "erreurs": erreurs}
 
 
 def etape_adresses(cg, communes) -> dict:
@@ -348,7 +380,8 @@ def enchainer(etape, communes, environment, suivante, reference=None):
         suivante(reste, {"risques": ESPACEMENT_RISQUES, "sirene": ESPACEMENT_SIRENE}.get(etape, ESPACEMENT_SIMULATIONS))
 
 
-FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "adresses": etape_adresses,
+FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "repertoires": etape_repertoires,
+             "adresses": etape_adresses,
              "risques": etape_risques, "sites": etape_sites, "entreprises": etape_entreprises,
              "simulations": etape_simulations}
 

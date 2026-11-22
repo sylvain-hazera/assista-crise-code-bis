@@ -212,7 +212,7 @@ class TestConventionDepartementale:
         from core.models import AmorcageDepartement
         self._deleguer_departement(departement)
         amorcage = AmorcageDepartement.objects.get()
-        assert set(amorcage.etapes) == {"referentiel", "annuaire", "adresses", "risques", "sites", "entreprises", "simulations"}
+        assert set(amorcage.etapes) == {"referentiel", "annuaire", "repertoires", "adresses", "risques", "sites", "entreprises", "simulations"}
 
     def test_l_arborescence_du_departement(self, departement):
         Commune.objects.filter(code__in=["42218", "42186"]).update(epci_code="244200770")

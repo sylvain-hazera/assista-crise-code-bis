@@ -446,6 +446,9 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                     "nom": nom[:200], "fonction": (r.get("fonction") or "").strip()[:120], "email": email or None,
                     "telephone": (r.get("telephone") or "").strip()[:40] or None, "indique_par": request.user,
                     "environment": inst.environment})
+        # Les copies de ces coordonnées dans les répertoires des autres collectivités suivent.
+        from .repertoires_departement import resynchroniser
+        resynchroniser(inst)
         audit_log(request=request, action_code="MODIFICATION", objet_type="Institution", objet_id=inst.id,
                   commentaire=f"Coordonnées de {inst.nom} mises à jour (délégation de gestion)")
         return Response({"ok": True})

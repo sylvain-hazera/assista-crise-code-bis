@@ -62,9 +62,10 @@ export class DelegationsGestionComponent implements OnInit {
   /** Libellés des étapes de l'amorçage, dans leur ordre. */
   readonly etapesAmorcage: { code: string; libelle: string }[] = [
     { code: 'referentiel', libelle: 'Référentiel des communes du département' },
-    { code: 'annuaire', libelle: 'Répertoires officiels (mairies, EPCI, services de crise)' },
+    { code: 'annuaire', libelle: 'Répertoires officiels (mairies, EPCI, services de crise), rattachés aux communes qu\'ils servent' },
+    { code: 'repertoires', libelle: 'Répertoires des communes et intercommunalités (EPCI, mairies membres, communes voisines)' },
     { code: 'adresses', libelle: 'Adresses de toutes les communes' },
-    { code: 'risques', libelle: 'Risques de chaque commune (Géorisques, zonages, plans de prévention, Géoportail de l\'urbanisme)' },
+    { code: 'risques', libelle: 'Risques de chaque commune (Géorisques, zonages, plans de prévention, servitudes, zones du PLU)' },
     { code: 'sites', libelle: 'Sites sensibles du département (écoles, santé, ICPE, DAE, équipements sportifs)' },
     { code: 'entreprises', libelle: 'Entreprises (élevages, hébergements, transport, commerces), commune par commune, au long cours' },
     { code: 'simulations', libelle: 'Pré-calcul des simulations d\'inondation et de ruissellement (une commune par minute)' },
