@@ -21652,6 +21652,10 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
             # filet de sécurité si le service-pont omet `statut` dans son POST.
             message.statut = StatutMessageMesh.RECU
             message.save(update_fields=['statut'])
+        # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
+        if message.direction == DirectionMessageMesh.ENTRANT:
+            from .messages_terrain import depuis_radio
+            depuis_radio(message.contenu, "MESHCORE")
         if message.direction == DirectionMessageMesh.ENTRANT:
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             if mot_cle:
@@ -22046,6 +22050,10 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
 
         message = serializer.save(**save_kwargs)
+        # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
+        if message.direction == DirectionMessageMesh.ENTRANT:
+            from .messages_terrain import depuis_radio
+            depuis_radio(message.contenu, "MESHCORE")
         if message.direction == DirectionMessageMesh.ENTRANT and not _echo_de_nos_messages(MessageCanalMeshCore, message.contenu):
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             canal_urgence = canal is not None and _canal_est_dedie_urgence(canal.nom)
@@ -22828,6 +22836,10 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
             message.statut = StatutMessageMesh.RECU
             message.save(update_fields=['statut'])
+        # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
+        if message.direction == DirectionMessageMesh.ENTRANT:
+            from .messages_terrain import depuis_radio
+            depuis_radio(message.contenu, "MESHTASTIC")
         # Détection SOS Meshtastic coupée par défaut (settings.DETECTION_SOS_MESHTASTIC).
         if message.direction == DirectionMessageMesh.ENTRANT and settings.DETECTION_SOS_MESHTASTIC:
             mot_cle = _detecter_mot_cle_sos(message.contenu)
@@ -22974,6 +22986,10 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             _verifier_debit_mesh_sortant(MessageCanalMeshtastic, expediteur, environment, canal=canal)
 
         message = serializer.save(environment=environment, expediteur=expediteur)
+        # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
+        if message.direction == DirectionMessageMesh.ENTRANT:
+            from .messages_terrain import depuis_radio
+            depuis_radio(message.contenu, "MESHTASTIC")
         # Détection SOS Meshtastic coupée par défaut (settings.DETECTION_SOS_MESHTASTIC).
         if (
             message.direction == DirectionMessageMesh.ENTRANT and settings.DETECTION_SOS_MESHTASTIC

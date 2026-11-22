@@ -62,6 +62,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.ModeleApplication
 import fr.assistacrise.mobile.ServiceTerrain
+import fr.assistacrise.mobile.domaine.Destination
+import fr.assistacrise.mobile.domaine.Navigation
 import fr.assistacrise.mobile.domaine.PositionMembre
 import fr.assistacrise.mobile.domaine.Releve
 import org.maplibre.android.MapLibre
@@ -87,6 +89,7 @@ import org.maplibre.geojson.Point
  * clé, pas de style tiers à charger : le style tient dans cette chaîne. Les tuiles déjà
  * vues restent dans le cache de MapLibre et s'affichent sans réseau.
  */
+/** Le fond IGN, en ligne. Le même vit dans assets/style-ign.json pour les cartes embarquées. */
 internal const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","tiles":["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],"tileSize":256,"maxzoom":19,"attribution":"© IGN"}},"layers":[{"id":"ign","type":"raster","source":"ign"}]}"""
 
 internal val FRANCE = LatLng(46.6, 2.4)
@@ -103,6 +106,10 @@ fun EcranCarte(modele: ModeleApplication) {
     val situes = dossiers.filter { it.situe && !it.clos }
     /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
     var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
+    val points by modele.pointsCrise.collectAsStateWithLifecycle()
+    var destination by remember { mutableStateOf<Destination?>(null) }
+    var horsLigne by remember { mutableStateOf(false) }
+    var capGps by remember { mutableStateOf<Float?>(null) }
 
     var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
     var moi by remember { mutableStateOf<Releve?>(null) }
@@ -134,8 +141,10 @@ fun EcranCarte(modele: ModeleApplication) {
             m.uiSettings.isRotateGesturesEnabled = false
             m.uiSettings.isTiltGesturesEnabled = false
             m.cameraPosition = CameraPosition.Builder().target(FRANCE).zoom(4.5).build()
-            m.setStyle(Style.Builder().fromJson(STYLE)) { style ->
+            // Le style est un fichier de l'application : le même sert aux cartes embarquées.
+            m.setStyle(Style.Builder().fromUri(fr.assistacrise.mobile.CartesHorsLigne.STYLE)) { style ->
                 style.addSource(GeoJsonSource("zones"))
+                style.addSource(GeoJsonSource("points"))
                 style.addSource(GeoJsonSource("dossiers"))
                 style.addSource(GeoJsonSource("lieu"))
                 style.addSource(GeoJsonSource("membres"))
@@ -148,6 +157,9 @@ fun EcranCarte(modele: ModeleApplication) {
                 style.addLayer(CircleLayer("dossiers-points", "dossiers").withProperties(
                     circleRadius(11f), circleStrokeColor("#1a1d29"), circleStrokeWidth(2.5f),
                     circleColor(Expression.match(Expression.get("urgent"), Expression.literal("oui"), Expression.color(android.graphics.Color.parseColor("#dc2626")), Expression.color(android.graphics.Color.parseColor("#f59e0b"))))))
+                // Les points de la crise (accueil, PC, rassemblement) : verts, carrés de bord.
+                style.addLayer(CircleLayer("points-crise", "points").withProperties(
+                    circleRadius(9f), circleColor("#15803d"), circleStrokeColor("#ffffff"), circleStrokeWidth(2.5f)))
                 style.addLayer(CircleLayer("lieu-point", "lieu").withProperties(
                     circleRadius(10f), circleColor("#ffffff"), circleStrokeColor("#3c4d81"), circleStrokeWidth(4f)))
                 style.addLayer(CircleLayer("membres-points", "membres").withProperties(
@@ -158,8 +170,17 @@ fun EcranCarte(modele: ModeleApplication) {
             }
             // Toucher un dossier l'ouvre ; maintenir le doigt ailleurs propose d'y créer quelque chose.
             m.addOnMapClickListener { point ->
-                val touche = m.queryRenderedFeatures(m.projection.toScreenLocation(point), "dossiers-points").firstOrNull()?.getStringProperty("id")
-                if (touche != null) { modele.ouvrirDossier(touche); true } else { lieuTouche = null; false }
+                val ecran = m.projection.toScreenLocation(point)
+                val touche = m.queryRenderedFeatures(ecran, "dossiers-points").firstOrNull()?.getStringProperty("id")
+                val pointCrise = m.queryRenderedFeatures(ecran, "points-crise").firstOrNull()?.getStringProperty("id")
+                when {
+                    touche != null -> { modele.ouvrirDossier(touche); true }
+                    pointCrise != null -> {
+                        points.firstOrNull { it.id == pointCrise }?.let { p -> destination = Destination(p.nom, p.latitude!!, p.longitude!!, "point") }
+                        true
+                    }
+                    else -> { lieuTouche = null; false }
+                }
             }
             m.addOnMapLongClickListener { point -> lieuTouche = point; true }
         }
@@ -177,6 +198,8 @@ fun EcranCarte(modele: ModeleApplication) {
             override fun onLocationChanged(p: Location) {
                 val releve = Releve(p.latitude, p.longitude, System.currentTimeMillis(), p.accuracy)
                 moi = releve
+                // En mouvement (plus de 1 m/s), le cap du GPS oriente la flèche « Aller vers ».
+                capGps = if (p.hasBearing() && p.hasSpeed() && p.speed > 1f) p.bearing else null
                 // Partagée une fois par ouverture de la carte : le suivi continu, c'est le service.
                 if (!partagee) { partagee = true; modele.partagerMaPosition(releve) }
             }
@@ -200,9 +223,12 @@ fun EcranCarte(modele: ModeleApplication) {
 
     // Les points suivent les données ; la carte ne se recadre qu'une fois, pour ne pas
     // arracher la vue des mains de quelqu'un qui est en train de la déplacer.
-    LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche) {
+    LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche, points) {
         val m = carte ?: return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
+        (style.getSource("points") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(points.map { p ->
+            Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply { addStringProperty("id", p.id) }
+        }))
         (style.getSource("dossiers") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(situes.map { d ->
             Feature.fromGeometry(Point.fromLngLat(d.longitude!!, d.latitude!!)).apply {
                 addStringProperty("id", d.id); addStringProperty("urgent", if (d.priorite == "URGENTE") "oui" else "non")
@@ -233,6 +259,7 @@ fun EcranCarte(modele: ModeleApplication) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Carte", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { horsLigne = true }) { Text("Hors ligne") }
             PastilleLien(lien)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -267,8 +294,24 @@ fun EcranCarte(modele: ModeleApplication) {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
         )
         // Les noms sont dans la liste, pas sur la carte : toucher une ligne y conduit.
-        if (membres.isNotEmpty() || situes.isNotEmpty()) {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 190.dp)) {
+        if (membres.isNotEmpty() || situes.isNotEmpty() || points.isNotEmpty()) {
+            // « Autour de moi » : les points de la crise, du plus proche au plus loin.
+            val autour = moi?.let { r -> Navigation.autourDe(r.latitude, r.longitude, points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") }) }
+                ?: points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") to null }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                items(autour, key = { "p-${it.first.nom}-${it.first.latitude}" }) { (d, distance) ->
+                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(14.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF15803D)))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(d.nom.ifBlank { "Point" }, style = MaterialTheme.typography.bodyLarge)
+                            Text(listOfNotNull(d.genre, distance?.let { Navigation.distanceLisible(it) }).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { destination = d }) { Text("Aller vers") }
+                    }
+                    HorizontalDivider()
+                }
                 items(situes, key = { "d-${it.id}" }) { d ->
                     Row(
                         Modifier.fillMaxWidth().clickable { carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.latitude!!, d.longitude!!), 16.0)) }
@@ -278,6 +321,7 @@ fun EcranCarte(modele: ModeleApplication) {
                         Box(Modifier.size(14.dp).clip(CircleShape).background(if (d.priorite == "URGENTE") Refus else Attente))
                         Spacer(Modifier.width(12.dp))
                         LigneDossier(d, Modifier.weight(1f))
+                        TextButton(onClick = { destination = Destination(d.titre, d.latitude!!, d.longitude!!, "Dossier") }) { Text("Aller") }
                         TextButton(onClick = { modele.ouvrirDossier(d.id) }) { Text("Ouvrir") }
                     }
                     HorizontalDivider()
@@ -295,6 +339,13 @@ fun EcranCarte(modele: ModeleApplication) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
+        }
+    }
+    if (horsLigne) DialogueHorsLigne(modele, carte, crises, situes, points) { horsLigne = false }
+    destination?.let { d ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { destination = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            AllerVers(d, moi, capGps, surArrivee = { modele.arriveSurLesLieux() }, surFermeture = { destination = null })
         }
     }
 }

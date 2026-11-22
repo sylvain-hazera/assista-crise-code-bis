@@ -22,6 +22,7 @@ class Synchronisation(
     private val dossiers: DepotDossiers? = null,
     private val radio: EmetteurRadio? = null,
     private val degats: DepotDegats? = null,
+    private val terrain: DepotTerrain? = null,
 ) {
     /**
      * Envoie ce qui attend, puis relit ce qui a changé — pour que l'affichage repose sur ce
@@ -53,6 +54,19 @@ class Synchronisation(
                         r
                     }
                 }
+                ActionEnAttente.GENRE_MESSAGE_TERRAIN -> when (val r = api.envoyerMessageTerrain(action.charge)) {
+                    is Reponse.Injoignable -> {
+                        // Pas de réseau : l'étiquette part sur le canal radio de l'équipe, une
+                        // seule fois ; le message reste en file pour le serveur.
+                        val equipe = equipes.equipes.value.firstOrNull { it.id == action.cible }
+                        val radioTexte = terrain?.etiquette(action)
+                        if (!action.parRadio && equipe != null && radioTexte != null) {
+                            radio?.envoyerAEquipe(equipe, radioTexte)?.let { protocole -> file.noterParRadio(action.id, protocole) }
+                        }
+                        r
+                    }
+                    else -> r
+                }
                 ActionEnAttente.GENRE_POSITION -> {
                     val coordonnees = action.charge.split(",").mapNotNull { it.toDoubleOrNull() }
                     if (coordonnees.size != 2) Reponse.Refus(400, "Position illisible.")
@@ -72,6 +86,7 @@ class Synchronisation(
             }
         }
         if (missionsTouchees) missions.rafraichir()
+        terrain?.apresSynchronisation()
         // Tout ce qui a été saisi dans le secteur embarqué est parti : il s'efface (décision du 20/11/2026).
         degats?.apresSynchronisation()
         return accusees

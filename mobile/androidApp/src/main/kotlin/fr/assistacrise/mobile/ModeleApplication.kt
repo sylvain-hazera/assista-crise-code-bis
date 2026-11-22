@@ -1,5 +1,6 @@
 package fr.assistacrise.mobile
 
+import fr.assistacrise.mobile.domaine.TypeMessageTerrain
 import fr.assistacrise.mobile.domaine.Constat
 import fr.assistacrise.mobile.donnees.DepotDegats
 import androidx.compose.runtime.getValue
@@ -352,6 +353,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.depot.toutEffacer()
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
+            app.terrain.toutEffacer()
+            app.points.toutEffacer()
             app.citoyen.toutEffacer()
             app.alertes.toutRetirer()
             app.veille.toutEffacer()
@@ -375,6 +378,48 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     fun actualiser() {
         viewModelScope.launch { synchroniser(force = true, bavard = true) }
+    }
+
+    /** Les points importants des crises, embarqués pour le GPS hors ligne. */
+    val pointsCrise = app.points.points
+    val cartesHorsLigne get() = app.cartes
+
+    /** « Aller vers » a conduit jusqu'au point : on propose d'envoyer « Arrivé sur les lieux ». */
+    fun arriveSurLesLieux() {
+        val mission = app.depot.missions.value.firstOrNull { it.statut == StatutMission.EN_COURS }
+        envoyerMessageTerrain(TypeMessageTerrain.ARRIVE, mission)
+    }
+
+    /** Le journal des messages de terrain envoyés de ce téléphone. */
+    val journalTerrain = app.terrain.journal
+
+    /**
+     * Un message de terrain en un geste (22/11/2026). Part par la file : données si le
+     * serveur répond, sinon sur le canal radio de l'équipe. La position est jointe si on en
+     * connaît une (celle du suivi, ou la dernière du téléphone).
+     */
+    fun envoyerMessageTerrain(type: TypeMessageTerrain, mission: Mission?, texte: String = "", nombre: Int? = null) {
+        viewModelScope.launch {
+            val equipe = mission?.let { m -> equipes.value.firstOrNull { it.id in m.equipes } } ?: equipes.value.firstOrNull()
+            val position = dernierePosition()
+            try {
+                app.terrain.envoyer(type, mission?.id, equipe?.id, texte, nombre, position?.first, position?.second)
+            } catch (e: IllegalArgumentException) {
+                message = e.message; return@launch
+            }
+            message = if (type.prioritaire) "${type.libelle} : envoyé en priorité." else "${type.libelle} : envoyé."
+            verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+        }
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")   // vérifiée juste avant
+    private fun dernierePosition(): Pair<Double, Double>? {
+        app.suivi.etat.value.dernierEnvoi?.let { return it.latitude to it.longitude }
+        if (!ServiceTerrain.positionAutorisee(app)) return null
+        val lm = app.getSystemService(android.location.LocationManager::class.java) ?: return null
+        return listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.time }?.let { it.latitude to it.longitude }
     }
 
     fun declarerStatut(mission: Mission, statut: StatutMission) {
@@ -409,6 +454,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     val e = app.equipes.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
                     app.citoyen.rafraichir()
+                    // Les points des crises ouvertes, pour le GPS hors ligne.
+                    app.points.rafraichir(crises.value.filter { it.ouverte }.map { it.id })
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
                     if (equipes.value.isNotEmpty()) app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
                     compte.value?.id?.let { app.benevole.chargerLesMobilisations(it) }

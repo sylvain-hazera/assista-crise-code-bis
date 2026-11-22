@@ -1,3 +1,4 @@
+import { MessagesTerrainMissionComponent } from '../messages-terrain/messages-terrain-mission.component';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -25,7 +26,7 @@ import { BoutonRapportComponent } from '../../shared/components/common/bouton-ra
 @Component({
   selector: 'app-missions',
   standalone: true,
-  imports: [BoutonRapportComponent, CommonModule, FormsModule, ReactiveFormsModule, MinimapComponent],
+  imports: [BoutonRapportComponent, CommonModule, FormsModule, ReactiveFormsModule, MinimapComponent, MessagesTerrainMissionComponent],
   templateUrl: './missions.component.html',
   styleUrls: ['./missions.component.scss'],
 })

@@ -6068,6 +6068,58 @@ def _jeton_collectivite():
     return secrets.token_urlsafe(32)
 
 
+class MessageTerrain(EnvironmentScopedModel):
+    """Un message de terrain en un geste, envoyé par un intervenant depuis l'application
+    (22/11/2026) : « arrivé sur les lieux », « intervention terminée », « demande de premiers
+    secours »… par les données, ou par radio (Meshtastic, MeshCore) avec une étiquette lisible
+    (core/messages_terrain.py). Donne au poste de commandement le statut de chacun, et lève
+    une alerte prioritaire pour un danger ou une demande de secours.
+
+    Ouvert à tout membre d'une équipe de la mission : c'est la réponse à l'écart n° 1 du
+    dossier de l'application (un bénévole ne pouvait déclarer aucun statut)."""
+
+    class Type(models.TextChoices):
+        ARRIVE = "ARRIVE", "Arrivé sur les lieux"
+        SITUATION = "SITUATION", "Message de situation"
+        TERMINEE = "TERMINEE", "Intervention terminée"
+        EN_ROUTE_SUIVANTE = "EN_ROUTE_SUIVANTE", "En route vers l'intervention suivante"
+        DISPONIBLE = "DISPONIBLE", "Disponible en retour"
+        INDISPONIBLE = "INDISPONIBLE", "Non disponible en retour"
+        RENFORT = "RENFORT", "Demande de renfort"
+        DANGER = "DANGER", "Danger / problème sur place"
+        PAUSE = "PAUSE", "En pause"
+        PREMIERS_SECOURS = "PREMIERS_SECOURS", "Demande de premiers secours"
+
+    class Canal(models.TextChoices):
+        DONNEES = "DONNEES", "Données"
+        MESHTASTIC = "MESHTASTIC", "Meshtastic"
+        MESHCORE = "MESHCORE", "MeshCore"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    auteur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages_terrain")
+    mission = models.ForeignKey("Mission", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
+    equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
+    type = models.CharField(max_length=20, choices=Type.choices)
+    texte = EncryptedTextField(blank=True, default="")
+    nombre = models.PositiveIntegerField(null=True, blank=True)
+    #: Position au moment de l'envoi, chiffrée comme toute position d'une personne.
+    latitude = EncryptedTextField(blank=True, default="")
+    longitude = EncryptedTextField(blank=True, default="")
+    canal = models.CharField(max_length=12, choices=Canal.choices, default=Canal.DONNEES)
+    #: Parti aussi par radio avant d'arriver par les données (ou l'inverse).
+    canaux_recus = models.JSONField(default=list, blank=True)
+    emis_le = models.DateTimeField()
+    recu_le = models.DateTimeField(auto_now_add=True)
+    #: Identifiant court donné par le téléphone : un message arrivé par radio puis par les
+    #: données n'est enregistré qu'une fois. Pas une donnée personnelle.
+    identifiant_client = models.CharField(max_length=16)
+
+    class Meta:
+        ordering = ["-emis_le"]
+        constraints = [models.UniqueConstraint(fields=["auteur", "identifiant_client"], name="uq_message_terrain_client")]
+
+
 class ConnecteurSMTP(EnvironmentScopedModel):
     """Une messagerie SMTP propre à une institution (22/11/2026) : « Messagerie du CD33 »,
     serveur de l'association… pour envoyer depuis SON adresse, à côté de Brevo

@@ -6646,3 +6646,17 @@ fichier — le texte entre balises parle à l'utilisateur, le commentaire au mai
   [meshcore-bridge](meshcore-bridge/README.md), [matrix-bridge](matrix-bridge/README.md),
   [mosquitto](mosquitto/README.md), [security](security/README.md)
 - `.github/agents/assista-crise-reprise.agent.md` — méthode de reprise du projet
+
+## Application mobile 0.12.0 (22/11/2026)
+
+- **Service de terrain** (`ServiceTerrain`, remplace `ServiceSuivi`) : la radio choisie reste connectée écran éteint
+  et application fermée ; la position n'est relevée que pendant une mission (démarrage application fermée
+  quand l'équipe est engagée, arrêt à la libération, notification sonore). Reprise au redémarrage.
+- **Messages de terrain** (`MessageTerrain`, migration `0374`, `/api/messages-terrain/`, `core/messages_terrain.py`) :
+  dix messages en un geste (arrivé, situation, terminée, en route, disponible, non disponible, renfort,
+  danger, pause, premiers secours avec motif). Par les données, ou par radio avec une étiquette lisible
+  `⚑CODE mission6.auteur6.ident texte`, reconnue à l'entrée des messages des ponts et dédoublonnée.
+  Danger et premiers secours : alerte immédiate (courriel, Matrix) au chef d'équipe et à l'institution.
+  Fiche de mission (administration) : statut de chacun et fil.
+- **GPS hors ligne** : régions IGN embarquées (`CartesHorsLigne`, style `asset://style-ign.json`), points de
+  la crise (`points-operationnels`) embarqués, « Autour de moi », « Aller vers » (flèche, distance, cap).

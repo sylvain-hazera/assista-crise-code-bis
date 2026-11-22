@@ -100,6 +100,9 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             }
         }
 
+        // Les messages de terrain en un geste, pour la mission en cours (22/11/2026).
+        PanneauTerrain(modele, missions.map { it.mission })
+
         // Ce qui attend d'être envoyé est toujours sous les yeux, pas dans un sous-menu.
         if (enAttente > 0 || refusees > 0) {
             BandeauFile(enAttente, refusees) { modele.aller(Ecran.COMPTE) }

@@ -230,6 +230,7 @@
         @if (selectedMission.description) {
           <p class="description-text">{{ selectedMission.description }}</p>
         }
+        @if (selectedMission.id) { <app-messages-terrain-mission [missionId]="selectedMission.id"></app-messages-terrain-mission> }
 
         <h3>Équipes affectées</h3>
         @if (selectedMission.equipe_ids.length === 0) {

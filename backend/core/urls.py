@@ -154,6 +154,7 @@ from .views import (
 
 from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView, RejoindreCollectiviteView
 from .views_envoi import ConnecteurSMTPViewSet
+from .views_terrain import MessageTerrainViewSet
 router = DefaultRouter()
 router.register(
     r'institution-types',
@@ -245,6 +246,7 @@ router.register(
 )
 router.register(r'delegations-gestion', DelegationGestionViewSet, basename='delegationgestion')
 router.register(r'connecteurs-smtp', ConnecteurSMTPViewSet, basename='connecteursmtp')
+router.register(r'messages-terrain', MessageTerrainViewSet, basename='messageterrain')
 
 router.register(
     r'disponibilites',

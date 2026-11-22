@@ -42,7 +42,11 @@ describe('MissionsComponent', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Le bloc « Sur le terrain » de la fiche relit ses messages : hors du sujet de ces essais.
+    http.match(r => r.url.includes('/messages-terrain/')).forEach(r => r.flush([]));
+    http.verify();
+  });
 
   it('signale les missions d’intérêt général dans la liste', () => {
     demarrer();

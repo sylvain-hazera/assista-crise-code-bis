@@ -10,6 +10,7 @@ import fr.assistacrise.mobile.donnees.Veille
 import fr.assistacrise.mobile.donnees.DepotEquipes
 import fr.assistacrise.mobile.donnees.DepotMissions
 import fr.assistacrise.mobile.donnees.DepotSuivi
+import fr.assistacrise.mobile.donnees.DepotTerrain
 import fr.assistacrise.mobile.donnees.FileAttente
 import fr.assistacrise.mobile.donnees.Session
 import fr.assistacrise.mobile.donnees.Synchronisation
@@ -56,7 +57,13 @@ class Application : android.app.Application() {
     val radio by lazy { LiaisonRadio(this) }
     val dossiers by lazy { DepotDossiers(api, magasin, file) { UUID.randomUUID().toString() } }
     val degats by lazy { DepotDegats(api, magasin, file) { UUID.randomUUID().toString() } }
-    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats) }
+    val terrain by lazy {
+        DepotTerrain(magasin, file, { session.compte.value?.id }, { System.currentTimeMillis() },
+            { java.time.Instant.now().toString() })
+    }
+    val points by lazy { fr.assistacrise.mobile.donnees.DepotPoints(api, magasin) }
+    val cartes by lazy { CartesHorsLigne(this) }
+    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats, terrain) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
     val notifications by lazy { DepotNotifications(api, magasin) { UUID.randomUUID().toString() } }
@@ -84,6 +91,8 @@ class Application : android.app.Application() {
         degats.restaurer()
         notifications.restaurer()
         benevole.restaurer()
+        terrain.restaurer()
+        points.restaurer()
         restaure = true
     }
 }

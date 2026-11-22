@@ -1,0 +1,11 @@
+.terrain { display: flex; flex-direction: column; gap: .4rem; margin: .8rem 0; color: var(--ac-text, #1f2937);
+  h3 { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: 1rem; } }
+.alerte { margin: 0; padding: .5rem .7rem; border-radius: 8px; background: var(--ac-red-bg, #fee2e2);
+  color: var(--ac-red-text, #991b1b); font-size: .9rem; a { color: inherit; } }
+.statuts, .fil { list-style: none; margin: 0; padding: 0;
+  li { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: baseline; padding: .3rem 0; font-size: .88rem;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb); }
+  li.prioritaire { color: var(--ac-red-text, #991b1b); } }
+.statut { padding: .05rem .5rem; border-radius: 999px; background: var(--ac-blue-bg, #eff6ff); color: var(--ac-blue-text, #1e3a8a); font-size: .8rem; }
+.quand, .aide { color: var(--ac-text-muted, #6b7280); font-size: .8rem; }
+details summary { cursor: pointer; font-size: .86rem; }

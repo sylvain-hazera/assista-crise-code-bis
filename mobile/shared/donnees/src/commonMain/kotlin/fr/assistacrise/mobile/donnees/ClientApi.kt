@@ -274,6 +274,13 @@ class ClientApi(
             if (dejaEmisParRadio != null) put("deja_emis_radio", dejaEmisParRadio)
         }).transformer(::lireMessages)
 
+    /** Un message de terrain (22/11/2026). Le serveur le reconnaît s'il l'a déjà reçu par radio. */
+    suspend fun envoyerMessageTerrain(corps: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(corps).jsonObject }.getOrNull()
+            ?: return Reponse.Refus(400, "Message illisible.")
+        return authentifie(HttpMethod.Post, "messages-terrain/", JsonObject(objet.filterKeys { it != "equipe" })).sansValeur()
+    }
+
     suspend fun positionsEquipes(): Reponse<List<PositionMembre>> = authentifie(HttpMethod.Get, "positions-equipes/").transformer {
         val liste = if (it is JsonObject) it.getValue("results") else it
         json.decodeFromJsonElement(ListSerializer(PositionMembre.serializer()), liste)

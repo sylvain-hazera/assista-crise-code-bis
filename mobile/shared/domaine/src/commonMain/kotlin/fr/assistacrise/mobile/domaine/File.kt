@@ -59,6 +59,10 @@ data class ActionEnAttente(
         /** Une photo prise pendant un constat : `cible` est le constat, `charge` un `PhotoEnAttente`.
          * Elle part après son constat (la file garde l'ordre) : le serveur la joint au bien. */
         const val GENRE_PHOTO_CONSTAT = "PHOTO_CONSTAT"
+
+        /** Un message de terrain en un geste : `cible` est l'équipe (pour le canal radio),
+         * `charge` un `MessageTerrainSortant` en JSON. */
+        const val GENRE_MESSAGE_TERRAIN = "MESSAGE_TERRAIN"
     }
 }
 

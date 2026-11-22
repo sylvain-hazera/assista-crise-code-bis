@@ -1,0 +1,35 @@
+<section class="terrain">
+  <h3><span class="material-icons" aria-hidden="true">campaign</span> Sur le terrain</h3>
+  @for (m of prioritaires; track m.id) {
+    <p class="alerte" role="alert">
+      <strong>{{ m.type_libelle }}</strong> — {{ m.auteur_nom }}@if (m.equipe_nom) { ({{ m.equipe_nom }}) },
+      {{ m.emis_le | date:'HH:mm' }}@if (m.texte) { : {{ m.texte }} }
+      @if (carte(m); as lien) { — <a [href]="lien" target="_blank" rel="noopener noreferrer">position</a> }
+    </p>
+  }
+  @if (statuts.length) {
+    <ul class="statuts">
+      @for (s of statuts; track s.id) {
+        <li [class.prioritaire]="s.prioritaire">
+          <strong>{{ s.auteur_nom }}</strong> <span class="statut">{{ s.statut }}</span>
+          <span class="quand">depuis {{ s.emis_le | date:'HH:mm' }} · {{ canaux[s.canal] }}</span>
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="aide">Aucun message de terrain pour cette mission.</p>
+  }
+  @if (fil.length) {
+    <details>
+      <summary>Tous les messages ({{ fil.length }})</summary>
+      <ul class="fil">
+        @for (m of fil; track m.id) {
+          <li [class.prioritaire]="m.prioritaire">
+            <span class="quand">{{ m.emis_le | date:'dd/MM HH:mm' }}</span> {{ m.auteur_nom }} — {{ m.type_libelle }}@if (m.nombre) { ({{ m.nombre }}) }
+            @if (m.texte) { : {{ m.texte }} } <span class="quand">· {{ canaux[m.canal] }}</span>
+          </li>
+        }
+      </ul>
+    </details>
+  }
+</section>
