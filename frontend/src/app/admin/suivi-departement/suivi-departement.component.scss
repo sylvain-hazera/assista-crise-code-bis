@@ -50,10 +50,30 @@ h2, h3 { margin: .4rem 0 0; }
 .detail { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--ac-border, #e5e7eb); }
 .coord { font-size: .85rem; overflow-wrap: anywhere; }
 .actions, .actions-epci { display: flex; flex-wrap: wrap; gap: .4rem 1rem; }
-.lien { background: none; border: 0; padding: 0; color: var(--brand-primary-lisible, var(--brand-primary, #1d4ed8)); cursor: pointer; text-decoration: underline; font: inherit; font-size: .85rem; }
 .formulaire { display: flex; flex-direction: column; gap: .5rem; padding: .7rem; border-radius: 8px; background: var(--ac-surface, #fff);
   border: 1px solid var(--ac-border, #e5e7eb);
   .grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .5rem; }
   label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--ac-text-muted, #5b6275); }
-  input { padding: .4rem .5rem; border: 1px solid var(--ac-border, #cbd5e1); border-radius: 6px; font: inherit;
-    background: var(--ac-surface, #fff); color: var(--ac-text, #111827); } }
+}
+
+// Boutons et champs : mêmes règles que les écrans du plan de sauvegarde (pcs-paragraphe.scss) ;
+// le projet n'a pas de .btn-primary global, chaque écran le déclare (22/11/2026).
+.btn-primary, .btn-secondary, .btn-danger {
+  display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .45rem .85rem;
+  border-radius: 6px; font: inherit; font-size: .86rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  align-self: flex-start;
+  &:disabled { opacity: .6; cursor: not-allowed; }
+}
+.btn-primary { border: none; background: #1d4ed8; color: #fff; &:hover:not(:disabled) { background: #1e40af; } }
+.btn-secondary { border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); }
+.btn-danger { border: none; background: #b91c1c; color: #fff; &:hover:not(:disabled) { background: #991b1b; } }
+input, textarea, select {
+  padding: .45rem .55rem; border-radius: 6px; border: 1px solid var(--ac-border, #d1d5db);
+  background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937); font: inherit; font-weight: 400;
+}
+input[type=radio], input[type=checkbox] { padding: 0; accent-color: #1d4ed8; }
+input[type=file] { padding: .3rem; }
+input[type=file]::file-selector-button { margin-right: .6rem; padding: .3rem .7rem; border-radius: 6px; font: inherit; font-size: .84rem;
+  border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #1f2937); cursor: pointer; }
+.lien { background: none; border: 0; padding: 0; font: inherit; font-size: .88rem; cursor: pointer; text-decoration: underline;
+  color: var(--brand-primary-lisible, #1d4ed8); }
