@@ -37,8 +37,8 @@ import fr.assistacrise.mobile.lien.Protocole
 /**
  * La radio de l'intervenant : la connecter, voir ce qu'elle sait faire, la quitter.
  *
- * Elle ne se configure pas ici (dossier § 2) : l'application se sert d'une radio déjà
- * réglée, et dit seulement si le canal de chaque équipe s'y trouve.
+ * L'écran simple dit seulement si le canal de chaque équipe s'y trouve. « Utilisateur radio
+ * avancé » (22/11/2026) ouvre l'intégralité des menus : canaux, contacts, réglages, outils.
  */
 @Composable
 fun SectionRadio(modele: ModeleApplication) {
@@ -73,6 +73,16 @@ fun SectionRadio(modele: ModeleApplication) {
                     color = if (canal != null) EnLigne else Attente,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+            }
+            // « Utilisateur radio avancé » : l'intégralité des menus de la radio (22/11/2026).
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Utilisateur radio avancé", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                androidx.compose.material3.Switch(checked = modele.modeRadioAvance, onCheckedChange = modele::basculerModeRadioAvance)
+            }
+            if (modele.modeRadioAvance) {
+                Button(onClick = { modele.aller(fr.assistacrise.mobile.Ecran.RADIO_AVANCEE) }, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Canaux, contacts, réglages de la radio")
+                }
             }
             OutlinedButton(onClick = modele::deconnecterLaRadio, modifier = Modifier.padding(top = 8.dp)) { Text("Déconnecter la radio") }
         }

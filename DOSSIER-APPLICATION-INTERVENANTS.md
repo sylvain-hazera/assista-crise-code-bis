@@ -88,8 +88,10 @@ Dire ce qu'on exclut vaut mieux que de le redécouvrir en cours de route.
   explicitement.
 - **Pas d'intégration TAK**, présente dans les deux applications Meshtastic : hors de la chaîne
   de commandement d'Assista-Crise.
-- **Pas de configuration de la radio depuis l'application.** C'est un métier entier, et les
-  applications officielles le font déjà. La nôtre *utilise* une radio déjà configurée.
+- ~~Pas de configuration de la radio depuis l'application.~~ **Levé le 22/11/2026** à la demande
+  de Sylvain : un interrupteur « Utilisateur radio avancé » ouvre l'intégralité des menus
+  (canaux, contacts, réglages, outils) de Meshtastic et de MeshCore. L'écran simple reste celui
+  de l'intervenant ordinaire.
 - **Pas d'application montre, pas de fox hunt.**
 
 ---
@@ -1372,3 +1374,26 @@ l'application n'est pas signée.
 résilience**. Si internet tombe, le navigateur ne joint plus l'API — contrairement à un
 satellite `full`, qui porte son propre Django. Les deux répondent à des besoins opposés et ne se
 remplacent pas.
+
+## 17. Version 0.13.0 (22/11/2026) : arrière-plan, messages de terrain, GPS hors ligne, radio avancée
+
+- **Service de terrain** : radio tenue écran éteint et application fermée ; position en mission
+  seulement, démarrée application fermée à l'engagement (permission « Toujours » et exemption
+  d'économie d'énergie demandées), coupée à la libération ; reprise au redémarrage du téléphone.
+- **Messages de terrain** : dix gestes (dont premiers secours avec motif), par les données ou par
+  radio avec une étiquette lisible `⚑CODE mission6.auteur6.ident texte` reconnue par le serveur.
+- **GPS hors ligne** : régions IGN embarquées, points de la crise, « Autour de moi », « Aller vers ».
+- **Radio avancée** :
+  - Meshtastic : messages d'administration (port 6) au nœud local, réglages décrits par
+    `SchemaMeshtastic` (généré depuis la bibliothèque officielle du pont, numéros seulement :
+    **licence GPL-3.0 des définitions à faire valider avant diffusion publique**), écriture
+    encadrée par begin/commit_edit_settings, champs inconnus conservés ; canaux (clé, rôle,
+    MQTT, précision), lien et QR de partage, nœuds (favori, oubli, message direct), identité,
+    redémarrage, réinitialisation, retour usine.
+  - MeshCore : formats relevés dans la bibliothèque `meshcore` (MIT) : canaux (« #nom » public ou
+    secret), contacts (message, chemin, partage, export/import de carte, suppression), nom,
+    position, puissance, paramètres radio, autres réglages, code Bluetooth, annonces,
+    redémarrage, retour usine.
+  - Confirmation résumée de chaque écriture, renforcée pour ce qui peut couper la radio du
+    réseau ; relecture après écriture. Non fait : traceroute Meshtastic.
+- **Rien n'a été essayé sur une vraie radio** : à valider sur le matériel de Sylvain.

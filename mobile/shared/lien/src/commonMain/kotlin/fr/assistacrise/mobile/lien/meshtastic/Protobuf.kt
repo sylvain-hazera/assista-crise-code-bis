@@ -21,7 +21,8 @@ internal class Ecrivain {
 
     private fun varintBrut(valeur: Long) {
         var v = valeur
-        while (v >= 0x80) { octets.add(((v and 0x7f) or 0x80).toByte()); v = v ushr 7 }
+        // Comparaison non signée : un int32 négatif s'écrit sur dix octets (complément à deux).
+        while (v.toULong() >= 0x80uL) { octets.add(((v and 0x7f) or 0x80).toByte()); v = v ushr 7 }
         octets.add(v.toByte())
     }
 
@@ -40,6 +41,15 @@ internal class Ecrivain {
             cle(numero, Fil.I32)
             for (i in 0..3) octets.add(((valeur shr (8 * i)) and 0xff).toByte())
         }
+        return this
+    }
+
+    /** Un varint nul écrit malgré tout : un index ou un type de demande valant 0 a un sens. */
+    fun zero(numero: Int): Ecrivain { cle(numero, Fil.VARINT); varintBrut(0); return this }
+
+    /** Un sous-message déjà sérialisé, écrit même vide. */
+    fun messageBrut(numero: Int, contenu: ByteArray): Ecrivain {
+        cle(numero, Fil.LONGUEUR); varintBrut(contenu.size.toLong()); octets.addAll(contenu.asList())
         return this
     }
 

@@ -178,6 +178,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.VERDICT -> EcranVerdict(modele)
                             ecran == Ecran.MOBILISATIONS -> EcranMobilisations(modele)
                             ecran == Ecran.MON_COMPTE -> EcranMonCompte(modele, compte!!)
+                            ecran == Ecran.RADIO_AVANCEE -> fr.assistacrise.mobile.ui.EcranRadioAvancee(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
@@ -190,5 +191,5 @@ class MainActivity : ComponentActivity() {
 /** Les écrans qu'on ouvre depuis un autre : ils ont leur flèche de retour, pas la barre. */
 private val ECRANS_SANS_BARRE = setOf(
     Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
-    Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE,
+    Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE, Ecran.RADIO_AVANCEE,
 )

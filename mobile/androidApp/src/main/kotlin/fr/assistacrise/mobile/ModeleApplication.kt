@@ -65,7 +65,7 @@ enum class EtapeConnexion { ADRESSE, CODE, MOT_DE_PASSE }
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
-    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS,
+    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -159,6 +159,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             if (compte.value != null) Alertes.planifierLaVeille(app)
             // Le suivi était actif quand l'application a été fermée : il reprend.
             if (compte.value != null) app.radio.reprendre()
+            lireModeRadioAvance()
             // Le suivi était actif, ou une radio est choisie : le service de terrain reprend.
             if (compte.value != null) ServiceTerrain.actualiser(app)
             pret = true
@@ -389,6 +390,34 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         val mission = app.depot.missions.value.firstOrNull { it.statut == StatutMission.EN_COURS }
         envoyerMessageTerrain(TypeMessageTerrain.ARRIVE, mission)
     }
+
+    // --- Utilisateur radio avancé (22/11/2026) -----------------------------------------------
+
+    val radioAvance = app.radio.avance
+    val piloteRadio get() = app.radio.piloteCourant
+    private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
+    var modeRadioAvance by mutableStateOf(false); private set
+
+    fun basculerModeRadioAvance(oui: Boolean) {
+        modeRadioAvance = oui
+        preferences.edit().putBoolean("avance", oui).apply()
+    }
+
+    fun lireModeRadioAvance() { modeRadioAvance = preferences.getBoolean("avance", false) }
+
+    /**
+     * Envoie à la radio des trames d'administration déjà construites, puis relit ce qu'elle a
+     * gardé. `resume` dit ce qui part (sans jamais citer une clé).
+     */
+    fun envoyerALaRadio(trames: List<ByteArray>, resume: String, relire: Boolean = true) {
+        viewModelScope.launch {
+            val ok = app.radio.envoyerAdmin(trames)
+            message = if (ok) "$resume : envoyé à la radio." else "$resume : la radio n'a pas pris la commande."
+            if (ok && relire) { kotlinx.coroutines.delay(1_500); app.radio.relireAvance() }
+        }
+    }
+
+    fun relireLaRadio() { viewModelScope.launch { if (!app.radio.relireAvance()) message = "La radio n'est pas prête." } }
 
     /** Le journal des messages de terrain envoyés de ce téléphone. */
     val journalTerrain = app.terrain.journal

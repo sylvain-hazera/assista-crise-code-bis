@@ -1,7 +1,12 @@
 package fr.assistacrise.mobile.lien
 
+import fr.assistacrise.mobile.lien.meshcore.AdminMeshCore
 import fr.assistacrise.mobile.lien.meshcore.MeshCore
+import fr.assistacrise.mobile.lien.meshtastic.AdminMeshtastic
+import fr.assistacrise.mobile.lien.meshtastic.CanalMeshtastic
+import fr.assistacrise.mobile.lien.meshtastic.Conteneur
 import fr.assistacrise.mobile.lien.meshtastic.Meshtastic
+import fr.assistacrise.mobile.lien.meshtastic.NoeudMeshtastic
 
 /** Un canal configuré sur la radio de l'intervenant. */
 data class CanalRadio(val index: Int, val nom: String)
@@ -51,6 +56,32 @@ abstract class PiloteRadio(val protocole: Protocole) {
     }
 
     class Reaction(val aEcrire: List<ByteArray> = emptyList(), val messages: List<MessageRadio> = emptyList())
+
+    /**
+     * « Utilisateur radio avancé » (22/11/2026) : tout ce que la radio a décrit d'elle-même,
+     * réglages, canaux complets, contacts. `version` augmente à chaque nouveauté : la liaison
+     * s'en sert pour rafraîchir l'écran.
+     */
+    data class Avance(
+        val version: Int = 0,
+        // Meshtastic
+        val monNoeud: Long? = null,
+        val reglages: Map<Pair<Conteneur, Int>, ByteArray> = emptyMap(),
+        val canauxMeshtastic: Map<Int, CanalMeshtastic> = emptyMap(),
+        val noeuds: Map<Long, NoeudMeshtastic> = emptyMap(),
+        val proprietaire: Pair<String, String>? = null,
+        // MeshCore
+        val moi: AdminMeshCore.Moi? = null,
+        val canauxMeshCore: Map<Int, AdminMeshCore.CanalComplet> = emptyMap(),
+        val contacts: Map<String, AdminMeshCore.Contact> = emptyMap(),
+        val carte: ByteArray? = null,
+        /** Dernière réponse à une commande (« OK », « refusée par la radio »). */
+        val derniereReponse: String? = null,
+    )
+
+    var avance: Avance = Avance(); protected set
+
+    protected fun noter(maj: (Avance) -> Avance) { avance = maj(avance).let { it.copy(version = it.version + 1) } }
 }
 
 class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
@@ -63,17 +94,33 @@ class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
     override fun recevoir(trame: ByteArray): Reaction {
         if (trame.isEmpty()) return Reaction()
         return when (trame[0].toInt() and 0xff) {
-            MeshCore.Rep.SELF_INFO -> { identite = MeshCore.lireSelfInfo(trame)?.nom; Reaction() }
+            MeshCore.Rep.SELF_INFO -> {
+                identite = MeshCore.lireSelfInfo(trame)?.nom
+                AdminMeshCore.lireMoi(trame)?.let { moi -> noter { it.copy(moi = moi) } }
+                Reaction()
+            }
+            AdminMeshCore.Rep.CONTACT_START -> { noter { it.copy(contacts = emptyMap()) }; Reaction() }
+            AdminMeshCore.Rep.CONTACT, AdminMeshCore.Rep.NEW_ADVERT -> {
+                AdminMeshCore.lireContact(trame)?.let { c -> noter { it.copy(contacts = it.contacts + (c.pubkeyHex to c)) } }
+                Reaction()
+            }
+            AdminMeshCore.Rep.CONTACT_URI -> { AdminMeshCore.lireCarte(trame)?.let { c -> noter { it.copy(carte = c) } }; Reaction() }
+            MeshCore.Rep.OK -> { if (prete) noter { it.copy(derniereReponse = "OK") }; Reaction() }
             MeshCore.Rep.CHANNEL_INFO -> {
                 val canal = MeshCore.lireCanal(trame) ?: return Reaction()
-                if (canal.nom.isNotBlank()) canauxConnus[canal.index] = canal.nom
+                AdminMeshCore.lireCanalComplet(trame)?.let { c ->
+                    noter { it.copy(canauxMeshCore = if (c.nom.isBlank()) it.canauxMeshCore - c.index else it.canauxMeshCore + (c.index to c)) }
+                }
+                if (canal.nom.isNotBlank()) canauxConnus[canal.index] = canal.nom else canauxConnus.remove(canal.index)
+                // Après l'ouverture, une relecture isolée d'un emplacement ne relance pas le balayage.
+                if (prete) return Reaction()
                 // On lit les emplacements un par un : un emplacement vide n'arrête rien, les
                 // canaux ne sont pas forcément rangés à la suite.
                 if (canal.index + 1 < MeshCore.EMPLACEMENTS) Reaction(listOf(MeshCore.demanderCanal(canal.index + 1)))
                 else finDeLecture()
             }
             // La radio refuse l'emplacement suivant : elle en a moins que prévu.
-            MeshCore.Rep.ERROR -> if (!prete) finDeLecture() else Reaction()
+            MeshCore.Rep.ERROR -> if (!prete) finDeLecture() else { noter { it.copy(derniereReponse = "Refusée par la radio") }; Reaction() }
             MeshCore.Rep.MESSAGES_WAITING -> Reaction(listOf(suivant()))
             MeshCore.Rep.CHANNEL_MSG_RECV, MeshCore.Rep.CHANNEL_MSG_RECV_V3 -> {
                 val m = MeshCore.lireMessageCanal(trame)
@@ -90,6 +137,10 @@ class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
 
     private fun suivant() = MeshCore.commandeSimple(MeshCore.Cmd.SYNC_NEXT_MESSAGE)
 
+    /** Relit tout ce que l'écran avancé affiche : identité et réglages, canaux, contacts. */
+    fun relireTout(): List<ByteArray> =
+        listOf(MeshCore.appStart(), AdminMeshCore.demanderContacts()) + (0 until MeshCore.EMPLACEMENTS).map { MeshCore.demanderCanal(it) }
+
     override fun envoyerSurCanal(index: Int, texte: String, secondesUnix: Long): List<ByteArray> =
         // 7 octets d'en-tête ; on garde de la marge pour le nom que la radio ajoute.
         Meshtastic.decouper(texte, MeshCore.TRAME_MAX - 7 - 40).map { MeshCore.envoyerSurCanal(index, it, secondesUnix) }
@@ -101,9 +152,20 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
     override fun ouverture(secondesUnix: Long): List<ByteArray> = listOf(Meshtastic.veutConfig(Meshtastic.NONCE_CONFIG))
 
     override fun recevoir(trame: ByteArray): Reaction {
+        when (val lu = AdminMeshtastic.lire(trame)) {
+            is AdminMeshtastic.Lu.Config -> noter { it.copy(reglages = it.reglages + ((lu.conteneur to lu.numero) to lu.contenu)) }
+            is AdminMeshtastic.Lu.Canal -> noter { it.copy(canauxMeshtastic = it.canauxMeshtastic + (lu.canal.index to lu.canal)) }
+            is AdminMeshtastic.Lu.Noeud -> noter { it.copy(noeuds = it.noeuds + (lu.noeud.numero to lu.noeud)) }
+            is AdminMeshtastic.Lu.Proprietaire -> noter { it.copy(proprietaire = lu.nomLong to lu.nomCourt) }
+            null -> Unit
+        }
         val evenement = runCatching { Meshtastic.lire(trame) }.getOrNull() ?: return Reaction()
         return when (evenement) {
-            is Meshtastic.Evenement.MonNoeud -> { identite = "!" + evenement.numero.toString(16).padStart(8, '0'); Reaction() }
+            is Meshtastic.Evenement.MonNoeud -> {
+                identite = "!" + evenement.numero.toString(16).padStart(8, '0')
+                noter { it.copy(monNoeud = evenement.numero) }
+                Reaction()
+            }
             is Meshtastic.Evenement.Canal -> {
                 // Le canal primaire n'a souvent pas de nom : c'est celui du préréglage radio.
                 if (evenement.role != 0) canauxConnus[evenement.index] = evenement.nom.ifBlank { "Primaire" }
@@ -122,6 +184,16 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
             else -> Reaction()
         }
     }
+
+    /** Un message d'administration pour la radio connectée, enveloppé pour le nœud local. */
+    fun admin(message: ByteArray): ByteArray? = avance.monNoeud?.let { AdminMeshtastic.paquet(it, message, identifiant()) }
+
+    /** Écrire des réglages : encadré par « début / validation d'édition », comme les applications officielles. */
+    fun adminGroupe(messages: List<ByteArray>): List<ByteArray> =
+        (listOf(AdminMeshtastic.commencerEdition()) + messages + AdminMeshtastic.validerEdition()).mapNotNull(::admin)
+
+    /** Relit toute la configuration (la radio la redécrit, nœuds compris). */
+    fun relireTout(): List<ByteArray> = listOf(Meshtastic.veutConfig(Meshtastic.NONCE_CONFIG))
 
     override fun battement(): ByteArray = Meshtastic.battement(nonce).also { nonce = Meshtastic.nonceSuivant(nonce) }
     override val periodeBattementMs: Long get() = Meshtastic.PERIODE_BATTEMENT_MS

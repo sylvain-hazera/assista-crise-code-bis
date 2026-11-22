@@ -451,6 +451,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
             nom = p.identite ?: _etat.value.nom, canaux = p.canaux, erreur = null, reseau = cadrage != null,
         )
         if (p.prete) app.lien.radio(true)
+        if (p.avance.version != _avance.value.version) _avance.value = p.avance
         for (message in reaction.messages) {
             val canal = p.canaux.firstOrNull { it.index == message.canal } ?: continue
             // Le canal dit de quelle équipe il s'agit ; un canal qui n'est celui d'aucune de
@@ -459,6 +460,32 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
             app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis())
         }
         reaction.aEcrire.forEach { ecrire(it) }
+    }
+
+    // --- Utilisateur radio avancé (22/11/2026) ---------------------------------------------
+
+    private val _avance = MutableStateFlow(PiloteRadio.Avance())
+    /** Tout ce que la radio a décrit d'elle-même : réglages, canaux complets, contacts. */
+    val avance: StateFlow<PiloteRadio.Avance> = _avance
+
+    val piloteCourant: PiloteRadio? get() = pilote
+
+    /**
+     * Envoie des trames d'administration déjà formées (le pilote sait les construire). Rend vrai
+     * si toutes sont parties. Les clés et secrets ne sont jamais journalisés ici.
+     */
+    suspend fun envoyerAdmin(trames: List<ByteArray>): Boolean {
+        if (pilote?.prete != true || trames.isEmpty()) return false
+        val fin = CompletableDeferred<Boolean>()
+        if (operations.trySend { fin.complete(trames.all { ecrire(it) }) }.isFailure) return false
+        return withTimeoutOrNull(30_000) { fin.await() } == true
+    }
+
+    /** Relit réglages, canaux et contacts (après une écriture : on vérifie ce que la radio a gardé). */
+    suspend fun relireAvance(): Boolean = when (val p = pilote) {
+        is PiloteMeshCore -> envoyerAdmin(p.relireTout())
+        is PiloteMeshtastic -> envoyerAdmin(p.relireTout())
+        else -> false
     }
 
     // --- Émission ------------------------------------------------------------------------

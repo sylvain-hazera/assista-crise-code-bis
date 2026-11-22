@@ -6667,3 +6667,7 @@ fichier — le texte entre balises parle à l'utilisateur, le commentaire au mai
   chaque étape inachevée avec un nouveau jeton, et la tâche principale coupée en route ; un message
   d'avant (ancien jeton) est ignoré. Lire l'amorçage relance aussi une étape muette depuis 30 min.
   Compteur des risques : total en base et date du dernier relevé.
+
+- **Application 0.13.0, « Utilisateur radio avancé »** : voir DOSSIER-APPLICATION-INTERVENANTS.md § 17
+  (`mobile/shared/lien/meshtastic/AdminMeshtastic.kt`, `SchemaMeshtastic.kt`,
+  `meshcore/AdminMeshCore.kt`, écran `EcranRadioAvancee.kt`).
