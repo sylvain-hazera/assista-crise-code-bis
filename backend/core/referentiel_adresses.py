@@ -26,6 +26,8 @@ identifiant ; une adresse disparue est marquée `retiree_le`, jamais effacée. U
 rend AUCUNE ligne alors qu'elle en avait garde ses adresses : un fichier tronqué ne doit pas
 retirer une commune entière.
 """
+import contextlib
+import contextvars
 import csv
 import datetime
 import gzip
@@ -219,8 +221,23 @@ def communes_manquantes(communes):
     return set(communes) - connues
 
 
+_chargement_suspendu = contextvars.ContextVar("chargement_adresses_suspendu", default=False)
+
+
+@contextlib.contextmanager
+def chargement_auto_suspendu():
+    """Pendant une création en masse (amorçage départemental), pas de chargement par institution."""
+    jeton = _chargement_suspendu.set(True)
+    try:
+        yield
+    finally:
+        _chargement_suspendu.reset(jeton)
+
+
 def demander(communes):
     """Charge en tâche de fond les communes qui n'ont encore aucune adresse. Rend celles demandées."""
+    if _chargement_suspendu.get():
+        return []
     manquantes = sorted(communes_manquantes(communes))
     if manquantes and getattr(settings, "CHARGEMENT_ADRESSES_AUTO", True):
         from .tasks import charger_adresses_departement_task

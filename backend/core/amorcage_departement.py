@@ -40,10 +40,13 @@ URL_ANNUAIRE = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/sea
 ETAPES = ("referentiel", "annuaire", "adresses", "risques", "sites", "simulations")
 ESPACEMENT_SIMULATIONS = 60  # secondes entre deux communes : l'IGN limite son débit
 # Une commune demande ~18 appels à Géorisques, espacés de 5 s pour toute la plateforme
-# (zonages_officiels.PAUSE_S) : ~90 s. Une tâche par commune, programmées à 100 s d'écart.
-# Le 22/11/2026, la Gironde (534 communes) en une seule tâche aurait demandé ~13 h, bien
-# au-delà de la limite de 4 h : la tâche aurait été tuée avant les sites et les simulations.
-ESPACEMENT_RISQUES = 100
+# (zonages_officiels.PAUSE_S) : ~90 s. Le 22/11/2026, la Gironde (534 communes) en une seule
+# tâche aurait demandé ~13 h, au-delà de la limite de 4 h.
+# Les communes s'enchaînent : chaque tâche traite une commune puis programme la suivante,
+# après un court délai. Jamais des centaines de tâches programmées à des heures d'écart : avec
+# Redis, une tâche dont le départ dépasse le délai de visibilité (1 h) est redistribuée, donc
+# exécutée plusieurs fois.
+ESPACEMENT_RISQUES = 10
 #: Au-delà, un amorçage sans fin consignée est tenu pour interrompu (la tâche a été tuée).
 DUREE_MAX_HEURES = 5
 
@@ -130,10 +133,15 @@ def _completer(institution, fiche):
 def etape_annuaire(cg, communes, interroger=interroger_annuaire, pause=PAUSE_ENTRE_APPELS) -> dict:
     """Une notification « Nouvelle institution » par mairie créée, c'était plusieurs centaines de
     courriels aux administrateurs pour un département (constaté le 22/11/2026 sur la Gironde) :
-    elles sont suspendues, et un seul récapitulatif part à la fin."""
+    elles sont suspendues, et un seul récapitulatif part à la fin. De même, chaque mairie créée
+    programmait le chargement des adresses de sa commune, soit 448 téléchargements du fichier
+    départemental (deux heures d'un des deux processus de tâches de fond) : l'étape « adresses »
+    charge tout le département en une fois."""
     from .notifications_admin import notifications_institution_suspendues, notifier_administrateurs
 
-    with notifications_institution_suspendues():
+    from .referentiel_adresses import chargement_auto_suspendu
+
+    with notifications_institution_suspendues(), chargement_auto_suspendu():
         resultat = _etape_annuaire(cg, communes, interroger, pause)
     c = resultat["comptes"]
     if c["mairies_creees"] or c["epci_crees"]:
@@ -211,11 +219,11 @@ def etape_adresses(cg, communes) -> dict:
 def etape_risques(cg, communes) -> dict:
     """Programme le relevé de chaque commune (une tâche chacune, espacées) : l'avancement se lit
     ensuite en direct dans les relevés (voir avancement_risques)."""
-    from .tasks import relever_risques_commune_task
-    for rang, code in enumerate(communes):
-        relever_risques_commune_task.apply_async(args=[code, cg.environment], countdown=rang * ESPACEMENT_RISQUES)
+    from .tasks import enchainer_amorcage_task
+    if communes:
+        enchainer_amorcage_task.delay("risques", list(communes), cg.environment)
     return {"comptes": {"communes_programmees": len(communes),
-                        "duree_estimee_heures": round(len(communes) * ESPACEMENT_RISQUES / 3600, 1)}}
+                        "duree_estimee_heures": round(len(communes) * 100 / 3600, 1)}}
 
 
 def avancement_risques(amorcage) -> dict:
@@ -252,20 +260,43 @@ def etape_referentiel(cg, communes) -> dict:
 def etape_simulations(cg, communes) -> dict:
     """Programme, commune par commune, les calculs de la page de simulation : ils tournent ensuite
     seuls, espacés, et chacun consigne son état."""
+    from .tasks import enchainer_amorcage_task
+    if communes:
+        enchainer_amorcage_task.delay("simulations", list(communes), cg.environment)
+    return {"comptes": {"communes_programmees": len(communes),
+                        "duree_estimee_minutes": len(communes) * ESPACEMENT_SIMULATIONS // 60}}
+
+
+def simulations_commune(code, environment):
+    """Lance les trois calculs de la page de simulation pour une commune."""
     from .models import StatutTacheInondation, TacheSimulationInondation, TypeTacheInondation
     from .tasks import calculer_paliers_task, calculer_ruissellement_task, charger_adresses_task
 
-    taches = ((TypeTacheInondation.PALIERS, calculer_paliers_task),
-              (TypeTacheInondation.RUISSELLEMENT, calculer_ruissellement_task),
-              (TypeTacheInondation.ADRESSES, charger_adresses_task))
-    for rang, code in enumerate(communes):
-        for type_tache, tache in taches:
-            TacheSimulationInondation.objects.update_or_create(
-                commune_code=code, environment=cg.environment, type_tache=type_tache,
-                defaults={"statut": StatutTacheInondation.EN_COURS, "erreur": None})
-            tache.apply_async(args=[code, cg.environment, False], countdown=rang * ESPACEMENT_SIMULATIONS)
-    return {"comptes": {"communes_programmees": len(communes),
-                        "duree_estimee_minutes": len(communes) * ESPACEMENT_SIMULATIONS // 60}}
+    for type_tache, tache in ((TypeTacheInondation.PALIERS, calculer_paliers_task),
+                              (TypeTacheInondation.RUISSELLEMENT, calculer_ruissellement_task),
+                              (TypeTacheInondation.ADRESSES, charger_adresses_task)):
+        TacheSimulationInondation.objects.update_or_create(
+            commune_code=code, environment=environment, type_tache=type_tache,
+            defaults={"statut": StatutTacheInondation.EN_COURS, "erreur": None})
+        tache.delay(code, environment, False)
+
+
+def enchainer(etape, communes, environment, suivante):
+    """Traite la première commune, puis confie le reste à `suivante(reste, délai)`. Une erreur
+    sur une commune n'arrête pas les autres."""
+    import logging
+    from .releve_georisques import relever_tout
+
+    code, reste = communes[0], communes[1:]
+    try:
+        if etape == "risques":
+            relever_tout(code, environment)
+        else:
+            simulations_commune(code, environment)
+    except Exception:
+        logging.getLogger(__name__).exception("Amorçage %s : échec pour %s", etape, code)
+    if reste:
+        suivante(reste, ESPACEMENT_RISQUES if etape == "risques" else ESPACEMENT_SIMULATIONS)
 
 
 FONCTIONS = {"referentiel": etape_referentiel, "annuaire": etape_annuaire, "adresses": etape_adresses,

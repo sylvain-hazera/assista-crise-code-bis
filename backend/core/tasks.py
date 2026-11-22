@@ -173,9 +173,12 @@ def charger_adresses_departement_task(communes: list):
     la simulation d'inondation plus haut, qu'elle écrasait — le worker l'annonçait
     (DuplicateTaskNameWarning) et la simulation appelait alors cette fonction-ci avec trois
     arguments au lieu d'un."""
-    from .referentiel_adresses import charger_communes
+    from .referentiel_adresses import charger_communes, communes_manquantes
 
-    return charger_communes(communes)
+    # Les communes chargées entre-temps (par l'amorçage, ou une demande précédente) ne justifient
+    # pas un nouveau téléchargement du fichier départemental.
+    restantes = sorted(communes_manquantes(communes))
+    return charger_communes(restantes) if restantes else {"lues": 0, "creees": 0, "modifiees": 0, "retirees": 0}
 
 
 @shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
@@ -230,8 +233,9 @@ def amorcer_departement_task(amorcage_id: str, etapes=None):
 
 
 @shared_task(acks_late=True, time_limit=900, soft_time_limit=870)
-def relever_risques_commune_task(commune_code: str, environment: str):
-    """Relevé complet d'une commune (Géorisques, zonages, plans de prévention, Géoportail de
-    l'urbanisme), programmé par l'amorçage départemental : une commune par tâche."""
-    from .releve_georisques import relever_tout
-    return relever_tout(commune_code, environment)
+def enchainer_amorcage_task(etape: str, communes: list, environment: str):
+    """Amorçage départemental, étapes longues (« risques », « simulations ») : une commune, puis
+    la tâche se reprogramme pour les suivantes (core/amorcage_departement.enchainer)."""
+    from .amorcage_departement import enchainer
+    enchainer(etape, communes, environment,
+              lambda reste, delai: enchainer_amorcage_task.apply_async(args=[etape, reste, environment], countdown=delai))

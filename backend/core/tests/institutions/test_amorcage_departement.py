@@ -109,17 +109,24 @@ def test_la_tache_de_la_simulation_garde_sa_signature():
 
 
 @pytest.mark.django_db
-def test_les_simulations_sont_programmees_commune_par_commune(cg):
+def test_les_simulations_s_enchainent_commune_par_commune(cg):
+    """Une commune, puis la suivante après un court délai : jamais des centaines de tâches
+    programmées à des heures d'écart (redistribuées par Redis au-delà d'une heure)."""
     from core.amorcage_departement import ESPACEMENT_SIMULATIONS, etape_simulations
     from core.models import TacheSimulationInondation
-    with mock.patch("core.tasks.calculer_paliers_task.apply_async") as paliers, \
-         mock.patch("core.tasks.calculer_ruissellement_task.apply_async") as ruissellement, \
-         mock.patch("core.tasks.charger_adresses_task.apply_async") as adresses:
+    from core.tasks import enchainer_amorcage_task
+    with mock.patch("core.tasks.calculer_paliers_task.delay") as paliers, \
+         mock.patch("core.tasks.calculer_ruissellement_task.delay") as ruissellement, \
+         mock.patch("core.tasks.charger_adresses_task.delay") as adresses, \
+         mock.patch("core.tasks.enchainer_amorcage_task.delay") as premiere, \
+         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
         resultat = etape_simulations(cg, ["42186", "42218"])
-    assert resultat["comptes"]["communes_programmees"] == 2
-    assert paliers.call_count == ruissellement.call_count == adresses.call_count == 2
-    assert paliers.call_args_list[1].kwargs["countdown"] == ESPACEMENT_SIMULATIONS
-    assert TacheSimulationInondation.objects.filter(statut="EN_COURS").count() == 6
+        assert resultat["comptes"]["communes_programmees"] == 2
+        premiere.assert_called_once_with("simulations", ["42186", "42218"], "PROD")
+        enchainer_amorcage_task.run("simulations", ["42186", "42218"], "PROD")
+    assert paliers.call_count == ruissellement.call_count == adresses.call_count == 1
+    assert suivante.call_args.kwargs == {"args": ["simulations", ["42218"], "PROD"], "countdown": ESPACEMENT_SIMULATIONS}
+    assert TacheSimulationInondation.objects.filter(statut="EN_COURS", commune_code="42186").count() == 3
 
 
 @pytest.mark.django_db
@@ -132,13 +139,35 @@ def test_le_referentiel_recharge_le_departement(cg):
 
 
 @pytest.mark.django_db
-def test_les_risques_sont_programmes_commune_par_commune(cg):
-    from core.amorcage_departement import ESPACEMENT_RISQUES, etape_risques
-    with mock.patch("core.tasks.relever_risques_commune_task.apply_async") as tache:
-        resultat = etape_risques(cg, ["42186", "42218"])
-    assert tache.call_count == 2
-    assert tache.call_args_list[1].kwargs["countdown"] == ESPACEMENT_RISQUES
-    assert resultat["comptes"]["communes_programmees"] == 2
+def test_les_risques_s_enchainent_et_une_erreur_n_arrete_pas_la_suite(cg):
+    from core.amorcage_departement import ESPACEMENT_RISQUES
+    from core.tasks import enchainer_amorcage_task
+    with mock.patch("core.releve_georisques.relever_tout", side_effect=RuntimeError("Géorisques muet")) as relever, \
+         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
+        enchainer_amorcage_task.run("risques", ["42186", "42218"], "PROD")
+    relever.assert_called_once_with("42186", "PROD")
+    assert suivante.call_args.kwargs == {"args": ["risques", ["42218"], "PROD"], "countdown": ESPACEMENT_RISQUES}
+    with mock.patch("core.releve_georisques.relever_tout"), \
+         mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as suivante:
+        enchainer_amorcage_task.run("risques", ["42218"], "PROD")
+    suivante.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_pas_de_chargement_d_adresses_par_mairie_creee_pendant_l_annuaire(cg):
+    with mock.patch("core.tasks.charger_adresses_departement_task.delay") as charger, \
+         mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        etape_annuaire(cg, ["42186", "42218"], interroger=lambda c: ANNUAIRE[c], pause=0)
+    charger.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_une_commune_deja_chargee_n_est_pas_retelechargee():
+    from core import tasks
+    with mock.patch("core.referentiel_adresses.communes_manquantes", return_value=set()), \
+         mock.patch("core.referentiel_adresses.charger_communes") as charger:
+        tasks.charger_adresses_departement_task.run(["33063"])
+    charger.assert_not_called()
 
 
 @pytest.mark.django_db

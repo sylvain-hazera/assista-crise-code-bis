@@ -904,8 +904,12 @@ la convention, elle ne peut plus qu'exporter ses données ».
   simulations d'inondation et de ruissellement en dernier (grille IGN, paliers, accumulation, seuil
   par adresse ; une commune par minute pour ménager l'IGN). **Risques programmés commune par commune**
   (22/11/2026, Gironde) : ~18 appels à Géorisques par commune espacés de 5 s pour toute la plateforme,
-  soit ~90 s ; 534 communes en une tâche dépassaient la limite de 4 h. Une tâche
-  `relever_risques_commune_task` par commune, à 100 s d'écart, avancement lu en direct dans les relevés.
+  soit ~90 s ; 534 communes en une tâche dépassaient la limite de 4 h. `enchainer_amorcage_task`
+  traite une commune puis se reprogramme pour la suivante (risques : 10 s, simulations : 60 s) ;
+  jamais de tâches programmées à des heures d'écart, que Redis redistribue au-delà d'une heure.
+  Avancement lu en direct dans les relevés. Pendant l'annuaire, pas de chargement d'adresses par
+  mairie créée (448 téléchargements du fichier de la Gironde le 22/11/2026), et
+  `charger_adresses_departement_task` ignore les communes déjà chargées.
   Un amorçage sans fin au-delà de 5 h est tenu pour interrompu et se relance. Les notifications
   « Nouvelle institution » sont suspendues pendant l'annuaire (plusieurs centaines de courriels
   pour la Gironde), remplacées par un récapitulatif. Les risques comprennent zonages
