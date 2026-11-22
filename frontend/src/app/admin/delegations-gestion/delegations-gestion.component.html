@@ -16,8 +16,8 @@
     <p class="aide">La convention se signe d'abord avec le département ; une commune peut aussi signer seule.
       Si la collectivité n'existe pas encore sur la plateforme, elle est créée à partir du référentiel officiel.</p>
     <div class="portee" role="radiogroup">
-      <label><input type="radio" name="portee" value="departement" [(ngModel)]="portee"> Un département (conseil départemental)</label>
-      <label><input type="radio" name="portee" value="commune" [(ngModel)]="portee"> Une commune (mairie)</label>
+      <label><input type="radio" name="portee" value="departement" [ngModel]="portee" (ngModelChange)="changerPortee($event)"> Un département (conseil départemental)</label>
+      <label><input type="radio" name="portee" value="commune" [ngModel]="portee" (ngModelChange)="changerPortee($event)"> Une commune (mairie)</label>
     </div>
     <div class="grille">
       @if (portee === 'departement') {
@@ -36,7 +36,7 @@
       }
       <label>Référence de la convention <input type="text" [(ngModel)]="saisie.reference" placeholder="CONV-2026-12"></label>
       <label>Signée le * <input type="date" [(ngModel)]="saisie.signeeLe"></label>
-      <label>Signataire pour la mairie <input type="text" [(ngModel)]="saisie.signataire" placeholder="Prénom Nom"></label>
+      <label>Signataire pour la collectivité <input type="text" [(ngModel)]="saisie.signataire" placeholder="Prénom Nom"></label>
       <label>Qualité <input type="text" [(ngModel)]="saisie.qualite"></label>
       <label>Échéance <input type="date" [(ngModel)]="saisie.dateFin"></label>
       <label class="large">Convention signée (PDF, facultatif) <input type="file" accept="application/pdf" (change)="choisirDocument($event)"></label>

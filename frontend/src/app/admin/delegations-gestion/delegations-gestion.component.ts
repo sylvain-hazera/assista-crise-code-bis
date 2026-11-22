@@ -40,7 +40,7 @@ export class DelegationsGestionComponent implements OnInit {
   recherche = '';
   propositions: Commune[] = [];
   commune: Commune | null = null;
-  saisie = { reference: '', signeeLe: '', signataire: '', qualite: 'Maire', dateFin: '' };
+  saisie = { reference: '', signeeLe: '', signataire: '', qualite: 'Président(e) du conseil départemental', dateFin: '' };
   document: File | null = null;
   envoi = false;
   private frappe = new Subject<string>();
@@ -87,6 +87,15 @@ export class DelegationsGestionComponent implements OnInit {
     });
   }
 
+  /** La qualité proposée suit le choix : président(e) du conseil départemental, ou maire. */
+  changerPortee(portee: 'departement' | 'commune'): void {
+    this.portee = portee;
+    const defauts = ['Maire', 'Président(e) du conseil départemental'];
+    if (!this.saisie.qualite || defauts.includes(this.saisie.qualite)) {
+      this.saisie.qualite = portee === 'departement' ? 'Président(e) du conseil départemental' : 'Maire';
+    }
+  }
+
   chercher(q: string): void { this.recherche = q; this.commune = null; this.frappe.next(q); }
 
   choisir(c: Commune): void { this.commune = c; this.recherche = c.name; this.propositions = []; }
@@ -121,7 +130,7 @@ export class DelegationsGestionComponent implements OnInit {
         this.envoi = false;
         this.message = `${d.collectivite_nom} : délégation enregistrée. Vous pouvez maintenant inviter la mairie.`;
         this.commune = null; this.recherche = ''; this.document = null; this.departementCode = '';
-        this.saisie = { reference: '', signeeLe: '', signataire: '', qualite: 'Maire', dateFin: '' };
+        this.saisie = { reference: '', signeeLe: '', signataire: '', qualite: this.portee === 'departement' ? 'Président(e) du conseil départemental' : 'Maire', dateFin: '' };
         this.charger();
       },
       error: e => { this.envoi = false; this.erreur = this.texteErreur(e); },

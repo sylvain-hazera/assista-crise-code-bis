@@ -109,6 +109,22 @@ def _mairie_de_la_commune(commune_code, aasc, request):
     return mairie, True
 
 
+def _aasc_du_contexte(request):
+    """L'AASC pour laquelle on engage, quand l'écran ne la précise pas (22/11/2026 : un
+    administrateur qui regardait la Réserve par le sélecteur du haut se voyait répondre
+    « précisez l'association », son institution courante n'étant pas elle). Dans l'ordre :
+    l'institution regardée par l'administrateur, l'institution courante, sinon la seule AASC
+    dont on est membre."""
+    from .perimetre_admin import institution_regardee
+
+    for candidate in (institution_regardee(request), getattr(request.user, "institution", None)):
+        if candidate is not None and _code_type(candidate) == CODE_AASC:
+            return candidate
+    mes_aasc = list(Institution.objects.filter(
+        contacts__utilisateur=request.user, contacts__actif=True, type__code__iexact=CODE_AASC).distinct()[:2])
+    return mes_aasc[0] if len(mes_aasc) == 1 else None
+
+
 def _conseil_departemental(departement_code, aasc, request):
     """Le conseil départemental : celui qui existe, sinon créé par l'AASC (« la Réserve signe
     par défaut avec le département »). Ancré sur la commune la plus peuplée du département,
@@ -154,9 +170,10 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
     # -- qui peut faire quoi ---------------------------------------------------------------
 
     def _cote_aasc_autorise(self, aasc, collectivite, communes=None):
-        """Bureau de l'AASC, ou cadre d'une de ses coordinations couvrant le territoire."""
+        """Bureau de l'AASC, ou cadre d'une de ses coordinations couvrant le territoire (ou
+        l'administrateur de la plateforme)."""
         user = self.request.user
-        if _membre(user, aasc, bureau=True):
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR or _membre(user, aasc, bureau=True):
             return True
         fictive = DelegationGestion(aasc=aasc, communes=communes or [], collectivite=collectivite,
                                     statut=DelegationGestion.Statut.ACTIVE)
@@ -172,7 +189,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         d = serializer.validated_data
         request = self.request
         user = request.user
-        aasc = d.get("aasc") or getattr(user, "institution", None)
+        aasc = d.get("aasc") or _aasc_du_contexte(request)
         if aasc is None or _code_type(aasc) != CODE_AASC:
             raise ValidationError({"aasc": "Précisez l'association agréée de sécurité civile qui exploite la plateforme."})
         if not d.get("convention_signee_le"):

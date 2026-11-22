@@ -258,3 +258,28 @@ def test_les_cercles_d_une_commune_hors_perimetre_sont_refuses(monde, create_use
     with mock.patch("core.tasks.relever_adresses_commune_task.delay"):
         assert c.get("/api/personnes-vulnerables/secteurs/", {"commune_code": "42186"}).status_code == 200
         assert c.get("/api/personnes-vulnerables/secteurs/", {"commune_code": "13055"}).status_code == 403
+
+
+@pytest.mark.django_db
+class TestAssociationDeduite:
+    """22/11/2026 : « Précisez l'association… » alors que l'écran n'envoie pas l'AASC."""
+
+    def _sans_aasc(self, client, **entetes):
+        return client.post(reverse("delegationgestion-list"), {
+            "commune_code": "42186", "convention_signee_le": "2026-11-15"}, format="json", **entetes)
+
+    def test_l_administrateur_qui_regarde_la_reserve(self, monde, create_user):
+        admin = create_user(username="admin-deleg@test.fr", email="admin-deleg@test.fr", type="ADMIN")
+        r = self._sans_aasc(_client(admin), HTTP_X_PERIMETRE=str(monde["aasc"].id))
+        assert r.status_code == 201, r.data
+        assert DelegationGestion.objects.get().aasc == monde["aasc"]
+
+    def test_le_membre_d_une_seule_association_meme_si_son_contexte_est_ailleurs(self, monde):
+        bureau = monde["bureau"]
+        mairie = Institution.objects.create(nom="Mairie voisine", type=_type("mairie"), commune_code="42207")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=bureau, actif=True)
+        bureau.institution = mairie
+        bureau.save()
+        r = self._sans_aasc(_client(bureau))
+        assert r.status_code == 201, r.data
+        assert DelegationGestion.objects.get().aasc == monde["aasc"]
