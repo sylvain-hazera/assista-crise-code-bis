@@ -174,6 +174,8 @@ def etat(commune_code: str, environment) -> dict:
         "zonages": zonages_officiels.etat(commune_code, environment),
         "plans_prevention": plans_prevention.etat(commune_code, environment),
         "perimetres_ppr": __import__("core.geoportail_urbanisme", fromlist=["etat"]).etat(commune_code, environment),
+        "servitudes": __import__("core.geoportail_urbanisme", fromlist=["servitudes_etat"]).servitudes_etat(
+            commune_code, environment),
     }
 
 

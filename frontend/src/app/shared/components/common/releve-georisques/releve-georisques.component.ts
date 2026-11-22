@@ -20,6 +20,8 @@ export interface EtatGeorisques {
   cavites: number;
   /** Plans de prévention : leur périmètre est relevé, et l'adresse de leur acte (le règlement). */
   perimetres_ppr?: { nom: string; categorie: string; type_assiette: string; fichier: string; url_acte: string }[];
+  /** Les autres servitudes d'utilité publique (réseaux, patrimoine, transports), par catégorie. */
+  servitudes?: { categorie: string; libelle: string; nombre: number; actes: { nom: string; url: string }[] }[];
 }
 
 /**

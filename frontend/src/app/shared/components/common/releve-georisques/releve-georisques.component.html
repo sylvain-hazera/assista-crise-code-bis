@@ -45,6 +45,23 @@
           <a routerLink="/admin/couches-carto">Couches cartographiques</a>.</p>
       </div>
     }
+    @if (etat!.servitudes?.length) {
+      <div class="plans">
+        <strong>Servitudes d'utilité publique — réseaux, patrimoine, transports</strong>
+        <ul>
+          @for (s of etat!.servitudes; track s.categorie) {
+            <li>{{ s.libelle }} : {{ s.nombre }} {{ s.nombre > 1 ? 'emprises' : 'emprise' }}
+              @for (a of s.actes; track a.url; let premier = $first) {
+                {{ premier ? '—' : '·' }} <a [href]="a.url" target="_blank" rel="noopener noreferrer">acte (PDF)</a>
+              }
+            </li>
+          }
+        </ul>
+        <p class="note">Source : Géoportail de l'urbanisme, ce que chaque gestionnaire y a déposé (une canalisation non
+          déposée n'y figure pas). Les tracés se voient sur la carte dans
+          <a routerLink="/admin/couches-carto">Couches cartographiques</a>, couche « Servitudes ».</p>
+      </div>
+    }
     @if (etat!.catnat.derniers.length) {
       <details>
         <summary>Les derniers arrêtés de catastrophe naturelle</summary>

@@ -130,3 +130,34 @@ class TestServitudesEtZonesDuPLU:
         def en_panne(emprise):
             raise OSError("muet")
         assert "servitudes" in gpu.relever_servitudes("42186", "PROD", CONTOUR, interroger=en_panne)["erreurs"]
+
+
+@pytest.mark.django_db
+class TestServitudesSurLeTerritoire:
+    """22/11/2026 : la page « Risques » montre les servitudes ; un EPCI ou un département voit
+    celles de tout son territoire ; le PLU reste une couche de la commune."""
+
+    def _deux_communes(self):
+        from core.models import Commune
+        Commune.objects.update_or_create(code="99101", defaults={"nom": "A", "departement_code": "99", "epci_code": "E9"})
+        Commune.objects.update_or_create(code="99102", defaults={"nom": "B", "departement_code": "99", "epci_code": "E9"})
+        for code in ("99101", "99102"):
+            gpu.relever_servitudes(code, "PROD", CONTOUR, interroger=lambda emprise: {"features": [_sup("i4", DANS, "ligne", "I4_act.pdf")]})
+            ServitudePPR.objects.filter(commune_code=code).update(identifiant=f"I4-{code}")
+
+    def test_la_page_risques_resume_les_servitudes(self):
+        self._deux_communes()
+        (ligne,) = gpu.servitudes_etat("99101", "PROD")
+        assert ligne["libelle"] == "Lignes électriques" and ligne["nombre"] == 1 and ligne["actes"][0]["url"].endswith("I4_act.pdf")
+
+    def test_un_epci_et_un_departement_voient_tout_leur_territoire(self):
+        self._deux_communes()
+        itype_epci, _c = InstitutionType.objects.get_or_create(code="epci", defaults={"libelle": "EPCI"})
+        epci = Institution.objects.create(nom="CC essai", type=itype_epci, commune_code="99101", epci_code="E9")
+        itype_cg, _c = InstitutionType.objects.get_or_create(code="cg", defaults={"libelle": "CG"})
+        cg = Institution.objects.create(nom="CD essai", type=itype_cg, commune_code="99101", departement_code="99",
+                                        secteur_override="departement")
+        for inst in (epci, cg):
+            objets = couches_carto.exporter("servitudes", inst, "PROD")["features"]
+            assert sorted(o["properties"]["commune"] for o in objets) == ["99101", "99102"], inst.nom
+            assert couches_carto.exporter("zones-urbanisme", inst, "PROD")["features"] == []

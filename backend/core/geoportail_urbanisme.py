@@ -263,6 +263,23 @@ def relever_zones(commune_code: str, environment, contour, interroger=interroger
     return bilan
 
 
+def servitudes_etat(commune_code: str, environment) -> list:
+    """Les autres servitudes de la commune, par catégorie, pour la page « Risques de la commune » :
+    leur nombre, quelques noms et les actes (22/11/2026)."""
+    if not commune_code:
+        return []
+    par_categorie = {}
+    for s in (ServitudePPR.objects.filter(commune_code=commune_code, environment=environment)
+              .exclude(categorie__in=list(CATEGORIES)).order_by("categorie", "nom")):
+        ligne = par_categorie.setdefault(s.categorie, {
+            "categorie": s.categorie, "libelle": LIBELLES_SERVITUDES.get(s.categorie, s.categorie.upper()),
+            "nombre": 0, "actes": []})
+        ligne["nombre"] += 1
+        if s.url_acte and s.url_acte not in [a["url"] for a in ligne["actes"]] and len(ligne["actes"]) < 3:
+            ligne["actes"].append({"nom": s.nom, "url": s.url_acte})
+    return sorted(par_categorie.values(), key=lambda l: l["libelle"])
+
+
 def etat(commune_code: str, environment) -> list:
     """Les plans relevés pour la commune, pour l'écran : leur nom, ce qu'ils couvrent, leur acte."""
     return [{"nom": s.nom, "categorie": CATEGORIES.get(s.categorie, s.categorie), "type_assiette": s.type_assiette,

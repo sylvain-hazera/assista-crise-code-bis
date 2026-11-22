@@ -933,6 +933,11 @@ la convention, elle ne peut plus qu'exporter ses données ».
   libellés `LIBELLES_SERVITUDES` : lignes électriques, monuments, voies ferrées, cours d'eau…) et les
   zones du PLU (`ZoneUrbanisme`, `relever_zones`, `wfs_du:zone_urba`). Liste tronquée signalée.
   Couches de carte `servitudes` et `zones-urbanisme` ; les écrans des PPR ne voient que pm1/pm3.
+  Les servitudes s'affichent aussi sur la page « Risques de la commune » (`servitudes_etat`, par
+  catégorie, avec les actes). Les couches `perimetres-ppr` et `servitudes` d'un EPCI ou d'un conseil
+  départemental couvrent **tout leur territoire** (`couches_carto._communes_du_territoire`, tracés
+  simplifiés à ~10 m, une servitude partagée montrée une fois). Le PLU reste une couche de la seule
+  commune (décision du 22/11/2026 : prévention et suivi des dégâts au long cours).
 - **File des travaux lourds** (22/11/2026) : `core/tasks.FILE_LOURDE` (« lourd ») reçoit l'amorçage,
   son enchaînement, les chargements d'adresses en masse, et les imports et simulations lancés par
   l'amorçage. Consommée par `ac_celery_worker_lourd` (service `celery-worker-lourd` de

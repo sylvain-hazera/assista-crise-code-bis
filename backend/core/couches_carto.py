@@ -102,30 +102,69 @@ def _zonages(institution, environment):
 
 from .geoportail_urbanisme import CATEGORIES as CATEGORIES_PPR  # noqa: E402
 
-
-def _perimetres_ppr(institution, environment):
-    from .models import ServitudePPR
-
-    return [_objet(s.polygone, nom=s.nom, type=s.type_assiette, acte=s.url_acte, source="Géoportail de l'urbanisme",
-                   releve_le=s.releve_le.date().isoformat())
-            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment,
-                                                 categorie__in=list(CATEGORIES_PPR))]
+#: Tolérance de simplification des tracés au-delà d'une commune (degrés, ~10 m) : une couche
+#: d'intercommunalité ou de département reste maniable sans changer ce qu'on lit à l'écran.
+SIMPLIFICATION = 0.0001
 
 
-def _servitudes(institution, environment):
+def _communes_du_territoire(institution) -> set:
+    """Une mairie : sa commune. Un EPCI : ses communes. Un conseil départemental : tout le
+    département (22/11/2026 : les couches d'un EPCI ou d'un département ne montraient que leur
+    commune siège)."""
+    from .models import Commune, Institution
+
+    niveau = institution.secteur_niveau_effectif
+    if niveau == Institution.SecteurNiveau.EPCI and institution.epci_code:
+        return set(Commune.objects.filter(epci_code=institution.epci_code).values_list("code", flat=True))
+    if niveau == Institution.SecteurNiveau.DEPARTEMENT and institution.departement_code:
+        return set(Commune.objects.filter(departement_code=institution.departement_code).values_list("code", flat=True))
+    return {institution.commune_code} if institution.commune_code else set()
+
+
+def _trace(geometrie, plusieurs):
+    return geometrie.simplify(SIMPLIFICATION, preserve_topology=True) if plusieurs else geometrie
+
+
+def _servitudes_du_territoire(institution, environment, ppr: bool):
     from .geoportail_urbanisme import LIBELLES_SERVITUDES
     from .models import ServitudePPR
 
-    return [_objet(s.polygone, nom=s.nom, categorie=LIBELLES_SERVITUDES.get(s.categorie, s.categorie.upper()),
-                   type=s.type_assiette, acte=s.url_acte, source="Géoportail de l'urbanisme",
-                   releve_le=s.releve_le.date().isoformat())
-            for s in ServitudePPR.objects.filter(commune_code=institution.commune_code or "", environment=environment)
-            .exclude(categorie__in=list(CATEGORIES_PPR))]
+    communes = _communes_du_territoire(institution)
+    plusieurs = len(communes) > 1
+    lignes = ServitudePPR.objects.filter(commune_code__in=communes, environment=environment)
+    lignes = lignes.filter(categorie__in=list(CATEGORIES_PPR)) if ppr else lignes.exclude(categorie__in=list(CATEGORIES_PPR))
+    vus, objets = set(), []
+    for s in lignes:
+        # Une même servitude qui touche plusieurs communes n'est montrée qu'une fois.
+        cle = (s.identifiant or s.id, s.categorie)
+        if s.identifiant and cle in vus:
+            continue
+        vus.add(cle)
+        proprietes = {"nom": s.nom, "type": s.type_assiette, "acte": s.url_acte, "source": "Géoportail de l'urbanisme",
+                      "releve_le": s.releve_le.date().isoformat()}
+        if not ppr:
+            proprietes["categorie"] = LIBELLES_SERVITUDES.get(s.categorie, s.categorie.upper())
+        if plusieurs:
+            proprietes["commune"] = s.commune_code
+        objets.append(_objet(_trace(s.polygone, plusieurs), **proprietes))
+    return objets
+
+
+def _perimetres_ppr(institution, environment):
+    return _servitudes_du_territoire(institution, environment, ppr=True)
+
+
+def _servitudes(institution, environment):
+    return _servitudes_du_territoire(institution, environment, ppr=False)
 
 
 def _zones_urbanisme(institution, environment):
-    from .models import ZoneUrbanisme
+    """Le PLU reste une couche de la commune (décision du 22/11/2026 : utile à la commune, pour
+    la prévention et le suivi des dégâts au long cours ; ni à l'EPCI ni au département)."""
+    from .models import Institution, ZoneUrbanisme
 
+    if institution.secteur_niveau_effectif not in (None, "", Institution.SecteurNiveau.COMMUNE):
+        return []
     return [_objet(z.polygone, type=z.type_zone, nom=z.libelle, description=z.libelle_long, reglement=z.url_reglement,
                    source="Géoportail de l'urbanisme", releve_le=z.releve_le.date().isoformat())
             for z in ZoneUrbanisme.objects.filter(commune_code=institution.commune_code or "", environment=environment)]
