@@ -419,6 +419,42 @@ def enchainer(etape, amorcage_id, jeton, environment):
         _lancer_chaine(amorcage_id, etape, environment, jeton, delai=CHAINES.get(etape, 10))
 
 
+def _restantes_d_un_ancien_amorcage(a, etape):
+    """Un amorçage lancé avant la reprise automatique (22/11/2026) ne notait pas ses communes
+    restantes : on les retrouve d'après ce qui est déjà en base, pour qu'il reprenne seul lui
+    aussi, sans relance à la main."""
+    from .models import Commune, ReleveGeorisques, TacheSimulationInondation
+
+    cg = a.delegation.collectivite
+    communes = sorted(Commune.objects.filter(departement_code=cg.departement_code).values_list("code", flat=True))
+    if etape == "risques":
+        faites = set(ReleveGeorisques.objects.filter(commune_code__in=communes, environment=cg.environment,
+                                                     releve_le__gte=a.debut).values_list("commune_code", flat=True))
+        return [c for c in communes if c not in faites]
+    if etape == "entreprises":
+        faites = int(((a.etapes.get(etape) or {}).get("comptes") or {}).get("faites") or 0)
+        return communes[faites:]   # l'ancien enchaînement allait dans l'ordre des codes
+    if etape == "simulations":
+        terminees = {}
+        for code, statut in TacheSimulationInondation.objects.filter(
+                commune_code__in=communes, environment=cg.environment).values_list("commune_code", "statut"):
+            terminees.setdefault(code, []).append(statut)
+        return [c for c in communes if not (len(terminees.get(c, [])) >= 3 and all(s == "TERMINEE" for s in terminees[c]))]
+    return []
+
+
+def _plus_recents(candidats):
+    """Pour chaque (délégation, étape longue), seul l'amorçage le plus récent qui la porte
+    reprend : les relances successives à la main ont laissé plusieurs amorçages pour la même
+    étape, et les reprendre tous ferait tourner la même étape en double."""
+    retenus = {}
+    for a in sorted(candidats, key=lambda x: x.debut):
+        for etape in CHAINES:
+            if etape in (a.etapes or {}):
+                retenus[(a.delegation_id, etape)] = a.pk
+    return retenus
+
+
 def reprendre(silence_minutes=SILENCE_MINUTES, amorcage=None) -> int:
     """Relance ce qui s'est arrêté : les étapes longues inachevées sans battement depuis
     `silence_minutes` (0 au démarrage du worker : rien ne peut tourner), et un amorçage dont la
@@ -430,8 +466,10 @@ def reprendre(silence_minutes=SILENCE_MINUTES, amorcage=None) -> int:
     from .tasks import amorcer_departement_task
 
     limite = timezone.now() - datetime.timedelta(minutes=silence_minutes)
-    candidats = [amorcage] if amorcage is not None else AmorcageDepartement.objects.filter(
-        debut__gte=timezone.now() - datetime.timedelta(days=14)).select_related("delegation__collectivite")
+    recents = list(AmorcageDepartement.objects.filter(debut__gte=timezone.now() - datetime.timedelta(days=14))
+                   .select_related("delegation__collectivite"))
+    retenus = _plus_recents(recents)
+    candidats = [amorcage] if amorcage is not None else recents
     relancees = 0
     for a in candidats:
         with transaction.atomic():
@@ -440,7 +478,23 @@ def reprendre(silence_minutes=SILENCE_MINUTES, amorcage=None) -> int:
             modifie = False
             for etape in CHAINES:
                 etat = (a.etapes or {}).get(etape)
-                if not etat or etat.get("statut") not in ("PROGRAMMEE", "EN_COURS") or not etat.get("restantes"):
+                if not etat or etat.get("statut") not in ("PROGRAMMEE", "EN_COURS"):
+                    continue
+                if retenus.get((a.delegation_id, etape), a.pk) != a.pk:
+                    # Une relance plus récente porte cette étape : celle-ci est close.
+                    etat["statut"] = "REMPLACEE"
+                    a.etapes[etape] = etat
+                    modifie = True
+                    continue
+                if "restantes" not in etat:
+                    etat["restantes"] = _restantes_d_un_ancien_amorcage(a, etape)
+                    etat["battement"] = None   # jamais battu : à reprendre tout de suite
+                    if not etat["restantes"]:
+                        etat["statut"], etat["fin"] = "TERMINEE", timezone.now().isoformat()
+                        a.etapes[etape] = etat
+                        modifie = True
+                        continue
+                if not etat.get("restantes"):
                     continue
                 battement = parse_datetime(etat.get("battement") or "") if etat.get("battement") else None
                 if battement is not None and battement > limite:

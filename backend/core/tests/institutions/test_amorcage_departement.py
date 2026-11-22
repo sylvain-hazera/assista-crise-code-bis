@@ -295,3 +295,26 @@ def test_l_ecran_ne_recoit_ni_la_liste_des_communes_ni_le_jeton(cg):
     lisibles = _etapes_lisibles({"risques": {"statut": "PROGRAMMEE", "restantes": ["1", "2"], "jeton": "x", "comptes": {"a": 1}},
                                  "_principal": {"jeton": "y"}})
     assert lisibles == {"risques": {"statut": "PROGRAMMEE", "comptes": {"a": 1, "restantes": 2}}}
+
+
+@pytest.mark.django_db
+def test_un_ancien_amorcage_sans_communes_restantes_reprend_seul(cg):
+    """Lancé avant la reprise automatique : ses communes restantes se retrouvent d'après la base,
+    et seule la relance la plus récente d'une étape reprend."""
+    import datetime
+    from django.utils import timezone
+    from core.amorcage_departement import reprendre
+    from core.models import ReleveGeorisques
+    ancien = _amorcage(cg, {"risques": {"statut": "PROGRAMMEE", "comptes": {"communes_programmees": 2}}})
+    AmorcageDepartement.objects.filter(pk=ancien.pk).update(debut=timezone.now() - datetime.timedelta(hours=3))
+    relance = AmorcageDepartement.objects.create(delegation=ancien.delegation, environment="PROD",
+                                                 etapes={"risques": {"statut": "PROGRAMMEE"},
+                                                         "entreprises": {"statut": "PROGRAMMEE", "comptes": {"total": 2, "faites": 1}}})
+    ReleveGeorisques.objects.create(commune_code="42186", rubrique="risques", donnees=[], environment="PROD")
+    with mock.patch("core.tasks.enchainer_amorcage_task.apply_async") as chaine, mock.patch("django.db.transaction.on_commit", lambda f: f()):
+        assert reprendre(0) == 2
+    ancien.refresh_from_db(); relance.refresh_from_db()
+    assert ancien.etapes["risques"]["statut"] == "REMPLACEE"
+    assert relance.etapes["risques"]["restantes"] == ["42218"]
+    assert relance.etapes["entreprises"]["restantes"] == ["42218"]
+    assert {c.kwargs["args"][0] for c in chaine.call_args_list} == {"risques", "entreprises"}
