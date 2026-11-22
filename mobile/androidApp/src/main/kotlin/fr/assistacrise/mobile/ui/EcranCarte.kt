@@ -61,7 +61,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.ModeleApplication
-import fr.assistacrise.mobile.ServiceSuivi
+import fr.assistacrise.mobile.ServiceTerrain
 import fr.assistacrise.mobile.domaine.PositionMembre
 import fr.assistacrise.mobile.domaine.Releve
 import org.maplibre.android.MapLibre
@@ -91,7 +91,7 @@ internal const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","ti
 
 internal val FRANCE = LatLng(46.6, 2.4)
 
-@SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceSuivi.autorise
+@SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceTerrain.autorise
 @Composable
 fun EcranCarte(modele: ModeleApplication) {
     val contexte = LocalContext.current
@@ -104,7 +104,7 @@ fun EcranCarte(modele: ModeleApplication) {
     /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
     var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
 
-    var autorise by remember { mutableStateOf(ServiceSuivi.autorise(contexte)) }
+    var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
     var moi by remember { mutableStateOf<Releve?>(null) }
     var carte by remember { mutableStateOf<MapLibreMap?>(null) }
     var cadree by remember { mutableStateOf(false) }

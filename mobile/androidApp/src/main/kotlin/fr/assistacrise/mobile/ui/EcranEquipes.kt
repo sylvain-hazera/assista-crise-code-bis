@@ -1,7 +1,14 @@
 package fr.assistacrise.mobile.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import fr.assistacrise.mobile.ServiceTerrain
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -124,6 +131,7 @@ private fun CarteSuivi(modele: ModeleApplication, suivi: EtatSuivi, equipes: Lis
             }
             Text(texte, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(10.dp))
+            if (suivi.consentement) ReglagesArrierePlan()
             Row {
                 when {
                     suivi.actif -> Button(onClick = modele::arreterLeSuivi) { Text("Arrêter le suivi") }
@@ -165,5 +173,41 @@ private fun CarteSuivi(modele: ModeleApplication, suivi: EtatSuivi, equipes: Lis
             },
             dismissButton = { TextButton(onClick = { expliquer = false }) { Text("Pas maintenant") } },
         )
+    }
+}
+
+
+/**
+ * Ce qu'il faut accorder pour que le suivi démarre application fermée quand l'équipe est
+ * engagée (22/11/2026) : la position « Toujours » et l'exemption d'économie d'énergie. Chaque
+ * point manquant est dit, avec son bouton ; rien n'est demandé en silence.
+ */
+@Composable
+private fun ReglagesArrierePlan() {
+    val contexte = LocalContext.current
+    var verifier by remember { mutableStateOf(0) }
+    val arrierePlan = remember(verifier) { ServiceTerrain.positionEnArrierePlan(contexte) }
+    val energie = remember(verifier) {
+        contexte.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(contexte.packageName) == true
+    }
+    val demandeArrierePlan = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { verifier++ }
+    if (arrierePlan && energie) return
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Pour que votre position soit partagée même application fermée, dès que votre équipe est engagée :",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
+    if (!arrierePlan && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        TextButton(onClick = { demandeArrierePlan.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }) {
+            Text("Autoriser la position « Toujours » (en mission seulement)")
+        }
+    }
+    if (!energie) {
+        TextButton(onClick = {
+            runCatching {
+                contexte.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${contexte.packageName}")))
+            }
+            verifier++
+        }) { Text("Ne pas mettre l'application en sommeil") }
     }
 }

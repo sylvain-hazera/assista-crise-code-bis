@@ -4,13 +4,22 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Position : lue quand la carte est ouverte, et suivie en mission seulement, par un
-         service de premier plan visible. Aucune permission d'arriere-plan n'est demandee :
-         le suivi ne demarre que depuis l'application ouverte. -->
+    <!-- Position : lue quand la carte est ouverte, et suivie en mission SEULEMENT, par le
+         service de terrain, visible en permanence. Depuis le 22/11/2026, le suivi demarre aussi
+         application fermee quand l'equipe est engagee : d'ou la permission d'arriere-plan,
+         demandee avec l'explication du dossier § 6, et la coupure a la liberation. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- La liaison avec la radio Meshtastic ou MeshCore reste ouverte en arriere-plan. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Reprise au redemarrage du telephone, si une mission ou une radio etait active. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Demande, expliquee, de ne pas etre mis en sommeil : sans elle, Android peut refuser de
+         demarrer le suivi quand l'equipe est engagee application fermee. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Camera : uniquement pour lire un QR code de mobilisation, image par image, sans rien
@@ -78,8 +87,16 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/chemins_prises" />
         </provider>
         <service
-            android:name=".ServiceSuivi"
+            android:name=".ServiceTerrain"
             android:exported="false"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="location|connectedDevice" />
+        <receiver
+            android:name=".DemarrageTelephone"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

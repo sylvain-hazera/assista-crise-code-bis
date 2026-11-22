@@ -101,6 +101,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
 
     /** La radio que la personne a choisie : on y revient seul après une coupure. */
     private var voulue: RadioTrouvee? = null
+    private var reconnexion: Job? = null
 
     // --- Recherche -----------------------------------------------------------------------
 
@@ -146,6 +147,8 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         val genre = if (radio.reseau) RESEAU else BLUETOOTH
         portee.launch { app.magasin.ecrire(FICHIER, "${radio.adresse}|${radio.protocole.name}|$genre|${radio.nom}") }
         ouvrir(radio)
+        // La liaison est tenue par le service de terrain : elle survit à l'écran éteint.
+        ServiceTerrain.actualiser(app)
     }
 
     /** Une radio jointe par le réseau : l'adresse est vérifiée (locale seulement) avant tout. */
@@ -157,8 +160,24 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         return null
     }
 
+    /** Une radio est-elle choisie ? Le service de terrain reste alors en vie pour elle. */
+    fun choisie(): Boolean = voulue != null
+
+    /** Au redémarrage du téléphone : relit seulement la radio choisie, sans ouvrir la liaison
+     * (le service de terrain s'en charge une fois démarré). */
+    suspend fun reprendreSiChoisie() {
+        if (voulue != null) return
+        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 4) ?: return
+        val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
+        val reseau = parties.getOrNull(2) == RESEAU
+        val nom = if (parties.getOrNull(2) in setOf(RESEAU, BLUETOOTH)) parties.getOrElse(3) { "Radio" }
+                  else parties.drop(2).joinToString("|").ifEmpty { "Radio" }
+        voulue = RadioTrouvee(parties[0], nom, protocole, reseau)
+    }
+
     /** Au démarrage : retrouve la radio choisie la dernière fois. */
     suspend fun reprendre() {
+        voulue?.let { radio -> if (gatt == null && prise == null && _etat.value.phase == Phase.ABSENTE) ouvrir(radio); return }
         if (voulue != null) return
         val parties = app.magasin.lire(FICHIER)?.split("|", limit = 4) ?: return
         val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
@@ -173,8 +192,10 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
 
     fun deconnecter() {
         voulue = null
+        reconnexion?.cancel(); reconnexion = null
         portee.launch { app.magasin.effacer(FICHIER) }
         fermer(null)
+        ServiceTerrain.actualiser(app)
     }
 
     private fun ouvrir(radio: RadioTrouvee) {
@@ -208,9 +229,23 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         pilote = null
         app.lien.radio(false)
         _etat.value = Etat(erreur = erreur)
-        // La radio s'est éloignée ou éteinte : on y revient, sans insister.
-        if (!garderVoulue && erreur != null) voulue?.let { radio ->
-            portee.launch { delay(20_000); if (voulue == radio && gatt == null && prise == null) ouvrir(radio) }
+        // La radio s'est éloignée ou éteinte : on y revient, sans relâche mais sans vider la
+        // batterie — 10 s, 20 s, 40 s… jusqu'à 5 min entre deux essais (22/11/2026 : « ça ne
+        // doit pas s'interrompre », y compris application fermée).
+        // Une seule boucle à la fois : un essai qui échoue repasse ici, et ne doit pas
+        // relancer le compte à rebours au début.
+        if (!garderVoulue && erreur != null && reconnexion?.isActive != true) voulue?.let { radio ->
+            reconnexion = portee.launch {
+                var attenteMs = 10_000L
+                while (voulue == radio && gatt == null && prise == null) {
+                    delay(attenteMs)
+                    if (voulue != radio || gatt != null || prise != null) break
+                    ouvrir(radio)
+                    delay(30_000)   // le temps de se connecter, ou d'échouer
+                    if (_etat.value.phase == Phase.PRETE) break
+                    attenteMs = (attenteMs * 2).coerceAtMost(300_000L)
+                }
+            }
         }
     }
 

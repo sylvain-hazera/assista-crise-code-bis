@@ -67,6 +67,43 @@ class Alertes(private val contexte: Context) {
     }
 
     /** L'alerte a été traitée dans l'application : inutile qu'elle reste dans le volet. */
+    /**
+     * « Prévenir que la géolocalisation est activée » (22/11/2026) : une notification sonore, en
+     * plus de la notification permanente du service, au moment où le suivi démarre. Si Android a
+     * refusé de démarrer le service depuis l'arrière-plan, un toucher rouvre l'application, qui
+     * le démarre.
+     */
+    @Suppress("MissingPermission")   // vérifiée par `autorisees`
+    fun geolocActivee(equipe: String?, ouvrirPourDemarrer: Boolean = false) {
+        if (!autorisees) return
+        val ouvrir = PendingIntent.getActivity(contexte, 2, Intent(contexte, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val texte = if (ouvrirPourDemarrer) "Votre équipe est engagée. Touchez pour activer le partage de votre position."
+                    else "Votre position est partagée${equipe?.let { " avec l'équipe $it" } ?: ""} pendant la mission. Elle s'arrêtera à votre libération."
+        gestionnaire.notify(ID_GEOLOC, NotificationCompat.Builder(contexte, CANAL_URGENT)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle("Géolocalisation activée — en mission")
+            .setContentText(texte)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(texte))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(ouvrir)
+            .build())
+    }
+
+    /** La position n'est plus partagée : libération, ou plafond de douze heures. */
+    @Suppress("MissingPermission")   // vérifiée par `autorisees`
+    fun geolocCoupee(plafond: Boolean = false) {
+        if (!autorisees) return
+        val texte = if (plafond) "Le partage de votre position s'est arrêté après douze heures."
+                    else "Vous êtes libéré : votre position n'est plus partagée."
+        gestionnaire.notify(ID_GEOLOC, NotificationCompat.Builder(contexte, CANAL)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle("Géolocalisation désactivée")
+            .setContentText(texte)
+            .setAutoCancel(true)
+            .build())
+    }
+
     fun retirer(cle: String) = gestionnaire.cancel(cle.hashCode())
 
     fun toutRetirer() = gestionnaire.cancelAll()
@@ -92,6 +129,7 @@ class Alertes(private val contexte: Context) {
         private const val CANAL = "messages"
         private const val CANAL_URGENT = "urgent"
         private const val TACHE = "veille"
+        private const val ID_GEOLOC = 7_001
 
         /**
          * Application fermée, c'est cette tâche qui vient relever le serveur. Un quart d'heure
@@ -121,7 +159,13 @@ class TacheVeille(contexte: Context, parametres: WorkerParameters) : CoroutineWo
         // La file d'abord : un message écrit sans réseau part dès que la tâche a du réseau,
         // sans attendre que la personne rouvre l'application.
         app.synchro.envoyerLaFile()
-        app.veille.relever { app.alertes.afficher(it) }
+        // Un engagement ou une libération, application fermée : le suivi démarre ou s'arrête
+        // ici même si le service de terrain ne tourne pas (22/11/2026).
+        runCatching { app.chef.releverEtPiloter() }
+        app.veille.relever(relire = false) { app.alertes.afficher(it) }
+        // Une radio choisie mais le service tué : on le relance.
+        app.radio.reprendreSiChoisie()
+        ServiceTerrain.actualiser(app)
         return Result.success()
     }
 }

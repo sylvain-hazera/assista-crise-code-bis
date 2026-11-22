@@ -63,6 +63,7 @@ class Application : android.app.Application() {
     val benevole by lazy { DepotBenevole(api, magasin) }
     val veille by lazy { Veille(magasin, notifications, equipes, depot) }
     val alertes by lazy { Alertes(this) }
+    val chef by lazy { ChefDeMission(this) }
 
     private val verrouRestauration = Mutex()
     private var restaure = false

@@ -157,8 +157,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             nonVues = app.notifications.nonVues()
             if (compte.value != null) Alertes.planifierLaVeille(app)
             // Le suivi était actif quand l'application a été fermée : il reprend.
-            if (compte.value != null && suivi.value.actif) ServiceSuivi.demarrer(app)
             if (compte.value != null) app.radio.reprendre()
+            // Le suivi était actif, ou une radio est choisie : le service de terrain reprend.
+            if (compte.value != null) ServiceTerrain.actualiser(app)
             pret = true
             if (compte.value != null) synchroniser(force = true, bavard = false)
         }
@@ -346,7 +347,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             Alertes.arreterLaVeille(app)
             app.notifications.toutEffacer()
             app.api.deconnecter()
-            ServiceSuivi.arreter(app)
+            ServiceTerrain.actualiser(app)
             app.radio.deconnecter()
             app.depot.toutEffacer()
             app.equipes.toutEffacer()
@@ -1013,14 +1014,14 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             app.suivi.consentir(oui)
             if (oui) { app.suivi.reprendre(); piloterLeSuivi(equipes.value) }
-            else { app.suivi.arreterALaMain(equipes.value); ServiceSuivi.arreter(app) }
+            else { app.suivi.arreterALaMain(equipes.value); ServiceTerrain.actualiser(app) }
         }
     }
 
     fun arreterLeSuivi() {
         viewModelScope.launch {
             app.suivi.arreterALaMain(equipes.value)
-            ServiceSuivi.arreter(app)
+            ServiceTerrain.actualiser(app)
         }
     }
 
@@ -1028,22 +1029,18 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch { app.suivi.reprendre(); piloterLeSuivi(equipes.value) }
     }
 
-    /** `connues` : mes équipes telles que le serveur vient de les donner, ou `null` s'il n'a pas répondu. */
+    /** `connues` : mes équipes telles que le serveur vient de les donner, ou `null` s'il n'a pas répondu.
+     * La décision est dans `ChefDeMission`, la même application fermée (22/11/2026). */
     private suspend fun piloterLeSuivi(connues: List<Equipe>?) {
-        when (app.suivi.arreterSiBesoin(connues)) {
-            MotifArret.FIN_D_ENGAGEMENT -> { ServiceSuivi.arreter(app); message = "Fin d'engagement : le suivi de position est arrêté." }
-            MotifArret.PLAFOND -> { ServiceSuivi.arreter(app); message = "Le suivi de position s'est arrêté après douze heures." }
-            else -> Unit
+        message = when (app.chef.piloter(connues)) {
+            ChefDeMission.Evenement.FIN_D_ENGAGEMENT -> "Fin d'engagement : le suivi de position est arrêté."
+            ChefDeMission.Evenement.PLAFOND -> "Le suivi de position s'est arrêté après douze heures."
+            ChefDeMission.Evenement.DEMARRE, ChefDeMission.Evenement.SERVICE_REFUSE ->
+                "Votre équipe est engagée : votre position est partagée."
+            else -> message
         }
-        if (connues != null && app.suivi.demarrerSiBesoin(connues)) {
-            if (ServiceSuivi.autorise(app)) {
-                ServiceSuivi.demarrer(app)
-                message = "Votre équipe est engagée : votre position est partagée."
-            } else {
-                // Consentement donné mais permission retirée depuis dans les réglages.
-                app.suivi.arreterALaMain(connues)
-            }
-        }
+        // Application à l'écran : Android autorise ici le démarrage refusé en arrière-plan.
+        ServiceTerrain.actualiser(app)
     }
 
     companion object {

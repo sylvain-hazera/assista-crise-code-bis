@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
-import fr.assistacrise.mobile.ServiceSuivi
+import fr.assistacrise.mobile.ServiceTerrain
 import fr.assistacrise.mobile.domaine.ChampsDepot
 import fr.assistacrise.mobile.domaine.Compte
 import fr.assistacrise.mobile.domaine.Declarant
@@ -295,11 +295,11 @@ private fun Titre(texte: String) {
  * La position, lue tant que le formulaire est affiché et pas une seconde de plus.
  * @return la position (ou `null`), si la permission est accordée, et de quoi la demander.
  */
-@SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceSuivi.autorise
+@SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceTerrain.autorise
 @Composable
 fun positionDuMoment(): Triple<Releve?, Boolean, () -> Unit> {
     val contexte = LocalContext.current
-    var autorise by remember { mutableStateOf(ServiceSuivi.autorise(contexte)) }
+    var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
     var position by remember { mutableStateOf<Releve?>(null) }
     val demande = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { accordees ->
         autorise = accordees.values.any { it }
