@@ -77,3 +77,13 @@ input[type=file]::file-selector-button { margin-right: .6rem; padding: .3rem .7r
   border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #1f2937); cursor: pointer; }
 .lien { background: none; border: 0; padding: 0; font: inherit; font-size: .88rem; cursor: pointer; text-decoration: underline;
   color: var(--brand-primary-lisible, #1d4ed8); }
+
+// Menu du département (22/11/2026), dans le style des cartes.
+.onglets { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: .6rem; }
+.onglet { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: .7rem .8rem; text-align: left;
+  border-radius: 10px; border: 1px solid var(--ac-border, #e5e7eb); background: var(--ac-surface, #fff);
+  color: var(--ac-text, #1f2937); font: inherit; cursor: pointer;
+  .material-icons { color: #1d4ed8; }
+  .aide { font-size: .78rem; }
+  &.active { border-color: #1d4ed8; box-shadow: inset 0 0 0 1px #1d4ed8; background: var(--ac-blue-bg, #eff6ff); }
+  &:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; } }

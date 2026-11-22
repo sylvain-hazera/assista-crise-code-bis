@@ -57,39 +57,9 @@ describe('DelegationsGestionComponent', () => {
     expect(c.crisesOuvertes['d1']).toEqual(['Crue du Gier']);
   });
 
-  it("lance l'amorçage d'une étape et garde son état", () => {
-    const amorcer = spyOn(service, 'amorcer').and.returnValue(of({ id: 'a', debut: '', fin: null,
-      etapes: { annuaire: { statut: 'EN_ATTENTE' } }, sites: [] }));
+  it('une délégation départementale renvoie vers le suivi du département', () => {
     const c = TestBed.createComponent(DelegationsGestionComponent).componentInstance;
-    c.amorcer({ id: 'd1' } as any, 'annuaire');
-    expect(amorcer).toHaveBeenCalledWith('d1', ['annuaire']);
-    expect(c.amorcages['d1']?.etapes['annuaire'].statut).toBe('EN_ATTENTE');
-    expect(c.comptesLisibles({ mairies_creees: 3 })).toBe('mairies creees : 3');
-  });
-
-  it("filtre l'arborescence par nom de commune, sans accents", () => {
-    const c = TestBed.createComponent(DelegationsGestionComponent).componentInstance;
-    const communes = [{ code: '42218', nom: 'Saint-Étienne', population: 1, mairie: null },
-                      { code: '42186', nom: 'Rive-de-Gier', population: 1, mairie: null }];
-    c.filtreArbre['d1'] = 'etienne';
-    expect(c.communesFiltrees({ id: 'd1' } as any, communes).map(x => x.code)).toEqual(['42218']);
-    c.filtreArbre['d1'] = '4218';
-    expect(c.communesFiltrees({ id: 'd1' } as any, communes).map(x => x.code)).toEqual(['42186']);
-  });
-
-  it('coche les collectivités sans compte et les invite', () => {
-    const inviter = spyOn(service, 'inviterCollectivites').and.returnValue(of({ envoyees: 2, sans_email: ['Mairie X'], deja_membres: 0 }));
-    spyOn(service, 'arborescence').and.returnValue(of(null));
-    const c = TestBed.createComponent(DelegationsGestionComponent).componentInstance;
-    const d = { id: 'd1' } as any;
-    const fiche = (id: string, membres = 0) => ({ id, nom: id, email: null, telephone: null, adresse: null, membres, delegation: false });
-    c.arbres['d1'] = { departement: { code: '42', nom: 'Loire', institution: null }, totaux: { communes: 3, mairies_sur_la_plateforme: 3, epcis: 1 },
-      epcis: [{ code: 'e', nom: 'Métropole', institution: fiche('epci'),
-        communes: [{ code: '1', nom: 'A', population: 1, mairie: fiche('m1') }, { code: '2', nom: 'B', population: 1, mairie: fiche('m2', 3) }] }] };
-    c.cocherToutesSansCompte(d);
-    expect([...c.selection['d1']].sort()).toEqual(['epci', 'm1']);
-    c.inviterSelection(d);
-    expect(inviter.calls.mostRecent().args[1].sort()).toEqual(['epci', 'm1']);
-    expect(c.message).toContain('Sans adresse officielle : Mairie X');
+    expect(c.estDepartementale({ departementale: true } as any)).toBeTrue();
+    expect(c.estDepartementale({ departementale: false } as any)).toBeFalse();
   });
 });

@@ -157,3 +157,46 @@ def test_coordonnees_hors_territoire_refusees(monde):
     r = _client(monde["cadre"]).post(reverse("delegationgestion-coordonnees", args=[monde["d"].id]),
                                      {"institution": str(monde["ailleurs"].id), "referent": {"nom": "X"}}, format="json")
     assert r.status_code == 400
+
+
+
+@pytest.mark.django_db
+def test_export_des_coordonnees_de_la_selection(monde):
+    from core.models import ReferentCollectivite
+    ReferentCollectivite.objects.create(institution=monde["muette"], nom="=Julie Martin", fonction="Secrétaire",
+                                        email="j.martin@commune.exemple", environment=monde["muette"].environment)
+    c = _client(monde["cadre"])
+    r = c.post(reverse("delegationgestion-export-coordonnees", args=[monde["d"].id]),
+               {"institutions": [str(monde["mairie"].id), str(monde["muette"].id), str(monde["ailleurs"].id)]}, format="json")
+    assert r.status_code == 200 and r["Content-Type"].startswith("text/csv")
+    texte = r.content.decode("utf-8-sig")
+    lignes = texte.strip().splitlines()
+    assert lignes[0].startswith("Collectivité;Type;Code commune")
+    assert len(lignes) == 3  # l'en-tête et les deux collectivités du département, pas celle d'ailleurs
+    assert "j.martin@commune.exemple" in texte and "'=Julie Martin" in texte  # pas de formule déguisée
+    assert monde["ailleurs"].nom not in texte
+
+
+@pytest.mark.django_db
+def test_export_refuse_a_un_inconnu(monde):
+    from core.models import User
+    inconnu = User.objects.create_user(username="inconnu-export@test.fr", email="inconnu-export@test.fr", password="x", type="SECOURS")
+    r = _client(inconnu).post(reverse("delegationgestion-export-coordonnees", args=[monde["d"].id]),
+                              {"institutions": [str(monde["mairie"].id)]}, format="json")
+    assert r.status_code in (403, 404)
+
+
+@pytest.mark.django_db
+def test_historique_de_la_delegation(monde):
+    c = _client(monde["cadre"])
+    c.post(reverse("delegationgestion-export-coordonnees", args=[monde["d"].id]),
+           {"institutions": [str(monde["mairie"].id)]}, format="json")
+    _inviter(monde, monde["mairie"])
+    r = c.get(reverse("delegationgestion-historique", args=[monde["d"].id]))
+    assert r.status_code == 200
+    textes = " ".join(e["texte"] for e in r.data)
+    assert "Export des coordonnées de 1 collectivité" in textes
+    assert {"journal", "invitation"} <= {e["type"] for e in r.data}
+    dates = [e["date"] for e in r.data]
+    assert dates == sorted(dates, reverse=True)
+    assert c.get(reverse("delegationgestion-detail", args=[monde["d"].id])).data["departementale"] is True

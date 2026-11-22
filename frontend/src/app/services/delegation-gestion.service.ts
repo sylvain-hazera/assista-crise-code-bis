@@ -23,7 +23,12 @@ export interface DelegationGestion {
   date_creation: string;
   date_retrait: string | null;
   motif_retrait: string;
+  /** Convention départementale : suivie depuis « Suivi du département ». */
+  departementale?: boolean;
 }
+
+/** Un évènement de l'historique d'une délégation. */
+export interface EvenementDelegation { date: string; type: 'journal' | 'amorcage' | 'invitation'; action: string; par: string; texte: string; }
 
 export interface PersonneQuiAgit { id: string; nom: string; titre: string; }
 
@@ -133,6 +138,15 @@ export class DelegationGestionService {
     if (officiel) corps.officiel = officiel;
     if (referent) corps.referent = referent;
     return this.http.post<{ ok: boolean }>(`${this.url}/${id}/coordonnees/`, corps);
+  }
+
+  /** Coordonnées des collectivités cochées, en tableur CSV (journalisé côté serveur). */
+  exporterCoordonnees(id: string, institutions: string[]): Observable<Blob> {
+    return this.http.post(`${this.url}/${id}/export-coordonnees/`, { institutions }, { responseType: 'blob' });
+  }
+
+  historique(id: string): Observable<EvenementDelegation[]> {
+    return this.http.get<EvenementDelegation[]>(`${this.url}/${id}/historique/`);
   }
 
   suivi(id: string): Observable<SuiviDepartement | null> {

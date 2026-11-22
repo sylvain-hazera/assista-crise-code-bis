@@ -1,10 +1,11 @@
 import { Component, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Subject, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
 
 import {
-  Arborescence, DelegationGestion, DelegationGestionService, EtatAmorcage, PersonneQuiAgit, RepertoireEpci,
+  DelegationGestion, DelegationGestionService, PersonneQuiAgit,
 } from '../../services/delegation-gestion.service';
 import { Commune, LocationService } from '../../services/location.service';
 
@@ -18,13 +19,10 @@ import { Commune, LocationService } from '../../services/location.service';
  * lui-même n'est pas compris dans la délégation.
  */
 
-function sansAccent(v: string): string {
-  return (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
 @Component({
   selector: 'app-delegations-gestion',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, RouterLink],
   templateUrl: './delegations-gestion.component.html',
   styleUrl: './delegations-gestion.component.scss',
 })
@@ -52,24 +50,7 @@ export class DelegationsGestionComponent implements OnInit {
   retrait: Record<string, string> = {};
   retraitForce: Record<string, boolean> = {};
   crisesOuvertes: Record<string, string[]> = {};
-  repertoires: Record<string, RepertoireEpci[]> = {};
-  amorcages: Record<string, EtatAmorcage | null> = {};
-  arbres: Record<string, Arborescence | null> = {};
-  filtreArbre: Record<string, string> = {};
-  /** Collectivités cochées dans l'arborescence, par délégation. */
-  selection: Record<string, Set<string>> = {};
 
-  /** Libellés des étapes de l'amorçage, dans leur ordre. */
-  readonly etapesAmorcage: { code: string; libelle: string }[] = [
-    { code: 'referentiel', libelle: 'Référentiel des communes du département' },
-    { code: 'annuaire', libelle: 'Répertoires officiels (mairies, EPCI, services de crise), rattachés aux communes qu\'ils servent' },
-    { code: 'repertoires', libelle: 'Répertoires des communes et intercommunalités (EPCI, mairies membres, communes voisines)' },
-    { code: 'adresses', libelle: 'Adresses de toutes les communes' },
-    { code: 'risques', libelle: 'Risques de chaque commune (Géorisques, zonages, plans de prévention, servitudes, zones du PLU)' },
-    { code: 'sites', libelle: 'Sites sensibles du département (écoles, santé, ICPE, DAE, équipements sportifs)' },
-    { code: 'entreprises', libelle: 'Entreprises (élevages, hébergements, transport, commerces), commune par commune, au long cours' },
-    { code: 'simulations', libelle: 'Pré-calcul des simulations d\'inondation et de ruissellement (une commune par minute)' },
-  ];
 
   constructor(private service: DelegationGestionService, private lieux: LocationService) {}
 
@@ -175,67 +156,8 @@ export class DelegationsGestionComponent implements OnInit {
     });
   }
 
-  voirArborescence(d: DelegationGestion): void {
-    this.service.arborescence(d.id).subscribe({ next: a => this.arbres[d.id] = a, error: e => this.erreur = this.texteErreur(e) });
-  }
-
-  /** Communes d'une branche qui correspondent au filtre (nom ou code), sans accents ni casse. */
-  communesFiltrees(d: DelegationGestion, communes: Arborescence['epcis'][number]['communes']) {
-    const f = sansAccent(this.filtreArbre[d.id] ?? '');
-    return f ? communes.filter(c => sansAccent(c.nom).includes(f) || c.code.startsWith(f)) : communes;
-  }
-
-  estCochee(d: DelegationGestion, id: string): boolean { return !!this.selection[d.id]?.has(id); }
-
-  cocher(d: DelegationGestion, id: string, coche: boolean): void {
-    const s = this.selection[d.id] ?? (this.selection[d.id] = new Set());
-    coche ? s.add(id) : s.delete(id);
-  }
-
-  /** Coche toutes les mairies d'une intercommunalité (et l'EPCI lui-même) qui n'ont encore aucun compte. */
-  cocherBranche(d: DelegationGestion, branche: Arborescence['epcis'][number]): void {
-    if (branche.institution && !branche.institution.membres) this.cocher(d, branche.institution.id, true);
-    for (const c of branche.communes) if (c.mairie && !c.mairie.membres) this.cocher(d, c.mairie.id, true);
-  }
-
-  /** Toutes les collectivités du département qui n'ont encore aucun compte. */
-  cocherToutesSansCompte(d: DelegationGestion): void {
-    for (const b of this.arbres[d.id]?.epcis ?? []) this.cocherBranche(d, b);
-  }
-
-  inviterSelection(d: DelegationGestion): void {
-    const ids = [...(this.selection[d.id] ?? [])];
-    if (!ids.length) return;
-    this.service.inviterCollectivites(d.id, ids).subscribe({
-      next: r => {
-        this.message = `${r.envoyees} invitation(s) envoyée(s)`
-          + (r.deja_membres ? `, ${r.deja_membres} collectivité(s) déjà présente(s)` : '')
-          + (r.sans_email.length ? `. Sans adresse officielle : ${r.sans_email.join(', ')}` : '.');
-        this.selection[d.id] = new Set();
-        this.voirArborescence(d);
-      },
-      error: e => this.erreur = this.texteErreur(e),
-    });
-  }
-
-  voirAmorcage(d: DelegationGestion): void {
-    this.service.amorcage(d.id).subscribe({ next: a => this.amorcages[d.id] = a, error: e => this.erreur = this.texteErreur(e) });
-  }
-
-  amorcer(d: DelegationGestion, etape?: string): void {
-    this.service.amorcer(d.id, etape ? [etape] : undefined).subscribe({
-      next: a => { this.amorcages[d.id] = a; this.message = 'Amorçage lancé : il se poursuit en tâche de fond, revenez voir son avancement.'; },
-      error: e => this.erreur = this.texteErreur(e),
-    });
-  }
-
-  comptesLisibles(comptes?: Record<string, number>): string {
-    return comptes ? Object.entries(comptes).map(([k, v]) => `${k.replace(/_/g, ' ')} : ${v}`).join(' · ') : '';
-  }
-
-  voirRepertoires(d: DelegationGestion): void {
-    this.service.repertoires(d.id).subscribe({ next: r => this.repertoires[d.id] = r, error: e => this.erreur = this.texteErreur(e) });
-  }
+  /** Une convention départementale se pilote depuis « Suivi du département » (22/11/2026). */
+  estDepartementale(d: DelegationGestion): boolean { return !!d.departementale; }
 
   /** Pendant une crise ouverte, le serveur demande une confirmation et un motif : on les affiche. */
   retirer(d: DelegationGestion): void {

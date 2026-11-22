@@ -34,6 +34,19 @@
       <div class="chiffre alerte"><strong>{{ d.suivi.totaux.sans_adresse }}</strong><span>sans adresse officielle</span></div>
     </div>
 
+    <nav class="onglets" aria-label="Suivi du département">
+      @for (o of onglets; track o.code) {
+        <button type="button" class="onglet" [class.active]="vue === o.code" [attr.aria-pressed]="vue === o.code" (click)="vue = o.code">
+          <span class="material-icons" aria-hidden="true">{{ o.icone }}</span>
+          <strong>{{ o.libelle }}</strong>
+          <span class="aide">{{ o.aide }}</span>
+        </button>
+      }
+    </nav>
+
+    @if (vue !== 'communes') {
+      <app-pilotage-departement [delegation]="d.delegation" [vue]="vue"></app-pilotage-departement>
+    } @else {
     <h3>Intercommunalités</h3>
     <div class="cartes">
       @for (e of d.suivi.epcis; track e.code) {
@@ -108,6 +121,7 @@
           </div>
         }
       </section>
+    }
     }
   }
 </div>

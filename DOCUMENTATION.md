@@ -967,7 +967,14 @@ la convention, elle ne peut plus qu'exporter ses données ».
   indique la personne à joindre (« la mairie ne répondra peut-être pas sur l'adresse par défaut,
   mais tel salarié ciblé, dont le conseil départemental donnerait l'adresse ») ; l'invitation part
   au référent en priorité, nommément. Données chiffrées ; référent vide = retiré.
-- Écran `/admin/delegations-gestion` (menu Administration).
+- Écran `/admin/delegations-gestion` (menu Administration) : la délégation elle-même (convention, qui
+  agit, présence des personnes vulnérables, export de réversibilité, fin). Une convention
+  départementale renvoie vers **Suivi du département** (22/11/2026), dont le menu en cartes porte :
+  Communes (avancement), Invitations (arborescence, « cocher toutes les collectivités sans
+  compte », inviter, **exporter les coordonnées en CSV**, action `export-coordonnees`, journalisée,
+  cellules protégées contre les formules), Amorçage, Répertoires et **Historique** (action
+  `historique` : main courante de la délégation et des collectivités du territoire, amorçages,
+  invitations). Composant `admin/pilotage-departement`.
 
 **Tâche Celery en double (corrigé le 21/11/2026)** : `tasks.charger_adresses_task` était défini
 deux fois ; la seconde définition (chargement BAN départemental, une liste de communes) écrasait

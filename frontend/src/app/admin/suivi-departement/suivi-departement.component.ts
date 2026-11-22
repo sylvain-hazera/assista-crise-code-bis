@@ -1,12 +1,13 @@
 import { Component, OnInit } from '@angular/core';
 import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Observable, forkJoin, of, catchError } from 'rxjs';
 
 import {
   DelegationGestion, DelegationGestionService, Enrolement, FicheArbre, SuiviBranche, SuiviDepartement,
 } from '../../services/delegation-gestion.service';
+import { PilotageDepartementComponent, VuePilotage } from '../pilotage-departement/pilotage-departement.component';
 
 interface DepartementSuivi { delegation: DelegationGestion; suivi: SuiviDepartement; }
 
@@ -19,7 +20,7 @@ interface DepartementSuivi { delegation: DelegationGestion; suivi: SuiviDepartem
 @Component({
   selector: 'app-suivi-departement',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, RouterLink, FormsModule, NgTemplateOutlet],
+  imports: [DatePipe, DecimalPipe, RouterLink, FormsModule, NgTemplateOutlet, PilotageDepartementComponent],
   templateUrl: './suivi-departement.component.html',
   styleUrl: './suivi-departement.component.scss',
 })
@@ -36,12 +37,22 @@ export class SuiviDepartementComponent implements OnInit {
   /** Saisie des coordonnées de la collectivité ouverte (commune ou intercommunalité). */
   saisie: { institution: string; email: string; telephone: string; refNom: string; refFonction: string; refEmail: string; refTelephone: string } | null = null;
 
+  /** Le menu du département : l'avancement commune par commune, puis le pilotage de la délégation. */
+  vue: 'communes' | VuePilotage = 'communes';
+  readonly onglets: { code: 'communes' | VuePilotage; icone: string; libelle: string; aide: string }[] = [
+    { code: 'communes', icone: 'location_city', libelle: 'Communes', aide: 'Arrivée et avancement des plans' },
+    { code: 'invitations', icone: 'forward_to_inbox', libelle: 'Invitations', aide: 'Inviter, exporter les coordonnées' },
+    { code: 'amorcage', icone: 'cloud_download', libelle: 'Amorçage', aide: 'Ce qui est récupéré à l\'avance' },
+    { code: 'repertoires', icone: 'contact_phone', libelle: 'Répertoires', aide: 'Contacts des intercommunalités' },
+    { code: 'historique', icone: 'history', libelle: 'Historique', aide: 'Ce qui a été fait, et par qui' },
+  ];
+
   readonly libelles: Record<Enrolement, string> = {
     a_rejoint: 'A rejoint', invitee: 'Invitée', non_invitee: 'À inviter',
     pas_d_adresse: "Pas d'adresse officielle", non_creee: 'Mairie à récupérer',
   };
 
-  constructor(private service: DelegationGestionService) {}
+  constructor(private service: DelegationGestionService, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
     this.service.lister().subscribe({
@@ -55,7 +66,9 @@ export class SuiviDepartementComponent implements OnInit {
           this.departements = actives
             .map((delegation, i) => ({ delegation, suivi: suivis[i] }))
             .filter((x): x is DepartementSuivi => !!x.suivi);
-          this.choisi = this.departements[0] ?? null;
+          // Venu de « Délégations de gestion » : le département de cette délégation.
+          const voulue = this.route.snapshot.queryParamMap.get('delegation');
+          this.choisi = this.departements.find(x => x.delegation.id === voulue) ?? this.departements[0] ?? null;
           this.chargement = false;
         });
       },
@@ -63,7 +76,7 @@ export class SuiviDepartementComponent implements OnInit {
     });
   }
 
-  choisir(d: DepartementSuivi): void { this.choisi = d; this.epciOuvert = null; this.branche = null; }
+  choisir(d: DepartementSuivi): void { this.choisi = d; this.epciOuvert = null; this.branche = null; this.vue = 'communes'; }
 
   part(n: number, total: number): number { return total ? Math.round(100 * n / total) : 0; }
 

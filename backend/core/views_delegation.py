@@ -16,6 +16,7 @@ import zipfile
 
 from django.apps import apps
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, serializers, status, viewsets
@@ -39,6 +40,19 @@ CODES_COLLECTIVITE = {"mairie", "epci", "cg"}
 CODE_AASC = "aasc"
 
 
+def _dans_le_departement(inst, dep) -> bool:
+    """Mairie ou intercommunalité du département délégué."""
+    code = inst.commune_code or ""
+    departement = inst.departement_code or (code[:3] if code[:2] in ("97", "98") else code[:2])
+    return _code_type(inst) in ("mairie", "epci") and bool(dep) and departement == dep
+
+
+def _cellule(valeur) -> str:
+    """Une cellule de tableur sans formule déguisée (=, +, -, @ en tête)."""
+    texte = "" if valeur is None else str(valeur)
+    return "'" + texte if texte[:1] in ("=", "+", "-", "@") else texte
+
+
 def _code_type(institution):
     return ((institution.type.code if institution and institution.type_id else "") or "").lower()
 
@@ -55,6 +69,7 @@ class DelegationGestionSerializer(serializers.ModelSerializer):
     aasc_nom = serializers.SerializerMethodField()
     en_vigueur = serializers.SerializerMethodField()
     a_un_document = serializers.SerializerMethodField()
+    departementale = serializers.SerializerMethodField()
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     departement_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
@@ -64,7 +79,7 @@ class DelegationGestionSerializer(serializers.ModelSerializer):
             "id", "collectivite", "collectivite_nom", "aasc", "aasc_nom", "communes", "statut",
             "en_vigueur", "convention_reference", "convention_signee_le", "convention_signataire",
             "convention_signataire_qualite", "date_fin", "convention_document", "a_un_document",
-            "date_creation", "date_retrait", "motif_retrait", "commune_code", "departement_code",
+            "date_creation", "date_retrait", "motif_retrait", "commune_code", "departement_code", "departementale",
         ]
         read_only_fields = ["statut", "date_creation", "date_retrait", "motif_retrait"]
         # La contrainte « une délégation active par couple » est tenue en base et rattrapée en
@@ -82,6 +97,11 @@ class DelegationGestionSerializer(serializers.ModelSerializer):
 
     def get_en_vigueur(self, obj):
         return est_en_vigueur(obj)
+
+    def get_departementale(self, obj):
+        """Convention avec un conseil départemental : son suivi a sa page (communes, invitations,
+        amorçage, historique)."""
+        return (obj.collectivite.secteur_niveau_effectif or "") == "departement"
 
     def get_a_un_document(self, obj):
         return bool(obj.convention_document)
@@ -391,9 +411,7 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         cibles = Institution.objects.filter(id__in=ids, actif=True)
         resultat = {"envoyees": 0, "sans_email": [], "deja_membres": 0, "hors_territoire": 0}
         for inst in cibles:
-            departement = inst.departement_code or (
-                inst.commune_code[:3] if (inst.commune_code or "")[:2] in ("97", "98") else (inst.commune_code or "")[:2])
-            if _code_type(inst) not in ("mairie", "epci") or not dep or departement != dep:
+            if not _dans_le_departement(inst, dep):
                 resultat["hors_territoire"] += 1
                 continue
             etat = inviter(inst, delegation, request)
@@ -407,6 +425,57 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
                   commentaire=(f"Invitations « Rejoindre votre collectivité » : {resultat['envoyees']} envoyée(s), "
                                f"{len(resultat['sans_email'])} sans adresse officielle"))
         return Response(resultat)
+
+    @action(detail=True, methods=["post"], url_path="export-coordonnees")
+    def export_coordonnees(self, request, pk=None):
+        """Les coordonnées des collectivités cochées, en tableur (CSV, point-virgule, lisible par
+        Excel) : pour une campagne de contact hors plateforme (publipostage, téléphone). Officiel
+        et référent ; journalisé, puisqu'il sort des coordonnées de personnes."""
+        import csv
+        from .delegation_gestion import zones_de
+        from .models import Commune, ContactInstitution, InvitationCollectivite, ReferentCollectivite
+
+        delegation = self.get_object()
+        if not self._peut_agir(request, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
+        ids = [i for i in (request.data.get("institutions") or []) if i][:2000]
+        cibles = [i for i in Institution.objects.filter(id__in=ids, actif=True).select_related("type")
+                  if _dans_le_departement(i, dep)]
+        cibles.sort(key=lambda i: (_code_type(i) != "epci", i.commune_code or "", i.nom))
+        noms_communes = dict(Commune.objects.filter(departement_code=dep).values_list("code", "nom")) if dep else {}
+        epci_par_commune = dict(Commune.objects.filter(departement_code=dep).values_list("code", "epci_code")) if dep else {}
+        noms_epci = {e.epci_code: e.nom for e in Institution.objects.filter(type__code__iexact="epci",
+                                                                             epci_code__in=set(epci_par_commune.values()))}
+        referents = {r.institution_id: r for r in ReferentCollectivite.objects.filter(institution__in=cibles)}
+        comptes = {}
+        for inst_id in ContactInstitution.objects.filter(institution__in=cibles, actif=True).values_list("institution_id", flat=True):
+            comptes[inst_id] = comptes.get(inst_id, 0) + 1
+        invitees = {}
+        for inv in InvitationCollectivite.objects.filter(institution__in=cibles).order_by("date_envoi"):
+            invitees[inv.institution_id] = inv.date_relance or inv.date_envoi
+
+        tampon = io.StringIO()
+        ecrire = csv.writer(tampon, delimiter=";")
+        ecrire.writerow(["Collectivité", "Type", "Code commune", "Commune", "Intercommunalité", "Courriel officiel",
+                         "Téléphone officiel", "Adresse", "Personne référente", "Fonction", "Courriel du référent",
+                         "Téléphone du référent", "Comptes sur la plateforme", "Invitée le"])
+        for inst in cibles:
+            r = referents.get(inst.id)
+            commune = inst.commune_code or ""
+            ecrire.writerow([_cellule(v) for v in (
+                inst.nom, "Intercommunalité" if _code_type(inst) == "epci" else "Mairie", commune,
+                noms_communes.get(commune, ""),
+                "" if _code_type(inst) == "epci" else noms_epci.get(epci_par_commune.get(commune), ""),
+                inst.email, inst.telephone, inst.adresse,
+                r.nom if r else "", r.fonction if r else "", r.email if r else "", r.telephone if r else "",
+                comptes.get(inst.id, 0),
+                timezone.localtime(invitees[inst.id]).strftime("%d/%m/%Y") if inst.id in invitees else "")])
+        audit_log(request=request, action_code="EXPORT", objet_type="DelegationGestion", objet_id=delegation.id,
+                  commentaire=f"Export des coordonnées de {len(cibles)} collectivité(s) (délégation de gestion)")
+        reponse = HttpResponse("\ufeff" + tampon.getvalue(), content_type="text/csv; charset=utf-8")
+        reponse["Content-Disposition"] = f'attachment; filename="coordonnees-collectivites-{dep or "territoire"}.csv"'
+        return reponse
 
     @action(detail=True, methods=["post"])
     def coordonnees(self, request, pk=None):
@@ -452,6 +521,44 @@ class DelegationGestionViewSet(viewsets.ModelViewSet):
         audit_log(request=request, action_code="MODIFICATION", objet_type="Institution", objet_id=inst.id,
                   commentaire=f"Coordonnées de {inst.nom} mises à jour (délégation de gestion)")
         return Response({"ok": True})
+
+    @action(detail=True, methods=["get"])
+    def historique(self, request, pk=None):
+        """Ce qui s'est passé sur la délégation, du plus récent au plus ancien : main courante de
+        la délégation (amorçages, invitations, exports) et des collectivités de son territoire
+        (coordonnées corrigées), puis les amorçages et les invitations envoyées (22/11/2026)."""
+        from .delegation_gestion import zones_de
+        from .models import AmorcageDepartement, AuditLog, InvitationCollectivite
+
+        delegation = self.get_object()
+        if not self._peut_agir(request, delegation):
+            raise PermissionDenied("Réservé à ceux qui agissent pour l'association sur ce territoire.")
+        dep = next((code for niveau, code in zones_de(delegation) if niveau == "departement"), None)
+        territoire = [i.id for i in Institution.objects.filter(actif=True).only("id", "commune_code", "departement_code", "type")
+                      .select_related("type") if _dans_le_departement(i, dep)] if dep else [delegation.collectivite_id]
+        evenements = []
+        lignes = (AuditLog.objects.select_related("action", "utilisateur")
+                  .filter(Q(objet_type="DelegationGestion", objet_id=delegation.id)
+                          | Q(objet_type="Institution", objet_id__in=territoire, date_action__gte=delegation.date_creation))
+                  .order_by("-date_action")[:300])
+        for l in lignes:
+            u = l.utilisateur
+            evenements.append({"date": l.date_action, "type": "journal",
+                               "action": l.action.libelle if l.action_id else "",
+                               "par": (f"{u.first_name} {u.last_name}".strip() or u.username) if u else "",
+                               "texte": l.commentaire or ""})
+        for a in AmorcageDepartement.objects.filter(delegation=delegation).order_by("-debut")[:20]:
+            evenements.append({"date": a.debut, "type": "amorcage", "action": "Amorçage", "par": "",
+                               "texte": "Terminé le " + timezone.localtime(a.fin).strftime("%d/%m/%Y %H:%M") if a.fin
+                               else "En cours"})
+        noms = dict(Institution.objects.filter(id__in=territoire).values_list("id", "nom"))
+        for inv in InvitationCollectivite.objects.filter(delegation=delegation).order_by("-date_envoi")[:500]:
+            evenements.append({"date": inv.date_relance or inv.date_envoi, "type": "invitation",
+                               "action": "Relance" if inv.date_relance else "Invitation",
+                               "par": "", "texte": f"{noms.get(inv.institution_id, 'Collectivité')} — "
+                                                  f"{inv.comptes_crees} compte(s) créé(s)"})
+        evenements.sort(key=lambda e: e["date"], reverse=True)
+        return Response(evenements[:500])
 
     @action(detail=True, methods=["get"])
     def suivi(self, request, pk=None):

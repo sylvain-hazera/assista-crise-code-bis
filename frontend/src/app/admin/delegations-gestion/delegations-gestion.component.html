@@ -68,116 +68,11 @@
           <button type="button" class="lien" (click)="voirPersonnes(d)">Qui agit pour l'association</button>
           <button type="button" class="lien" (click)="voirPresence(d)">Personnes vulnérables (présence)</button>
           @if (d.en_vigueur) { <button type="button" class="lien" (click)="ouvrirInvitation(d)">Inviter la mairie</button> }
-          <button type="button" class="lien" (click)="voirRepertoires(d)">Répertoires des intercommunalités</button>
-          <button type="button" class="lien" (click)="voirArborescence(d)">Arborescence du département</button>
-          <button type="button" class="lien" (click)="voirAmorcage(d)">Amorçage du département</button>
           <button type="button" class="lien" (click)="exporter(d)">Exporter les données de la collectivité</button>
+          @if (estDepartementale(d)) {
+            <a class="lien" routerLink="/admin/suivi-departement" [queryParams]="{ delegation: d.id }">Suivi du département : communes, invitations, amorçage, historique</a>
+          }
         </div>
-        @if (arbres[d.id]; as arbre) {
-          <div class="arbre">
-            <p class="arbre-tete">
-              <strong>{{ arbre.departement.nom }} ({{ arbre.departement.code }})</strong> —
-              {{ arbre.totaux.epcis }} intercommunalité(s), {{ arbre.totaux.communes }} communes,
-              {{ arbre.totaux.mairies_sur_la_plateforme }} mairie(s) sur la plateforme
-            </p>
-            <div class="barre-arbre">
-              <input type="search" [(ngModel)]="filtreArbre[d.id]" placeholder="Filtrer une commune (nom ou code)">
-              <button type="button" class="lien" (click)="cocherToutesSansCompte(d)">Cocher toutes les collectivités sans compte</button>
-              <button type="button" class="btn-primary" [disabled]="!selection[d.id]?.size" (click)="inviterSelection(d)">
-                Inviter la sélection ({{ selection[d.id]?.size ?? 0 }})
-              </button>
-            </div>
-            @for (e of arbre.epcis; track e.code) {
-              @if (communesFiltrees(d, e.communes); as communes) {
-                @if (communes.length) {
-                  <details [open]="!!filtreArbre[d.id]">
-                    <summary>
-                      <span class="material-icons" aria-hidden="true">account_tree</span>
-                      @if (e.institution; as epci) {
-                        <input type="checkbox" [checked]="estCochee(d, epci.id)" (change)="cocher(d, epci.id, $any($event.target).checked)"
-                               (click)="$event.stopPropagation()" [attr.aria-label]="'Inviter ' + e.nom">
-                      }
-                      {{ e.nom }} <span class="compte">{{ communes.length }} commune(s)</span>
-                      @if (e.institution?.telephone) { <span class="coord">{{ e.institution?.telephone }}</span> }
-                      @if (e.institution?.membres) { <span class="badge sur">a rejoint</span> }
-                      @else if (e.institution?.invitee_le) { <span class="badge del">invitée le {{ e.institution?.invitee_le | date:'dd/MM' }}</span> }
-                      <button type="button" class="lien" (click)="$event.preventDefault(); cocherBranche(d, e)">cocher les mairies sans compte</button>
-                    </summary>
-                    <ul class="communes">
-                      @for (c of communes; track c.code) {
-                        <li>
-                          <span class="nom">{{ c.nom }}</span> <span class="code">{{ c.code }}</span>
-                          @if (c.population) { <span class="code">{{ c.population }} hab.</span> }
-                          @if (c.mairie; as m) {
-                            <input type="checkbox" [checked]="estCochee(d, m.id)" (change)="cocher(d, m.id, $any($event.target).checked)"
-                                   [attr.aria-label]="'Inviter ' + c.nom">
-                            <span class="coord">{{ m.telephone }}{{ m.email ? ' · ' + m.email : '' }}</span>
-                            @if (m.membres) { <span class="badge sur">{{ m.membres }} compte(s)</span> }
-                            @else if (m.invitee_le) { <span class="badge del">invitée le {{ m.invitee_le | date:'dd/MM' }}</span> }
-                            @if (!m.email) { <span class="badge absent">pas d'adresse officielle</span> }
-                            @if (m.delegation) { <span class="badge del">déléguée</span> }
-                          } @else {
-                            <span class="badge absent">mairie à récupérer</span>
-                          }
-                        </li>
-                      }
-                    </ul>
-                  </details>
-                }
-              }
-            }
-          </div>
-        }
-        @if (amorcages[d.id] !== undefined) {
-          <div class="amorcage">
-            <p class="aide">Récupère à l'avance tout ce qui peut l'être, pour toutes les communes du département : référentiel,
-              répertoires officiels, adresses, risques et zonages, sites sensibles, et le pré-calcul des simulations.
-              Lancé automatiquement à l'enregistrement de la délégation. Données publiques seulement.</p>
-            <table>
-              @for (e of etapesAmorcage; track e.code) {
-                <tr>
-                  <td>{{ e.libelle }}</td>
-                  <td>{{ amorcages[d.id]?.etapes?.[e.code]?.statut ?? '—' }}</td>
-                  <td class="comptes">{{ comptesLisibles(amorcages[d.id]?.etapes?.[e.code]?.comptes) }}{{ amorcages[d.id]?.etapes?.[e.code]?.erreur ? ' — ' + amorcages[d.id]?.etapes?.[e.code]?.erreur : '' }}</td>
-                  <td><button type="button" class="lien" (click)="amorcer(d, e.code)">Relancer</button></td>
-                </tr>
-              }
-            </table>
-            @if (amorcages[d.id]?.risques; as r) {
-              <p class="aide">Risques relevés : {{ r.faites }} / {{ r.total }} communes (une toutes les 100 secondes environ,
-                Géorisques limite son débit).</p>
-            }
-            @if (amorcages[d.id]?.interrompu) {
-              <p class="erreur">Cet amorçage a été interrompu : relancez-le, ce qui est déjà récupéré n'est pas refait.</p>
-            }
-            @if (amorcages[d.id]?.sites?.length) {
-              <p class="aide">Sites sensibles :</p>
-              <ul class="sites-amorcage">
-                @for (s of amorcages[d.id]!.sites; track s.source) {
-                  <li>{{ s.source }} : {{ s.statut }}@if (s.total != null) { — {{ s.total }} trouvés, {{ s.crees }} nouveaux }
-                    @if (s.erreur) { <span class="erreur">Échec : {{ s.erreur }}</span> }
-                    @for (i of s.incomplet ?? []; track i) { <span class="erreur">Incomplet : {{ i }}</span> }
-                  </li>
-                }
-              </ul>
-            }
-            <button type="button" class="btn-primary" (click)="amorcer(d)">Amorcer tout le département</button>
-            <button type="button" class="lien" (click)="voirAmorcage(d)">Actualiser</button>
-          </div>
-        }
-        @if (repertoires[d.id]; as reps) {
-          <div class="repertoires">
-            @for (r of reps; track r.id) {
-              <details>
-                <summary>{{ r.nom }} — {{ r.contacts.length }} contact(s), {{ r.annuaire.length }} dans l'annuaire de crise</summary>
-                <ul>
-                  @for (c of r.contacts; track $index) { <li>{{ c.nom }} — {{ c.fonction }} — {{ c.telephone }} — {{ c.email }}</li> }
-                  @for (a of r.annuaire; track $index) { <li>{{ a.nom }} ({{ a.organisme }}) — {{ a.telephone }} — {{ a.email }}</li> }
-                </ul>
-              </details>
-            } @empty { <p class="aide">Aucune intercommunalité enregistrée pour ce département (ou délégation communale).</p> }
-          </div>
-        }
 
         @if (personnes[d.id]; as liste) {
           <ul class="personnes">
