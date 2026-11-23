@@ -156,13 +156,6 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     private val verrouSynchro = Mutex()
 
     init {
-        // Le fil ouvert à l'écran, pour les notifications des messages radio (23/11/2026).
-        viewModelScope.launch {
-            androidx.compose.runtime.snapshotFlow { Triple(ecran, equipeOuverte, conversationRadio) }.collect { (e, eq, conv) ->
-                app.equipeAffichee = eq.takeIf { e == Ecran.MESSAGERIE }
-                app.messagerieRadio.ouverte = conv.takeIf { e == Ecran.RADIO_CONVERSATION }
-            }
-        }
         viewModelScope.launch {
             app.restaurer()
             nonVues = app.notifications.nonVues()
@@ -492,6 +485,19 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val conversationsRadio = app.messagerieRadio.conversations
     val nonLusRadio = app.messagerieRadio.nonLus
     var conversationRadio by mutableStateOf<String?>(null); private set
+
+    // Le fil ouvert à l'écran, pour les notifications des messages radio (23/11/2026). Placé ICI,
+    // après la déclaration de `conversationRadio` : viewModelScope démarre la coroutine sur-le-champ
+    // (Main.immediate), et lire une propriété pas encore initialisée faisait planter l'application
+    // au démarrage (0.18.0).
+    init {
+        viewModelScope.launch {
+            androidx.compose.runtime.snapshotFlow { Triple(ecran, equipeOuverte, conversationRadio) }.collect { (e, eq, conv) ->
+                app.equipeAffichee = eq.takeIf { e == Ecran.MESSAGERIE }
+                app.messagerieRadio.ouverte = conv.takeIf { e == Ecran.RADIO_CONVERSATION }
+            }
+        }
+    }
 
     fun ouvrirConversationRadio(cle: String) {
         conversationRadio = cle

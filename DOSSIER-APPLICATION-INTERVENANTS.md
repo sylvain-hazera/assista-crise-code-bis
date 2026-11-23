@@ -1447,3 +1447,9 @@ Retour du premier essai réel (radio Meshtastic et MeshCore connectées, formati
 - **Qui a écrit, en Meshtastic** : le pilote remonte l'émetteur d'un message de canal (nœud
   « !1a2b3c4d »), affiché par son nom long, ou court, d'après la liste des nœuds. Aussi dans le
   fil d'équipe, au lieu de « Par radio ».
+
+**0.18.1 (23/11/2026)** : la 0.18.0 plantait au démarrage. Le relevé du fil affiché (pour ne
+pas notifier ce qu'on lit) était lancé dans un bloc `init` placé avant la déclaration de
+`conversationRadio` ; `viewModelScope` démarre la coroutine sur-le-champ (Main.immediate) et
+lisait une propriété pas encore initialisée (NullPointerException, reproduit sur émulateur).
+Bloc déplacé après la déclaration ; démarrage vérifié sur émulateur.
