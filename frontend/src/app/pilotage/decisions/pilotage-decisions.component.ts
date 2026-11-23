@@ -6,10 +6,12 @@ import { PilotageService } from '../pilotage.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import {
-  ActionCellule, CellulePilotageService, DecisionCellule, InstantaneReleve, NouvelleAction, ReleveCellule, StatutAction,
+  ActionCellule, CellulePilotageService, DecisionCellule, EtatPoints, InstantaneReleve, JalonChronologie, NouvelleAction,
+  ReleveCellule, Retex, StatutAction,
 } from '../../services/cellule-pilotage.service';
+import { ActivatedRoute } from '@angular/router';
 
-type Onglet = 'decisions' | 'actions' | 'releve';
+type Onglet = 'decisions' | 'actions' | 'releve' | 'chronologie' | 'points' | 'retex';
 
 /**
  * Décisions et actions de la cellule, et relève (23/11/2026) : « qui fait quoi, pour quand ».
@@ -40,6 +42,17 @@ export class PilotageDecisionsComponent implements OnInit {
   erreur = '';
   message = '';
 
+  // Chronologie, points de situation, RETEX (lot D)
+  chronologie: JalonChronologie[] = [];
+  nouveauJalon = '';
+  points: EtatPoints | null = null;
+  apercuPoint: Record<string, any> | null = null;
+  textePoint = '';
+  cadence: number | null = null;
+  retex: Retex | null = null;
+  retexSaisie = { ce_qui_a_marche: '', ce_qui_a_manque: '', ameliorations: '' };
+  private readonly route = inject(ActivatedRoute);
+
   // Nouvelle décision
   texte = '';
   nouvelles: NouvelleAction[] = [];
@@ -56,6 +69,8 @@ export class PilotageDecisionsComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    const demande = this.route.snapshot?.queryParamMap?.get('onglet') as Onglet | null;
+    if (demande) this.changerOnglet(demande);
     const institution = this.auth.getCurrentUser()?.institution_id;
     if (institution) {
       this.contacts.getForInstitution(institution).subscribe({
@@ -80,7 +95,60 @@ export class PilotageDecisionsComponent implements OnInit {
 
   changerOnglet(o: Onglet): void {
     this.onglet = o;
-    if (o === 'releve' && this.crise) this.service.apercuReleve(this.crise).subscribe({ next: a => this.apercu = a, error: () => {} });
+    const crise = this.crise;
+    if (!crise) return;
+    if (o === 'releve') this.service.apercuReleve(crise).subscribe({ next: a => this.apercu = a, error: () => {} });
+    if (o === 'chronologie') this.service.chronologie(crise).subscribe({ next: c => this.chronologie = c, error: e => this.erreur = this.texteErreur(e) });
+    if (o === 'points') {
+      this.service.points(crise).subscribe({ next: p => { this.points = p; this.cadence = p.cadence_h; }, error: e => this.erreur = this.texteErreur(e) });
+      this.service.apercuPoint(crise).subscribe({ next: a => this.apercuPoint = a, error: () => {} });
+    }
+    if (o === 'retex') this.service.retex(crise).subscribe({
+      next: r => {
+        this.retex = r;
+        if (r.retex) this.retexSaisie = { ce_qui_a_marche: r.retex.ce_qui_a_marche, ce_qui_a_manque: r.retex.ce_qui_a_manque, ameliorations: r.retex.ameliorations };
+      },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  ajouterJalon(): void {
+    if (!this.crise || !this.nouveauJalon.trim()) return;
+    this.service.ajouterJalon(this.crise, this.nouveauJalon.trim()).subscribe({
+      next: () => { this.nouveauJalon = ''; this.changerOnglet('chronologie'); },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  diffuserPoint(): void {
+    if (!this.crise) return;
+    this.service.diffuserPoint(this.crise, this.textePoint).subscribe({
+      next: () => { this.textePoint = ''; this.message = 'Point de situation diffusé.'; this.pilotage.rafraichirTerrain(); this.changerOnglet('points'); },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  fixerCadence(): void {
+    if (!this.crise) return;
+    this.service.cadence(this.crise, this.cadence || null).subscribe({
+      next: r => { this.message = r.cadence_h ? `Rappel d’un point de situation toutes les ${r.cadence_h} h.` : 'Plus de rappel de point de situation.';
+                   this.pilotage.rafraichirTerrain(); this.changerOnglet('points'); },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  enregistrerRetex(): void {
+    if (!this.crise) return;
+    this.service.enregistrerRetex(this.crise, this.retexSaisie).subscribe({
+      next: () => { this.message = 'Retour d’expérience enregistré.'; this.changerOnglet('retex'); },
+      error: e => this.erreur = this.texteErreur(e),
+    });
+  }
+
+  /** « 1 h 25 » pour un délai en minutes. */
+  duree(min: number | null): string {
+    if (min === null || min === undefined) return '—';
+    return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`;
   }
 
   ajouterAction(): void { this.nouvelles.push({ intitule: '', responsable: null, responsable_libre: '', echeance: null }); }

@@ -8,6 +8,11 @@
       Actions @if (enRetard) { <span class="pastille">{{ enRetard }} en retard</span> }
     </button>
     <button type="button" role="tab" [class.actif]="onglet === 'releve'" (click)="changerOnglet('releve')">Relève</button>
+    <button type="button" role="tab" [class.actif]="onglet === 'points'" (click)="changerOnglet('points')">
+      Points de situation @if (pilotage.pointDu()?.du) { <span class="pastille">dû</span> }
+    </button>
+    <button type="button" role="tab" [class.actif]="onglet === 'chronologie'" (click)="changerOnglet('chronologie')">Chronologie</button>
+    <button type="button" role="tab" [class.actif]="onglet === 'retex'" (click)="changerOnglet('retex')">RETEX</button>
   </div>
   @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
   @if (message) { <p class="message" role="status">{{ message }}</p> }
@@ -107,6 +112,92 @@
           <p class="alerte">{{ r.instantane.alertes_terrain.length }} alerte(s) du terrain non prise(s) en compte au moment de la relève.</p>
         }
       </article>
+    }
+  }
+
+  @if (onglet === 'points') {
+    <section class="bloc">
+      <h2>Rappel</h2>
+      <div class="ligne-action">
+        <label>Un point toutes les
+          <input type="number" min="1" max="48" [(ngModel)]="cadence" style="width: 5rem" aria-label="Cadence en heures"> heures</label>
+        <button type="button" class="secondaire" (click)="fixerCadence()">Enregistrer</button>
+      </div>
+      @if (points?.prochain) {
+        <p class="note">@if (points!.du) { <strong class="alerte">Point dû depuis {{ points!.prochain | date:'HH:mm' }}.</strong> } @else { Prochain point à {{ points!.prochain | date:'dd/MM HH:mm' }}. }</p>
+      }
+    </section>
+    <section class="bloc nouvelle">
+      <h2>Nouveau point de situation</h2>
+      @if (apercuPoint) {
+        <div class="chiffres">
+          <span><strong>{{ apercuPoint['chiffres']?.dossiers_ouverts }}</strong> dossiers ouverts</span>
+          <span><strong>{{ apercuPoint['chiffres']?.equipes_engagees }}</strong> équipes engagées</span>
+          @if (apercuPoint['accueil']) { <span><strong>{{ apercuPoint['accueil'].presents }}</strong> accueillis</span> }
+          @if (apercuPoint['degats']) { <span><strong>{{ apercuPoint['degats'].evalues }}</strong> biens évalués</span> }
+          <span><strong>{{ apercuPoint['alertes_terrain'] }}</strong> alertes du terrain</span>
+        </div>
+        <p class="note">Ces chiffres sont joints au point au moment de sa diffusion.</p>
+      }
+      <textarea rows="4" [(ngModel)]="textePoint" placeholder="Situation, évolution, prochaines étapes…" aria-label="Texte du point"></textarea>
+      <div class="boutons"><button type="button" class="principal" (click)="diffuserPoint()">Diffuser le point</button></div>
+    </section>
+    @for (p of points?.points ?? []; track p.id) {
+      <article class="bloc">
+        <div class="entete-decision"><span class="quand">{{ p.diffuse_le | date:'dd/MM HH:mm' }} · {{ p.redige_par }}</span>
+          <button type="button" class="lien" (click)="imprimer()">Imprimer</button></div>
+        @if (p.texte) { <p class="texte">{{ p.texte }}</p> }
+        <p class="note">{{ p.instantane['chiffres']?.dossiers_ouverts }} dossiers ouverts · {{ p.instantane['chiffres']?.equipes_engagees }} équipes engagées
+          @if (p.instantane['accueil']) { · {{ p.instantane['accueil'].presents }} accueillis }</p>
+      </article>
+    }
+  }
+
+  @if (onglet === 'chronologie') {
+    <section class="bloc nouvelle">
+      <div class="ligne-action">
+        <input type="text" [(ngModel)]="nouveauJalon" placeholder="Un jalon (ex. pic de crue, évacuation terminée)" aria-label="Nouveau jalon">
+        <button type="button" class="principal" [disabled]="!nouveauJalon.trim()" (click)="ajouterJalon()">Ajouter</button>
+      </div>
+    </section>
+    <ol class="frise bloc">
+      @for (j of chronologie; track $index) {
+        <li [attr.data-genre]="j.genre">
+          <span class="quand">{{ j.le | date:'dd/MM HH:mm' }}</span>
+          <span class="genre">{{ j.genre === 'JALON' ? 'Jalon' : j.genre === 'DECISION' ? 'Décision' : j.genre === 'CENTRE' ? 'Centre' : j.genre === 'MISSION' ? 'Mission' : j.genre === 'POINT' ? 'Point' : j.genre === 'RELEVE' ? 'Relève' : 'Crise' }}</span>
+          <span>{{ j.libelle }}@if (j.par) { <span class="quand"> · {{ j.par }}</span> }</span>
+        </li>
+      } @empty { <li class="vide">Aucun jalon.</li> }
+    </ol>
+  }
+
+  @if (onglet === 'retex') {
+    @if (retex) {
+      <section class="bloc">
+        <div class="entete-decision"><h2>Rapport — {{ retex.crise.nom }}</h2><button type="button" class="lien" (click)="imprimer()">Imprimer</button></div>
+        <p class="note">Du {{ retex.crise.debut | date:'dd/MM/yyyy HH:mm' }}@if (retex.crise.fin) { au {{ retex.crise.fin | date:'dd/MM/yyyy HH:mm' }} } @else { (crise en cours) }</p>
+        <div class="chiffres">
+          <span><strong>{{ retex.decisions }}</strong> décisions</span>
+          <span><strong>{{ retex.actions.faites }}</strong> / {{ retex.actions.total }} actions faites</span>
+          <span><strong>{{ retex.actions.faites_en_retard }}</strong> faites en retard</span>
+          <span><strong>{{ retex.actions.ouvertes }}</strong> encore ouvertes</span>
+        </div>
+        <h2>Délais d'intervention (médianes, {{ retex.delais.dossiers }} dossiers)</h2>
+        <ul class="liste">
+          <li>Création → affectation : <strong>{{ duree(retex.delais.creation_affectation.mediane_min) }}</strong> ({{ retex.delais.creation_affectation.nombre }} dossiers)</li>
+          <li>Affectation → arrivée sur les lieux : <strong>{{ duree(retex.delais.affectation_arrivee.mediane_min) }}</strong> ({{ retex.delais.affectation_arrivee.nombre }})</li>
+          <li>Création → résolution : <strong>{{ duree(retex.delais.creation_resolution.mediane_min) }}</strong> ({{ retex.delais.creation_resolution.nombre }})</li>
+        </ul>
+        <p class="note">Aucune donnée nominative : ce rapport survit à la purge des données des habitants à la clôture.</p>
+      </section>
+      <section class="bloc nouvelle">
+        <h2>Retour d'expérience</h2>
+        <label>Ce qui a marché <textarea rows="3" [(ngModel)]="retexSaisie.ce_qui_a_marche"></textarea></label>
+        <label>Ce qui a manqué <textarea rows="3" [(ngModel)]="retexSaisie.ce_qui_a_manque"></textarea></label>
+        <label>Actions d'amélioration <textarea rows="3" [(ngModel)]="retexSaisie.ameliorations"></textarea></label>
+        @if (retex.retex) { <p class="note">Dernière mise à jour par {{ retex.retex.maj_par }} le {{ retex.retex.maj_le | date:'dd/MM HH:mm' }}</p> }
+        <div class="boutons"><button type="button" class="principal" (click)="enregistrerRetex()">Enregistrer</button></div>
+      </section>
     }
   }
 }

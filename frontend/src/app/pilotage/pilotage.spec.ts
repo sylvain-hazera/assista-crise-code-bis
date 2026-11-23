@@ -129,17 +129,32 @@ describe('Poste de pilotage', () => {
     fixture.destroy();
   });
 
+  it('l\'horloge de crise : H+ en heures, puis en jours (23/11/2026)', () => {
+    const fixture = TestBed.createComponent(PilotageLayoutComponent);
+    const pilotage = TestBed.inject(PilotageService);
+    const il_y_a = (min: number) => new Date(Date.now() - min * 60000).toISOString();
+    pilotage.crises.set([{ id: 'c1', name: 'Crue', start_date: il_y_a(125.5) } as never]);
+    pilotage.choisir('c1');
+    expect(fixture.componentInstance.depuis()).toBe('2 h 05');
+    pilotage.crises.set([{ id: 'c1', name: 'Crue', start_date: il_y_a(1440 + 190.5) } as never]);
+    expect(fixture.componentInstance.depuis()).toBe('1 j 03 h');
+    fixture.destroy();
+  });
+
   it('le terrain : l\'alerte Danger en tête, prise en compte en un geste (23/11/2026)', async () => {
     const pilotage = TestBed.inject(PilotageService);
     pilotage.choisir('c1');
     pilotage.rafraichirTerrain();
     const alerte = { id: 'm1', auteur_nom: 'Léa', equipe_nom: 'Gier', type: 'DANGER', type_libelle: 'Danger', texte: 'Mur fissuré',
                      nombre: null, canal: 'MESHCORE', emis_le: '2026-11-23T10:00:00Z', dossier_numero: null, prioritaire: true };
+    http.expectOne(r => r.url === `${api}/cellule/points/`).flush({ cadence_h: 2, prochain: '2026-11-23T09:00:00Z', du: true, points: [] });
     http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [alerte], statuts: [{ ...alerte, statut: 'Danger signalé' }], derniers: [alerte] });
+    expect(pilotage.pointDu()?.du).toBeTrue();
     expect(pilotage.alertesTerrain()).toBe(1);
     const promesse = pilotage.prendreEnCompte('m1');
     http.expectOne(`${api}/messages-terrain/m1/prendre-en-compte/`).flush({ ...alerte, pris_en_compte_le: '2026-11-23T10:01:00Z' });
     await promesse;
+    http.expectOne(r => r.url === `${api}/cellule/points/`).flush({ cadence_h: 2, prochain: null, du: false, points: [] });
     http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
     expect(pilotage.alertesTerrain()).toBe(0);
   });

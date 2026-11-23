@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -21,7 +22,7 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
  */
 @Component({
   selector: 'app-pilotage-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, BoutonFormationComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, BoutonFormationComponent, DatePipe],
   template: `
     <div class="pilotage">
       <header class="entete entete-compacte">
@@ -39,6 +40,14 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
           </label>
         } @else if (erreurCrises()) {
           <span class="erreur-crises">{{ erreurCrises() }}</span>
+        }
+        @if (pilotage.crise()?.start_date) {
+          <span class="horloge" [title]="'Crise ouverte le ' + (pilotage.crise()!.start_date | date:'dd/MM à HH:mm')">H+{{ depuis() }}</span>
+        }
+        @if (pilotage.pointDu()?.du) {
+          <a class="point-du" routerLink="decisions" [queryParams]="{ onglet: 'points' }" title="Le point de situation est dû">
+            <span class="material-icons" aria-hidden="true">schedule</span><span class="libelle-point">Point dû</span>
+          </a>
         }
         <span class="outils">
           <app-bouton-formation />
@@ -111,6 +120,10 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
     }
     .erreur-crises { font-size: .82rem; color: var(--ac-red-text, #b91c1c); }
     .outils { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+    .horloge { flex: none; font-variant-numeric: tabular-nums; font-weight: 700; font-size: .85rem; padding: 4px 8px; border-radius: 6px;
+               background: var(--ac-bg-muted, #f3f4f6); color: var(--ac-text, #1f2937); white-space: nowrap; }
+    .point-du { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; text-decoration: none;
+                background: #fef3c7; color: #92400e; font-size: .82rem; font-weight: 700; .material-icons { font-size: 1.05rem; } }
     .administration { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 10px; border-radius: 8px;
                       color: var(--ac-text-muted, #6b7280); text-decoration: none; font-size: .85rem; font-weight: 600;
                       border: 1px solid var(--ac-border, #e5e7eb); }
@@ -145,7 +158,7 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
     .contenu { flex: 1; min-width: 0; padding: 16px calc(16px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) 16px; }
 
     @media (max-width: 1100px) {
-      .espace, .libelle-admin { display: none; }
+      .espace, .libelle-admin, .libelle-point { display: none; }
       .administration { padding: 0 8px; }
     }
     @media (max-width: 520px) {
@@ -183,6 +196,17 @@ export class PilotageLayoutComponent implements OnInit, OnDestroy {
     { lien: 'point', libelle: 'Standard', icone: 'call' },
     { lien: 'alertes', libelle: 'Alertes', icone: 'notifications' },
   ];
+  /** L'heure de la crise, relue chaque minute : « H+ 12 h 05 », « H+ 2 j 03 h ». */
+  private readonly maintenant = signal(Date.now());
+  private minuterieHorloge = setInterval(() => this.maintenant.set(Date.now()), 60_000);
+  depuis(): string {
+    const debut = this.pilotage.crise()?.start_date;
+    if (!debut) return '';
+    const minutes = Math.max(0, Math.floor((this.maintenant() - new Date(debut).getTime()) / 60000));
+    const j = Math.floor(minutes / 1440), h = Math.floor((minutes % 1440) / 60), m = minutes % 60;
+    return j ? `${j} j ${String(h).padStart(2, '0')} h` : `${h} h ${String(m).padStart(2, '0')}`;
+  }
+
   /** Sur téléphone, la barre du bas garde quatre onglets ; les autres sont sous « Plus ». */
   readonly NB_PRINCIPAUX = 4;
   plusOuvert = false;
@@ -202,6 +226,7 @@ export class PilotageLayoutComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.minuterieTerrain) clearInterval(this.minuterieTerrain);
+    clearInterval(this.minuterieHorloge);
   }
 
   choisir(evenement: Event): void {

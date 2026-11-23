@@ -91,3 +91,43 @@ class TestReleve:
         r = _client(cellule["adjoint"]).post(reverse("cellule-releve-reprendre", args=[releve]))
         assert r.status_code == 200 and r.data["reprise_par_nom"] == "Adjoint Test"
         assert ReleveCellule.objects.get().points_vigilance == "Crue de nuit"
+
+
+@pytest.mark.django_db
+class TestChronologiePointsRetex:
+    def test_la_chronologie_fusionne_jalons_saisis_et_automatiques(self, cellule):
+        client = _client(cellule["maire"])
+        client.post(reverse("cellule-decision-list"), {"crise": str(cellule["crise"].id), "texte": "Ouvrir le PC"}, format="json")
+        r = client.post(reverse("cellule-chronologie-list"), {"crise": str(cellule["crise"].id), "libelle": "Pic de crue"}, format="json")
+        assert r.status_code == 201, r.data
+        genres = {j["genre"] for j in client.get(reverse("cellule-chronologie-list"), {"crise": str(cellule["crise"].id)}).data}
+        assert {"CRISE", "DECISION", "JALON"} <= genres
+
+    def test_cadence_et_point_de_situation_du(self, cellule):
+        from unittest import mock
+        client = _client(cellule["maire"])
+        crise = str(cellule["crise"].id)
+        assert client.post(reverse("cellule-point-cadence"), {"crise": crise, "heures": 99}, format="json").status_code == 400
+        client.post(reverse("cellule-point-cadence"), {"crise": crise, "heures": 2}, format="json")
+        Crisis.objects.filter(pk=cellule["crise"].pk).update(start_date=timezone.now() - datetime.timedelta(hours=3))
+        etat = client.get(reverse("cellule-point-list"), {"crise": crise}).data
+        assert etat["cadence_h"] == 2 and etat["du"] is True
+        with mock.patch("core.geo_lookup.commune_code_from_point", return_value="42186"):
+            r = client.post(reverse("cellule-point-list"), {"crise": crise, "texte": "Situation stable"}, format="json")
+        assert r.status_code == 201, r.data
+        assert "chiffres" in r.data["instantane"]
+        assert client.get(reverse("cellule-point-list"), {"crise": crise}).data["du"] is False
+
+    def test_retex_et_delais_sans_donnee_nominative(self, cellule):
+        from core.models import Dossier, RetexCrise
+        maintenant = timezone.now()
+        Dossier.objects.create(numero="D-R1", crise=cellule["crise"], date_affectation=maintenant + datetime.timedelta(minutes=30),
+                               date_resolution=maintenant + datetime.timedelta(hours=4))
+        client = _client(cellule["maire"])
+        crise = str(cellule["crise"].id)
+        client.post(reverse("cellule-retex-list"), {"crise": crise, "ce_qui_a_marche": "La radio", "ce_qui_a_manque": "Des sacs"},
+                    format="json")
+        r = client.get(reverse("cellule-retex-list"), {"crise": crise}).data
+        assert r["retex"]["ce_qui_a_marche"] == "La radio"
+        assert r["delais"]["dossiers"] == 1 and r["delais"]["creation_affectation"]["nombre"] == 1
+        assert RetexCrise.objects.get().ce_qui_a_manque == "Des sacs"

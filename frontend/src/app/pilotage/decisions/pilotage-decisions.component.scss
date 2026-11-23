@@ -33,3 +33,12 @@ textarea { width: 100%; box-sizing: border-box; }
 .liste { margin: 0; padding-left: 18px; li.retard { color: #b91c1c; } }
 .alerte { color: #b91c1c; margin: 0; }
 @media print { .onglets, .nouvelle, .boutons, button { display: none !important; } }
+
+.frise { list-style: none; margin: 0; padding: 12px;
+  li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 0; border-top: 1px solid var(--ac-border, #f3f4f6); align-items: baseline; }
+  .genre { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px;
+           background: var(--ac-bg-muted, #f3f4f6); }
+  li[data-genre="DECISION"] .genre { background: #dbeafe; color: #1e40af; }
+  li[data-genre="JALON"] .genre { background: #fef3c7; color: #92400e; } }
+label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+.alerte { color: #b91c1c; }

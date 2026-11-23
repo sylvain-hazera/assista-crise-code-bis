@@ -349,6 +349,9 @@ class Crisis(EnvironmentScopedModel):
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
     zone = gis_models.PolygonField(srid=4326, null=True, blank=True)
+    #: Cadence des points de situation, en heures (23/11/2026) : le pilotage rappelle le point dû.
+    #: Vide : aucun rappel.
+    cadence_points_h = models.PositiveSmallIntegerField(null=True, blank=True)
 
     # Zone composée de communes/départements (contours geo.api.gouv.fr bufferisés de radius km,
     # puis unis côté frontend). zone_departements/zone_communes mémorisent la composition ; la
@@ -13117,6 +13120,54 @@ class ActionCellule(EnvironmentScopedModel):
     def en_retard(self) -> bool:
         return bool(self.echeance and self.statut in (self.Statut.A_FAIRE, self.Statut.EN_COURS)
                     and self.echeance < timezone.now())
+
+
+class JalonCrise(EnvironmentScopedModel):
+    """Un jalon de la chronologie de la crise, saisi par une cellule (ou une entrée de main
+    courante marquée comme jalon) ; les jalons automatiques (décisions, centres, missions,
+    points de situation, relèves) sont composés à la lecture (23/11/2026)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="jalons")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="jalons_crise")
+    libelle = EncryptedTextField()
+    survenu_le = models.DateTimeField(default=timezone.now)
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="jalons_crise")
+    journal = models.ForeignKey("JournalCollectivite", on_delete=models.SET_NULL, null=True, blank=True, related_name="jalons")
+
+    class Meta:
+        ordering = ["-survenu_le"]
+
+
+class PointSituation(EnvironmentScopedModel):
+    """Un point de situation diffusé par une cellule : texte et instantané des chiffres du moment,
+    chiffrés (23/11/2026)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="points_situation")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="points_situation")
+    redige_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="points_situation")
+    diffuse_le = models.DateTimeField(auto_now_add=True)
+    texte = EncryptedTextField(blank=True, default="")
+    instantane = EncryptedJSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-diffuse_le"]
+
+
+class RetexCrise(EnvironmentScopedModel):
+    """Le retour d'expérience d'une cellule sur une crise (23/11/2026) : ce qui a marché, ce qui a
+    manqué, les actions d'amélioration. Chiffré ; aucune donnée nominative (la clôture déclenche
+    la purge des données des habitants, le RETEX doit lui survivre)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="retex")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="retex")
+    ce_qui_a_marche = EncryptedTextField(blank=True, default="")
+    ce_qui_a_manque = EncryptedTextField(blank=True, default="")
+    ameliorations = EncryptedTextField(blank=True, default="")
+    maj_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="retex_crise")
+    maj_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["crise", "institution", "environment"], name="retex_unique")]
 
 
 class ReleveCellule(EnvironmentScopedModel):

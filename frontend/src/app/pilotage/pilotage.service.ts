@@ -63,6 +63,8 @@ export class PilotageService {
   /** Le terrain en direct de la crise suivie, relu toutes les 30 s (23/11/2026). */
   readonly terrain = signal<VueTerrain | null>(null);
   readonly alertesTerrain = computed(() => this.terrain()?.alertes.length ?? 0);
+  /** Le prochain point de situation dû (cadence fixée par la cellule), relu avec le terrain. */
+  readonly pointDu = signal<{ du: boolean; prochain: string | null } | null>(null);
 
   constructor(private http: HttpClient) {}
 
@@ -72,7 +74,11 @@ export class PilotageService {
 
   rafraichirTerrain(): void {
     const crise = this.criseId();
-    if (!crise) { this.terrain.set(null); return; }
+    if (!crise) { this.terrain.set(null); this.pointDu.set(null); return; }
+    this.http.get<{ du: boolean; prochain: string | null }>(`${environment.apiUrl}/cellule/points/`, { params: { crise } }).subscribe({
+      next: e => this.pointDu.set({ du: e.du, prochain: e.prochain }),
+      error: () => this.pointDu.set(null),   // cellule non tenue par cette institution : pas de rappel
+    });
     this.http.get<VueTerrain>(`${environment.apiUrl}/messages-terrain/crise/`, { params: { crise } }).subscribe({
       next: v => this.terrain.set(v),
       error: () => { /* réseau ou droits : on garde la dernière vue */ },
