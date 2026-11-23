@@ -21,7 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -128,6 +127,7 @@ fun EcranDegats(modele: ModeleApplication) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Accueil(modele: ModeleApplication, crises: List<Pair<String, String>>, crise: String?, choisir: (String) -> Unit,
                     position: Releve?, resumeSecteur: String?, commencer: () -> Unit) {
@@ -158,7 +158,8 @@ private fun Accueil(modele: ModeleApplication, crises: List<Pair<String, String>
                 // Étendue : un rayon jusqu'à 20 km, ou toute la commune — jamais au-delà de votre commune.
                 var etendue by rememberSaveable { mutableStateOf(1000) }     // 0 = toute la commune
                 Text("Étendue", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // À la ligne plutôt qu'en défilement : rien ne sort de l'écran (23/11/2026).
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(1000 to "1 km", 3000 to "3 km", 5000 to "5 km", 10000 to "10 km", 20000 to "20 km", 0 to "Toute ma commune").forEach { (valeur, libelle) ->
                         FilterChip(selected = etendue == valeur, onClick = { etendue = valeur }, label = { Text(libelle) })
                     }
@@ -172,6 +173,10 @@ private fun Accueil(modele: ModeleApplication, crises: List<Pair<String, String>
                 }
                 if (resumeSecteur != null) OutlinedButton(onClick = modele::effacerSecteurDegats, modifier = Modifier.fillMaxWidth()) { Text("Effacer le secteur embarqué") }
             }
+        }
+        if (crise == null && crises.isNotEmpty()) {
+            Text("Cochez d'abord la crise concernée, en haut de l'écran.", style = MaterialTheme.typography.bodyMedium,
+                 color = MaterialTheme.colorScheme.error)
         }
         Button(onClick = commencer, enabled = crise != null && position != null, modifier = Modifier.fillMaxWidth().height(56.dp)) {
             Text(if (position == null) "Localisation en cours…" else "Commencer la tournée")

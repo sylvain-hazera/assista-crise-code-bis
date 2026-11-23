@@ -1,6 +1,9 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package fr.assistacrise.mobile.ui
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
@@ -367,7 +370,7 @@ private fun CreerIci(crises: List<Crise>, surChoix: (GenreDepot, Crise) -> Unit,
             }
             if (crises.size > 1) {
                 Text("Pour quelle crise ?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     crises.forEach { c -> FilterChip(selected = choisie?.id == c.id, onClick = { choisie = c }, label = { Text(c.nom) }) }
                 }
             } else {

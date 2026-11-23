@@ -1476,3 +1476,7 @@ Bloc déplacé après la déclaration ; démarrage vérifié sur émulateur.
   suis devant… » → vérifier le point → évaluer → avancer. Après l'embarquement, le message dit
   d'appuyer sur « Commencer la tournée » (retour d'essai : « j'ai 4 000 adresses chargées, et
   ensuite ? »).
+
+**0.19.1 (23/11/2026)** : rien ne dépasse de l'écran. Les étendues du secteur embarqué, les
+crises de la carte et les photos d'un dossier passent à la ligne au lieu de défiler hors de
+l'écran ; un message dit de cocher la crise quand les boutons sont grisés faute de crise.
