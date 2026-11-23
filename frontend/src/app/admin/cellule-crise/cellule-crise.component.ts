@@ -356,6 +356,19 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
 
   /** Équipes de la crise pour ce dossier : la suggérée, puis celles qui prennent déjà sa
    * compétence, puis les autres. */
+  /** Le nom complet de l'équipe choisie pour ce dossier : le menu, étroit sur téléphone, le
+   * tronque ; il s'affiche dessous, sur plusieurs lignes (23/11/2026). */
+  libelleEquipe(d: Dossier): string {
+    const id = this.choixPour(d);
+    return id ? (this.equipesPour(d).find(e => e.id === id)?.libelle ?? '') : '';
+  }
+
+  /** Idem pour une offre. */
+  nomEquipeOffre(id: string | undefined): string {
+    const e = id ? this.equipes.find(x => x.team.id === id) : undefined;
+    return e ? this.teamDisplayName(e.team) : '';
+  }
+
   equipesPour(d: Dossier): { id: string; libelle: string }[] {
     const prennent = new Set(this.affectationsCrise.filter(a => a.competence === d.competence).map(a => a.equipe));
     const rang = (t: Team) => t.id === d.equipe ? 0 : prennent.has(t.id!) ? 1 : 2;

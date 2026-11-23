@@ -19,7 +19,7 @@ import { AuthService } from '../../../../auth/services/auth.service';
               [attr.aria-pressed]="enFormation()"
               [title]="enFormation() ? 'Revenir aux données réelles' : 'Passer en formation (données fictives de démonstration)'">
         <span class="material-icons" aria-hidden="true">{{ enFormation() ? 'school' : 'model_training' }}</span>
-        Formation
+        <span class="libelle-formation">Formation</span>
       </button>
     }
   `,
@@ -31,6 +31,11 @@ import { AuthService } from '../../../../auth/services/auth.service';
     }
     .formation .material-icons { font-size: 1rem; }
     .formation.active { background: #f97316; border-color: #ea580c; color: #fff; }
+    /* Barre du pilotage sur écran étroit : l'icône seule, le titre reste au survol. */
+    @media (max-width: 1100px) {
+      :host-context(.entete-compacte) .libelle-formation { display: none; }
+      :host-context(.entete-compacte) .formation { padding: 6px; }
+    }
     .formation:focus-visible { outline: 2px solid var(--brand-primary, #2563eb); outline-offset: 2px; }
   `],
 })

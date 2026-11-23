@@ -127,6 +127,7 @@
                             <option [ngValue]="e.team.id">{{ teamDisplayName(e.team) }}</option>
                           }
                         </select>
+                        @if (nomEquipeOffre(equipeOffre[o.id])) { <span class="equipe-choisie">{{ nomEquipeOffre(equipeOffre[o.id]) }}</span> }
                         <button type="button" [disabled]="!equipeOffre[o.id] || affectationEnCours" (click)="affecterOffre(o)">Affecter</button>
                       </td>
                     </tr>
@@ -398,6 +399,7 @@
                   <option [value]="e.id">{{ e.libelle }}</option>
                 }
               </select>
+              @if (libelleEquipe(d)) { <span class="equipe-choisie">{{ libelleEquipe(d) }}</span> }
               <button type="button" [disabled]="!choixPour(d) || affectationEnCours" (click)="affecterDossier(d, choixPour(d))">
                 {{ d.equipe && choixPour(d) === d.equipe ? 'Confirmer' : 'Affecter' }}
               </button>

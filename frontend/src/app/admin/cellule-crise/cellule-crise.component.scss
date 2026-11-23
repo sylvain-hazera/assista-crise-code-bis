@@ -247,11 +247,20 @@
 .table-dense {
   button:disabled { opacity: 0.45; cursor: default; }
   tr.coche td { background: var(--ac-blue-bg, #eff6ff); }
+  /* En colonne (23/11/2026, pilotage sur téléphone) : le menu, plus étroit, puis le nom complet
+     de l'équipe choisie sur plusieurs lignes (un menu natif ne passe pas à la ligne), puis le
+     bouton -- tout tient dans l'écran au lieu de déborder à droite. */
   .cellule-affecter {
     display: flex;
-    gap: 0.35rem;
-    align-items: center;
-    select { max-width: 16rem; font-size: 0.78rem; padding: 0.2rem; }
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.3rem;
+    width: 12rem;
+    max-width: 40vw;
+    select { width: 100%; min-width: 0; max-width: 100%; font-size: 0.78rem; padding: 0.2rem; }
+    .equipe-choisie { font-size: 0.75rem; line-height: 1.25; color: var(--ac-text-muted, #4b5563);
+                      white-space: normal; overflow-wrap: anywhere; }
+    button { align-self: flex-start; }
   }
 }
 

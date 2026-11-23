@@ -24,7 +24,7 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
   imports: [RouterOutlet, RouterLink, RouterLinkActive, BoutonFormationComponent],
   template: `
     <div class="pilotage">
-      <header class="entete">
+      <header class="entete entete-compacte">
         <img [src]="logo()" alt="" class="logo">
         <span class="marque">{{ nom() }}</span>
         <span class="espace">Pilotage</span>
@@ -72,21 +72,27 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
     :host { display: block; }
     .pilotage { min-height: 100dvh; display: flex; flex-direction: column;
                 background: var(--ac-bg, #f3f4f6); color: var(--ac-text, #1f2937); }
+    /* Une seule ligne, toujours (23/11/2026, téléphone en paysage : la barre passait sur deux
+       lignes). Le sélecteur de crise prend la place qui reste et se tronque ; sur écran étroit,
+       « Pilotage » disparaît, et Formation et Administration gardent leur seule icône. */
     .entete {
-      position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
       padding: calc(8px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 8px
                calc(16px + env(safe-area-inset-left, 0px));
       background: var(--ac-surface, #fff); border-bottom: 1px solid var(--ac-border, #e5e7eb);
     }
-    .logo { height: 30px; width: auto; }
-    .marque { font-weight: 700; }
+    .logo { height: 30px; width: auto; flex: none; }
+    .marque { font-weight: 700; white-space: nowrap; }
+    .espace { white-space: nowrap; }
+    .crise { flex: 1 1 auto; min-width: 0; display: flex; }
     .espace { font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ac-text-muted, #6b7280); }
     .crise select {
-      min-height: 40px; max-width: 42vw; padding: 0 10px; border-radius: 8px; font: inherit; font-size: 16px; font-weight: 600;
+      min-height: 40px; width: 100%; max-width: 32rem; min-width: 0; padding: 0 28px 0 10px; border-radius: 8px;
+      font: inherit; font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
       border: 1px solid var(--ac-border, #d1d5db); background: var(--ac-surface, #fff); color: var(--ac-text, #1f2937);
     }
     .erreur-crises { font-size: .82rem; color: var(--ac-red-text, #b91c1c); }
-    .outils { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .outils { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
     .administration { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 10px; border-radius: 8px;
                       color: var(--ac-text-muted, #6b7280); text-decoration: none; font-size: .85rem; font-weight: 600;
                       border: 1px solid var(--ac-border, #e5e7eb); }
@@ -109,6 +115,14 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
     .rail a:focus-visible, .administration:focus-visible { outline: 2px solid var(--brand-primary, #2563eb); outline-offset: 2px; }
     .contenu { flex: 1; min-width: 0; padding: 16px calc(16px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) 16px; }
 
+    @media (max-width: 1100px) {
+      .espace, .libelle-admin { display: none; }
+      .administration { padding: 0 8px; }
+    }
+    @media (max-width: 520px) {
+      .marque { display: none; }
+    }
+
     /* Écran étroit (téléphone, iPad en Split View) : onglets en bas, comme Terrain. */
     @media (max-width: 700px) {
       .rail {
@@ -118,8 +132,6 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
       }
       .rail a { flex: 1; min-height: 56px; border-radius: 0; }
       .contenu { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
-      .libelle-admin { display: none; }
-      .crise select { max-width: 60vw; }
     }
   `],
 })
