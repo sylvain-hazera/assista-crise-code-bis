@@ -131,6 +131,14 @@ class Command(BaseCommand):
 
     def _traiter(self, source, message, environment, compteur, tampon, deja_vus, verrou):
         """Une observation, d'où qu'elle vienne : décodée, dédoublonnée, notée."""
+        if message is not None and message.sorte == 'status':
+            # 23/11/2026 : l'état de l'observateur (batterie, bruit de fond…) pour le tableau radio.
+            try:
+                from core.ingestion_observateurs_meshcore import enregistrer_etat
+                enregistrer_etat(message, environment=environment)
+            except Exception:
+                logger.exception("[%s] état d'observateur non enregistré.", source.nom)
+            return
         if message is None or message.sorte not in ('packets', 'raw'):
             return
         if deja_vus.deja_vu(message.observateur, message.donnees.get("raw")):

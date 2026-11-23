@@ -131,3 +131,17 @@ class RevueDroitsExportView(APIView):
 
 def _oui(v):
     return "oui" if v else "non"
+
+
+class TableauRadioMeshCoreView(APIView):
+    """GET /api/tableau-radio-meshcore/?fenetre=6h|24h|7j : trafic, liaisons, relais publics et
+    observateurs MeshCore (23/11/2026, core/tableau_meshcore.py)."""
+
+    def get_permissions(self):
+        from .permissions import PeutAccederRadio
+        return [permissions.IsAuthenticated(), PeutAccederRadio()]
+
+    def get(self, request):
+        from . import tableau_meshcore
+        from .permissions import get_active_environment
+        return Response(tableau_meshcore.construire(get_active_environment(request), request.query_params.get("fenetre", "24h")))

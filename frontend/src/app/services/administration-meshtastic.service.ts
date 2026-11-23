@@ -50,4 +50,10 @@ export class AdministrationMeshtasticService {
   diagnostic(): Observable<DiagnosticLiaisons> {
     return this.http.get<DiagnosticLiaisons>(`${environment.apiUrl}/contacts-meshtastic/analyse-liaisons/`);
   }
+
+  /** Le même diagnostic côté MeshCore (23/11/2026) : observateurs MQTT, flux et cartographie
+   * CoreScope, companions — backend/core/analyse_liaisons.analyser_meshcore. */
+  diagnosticMeshCore(): Observable<DiagnosticLiaisons> {
+    return this.http.get<DiagnosticLiaisons>(`${environment.apiUrl}/contacts-meshcore/analyse-liaisons/`);
+  }
 }

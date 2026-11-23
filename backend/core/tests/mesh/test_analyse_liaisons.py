@@ -475,3 +475,20 @@ class TestAnalyseMeshCore:
         resultat = analyser("PROD")   # Meshtastic
         assert resultat["sens_unique"] == []
         assert "liaisons_ecartees" not in resultat
+
+
+@pytest.mark.django_db
+def test_un_repeteur_de_la_cartographie_corescope_n_est_plus_inconnu(noeud_meshcore):
+    """23/11/2026 : l'analyse MeshCore ne connaissait que les contacts de nos companions ; une
+    liaison vers un répéteur public (cartographie importée de CoreScope) était écartée comme
+    « préfixe inconnu »."""
+    from core.analyse_liaisons import analyser_meshcore
+    from core.models import NoeudPublicMeshCore
+
+    noeud_meshcore(CLE_P, "Passerelle")
+    NoeudPublicMeshCore.objects.create(instance="meshstats.test", pubkey_hex="ff" + "1" * 62, nom="Repeteur public",
+                                       role="repeater", dernier_vu=timezone.now(), date_import=timezone.now(),
+                                       location=Point(55.5, -21.0, srid=4326))
+    _liaison_meshcore("ff", CLE_P)
+    resultat = analyser_meshcore("PROD")
+    assert resultat["liaisons_ecartees"]["prefixe_inconnu"] == 0

@@ -34,7 +34,7 @@ export class DiagnosticRadioComponent implements OnInit {
   erreur: string | null = null;
 
   /** Relais sourd dont on déplie les mesures. */
-  sourdDeplie: number | null = null;
+  sourdDeplie: number | string | null = null;
 
   constructor(private service: AdministrationMeshtasticService) {}
 
@@ -42,10 +42,22 @@ export class DiagnosticRadioComponent implements OnInit {
     this.calculer();
   }
 
+  /** Le réseau analysé (23/11/2026) : Meshtastic, ou MeshCore et tout ce qu'en rapportent les
+   * observateurs MQTT, CoreScope et nos companions. */
+  protocole: 'meshtastic' | 'meshcore' = 'meshtastic';
+
+  choisirProtocole(p: 'meshtastic' | 'meshcore'): void {
+    if (p === this.protocole) return;
+    this.protocole = p;
+    this.diagnostic = null;
+    this.sourdDeplie = null;
+    this.calculer();
+  }
+
   calculer(): void {
     this.chargement = true;
     this.erreur = null;
-    this.service.diagnostic().subscribe({
+    (this.protocole === 'meshcore' ? this.service.diagnosticMeshCore() : this.service.diagnostic()).subscribe({
       next: (diagnostic) => { this.diagnostic = diagnostic; this.chargement = false; },
       error: (e: HttpErrorResponse) => {
         this.erreur = e.status === 403
@@ -56,13 +68,28 @@ export class DiagnosticRadioComponent implements OnInit {
     });
   }
 
-  basculerSourd(nodeNum: number): void {
-    this.sourdDeplie = this.sourdDeplie === nodeNum ? null : nodeNum;
+  basculerSourd(ident: number | string): void {
+    this.sourdDeplie = this.sourdDeplie === ident ? null : ident;
   }
 
-  hexa(nodeNum: number): string {
-    return `!${nodeNum.toString(16).padStart(8, '0')}`;
+  /** L'identité d'un nœud : numéro Meshtastic, ou clé publique MeshCore. */
+  ident(noeud: { node_num?: number; pubkey?: string }): number | string {
+    return noeud.node_num ?? noeud.pubkey ?? '';
   }
+
+  hexa(ident: number | string): string {
+    return typeof ident === 'string'
+      ? ident.slice(0, 12)
+      : `!${ident.toString(16).padStart(8, '0')}`;
+  }
+
+  /** Ce que chaque origine de preuve vaut, en clair. */
+  readonly libellesSource: Record<string, { libelle: string; aide: string }> = {
+    RF: { libelle: 'réception directe', aide: 'Reçu et mesuré (SNR) par une passerelle, un observateur ou un companion' },
+    VOISINAGE: { libelle: 'voisinage', aide: 'Déclaré par le nœud dans son relevé de voisins' },
+    TRACEROUTE: { libelle: 'traceroute', aide: "Saut d'un traceroute : ne prouve pas que le nœud rapporte ce qu'il entend" },
+    CHEMIN: { libelle: 'chemin', aide: "Relais consécutifs du chemin d'un paquet (observateurs MQTT, CoreScope) : pas de SNR, preuve plus faible qu'une réception directe" },
+  };
 
   /** Vrai quand le réseau ne porte aucune conclusion : évite d'afficher quatre tableaux vides
    * sans dire pourquoi. */

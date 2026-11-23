@@ -1,0 +1,125 @@
+<div class="barre">
+  <p class="explication">
+    Ce que rapportent les observateurs MQTT, le flux et la cartographie CoreScope (meshstats) et vos companions :
+    trames décodées, liaisons, relais publics, état des observateurs.
+  </p>
+  <div class="fenetres" role="group" aria-label="Période">
+    @for (f of fenetres; track f.valeur) {
+      <button type="button" [class.actif]="fenetre === f.valeur" [attr.aria-pressed]="fenetre === f.valeur" (click)="choisir(f.valeur)">{{ f.libelle }}</button>
+    }
+  </div>
+</div>
+
+@if (erreur) { <div class="message erreur" role="alert"><span class="material-icons">error_outline</span> {{ erreur }}</div> }
+@if (chargement && !tableau) { <p class="attente">Chargement…</p> }
+
+@if (tableau; as t) {
+  <div class="chiffres">
+    <div class="chiffre"><strong>{{ nb(t.trafic.total) }}</strong><span>trames décodées</span></div>
+    <div class="chiffre"><strong>{{ nb(t.liaisons.emetteurs_entendus) }}</strong><span>émetteurs entendus</span></div>
+    <div class="chiffre"><strong>{{ nb(t.liaisons.recepteurs) }}</strong><span>récepteurs qui rapportent</span></div>
+    <div class="chiffre"><strong>{{ t.relais_publics.repeteurs_vus }} / {{ t.relais_publics.repeteurs }}</strong><span>répéteurs publics vus</span></div>
+  </div>
+
+  <section class="bloc">
+    <h2>Trafic</h2>
+    @if (!t.trafic.total) {
+      <p class="attente">Aucune trame comptée sur la période : vérifiez que les sources d'observation sont connectées (plus bas).</p>
+    } @else {
+      <div class="courbe" role="img" [attr.aria-label]="'Trames décodées par tranche de ' + t.trafic.pas_heures + ' h'">
+        @for (p of t.trafic.courbe; track p.debut) {
+          <div class="colonne" [title]="(p.debut | date:'dd/MM HH:mm') + ' : ' + p.trames + ' trames'">
+            <div class="barre-courbe" [style.height.%]="hauteur(p.trames)"></div>
+          </div>
+        }
+      </div>
+      <p class="note">Trames décodées par tranche de {{ t.trafic.pas_heures }} h.</p>
+      <div class="deux">
+        <div>
+          <h3>Nature du trafic</h3>
+          <table>
+            @for (ty of t.trafic.par_type; track ty.type) {
+              <tr><td>{{ libelleType(ty.type) }} <span class="code">{{ ty.type }}</span></td>
+                  <td class="nombre">{{ nb(ty.trames) }}</td><td class="nombre discret">{{ part(ty.trames) }} %</td></tr>
+            }
+          </table>
+        </div>
+        <div>
+          <h3>Récepteurs les plus actifs</h3>
+          <table>
+            @for (r of t.trafic.recepteurs; track r.pubkey) {
+              <tr><td>{{ r.nom }} <span class="code">{{ r.pubkey.slice(0, 8) }}</span></td>
+                  <td class="nombre">{{ nb(r.trames) }}</td></tr>
+            }
+          </table>
+        </div>
+      </div>
+    }
+  </section>
+
+  <section class="bloc">
+    <h2>Liaisons observées</h2>
+    <ul class="liaisons">
+      <li><strong>{{ nb(t.liaisons.reception_directe) }}</strong> en réception directe, avec SNR mesuré</li>
+      <li><strong>{{ nb(t.liaisons.chemins) }}</strong> déduites des chemins des paquets (relais consécutifs, sans SNR)</li>
+      @if (t.liaisons.voisinage) { <li><strong>{{ nb(t.liaisons.voisinage) }}</strong> par relevé de voisinage</li> }
+    </ul>
+    <p class="note">Leur analyse (relais sourds, liaisons à sens unique…) est dans le Diagnostic radio, onglet MeshCore.</p>
+  </section>
+
+  <section class="bloc">
+    <h2>Observateurs</h2>
+    @if (!t.observateurs.length) {
+      <p class="attente">Aucun message d'état reçu pour l'instant : seuls les observateurs qui publient leur état apparaissent ici.</p>
+    } @else {
+      <div class="defile">
+        <table>
+          <thead><tr><th>Observateur</th><th>Dernier état</th><th>Batterie</th><th>Bruit de fond</th><th>En marche depuis</th><th>Trames (période)</th></tr></thead>
+          <tbody>
+            @for (o of t.observateurs; track o.pubkey) {
+              <tr [class.silencieux]="o.silencieux">
+                <td>{{ o.nom }}@if (o.iata) { <span class="code">{{ o.iata }}</span> }</td>
+                <td>{{ o.recu_le | date:'dd/MM HH:mm' }}@if (o.silencieux) { <span class="puce">silencieux</span> }</td>
+                <td class="nombre">{{ tension(o.mesures['battery_mv']) }}</td>
+                <td class="nombre">{{ o.mesures['noise_floor'] !== undefined ? o.mesures['noise_floor'] + ' dBm' : '—' }}</td>
+                <td class="nombre">{{ duree(o.mesures['uptime_secs']) }}</td>
+                <td class="nombre">{{ nb(o.trames) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="note">« Silencieux » : aucun état depuis plus d'une heure. Les valeurs non publiées par un observateur restent vides.</p>
+    }
+    @if (t.sources.length) {
+      <h3>Sources d'observation</h3>
+      <ul class="sources">
+        @for (s of t.sources; track s.nom) {
+          <li><strong>{{ s.nom }}</strong> <span class="code">{{ s.type }}</span>
+            — {{ s.actif ? (s.etat || 'état inconnu') : 'désactivée' }}
+            @if (s.derniere_connexion) { · connectée le {{ s.derniere_connexion | date:'dd/MM HH:mm' }} }</li>
+        }
+      </ul>
+    }
+  </section>
+
+  <section class="bloc">
+    <h2>Relais publics (cartographie CoreScope)</h2>
+    <p class="note">
+      {{ t.relais_publics.repeteurs }} répéteurs et {{ t.relais_publics.rooms }} rooms importés
+      @if (t.relais_publics.instances.length) { de {{ t.relais_publics.instances.join(', ') }} }
+      @if (t.relais_publics.derniere_import) { · dernier import le {{ t.relais_publics.derniere_import | date:'dd/MM/yyyy' }} }.
+    </p>
+    @if (t.relais_publics.plus_utiles.length) {
+      <h3>Les plus utiles au réseau</h3>
+      <table>
+        @for (r of t.relais_publics.plus_utiles; track r.pubkey) {
+          <tr><td>{{ r.nom }} <span class="code">{{ r.pubkey.slice(0, 8) }}</span></td>
+              <td class="nombre">{{ r.note || r.score }}</td>
+              <td class="discret">{{ r.dernier_vu ? ('vu le ' + (r.dernier_vu | date:'dd/MM HH:mm')) : 'jamais vu' }}</td></tr>
+        }
+      </table>
+    }
+  </section>
+  <p class="note">Calculé le {{ t.calcule_le | date:'dd/MM/yyyy à HH:mm' }}.</p>
+}

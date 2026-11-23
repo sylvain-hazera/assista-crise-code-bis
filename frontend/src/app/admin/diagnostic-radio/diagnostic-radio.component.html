@@ -15,6 +15,19 @@
     </p>
   </header>
 
+  <div class="protocoles" role="radiogroup" aria-label="Réseau analysé">
+    <button type="button" role="radio" [attr.aria-checked]="protocole === 'meshtastic'" [class.actif]="protocole === 'meshtastic'"
+            (click)="choisirProtocole('meshtastic')">Meshtastic</button>
+    <button type="button" role="radio" [attr.aria-checked]="protocole === 'meshcore'" [class.actif]="protocole === 'meshcore'"
+            (click)="choisirProtocole('meshcore')">MeshCore</button>
+  </div>
+  @if (protocole === 'meshcore') {
+    <p class="explication">
+      MeshCore : liaisons rapportées par les observateurs MQTT, le flux et la cartographie CoreScope (meshstats),
+      et vos companions (réceptions, chemins des paquets, relevés de voisinage).
+    </p>
+  }
+
   @if (erreur) {
     <div class="message erreur" role="alert">
       <span class="material-icons">error_outline</span> {{ erreur }}
@@ -32,7 +45,24 @@
           <span class="material-icons">refresh</span> Recalculer
         </button>
       </h2>
-      @if (diagnostic.puissance_connue) {
+      @if (diagnostic.liaisons_ecartees; as ecartees) {
+        @if (ecartees.prefixe_ambigu || ecartees.prefixe_inconnu) {
+          <p class="message avertissement">
+            <span class="material-icons">rule</span>
+            <span>
+              <strong>{{ ecartees.prefixe_ambigu + ecartees.prefixe_inconnu }}</strong> liaison(s) écartée(s) :
+              {{ ecartees.prefixe_ambigu }} dont le préfixe désigne plusieurs nœuds, {{ ecartees.prefixe_inconnu }} dont
+              l'émetteur n'est connu ni de vos companions ni de la cartographie publique. Les conclusions ne portent que sur les autres.
+            </span>
+          </p>
+        }
+      }
+      @if (protocole === 'meshcore' && !diagnostic.puissance_connue) {
+        <p class="message avertissement">
+          <span class="material-icons">warning_amber</span>
+          <span>La puissance d'émission des nœuds MeshCore n'est pas relevée : les conclusions sont <strong>non corrigées</strong>.</span>
+        </p>
+      } @else if (diagnostic.puissance_connue) {
         <p class="bon">
           <span class="material-icons">check_circle</span>
           Puissance d'émission connue pour <strong>{{ diagnostic.noeuds_puissance_connue }}</strong>
@@ -76,9 +106,9 @@
             <tr><th>Nœud</th><th>Écart médian</th><th>Voisins</th><th>Concordantes</th><th>Puissance</th><th></th></tr>
           </thead>
           <tbody>
-            @for (sourd of diagnostic.sourds; track sourd.node_num) {
+            @for (sourd of diagnostic.sourds; track ident(sourd)) {
               <tr>
-                <td>{{ sourd.nom }} <span class="num">{{ hexa(sourd.node_num) }}</span></td>
+                <td>{{ sourd.nom }} <span class="num">{{ hexa(ident(sourd)) }}</span></td>
                 <td class="chiffre">{{ sourd.ecart_db }} dB</td>
                 <td class="chiffre">{{ sourd.nb_voisins }}</td>
                 <td class="chiffre">{{ sourd.nb_concordantes }}</td>
@@ -90,12 +120,12 @@
                   }
                 </td>
                 <td>
-                  <button type="button" class="discret" (click)="basculerSourd(sourd.node_num)">
-                    {{ sourdDeplie === sourd.node_num ? 'Masquer' : 'Mesures' }}
+                  <button type="button" class="discret" (click)="basculerSourd(ident(sourd))">
+                    {{ sourdDeplie === ident(sourd) ? 'Masquer' : 'Mesures' }}
                   </button>
                 </td>
               </tr>
-              @if (sourdDeplie === sourd.node_num) {
+              @if (sourdDeplie === ident(sourd)) {
                 <tr class="detail">
                   <td colspan="6">
                     <table class="interne">
@@ -150,9 +180,12 @@
                 <td class="chiffre">{{ cas.distance_km !== null ? cas.distance_km + ' km' : '—' }}</td>
                 <td>
                   @if (cas.preuve === 'passerelle') {
-                    <span class="etiquette bonne" title="SNR mesuré par une passerelle MQTT">passerelle</span>
+                    <span class="etiquette bonne" title="SNR mesuré par une passerelle, un observateur ou un companion">{{ protocole === 'meshcore' ? 'observateur' : 'passerelle' }}</span>
                   } @else {
-                    <span class="etiquette" title="Rapport de voisinage : plafonné à 10 voisins, une absence ne prouve rien si la liste est pleine">voisinage</span>
+                    <span class="etiquette" [title]="protocole === 'meshcore' ? 'Relevé de voisinage complet : MeshCore annonce son total de voisins' : 'Rapport de voisinage : plafonné à 10 voisins, une absence ne prouve rien si la liste est pleine'">voisinage</span>
+                  }
+                  @for (s of cas.sources; track s) {
+                    <span class="etiquette source" [title]="libellesSource[s]?.aide || s">{{ libellesSource[s]?.libelle || s }}</span>
                   }
                 </td>
               </tr>
@@ -206,9 +239,9 @@
         <table>
           <thead><tr><th>Nœud</th><th>Entend</th><th>Lesquels</th></tr></thead>
           <tbody>
-            @for (noeud of diagnostic.inaudibles; track noeud.node_num) {
+            @for (noeud of diagnostic.inaudibles; track ident(noeud)) {
               <tr>
-                <td>{{ noeud.nom }} <span class="num">{{ hexa(noeud.node_num) }}</span></td>
+                <td>{{ noeud.nom }} <span class="num">{{ hexa(ident(noeud)) }}</span></td>
                 <td class="chiffre">{{ noeud.entend }} voisin(s)</td>
                 <td class="voisins">{{ noeud.voisins.join(', ') }}</td>
               </tr>

@@ -8,6 +8,16 @@
     </p>
   </header>
 
+  <div class="protocoles" role="radiogroup" aria-label="Réseau affiché">
+    <button type="button" role="radio" [attr.aria-checked]="protocole === 'meshtastic'" [class.actif]="protocole === 'meshtastic'"
+            (click)="protocole = 'meshtastic'">Meshtastic</button>
+    <button type="button" role="radio" [attr.aria-checked]="protocole === 'meshcore'" [class.actif]="protocole === 'meshcore'"
+            (click)="protocole = 'meshcore'">MeshCore</button>
+  </div>
+
+  @if (protocole === 'meshcore') {
+    <app-tableau-meshcore />
+  } @else {
   <div class="barre">
     <label>
       Passerelle
@@ -175,5 +185,6 @@
         <p class="muet">Aucun traceroute pour l'instant : lancez-en un depuis le tableau des nœuds.</p>
       }
     </section>
+  }
   }
 </div>

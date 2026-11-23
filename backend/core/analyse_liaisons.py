@@ -66,8 +66,19 @@ from django.utils import timezone
 
 from .models import (
     ConfigurationNoeudMeshtastic, ContactMeshCore, ContactMeshtastic, LiaisonMeshCore,
-    LiaisonMeshtastic, ReleveVoisinageMeshCore, SourceLiaisonMeshtastic,
+    LiaisonMeshtastic, NoeudPublicMeshCore, RelaisMeshCore, ReleveVoisinageMeshCore, SourceLiaisonMeshtastic,
 )
+
+
+class _NoeudConnu:
+    """Un nœud MeshCore connu d'ailleurs que par nos companions (23/11/2026) : la cartographie
+    publique importée de CoreScope (répéteurs, rooms), ou un relais de la plateforme. Mêmes
+    attributs que ce que l'analyse lit d'un `ContactMeshCore`."""
+
+    def __init__(self, nom, dernier_advert=None, location=None):
+        self.nom = nom
+        self.dernier_advert = dernier_advert
+        self.location = location
 
 # Écart de SNR au-delà duquel un nœud est jugé sourd, en dB. Valeur de son implémentation.
 SEUIL_SOURD_DB = 8.0
@@ -247,6 +258,19 @@ class _SourceMeshCore(_Source):
             if connu is None or (contact.dernier_advert
                                  and contact.dernier_advert > (connu.dernier_advert or contact.dernier_advert)):
                 connus[cle] = contact
+        # 23/11/2026 : aussi la cartographie publique (CoreScope) et nos relais. Sans eux, une
+        # liaison observée par un observateur MQTT vers un répéteur qu'aucun de nos companions
+        # n'a en contact était écartée comme « préfixe inconnu » -- la plus grande part de ce
+        # que les observateurs rapportent. Les contacts de nos companions gardent la priorité.
+        for public in NoeudPublicMeshCore.objects.filter(environment=self.environment).only(
+                "pubkey_hex", "nom", "dernier_vu", "location"):
+            cle = (public.pubkey_hex or '').lower()
+            if cle and cle not in connus:
+                connus[cle] = _NoeudConnu(public.nom, public.dernier_vu, public.location)
+        for relais in RelaisMeshCore.objects.filter(environment=self.environment, actif=True).exclude(pubkey_hex=None).only("pubkey_hex", "nom"):
+            cle = (relais.pubkey_hex or '').lower()
+            if cle and cle not in connus:
+                connus[cle] = _NoeudConnu(relais.nom)
         self._par_prefixe.clear()
         for cle in connus:
             # Indexé par toutes les longueurs de préfixe utiles : un relevé peut en rendre 4,

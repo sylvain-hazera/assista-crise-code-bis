@@ -112,3 +112,11 @@ table {
   .page { padding: 12px; }
   table { display: block; overflow-x: auto; }
 }
+
+// Réseau analysé (23/11/2026).
+.protocoles {
+  display: inline-flex; margin: .25rem 0 .75rem; border: 1px solid var(--ac-border, #d1d5db); border-radius: 8px; overflow: hidden;
+  button { border: none; background: var(--ac-surface, #fff); color: inherit; padding: .45rem 1rem; cursor: pointer; font: inherit;
+           &.actif { background: #2563eb; color: #fff; font-weight: 600; } & + button { border-left: 1px solid var(--ac-border, #d1d5db); } }
+}
+.etiquette.source { margin-left: .25rem; opacity: .85; }

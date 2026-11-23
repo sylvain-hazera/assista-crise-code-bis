@@ -13060,6 +13060,27 @@ class ControleAppareilStock(models.Model):
 #: Modèle -> jetons. Un lien envoyé par courriel (modifier sa demande, confirmer une alerte,
 #: rejoindre une association…) est retrouvé par l'empreinte du jeton, jamais par le jeton.
 
+class EtatObservateurMeshCore(EnvironmentScopedModel):
+    """Le dernier message d'état (`meshcore/<iata>/<clé>/status`) d'un observateur MeshCore
+    (23/11/2026). Ces messages étaient reçus et jetés ; le tableau radio les montre.
+
+    Les noms de champs ne sont connus que par les chaînes du firmware observateur
+    (`battery_mv`, `uptime_secs`, `noise_floor`, `last_rssi`, `last_snr`, `recv`…), jamais
+    vérifiés sur un message réel au moment de l'écrire : on garde donc TOUTES les valeurs
+    numériques reçues, telles quelles, et l'affichage prend celles qu'il connaît si elles sont
+    là. Aucune donnée personnelle : un état de matériel radio."""
+
+    pubkey_hex = models.CharField(max_length=64)
+    iata = models.CharField(max_length=10, blank=True, default="")
+    origine = models.CharField(max_length=60, blank=True, default="",
+                               help_text="Nom que l'observateur se donne (`origin`), s'il le publie.")
+    mesures = models.JSONField(default=dict, blank=True)
+    recu_le = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["pubkey_hex", "environment"], name="etat_observateur_unique")]
+
+
 class RevueDroits(EnvironmentScopedModel):
     """Une décision de revue des droits sur la fiche de contact d'une personne dans une
     institution (23/11/2026, core/revue_droits.py) : confirmé, ou tel droit retiré.

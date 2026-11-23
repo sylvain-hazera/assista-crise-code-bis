@@ -110,3 +110,10 @@ button.secondaire {
 }
 
 .attente { color: var(--ac-text-muted, #4b5563); }
+
+// Réseau affiché (23/11/2026).
+.protocoles {
+  display: inline-flex; margin: .25rem 0 .75rem; border: 1px solid var(--ac-border, #d1d5db); border-radius: 8px; overflow: hidden;
+  button { border: none; background: var(--ac-surface, #fff); color: inherit; padding: .45rem 1rem; cursor: pointer; font: inherit;
+           &.actif { background: #2563eb; color: #fff; font-weight: 600; } & + button { border-left: 1px solid var(--ac-border, #d1d5db); } }
+}

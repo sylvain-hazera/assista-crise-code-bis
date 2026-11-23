@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription, interval } from 'rxjs';
 import { startWith, switchMap } from 'rxjs/operators';
 
+import { TableauMeshCoreComponent } from './tableau-meshcore/tableau-meshcore.component';
 import { CompagnonMeshtasticService } from '../../services/compagnon-meshtastic.service';
 import { AdministrationMeshtasticService } from '../../services/administration-meshtastic.service';
 import { CompagnonMeshtastic } from '../../shared/models/compagnon-meshtastic.model';
@@ -23,7 +24,7 @@ type TriNoeuds = 'dernier_entendu' | 'nom' | 'batterie' | 'snr' | 'sauts';
 @Component({
   selector: 'app-tableau-radio',
   standalone: true,
-  imports: [CommonModule, FormsModule, SerieCompacteComponent, CartePaquetsComponent],
+  imports: [TableauMeshCoreComponent, CommonModule, FormsModule, SerieCompacteComponent, CartePaquetsComponent],
   templateUrl: './tableau-radio.component.html',
   styleUrls: ['./tableau-radio.component.scss'],
 })
@@ -37,6 +38,9 @@ export class TableauRadioComponent implements OnInit, OnDestroy {
 
   passerelles: CompagnonMeshtastic[] = [];
   passerelleId = '';
+  /** Le réseau affiché (23/11/2026) : la passerelle Meshtastic, ou MeshCore (observateurs MQTT,
+   * CoreScope, companions) — voir TableauMeshCoreComponent. */
+  protocole: 'meshtastic' | 'meshcore' = 'meshtastic';
   fenetre: FenetreTableauRadio = '6h';
   tableau: TableauRadio | null = null;
   chargement = false;

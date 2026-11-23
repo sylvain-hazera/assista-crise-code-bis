@@ -109,9 +109,9 @@ describe('DiagnosticRadioComponent', () => {
   it('ne déplie les mesures d’un relais que sur demande', () => {
     const composant = demarrer({ ...VIDE, sourds: [UN_SOURD] }).componentInstance;
     expect(composant.sourdDeplie).toBeNull();
-    composant.basculerSourd(UN_SOURD.node_num);
-    expect(composant.sourdDeplie).toBe(UN_SOURD.node_num);
-    composant.basculerSourd(UN_SOURD.node_num);
+    composant.basculerSourd(UN_SOURD.node_num!);
+    expect(composant.sourdDeplie).toBe(UN_SOURD.node_num!);
+    composant.basculerSourd(UN_SOURD.node_num!);
     expect(composant.sourdDeplie).toBeNull();
   });
 
@@ -138,5 +138,21 @@ describe('DiagnosticRadioComponent', () => {
   it('formate le numéro de nœud comme le reste du projet', () => {
     const composant = demarrer().componentInstance;
     expect(composant.hexa(0x1a2b3c4d)).toBe('!1a2b3c4d');
+  });
+
+  it('bascule sur MeshCore : autre calcul, clés publiques, liaisons écartées dites (23/11/2026)', () => {
+    const fixture = demarrer();
+    fixture.componentInstance.choisirProtocole('meshcore');
+    http.expectOne(`${environment.apiUrl}/contacts-meshcore/analyse-liaisons/`).flush({
+      ...VIDE,
+      inaudibles: [{ pubkey: 'ab12cd34ef56' + '0'.repeat(52), nom: 'Repeteur public', entend: 2, voisins: ['A', 'B'] }],
+      liaisons_ecartees: { prefixe_ambigu: 3, prefixe_inconnu: 7 },
+    });
+    fixture.detectChanges();
+    const texte = (fixture.nativeElement as HTMLElement).textContent || '';
+    expect(texte).toContain('ab12cd34ef56');
+    expect(texte).toContain('Repeteur public');
+    expect(texte).toContain('10');
+    expect(texte).toContain('cartographie publique');
   });
 });

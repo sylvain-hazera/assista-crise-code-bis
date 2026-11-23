@@ -264,8 +264,8 @@ export interface LiaisonSensUnique {
   /** `passerelle` : SNR mesuré par une passerelle MQTT. `voisinage` : rapport NeighborInfo —
    * plafonné à 10 voisins, donc une absence ne prouve rien si la liste est pleine. */
   preuve: 'passerelle' | 'voisinage';
-  entend: number;
-  entendu: number;
+  entend: number | string;
+  entendu: number | string;
   nom_entend: string;
   nom_entendu: string;
   snr: number | null;
@@ -276,8 +276,8 @@ export interface LiaisonSensUnique {
 
 /** Plus de 10 dB d'écart entre les deux sens, correction de puissance appliquée. */
 export interface LiaisonDesequilibree {
-  a: number;
-  b: number;
+  a: number | string;
+  b: number | string;
   nom_a: string;
   nom_b: string;
   snr_fort: number;
@@ -292,16 +292,18 @@ export interface LiaisonDesequilibree {
 /** Entend ses voisins, mais personne ne l'entend : antenne en réception seulement, ou émission
  * en panne. */
 export interface NoeudInaudible {
-  node_num: number;
+  /** Meshtastic ; MeshCore porte `pubkey` à la place (23/11/2026). */
+  node_num?: number;
+  pubkey?: string;
   nom: string;
-  entend: number;
+  entend: number | string;
   voisins: string[];
 }
 
 export interface MesureRelaisSourd {
-  partenaire: number;
+  partenaire: number | string;
   nom_partenaire: string;
-  entendu_chez_partenaire: number;
+  entendu_chez_partenaire: number | string;
   /** Null = il ne l'a jamais rapporté : l'écart n'est alors qu'une BORNE BASSE. */
   entendu_chez_lui: number | null;
   ecart_db: number;
@@ -311,7 +313,8 @@ export interface MesureRelaisSourd {
 }
 
 export interface RelaisSourd {
-  node_num: number;
+  node_num?: number;
+  pubkey?: string;
   nom: string;
   /** Médiane des écarts, pas une mesure isolée. */
   ecart_db: number;
@@ -331,4 +334,6 @@ export interface DiagnosticLiaisons {
   puissance_connue: boolean;
   noeuds_puissance_connue: number;
   calcule_le: string;
+  /** MeshCore : liaisons écartées parce que leur préfixe ne désigne pas UN nœud connu. */
+  liaisons_ecartees?: { prefixe_ambigu: number; prefixe_inconnu: number };
 }

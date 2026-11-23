@@ -177,3 +177,32 @@ def ingerer_paquet(message, environment=Environment.PROD, maintenant=None, tampo
         source=SourceLiaisonMeshtastic.RF, environment=environment,
     ).first()
     return decode, liaison
+
+
+#: Au plus ce nombre de valeurs gardées d'un message d'état : un message anormal ne remplit pas la base.
+MESURES_MAX = 30
+
+
+def enregistrer_etat(message, environment=Environment.PROD, maintenant=None):
+    """Garde le dernier message d'état d'un observateur (23/11/2026) : toutes ses valeurs
+    NUMÉRIQUES, sans présumer de leurs noms (voir EtatObservateurMeshCore), et son `origin`."""
+    from .models import EtatObservateurMeshCore
+
+    if not isinstance(message.donnees, dict) or not message.observateur:
+        return None
+    mesures = {}
+    for cle, valeur in message.donnees.items():
+        if len(mesures) >= MESURES_MAX:
+            break
+        if isinstance(valeur, bool):
+            continue
+        if isinstance(valeur, (int, float)):
+            mesures[str(cle)[:40]] = valeur
+    origine = message.donnees.get("origin")
+    etat, _cree = EtatObservateurMeshCore.objects.update_or_create(
+        pubkey_hex=message.observateur.lower()[:64], environment=environment,
+        defaults={"iata": (message.iata or "")[:10], "origine": str(origine)[:60] if isinstance(origine, str) else "",
+                  "mesures": mesures, "recu_le": maintenant or timezone.now()},
+    )
+    return etat
+
