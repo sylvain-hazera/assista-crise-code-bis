@@ -62,6 +62,21 @@ class TestTournee:
             r = terrain["autre"].get("/api/habitations/tournee/", {"crise": str(terrain["feu"].id), "latitude": 44.87, "longitude": -1.2})
         assert r.status_code == 403
 
+    def test_le_refus_dit_la_vraie_raison(self, terrain):
+        """23/11/2026 : « réservé aux élus » couvrait tous les cas ; un membre de la réserve
+        communale, rattaché à sa mairie, ne savait pas que seul manquait l'activation du module."""
+        params = {"crise": str(terrain["feu"].id), "latitude": 44.87, "longitude": -1.2}
+        with patch("core.views.commune_code_from_point", return_value="33063"):
+            ailleurs = terrain["elue"].get("/api/habitations/tournee/", params)
+        assert ailleurs.status_code == 403 and "hors du territoire" in str(ailleurs.data["detail"])
+        ModuleDegatsCrise.objects.filter(crise=terrain["feu"]).update(actif=False)
+        with patch("core.views.commune_code_from_point", return_value=COMMUNE):
+            sans_module = terrain["elue"].get("/api/habitations/tournee/", params)
+        assert sans_module.status_code == 403 and "Activation du module" in str(sans_module.data["detail"])
+        with patch("core.views.commune_code_from_point", return_value=COMMUNE):
+            autre = terrain["autre"].get("/api/habitations/tournee/", params)
+        assert "comptes d'une mairie" in str(autre.data["detail"])
+
 
 @pytest.mark.django_db
 class TestConstat:

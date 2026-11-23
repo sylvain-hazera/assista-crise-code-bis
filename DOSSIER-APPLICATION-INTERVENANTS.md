@@ -1453,3 +1453,14 @@ pas notifier ce qu'on lit) était lancé dans un bloc `init` placé avant la dé
 `conversationRadio` ; `viewModelScope` démarre la coroutine sur-le-champ (Main.immediate) et
 lisait une propriété pas encore initialisée (NullPointerException, reproduit sur émulateur).
 Bloc déplacé après la déclaration ; démarrage vérifié sur émulateur.
+
+**0.18.2 (23/11/2026)**, retours d'un testeur (réserve communale) :
+- le bandeau orange de la formation passait sur la barre d'état (heure, batterie, caméra) : il
+  colore cette zone mais écrit dessous ;
+- messages d'erreur en anglais (« Date has wrong format ») : le serveur répond désormais en
+  français à toutes les requêtes (langue posée par requête dans un middleware, la langue par
+  défaut du serveur étant l'anglais) ;
+- « réservé aux élus de la commune » pour un compte de mairie : le refus de l'évaluation des
+  dégâts dit maintenant la vraie raison (hors de sa commune, compte non rattaché, ou module
+  dégâts non activé par la mairie pour la crise, avec où l'activer). Même chose pour
+  « Embarquer ce secteur », qui passe par la même règle.

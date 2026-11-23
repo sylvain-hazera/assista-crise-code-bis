@@ -8,15 +8,27 @@ class GeoResolutionBudgetMiddleware:
     """Pose une seule fois par requête le budget de résolutions géo externes (voir
     core.geo_lookup.reset_resolution_budget) — évite qu'une liste touchant des milliers de
     communes/points jamais vus enchaîne autant d'appels HTTP synchrones et fasse dépasser le
-    timeout du worker (voir le commentaire détaillé dans geo_lookup.py, incident du 14/09)."""
+    timeout du worker (voir le commentaire détaillé dans geo_lookup.py, incident du 14/09).
+
+    Il pose aussi la langue de la requête : le français (23/11/2026). La langue par défaut du
+    serveur était l'anglais, et les messages produits par Django et DRF partaient tels quels
+    (« Date has wrong format… » sous un champ de l'application mobile, remonté par un testeur).
+    Tout le produit est en français ; les traductions de Django et DRF sont installées. Le
+    réglage de fond (LANGUAGE_CODE) est dans config/settings.py ; ici, chaque requête est
+    traitée en français quel que soit ce réglage."""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
+        from django.utils import translation
+
         from .geo_lookup import reset_resolution_budget
         reset_resolution_budget()
-        return self.get_response(request)
+        with translation.override("fr"):
+            reponse = self.get_response(request)
+            reponse.headers.setdefault("Content-Language", "fr")
+            return reponse
 
 
 class AuditTraceMiddleware:

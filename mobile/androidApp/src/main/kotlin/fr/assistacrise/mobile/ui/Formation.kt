@@ -1,6 +1,11 @@
 package fr.assistacrise.mobile.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,7 +46,12 @@ fun BandeauFormation(modele: ModeleApplication) {
         "FORMATION — données fictives · la radio, elle, est réelle",
         color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
         style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier.fillMaxWidth().background(Orange).padding(vertical = 6.dp, horizontal = 8.dp),
+        // L'application dessine sous la barre d'état (bord à bord) : le bandeau colore cette zone
+        // mais écrit dessous, hors de l'heure, des icônes et du trou de la caméra (23/11/2026,
+        // remonté par un testeur : le texte passait par-dessus).
+        modifier = Modifier.fillMaxWidth().background(Orange)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .padding(vertical = 6.dp, horizontal = 8.dp),
     )
 }
 

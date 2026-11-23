@@ -30,24 +30,38 @@ DANGERS = ("STRUCTURE", "ELECTRICITE", "GAZ", "EAU", "AUTRE")
 ANCIENNETE_MAX = datetime.timedelta(days=30)
 
 
-def peut_evaluer(request, commune_code, crise):
-    """Le personnel municipal et les élus de la commune (autorité locale), le module de dégâts
-    activé par leur institution sur cette crise ; un administrateur pour dépanner."""
+def motif_de_refus(request, commune_code, crise):
+    """Pourquoi l'évaluation sur le terrain est refusée ici, en clair -- ou None si elle est
+    permise. Le personnel municipal et les élus de la commune (autorité locale), le module de
+    dégâts activé par leur institution sur cette crise ; un administrateur pour dépanner.
+
+    23/11/2026 : un seul message (« réservé aux élus ») couvrait tous les cas, et un membre de
+    réserve communale, pourtant rattaché à sa mairie, ne pouvait pas savoir que le seul manque
+    était l'activation du module par sa mairie."""
     from .models import ModuleDegatsCrise, UserRole
     from .permissions import get_effective_role
 
     user = getattr(request, "user", None)
     if not (user and user.is_authenticated):
-        return False
+        return "Connectez-vous pour évaluer les dégâts."
     role = get_effective_role(request)
     if role == UserRole.ADMINISTRATOR:
-        return True
+        return None
+    if role != UserRole.LOCAL_AUTHORITY:
+        return "L'évaluation des dégâts sur le terrain est réservée aux comptes d'une mairie (personnel, élus, réserve communale)."
     institution = getattr(user, "institution", None)
-    if role != UserRole.LOCAL_AUTHORITY or institution is None or not commune_code:
-        return False
-    if institution.commune_code != commune_code:
-        return False
-    return ModuleDegatsCrise.objects.filter(crise=crise, institution=institution, actif=True).exists()
+    if institution is None:
+        return "Votre compte n'est rattaché à aucune mairie : demandez à votre mairie de vous y rattacher."
+    if not commune_code or institution.commune_code != commune_code:
+        return "Vous êtes hors du territoire de votre commune : l'évaluation se fait sur la commune de votre mairie."
+    if not ModuleDegatsCrise.objects.filter(crise=crise, institution=institution, actif=True).exists():
+        return ("Votre mairie n'a pas activé l'évaluation des dégâts pour cette crise. Elle s'active sur le site, "
+                "page « Référencement des dégâts », bouton « Activation du module ».")
+    return None
+
+
+def peut_evaluer(request, commune_code, crise):
+    return motif_de_refus(request, commune_code, crise) is None
 
 
 def type_de_bien(valeur, libre, user):

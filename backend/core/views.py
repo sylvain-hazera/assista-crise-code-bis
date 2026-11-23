@@ -8214,8 +8214,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if crise is None or latitude is None or longitude is None:
             return Response({"error": "crise, latitude et longitude sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
         commune_code = commune_code_from_point(Point(longitude, latitude, srid=4326))
-        if not terrain.peut_evaluer(request, commune_code, crise):
-            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        motif = terrain.motif_de_refus(request, commune_code, crise)
+        if motif:
+            raise PermissionDenied(motif)
         rayon = _flottant(request.query_params.get('rayon_m'), 1, terrain.RAYON_TOURNEE_MAX_M) or terrain.RAYON_TOURNEE_M
         return Response({"points": terrain.tournee(crise, get_active_environment(request), latitude, longitude, rayon)})
 
@@ -8281,8 +8282,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "ban_id, ou latitude et longitude d'un point nouveau."}, status=status.HTTP_400_BAD_REQUEST)
         commune_code = (existant.commune_code if existant else None) or (
             adresse_ban.commune_code if adresse_ban else commune_code_from_point(lieu))
-        if not terrain.peut_evaluer(request, commune_code, crise):
-            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        motif = terrain.motif_de_refus(request, commune_code, crise)
+        if motif:
+            raise PermissionDenied(motif)
         modules = list(ModuleDegatsCrise.objects.filter(crise=crise, institution=request.user.institution, actif=True)) \
             if getattr(request.user, 'institution', None) else []
         position = lieu or (adresse_ban.location if adresse_ban else existant.location)
@@ -8398,8 +8400,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if crise is None or latitude is None or longitude is None:
             return Response({"error": "crise, latitude et longitude sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
         commune_code = commune_code_from_point(Point(longitude, latitude, srid=4326))
-        if not terrain.peut_evaluer(request, commune_code, crise):
-            raise PermissionDenied("L'évaluation sur le terrain est réservée au personnel municipal et aux élus de la commune.")
+        motif = terrain.motif_de_refus(request, commune_code, crise)
+        if motif:
+            raise PermissionDenied(motif)
         rayon = _flottant(request.query_params.get('rayon_m'), 100, self.RAYON_SECTEUR_MAX_M) or self.RAYON_SECTEUR_M
         ecart_lat = rayon / 111_320
         ecart_lon = rayon / (111_320 * max(0.1, math.cos(math.radians(latitude))))
