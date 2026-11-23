@@ -11324,6 +11324,16 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                                      origine=str(request.data.get('identifiant') or '')[:120])
             if conversation.crise_id:
                 attribuer_indicatif(team, conversation.crise)
+            # TRANSITION (23/11/2026) : l'application 0.21 émet par radio sur le canal DE
+            # L'ÉQUIPE ; tant qu'elle n'est pas remplacée par une version qui connaît le canal de
+            # crise, on continue de le créer au premier message (une seule fois : la fonction
+            # envoie la clé à chaque membre équipé, d'où la garde « n'existe pas encore »).
+            if not CanalMeshtastic.objects.filter(equipe=team).exists():
+                for membre in team.members.all():
+                    _assurer_canal_meshtastic_et_notifier(request, team, membre)
+            if not CanalMeshCore.objects.filter(equipe=team).exists():
+                for membre in team.members.all():
+                    _assurer_canal_meshcore_et_notifier(request, team, membre)
             conv.diffuser_radio(message, equipe=team, crise=conversation.crise, deja_emis=deja_emis_radio,
                                 auteur=request.user)
 
