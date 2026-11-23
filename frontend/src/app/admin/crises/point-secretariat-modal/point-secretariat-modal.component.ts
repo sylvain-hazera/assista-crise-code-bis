@@ -11,6 +11,8 @@ const TYPES: { value: TypePersonneAccueillie; label: string }[] = [
   { value: 'EVACUE', label: 'Personne évacuée' },
   { value: 'POMPIER', label: 'Pompier' },
   { value: 'BENEVOLE_AUTRE_EQUIPE', label: "Bénévole d'une autre équipe" },
+  // Le regroupement des moyens accueille des intervenants (23/11/2026).
+  { value: 'INTERVENANT', label: 'Intervenant mobilisé' },
   { value: 'AUTRE', label: 'Autre' },
 ];
 

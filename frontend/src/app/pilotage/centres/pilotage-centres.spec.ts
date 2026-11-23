@@ -36,7 +36,7 @@ describe('Pilotage — centres (23/11/2026)', () => {
     expect(niveauJauge(centre({ occupation: { ...centre().occupation, capacite: null } }))).toBe('inconnu');
   });
 
-  it('la liste : orientation, jauge, manques, et une arrivée enregistrée en un geste', async () => {
+  it('la liste : orientation, jauge, manques, et l\'admission complète par le secrétariat du site', async () => {
     const pilotage = TestBed.inject(PilotageService);
     pilotage.choisir('c1');
     const fixture = TestBed.createComponent(PilotageCentresComponent);
@@ -51,15 +51,18 @@ describe('Pilotage — centres (23/11/2026)', () => {
     expect(fixture.nativeElement.querySelector('.jauge').getAttribute('data-niveau')).toBe('presque');
     expect(pilotage.alertesCentres()).toBe(1);
 
+    // « + Admission » ouvre le secrétariat du site, à l'identique (famille, adultes, enfants, référent…).
     fixture.componentInstance.ouvrirArrivee(centre());
-    fixture.componentInstance.nombre = 3;
-    const promesse = fixture.componentInstance.enregistrerArrivee(centre());
-    const req = http.expectOne(`${api}/registre-presences/`);
-    expect(req.request.body).toEqual({ point: 'p1', type_personne: 'EVACUE', nombre: 3 });
-    req.flush({ id: 'r9' });
-    await promesse;
-    http.expectOne(r => r.url === `${api}/pilotage/centres/`).flush(liste);
-    expect(fixture.componentInstance.arriveePour()).toBeNull();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-point-secretariat-modal')).not.toBeNull();
+    http.expectOne(r => r.url.includes('registre-presences')).flush([]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Famille');
+    expect(fixture.nativeElement.textContent).toContain('Groupe');
+    expect(fixture.nativeElement.textContent).toContain('Régime alimentaire');
+    fixture.componentInstance.fermerSecretariat();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-point-secretariat-modal')).toBeNull();
     fixture.destroy();
   });
 

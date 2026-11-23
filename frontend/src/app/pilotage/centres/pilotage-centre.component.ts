@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { DetailCentre, PilotageService } from '../pilotage.service';
+import { PointSecretariatModalComponent } from '../../admin/crises/point-secretariat-modal/point-secretariat-modal.component';
+import { PointOperationnel } from '../../shared/models/point-operationnel.model';
 
 type Onglet = 'registre' | 'stock' | 'equipe' | 'fiche';
 
@@ -16,7 +18,7 @@ type Onglet = 'registre' | 'stock' | 'equipe' | 'fiche';
 @Component({
   selector: 'app-pilotage-centre',
   standalone: true,
-  imports: [DatePipe, FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink, PointSecretariatModalComponent],
   template: `
     <a routerLink=".." class="retour"><span class="material-icons" aria-hidden="true">arrow_back</span> Centres</a>
     @if (!centre()) {
@@ -35,14 +37,7 @@ type Onglet = 'registre' | 'stock' | 'equipe' | 'fiche';
         @switch (onglet()) {
           @case ('registre') {
             @if (c.peut_gerer && c.etat === 'OUVERT') {
-              <form class="ligne-form" (ngSubmit)="arrivee()">
-                <select name="categorie" [(ngModel)]="categorie" aria-label="Catégorie">
-                  @for (k of c.categories; track k.type) { <option [value]="k.type">{{ k.libelle }}</option> }
-                </select>
-                <input type="number" name="nombre" min="1" max="500" [(ngModel)]="nombre" aria-label="Nombre"/>
-                <input type="text" name="nom" [(ngModel)]="nom" placeholder="Nom (facultatif)" autocomplete="off"/>
-                <button type="submit" [disabled]="enCours() || !(nombre >= 1)">+ Arrivée</button>
-              </form>
+              <div class="gestes"><button type="button" (click)="secretariat.set(pointDe(c))">+ Admission</button></div>
             }
             @if (!c.registre.length) { <p class="vide">Personne n'est enregistré comme présent.</p> }
             <ul class="liste">
@@ -115,6 +110,9 @@ type Onglet = 'registre' | 'stock' | 'equipe' | 'fiche';
         @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
       }
     }
+    @if (secretariat(); as p) {
+      <app-point-secretariat-modal [point]="p" (closed)="secretariat.set(null); charger()"></app-point-secretariat-modal>
+    }
   `,
   styles: [`
     .retour { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: var(--brand-primary, #2563eb); min-height: 40px; }
@@ -147,13 +145,12 @@ export class PilotageCentreComponent implements OnInit, OnDestroy {
   readonly onglet = signal<Onglet>('registre');
   readonly enCours = signal(false);
   readonly erreur = signal<string | null>(null);
+  /** L'admission complète : le secrétariat du site, à l'identique. */
+  readonly secretariat = signal<PointOperationnel | null>(null);
   readonly onglets: { id: Onglet; libelle: string }[] = [
     { id: 'registre', libelle: 'Registre' }, { id: 'stock', libelle: 'Stock' },
     { id: 'equipe', libelle: 'Équipe' }, { id: 'fiche', libelle: 'Fiche' },
   ];
-  categorie = 'EVACUE';
-  nombre = 1;
-  nom = '';
   nouvelleCapacite: number | null = null;
   private id = '';
   private minuterie?: ReturnType<typeof setInterval>;
@@ -172,11 +169,14 @@ export class PilotageCentreComponent implements OnInit, OnDestroy {
     try {
       const c = await this.pilotage.centre(this.id);
       if (this.nouvelleCapacite === null) this.nouvelleCapacite = c.occupation.capacite;
-      if (this.centre() === null && c.type === 'REGROUPEMENT_MOYENS') this.categorie = 'INTERVENANT';
       this.centre.set(c);
     } catch (e: any) {
       this.erreur.set(e?.error?.error ?? e?.error?.detail ?? 'Centre indisponible.');
     }
+  }
+
+  pointDe(c: DetailCentre): PointOperationnel {
+    return { id: c.id, nom: c.nom } as PointOperationnel;
   }
 
   creneau(c: string): string {
@@ -189,10 +189,6 @@ export class PilotageCentreComponent implements OnInit, OnDestroy {
     try { await action(); await this.charger(); }
     catch (e: any) { this.erreur.set(e?.error?.detail ?? e?.error?.error ?? 'Geste refusé.'); }
     finally { this.enCours.set(false); }
-  }
-
-  arrivee(): Promise<void> {
-    return this.geste(async () => { await this.pilotage.arrivee(this.id, this.categorie, this.nombre, this.nom); this.nombre = 1; this.nom = ''; });
   }
 
   sortie(ligne: string): Promise<void> { return this.geste(() => this.pilotage.sortie(ligne)); }

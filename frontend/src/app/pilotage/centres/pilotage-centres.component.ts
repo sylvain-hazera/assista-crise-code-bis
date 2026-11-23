@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { CentrePilotage, PilotageService } from '../pilotage.service';
+import { PointSecretariatModalComponent } from '../../admin/crises/point-secretariat-modal/point-secretariat-modal.component';
+import { PointOperationnel } from '../../shared/models/point-operationnel.model';
 
 /** La jauge d'un centre : vert, orange à 90 %, rouge plein. */
 export function niveauJauge(c: CentrePilotage): 'ok' | 'presque' | 'plein' | 'inconnu' {
@@ -21,7 +23,7 @@ export function niveauJauge(c: CentrePilotage): 'ok' | 'presque' | 'plein' | 'in
 @Component({
   selector: 'app-pilotage-centres',
   standalone: true,
-  imports: [DatePipe, FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink, PointSecretariatModalComponent],
   template: `
     <h1>Centres</h1>
     @if (!pilotage.criseId()) {
@@ -70,7 +72,7 @@ export function niveauJauge(c: CentrePilotage): 'ok' | 'presque' | 'plein' | 'in
             @if (c.peut_gerer) {
               <div class="gestes">
                 @if (c.etat === 'OUVERT') {
-                  <button type="button" (click)="ouvrirArrivee(c)">+ Arrivée</button>
+                  <button type="button" (click)="ouvrirArrivee(c)">+ Admission</button>
                   <a class="secondaire" [routerLink]="[c.id]" [queryParams]="{ onglet: 'registre' }">Sortie…</a>
                   <button type="button" class="secondaire" [disabled]="enCours() === c.id" (click)="etat(c, 'fermer')">Fermer</button>
                 } @else {
@@ -78,25 +80,15 @@ export function niveauJauge(c: CentrePilotage): 'ok' | 'presque' | 'plein' | 'in
                 }
               </div>
             }
-            @if (arriveePour() === c.id) {
-              <form class="arrivee" (ngSubmit)="enregistrerArrivee(c)">
-                <label>Catégorie
-                  <select name="categorie" [(ngModel)]="categorie">
-                    @for (k of categories; track k.type) { <option [value]="k.type">{{ k.libelle }}</option> }
-                  </select>
-                </label>
-                <label>Nombre <input type="number" name="nombre" min="1" max="500" [(ngModel)]="nombre" required/></label>
-                <label>Nom (facultatif) <input type="text" name="nom" [(ngModel)]="nom" autocomplete="off"/></label>
-                <div class="gestes">
-                  <button type="submit" [disabled]="enCours() === c.id || !(nombre >= 1)">Enregistrer</button>
-                  <button type="button" class="secondaire" (click)="arriveePour.set(null)">Annuler</button>
-                </div>
-              </form>
-            }
           </article>
         }
       </div>
       @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
+    }
+    <!-- L'admission complète : le même secrétariat que sur le site (personne seule, famille ou
+         groupe, adultes, enfants et leurs âges, référent, régime alimentaire, commentaire). -->
+    @if (secretariat(); as p) {
+      <app-point-secretariat-modal [point]="p" (closed)="fermerSecretariat()"></app-point-secretariat-modal>
     }
   `,
   styles: [`
@@ -133,16 +125,9 @@ export function niveauJauge(c: CentrePilotage): 'ok' | 'presque' | 'plein' | 'in
 export class PilotageCentresComponent implements OnInit {
   readonly pilotage = inject(PilotageService);
   readonly enCours = signal<string | null>(null);
-  readonly arriveePour = signal<string | null>(null);
+  /** Le centre dont le secrétariat (admission complète) est ouvert. */
+  readonly secretariat = signal<PointOperationnel | null>(null);
   readonly erreur = signal<string | null>(null);
-  readonly categories = [
-    { type: 'EVACUE', libelle: 'Personne évacuée' }, { type: 'INTERVENANT', libelle: 'Intervenant mobilisé' },
-    { type: 'POMPIER', libelle: 'Pompier' }, { type: 'BENEVOLE_AUTRE_EQUIPE', libelle: "Bénévole d'une autre équipe" },
-    { type: 'AUTRE', libelle: 'Autre' },
-  ];
-  categorie = 'EVACUE';
-  nombre = 1;
-  nom = '';
 
   ngOnInit(): void { this.pilotage.rafraichirCentres(); }
 
@@ -157,23 +142,14 @@ export class PilotageCentresComponent implements OnInit {
     return { OUVERT: 'Ouvert', PREVU: 'Prévu', FERME: 'Fermé' }[c.etat];
   }
 
+  /** L'admission complète, par le secrétariat du site (23/11/2026 : « il faut faire la même entrée »). */
   ouvrirArrivee(c: CentrePilotage): void {
-    // Un regroupement des moyens accueille des intervenants, pas la population.
-    this.categorie = c.type === 'REGROUPEMENT_MOYENS' ? 'INTERVENANT' : 'EVACUE';
-    this.nombre = 1;
-    this.nom = '';
-    this.arriveePour.set(c.id);
+    this.secretariat.set({ id: c.id, nom: c.nom } as PointOperationnel);
   }
 
-  async enregistrerArrivee(c: CentrePilotage): Promise<void> {
-    this.enCours.set(c.id);
-    this.erreur.set(null);
-    try {
-      await this.pilotage.arrivee(c.id, this.categorie, this.nombre, this.nom);
-      this.arriveePour.set(null);
-    } catch (e: any) {
-      this.erreur.set(e?.error?.detail ?? e?.error?.error ?? 'Arrivée non enregistrée.');
-    } finally { this.enCours.set(null); }
+  fermerSecretariat(): void {
+    this.secretariat.set(null);
+    this.pilotage.rafraichirCentres();
   }
 
   async etat(c: CentrePilotage, geste: 'ouvrir' | 'fermer'): Promise<void> {

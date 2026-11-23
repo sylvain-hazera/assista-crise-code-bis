@@ -1,4 +1,4 @@
-export type TypePersonneAccueillie = 'EVACUE' | 'POMPIER' | 'BENEVOLE_AUTRE_EQUIPE' | 'AUTRE';
+export type TypePersonneAccueillie = 'EVACUE' | 'POMPIER' | 'BENEVOLE_AUTRE_EQUIPE' | 'INTERVENANT' | 'AUTRE';
 
 export interface RegistrePresence {
   id: string;
