@@ -22,11 +22,26 @@ def test_l_etat_d_un_observateur_garde_ses_valeurs_numeriques_seulement():
     })
     enregistrer_etat(message)
     etat = EtatObservateurMeshCore.objects.get(pubkey_hex=OBS)
-    assert etat.mesures == {"battery_mv": 4012, "noise_floor": -112, "uptime_secs": 3600}
+    assert {k: v for k, v in etat.mesures.items() if k != "_cles"} == {"battery_mv": 4012, "noise_floor": -112, "uptime_secs": 3600}
+    # Les noms de tous les champs, jamais leurs valeurs textuelles.
+    assert set(etat.mesures["_cles"]) == {"battery_mv", "noise_floor", "uptime_secs", "origin", "firmware", "drapeau"}
     assert (etat.origine, etat.iata) == ("33PORGE_OBS", "BOD")
     # Le suivant remplace le précédent : un seul état par observateur.
     enregistrer_etat(MessageObservateur("BOD", OBS, "status", {"battery_mv": 3900}))
-    assert EtatObservateurMeshCore.objects.get(pubkey_hex=OBS).mesures == {"battery_mv": 3900}
+    assert EtatObservateurMeshCore.objects.get(pubkey_hex=OBS).mesures == {"battery_mv": 3900, "_cles": ["battery_mv"]}
+
+
+@pytest.mark.django_db
+def test_valeurs_imbriquees_et_nombres_en_texte():
+    """23/11/2026 : en production, aucun nombre au premier niveau des messages d'état."""
+    from core.tableau_meshcore import _connues
+    enregistrer_etat(MessageObservateur("BOD", OBS, "status", {
+        "origin": "Obs", "status": "online", "stats": {"battery_mv": "4012", "noise_floor": -110, "radio": {"last_snr": 7.5}},
+    }))
+    mesures = EtatObservateurMeshCore.objects.get(pubkey_hex=OBS).mesures
+    assert mesures["stats.battery_mv"] == 4012 and mesures["stats.radio.last_snr"] == 7.5
+    assert "status" in mesures["_cles"] and "online" not in str(mesures)
+    assert _connues(mesures) == {"battery_mv": 4012, "noise_floor": -110, "last_snr": 7.5}
 
 
 @pytest.mark.django_db

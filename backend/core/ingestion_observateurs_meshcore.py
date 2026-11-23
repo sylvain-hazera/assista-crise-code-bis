@@ -183,21 +183,53 @@ def ingerer_paquet(message, environment=Environment.PROD, maintenant=None, tampo
 MESURES_MAX = 30
 
 
+def _valeur_numerique(valeur):
+    """Un nombre, ou un nombre écrit en texte (« 4012 », « -112.5 ») ; None sinon."""
+    if isinstance(valeur, bool):
+        return None
+    if isinstance(valeur, (int, float)):
+        return valeur
+    if isinstance(valeur, str):
+        texte = valeur.strip()
+        try:
+            return int(texte)
+        except ValueError:
+            try:
+                return float(texte)
+            except ValueError:
+                return None
+    return None
+
+
+def _aplatir(donnees, prefixe="", profondeur=0, sortie=None, cles=None):
+    """Les valeurs numériques d'un message d'état, sous-objets compris (« stats.battery_mv »),
+    et les NOMS de tous les champs rencontrés -- pour connaître la forme réelle des messages sans
+    la présumer (23/11/2026 : 207 observateurs, aucun nombre au premier niveau)."""
+    sortie = {} if sortie is None else sortie
+    cles = [] if cles is None else cles
+    for cle, valeur in donnees.items():
+        nom = f"{prefixe}{str(cle)[:40]}"
+        if len(cles) < MESURES_MAX:
+            cles.append(nom)
+        if isinstance(valeur, dict) and profondeur < 2:
+            _aplatir(valeur, nom + ".", profondeur + 1, sortie, cles)
+            continue
+        nombre = _valeur_numerique(valeur)
+        if nombre is not None and len(sortie) < MESURES_MAX:
+            sortie[nom] = nombre
+    return sortie, cles
+
+
 def enregistrer_etat(message, environment=Environment.PROD, maintenant=None):
-    """Garde le dernier message d'état d'un observateur (23/11/2026) : toutes ses valeurs
-    NUMÉRIQUES, sans présumer de leurs noms (voir EtatObservateurMeshCore), et son `origin`."""
+    """Garde le dernier message d'état d'un observateur (23/11/2026) : ses valeurs numériques
+    (sous-objets compris, nombres en texte acceptés), les noms de ses champs (`_cles`), et son
+    `origin`. Aucune valeur textuelle n'est gardée, hormis ce nom."""
     from .models import EtatObservateurMeshCore
 
     if not isinstance(message.donnees, dict) or not message.observateur:
         return None
-    mesures = {}
-    for cle, valeur in message.donnees.items():
-        if len(mesures) >= MESURES_MAX:
-            break
-        if isinstance(valeur, bool):
-            continue
-        if isinstance(valeur, (int, float)):
-            mesures[str(cle)[:40]] = valeur
+    mesures, cles = _aplatir(message.donnees)
+    mesures["_cles"] = cles
     origine = message.donnees.get("origin")
     etat, _cree = EtatObservateurMeshCore.objects.update_or_create(
         pubkey_hex=message.observateur.lower()[:64], environment=environment,
@@ -205,4 +237,3 @@ def enregistrer_etat(message, environment=Environment.PROD, maintenant=None):
                   "mesures": mesures, "recu_le": maintenant or timezone.now()},
     )
     return etat
-

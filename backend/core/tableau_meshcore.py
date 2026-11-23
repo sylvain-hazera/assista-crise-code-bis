@@ -21,6 +21,19 @@ MESURES_CONNUES = ("battery_mv", "noise_floor", "uptime_secs", "last_rssi", "las
 SILENCE = datetime.timedelta(hours=1)
 
 
+def _connues(mesures):
+    """Les valeurs que l'écran sait nommer, au premier niveau ou dans un sous-objet
+    (« stats.battery_mv » se lit comme « battery_mv »)."""
+    connues = {}
+    for cle, valeur in (mesures or {}).items():
+        if cle == "_cles" or not isinstance(valeur, (int, float)):
+            continue
+        nom = cle.rsplit(".", 1)[-1]
+        if nom in MESURES_CONNUES and nom not in connues:
+            connues[nom] = valeur
+    return connues
+
+
 def _noms(cles, environment):
     """Le nom de chaque clé publique (ou préfixe) : cartographie publique, companions, contacts,
     observateurs qui se nomment eux-mêmes."""
@@ -117,8 +130,8 @@ def construire(environment, fenetre="24h", maintenant=None):
         "observateurs": [{
             "pubkey": e.pubkey_hex, "nom": e.origine or noms.get(e.pubkey_hex, e.pubkey_hex[:12]), "iata": e.iata,
             "recu_le": e.recu_le.isoformat(), "silencieux": maintenant - e.recu_le > SILENCE,
-            "mesures": {k: e.mesures[k] for k in MESURES_CONNUES if k in e.mesures},
-            "autres_mesures": len([k for k in e.mesures if k not in MESURES_CONNUES]),
+            "mesures": _connues(e.mesures),
+            "autres_mesures": len([k for k in e.mesures if k != "_cles" and k.rsplit(".", 1)[-1] not in MESURES_CONNUES]),
             "trames": trames_par.get(e.pubkey_hex, 0),
         } for e in etats],
         "sources": [{
