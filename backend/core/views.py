@@ -16138,6 +16138,15 @@ class InstitutionViewSet(
 
         # Un administrateur peut rattacher explicitement, ou laisser l'institution autonome.
         parente = serializer.validated_data.get("institution_parente") if est_admin else mere
+        # Réserve communale (23/11/2026, core/rcsc.py) : une par mairie, toujours sous elle.
+        from . import rcsc
+        type_demande = serializer.validated_data.get("type")
+        est_une_rcsc = (getattr(type_demande, "code", "") or "").lower() == rcsc.CODE_TYPE
+        if est_une_rcsc:
+            try:
+                rcsc.verifier_creation_rcsc(parente)
+            except ValueError as refus:
+                raise ValidationError({"error": str(refus)})
         institution = serializer.save(
             environment=get_active_environment(self.request), institution_parente=parente,
         )
@@ -16160,6 +16169,10 @@ class InstitutionViewSet(
                          + (f" (rattachée à {parente.nom})" if parente else "")
                          + (f", équipe « {equipe.name} » créée" if equipe else "")),
         )
+        if est_une_rcsc:
+            rcsc.completer(institution)
+            if equipe is not None:
+                equipe.refresh_from_db()
         # Rendue avec la réponse (voir InstitutionSerializer.get_equipe_creee) : l'écran
         # enchaîne en proposant d'y entrer ou d'y inviter du monde.
         institution._equipe_creee = equipe

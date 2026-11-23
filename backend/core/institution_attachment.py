@@ -285,14 +285,27 @@ def grant_institution_and_demo_access(user, institution, request=None):
     (send_mail_logged/audit_log en ont besoin) -- en pratique tous les appelants réels en
     disposent (actions de vue authentifiées ou import, jamais un script sans contexte)."""
     update_fields = []
+    # Réserve communale (23/11/2026, voir core/rcsc.py) : le réserviste travaille pour la mairie
+    # mère, avec ses droits. Son institution de travail est donc la mairie, et son compte
+    # « autorité locale » -- sauf s'il travaille déjà pour une autre institution (un membre
+    # d'AASC qui rejoint aussi la réserve garde son rattachement et son rôle).
+    from .rcsc import est_rcsc, mairie_d_exercice
+    exercice = mairie_d_exercice(institution)
     if user.institution_id is None:
-        user.institution = institution
+        user.institution = exercice
         update_fields.append('institution')
+    if est_rcsc(institution) and exercice is not institution and user.institution_id == exercice.id \
+            and user.type not in (UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY):
+        user.type = UserRole.LOCAL_AUTHORITY
+        update_fields.append('type')
+        if user.demo_role and user.demo_role != UserRole.ADMINISTRATOR:
+            user.demo_role = UserRole.LOCAL_AUTHORITY
+            update_fields.append('demo_role')
     if not user.demo_role:
         user.demo_role = user.type
         update_fields.append('demo_role')
     if update_fields:
-        user.save(update_fields=update_fields)
+        user.save(update_fields=list(dict.fromkeys(update_fields)))
 
     team, _ = get_or_create_institution_team(institution, request)
     if not team.members.filter(pk=user.pk).exists():
@@ -527,7 +540,11 @@ def attach_secours_user_to_institution(user, request=None):
                 type__code__iexact='mairie', commune_code=user.pending_commune_code, actif=True,
             ).first()
         if matched_institution:
-            contact, contact_created = _get_or_create_contact_institution(matched_institution, user, 'Réserviste RCSC')
+            # 23/11/2026 : la RCSC est une institution fille de la mairie (core/rcsc.py). Le
+            # réserviste y est rattaché ; il travaille pour la mairie, avec ses droits.
+            from .rcsc import FONCTION_RESERVISTE, creer_pour
+            matched_institution = creer_pour(matched_institution)
+            contact, contact_created = _get_or_create_contact_institution(matched_institution, user, FONCTION_RESERVISTE)
             if contact_created and request is not None:
                 audit_log(
                     request=request,

@@ -104,9 +104,11 @@ class TestSecoursAttachmentGrantsDemoAccess:
         institution = attach_secours_user_to_institution(user)
         user.refresh_from_db()
 
-        assert institution == mairie
+        # 23/11/2026 (core/rcsc.py) : rattaché à la RCSC, fille de la mairie ; il travaille
+        # pour la mairie, avec ses droits, y compris en démo.
+        assert institution.institution_parente_id == mairie.id and institution.type.code == "rcsc"
         assert user.institution_id == mairie.id
-        assert user.demo_role == "SECOURS"
+        assert (user.type, user.demo_role) == ("AUT_LOCALE", "AUT_LOCALE")
 
 
 @pytest.mark.django_db

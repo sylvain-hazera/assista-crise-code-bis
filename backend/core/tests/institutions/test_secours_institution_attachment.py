@@ -117,7 +117,12 @@ class TestRcscAttachment:
             response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
 
         assert response.status_code == status.HTTP_200_OK
-        assert filtrer_chiffre(ContactInstitution.objects.filter(institution=mairie, utilisateur=pending), fonction="Réserviste RCSC").exists()
+        # 23/11/2026 (core/rcsc.py) : rattaché à la RCSC, institution fille de la mairie créée
+        # au besoin ; il travaille pour la mairie, avec ses droits (autorité locale).
+        rcsc = Institution.objects.get(institution_parente=mairie, type__code="rcsc")
+        assert filtrer_chiffre(ContactInstitution.objects.filter(institution=rcsc, utilisateur=pending), fonction="Réserviste").exists()
+        pending.refresh_from_db()
+        assert (pending.institution_id, pending.type) == (mairie.id, "AUT_LOCALE")
         # Pas de notification "rattachement manuel" puisqu'une mairie a bien été trouvée.
         manual_attach_calls = [
             c for c in mock_send_mail.call_args_list
