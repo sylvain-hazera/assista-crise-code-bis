@@ -18,6 +18,8 @@ import { ContactInstitutionService } from '../../services/contact-institution.se
 import { InstitutionDomaineService } from '../../services/institution-domaine.service';
 import { UserService } from '../../services/user.service';
 import { AuthService } from '../../auth/services/auth.service';
+import { OrganisationArbreComponent } from './organisation-arbre/organisation-arbre.component';
+import { PerimetreService } from '../../services/perimetre.service';
 import { CompetenceService } from '../../services/competence.service';
 import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
 import { LocationService, Commune } from '../../services/location.service';
@@ -49,7 +51,7 @@ import {
 import { User } from '../../shared/models/user.model';
 import { Competence } from '../../shared/models/competence.model';
 
-type MainTab = 'institutions' | 'types' | 'roles';
+type MainTab = 'institutions' | 'types' | 'roles' | 'organisation';
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
 type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' | 'annuaire-pcs' | 'mes-risques' | 'envois' | 'modeles' | 'atouts';
@@ -59,7 +61,7 @@ import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [PcsRisquesComponent, PcsAnnuaireComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent, ConnecteursSmtpComponent],
+  imports: [OrganisationArbreComponent, PcsRisquesComponent, PcsAnnuaireComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent, ConnecteursSmtpComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })
@@ -192,7 +194,17 @@ export class InstitutionsComponent implements OnInit {
     private risqueCommunalService: RisqueCommunalService,
     private authService: AuthService,
     private router: Router,
+    private perimetreService: PerimetreService,
   ) {}
+
+  /** Un administrateur qui regarde une partie de la plateforme seulement (« Mon institution »
+   * ou une autre) : la liste des contacts est réduite à ce périmètre, alors que la liste des
+   * institutions montre tout. Une fiche hors périmètre paraît donc vide — on le dit
+   * (23/11/2026, constaté sur la réserve communale du Porge). */
+  get contactsReduitsParLaVue(): boolean {
+    return this.authService.getCurrentUser()?.type === 'ADMIN'
+      && this.perimetreService.choix !== PerimetreService.TOUT;
+  }
 
   readonly categoriesInterlocuteurPCS = CATEGORIES_INTERLOCUTEUR_PCS;
   readonly modesAlertePCS = MODES_ALERTE_PCS;
@@ -820,6 +832,14 @@ export class InstitutionsComponent implements OnInit {
       next: () => { this.reloadInstitutions(); this.showSuccess('Institution supprimée.'); this.closeModal(); },
       error: (err) => this.showError('Erreur lors de la suppression.', err),
     });
+  }
+
+  /** Un clic dans l'arbre de l'organisation ouvre la fiche, qu'elle soit dans la liste chargée
+   * ou non (une fille hors de la page courante). */
+  ouvrirDepuisOrganisation(id: string): void {
+    const connue = this.institutions.find(i => i.id === id);
+    if (connue) { this.openDetail(connue); return; }
+    this.institutionService.getById(id).subscribe({ next: i => this.openDetail(i) });
   }
 
   openDetail(institution: Institution): void {

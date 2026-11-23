@@ -1,0 +1,147 @@
+<section class="page">
+  <header class="entete">
+    <h1><span class="material-icons" aria-hidden="true">rule</span> Revue des droits</h1>
+    <p class="sous-titre">Qui peut faire quoi, dans votre institution et les entités qui en dépendent — et la revue tous les six mois.</p>
+  </header>
+
+  @if (chargement && !matrice) {
+    <p class="etat">Chargement…</p>
+  } @else if (erreur) {
+    <p class="etat erreur" role="alert">{{ erreur }}</p>
+  } @else if (matrice) {
+    <div class="barre">
+      <label class="champ">
+        <span>Institution</span>
+        <select [ngModel]="institutionChoisie" (ngModelChange)="changerInstitution($event)" aria-label="Institution à revoir">
+          @for (c of matrice.choix; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+        </select>
+      </label>
+      <button type="button" class="btn-secondaire" (click)="exporter()">
+        <span class="material-icons" aria-hidden="true">download</span> Exporter (CSV)
+      </button>
+    </div>
+
+    <div class="resume">
+      <div class="tuile"><strong>{{ matrice.resume.actives }}</strong><span>fiches actives</span></div>
+      <div class="tuile" [class.alerte]="matrice.resume.a_revoir"><strong>{{ matrice.resume.a_revoir }}</strong><span>à revoir</span></div>
+      <div class="tuile" [class.alerte]="matrice.resume.anomalies"><strong>{{ matrice.resume.anomalies }}</strong><span>avec une anomalie</span></div>
+      <div class="tuile" [class.alerte]="echeanceDepassee">
+        <strong>{{ matrice.resume.prochaine_echeance ? (matrice.resume.prochaine_echeance | date:'dd/MM/yyyy') : '—' }}</strong>
+        <span>prochaine revue complète</span>
+      </div>
+    </div>
+
+    @if (echeanceDepassee || matrice.resume.a_revoir) {
+      <p class="bandeau">
+        <span class="material-icons" aria-hidden="true">event_busy</span>
+        {{ matrice.resume.a_revoir }} fiche(s) à revoir : chaque fiche se revoit tous les {{ matrice.resume.periode_jours }} jours environ (six mois).
+      </p>
+    }
+    @if (matrice.resume.sans_responsable.length) {
+      <p class="bandeau">
+        <span class="material-icons" aria-hidden="true">person_off</span>
+        Sans responsable désigné (bureau, contact principal ou rôle de responsable) : {{ matrice.resume.sans_responsable.join(', ') }}.
+      </p>
+    }
+    @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+    <div class="filtres">
+      @if (matrice.institutions.length > 1) {
+        <select [(ngModel)]="filtreInstitution" aria-label="Filtrer par entité">
+          <option value="">Toutes les entités ({{ matrice.institutions.length }})</option>
+          @for (i of matrice.institutions; track i.id) { <option [value]="i.id">{{ i.nom }}</option> }
+        </select>
+      }
+      <div class="segments" role="radiogroup" aria-label="Filtre">
+        <button type="button" [class.actif]="filtre === 'toutes'" (click)="filtre = 'toutes'">Toutes</button>
+        <button type="button" [class.actif]="filtre === 'a-revoir'" (click)="filtre = 'a-revoir'">À revoir</button>
+        <button type="button" [class.actif]="filtre === 'anomalies'" (click)="filtre = 'anomalies'">Anomalies</button>
+      </div>
+      <input type="search" [(ngModel)]="recherche" placeholder="Nom, email, fonction…" aria-label="Rechercher une personne">
+      <label class="case"><input type="checkbox" [(ngModel)]="voirInactives"> Fiches retirées</label>
+    </div>
+
+    <div class="tableau">
+      <table>
+        <thead>
+          <tr>
+            <th>Personne</th><th>Entité · fonction</th><th>Compte</th><th>Bureau / principal</th><th>Rôles</th>
+            <th>Équipes</th><th>Registre</th><th>Dernière connexion</th><th>Revue</th><th>Anomalies</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (l of lignes; track l.contact) {
+            <tr [class.retiree]="!l.actif">
+              <td data-titre="Personne"><strong>{{ l.nom }}</strong><br><span class="discret">{{ l.email }}</span>
+                @if (!l.compte_actif) { <span class="puce rouge">compte désactivé</span> }</td>
+              <td data-titre="Entité">{{ l.institution_nom }}@if (l.fonction) { <br><span class="discret">{{ l.fonction }}</span> }</td>
+              <td data-titre="Compte">{{ l.type_compte_libelle }}
+                @if (l.institution_travail && l.institution_travail !== l.institution_nom) { <br><span class="discret">travaille pour {{ l.institution_travail }}</span> }
+                @if (l.acces_formation) { <br><span class="puce">formation</span> }</td>
+              <td data-titre="Bureau">
+                @if (l.membre_bureau) { <span class="puce bleue">bureau</span> }
+                @if (l.contact_principal) { <span class="puce bleue">principal</span> }
+                @if (!l.membre_bureau && !l.contact_principal) { <span class="discret">—</span> }</td>
+              <td data-titre="Rôles">
+                @for (r of l.roles; track r.id) { <span class="puce">{{ r.libelle }}</span> }
+                @if (!l.roles.length) { <span class="discret">—</span> }</td>
+              <td data-titre="Équipes">{{ l.equipes.join(', ') || '—' }}
+                @if (l.encadre.length) { <br><span class="discret">encadre : {{ l.encadre.join(', ') }}</span> }</td>
+              <td data-titre="Registre">
+                @if (l.habilite_registre) {
+                  <span class="puce" [class.rouge]="!l.engagement_signe">habilité{{ l.engagement_signe ? '' : ', engagement non signé' }}</span>
+                } @else { <span class="discret">—</span> }</td>
+              <td data-titre="Connexion">{{ l.derniere_connexion ? (l.derniere_connexion | date:'dd/MM/yyyy') : 'jamais' }}</td>
+              <td data-titre="Revue">
+                @if (l.derniere_revue) { {{ l.derniere_revue.le | date:'dd/MM/yyyy' }}<br><span class="discret">{{ l.derniere_revue.par }}</span> }
+                @else { <span class="discret">jamais</span> }
+                @if (aRevoir(l) && l.actif) { <br><span class="puce orange">à revoir</span> }</td>
+              <td data-titre="Anomalies">
+                @for (a of anomalies(l); track a.code) { <span class="puce rouge" [title]="a.libelle">{{ a.libelle }}</span> }
+                @if (!anomalies(l).length) { <span class="discret">—</span> }</td>
+              <td class="actions">
+                @if (l.actif) {
+                  <button type="button" class="btn-ok" (click)="proposer(l, 'CONFIRME', 'Confirmer les droits')">Confirmer</button>
+                  <details class="retirer">
+                    <summary>Retirer…</summary>
+                    <div class="menu">
+                      @if (l.membre_bureau) { <button type="button" (click)="proposer(l, 'BUREAU_RETIRE', 'Retirer du bureau')">du bureau</button> }
+                      @for (r of l.roles; track r.id) {
+                        <button type="button" (click)="proposer(l, 'ROLE_RETIRE', 'Retirer le rôle « ' + r.libelle + ' »', r.id)">le rôle {{ r.libelle }}</button>
+                      }
+                      <button type="button" (click)="proposer(l, 'CONTACT_DESACTIVE', 'Retirer de ' + l.institution_nom)">de l'entité</button>
+                      @if (l.habilite_registre) { <a routerLink="/admin/habilitations-registre">l'habilitation au registre →</a> }
+                    </div>
+                  </details>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="11" class="vide">Aucune fiche ne correspond.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
+
+@if (enCours) {
+  <div class="voile" (click)="enCours = null"></div>
+  <div class="dialogue" role="dialog" aria-modal="true" aria-labelledby="titre-decision">
+    <h2 id="titre-decision">{{ enCours.libelle }}</h2>
+    <p><strong>{{ enCours.ligne.nom }}</strong> — {{ enCours.ligne.institution_nom }}</p>
+    @if (enCours.decision === 'CONTACT_DESACTIVE') {
+      <p class="avertissement">La personne ne fera plus partie de cette entité. Son compte reste ouvert.</p>
+    }
+    <label class="champ">
+      <span>Commentaire (facultatif, gardé chiffré)</span>
+      <textarea rows="3" [(ngModel)]="enCours.commentaire" placeholder="Fin de mandat, départ, vérifié avec…"></textarea>
+    </label>
+    <div class="boutons">
+      <button type="button" class="btn-secondaire" (click)="enCours = null">Annuler</button>
+      <button type="button" class="btn-ok" [disabled]="envoi" (click)="confirmerDecision()">
+        {{ envoi ? 'Enregistrement…' : 'Enregistrer la décision' }}
+      </button>
+    </div>
+  </div>
+}

@@ -13059,6 +13059,35 @@ class ControleAppareilStock(models.Model):
 # ── Jetons chiffrés : leur empreinte, avant chaque enregistrement (18/11/2026) ─────────────────
 #: Modèle -> jetons. Un lien envoyé par courriel (modifier sa demande, confirmer une alerte,
 #: rejoindre une association…) est retrouvé par l'empreinte du jeton, jamais par le jeton.
+
+class RevueDroits(EnvironmentScopedModel):
+    """Une décision de revue des droits sur la fiche de contact d'une personne dans une
+    institution (23/11/2026, core/revue_droits.py) : confirmé, ou tel droit retiré.
+
+    La revue périodique (tous les six mois) se lit sur la date de la dernière décision de
+    chaque contact. Le commentaire est chiffré comme tout ce qui est saisi."""
+
+    class Decision(models.TextChoices):
+        CONFIRME = "CONFIRME", "Droits confirmés"
+        BUREAU_RETIRE = "BUREAU_RETIRE", "Retiré du bureau"
+        ROLE_RETIRE = "ROLE_RETIRE", "Rôle opérationnel retiré"
+        CONTACT_DESACTIVE = "CONTACT_DESACTIVE", "Retiré de l'institution"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contact = models.ForeignKey("ContactInstitution", on_delete=models.CASCADE, related_name="revues_droits")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="revues_droits")
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="revues_droits_subies")
+    revu_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="revues_droits_faites")
+    revu_le = models.DateTimeField(auto_now_add=True)
+    decision = models.CharField(max_length=20, choices=Decision.choices)
+    #: Pour ROLE_RETIRE : le code du rôle retiré (pas une donnée personnelle).
+    detail = models.CharField(max_length=40, blank=True, default="")
+    commentaire = EncryptedTextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-revu_le"]
+        indexes = [models.Index(fields=["institution", "revu_le"])]
+
 JETONS_CHIFFRES = {
     "Request": ("deletion_token", "edition_token"),
     "Information": ("deletion_token", "edition_token"),

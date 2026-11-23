@@ -14,13 +14,14 @@ export type GroupeNavId = 'permanent' | 'mon-activite' | 'crise' | 'post-critiqu
  * - `autorite-locale` : collectivités territoriales (isAutoriteLocaleCommunale) ;
  * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables` ;
  * - `membres-association` : champ serveur `acces_membres_association` ;
+ * - `revue-droits` : champ serveur `acces_revue_droits` (bureau, contact principal, responsable) ;
  * - `campagnes` : champ serveur `acces_campagnes` (qui peut mener une campagne) ;
  * - `radio` : champ serveur `acces_radio` (nœud personnel, passerelle de l'institution, ou
  *   droit accordé — voir backend/core/acces_radio.py). L'entrée « Accueil radio » reste en
  *   `tous` : c'est elle qui explique ce qu'il faut et permet de le demander. */
 export type VisibiliteNav =
   'institutionnel' | 'tous' | 'sysadmin' | 'admin-plateforme' | 'validation-comptes' | 'autorite-locale'
-  | 'registre-vulnerables' | 'membres-association' | 'campagnes' | 'radio';
+  | 'registre-vulnerables' | 'membres-association' | 'revue-droits' | 'campagnes' | 'radio';
 
 /** Second niveau de replis, à l'intérieur d'un cadre. N'existe que là où un même cadre
  * contient deux familles d'écrans qui ne se mélangent jamais : MeshCore et Meshtastic sont
@@ -243,6 +244,7 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },
   // Qui est membre de quelle institution, par la personne.
   { icon: 'switch_account', label: 'Rattachements', route: '/admin/rattachements', groupe: 'administration' },
+  { icon: 'rule', label: 'Revue des droits', route: '/admin/revue-droits', groupe: 'administration', visibilite: 'revue-droits' },
   { icon: 'handshake', label: 'Délégations de gestion', route: '/admin/delegations-gestion', groupe: 'administration' },
   { icon: 'query_stats', label: 'Suivi du département', route: '/admin/suivi-departement', groupe: 'administration' },
   { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs', groupe: 'administration', visibilite: 'sysadmin' },

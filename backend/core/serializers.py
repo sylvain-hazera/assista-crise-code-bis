@@ -374,6 +374,7 @@ class UserSerializer(serializers.ModelSerializer):
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
     acces_membres_association = serializers.SerializerMethodField()
+    acces_revue_droits = serializers.SerializerMethodField()
     acces_campagnes = serializers.SerializerMethodField()
     second_facteur = serializers.SerializerMethodField()
     est_benevole_association = serializers.SerializerMethodField()
@@ -467,20 +468,33 @@ class UserSerializer(serializers.ModelSerializer):
         """
         # Import local : institution_attachment importe deja des serializers ailleurs, un
         # import en tete de module fermerait le cycle.
-        from .institution_attachment import CODE_TYPE_AASC
+        from .institution_attachment import est_type_associatif, filtre_associatif
 
         if obj.type == UserRole.ADMINISTRATOR:
             return True
 
         institution = getattr(obj, 'institution', None)
         if institution is not None and institution.type_id and institution.actif:
-            if (institution.type.code or '').lower() == CODE_TYPE_AASC:
+            if est_type_associatif(institution.type.code):
                 return True
 
+        # Le bureau d'une association -- AASC ou réserve communale (23/11/2026).
         return ContactInstitution.objects.filter(
-            utilisateur=obj, actif=True, membre_bureau=True,
-            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+            filtre_associatif(), utilisateur=obj, actif=True, membre_bureau=True,
+            institution__actif=True,
         ).exists()
+
+    def get_acces_revue_droits(self, obj):
+        """Qui voit « Revue des droits » (23/11/2026, core/revue_droits.py) : l'administrateur,
+        et le bureau, le contact principal ou un responsable d'une institution. Calculé pour le
+        SEUL compte de la requête (trois requêtes : pas dans la liste des utilisateurs)."""
+        requete = self.context.get('request')
+        if requete is None or not getattr(requete.user, 'is_authenticated', False) or requete.user.id != obj.id:
+            return None
+        if obj.type == UserRole.ADMINISTRATOR:
+            return True
+        from .revue_droits import institutions_revisables
+        return bool(institutions_revisables(obj))
 
     def get_second_facteur(self, obj):
         """Où en est la protection du compte. Complet pour soi-même (le site s'en sert pour
@@ -530,11 +544,11 @@ class UserSerializer(serializers.ModelSerializer):
         est `UTIL_SIMPLE` jusqu'à ce qu'on le désigne encadrant, et un agent de mairie peut
         être adhérent de l'association locale.
         """
-        from .institution_attachment import CODE_TYPE_AASC
+        from .institution_attachment import filtre_associatif
 
+        # Adhérent d'une association -- AASC ou réserve communale (23/11/2026).
         return ContactInstitution.objects.filter(
-            utilisateur=obj, actif=True,
-            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+            filtre_associatif(), utilisateur=obj, actif=True, institution__actif=True,
         ).exists()
 
     def _niveau_radio(self, obj):
@@ -601,7 +615,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_campagnes', 'second_facteur',
+                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_revue_droits', 'acces_campagnes', 'second_facteur',
                   'est_benevole_association',
                   'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {

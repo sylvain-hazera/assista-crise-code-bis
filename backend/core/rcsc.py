@@ -74,6 +74,18 @@ def completer(rcsc):
     Team.objects.filter(institution=rcsc).update(est_equipe_rcsc=True)
 
 
+def de_la_commune(nom):
+    """« du Porge », « de La Teste-de-Buch », « des Eglisottes », « d'Arcachon », « de Mérignac »."""
+    nom = (nom or "").strip()
+    if nom.startswith("Le "):
+        return "du " + nom[3:]
+    if nom.startswith("Les "):
+        return "des " + nom[4:]
+    if nom[:1].upper() in "AEIOUYHÂÉÈÊÎÔÛ":
+        return "d'" + nom
+    return "de " + nom
+
+
 def creer_pour(mairie, environment=None):
     """Crée la RCSC d'une mairie (inscription d'un réserviste dont la mairie n'a pas encore la
     sienne, script d'exploitation). Rend la RCSC existante si elle existe déjà."""
@@ -84,7 +96,7 @@ def creer_pour(mairie, environment=None):
         return existante
     environnement = environment or mairie.environment
     rcsc = Institution.objects.create(
-        nom=f"Réserve communale de {mairie.commune_nom or mairie.nom}", type=type_rcsc(),
+        nom=f"Réserve communale {de_la_commune(mairie.commune_nom or mairie.nom)}", type=type_rcsc(),
         institution_parente=mairie, environment=environnement, actif=True,
     )
     creer_equipe_fille(rcsc, mairie, None, environnement)

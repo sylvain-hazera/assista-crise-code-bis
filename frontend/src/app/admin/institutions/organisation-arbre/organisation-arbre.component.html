@@ -1,0 +1,73 @@
+<div class="orga">
+  <p class="intro">Chaque institution, les entités qui dépendent d'elle (réserve communale, CCAS, comités…) et leurs équipes.</p>
+  <form class="recherche" (ngSubmit)="charger()">
+    <span class="material-icons" aria-hidden="true">search</span>
+    <input type="search" name="recherche" [(ngModel)]="recherche" placeholder="Rechercher une institution (vue plateforme)…"
+           aria-label="Rechercher une institution">
+    <button type="submit" class="btn-secondaire">Chercher</button>
+  </form>
+
+  @if (chargement) {
+    <p class="etat">Chargement…</p>
+  } @else if (erreur) {
+    <p class="etat erreur" role="alert">{{ erreur }}</p>
+  } @else if (!arbres.length) {
+    <p class="etat">Aucune institution avec des entités rattachées dans votre périmètre.</p>
+  } @else {
+    <ul class="arbre" role="tree">
+      @for (n of arbres; track n.id) {
+        <ng-container [ngTemplateOutlet]="noeud" [ngTemplateOutletContext]="{ $implicit: n }" />
+      }
+    </ul>
+  }
+</div>
+
+<ng-template #noeud let-n>
+  <li role="treeitem" [attr.aria-expanded]="aDesEnfants(n) ? !replies.has(n.id) : null" [class.inactif]="!n.actif">
+    <div class="ligne" [class.rcsc]="n.rcsc">
+      @if (aDesEnfants(n)) {
+        <button type="button" class="pli" (click)="basculer(n.id)" [attr.aria-label]="(replies.has(n.id) ? 'Déplier ' : 'Replier ') + n.nom">
+          <span class="material-icons">{{ replies.has(n.id) ? 'chevron_right' : 'expand_more' }}</span>
+        </button>
+      } @else { <span class="pli vide"></span> }
+      <span class="material-icons type" aria-hidden="true">{{ icone(n) }}</span>
+      <button type="button" class="nom" (click)="ouvrir.emit(n.id)">{{ n.nom }}</button>
+      <span class="meta">
+        {{ n.type_libelle }}@if (n.commune) { · {{ n.commune }} }
+      </span>
+      @if (n.rcsc) { <span class="pastille">RCSC</span> }
+      @if (!n.actif) { <span class="pastille grise">inactive</span> }
+      <span class="compte" title="Fiches de contact actives">{{ n.membres }} membre{{ n.membres > 1 ? 's' : '' }}</span>
+      @if (totalFilles(n)) { <span class="compte">{{ totalFilles(n) }} entité{{ totalFilles(n) > 1 ? 's' : '' }}</span> }
+    </div>
+    @if (aDesEnfants(n) && !replies.has(n.id)) {
+      <ul role="group">
+        @for (e of n.equipes; track e.id) {
+          <ng-container [ngTemplateOutlet]="equipe" [ngTemplateOutletContext]="{ $implicit: e }" />
+        }
+        @for (f of n.filles; track f.id) {
+          <ng-container [ngTemplateOutlet]="noeud" [ngTemplateOutletContext]="{ $implicit: f }" />
+        }
+      </ul>
+    }
+  </li>
+</ng-template>
+
+<ng-template #equipe let-e>
+  <li role="treeitem" class="equipe">
+    <div class="ligne">
+      <span class="pli vide"></span>
+      <span class="material-icons type" aria-hidden="true">groups</span>
+      <span class="nom-equipe">{{ e.nom }}</span>
+      @if (e.rcsc) { <span class="pastille">RCSC</span> }
+      <span class="compte">{{ e.membres }} membre{{ e.membres > 1 ? 's' : '' }}</span>
+    </div>
+    @if (e.sous_equipes.length) {
+      <ul role="group">
+        @for (s of e.sous_equipes; track s.id) {
+          <ng-container [ngTemplateOutlet]="equipe" [ngTemplateOutletContext]="{ $implicit: s }" />
+        }
+      </ul>
+    }
+  </li>
+</ng-template>

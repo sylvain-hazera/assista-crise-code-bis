@@ -222,6 +222,8 @@ export class AdminSidebarComponent {
         return !!this.authService.getCurrentUser()?.acces_registre_vulnerables;
       case 'membres-association':
         return !!this.authService.getCurrentUser()?.acces_membres_association;
+      case 'revue-droits':
+        return !!this.authService.getCurrentUser()?.acces_revue_droits;
       case 'campagnes':
         return !!this.authService.getCurrentUser()?.acces_campagnes;
       case 'radio':

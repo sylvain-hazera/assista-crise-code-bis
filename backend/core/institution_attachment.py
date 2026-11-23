@@ -440,6 +440,25 @@ def nom_comparable(valeur):
 #: insensible à la casse partout : les lignes de catalogue existent en « AASC » comme en
 #: « aasc » selon la façon dont elles ont été créées.
 CODE_TYPE_AASC = "aasc"
+#: Les institutions qui gèrent des MEMBRES comme une association (annuaire, recrutement,
+#: bureau, qualifications, campagnes, fiche bénévole) : les AASC, et depuis le 23/11/2026 la
+#: réserve communale (« une RCSC est une association fille d'une mairie, elle doit pouvoir
+#: gérer ses membres comme les Casques jaunes gèrent les leurs », voir core/rcsc.py).
+#: `trouver_aasc` et l'inscription « aasc » restent, eux, propres aux AASC.
+TYPES_ASSOCIATIFS = (CODE_TYPE_AASC, "rcsc")
+
+
+def est_type_associatif(code) -> bool:
+    return (code or "").lower() in TYPES_ASSOCIATIFS
+
+
+def filtre_associatif(prefixe="institution__type__code"):
+    """Q() : le type de l'institution est associatif (insensible à la casse, comme ailleurs)."""
+    from django.db.models import Q
+    q = Q()
+    for code in TYPES_ASSOCIATIFS:
+        q |= Q(**{f"{prefixe}__iexact": code})
+    return q
 
 
 def trouver_aasc(nom_declare):

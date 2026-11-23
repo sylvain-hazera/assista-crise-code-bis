@@ -38,6 +38,9 @@
 
 .tabs {
   display: flex;
+  // Dix onglets dans la fiche d'une institution : sur un téléphone, ils passent à la ligne au
+  // lieu de sortir de l'écran (23/11/2026, remonté sur mobile).
+  flex-wrap: wrap;
   gap: .25rem;
   border-bottom: 1px solid var(--ac-border, #e5e7eb);
   margin-bottom: 1rem;
@@ -55,8 +58,14 @@
     color: var(--ac-text-muted, #6b7280);
     font-size: .9rem;
     border-bottom: 2px solid transparent;
+    white-space: nowrap;
 
     .material-icons { font-size: 1.1rem; }
+
+    @media (max-width: 640px) {
+      padding: .45rem .6rem;
+      font-size: .82rem;
+    }
 
     &.active {
       color: var(--ac-blue-text, #2563eb);

@@ -62,6 +62,10 @@ export type TriAnnuaire = 'nom' | 'fonction' | 'commune' | 'perimes' | 'silencie
  * (institution_attachment.CODE_TYPE_AASC) : les lignes de catalogue existent en « AASC »
  * comme en « aasc » selon la facon dont elles ont ete creees. */
 const CODE_TYPE_AASC = 'aasc';
+/** Les institutions qui gerent des membres comme une association : les AASC, et la reserve
+ * communale (RCSC, institution fille de sa mairie) depuis le 23/11/2026 -- miroir de
+ * institution_attachment.TYPES_ASSOCIATIFS. */
+const TYPES_ASSOCIATIFS = [CODE_TYPE_AASC, 'rcsc'];
 
 /**
  * Gestion des membres d'une association agréée de sécurité civile : annuaire, recrutement,
@@ -274,7 +278,7 @@ export class MembresAssociationComponent implements OnInit {
         //   raison de voir des mairies dans un selecteur d'associations.
         const associations = liste.filter(
           i => i.id && i.actif !== false
-            && (i.type_code || '').toLowerCase() === CODE_TYPE_AASC);
+            && TYPES_ASSOCIATIFS.includes((i.type_code || '').toLowerCase()));
 
         if (this.estAdministrateur) {
           this.mesInstitutions = associations;

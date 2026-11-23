@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { sysAdminGuard, adminPlateformeGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard, membresAssociationGuard, campagnesGuard, radioGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, adminPlateformeGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard, membresAssociationGuard, revueDroitsGuard, campagnesGuard, radioGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 
 export const ADMIN_ROUTES: Routes = [
@@ -75,6 +75,8 @@ export const ADMIN_ROUTES: Routes = [
   // gardes que « Membres » -- c'est la meme rubrique et le meme public, et le serveur tranche
   // ensuite qui peut LANCER (bureau, ou encadrement sur sa branche).
   { path: 'campagnes-disponibilite', loadComponent: () => import('./campagnes-disponibilite/campagnes-disponibilite.component').then(m => m.CampagnesDisponibiliteComponent), canActivate: [institutionalEffectiveGuard, campagnesGuard] },
+  // Revue des droits des contacts d'une institution et de ses filles (23/11/2026).
+  { path: 'revue-droits', loadComponent: () => import('./revue-droits/revue-droits.component').then(m => m.RevueDroitsComponent), canActivate: [institutionalEffectiveGuard, revueDroitsGuard] },
   { path: 'membres-association', loadComponent: () => import('./membres-association/membres-association.component').then(m => m.MembresAssociationComponent), canActivate: [institutionalEffectiveGuard, membresAssociationGuard] },
   { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
   // Designation nominative (art. R. 121-7 du CASF) : garde `autoriteLocaleGuard` et non

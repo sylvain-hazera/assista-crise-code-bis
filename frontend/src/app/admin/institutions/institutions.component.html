@@ -24,7 +24,14 @@
     <button class="tab" [class.active]="activeTab === 'roles'" (click)="activeTab = 'roles'">
       <span class="material-icons">badge</span> Rôles opérationnels
     </button>
+    <button class="tab" [class.active]="activeTab === 'organisation'" (click)="activeTab = 'organisation'">
+      <span class="material-icons">lan</span> Organisation
+    </button>
   </nav>
+
+  @if (activeTab === 'organisation') {
+    <app-organisation-arbre (ouvrir)="ouvrirDepuisOrganisation($event)" />
+  }
 
   @if (isLoading) {
     <div class="loading">Chargement...</div>
@@ -416,7 +423,12 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="5" class="empty">Aucun contact.</td></tr>
+                  <tr><td colspan="5" class="empty">
+                    @if (contactsReduitsParLaVue) {
+                      Aucun contact visible dans votre vue actuelle. Votre sélecteur du haut limite les contacts à
+                      votre institution (et ses filles) : choisissez « Toute la plateforme » pour voir ceux-ci.
+                    } @else { Aucun contact. }
+                  </td></tr>
                 }
               </tbody>
             </table>

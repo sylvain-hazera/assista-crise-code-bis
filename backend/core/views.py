@@ -16186,6 +16186,10 @@ class InstitutionViewSet(
                     "contact_principal": True,
                     "actif": True,
                     "environment": institution.environment,
+                    # Une réserve communale se gère comme une association : celui qui la crée
+                    # pour la mairie en tient d'abord le bureau (23/11/2026), et pourra
+                    # désigner le chef de réserve.
+                    "membre_bureau": est_une_rcsc,
                 },
             )
             if created:
@@ -26749,11 +26753,11 @@ class MaFicheBenevoleView(generics.GenericAPIView):
         un échec de la ressource ne doit pas transformer une correction d'adresse réussie en
         erreur à l'écran."""
         from .fiches_benevoles import ressource_du_benevole
-        from .institution_attachment import CODE_TYPE_AASC
+        from .institution_attachment import filtre_associatif
 
         rattachements = ContactInstitution.objects.filter(
-            utilisateur=fiche.utilisateur, actif=True,
-            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+            filtre_associatif(), utilisateur=fiche.utilisateur, actif=True,
+            institution__actif=True,
         ).select_related('institution')
         for rattachement in rattachements:
             try:

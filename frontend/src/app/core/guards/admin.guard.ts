@@ -105,6 +105,21 @@ export const autoriteLocaleGuard: CanActivateFn = (route, state) => {
  * attribut du rattachement et non du compte. Avant le 28/10/2026 la page était ouverte à tout
  * rôle institutionnel et se fermait d'elle-même : elle paraissait cassée à une mairie plutôt
  * qu'absente. */
+/** « Revue des droits » (23/11/2026) : champ serveur `acces_revue_droits` — administrateur, ou
+ * bureau, contact principal ou responsable d'une institution (backend/core/revue_droits.py). */
+export const revueDroitsGuard: CanActivateFn = () => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_revue_droits ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
 export const membresAssociationGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);

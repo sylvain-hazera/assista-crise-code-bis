@@ -28,10 +28,10 @@ ACCROCHES = {
 
 
 def _est_association(institution):
-    from .institution_attachment import CODE_TYPE_AASC
+    from .institution_attachment import est_type_associatif
 
     type_ = getattr(institution, "type", None)
-    return bool(type_ and (type_.code or "").lower() == CODE_TYPE_AASC)
+    return bool(type_ and est_type_associatif(type_.code))   # AASC ou réserve communale
 
 
 def _pilote_toute_l_institution(utilisateur, institution):

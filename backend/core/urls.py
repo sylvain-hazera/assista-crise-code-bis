@@ -368,6 +368,10 @@ router.register(r'dossiers-relogement', DossierRelogementViewSet)
 router.register(r'creneaux-equipe', CreneauEquipeViewSet)
 router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
+from .views_organisation import (  # noqa: E402
+    OrganisationView, RevueDroitsDecisionView, RevueDroitsExportView, RevueDroitsView,
+)
+
 urlpatterns = [
     path('', include(router.urls)),
     # path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
@@ -448,6 +452,11 @@ urlpatterns = [
     path('qualite-air/', QualiteAirView.as_view(), name='qualite_air'),
     path('sante-urgences/', SanteUrgencesView.as_view(), name='sante_urgences'),
     path('radioactivite/', RadioactiviteView.as_view(), name='radioactivite'),
+    # Organisation (arbre des institutions et de leurs filles) et revue des droits (23/11/2026).
+    path('organisation/', OrganisationView.as_view(), name='organisation'),
+    path('revue-droits/', RevueDroitsView.as_view(), name='revue-droits'),
+    path('revue-droits/decision/', RevueDroitsDecisionView.as_view(), name='revue-droits-decision'),
+    path('revue-droits/export/', RevueDroitsExportView.as_view(), name='revue-droits-export'),
     path('seismes/', SeismesView.as_view(), name='seismes'),
     path('volcans/', VolcansView.as_view(), name='volcans'),
     path('defibrillateurs/', DefibrillateursView.as_view(), name='defibrillateurs'),

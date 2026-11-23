@@ -1,0 +1,44 @@
+.orga { display: flex; flex-direction: column; gap: .75rem; }
+.intro { margin: 0; color: var(--ac-text-muted, #6b7280); font-size: .9rem; }
+.recherche {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  input { flex: 1; min-width: 12rem; padding: .5rem .7rem; border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px;
+          background: var(--ac-surface, #fff); color: inherit; }
+  .material-icons { color: var(--ac-text-muted, #6b7280); }
+}
+.etat { color: var(--ac-text-muted, #6b7280); &.erreur { color: var(--ac-red-text, #b91c1c); } }
+
+.arbre, .arbre ul { list-style: none; margin: 0; padding: 0; }
+.arbre ul { margin-left: 1.1rem; padding-left: .6rem; border-left: 1px dashed var(--ac-border, #d1d5db); }
+
+.ligne {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  padding: .3rem .25rem; border-radius: 6px;
+  &:hover { background: var(--ac-surface-hover, rgba(37, 99, 235, .05)); }
+  &.rcsc .type { color: var(--ac-orange-text, #c2410c); }
+}
+.pli {
+  border: none; background: none; cursor: pointer; padding: 0; width: 1.5rem; height: 1.5rem;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--ac-text-muted, #6b7280);
+  &.vide { cursor: default; }
+  &:focus-visible { outline: 2px solid #2563eb; border-radius: 4px; }
+}
+.type { font-size: 1.15rem; color: var(--ac-blue-text, #2563eb); }
+.nom {
+  border: none; background: none; padding: 0; cursor: pointer; font-weight: 600; color: inherit; text-align: left;
+  &:hover, &:focus-visible { text-decoration: underline; }
+}
+.nom-equipe { font-weight: 500; }
+.equipe .type { color: var(--ac-text-muted, #6b7280); }
+.meta { color: var(--ac-text-muted, #6b7280); font-size: .82rem; }
+.compte {
+  font-size: .75rem; padding: .05rem .45rem; border-radius: 999px;
+  background: var(--ac-bg-muted, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+  font-variant-numeric: tabular-nums;
+}
+.pastille {
+  font-size: .7rem; font-weight: 700; letter-spacing: .04em; padding: .05rem .4rem; border-radius: 4px;
+  background: var(--ac-orange-bg, #fff7ed); color: var(--ac-orange-text, #c2410c);
+  &.grise { background: var(--ac-bg-muted, #f3f4f6); color: var(--ac-text-muted, #6b7280); }
+}
+.inactif > .ligne { opacity: .6; }
