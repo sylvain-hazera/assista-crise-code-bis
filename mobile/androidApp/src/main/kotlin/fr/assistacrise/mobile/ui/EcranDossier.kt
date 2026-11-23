@@ -111,6 +111,9 @@ fun EcranDossier(modele: ModeleApplication) {
                 }
             }
 
+            // Les messages de terrain en un geste, pour ce dossier (22/11/2026).
+            if (!d.clos) PanneauTerrain(modele, d)
+
             // --- Photos -------------------------------------------------------------------
             SousTitre("Photos")
             val recues = photos[d.id].orEmpty()

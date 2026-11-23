@@ -37,6 +37,8 @@ enum class TypeMessageTerrain(
 data class MessageTerrainSortant(
     val type: String,
     val mission: String? = null,
+    /** Le dossier (l'intervention) : les boutons sont dans sa fiche, à l'intérieur de la mission. */
+    val dossier: String? = null,
     val equipe: String? = null,
     val texte: String = "",
     val nombre: Int? = null,
@@ -55,10 +57,13 @@ object EtiquetteTerrain {
     /** Au-delà, le texte est tronqué : une trame radio est petite (MeshCore surtout). */
     const val OCTETS_MAX = 140
 
-    fun ecrire(type: TypeMessageTerrain, mission: String?, auteur: String, identifiant: String, texte: String = "", nombre: Int? = null): String {
+    fun ecrire(type: TypeMessageTerrain, mission: String?, auteur: String, identifiant: String, texte: String = "", nombre: Int? = null,
+               dossier: String? = null): String {
         val m6 = mission?.filter { it.isLetterOrDigit() }?.lowercase()?.take(6)?.padEnd(6, '0') ?: "------"
         val a6 = auteur.filter { it.isLetterOrDigit() }.lowercase().take(6).padEnd(6, '0')
-        val entete = "⚑${type.code} $m6.$a6.$identifiant"
+        // Quatrième groupe, facultatif : le dossier.
+        val d6 = dossier?.filter { it.isLetterOrDigit() }?.lowercase()?.take(6)?.let { ".$it" } ?: ""
+        val entete = "⚑${type.code} $m6.$a6.$identifiant$d6"
         val corps = buildString {
             append(type.libelle)
             if (nombre != null) append(" ($nombre)")

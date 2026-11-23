@@ -52,6 +52,9 @@ class TerrainTest {
         assertEquals("⚑PS 3f2a9c.9c1e0b.a1b2c3 Demande de premiers secours : chute, cheville", e)
         val long = EtiquetteTerrain.ecrire(TypeMessageTerrain.SITUATION, null, "9c1e0b", "a1b2c3", "é".repeat(200))
         assertTrue(long.startsWith("⚑SIT ------.9c1e0b.a1b2c3") && long.endsWith("…") && long.encodeToByteArray().size <= EtiquetteTerrain.OCTETS_MAX)
+        // Avec le dossier : un quatrième groupe.
+        assertEquals("⚑ARR 3f2a9c.9c1e0b.a1b2c3.7d41e0 Arrivé sur les lieux",
+            EtiquetteTerrain.ecrire(TypeMessageTerrain.ARRIVE, "3f2a9c11", "9c1e0b44", "a1b2c3", dossier = "7d41e0aa-bbbb"))
     }
 
     @Test fun lesSecoursExigentUnMotif() = runTest {
@@ -63,11 +66,12 @@ class TerrainTest {
         val banc = Banc(HttpStatusCode.OK)
         banc.api.connecter("c@exemple.fr", "secret")
         banc.equipes.rafraichir()
-        banc.terrain.envoyer(TypeMessageTerrain.RENFORT, "m1", "t1", nombre = 3)
+        banc.terrain.envoyer(TypeMessageTerrain.RENFORT, "m1", "t1", nombre = 3, dossier = "d1")
         banc.synchro.envoyerLaFile(force = true)
         val corps = Json.parseToJsonElement((banc.demandes.last().body as TextContent).text).jsonObject
         assertEquals("RENFORT", corps.getValue("type").jsonPrimitive.content)
         assertEquals("3", corps.getValue("nombre").jsonPrimitive.content)
+        assertEquals("d1", corps.getValue("dossier").jsonPrimitive.content)
         assertTrue("equipe" !in corps)
         assertEquals(DepotTerrain.RECU, banc.terrain.journal.value.single().etat)
         assertTrue(banc.radio.isEmpty())

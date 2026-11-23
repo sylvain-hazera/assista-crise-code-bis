@@ -432,9 +432,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val cartesHorsLigne get() = app.cartes
 
     /** « Aller vers » a conduit jusqu'au point : on propose d'envoyer « Arrivé sur les lieux ». */
-    fun arriveSurLesLieux() {
-        val mission = app.depot.missions.value.firstOrNull { it.statut == StatutMission.EN_COURS }
-        envoyerMessageTerrain(TypeMessageTerrain.ARRIVE, mission)
+    fun arriveSurLesLieux(dossierId: String?) {
+        envoyerMessageTerrain(TypeMessageTerrain.ARRIVE, dossiers.value.firstOrNull { it.id == dossierId })
     }
 
     // --- Utilisateur radio avancé (22/11/2026) -----------------------------------------------
@@ -503,12 +502,13 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      * serveur répond, sinon sur le canal radio de l'équipe. La position est jointe si on en
      * connaît une (celle du suivi, ou la dernière du téléphone).
      */
-    fun envoyerMessageTerrain(type: TypeMessageTerrain, mission: Mission?, texte: String = "", nombre: Int? = null) {
+    fun envoyerMessageTerrain(type: TypeMessageTerrain, dossier: fr.assistacrise.mobile.domaine.Dossier?, texte: String = "", nombre: Int? = null) {
         viewModelScope.launch {
-            val equipe = mission?.let { m -> equipes.value.firstOrNull { it.id in m.equipes } } ?: equipes.value.firstOrNull()
+            // L'équipe du dossier porte le message par radio ; à défaut, la première de mes équipes.
+            val equipe = dossier?.equipe?.let { id -> equipes.value.firstOrNull { it.id == id } } ?: equipes.value.firstOrNull()
             val position = dernierePosition()
             try {
-                app.terrain.envoyer(type, mission?.id, equipe?.id, texte, nombre, position?.first, position?.second)
+                app.terrain.envoyer(type, dossier?.mission, equipe?.id, texte, nombre, position?.first, position?.second, dossier?.id)
             } catch (e: IllegalArgumentException) {
                 message = e.message; return@launch
             }

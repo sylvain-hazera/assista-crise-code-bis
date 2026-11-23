@@ -9,7 +9,8 @@ secours avec son motif.
 **Format radio** : lisible par un humain sur n'importe quelle radio, et reconnu par le serveur
 quand le message arrive par un pont :
 
-    ⚑ARR 3f2a9c.9c1e0b.a1b2c3 Arrivé sur les lieux
+    ⚑ARR 3f2a9c.9c1e0b.a1b2c3.7d41e0 Arrivé sur les lieux
+     │   │      │      │      └ début de l'identifiant du dossier (facultatif)
      │   │      │      └ identifiant du message (6 hex) : dédoublonnage radio/données
      │   │      └ début de l'identifiant de l'intervenant (6 hex)
      │   └ début de l'identifiant de la mission (6 hex), ou « ------ » sans mission
@@ -41,7 +42,7 @@ STATUT_DU_TYPE = {
     "RENFORT": "Demande de renfort", "DANGER": "Danger signalé", "PREMIERS_SECOURS": "Demande de secours",
 }
 
-_ETIQUETTE = re.compile(r"⚑([A-Z]{2,7}) ([0-9a-f-]{6})\.([0-9a-f]{6})\.([0-9a-f]{6})(?: (.*))?$", re.S)
+_ETIQUETTE = re.compile(r"⚑([A-Z]{2,7}) ([0-9a-f-]{6})\.([0-9a-f]{6})\.([0-9a-f]{6})(?:\.([0-9a-f]{6}))?(?: (.*))?$", re.S)
 
 
 def lire_etiquette(texte):
@@ -53,7 +54,7 @@ def lire_etiquette(texte):
     if not m or m.group(1) not in CODES:
         return None
     return {"type": CODES[m.group(1)], "mission6": None if m.group(2) == "------" else m.group(2),
-            "auteur6": m.group(3), "ident": m.group(4), "texte": (m.group(5) or "").strip()}
+            "auteur6": m.group(3), "ident": m.group(4), "dossier6": m.group(5), "texte": (m.group(6) or "").strip()}
 
 
 def peut_ecrire(user, mission) -> bool:
@@ -63,7 +64,7 @@ def peut_ecrire(user, mission) -> bool:
 
 
 def enregistrer(auteur, mission, type_, texte="", nombre=None, latitude=None, longitude=None,
-                canal="DONNEES", emis_le=None, identifiant_client="", request=None):
+                canal="DONNEES", emis_le=None, identifiant_client="", request=None, dossier=None):
     """Enregistre le message (une seule fois par identifiant client), et ses effets. Rend
     (message, cree)."""
     from .models import MessageTerrain
@@ -83,7 +84,8 @@ def enregistrer(auteur, mission, type_, texte="", nombre=None, latitude=None, lo
     try:
         with transaction.atomic():
             message = MessageTerrain.objects.create(
-                auteur=auteur, mission=mission, equipe=equipe, crise=mission.crise if mission else None, type=type_,
+                auteur=auteur, mission=mission, dossier=dossier, equipe=equipe,
+                crise=mission.crise if mission else (dossier.crise if dossier is not None else None), type=type_,
                 texte=(texte or "")[:2000], nombre=nombre, latitude="" if latitude is None else str(latitude),
                 longitude="" if longitude is None else str(longitude), canal=canal, canaux_recus=[canal],
                 emis_le=emis_le or timezone.now(), identifiant_client=(identifiant_client or "")[:16],
@@ -106,9 +108,10 @@ def _effets(message, request):
     libelle = message.get_type_display()
     detail = f" : {message.texte}" if message.texte else ""
     nombre = f" ({message.nombre} personne(s))" if message.nombre else ""
+    sur = f" — dossier {message.dossier.numero}" if message.dossier_id and message.dossier.numero else ""
     audit_log(request=request, action_code="MODIFICATION", objet_type="MessageTerrain", objet_id=message.id,
               crise=message.crise,
-              commentaire=f"{_nom(message.auteur)} — {libelle}{nombre}{detail}"
+              commentaire=f"{_nom(message.auteur)} — {libelle}{nombre}{sur}{detail}"
                           f"{' (par radio ' + message.get_canal_display() + ')' if message.canal != 'DONNEES' else ''}")
     if message.type in PRIORITAIRES:
         try:
@@ -148,6 +151,7 @@ def alerter(message, request=None):
     corps = (f"{titre}\n\nPar : {_nom(message.auteur)}"
              f"{' — équipe ' + message.equipe.name if message.equipe else ''}\n"
              f"Mission : {mission.titre if mission else 'aucune'}\n"
+             f"{'Dossier : ' + str(message.dossier.numero or '') + ' ' + str(message.dossier.titre or '') + chr(10) if message.dossier_id else ''}"
              f"{'Motif' if message.type == 'PREMIERS_SECOURS' else 'Précision'} : {message.texte or 'non précisé'}\n"
              f"{'Position : ' + message.latitude + ', ' + message.longitude if message.latitude else 'Position non transmise'}\n"
              f"Reçu par : {message.get_canal_display()}")
@@ -192,8 +196,11 @@ def depuis_radio(texte, canal):
         auteur = next((u for u in candidats if str(u.id).replace("-", "").startswith(lu["auteur6"])), None)
         if auteur is None:
             return None
+        dossier = None
+        if lu.get("dossier6"):
+            dossier = next((d for d in mission.dossiers.all() if d.id.hex.startswith(lu["dossier6"])), None)
         message, _cree = enregistrer(auteur, mission, lu["type"], texte=lu["texte"], canal=canal,
-                                     identifiant_client=lu["ident"])
+                                     identifiant_client=lu["ident"], dossier=dossier)
         return message
     except Exception:
         logger.exception("Étiquette de terrain reçue par radio non traitée.")

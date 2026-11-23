@@ -1406,3 +1406,13 @@ avec recherche par nom. Chacun ouvre une conversation : parler sur un canal, ou 
 direct**, émis et reçu (les pilotes remontent désormais les messages adressés au nœud). Les
 conversations sont gardées dans le magasin chiffré, 200 messages chacune ; en formation, les
 messages émis suivent la règle « [démo] ». Pas d'accusé de réception affiché pour l'instant.
+
+## 19. Version 0.16.0 (23/11/2026) : les boutons de terrain dans le dossier
+
+Les dix messages de terrain sont dans la fiche du dossier (l'intervention), à l'intérieur de la
+mission, et plus dans l'écran Missions. Chaque message porte son dossier ; la mission s'en
+déduit. Par radio, il part sur le **canal de l'équipe** chargée du dossier (il n'y a pas de canal
+par dossier) ; l'étiquette gagne un quatrième groupe facultatif, le début de l'identifiant du
+dossier (`⚑ARR 3f2a9c.9c1e0b.a1b2c3.7d41e0 …`). Serveur : migration 0375 ; un dossier qui n'est
+pas confié aux équipes de l'intervenant est refusé. Le poste de commandement affiche le dossier
+de chaque message dans la fiche de la mission.

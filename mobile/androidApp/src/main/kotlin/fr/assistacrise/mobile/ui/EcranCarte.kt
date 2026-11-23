@@ -321,7 +321,7 @@ fun EcranCarte(modele: ModeleApplication) {
                         Box(Modifier.size(14.dp).clip(CircleShape).background(if (d.priorite == "URGENTE") Refus else Attente))
                         Spacer(Modifier.width(12.dp))
                         LigneDossier(d, Modifier.weight(1f))
-                        TextButton(onClick = { destination = Destination(d.titre, d.latitude!!, d.longitude!!, "Dossier") }) { Text("Aller") }
+                        TextButton(onClick = { destination = Destination(d.titre, d.latitude!!, d.longitude!!, "Dossier", d.id) }) { Text("Aller") }
                         TextButton(onClick = { modele.ouvrirDossier(d.id) }) { Text("Ouvrir") }
                     }
                     HorizontalDivider()
@@ -345,7 +345,7 @@ fun EcranCarte(modele: ModeleApplication) {
     destination?.let { d ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { destination = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            AllerVers(d, moi, capGps, surArrivee = { modele.arriveSurLesLieux() }, surFermeture = { destination = null })
+            AllerVers(d, moi, capGps, surArrivee = { modele.arriveSurLesLieux(d.dossier) }, surFermeture = { destination = null })
         }
     }
 }

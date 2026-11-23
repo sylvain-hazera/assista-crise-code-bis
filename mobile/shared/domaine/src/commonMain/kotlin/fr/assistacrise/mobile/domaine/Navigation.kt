@@ -24,7 +24,7 @@ data class PointCrise(
 }
 
 /** Une destination de « Aller vers » : un point, un dossier, un membre. */
-data class Destination(val nom: String, val latitude: Double, val longitude: Double, val genre: String)
+data class Destination(val nom: String, val latitude: Double, val longitude: Double, val genre: String, val dossier: String? = null)
 
 /**
  * « Aller vers un point », sans itinéraire (22/11/2026) : distance et cap à vol d'oiseau, et

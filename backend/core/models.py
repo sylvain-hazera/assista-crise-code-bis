@@ -6098,6 +6098,9 @@ class MessageTerrain(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     auteur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages_terrain")
     mission = models.ForeignKey("Mission", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
+    #: Le dossier (l'intervention) que le message concerne : les boutons sont dans la fiche du
+    #: dossier, à l'intérieur de la mission (22/11/2026).
+    dossier = models.ForeignKey("Dossier", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
     equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
     crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_terrain")
     type = models.CharField(max_length=20, choices=Type.choices)

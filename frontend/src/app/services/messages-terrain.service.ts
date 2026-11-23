@@ -7,6 +7,7 @@ import { environment } from '../../environments/environment';
 /** Un message de terrain envoyé par un intervenant (22/11/2026). */
 export interface MessageTerrain {
   id: string; auteur: string; auteur_nom: string; mission: string | null; equipe: string | null; equipe_nom: string | null;
+  dossier?: string | null; dossier_numero?: string | null; dossier_titre?: string | null;
   type: string; type_libelle: string; texte: string; nombre: number | null; latitude: string; longitude: string;
   canal: 'DONNEES' | 'MESHTASTIC' | 'MESHCORE'; canaux_recus: string[]; emis_le: string; recu_le: string; prioritaire: boolean;
   statut?: string;

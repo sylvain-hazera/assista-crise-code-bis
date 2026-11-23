@@ -14,17 +14,22 @@ class MessageTerrainSerializer(serializers.ModelSerializer):
     auteur_nom = serializers.SerializerMethodField()
     type_libelle = serializers.CharField(source="get_type_display", read_only=True)
     equipe_nom = serializers.CharField(source="equipe.name", read_only=True, default=None)
+    dossier_numero = serializers.CharField(source="dossier.numero", read_only=True, default=None)
+    dossier_titre = serializers.SerializerMethodField()
     prioritaire = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageTerrain
-        fields = ["id", "auteur", "auteur_nom", "mission", "equipe", "equipe_nom", "type", "type_libelle", "texte", "nombre",
+        fields = ["id", "auteur", "auteur_nom", "mission", "dossier", "dossier_numero", "dossier_titre", "equipe", "equipe_nom", "type", "type_libelle", "texte", "nombre",
                   "latitude", "longitude", "canal", "canaux_recus", "emis_le", "recu_le", "prioritaire"]
         read_only_fields = fields
 
     def get_auteur_nom(self, obj):
         u = obj.auteur
         return (f"{u.first_name} {u.last_name}".strip() or u.username) if u else ""
+
+    def get_dossier_titre(self, obj):
+        return obj.dossier.titre if obj.dossier_id else None
 
     def get_prioritaire(self, obj):
         return obj.type in mt.PRIORITAIRES
@@ -58,7 +63,17 @@ class MessageTerrainViewSet(viewsets.GenericViewSet):
         if type_ not in MessageTerrain.Type.values:
             raise ValidationError({"error": "Type de message inconnu."})
         mission = self._mission(request, d.get("mission")) if d.get("mission") else None
-        if mission is not None and not mt.peut_ecrire(request.user, mission):
+        dossier = None
+        if d.get("dossier"):
+            from .models import Dossier
+            dossier = Dossier.objects.select_related("mission", "equipe").filter(pk=d.get("dossier")).first()
+            if dossier is None:
+                raise ValidationError({"error": "Dossier introuvable."})
+            mission = mission or dossier.mission
+            mon_equipe = dossier.equipe_id and request.user.teams.filter(pk=dossier.equipe_id).exists()
+            if not mon_equipe and not (mission is not None and mt.peut_ecrire(request.user, mission)):
+                raise PermissionDenied("Ce dossier n'est pas confié à vos équipes.")
+        elif mission is not None and not mt.peut_ecrire(request.user, mission):
             raise PermissionDenied("Réservé aux membres des équipes de la mission.")
         if mission is None and not request.user.teams.exists():
             raise PermissionDenied("Réservé aux membres d'une équipe.")
@@ -70,7 +85,7 @@ class MessageTerrainViewSet(viewsets.GenericViewSet):
                 request.user, mission, type_, texte=(d.get("texte") or "").strip(),
                 nombre=int(nombre) if nombre not in (None, "") else None, latitude=d.get("latitude"),
                 longitude=d.get("longitude"), canal=canal, emis_le=emis,
-                identifiant_client=(d.get("identifiant_client") or "")[:16], request=request)
+                identifiant_client=(d.get("identifiant_client") or "")[:16], request=request, dossier=dossier)
         except ValueError as exc:
             raise ValidationError({"error": str(exc)})
         return Response(MessageTerrainSerializer(message).data, status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK)

@@ -97,7 +97,7 @@ def test_un_message_recu_par_radio_puis_par_les_donnees_n_est_enregistre_qu_une_
 def test_lecture_des_etiquettes():
     lu = mt.lire_etiquette("⚑PS 3f2a9c.9c1e0b.a1b2c3 Premiers secours : chute")
     assert lu == {"type": "PREMIERS_SECOURS", "mission6": "3f2a9c", "auteur6": "9c1e0b", "ident": "a1b2c3",
-                  "texte": "Premiers secours : chute"}
+                  "dossier6": None, "texte": "Premiers secours : chute"}
     assert mt.lire_etiquette("Bonjour à tous") is None
     assert mt.lire_etiquette("⚑XYZ 3f2a9c.9c1e0b.a1b2c3") is None
 
@@ -141,3 +141,25 @@ def test_en_formation_l_alerte_ne_part_qu_a_l_auteur(terrain):
     assert courriel.to == ["benevole-t@test.fr"] and courriel.subject.startswith("[assista-crise] [DEMO]")
     assert {c.args[0] for c in dm.call_args_list} <= {terrain["benevole"]}
     assert MessageTerrain.objects.get().environment == "DEMO"
+
+
+@pytest.mark.django_db
+def test_le_message_porte_son_dossier_par_les_donnees_et_par_radio(terrain):
+    from core.models import Dossier
+    benevole, mission = terrain["benevole"], terrain["mission"]
+    dossier = Dossier.objects.create(numero="D-42", titre="Cave inondée", crise=terrain["crise"], equipe=terrain["equipe"], mission=mission)
+    # Par les données, le dossier seul suffit : la mission s'en déduit.
+    with mock.patch("core.matrix.envoyer_dm"):
+        r = _client(benevole).post(reverse("messageterrain-list"), {"dossier": str(dossier.id), "type": "ARRIVE",
+                                                                    "identifiant_client": "aaaaa1"}, format="json")
+    assert r.status_code == 201, r.data
+    assert (r.data["dossier_numero"], r.data["mission"]) == ("D-42", mission.id)
+    # Par radio, le quatrième groupe de l'étiquette désigne le dossier.
+    texte = f"⚑FIN {mission.id.hex[:6]}.{benevole.id.hex[:6]}.bbbbb2.{dossier.id.hex[:6]} Intervention terminée"
+    m = mt.depuis_radio(texte, "MESHCORE")
+    assert m.dossier == dossier and m.type == "TERMINEE"
+    # Un dossier d'une autre équipe : refusé.
+    autre = Dossier.objects.create(numero="D-43", crise=terrain["crise"])
+    r = _client(benevole).post(reverse("messageterrain-list"), {"dossier": str(autre.id), "type": "ARRIVE",
+                                                                "identifiant_client": "ccccc3"}, format="json")
+    assert r.status_code == 403

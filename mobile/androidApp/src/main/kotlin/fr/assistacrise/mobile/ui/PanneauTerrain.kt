@@ -14,7 +14,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,8 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.ModeleApplication
 import fr.assistacrise.mobile.domaine.EtiquetteTerrain
-import fr.assistacrise.mobile.domaine.Mission
-import fr.assistacrise.mobile.domaine.StatutMission
+import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.TypeMessageTerrain
 import fr.assistacrise.mobile.donnees.DepotTerrain
 import java.text.SimpleDateFormat
@@ -41,39 +39,27 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Les messages de terrain en un geste (22/11/2026) : de gros boutons, à portée de pouce, pour
- * la mission en cours. Un texte n'est demandé que là où il sert ; pour une demande de premiers
+ * Les messages de terrain en un geste (22/11/2026) : de gros boutons, à portée de pouce, dans la
+ * fiche du dossier (l'intervention), à l'intérieur de la mission. Un texte n'est demandé que là où il sert ; pour une demande de premiers
  * secours, le motif est demandé aussitôt.
  */
 @Composable
-fun PanneauTerrain(modele: ModeleApplication, missions: List<Mission>) {
-    val enCours = missions.filter { it.statut == StatutMission.EN_COURS }
-    if (enCours.isEmpty()) return
-    var choisie by rememberSaveable { mutableStateOf(enCours.first().id) }
-    val mission = enCours.firstOrNull { it.id == choisie } ?: enCours.first()
+fun PanneauTerrain(modele: ModeleApplication, dossier: Dossier) {
     var saisie by rememberSaveable { mutableStateOf<String?>(null) }
     val journal by modele.journalTerrain.collectAsStateWithLifecycle()
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Column(Modifier.padding(12.dp)) {
             Text("Sur le terrain", style = MaterialTheme.typography.titleMedium)
-            if (enCours.size > 1) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    enCours.take(3).forEach { m ->
-                        FilterChip(selected = m.id == mission.id, onClick = { choisie = m.id }, label = { Text(m.titre, maxLines = 1) })
-                    }
-                }
-            } else {
-                Text(mission.titre, style = MaterialTheme.typography.bodySmall)
-            }
+            Text("Signalez où vous en êtes sur ce dossier, au poste de commandement.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
             TypeMessageTerrain.entries.chunked(2).forEach { ligne ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     ligne.forEach { type ->
                         val geste = {
                             if (type.demandeTexte || type.demandeNombre) saisie = type.name
-                            else modele.envoyerMessageTerrain(type, mission)
+                            else modele.envoyerMessageTerrain(type, dossier)
                         }
                         if (type.prioritaire) {
                             Button(onClick = geste, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -118,7 +104,7 @@ fun PanneauTerrain(modele: ModeleApplication, missions: List<Mission>) {
             },
             confirmButton = {
                 TextButton(enabled = !type.texteObligatoire || texte.isNotBlank(), onClick = {
-                    modele.envoyerMessageTerrain(type, mission, texte, nombre.toIntOrNull())
+                    modele.envoyerMessageTerrain(type, dossier, texte, nombre.toIntOrNull())
                     saisie = null
                 }) { Text("Envoyer") }
             },

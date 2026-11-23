@@ -48,11 +48,11 @@ class DepotTerrain(
     /** Met le message en file. `equipe` : celle dont le canal radio porte le message sans réseau. */
     suspend fun envoyer(
         type: TypeMessageTerrain, mission: String?, equipe: String?, texte: String = "", nombre: Int? = null,
-        latitude: Double? = null, longitude: Double? = null,
+        latitude: Double? = null, longitude: Double? = null, dossier: String? = null,
     ): Envoye {
         require(!type.texteObligatoire || texte.isNotBlank()) { type.questionTexte }
         val identifiant = Random.nextInt(0, 0xffffff).toString(16).padStart(6, '0')
-        val sortant = MessageTerrainSortant(type.name, mission, equipe, texte.trim(), nombre, latitude, longitude, maintenantIso(), identifiant)
+        val sortant = MessageTerrainSortant(type.name, mission, dossier, equipe, texte.trim(), nombre, latitude, longitude, maintenantIso(), identifiant)
         val action = file.ajouter(ActionEnAttente.GENRE_MESSAGE_TERRAIN, equipe ?: "", json.encodeToString(MessageTerrainSortant.serializer(), sortant), type.libelle)
         val envoye = Envoye(identifiant, action.id, type.name, type.libelle, texte.trim(), horloge())
         garder((listOf(envoye) + _journal.value).take(MAX))
@@ -63,7 +63,7 @@ class DepotTerrain(
     fun etiquette(action: ActionEnAttente): String? {
         val m = runCatching { json.decodeFromString(MessageTerrainSortant.serializer(), action.charge) }.getOrNull() ?: return null
         val type = TypeMessageTerrain.entries.firstOrNull { it.name == m.type } ?: return null
-        return EtiquetteTerrain.ecrire(type, m.mission, auteur() ?: return null, m.identifiant, m.texte, m.nombre)
+        return EtiquetteTerrain.ecrire(type, m.mission, auteur() ?: return null, m.identifiant, m.texte, m.nombre, m.dossier)
     }
 
     /** Après un passage de la file : ce qui n'y est plus est arrivé ; ce qui est parti par radio le dit. */

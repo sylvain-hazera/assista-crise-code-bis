@@ -3,7 +3,7 @@
   @for (m of prioritaires; track m.id) {
     <p class="alerte" role="alert">
       <strong>{{ m.type_libelle }}</strong> — {{ m.auteur_nom }}@if (m.equipe_nom) { ({{ m.equipe_nom }}) },
-      {{ m.emis_le | date:'HH:mm' }}@if (m.texte) { : {{ m.texte }} }
+      {{ m.emis_le | date:'HH:mm' }}@if (m.dossier_numero) { · dossier {{ m.dossier_numero }} }@if (m.texte) { : {{ m.texte }} }
       @if (carte(m); as lien) { — <a [href]="lien" target="_blank" rel="noopener noreferrer">position</a> }
     </p>
   }
@@ -12,7 +12,7 @@
       @for (s of statuts; track s.id) {
         <li [class.prioritaire]="s.prioritaire">
           <strong>{{ s.auteur_nom }}</strong> <span class="statut">{{ s.statut }}</span>
-          <span class="quand">depuis {{ s.emis_le | date:'HH:mm' }} · {{ canaux[s.canal] }}</span>
+          <span class="quand">depuis {{ s.emis_le | date:'HH:mm' }}@if (s.dossier_numero) { · dossier {{ s.dossier_numero }} } · {{ canaux[s.canal] }}</span>
         </li>
       }
     </ul>
@@ -25,7 +25,7 @@
       <ul class="fil">
         @for (m of fil; track m.id) {
           <li [class.prioritaire]="m.prioritaire">
-            <span class="quand">{{ m.emis_le | date:'dd/MM HH:mm' }}</span> {{ m.auteur_nom }} — {{ m.type_libelle }}@if (m.nombre) { ({{ m.nombre }}) }
+            <span class="quand">{{ m.emis_le | date:'dd/MM HH:mm' }}</span> {{ m.auteur_nom }} — {{ m.type_libelle }}@if (m.nombre) { ({{ m.nombre }}) }@if (m.dossier_numero) { · dossier {{ m.dossier_numero }} }
             @if (m.texte) { : {{ m.texte }} } <span class="quand">· {{ canaux[m.canal] }}</span>
           </li>
         }
