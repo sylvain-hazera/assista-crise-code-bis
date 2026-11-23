@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
  * Le service de terrain (22/11/2026), qui remplace le seul suivi de position. Un service de
  * premier plan, avec deux raisons d'exister, chacune visible dans la notification :
  *
- * - **la radio** : tant qu'une radio Meshtastic ou MeshCore est choisie, la liaison reste
+ * - **la radio** : tant qu'une radio Meshtastic ou MeshCore (ou une de chaque) est choisie, la liaison reste
  *   ouverte écran éteint et application fermée (« ça ne doit pas s'interrompre ») ;
  * - **la mission** : tant qu'une de mes équipes est engagée, la position est relevée et
  *   partagée — et seulement alors. « La géolocalisation doit rester activée le temps de la
@@ -71,7 +71,7 @@ class ServiceTerrain : Service(), LocationListener {
         // sur disque, pas en mémoire.
         app.restaurer()
         app.radio.reprendre()
-        portee.launch { app.radio.etat.collectLatest { mettreAJour() } }
+        portee.launch { app.radio.etats.collectLatest { mettreAJour() } }
         portee.launch { app.suivi.etat.collectLatest { mettreAJour() } }
         while (true) {
             // Le serveur dit si une de mes équipes est engagée, ou libérée. Hors réseau, seul
@@ -161,12 +161,12 @@ class ServiceTerrain : Service(), LocationListener {
             },
         )
         val ouvrir = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val radio = app.radio.etat.value
-        val texteRadio = when {
-            !app.radio.choisie() -> null
-            radio.phase == LiaisonRadio.Phase.PRETE -> "Radio ${radio.protocole?.libelle ?: ""} connectée : ${radio.nom ?: ""}".trim()
-            else -> "Radio : reconnexion en cours…"
-        }
+        // Une ou deux radios (23/11/2026) : la notification les nomme toutes.
+        val texteRadio = app.radio.toutes.filter { it.choisie() }.map { l ->
+            val e = l.etat.value
+            if (e.phase == LiaisonRadio.Phase.PRETE) "${l.emplacement.libelle} connectée : ${e.nom ?: ""}".trim()
+            else "${l.emplacement.libelle} : reconnexion…"
+        }.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "Radio ")
         val constructeur = Notification.Builder(this, CANAL)
             .setOngoing(true)
             .setContentIntent(ouvrir)

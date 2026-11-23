@@ -76,8 +76,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val equipes = app.equipes.equipes
     val fils = app.equipes.fils
     val suivi = app.suivi.etat
-    val radio = app.radio.etat
+    /** Les deux liaisons radio (23/11/2026) : Meshtastic puis MeshCore. */
+    val radios = app.radio.etats
     val radiosTrouvees = app.radio.trouvees
+    val rechercheRadio = app.radio.recherche
+    val erreurRechercheRadio = app.radio.erreurRecherche
     val crises = app.citoyen.crises
     val informations = app.citoyen.informations
     val typesDemande = app.citoyen.typesDemande
@@ -395,7 +398,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.notifications.toutEffacer()
             app.api.deconnecter()
             ServiceTerrain.actualiser(app)
-            app.radio.deconnecter()
+            app.radio.toutDeconnecter()
             app.depot.toutEffacer()
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
@@ -438,8 +441,21 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     // --- Utilisateur radio avancé (22/11/2026) -----------------------------------------------
 
-    val radioAvance = app.radio.avance
-    val piloteRadio get() = app.radio.piloteCourant
+    /**
+     * La radio que les menus avancés et la messagerie radio regardent, quand le téléphone en
+     * tient deux (23/11/2026). À défaut de choix, la première radio prête.
+     */
+    var protocoleRadio by mutableStateOf<fr.assistacrise.mobile.lien.Protocole?>(null); private set
+    fun choisirRadio(protocole: fr.assistacrise.mobile.lien.Protocole) { protocoleRadio = protocole }
+    val liaisonChoisie: LiaisonRadio get() =
+        protocoleRadio?.let { app.radio.pour(it) }?.takeIf { it.etat.value.phase == LiaisonRadio.Phase.PRETE }
+            ?: app.radio.pretes().firstOrNull() ?: app.radio.pour(protocoleRadio ?: fr.assistacrise.mobile.lien.Protocole.MESHTASTIC)
+    val radio get() = liaisonChoisie.etat
+    val radioAvance get() = liaisonChoisie.avance
+    val piloteRadio get() = liaisonChoisie.piloteCourant
+    fun piloteDe(protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).piloteCourant
+    /** L'équipe dont ce canal (de la radio choisie) est le canal géré par la plateforme. */
+    fun equipeDuCanalRadio(index: Int) = app.radio.equipeDuCanal(liaisonChoisie.emplacement, index)
     private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
     var modeRadioAvance by mutableStateOf(false); private set
 
@@ -456,9 +472,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      */
     fun envoyerALaRadio(trames: List<ByteArray>, resume: String, relire: Boolean = true) {
         viewModelScope.launch {
-            val ok = app.radio.envoyerAdmin(trames)
+            val liaison = liaisonChoisie
+            val ok = liaison.envoyerAdmin(trames)
             message = if (ok) "$resume : envoyé à la radio." else "$resume : la radio n'a pas pris la commande."
-            if (ok && relire) { kotlinx.coroutines.delay(1_500); app.radio.relireAvance() }
+            if (ok && relire) { kotlinx.coroutines.delay(1_500); liaison.relireAvance() }
         }
     }
 
@@ -480,19 +497,16 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         aller(Ecran.EQUIPES)
     }
 
-    fun nomDuContactRadio(contact: String) = app.messagerieRadio.nomDuContact(contact)
+    fun nomDuContactRadio(cle: String) = app.messagerieRadio.nomDuContact(cle)
 
     fun ecrireALaRadio(cle: String, texte: String) {
         viewModelScope.launch {
-            val ok = when {
-                cle.startsWith("c:") -> app.messagerieRadio.envoyerSurCanal(cle.removePrefix("c:").toInt(), texte)
-                else -> app.messagerieRadio.envoyerDirect(cle.removePrefix("d:"), texte)
-            }
+            val ok = app.messagerieRadio.envoyer(cle, texte)
             if (!ok) message = "La radio n'a pas pris le message (radio déconnectée, ou contact inconnu)."
         }
     }
 
-    fun relireLaRadio() { viewModelScope.launch { if (!app.radio.relireAvance()) message = "La radio n'est pas prête." } }
+    fun relireLaRadio() { viewModelScope.launch { if (!liaisonChoisie.relireAvance()) message = "La radio n'est pas prête." } }
 
     /** Le journal des messages de terrain envoyés de ce téléphone. */
     val journalTerrain = app.terrain.journal
@@ -1071,10 +1085,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     /** Une radio jointe par le réseau (TCP/IP). Rend le motif d'un refus, ou null. */
     fun connecterLaRadioParLeReseau(protocole: fr.assistacrise.mobile.lien.Protocole, adresse: String): String? =
         app.radio.connecterParLeReseau(protocole, adresse)
-    fun deconnecterLaRadio() = app.radio.deconnecter()
+    fun deconnecterLaRadio(protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.deconnecter(protocole)
 
-    /** Le canal de cette équipe sur la radio connectée, s'il y est configuré. */
-    fun canalRadioDe(equipe: Equipe) = app.radio.canalPour(equipe)
+    /** Le canal de cette équipe sur cette radio, s'il y est configuré. */
+    fun canalRadioDe(equipe: Equipe, protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).canalPour(equipe)
 
     // --- Mode citoyen ---------------------------------------------------------------------
 

@@ -44,8 +44,10 @@ private class Banc(repondre: suspend MockRequestHandleScope.(HttpRequestData) ->
     /** Ce que la radio a émis, par équipe. `radioPresente = false` : pas de radio connectée. */
     val emisParRadio = mutableListOf<Pair<String, String>>()
     var radioPresente = false
+    /** Ce que rend la radio quand elle émet : deux radios sur le téléphone rendent « MESHTASTIC,MESHCORE ». */
+    var protocolesEmis = "MESHCORE"
     val synchro = Synchronisation(api, file, depot, equipes, radio = EmetteurRadio { equipe, texte ->
-        if (radioPresente && equipe.canalMeshCore != null) { emisParRadio += equipe.nom to texte; "MESHCORE" } else null
+        if (radioPresente && equipe.canalMeshCore != null) { emisParRadio += equipe.nom to texte; protocolesEmis } else null
     })
 
     fun chemins() = demandes.map { "${it.method.value} ${it.url.encodedPath.removePrefix("/api/")}" }
@@ -448,6 +450,21 @@ class CoupureReseauTest {
         assertEquals(1, banc.synchro.envoyerLaFile(force = true))
         assertEquals("MESHCORE", banc.demandes.last().corps().getValue("deja_emis_radio").jsonPrimitive.content)
         assertTrue(banc.file.actions.value.isEmpty())
+    }
+
+    @Test fun deuxRadiosLeServeurApprendQueLeMessageEstPartiSurLesDeuxReseaux() = runTest {
+        var code = HttpStatusCode.OK
+        val banc = banc { code }
+        banc.api.connecter("c@exemple.fr", "secret")
+        banc.equipes.rafraichir()
+        code = HttpStatusCode.ServiceUnavailable
+        banc.radioPresente = true
+        banc.protocolesEmis = "MESHTASTIC,MESHCORE"
+        banc.equipes.ecrire(banc.equipes.equipes.value.first(), "Deux reseaux")
+        banc.synchro.envoyerLaFile(force = true)
+        code = HttpStatusCode.OK
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        assertEquals("MESHTASTIC,MESHCORE", banc.demandes.last().corps().getValue("deja_emis_radio").jsonPrimitive.content)
     }
 
     @Test fun uneEquipeSansCanalOuUnTelephoneSansRadioAttendSimplementLeReseau() = runTest {

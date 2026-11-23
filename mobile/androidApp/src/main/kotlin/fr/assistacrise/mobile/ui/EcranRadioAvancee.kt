@@ -82,6 +82,7 @@ import java.security.SecureRandom
  */
 @Composable
 fun EcranRadioAvancee(modele: ModeleApplication) {
+    val etats by modele.radios.collectAsStateWithLifecycle()
     val etat by modele.radio.collectAsStateWithLifecycle()
     val avance by modele.radioAvance.collectAsStateWithLifecycle()
     var onglet by rememberSaveable { mutableStateOf(0) }
@@ -99,6 +100,13 @@ fun EcranRadioAvancee(modele: ModeleApplication) {
         if (pilote == null || !pilote.prete) {
             Text("Connectez d'abord une radio (écran Compte).", modifier = Modifier.padding(16.dp))
             return@Column
+        }
+        // Deux radios sur le téléphone (23/11/2026) : on choisit celle qu'on règle.
+        val pretes = etats.mapNotNull { e -> e.protocole.takeIf { e.phase == fr.assistacrise.mobile.LiaisonRadio.Phase.PRETE } }
+        if (pretes.size > 1) Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            pretes.forEach { p ->
+                androidx.compose.material3.FilterChip(selected = p == pilote.protocole, onClick = { modele.choisirRadio(p) }, label = { Text(p.libelle) })
+            }
         }
         if (modele.zone.collectAsStateWithLifecycle().value == fr.assistacrise.mobile.donnees.Session.DEMO) {
             Text("Formation : la radio est réelle. Ce que vous modifiez ici est vraiment écrit sur la radio.",
@@ -165,11 +173,45 @@ private fun ConfirmerEffacement(titre: String, texte: String, surOui: () -> Unit
     )
 }
 
+/**
+ * Toucher au canal d'une équipe (23/11/2026) : « il faut s'aligner sur les canaux, vu qu'on en a
+ * peu, pour éviter la perte de données ». Ce canal est celui que la plateforme installe pour
+ * l'équipe, et que les ponts écoutent : le modifier ou le retirer coupe ce téléphone des
+ * messages radio de l'équipe. Confirmation renforcée, conséquences dites.
+ */
+@Composable
+private fun GardeCanalDEquipe(equipe: String, action: String, surOui: () -> Unit, surNon: () -> Unit) {
+    var saisie by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = surNon,
+        title = { Text("Canal de l'équipe $equipe") },
+        text = {
+            Column {
+                Text("Ce canal est géré par la plateforme : c'est par lui que l'équipe $equipe, le poste de commandement " +
+                    "et les ponts radio se parlent. Si vous le $action, les messages radio de l'équipe n'arriveront plus " +
+                    "sur cette radio, et les vôtres ne leur parviendront plus par radio. La plateforme le réinstallera " +
+                    "tel quel à la prochaine mise à jour de l'équipe.")
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(saisie, { saisie = it }, label = { Text("Tapez CONFIRMER pour continuer") }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(enabled = saisie.trim().uppercase() == "CONFIRMER", onClick = surOui) { Text("Continuer") } },
+        dismissButton = { TextButton(onClick = surNon) { Text("Annuler") } },
+    )
+}
+
+@Composable
+private fun MentionCanalDEquipe(equipe: String?) {
+    if (equipe != null) Text("Canal de l'équipe $equipe — géré par la plateforme", style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.tertiary)
+}
+
 // ── Meshtastic ──
 
 @Composable
 private fun CanauxMeshtastic(modele: ModeleApplication, pilote: PiloteMeshtastic, avance: PiloteRadio.Avance) {
     var edite by remember { mutableStateOf<CanalMeshtastic?>(null) }
+    var garde by remember { mutableStateOf<CanalMeshtastic?>(null) }
     val presse = LocalClipboardManager.current
     Text("Huit emplacements. Le canal primaire porte le préréglage radio ; les clés ne sont jamais affichées.", style = MaterialTheme.typography.bodySmall)
     (0 until 8).forEach { i ->
@@ -179,8 +221,9 @@ private fun CanauxMeshtastic(modele: ModeleApplication, pilote: PiloteMeshtastic
                 Column(Modifier.weight(1f)) {
                     Text("$i · ${c.nom.ifBlank { if (c.role == 1) "Primaire (sans nom)" else "—" }}", style = MaterialTheme.typography.bodyLarge)
                     Text("${listOf("Désactivé", "Primaire", "Secondaire")[c.role.coerceIn(0, 2)]} · clé ${AdminMeshtastic.pskLisible(c.psk)}", style = MaterialTheme.typography.bodySmall)
+                    MentionCanalDEquipe(modele.equipeDuCanalRadio(i)?.nom)
                 }
-                TextButton(onClick = { edite = c }) { Text("Modifier") }
+                TextButton(onClick = { if (modele.equipeDuCanalRadio(i) != null) garde = c else edite = c }) { Text("Modifier") }
             }
         }
     }
@@ -189,6 +232,9 @@ private fun CanauxMeshtastic(modele: ModeleApplication, pilote: PiloteMeshtastic
         CodeQr(lien)
         OutlinedButton(onClick = { presse.setText(AnnotatedString(lien)) }) { Text("Copier le lien") }
         Text("Ce lien contient les clés des canaux : ne le partagez qu'avec votre équipe.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    garde?.let { c ->
+        GardeCanalDEquipe(modele.equipeDuCanalRadio(c.index)?.nom ?: "", "modifiez", { edite = c; garde = null }, { garde = null })
     }
     edite?.let { c -> EditeurCanalMeshtastic(c, { edite = null }) { nouveau ->
         modele.envoyerALaRadio(pilote.adminGroupe(listOf(AdminMeshtastic.ecrireCanal(nouveau))), "Canal ${nouveau.index}")
@@ -442,15 +488,24 @@ private fun lienDePartage(avance: PiloteRadio.Avance): String? {
 private fun CanauxMeshCore(modele: ModeleApplication, avance: PiloteRadio.Avance) {
     var edite by remember { mutableStateOf<Int?>(null) }
     var effacer by remember { mutableStateOf<Int?>(null) }
+    var garde by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }   // (emplacement, retirer ?)
     Text("Les emplacements occupés. Un nom commençant par « # » est un canal public : sa clé se déduit du nom.", style = MaterialTheme.typography.bodySmall)
     avance.canauxMeshCore.values.sortedBy { it.index }.forEach { c ->
         Card(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${c.index} · ${c.nom}", modifier = Modifier.weight(1f))
-                TextButton(onClick = { edite = c.index }) { Text("Modifier") }
-                TextButton(onClick = { effacer = c.index }) { Text("Retirer") }
+                Column(Modifier.weight(1f)) {
+                    Text("${c.index} · ${c.nom}")
+                    MentionCanalDEquipe(modele.equipeDuCanalRadio(c.index)?.nom)
+                }
+                val dEquipe = modele.equipeDuCanalRadio(c.index) != null
+                TextButton(onClick = { if (dEquipe) garde = c.index to false else edite = c.index }) { Text("Modifier") }
+                TextButton(onClick = { if (dEquipe) garde = c.index to true else effacer = c.index }) { Text("Retirer") }
             }
         }
+    }
+    garde?.let { (i, retirer) ->
+        GardeCanalDEquipe(modele.equipeDuCanalRadio(i)?.nom ?: "", if (retirer) "retirez" else "modifiez",
+            { if (retirer) effacer = i else edite = i; garde = null }, { garde = null })
     }
     val libre = (0 until MeshCore.EMPLACEMENTS).firstOrNull { it !in avance.canauxMeshCore }
     if (libre != null) OutlinedButton(onClick = { edite = libre }) { Text("Ajouter un canal (emplacement $libre)") }

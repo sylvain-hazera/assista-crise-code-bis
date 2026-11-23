@@ -11282,13 +11282,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # l'intervenant, et le remet maintenant au serveur. On l'enregistre sur ce
             # protocole comme DÉJÀ ENVOYÉ : le pont ne le rediffuse pas une seconde fois, et
             # l'exemplaire qu'une passerelle aurait entendu est reconnu comme son écho
-            # (`_sans_echos`). L'autre protocole, lui, reste à émettre : la radio du téléphone
-            # n'en parle qu'un. Toute autre valeur est ignorée — un client ne peut s'en servir
-            # que pour ne PAS faire émettre son propre message.
-            deja_emis_radio = str(request.data.get('deja_emis_radio') or '').upper()
+            # (`_sans_echos`). Un protocole que le téléphone n'a pas émis reste à émettre. Depuis
+            # le 23/11/2026, un téléphone peut tenir une radio de chaque protocole : la valeur
+            # est alors une liste (« MESHTASTIC,MESHCORE »). Toute autre valeur est ignorée — un
+            # client ne peut s'en servir que pour ne PAS faire émettre son propre message.
+            deja_emis_radio = {p.strip() for p in str(request.data.get('deja_emis_radio') or '').upper().split(',')}
 
             def _statut_radio(protocole):
-                return StatutMessageMesh.ENVOYE if deja_emis_radio == protocole else StatutMessageMesh.EN_ATTENTE
+                return StatutMessageMesh.ENVOYE if protocole in deja_emis_radio else StatutMessageMesh.EN_ATTENTE
 
             if salon.room_id:
                 envoyer_message_salon(salon.room_id, request.user, nom, texte, urgent=urgent)

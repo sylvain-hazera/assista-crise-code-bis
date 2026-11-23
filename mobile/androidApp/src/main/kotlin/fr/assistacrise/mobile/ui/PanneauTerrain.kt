@@ -117,7 +117,7 @@ private fun heure(millis: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).forma
 
 private fun etat(e: DepotTerrain.Envoye) = when (e.etat) {
     DepotTerrain.RECU -> "reçu par le poste de commandement"
-    DepotTerrain.RADIO -> "parti par radio ${if (e.protocole == "MESHCORE") "MeshCore" else "Meshtastic"}, en attente du réseau"
+    DepotTerrain.RADIO -> "parti par radio ${e.protocole.orEmpty().split(",").joinToString(" et ") { if (it == "MESHCORE") "MeshCore" else "Meshtastic" }}, en attente du réseau"
     DepotTerrain.REFUSE -> "refusé : ${e.erreur ?: "voir la file"}"
     else -> "en attente d'envoi"
 }

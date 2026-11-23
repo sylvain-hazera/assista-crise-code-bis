@@ -5,7 +5,8 @@ import fr.assistacrise.mobile.domaine.StatutMission
 
 /** La radio de l'intervenant, vue d'ici : elle sait, ou non, porter un message à une équipe. */
 fun interface EmetteurRadio {
-    /** @return le protocole (`MESHCORE`, `MESHTASTIC`) par lequel le message est parti sur le
+    /** @return le ou les protocoles (`MESHCORE`, `MESHTASTIC`, ou `MESHTASTIC,MESHCORE` quand le
+     * téléphone tient une radio de chaque, 23/11/2026) par lesquels le message est parti sur le
      * canal radio de cette équipe, ou `null` s'il n'est pas parti. */
     suspend fun envoyerAEquipe(equipe: fr.assistacrise.mobile.domaine.Equipe, texte: String): String?
 }

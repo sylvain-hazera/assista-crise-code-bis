@@ -141,3 +141,8 @@ def test_message_deja_emis_par_la_radio_du_telephone_n_est_pas_rediffuse(create_
     client.post(url, {"texte": "Second message", "deja_emis_radio": "n-importe-quoi"}, format="json")
     assert MessageCanalMeshCore.objects.filter(canal=meshcore, statut="EN_ATTENTE").count() == 1
     assert MessageCanalMeshtastic.objects.filter(canal=meshtastic, statut="EN_ATTENTE").count() == 2
+
+    # Deux radios sur le même téléphone (23/11/2026) : déjà émis sur les deux réseaux.
+    client.post(url, {"texte": "Troisieme", "deja_emis_radio": "MESHTASTIC,MESHCORE"}, format="json")
+    assert MessageCanalMeshCore.objects.filter(canal=meshcore, statut="ENVOYE").count() == 2
+    assert MessageCanalMeshtastic.objects.filter(canal=meshtastic, statut="ENVOYE").count() == 1

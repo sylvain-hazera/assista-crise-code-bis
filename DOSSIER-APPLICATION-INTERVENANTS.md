@@ -1416,3 +1416,19 @@ par dossier) ; l'étiquette gagne un quatrième groupe facultatif, le début de 
 dossier (`⚑ARR 3f2a9c.9c1e0b.a1b2c3.7d41e0 …`). Serveur : migration 0375 ; un dossier qui n'est
 pas confié aux équipes de l'intervenant est refusé. Le poste de commandement affiche le dossier
 de chaque message dans la fiche de la mission.
+
+## 20. Version 0.17.0 (23/11/2026) : deux radios à la fois, canaux d'équipe protégés
+
+- **Une radio Meshtastic et une radio MeshCore en même temps** : une liaison par protocole
+  (`LiaisonRadio`), coordonnées par `Radios` ; chacune retenue et reconnectée seule, la
+  notification les nomme toutes. Sans réseau, un message d'équipe ou de terrain part sur
+  **chaque** radio qui porte le canal de l'équipe ; au retour du réseau, `deja_emis_radio`
+  vaut alors « MESHTASTIC,MESHCORE » et les ponts ne le répètent sur aucun des deux réseaux
+  (le serveur accepte la liste). Messagerie radio et menus avancés : on choisit la radio quand
+  il y en a deux ; les conversations sont rangées par protocole.
+- **Alignement sur les canaux** (« on en a peu, il faut éviter la perte de données ») :
+  l'application ne crée aucun canal. Elle n'emploie que le canal de l'équipe tel que la
+  plateforme l'installe, retrouvé par son nom ; absent de la radio, le message attend le réseau.
+  Dans le menu radio avancé, les canaux d'équipe sont signalés (« géré par la plateforme ») ;
+  les modifier ou les retirer demande de taper CONFIRMER, après l'énoncé des conséquences.
+- Ancien choix de radio (un seul fichier « radio ») : repris par l'emplacement de son protocole.

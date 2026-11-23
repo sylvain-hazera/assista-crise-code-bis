@@ -54,7 +54,7 @@ class Application : android.app.Application() {
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
     val citoyen by lazy { DepotCitoyen(api, magasin, file) }
-    val radio by lazy { LiaisonRadio(this) }
+    val radio by lazy { Radios(this) }
     val dossiers by lazy { DepotDossiers(api, magasin, file) { UUID.randomUUID().toString() } }
     val degats by lazy { DepotDegats(api, magasin, file) { UUID.randomUUID().toString() } }
     val terrain by lazy {

@@ -9,16 +9,10 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.ParcelUuid
 import fr.assistacrise.mobile.domaine.Equipe
-import fr.assistacrise.mobile.donnees.EmetteurRadio
 import fr.assistacrise.mobile.lien.AdresseReseau
 import fr.assistacrise.mobile.lien.CadrageFlux
 import fr.assistacrise.mobile.lien.CanalRadio
@@ -58,12 +52,15 @@ import kotlin.random.Random
  * iOS). Mêmes pilotes, même reprise après coupure ; seule l'adresse doit être locale, le lien
  * n'étant pas chiffré.
  *
+ * Une liaison par protocole (23/11/2026) : un téléphone peut tenir en même temps une radio
+ * Meshtastic et une radio MeshCore ; `Radios` les coordonne.
+ *
  * **Cette classe n'a pas pu être essayée** : l'émulateur n'a pas de Bluetooth, et il n'y
  * avait pas de radio. Elle est écrite d'après les clients de référence et le code des
  * firmwares ; le premier essai sur du matériel dira ce qui reste à corriger.
  */
 @SuppressLint("MissingPermission")   // chaque entrée publique vérifie `autorise` d'abord
-class LiaisonRadio(private val app: Application) : EmetteurRadio {
+class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
 
     enum class Phase { ABSENTE, RECHERCHE, CONNEXION, PRETE }
 
@@ -82,8 +79,6 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
 
     private val _etat = MutableStateFlow(Etat())
     val etat: StateFlow<Etat> = _etat
-    private val _trouvees = MutableStateFlow<List<RadioTrouvee>>(emptyList())
-    val trouvees: StateFlow<List<RadioTrouvee>> = _trouvees
 
     private val portee = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val adaptateur get() = app.getSystemService(BluetoothManager::class.java)?.adapter
@@ -103,46 +98,10 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     private var voulue: RadioTrouvee? = null
     private var reconnexion: Job? = null
 
-    // --- Recherche -----------------------------------------------------------------------
-
-    private val ecouteRecherche = object : ScanCallback() {
-        override fun onScanResult(type: Int, resultat: ScanResult) {
-            val services = resultat.scanRecord?.serviceUuids?.map { it.uuid.toString().lowercase() } ?: return
-            val protocole = when {
-                MeshCore.SERVICE in services -> Protocole.MESHCORE
-                Meshtastic.SERVICE in services -> Protocole.MESHTASTIC
-                else -> return
-            }
-            val radio = RadioTrouvee(resultat.device.address, resultat.device.name ?: resultat.scanRecord?.deviceName ?: "Radio sans nom", protocole)
-            if (_trouvees.value.none { it.adresse == radio.adresse }) _trouvees.value = _trouvees.value + radio
-        }
-    }
-
-    fun chercher() {
-        val scanner = adaptateur?.takeIf { it.isEnabled && autorise(app) }?.bluetoothLeScanner
-        if (scanner == null) {
-            _etat.value = Etat(erreur = "Le Bluetooth est éteint ou indisponible sur ce téléphone.")
-            return
-        }
-        _trouvees.value = emptyList()
-        if (_etat.value.phase == Phase.ABSENTE) _etat.value = Etat(phase = Phase.RECHERCHE)
-        val filtres = listOf(MeshCore.SERVICE, Meshtastic.SERVICE).map {
-            ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(it))).build()
-        }
-        scanner.startScan(filtres, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), ecouteRecherche)
-        // Une recherche qu'on oublie d'arrêter vide la batterie.
-        portee.launch { delay(30_000); arreterLaRecherche() }
-    }
-
-    fun arreterLaRecherche() {
-        runCatching { adaptateur?.bluetoothLeScanner?.stopScan(ecouteRecherche) }
-        if (_etat.value.phase == Phase.RECHERCHE) _etat.value = Etat()
-    }
-
     // --- Connexion -----------------------------------------------------------------------
 
     fun connecter(radio: RadioTrouvee) {
-        arreterLaRecherche()
+        require(radio.protocole == emplacement)
         voulue = radio
         val genre = if (radio.reseau) RESEAU else BLUETOOTH
         portee.launch { app.magasin.ecrire(FICHIER, "${radio.adresse}|${radio.protocole.name}|$genre|${radio.nom}") }
@@ -167,7 +126,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
      * (le service de terrain s'en charge une fois démarré). */
     suspend fun reprendreSiChoisie() {
         if (voulue != null) return
-        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 4) ?: return
+        val parties = lireChoix() ?: return
         val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
         val reseau = parties.getOrNull(2) == RESEAU
         val nom = if (parties.getOrNull(2) in setOf(RESEAU, BLUETOOTH)) parties.getOrElse(3) { "Radio" }
@@ -179,7 +138,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
     suspend fun reprendre() {
         voulue?.let { radio -> if (gatt == null && prise == null && _etat.value.phase == Phase.ABSENTE) ouvrir(radio); return }
         if (voulue != null) return
-        val parties = app.magasin.lire(FICHIER)?.split("|", limit = 4) ?: return
+        val parties = lireChoix() ?: return
         val protocole = Protocole.entries.firstOrNull { it.name == parties.getOrNull(1) } ?: return
         // Ancien format « adresse|protocole|nom » : une radio Bluetooth.
         val reseau = parties.getOrNull(2) == RESEAU
@@ -196,6 +155,16 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         portee.launch { app.magasin.effacer(FICHIER) }
         fermer(null)
         ServiceTerrain.actualiser(app)
+    }
+
+    /** Ancien fichier unique (avant le 23/11/2026) : l'emplacement de son protocole le reprend. */
+    private suspend fun lireChoix(): List<String>? {
+        app.magasin.lire(FICHIER)?.let { return it.split("|", limit = 4) }
+        val ancien = app.magasin.lire(ANCIEN_FICHIER)?.split("|", limit = 4) ?: return null
+        if (ancien.getOrNull(1) != emplacement.name) return null
+        app.magasin.ecrire(FICHIER, ancien.joinToString("|"))
+        app.magasin.effacer(ANCIEN_FICHIER)
+        return ancien
     }
 
     private fun ouvrir(radio: RadioTrouvee) {
@@ -227,8 +196,8 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
         prise = null; cadrage = null
         runCatching { ancienne?.close() }
         pilote = null
-        app.lien.radio(false)
         _etat.value = Etat(erreur = erreur)
+        app.radio.lienChange()
         // La radio s'est éloignée ou éteinte : on y revient, sans relâche mais sans vider la
         // batterie — 10 s, 20 s, 40 s… jusqu'à 5 min entre deux essais (22/11/2026 : « ça ne
         // doit pas s'interrompre », y compris application fermée).
@@ -450,7 +419,7 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
             phase = if (p.prete) Phase.PRETE else Phase.CONNEXION,
             nom = p.identite ?: _etat.value.nom, canaux = p.canaux, erreur = null, reseau = cadrage != null,
         )
-        if (p.prete) app.lien.radio(true)
+        if (p.prete) app.radio.lienChange()
         if (p.avance.version != _avance.value.version) _avance.value = p.avance
         for (message in reaction.messages) {
             val canal = p.canaux.firstOrNull { it.index == message.canal } ?: continue
@@ -492,35 +461,25 @@ class LiaisonRadio(private val app: Application) : EmetteurRadio {
 
     // --- Émission ------------------------------------------------------------------------
 
-    override suspend fun envoyerAEquipe(equipe: Equipe, texte: String): String? {
+    suspend fun envoyerAEquipe(equipe: Equipe, texte: String): String? {
         val p = pilote?.takeIf { it.prete } ?: return null
         val canal = p.canalNomme(canalDe(equipe, p.protocole)) ?: return null
-        val trames = p.envoyerSurCanal(canal.index, texteSelonLaZone(texte), System.currentTimeMillis() / 1000)
+        val trames = p.envoyerSurCanal(canal.index, app.radio.texteSelonLaZone(texte), System.currentTimeMillis() / 1000)
         val fin = CompletableDeferred<Boolean>()
         if (operations.trySend { fin.complete(trames.all { ecrire(it) }) }.isFailure) return null
         return if (withTimeoutOrNull(20_000) { fin.await() } == true) p.protocole.name else null
     }
 
-    /**
-     * En formation, la règle du serveur pour la démo (`_contenu_message_mesh_demo`) : la radio
-     * est réelle et ses voisins aussi, donc le message est préfixé « [démo] » et gardé court.
-     */
-    fun texteSelonLaZone(texte: String): String {
-        if (!app.session.enFormation) return texte
-        val propre = texte.trim()
-        val prefixe = if (propre.lowercase().startsWith("[démo]")) "" else "[démo] "
-        val disponible = 100 - prefixe.length
-        return prefixe + if (propre.length > disponible) propre.take(disponible - 1).trimEnd() + "…" else propre
-    }
-
     /** Le canal de cette équipe sur la radio connectée, s'il y est. */
     fun canalPour(equipe: Equipe): CanalRadio? = pilote?.let { it.canalNomme(canalDe(equipe, it.protocole)) }
 
-    private fun canalDe(equipe: Equipe, protocole: Protocole): String? =
+    fun canalDe(equipe: Equipe, protocole: Protocole = emplacement): String? =
         if (protocole == Protocole.MESHCORE) equipe.canalMeshCore else equipe.canalMeshtastic
 
+    private val FICHIER = "radio-${emplacement.name.lowercase()}"
+
     companion object {
-        private const val FICHIER = "radio"
+        private const val ANCIEN_FICHIER = "radio"
         private const val RESEAU = "reseau"
         private const val BLUETOOTH = "bluetooth"
         private const val CCCD = "00002902-0000-1000-8000-00805f9b34fb"

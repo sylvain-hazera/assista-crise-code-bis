@@ -5,6 +5,7 @@ import fr.assistacrise.mobile.lien.MessageRadio
 import fr.assistacrise.mobile.lien.PiloteMeshCore
 import fr.assistacrise.mobile.lien.PiloteMeshtastic
 import fr.assistacrise.mobile.lien.PiloteRadio
+import fr.assistacrise.mobile.lien.Protocole
 import fr.assistacrise.mobile.lien.meshcore.MeshCore
 import fr.assistacrise.mobile.lien.meshtastic.Meshtastic
 import kotlinx.coroutines.CoroutineScope
@@ -25,9 +26,11 @@ import kotlinx.serialization.json.Json
  * liste des canaux de mon nœud, pouvoir parler dedans, la liste des contacts, faire une
  * recherche par nom, faire des messages directs. »
  *
- * Une conversation se désigne par une clé : `c:<index>` (canal) ou `d:<contact>` (direct, le
- * contact étant « !1a2b3c4d » en Meshtastic ou le préfixe de clé publique en MeshCore). Gardée
- * dans le magasin chiffré du téléphone, 200 messages par conversation au plus.
+ * Une conversation se désigne par une clé : `<PROTOCOLE>|c:<index>` (canal) ou
+ * `<PROTOCOLE>|d:<contact>` (direct, le contact étant « !1a2b3c4d » en Meshtastic ou le préfixe
+ * de clé publique en MeshCore). Le protocole en tête, parce qu'un téléphone peut tenir les deux
+ * radios à la fois (23/11/2026) : le canal 0 de l'une n'est pas celui de l'autre. Gardée dans le
+ * magasin chiffré du téléphone, 200 messages par conversation au plus.
  */
 class MessagerieRadio(private val app: Application) {
 
@@ -48,37 +51,34 @@ class MessagerieRadio(private val app: Application) {
     fun recevoir(messages: List<MessageRadio>, directs: List<MessageDirect>, pilote: PiloteRadio) {
         if (messages.isEmpty() && directs.isEmpty()) return
         val maintenant = System.currentTimeMillis()
+        val pr = pilote.protocole
         for (m in messages) {
             // MeshCore écrit « Nom: texte » ; Meshtastic ne dit pas qui parle sur un canal.
             val coupe = m.texte.indexOf(": ").takeIf { it in 1..32 }
-            ajouter("c:${m.canal}", Message(false, coupe?.let { m.texte.substring(0, it) } ?: "", coupe?.let { m.texte.substring(it + 2) } ?: m.texte, maintenant))
+            ajouter(cle(pr, "c:${m.canal}"), Message(false, coupe?.let { m.texte.substring(0, it) } ?: "", coupe?.let { m.texte.substring(it + 2) } ?: m.texte, maintenant))
         }
-        for (d in directs) ajouter("d:${d.de}", Message(false, nomDuContact(d.de, pilote), d.texte, maintenant))
+        for (d in directs) ajouter(cle(pr, "d:${d.de}"), Message(false, nomDuContact(cle(pr, "d:${d.de}")), d.texte, maintenant))
     }
 
-    /** Parler sur un canal du nœud. */
-    suspend fun envoyerSurCanal(index: Int, texte: String): Boolean {
-        val p = app.radio.piloteCourant ?: return false
-        val ok = app.radio.envoyerAdmin(p.envoyerSurCanal(index, app.radio.texteSelonLaZone(texte), System.currentTimeMillis() / 1000))
-        ajouter("c:$index", Message(true, "Moi", texte, System.currentTimeMillis(), ok), compter = false)
-        return ok
-    }
-
-    /** Message direct à un contact. */
-    suspend fun envoyerDirect(contact: String, texte: String): Boolean {
-        val p = app.radio.piloteCourant ?: return false
+    /** Envoie sur la conversation désignée par sa clé (canal ou direct, sur la radio de son protocole). */
+    suspend fun envoyer(cle: String, texte: String): Boolean {
+        val (protocole, reste) = lireCle(cle) ?: return false
+        val liaison = app.radio.pour(protocole)
+        val p = liaison.piloteCourant?.takeIf { it.prete } ?: return false
         val propre = app.radio.texteSelonLaZone(texte)
-        val trames = when (p) {
-            is PiloteMeshtastic -> contact.removePrefix("!").toLongOrNull(16)?.let { num ->
+        val maintenant = System.currentTimeMillis()
+        val trames = when {
+            reste.startsWith("c:") -> reste.removePrefix("c:").toIntOrNull()?.let { p.envoyerSurCanal(it, propre, maintenant / 1000) }
+            p is PiloteMeshtastic -> reste.removePrefix("d:").removePrefix("!").toLongOrNull(16)?.let { num ->
                 Meshtastic.decouper(propre).map { Meshtastic.texte(num, it, (1L..0xffffffffL).random()) }
             }
-            is PiloteMeshCore -> p.avance.contacts.keys.firstOrNull { it.startsWith(contact, ignoreCase = true) }?.let { cle ->
-                listOf(MeshCore.envoyerMessage(cle, propre, System.currentTimeMillis() / 1000))
+            p is PiloteMeshCore -> p.avance.contacts.keys.firstOrNull { it.startsWith(reste.removePrefix("d:"), ignoreCase = true) }?.let { pub ->
+                listOf(MeshCore.envoyerMessage(pub, propre, maintenant / 1000))
             }
             else -> null
         } ?: return false
-        val ok = app.radio.envoyerAdmin(trames)
-        ajouter("d:$contact", Message(true, "Moi", texte, System.currentTimeMillis(), ok), compter = false)
+        val ok = liaison.envoyerAdmin(trames)
+        ajouter(cle, Message(true, "Moi", texte, maintenant, ok), compter = false)
         return ok
     }
 
@@ -92,13 +92,15 @@ class MessagerieRadio(private val app: Application) {
 
     suspend fun toutEffacer() { _conversations.value = emptyMap(); _nonLus.value = emptyMap(); app.magasin.effacer(FICHIER) }
 
-    fun nomDuContact(contact: String, pilote: PiloteRadio? = app.radio.piloteCourant): String {
-        val a = pilote?.avance ?: return contact
-        return when (pilote) {
-            is PiloteMeshtastic -> a.noeuds.values.firstOrNull { it.identifiant == contact }?.let { it.nomLong.ifBlank { it.nomCourt } } ?: contact
-            is PiloteMeshCore -> a.contacts.values.firstOrNull { it.pubkeyHex.startsWith(contact, ignoreCase = true) }?.nom ?: contact.take(12)
-            else -> contact
-        }.ifBlank { contact }
+    /** Le nom d'un contact, d'après sa clé de conversation directe. */
+    fun nomDuContact(cleConversation: String): String {
+        val (protocole, reste) = lireCle(cleConversation) ?: return cleConversation
+        val contact = reste.removePrefix("d:")
+        val a = app.radio.pour(protocole).avance.value
+        return when (protocole) {
+            Protocole.MESHTASTIC -> a.noeuds.values.firstOrNull { it.identifiant == contact }?.let { it.nomLong.ifBlank { it.nomCourt } }
+            Protocole.MESHCORE -> a.contacts.values.firstOrNull { it.pubkeyHex.startsWith(contact, ignoreCase = true) }?.nom
+        }?.ifBlank { null } ?: contact.take(12)
     }
 
     private fun ajouter(cle: String, m: Message, compter: Boolean = true) {
@@ -112,9 +114,14 @@ class MessagerieRadio(private val app: Application) {
         portee.launch { app.magasin.ecrire(FICHIER, json.encodeToString(FORME, instantane)) }
     }
 
-    private companion object {
-        const val FICHIER = "radio-conversations"
-        const val MAX = 200
-        val FORME = MapSerializer(String.serializer(), ListSerializer(Message.serializer()))
+    companion object {
+        fun cle(protocole: Protocole, reste: String) = "${protocole.name}|$reste"
+        fun lireCle(cle: String): Pair<Protocole, String>? {
+            val (p, reste) = cle.split("|", limit = 2).takeIf { it.size == 2 } ?: return null
+            return (Protocole.entries.firstOrNull { it.name == p } ?: return null) to reste
+        }
+        private const val FICHIER = "radio-conversations"
+        private const val MAX = 200
+        private val FORME = MapSerializer(String.serializer(), ListSerializer(Message.serializer()))
     }
 }
