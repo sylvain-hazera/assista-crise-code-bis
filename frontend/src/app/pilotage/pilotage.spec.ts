@@ -105,15 +105,31 @@ describe('Poste de pilotage', () => {
     fixture.destroy();
   });
 
-  it('six écrans dans le rail, et l\'administration à un geste pour qui y a accès', () => {
+  it('les écrans du rail (Terrain ajouté, le standard nommé ainsi), et l\'administration à un geste', () => {
     spyOn(TestBed.inject(AuthService), 'canEnterAdminArea').and.returnValue(true);
     const fixture = TestBed.createComponent(PilotageLayoutComponent);
     fixture.detectChanges();
     http.expectOne(`${api}/crises/`).flush([]);
     const onglets = Array.from(fixture.nativeElement.querySelectorAll('.rail a .libelle')).map((a: any) => a.textContent.trim());
-    expect(onglets).toEqual(['Situation', 'Cellule', 'Carte', 'Dossiers', 'Point de situation', 'Alertes']);
+    expect(onglets).toEqual(['Situation', 'Cellule', 'Terrain', 'Carte', 'Dossiers', 'Standard', 'Alertes']);
     expect(fixture.nativeElement.querySelector('a.administration')).not.toBeNull();
-    expect(PILOTAGE_ROUTES.map(r => r.path)).toEqual(['', 'situation', 'cellule', 'carte', 'dossiers', 'point', 'alertes']);
+    expect(PILOTAGE_ROUTES.map(r => r.path)).toEqual(['', 'situation', 'cellule', 'carte', 'dossiers', 'point', 'terrain', 'alertes']);
+    fixture.destroy();
+  });
+
+  it('le terrain : l\'alerte Danger en tête, prise en compte en un geste (23/11/2026)', async () => {
+    const pilotage = TestBed.inject(PilotageService);
+    pilotage.choisir('c1');
+    pilotage.rafraichirTerrain();
+    const alerte = { id: 'm1', auteur_nom: 'Léa', equipe_nom: 'Gier', type: 'DANGER', type_libelle: 'Danger', texte: 'Mur fissuré',
+                     nombre: null, canal: 'MESHCORE', emis_le: '2026-11-23T10:00:00Z', dossier_numero: null, prioritaire: true };
+    http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [alerte], statuts: [{ ...alerte, statut: 'Danger signalé' }], derniers: [alerte] });
+    expect(pilotage.alertesTerrain()).toBe(1);
+    const promesse = pilotage.prendreEnCompte('m1');
+    http.expectOne(`${api}/messages-terrain/m1/prendre-en-compte/`).flush({ ...alerte, pris_en_compte_le: '2026-11-23T10:01:00Z' });
+    await promesse;
+    http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
+    expect(pilotage.alertesTerrain()).toBe(0);
   });
 
   it('les alertes : la fiche s\'ouvre et l\'alerte passe lue', async () => {

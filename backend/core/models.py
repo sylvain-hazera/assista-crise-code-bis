@@ -6117,6 +6117,11 @@ class MessageTerrain(EnvironmentScopedModel):
     #: Identifiant court donné par le téléphone : un message arrivé par radio puis par les
     #: données n'est enregistré qu'une fois. Pas une donnée personnelle.
     identifiant_client = models.CharField(max_length=16)
+    #: Danger ou demande de secours vus par le poste de commandement (23/11/2026) : qui l'a pris
+    #: en compte, et quand. Une alerte non prise en compte reste en tête du pilotage.
+    pris_en_compte_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                           related_name="messages_terrain_pris_en_compte")
+    pris_en_compte_le = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-emis_le"]

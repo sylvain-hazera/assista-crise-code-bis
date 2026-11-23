@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { BrandingService } from '../services/branding.service';
@@ -57,11 +57,29 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
       }
       <div class="corps">
         <nav class="rail" aria-label="Poste de pilotage">
-          @for (o of onglets; track o.lien) {
-            <a [routerLink]="o.lien" routerLinkActive="actif" [queryParams]="o.avecCrise ? { crise: pilotage.criseId() } : null">
-              <span class="material-icons" aria-hidden="true">{{ o.icone }}</span>
+          @for (o of onglets; track o.lien; let i = $index) {
+            <a [routerLink]="o.lien" routerLinkActive="actif" [queryParams]="o.avecCrise ? { crise: pilotage.criseId() } : null"
+               [class.secondaire]="i >= NB_PRINCIPAUX" (click)="plusOuvert = false">
+              <span class="icone-onglet">
+                <span class="material-icons" aria-hidden="true">{{ o.icone }}</span>
+                @if (o.lien === 'terrain' && pilotage.alertesTerrain()) {
+                  <span class="pastille-alerte" [attr.aria-label]="pilotage.alertesTerrain() + ' alerte(s) à prendre en compte'">{{ pilotage.alertesTerrain() }}</span>
+                }
+              </span>
               <span class="libelle">{{ o.libelle }}</span>
             </a>
+          }
+          <button type="button" class="plus" (click)="plusOuvert = !plusOuvert" [attr.aria-expanded]="plusOuvert">
+            <span class="material-icons" aria-hidden="true">more_horiz</span><span class="libelle">Plus</span>
+          </button>
+          @if (plusOuvert) {
+            <div class="menu-plus" role="menu">
+              @for (o of onglets.slice(NB_PRINCIPAUX); track o.lien) {
+                <a role="menuitem" [routerLink]="o.lien" [queryParams]="o.avecCrise ? { crise: pilotage.criseId() } : null" (click)="plusOuvert = false">
+                  <span class="material-icons" aria-hidden="true">{{ o.icone }}</span> {{ o.libelle }}
+                </a>
+              }
+            </div>
           }
         </nav>
         <main class="contenu"><router-outlet /></main>
@@ -112,6 +130,17 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
       color: var(--ac-text-muted, #6b7280); font-size: .72rem; font-weight: 600;
     }
     .rail a.actif { background: var(--ac-blue-bg, #dbeafe); color: var(--brand-primary, #2563eb); }
+    .icone-onglet { position: relative; display: inline-flex; }
+    .pastille-alerte { position: absolute; top: -6px; right: -10px; min-width: 18px; height: 18px; padding: 0 4px;
+                       border-radius: 9px; background: #b91c1c; color: #fff; font-size: .68rem; font-weight: 700;
+                       display: inline-flex; align-items: center; justify-content: center; }
+    .plus { display: none; border: none; background: none; color: var(--ac-text-muted, #6b7280); font: inherit;
+            font-size: .72rem; font-weight: 600; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
+    .menu-plus { position: fixed; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+                 display: flex; flex-direction: column; min-width: 12rem; padding: 6px; border-radius: 12px;
+                 background: var(--ac-surface, #fff); border: 1px solid var(--ac-border, #e5e7eb); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+                 a { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 8px; text-decoration: none;
+                     color: var(--ac-text, #1f2937); font-size: .9rem; } }
     .rail a:focus-visible, .administration:focus-visible { outline: 2px solid var(--brand-primary, #2563eb); outline-offset: 2px; }
     .contenu { flex: 1; min-width: 0; padding: 16px calc(16px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) 16px; }
 
@@ -131,11 +160,13 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
         border-top: 1px solid var(--ac-border, #e5e7eb);
       }
       .rail a { flex: 1; min-height: 56px; border-radius: 0; }
+      .rail a.secondaire { display: none; }
+      .plus { display: flex; flex: 1; min-height: 56px; justify-content: center; }
       .contenu { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
     }
   `],
 })
-export class PilotageLayoutComponent implements OnInit {
+export class PilotageLayoutComponent implements OnInit, OnDestroy {
   readonly pilotage = inject(PilotageService);
   private branding = inject(BrandingService);
   private auth = inject(AuthService);
@@ -144,21 +175,36 @@ export class PilotageLayoutComponent implements OnInit {
   readonly onglets: Onglet[] = [
     { lien: 'situation', libelle: 'Situation', icone: 'dashboard' },
     { lien: 'cellule', libelle: 'Cellule', icone: 'hub', avecCrise: true },
+    { lien: 'terrain', libelle: 'Terrain', icone: 'directions_run' },
     { lien: 'carte', libelle: 'Carte', icone: 'map' },
     { lien: 'dossiers', libelle: 'Dossiers', icone: 'folder_open' },
-    { lien: 'point', libelle: 'Point de situation', icone: 'summarize' },
+    // C'est le standard téléphonique de la crise (« Quelqu'un appelle pour… ») : nommé ainsi.
+    { lien: 'point', libelle: 'Standard', icone: 'call' },
     { lien: 'alertes', libelle: 'Alertes', icone: 'notifications' },
   ];
+  /** Sur téléphone, la barre du bas garde quatre onglets ; les autres sont sous « Plus ». */
+  readonly NB_PRINCIPAUX = 4;
+  plusOuvert = false;
+  private minuterieTerrain?: ReturnType<typeof setInterval>;
   private marque = toSignal(this.branding.branding$);
   nom(): string { return this.marque()?.nom_affichage ?? 'Assista-Crise'; }
   logo(): string { return this.marque()?.logo_url ?? '/logo.png'; }
   enFormation(): boolean { return this.auth.getEnvironment() === 'DEMO'; }
 
   ngOnInit(): void {
-    this.pilotage.chargerCrises().catch(() => this.erreurCrises.set('Crises indisponibles : vérifiez le réseau.'));
+    this.pilotage.chargerCrises()
+      .then(() => this.pilotage.rafraichirTerrain())
+      .catch(() => this.erreurCrises.set('Crises indisponibles : vérifiez le réseau.'));
+    // Le terrain en direct : l'onglet affiche le nombre d'alertes non prises en compte.
+    this.minuterieTerrain = setInterval(() => this.pilotage.rafraichirTerrain(), 30_000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.minuterieTerrain) clearInterval(this.minuterieTerrain);
   }
 
   choisir(evenement: Event): void {
     this.pilotage.choisir((evenement.target as HTMLSelectElement).value || null);
+    this.pilotage.rafraichirTerrain();
   }
 }

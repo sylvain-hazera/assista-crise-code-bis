@@ -163,3 +163,22 @@ def test_le_message_porte_son_dossier_par_les_donnees_et_par_radio(terrain):
     r = _client(benevole).post(reverse("messageterrain-list"), {"dossier": str(autre.id), "type": "ARRIVE",
                                                                 "identifiant_client": "ccccc3"}, format="json")
     assert r.status_code == 403
+
+
+@pytest.mark.django_db
+def test_le_pilotage_voit_le_terrain_et_prend_en_compte_le_danger(terrain):
+    """23/11/2026 : terrain en direct dans le pilotage ; une alerte Danger reste en tête tant
+    que le poste de commandement ne l'a pas prise en compte."""
+    _envoyer(terrain["benevole"], terrain["mission"], "ARRIVE", ident="aaaaa1")
+    _envoyer(terrain["benevole"], terrain["mission"], "DANGER", ident="aaaaa2", texte="Mur fissuré")
+    pc = User.objects.create_user(username="pc-t@test.fr", email="pc-t@test.fr", password="x", type="AUT_LOCALE")
+    vue = _client(pc).get(reverse("messageterrain-crise"), {"crise": str(terrain["crise"].id)}).data
+    assert [a["type"] for a in vue["alertes"]] == ["DANGER"]
+    assert vue["statuts"][0]["statut"] == "Danger signalé" and len(vue["derniers"]) == 2
+    alerte = vue["alertes"][0]["id"]
+    r = _client(pc).post(reverse("messageterrain-prendre-en-compte", args=[alerte]))
+    assert r.status_code == 200 and r.data["pris_en_compte_le"]
+    assert _client(pc).get(reverse("messageterrain-crise"), {"crise": str(terrain["crise"].id)}).data["alertes"] == []
+    # Un bénévole n'a ni la vue du poste de commandement, ni la prise en compte.
+    assert _client(terrain["benevole"]).get(reverse("messageterrain-crise"), {"crise": str(terrain["crise"].id)}).status_code == 403
+    assert _client(terrain["benevole"]).post(reverse("messageterrain-prendre-en-compte", args=[alerte])).status_code == 403
