@@ -9823,7 +9823,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         equipes = self.get_queryset().filter(
             Q(members=request.user) | Q(leader=request.user) | Q(regulateur=request.user)
         ).distinct()
-        return Response(self.get_serializer(equipes, many=True).data)
+        # Le canal de la crise et l'indicatif (23/11/2026) : seulement ici, où l'application les lit.
+        return Response(self.get_serializer(equipes, many=True, context={**self.get_serializer_context(), "avec_canal_crise": True}).data)
 
     @action(detail=True, methods=['get'], url_path='institutions-liees')
     def institutions_liees(self, request, pk=None):
@@ -11320,8 +11321,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # ce protocole est enregistré DÉJÀ ENVOYÉ, le pont ne le rediffuse pas.
             deja_emis_radio = {p.strip() for p in str(request.data.get('deja_emis_radio') or '').upper().split(',') if p.strip()}
             source = SourceMessage.APPLICATION if request.data.get('source') == 'APPLICATION' or deja_emis_radio else SourceMessage.SITE
-            message, _ = conv.ecrire(conversation, texte, auteur=request.user, source=source, urgent=urgent,
-                                     origine=str(request.data.get('identifiant') or '')[:120])
+            message = conv.deja_entendu(conversation, texte, request.user) if deja_emis_radio else None
+            if message is None:
+                message, _ = conv.ecrire(conversation, texte, auteur=request.user, source=source, urgent=urgent,
+                                         origine=str(request.data.get('identifiant') or '')[:120])
             if conversation.crise_id:
                 attribuer_indicatif(team, conversation.crise)
             # TRANSITION (23/11/2026) : l'application 0.21 émet par radio sur le canal DE

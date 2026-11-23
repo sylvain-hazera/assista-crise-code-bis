@@ -24,6 +24,8 @@ class Synchronisation(
     private val radio: EmetteurRadio? = null,
     private val degats: DepotDegats? = null,
     private val terrain: DepotTerrain? = null,
+    /** Le nom de l'appareil, pour « entendu par » (un modèle de téléphone, rien de personnel). */
+    private val appareil: String = "téléphone",
 ) {
     /**
      * Envoie ce qui attend, puis relit ce qui a changé — pour que l'affichage repose sur ce
@@ -82,6 +84,11 @@ class Synchronisation(
                 ActionEnAttente.GENRE_COMMENTAIRE -> api.commenter(action.cible, action.charge)
                 ActionEnAttente.GENRE_PHOTO -> envoyerPhoto(action)
                 ActionEnAttente.GENRE_CONSTAT -> api.envoyerConstat(action.charge)
+                // Un serveur pas encore à jour (404) : on garde pour plus tard, rien n'est perdu.
+                ActionEnAttente.GENRE_ENTENDU_RADIO -> when (val r = api.envoyerEntendu(action.charge, appareil)) {
+                    is Reponse.Refus -> if (r.code == 404) Reponse.Injoignable("Serveur pas encore à jour.") else r
+                    else -> r
+                }
                 ActionEnAttente.GENRE_PHOTO_CONSTAT -> envoyerPhotoConstat(action)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }

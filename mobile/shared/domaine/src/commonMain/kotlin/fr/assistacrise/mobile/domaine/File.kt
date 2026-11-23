@@ -63,6 +63,11 @@ data class ActionEnAttente(
         /** Un message de terrain en un geste : `cible` est l'équipe (pour le canal radio),
          * `charge` un `MessageTerrainSortant` en JSON. */
         const val GENRE_MESSAGE_TERRAIN = "MESSAGE_TERRAIN"
+
+        /** Un message que la radio de ce téléphone a entendu (canal de crise, ancien canal
+         * d'équipe, EMCOM), remis au serveur au retour du réseau (23/11/2026) : rien ne se perd
+         * hors de portée des passerelles. `charge` : le JSON attendu par `radio/entendus/`. */
+        const val GENRE_ENTENDU_RADIO = "ENTENDU_RADIO"
     }
 }
 

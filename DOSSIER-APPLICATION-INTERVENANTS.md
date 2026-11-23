@@ -1527,3 +1527,22 @@ un message Meshtastic ou MeshCore reçu n'émet pas de notification, il en faut 
   Android de l'application.
 - Restent en place : nouvelles missions, messages d'équipe, campagnes de disponibilités
   (relevés du serveur, application fermée compris), géolocalisation activée et coupée.
+
+## 25. Version 0.22.0 (23/11/2026) : un canal radio par crise
+
+Décisions de Sylvain du 23/11/2026 : Matrix s'arrête, un canal radio par crise (clé publique),
+adressage « @INDICATIF », rien de perdu (pot commun trié par l'équipe transmissions, à défaut la
+régulation).
+- **Envoi** : sans réseau, un message d'équipe part sur le canal de la crise, préfixé de
+  l'indicatif de l'équipe (« @ALPHA on arrive ») ; à défaut, sur l'ancien canal de l'équipe.
+- **Réception** : sur le canal de la crise, ce qui est adressé à mon équipe arrive dans sa
+  messagerie et sonne ; un message sans adresse sonne dans la messagerie radio ; ce qui est
+  adressé à une autre équipe ne sonne pas.
+- **Rien ne se perd** : tout ce que la radio entend sur le canal de la crise, un ancien canal
+  d'équipe ou Fr_EMCOM est remis au serveur au retour du réseau (`radio/entendus/`), qui le
+  range (équipe, cellule, pot commun) sans doublon. Ces remises ne figurent pas dans la liste
+  des envois de la personne.
+- **Alignement** : Compte › Radio montre si le canal de la crise est sur la radio ; « Aligner la
+  radio sur la crise » ajoute Fr_Balise, Fr_EMCOM et le canal de la crise dans des emplacements
+  libres (il faut le réseau pour lire le plan). Pas encore : l'alignement hors réseau par QR
+  code entre téléphones, et le compte rendu de l'alignement au pilotage.

@@ -1893,6 +1893,9 @@ class TeamSerializer(serializers.ModelSerializer):
     # appareil.
     canal_meshtastic_id = serializers.CharField(source='canal_meshtastic.id', read_only=True, default=None)
     canal_meshtastic_nom = serializers.CharField(source='canal_meshtastic.nom', read_only=True, default=None)
+    # Canal de la crise ouverte de l'équipe (23/11/2026) : l'application y écrit « @INDICATIF »
+    # et le compare à sa radio. None hors crise, ou tant que le canal n'est pas créé.
+    canal_crise = serializers.SerializerMethodField()
     # Salon Matrix de l'équipe entière (voir TeamViewSet.provisionner_salons_matrix) — même
     # principe que canal_meshcore_id ci-dessus, indépendant.
     #
@@ -1993,6 +1996,19 @@ class TeamSerializer(serializers.ModelSerializer):
         code = obj.institution.commune_code if obj.institution_id else None
         return commune_center_from_code(code) if code else None
 
+    def get_canal_crise(self, obj):
+        if not self.context.get("avec_canal_crise"):
+            return None
+        from .canaux_locaux import canaux_de_crise
+        from .routage_canaux import attribuer_indicatif
+        from .salons_de_crise import crise_du_contexte
+        crise = crise_du_contexte(obj)
+        if crise is None:
+            return None
+        meshtastic, meshcore = canaux_de_crise(crise, obj.environment)
+        return {"crise": str(crise.id), "meshtastic": meshtastic.nom, "meshcore": meshcore.nom,
+                "indicatif": attribuer_indicatif(obj, crise)}
+
     def validate_indicatif(self, valeur):
         """Indicatif radio (23/11/2026) : 2 à 6 lettres ou chiffres, en majuscules ; vide permis
         (il est alors proposé depuis le nom au premier message de crise)."""
@@ -2048,7 +2064,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'canal_meshcore_nom',
             'canal_meshcore_provisionne',
             'canal_meshtastic_id',
-            'canal_meshtastic_nom',
+            'canal_meshtastic_nom', 'canal_crise',
             'salon_matrix_id',
             'salon_matrix_room_id',
             'salons_matrix',

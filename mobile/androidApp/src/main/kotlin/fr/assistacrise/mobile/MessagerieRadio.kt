@@ -62,7 +62,13 @@ class MessagerieRadio(private val app: Application) {
             // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres sonnent
             // aussi, sauf ceux qu'on a fait taire (cloche) — 23/11/2026 : « un message reçu
             // n'émet pas de notification, il en faut ».
-            if (k !in muets() && app.radio.equipeDuCanal(pr, m.canal) == null) {
+            // Canal de crise (23/11/2026) : ce qui est adressé à mon équipe sonne par sa messagerie,
+            // ce qui est adressé à une autre équipe ne sonne pas ; un message sans adresse, si.
+            val equipeDuCanal = app.radio.equipeDuCanal(pr, m.canal)
+            val canalDeCrise = equipeDuCanal?.canalCrise?.let { cc ->
+                pilote.canalNomme(cc.nomPour(pr == fr.assistacrise.mobile.lien.Protocole.MESHCORE))?.index == m.canal } == true
+            val sansAdresse = !Regex("""(?:^|:\s)@[A-Za-z0-9]{2,8}\b""").containsMatchIn(m.texte)
+            if (k !in muets() && (equipeDuCanal == null || (canalDeCrise && sansAdresse))) {
                 val nom = pilote.canaux.firstOrNull { it.index == m.canal }?.nom ?: "Canal ${m.canal}"
                 alerter(k, "« $nom » · ${pr.libelle}", FormatNotification.ligneRadio(auteur, texte))
                 FormatNotification.urgenceTerrain(app, auteur, texte, CIBLE + k)

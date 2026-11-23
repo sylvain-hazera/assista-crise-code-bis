@@ -12,7 +12,9 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import fr.assistacrise.mobile.domaine.ActionEnAttente
 import fr.assistacrise.mobile.domaine.Alerte
+import fr.assistacrise.mobile.domaine.PlanRadio
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.lien.AdresseReseau
 import fr.assistacrise.mobile.lien.CadrageFlux
@@ -424,11 +426,23 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
         if (p.avance.version != _avance.value.version) _avance.value = p.avance
         for (message in reaction.messages) {
             val canal = p.canaux.firstOrNull { it.index == message.canal } ?: continue
-            // Le canal dit de quelle équipe il s'agit ; un canal qui n'est celui d'aucune de
-            // mes équipes ne me concerne pas.
-            val equipe = app.equipes.equipes.value.firstOrNull { p.canalNomme(canalDe(it, p.protocole))?.index == canal.index } ?: continue
             val emetteur = message.de?.let { app.messagerieRadio.nomDuContact(MessagerieRadio.cle(p.protocole, "d:$it")) }
-            val nouveau = app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis(), emetteur) ?: continue
+            val equipes = app.equipes.equipes.value
+            // Canal de crise (23/11/2026) : « @ALPHA texte » est pour l'équipe Alpha.
+            val parCrise = equipes.firstNotNullOfOrNull { e ->
+                val cc = e.canalCrise ?: return@firstNotNullOfOrNull null
+                if (p.canalNomme(cc.nomPour(p.protocole == Protocole.MESHCORE))?.index != canal.index) null
+                else cc.pourMoi(message.texte)?.let { e to it }
+            }
+            val estCanalDeCrise = equipes.any { e -> e.canalCrise?.let { p.canalNomme(it.nomPour(p.protocole == Protocole.MESHCORE))?.index == canal.index } == true }
+            val ancienCanal = equipes.firstOrNull { p.canalNomme(canalDe(it, p.protocole))?.index == canal.index }
+            // Rien ne se perd hors de portée des passerelles : ce que la radio a entendu sur un
+            // canal de la plateforme (ou EMCOM) est remis au serveur au retour du réseau.
+            if (estCanalDeCrise || ancienCanal != null || PlanRadio.normaliser(canal.nom) == "fr_emcom") {
+                remonter(p.protocole, canal.nom, emetteur, message.texte)
+            }
+            val (equipe, texte) = parCrise ?: (ancienCanal?.let { it to message.texte } ?: continue)
+            val nouveau = app.equipes.entenduParRadio(equipe.id, texte, System.currentTimeMillis(), emetteur) ?: continue
             // La veille ne fait pas sonner ce que la radio a entendu : c'est ici (23/11/2026).
             // Une notification par équipe, mise à jour à chaque message ; un Danger ou une demande
             // de secours sonne en plus en urgent.
@@ -473,15 +487,39 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
 
     suspend fun envoyerAEquipe(equipe: Equipe, texte: String): String? {
         val p = pilote?.takeIf { it.prete } ?: return null
-        val canal = p.canalNomme(canalDe(equipe, p.protocole)) ?: return null
-        val trames = p.envoyerSurCanal(canal.index, app.radio.texteSelonLaZone(texte), System.currentTimeMillis() / 1000)
+        // Le canal de la crise d'abord, adressé « @INDICATIF » (23/11/2026) ; à défaut l'ancien
+        // canal de l'équipe (téléphones et passerelles pas encore alignés).
+        val cc = equipe.canalCrise
+        val parCrise = cc?.let { p.canalNomme(it.nomPour(p.protocole == Protocole.MESHCORE)) }
+        val canal = parCrise ?: p.canalNomme(canalDe(equipe, p.protocole)) ?: return null
+        val contenu = if (parCrise != null && cc != null) cc.adresser(texte) else texte
+        val trames = p.envoyerSurCanal(canal.index, app.radio.texteSelonLaZone(contenu), System.currentTimeMillis() / 1000)
         val fin = CompletableDeferred<Boolean>()
         if (operations.trySend { fin.complete(trames.all { ecrire(it) }) }.isFailure) return null
         return if (withTimeoutOrNull(20_000) { fin.await() } == true) p.protocole.name else null
     }
 
-    /** Le canal de cette équipe sur la radio connectée, s'il y est. */
-    fun canalPour(equipe: Equipe): CanalRadio? = pilote?.let { it.canalNomme(canalDe(equipe, it.protocole)) }
+    /** Le canal par lequel on parle à cette équipe sur la radio connectée : celui de la crise,
+     * sinon l'ancien canal de l'équipe. */
+    fun canalPour(equipe: Equipe): CanalRadio? = pilote?.let { p ->
+        equipe.canalCrise?.let { p.canalNomme(it.nomPour(p.protocole == Protocole.MESHCORE)) } ?: p.canalNomme(canalDe(equipe, p.protocole))
+    }
+
+    /** Met en file, pour le serveur, un message entendu par cette radio. */
+    private suspend fun remonter(protocole: Protocole, canal: String, auteur: String?, texte: String) {
+        val maintenant = System.currentTimeMillis()
+        val identifiant = "${protocole.name}-${canal.hashCode().toUInt().toString(16)}-${texte.hashCode().toUInt().toString(16)}-${maintenant / 60_000}"
+        if (app.file.actions.value.any { it.genre == ActionEnAttente.GENRE_ENTENDU_RADIO && it.cible == identifiant }) return
+        val charge = kotlinx.serialization.json.buildJsonObject {
+            put("identifiant", kotlinx.serialization.json.JsonPrimitive(identifiant))
+            put("protocole", kotlinx.serialization.json.JsonPrimitive(protocole.name))
+            put("canal", kotlinx.serialization.json.JsonPrimitive(canal))
+            if (auteur != null) put("auteur", kotlinx.serialization.json.JsonPrimitive(auteur))
+            put("texte", kotlinx.serialization.json.JsonPrimitive(texte))
+            put("entendu_le", kotlinx.serialization.json.JsonPrimitive(java.time.Instant.ofEpochMilli(maintenant).toString()))
+        }.toString()
+        runCatching { app.file.ajouter(ActionEnAttente.GENRE_ENTENDU_RADIO, identifiant, charge, "Message radio entendu ($canal)") }
+    }
 
     fun canalDe(equipe: Equipe, protocole: Protocole = emplacement): String? =
         if (protocole == Protocole.MESHCORE) equipe.canalMeshCore else equipe.canalMeshtastic

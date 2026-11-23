@@ -16,6 +16,8 @@ data class Equipe(
     /** Le canal radio de l'équipe, par protocole : c'est par lui qu'on se parle sans réseau. */
     @SerialName("canal_meshcore_nom") val canalMeshCore: String? = null,
     @SerialName("canal_meshtastic_nom") val canalMeshtastic: String? = null,
+    /** Le canal radio de la crise ouverte de l'équipe et son indicatif (23/11/2026). */
+    @SerialName("canal_crise") val canalCrise: CanalCrise? = null,
     @SerialName("leader") val chef: String? = null,
     /** La mission en cours de l'équipe : un dossier qu'on lui confie en fait partie. */
     @SerialName("mission_active") val missionActive: String? = null,
@@ -74,3 +76,66 @@ fun filDeMessages(recus: List<MessageEquipe>, file: List<ActionEnAttente>, idEqu
             refus = if (it.etat == EtatAction.REFUSEE) (it.erreur ?: "Refusé par le serveur") else null,
         )
     }
+
+/**
+ * Un seul canal radio par crise (décision du 23/11/2026) : l'équipe y est adressée par son
+ * indicatif, « @ALPHA texte ». Canal public : rien de personnel n'y passe.
+ */
+@Serializable
+data class CanalCrise(
+    val crise: String,
+    val meshtastic: String? = null,
+    val meshcore: String? = null,
+    val indicatif: String? = null,
+) {
+    fun nomPour(meshcore: Boolean): String? = if (meshcore) this.meshcore else meshtastic
+
+    /** « @ALPHA texte » si l'équipe a un indicatif. */
+    fun adresser(texte: String): String = indicatif?.let { "@$it ${texte.trim()}" } ?: texte.trim()
+
+    /** Rend le texte sans l'adresse s'il est adressé à cet indicatif, sinon null. Le nom que
+     * MeshCore met devant est gardé (« Léa: @ALPHA x » → « Léa: x ») : il dit qui parle. */
+    fun pourMoi(texte: String): String? {
+        val i = indicatif ?: return null
+        val m = ADRESSE.find(texte) ?: return null
+        if (!m.groupValues[2].equals(i, ignoreCase = true)) return null
+        return (m.groupValues[1] + m.groupValues[3]).trim()
+    }
+
+    companion object {
+        private val ADRESSE = Regex("""^((?:[^:\n@]{1,32}:\s+)?)@([A-Za-z0-9]{2,8})\b[\s:,]*(.*)$""", RegexOption.DOT_MATCHES_ALL)
+    }
+}
+
+/** Le plan de canaux d'une crise, tel que le serveur le donne (`radio/plan/`) : clés publiques. */
+@Serializable
+data class PlanRadio(
+    val crise: String,
+    val version: String = "",
+    val meshtastic: List<CanalPlanMeshtastic> = emptyList(),
+    val meshcore: List<CanalPlanMeshCore> = emptyList(),
+    val avertissement: String = "",
+) {
+    /** Les canaux du plan absents de la radio (comparés par nom, sans « # », sans la casse). */
+    fun absents(meshcoreRadio: Boolean, presents: Collection<String>): List<String> {
+        val ont = presents.map { normaliser(it) }.toSet()
+        val noms = if (meshcoreRadio) meshcore.map { it.nom } else meshtastic.map { it.nom }
+        return noms.filter { normaliser(it) !in ont }
+    }
+
+    companion object {
+        fun normaliser(nom: String) = nom.trim().removePrefix("#").lowercase()
+
+        /** Premier emplacement Meshtastic libre (1 à 7 ; 0 est le primaire, on n'y touche pas). */
+        fun emplacementLibreMeshtastic(roles: Map<Int, Int>): Int? = (1..7).firstOrNull { (roles[it] ?: 0) == 0 }
+
+        /** Premier emplacement MeshCore libre (1 à `total` − 1 ; 0 est le canal Public d'usine). */
+        fun emplacementLibreMeshCore(occupes: Set<Int>, total: Int = 40): Int? = (1 until total).firstOrNull { it !in occupes }
+    }
+}
+
+@Serializable
+data class CanalPlanMeshtastic(val nom: String, @SerialName("psk_hex") val pskHex: String = "", val role: String = "")
+
+@Serializable
+data class CanalPlanMeshCore(val nom: String, @SerialName("cle_hex") val cleHex: String = "", val role: String = "")

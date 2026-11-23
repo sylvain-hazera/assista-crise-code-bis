@@ -130,6 +130,20 @@ def ecrire(conversation, texte, *, auteur=None, auteur_libre=None, source=Source
     return message, True
 
 
+def deja_entendu(conversation, texte, auteur, fenetre=datetime.timedelta(hours=24)):
+    """Le téléphone remet un message qu'il a déjà émis par sa radio : une passerelle l'a peut-être
+    entendu et rangé, sans auteur connu. On le rattache à son auteur au lieu de le doubler."""
+    cible = normaliser(texte)
+    for m in conversation.messages.filter(auteur__isnull=True, emis_le__gte=timezone.now() - fenetre,
+                                          source__in=[SourceMessage.MESHTASTIC, SourceMessage.MESHCORE,
+                                                      SourceMessage.TELEPHONE_RADIO]).order_by("-emis_le")[:50]:
+        if normaliser(m.texte).endswith(cible):
+            m.auteur = auteur
+            m.save(update_fields=["auteur"])
+            return m
+    return None
+
+
 def nom_auteur(message, request=None):
     if message.auteur_id:
         from .permissions import nom_affichable

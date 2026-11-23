@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -72,7 +73,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     val compte = app.session.compte
     val lien = app.lien.etat
-    val file = app.file.actions
+    /** La file affichée : sans les messages radio entendus en attente de remise au serveur, qui
+     * ne sont pas des envois de la personne (ils partent seuls, 23/11/2026). */
+    val file: StateFlow<List<fr.assistacrise.mobile.domaine.ActionEnAttente>> = app.file.actions
+        .map { l -> l.filter { it.genre != fr.assistacrise.mobile.domaine.ActionEnAttente.GENRE_ENTENDU_RADIO } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val equipes = app.equipes.equipes
     val fils = app.equipes.fils
     val suivi = app.suivi.etat
@@ -1180,6 +1185,73 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     /** Le canal de cette équipe sur cette radio, s'il y est configuré. */
     fun canalRadioDe(equipe: Equipe, protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).canalPour(equipe)
+
+    // --- Alignement sur le canal de la crise (23/11/2026) -------------------------------------
+
+    var alignementEnCours by mutableStateOf(false); private set
+
+    /** Le canal de la crise est-il sur cette radio ? */
+    fun canalDeCriseSurLaRadio(cc: fr.assistacrise.mobile.domaine.CanalCrise, protocole: fr.assistacrise.mobile.lien.Protocole) =
+        app.radio.pour(protocole).piloteCourant?.canalNomme(cc.nomPour(protocole == fr.assistacrise.mobile.lien.Protocole.MESHCORE))
+
+    /**
+     * Écrit sur la radio les canaux du plan de la crise qui lui manquent (Fr_Balise, Fr_EMCOM, canal
+     * de la crise), dans des emplacements libres, sans toucher aux autres. Il faut le réseau pour
+     * lire le plan (les clés publiques des canaux communautaires).
+     */
+    fun alignerRadio(protocole: fr.assistacrise.mobile.lien.Protocole, crise: String) {
+        if (alignementEnCours) return
+        viewModelScope.launch {
+            alignementEnCours = true
+            try {
+                val plan = when (val r = app.api.planRadio(crise)) {
+                    is Reponse.Ok -> r.valeur
+                    is Reponse.Refus -> { message = "Plan radio refusé : ${r.message}"; return@launch }
+                    is Reponse.Injoignable -> { message = "Il faut le réseau pour lire le plan radio de la crise."; return@launch }
+                }
+                val liaison = app.radio.pour(protocole)
+                val pilote = liaison.piloteCourant?.takeIf { it.prete } ?: run { message = "Radio ${protocole.libelle} non connectée."; return@launch }
+                val absents = plan.absents(protocole == fr.assistacrise.mobile.lien.Protocole.MESHCORE, pilote.canaux.map { it.nom })
+                if (absents.isEmpty()) { message = "Radio ${protocole.libelle} déjà alignée sur la crise."; return@launch }
+                var ecrits = 0
+                var sansPlace = 0
+                when (pilote) {
+                    is fr.assistacrise.mobile.lien.PiloteMeshtastic -> {
+                        liaison.relireAvance(); kotlinx.coroutines.delay(2_000)
+                        val roles = pilote.avance.canauxMeshtastic.mapValues { it.value.role }.toMutableMap()
+                        for (nom in absents) {
+                            val c = plan.meshtastic.first { it.nom == nom }
+                            val i = fr.assistacrise.mobile.domaine.PlanRadio.emplacementLibreMeshtastic(roles) ?: run { sansPlace++; null } ?: continue
+                            val canal = fr.assistacrise.mobile.lien.meshtastic.CanalMeshtastic(i, c.nom, role = 2, psk = c.pskHex.hexEnOctets())
+                            if (liaison.envoyerAdmin(pilote.adminGroupe(listOf(fr.assistacrise.mobile.lien.meshtastic.AdminMeshtastic.ecrireCanal(canal))))) {
+                                roles[i] = 2; ecrits++
+                            }
+                        }
+                    }
+                    is fr.assistacrise.mobile.lien.PiloteMeshCore -> {
+                        val occupes = pilote.canaux.map { it.index }.toMutableSet()
+                        for (nom in absents) {
+                            val c = plan.meshcore.first { it.nom == nom }
+                            val i = fr.assistacrise.mobile.domaine.PlanRadio.emplacementLibreMeshCore(occupes) ?: run { sansPlace++; null } ?: continue
+                            val trames = listOf(fr.assistacrise.mobile.lien.meshcore.AdminMeshCore.ecrireCanal(i, c.nom, c.cleHex.hexEnOctets()),
+                                                fr.assistacrise.mobile.lien.meshcore.MeshCore.demanderCanal(i))
+                            if (liaison.envoyerAdmin(trames)) { occupes += i; ecrits++ }
+                        }
+                    }
+                    else -> {}
+                }
+                kotlinx.coroutines.delay(1_500); liaison.relireAvance()
+                message = buildString {
+                    append(if (ecrits > 0) "$ecrits canal(aux) ajouté(s) à la radio ${protocole.libelle}." else "Aucun canal ajouté.")
+                    if (sansPlace > 0) append(" Plus d'emplacement libre pour $sansPlace : libérez-en un (Radio avancée).")
+                }
+            } finally {
+                alignementEnCours = false
+            }
+        }
+    }
+
+    private fun String.hexEnOctets(): ByteArray = chunked(2).mapNotNull { it.toIntOrNull(16)?.toByte() }.toByteArray()
 
     // --- Mode citoyen ---------------------------------------------------------------------
 

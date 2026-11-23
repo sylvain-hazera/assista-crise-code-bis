@@ -188,11 +188,35 @@ private fun BlocRadio(modele: ModeleApplication, protocole: Protocole, etat: Lia
                 "Sans réseau, vos messages d'équipe partent par cette radio, sur le canal de l'équipe.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Un seul canal par crise (23/11/2026) : l'équipe y est adressée par son indicatif.
+            equipes.mapNotNull { it.canalCrise }.distinctBy { it.crise }.forEach { cc ->
+                val nom = cc.nomPour(protocole == Protocole.MESHCORE) ?: return@forEach
+                val present = modele.canalDeCriseSurLaRadio(cc, protocole) != null
+                Text(
+                    if (present) "Canal de la crise « $nom » présent sur la radio"
+                    else "Canal de la crise « $nom » absent de cette radio : sans réseau, les messages de la crise n'y passeront pas.",
+                    style = MaterialTheme.typography.bodySmall, color = if (present) EnLigne else Attente,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (!present) {
+                    Button(enabled = !modele.alignementEnCours, onClick = { modele.alignerRadio(protocole, cc.crise) },
+                           modifier = Modifier.padding(top = 4.dp)) {
+                        Text(if (modele.alignementEnCours) "Alignement…" else "Aligner la radio sur la crise")
+                    }
+                    Text("Ajoute Fr_Balise, Fr_EMCOM et le canal de la crise dans des emplacements libres, sans toucher aux autres. Canal lisible par tous : rien de personnel.",
+                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             equipes.forEach { equipe ->
                 val canal = modele.canalRadioDe(equipe, protocole)
+                val indicatif = equipe.canalCrise?.indicatif
                 Text(
-                    if (canal != null) "${equipe.nom} : canal « ${canal.nom} » présent sur la radio"
-                    else "${equipe.nom} : son canal n'est pas sur cette radio — sans réseau, ses messages n'y passeront pas",
+                    when {
+                        canal != null && indicatif != null && canal.nom.equals(equipe.canalCrise?.nomPour(protocole == Protocole.MESHCORE), ignoreCase = true) ->
+                            "${equipe.nom} : par le canal de la crise, adressée « @$indicatif »"
+                        canal != null -> "${equipe.nom} : canal « ${canal.nom} » présent sur la radio"
+                        else -> "${equipe.nom} : aucun canal sur cette radio — sans réseau, ses messages n'y passeront pas"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (canal != null) EnLigne else Attente,
                     modifier = Modifier.padding(top = 4.dp),

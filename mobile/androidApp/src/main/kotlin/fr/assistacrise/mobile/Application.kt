@@ -84,7 +84,8 @@ class Application : android.app.Application() {
             var attente = -1
             var refusees = -1
             file.actions.collect { actions ->
-                val n = actions.count { it.etat == fr.assistacrise.mobile.domaine.EtatAction.EN_ATTENTE }
+                val n = actions.count { it.etat == fr.assistacrise.mobile.domaine.EtatAction.EN_ATTENTE &&
+                    it.genre != fr.assistacrise.mobile.domaine.ActionEnAttente.GENRE_ENTENDU_RADIO }
                 val r = actions.count { it.etat == fr.assistacrise.mobile.domaine.EtatAction.REFUSEE }
                 if (attente > 0 && n == 0 && !premierPlan) {
                     alertes.etat("envois-partis", "Synchronisation faite",
@@ -143,7 +144,7 @@ class Application : android.app.Application() {
     }
     val points by lazy { fr.assistacrise.mobile.donnees.DepotPoints(api, magasin) }
     val cartes by lazy { CartesHorsLigne(this) }
-    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats, terrain) }
+    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats, terrain, "Android ${android.os.Build.MODEL}") }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
     val notifications by lazy { DepotNotifications(api, magasin) { UUID.randomUUID().toString() } }

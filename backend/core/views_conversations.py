@@ -95,8 +95,10 @@ class MessagesConversationView(APIView):
             raise ValidationError({"error": "texte requis."})
         deja = {p.strip() for p in str(request.data.get("deja_emis_radio") or "").upper().split(",") if p.strip()}
         source = SourceMessage.APPLICATION if request.data.get("source") == "APPLICATION" or deja else SourceMessage.SITE
-        message, _ = conv.ecrire(c, texte, auteur=request.user, source=source, urgent=bool(request.data.get("urgent")),
-                                 origine=str(request.data.get("identifiant") or "")[:120])
+        message = conv.deja_entendu(c, texte, request.user) if deja else None
+        if message is None:
+            message, _ = conv.ecrire(c, texte, auteur=request.user, source=source, urgent=bool(request.data.get("urgent")),
+                                     origine=str(request.data.get("identifiant") or "")[:120])
         if c.genre == GenreConversation.EQUIPE and c.crise_id:
             attribuer_indicatif(c.equipe, c.crise)
             conv.diffuser_radio(message, equipe=c.equipe, crise=c.crise, deja_emis=deja, auteur=request.user)

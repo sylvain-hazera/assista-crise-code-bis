@@ -281,6 +281,23 @@ class ClientApi(
             if (dejaEmisParRadio != null) put("deja_emis_radio", dejaEmisParRadio)
         }).transformer(::lireMessages)
 
+    /** Ce que la radio de ce téléphone a entendu (23/11/2026) : une entrée par appel, le serveur
+     * la range (équipe, cellule ou pot commun) et ignore un renvoi (même identifiant). */
+    suspend fun envoyerEntendu(entree: String, appareil: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(entree).jsonObject }.getOrNull()
+            ?: return Reponse.Refus(400, "Message radio illisible.")
+        return authentifie(HttpMethod.Post, "radio/entendus/", buildJsonObject {
+            put("appareil", appareil)
+            put("messages", kotlinx.serialization.json.JsonArray(listOf(objet)))
+        }).sansValeur()
+    }
+
+    /** Le plan de canaux de la crise (23/11/2026) : clés publiques seulement. */
+    suspend fun planRadio(crise: String): Reponse<fr.assistacrise.mobile.domaine.PlanRadio> =
+        authentifie(HttpMethod.Get, "radio/plan/?crise=$crise").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.PlanRadio.serializer(), it)
+        }
+
     /** Un message de terrain (22/11/2026). Le serveur le reconnaît s'il l'a déjà reçu par radio. */
     suspend fun envoyerMessageTerrain(corps: String): Reponse<Unit> {
         val objet = runCatching { json.parseToJsonElement(corps).jsonObject }.getOrNull()
