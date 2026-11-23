@@ -430,8 +430,13 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
             val emetteur = message.de?.let { app.messagerieRadio.nomDuContact(MessagerieRadio.cle(p.protocole, "d:$it")) }
             val nouveau = app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis(), emetteur) ?: continue
             // La veille ne fait pas sonner ce que la radio a entendu : c'est ici (23/11/2026).
-            if (!(app.premierPlan && app.equipeAffichee == equipe.id)) app.alertes.afficher(Alerte(
-                "r:${nouveau.id}", Alerte.Genre.MESSAGE, "${equipe.nom} · par radio", "${nouveau.auteur} : ${nouveau.texte}".take(160), cible = equipe.id))
+            // Une notification par équipe, mise à jour à chaque message ; un Danger ou une demande
+            // de secours sonne en plus en urgent.
+            if (!(app.premierPlan && app.equipeAffichee == equipe.id)) {
+                app.alertes.conversation(idNotificationEquipe(equipe.id), "${equipe.nom} · par radio",
+                    FormatNotification.ligneRadio(nouveau.auteur, nouveau.texte), Alerte.Genre.MESSAGE, equipe.id)
+            }
+            FormatNotification.urgenceTerrain(app, nouveau.auteur, nouveau.texte, equipe.id)
         }
         // Tous les canaux du nœud et les messages directs, pour la messagerie radio (22/11/2026).
         app.messagerieRadio.recevoir(reaction.messages, reaction.directs, p)
@@ -484,6 +489,7 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
     private val FICHIER = "radio-${emplacement.name.lowercase()}"
 
     companion object {
+        fun idNotificationEquipe(equipe: String) = "equipe-radio:$equipe"
         private const val ANCIEN_FICHIER = "radio"
         private const val RESEAU = "reseau"
         private const val BLUETOOTH = "bluetooth"

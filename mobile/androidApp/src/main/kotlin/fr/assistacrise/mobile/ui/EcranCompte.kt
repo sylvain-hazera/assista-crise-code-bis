@@ -94,6 +94,28 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
                 }
             }
 
+            // Sans l'accord d'Android, rien ne sonne : ni mission, ni message radio (23/11/2026).
+            if (!modele.notificationsAutorisees) {
+                val contexteNotif = androidx.compose.ui.platform.LocalContext.current
+                androidx.compose.material3.Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                ) {
+                    androidx.compose.foundation.layout.Column(Modifier.padding(12.dp)) {
+                        Text("Notifications désactivées", style = MaterialTheme.typography.titleSmall)
+                        Text("Ce téléphone n'affichera ni les missions, ni les messages des équipes, ni les messages radio.",
+                             style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = {
+                            runCatching {
+                                contexteNotif.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, contexteNotif.packageName)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        }) { Text("Activer les notifications") }
+                    }
+                }
+            }
+
             SectionFormation(modele)
             SectionRadio(modele)
 

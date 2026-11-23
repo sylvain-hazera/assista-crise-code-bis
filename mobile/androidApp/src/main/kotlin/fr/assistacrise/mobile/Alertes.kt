@@ -104,15 +104,88 @@ class Alertes(private val contexte: Context) {
             .build())
     }
 
+    // --- Conversations (radio, équipes) et état de l'application (23/11/2026) -----------------
+
+    private val lignesParConversation = java.util.concurrent.ConcurrentHashMap<String, MutableList<String>>()
+
+    /**
+     * Une notification PAR conversation, mise à jour à chaque message : les derniers messages en
+     * liste, le nombre en titre, et une seule sonnerie jusqu'à ce qu'on l'ouvre (un canal bavard
+     * ne fait pas vibrer le téléphone à chaque trame). `cible` : ce qu'un toucher ouvre.
+     */
+    @Suppress("MissingPermission")   // vérifiée par `autorisees`
+    fun conversation(id: String, titre: String, ligne: String, genre: Alerte.Genre, cible: String, radio: Boolean = true): Boolean {
+        if (!autorisees) return false
+        creerLesCanaux()
+        val lignes = lignesParConversation.getOrPut(id) { mutableListOf() }
+        synchronized(lignes) { lignes += ligne.take(160); while (lignes.size > 6) lignes.removeAt(0) }
+        val total = (compteParConversation.merge(id, 1, Int::plus) ?: 1)
+        val ouvrir = Intent(contexte, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_GENRE, genre.name)
+            putExtra(EXTRA_CIBLE, cible)
+        }
+        val style = NotificationCompat.InboxStyle().also { s -> synchronized(lignes) { lignes.forEach { s.addLine(it) } } }
+        if (total > 1) style.setSummaryText("$total messages")
+        val notification = NotificationCompat.Builder(contexte, if (radio) CANAL_RADIO else CANAL)
+            .setSmallIcon(R.drawable.ic_alerte)
+            .setContentTitle(if (total > 1) "$titre ($total)" else titre)
+            .setContentText(ligne.take(160))
+            .setStyle(style)
+            .setNumber(total)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(PendingIntent.getActivity(contexte, id.hashCode(), ouvrir, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
+        return runCatching { gestionnaire.notify(id.hashCode(), notification) }.isSuccess
+    }
+
+    private val compteParConversation = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** La conversation est ouverte : sa notification disparaît, son compte repart de zéro. */
+    fun retirerConversation(id: String) {
+        lignesParConversation.remove(id); compteParConversation.remove(id)
+        gestionnaire.cancel(id.hashCode())
+    }
+
+    /** Une information sur l'application elle-même (synchronisation, radio perdue) : sans bruit. */
+    @Suppress("MissingPermission")   // vérifiée par `autorisees`
+    fun etat(id: String, titre: String, texte: String) {
+        if (!autorisees) return
+        creerLesCanaux()
+        val ouvrir = PendingIntent.getActivity(contexte, id.hashCode(), Intent(contexte, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        runCatching {
+            gestionnaire.notify(id.hashCode(), NotificationCompat.Builder(contexte, CANAL_ETAT)
+                .setSmallIcon(R.drawable.ic_alerte).setContentTitle(titre).setContentText(texte)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(texte))
+                .setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_DEFAULT).setContentIntent(ouvrir).build())
+        }
+    }
+
+    fun retirerEtat(id: String) = gestionnaire.cancel(id.hashCode())
+
     fun retirer(cle: String) = gestionnaire.cancel(cle.hashCode())
 
     fun toutRetirer() = gestionnaire.cancelAll()
 
-    private fun creerLesCanaux() {
+    fun creerLesCanaux() {
         val systeme = contexte.getSystemService(NotificationManager::class.java)
         systeme.createNotificationChannel(
             NotificationChannel(CANAL, "Messages et missions", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Demandes de disponibilités, messages de vos équipes, nouvelles missions."
+            },
+        )
+        systeme.createNotificationChannel(
+            NotificationChannel(CANAL_RADIO, "Messages radio", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Messages reçus par la radio Meshtastic ou MeshCore : canaux, équipes, messages directs."
+            },
+        )
+        systeme.createNotificationChannel(
+            NotificationChannel(CANAL_ETAT, "État de l'application", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Envois partis au retour du réseau, envois refusés, radio perdue puis retrouvée."
             },
         )
         systeme.createNotificationChannel(
@@ -128,6 +201,8 @@ class Alertes(private val contexte: Context) {
         const val EXTRA_CIBLE = "alerte.cible"
         private const val CANAL = "messages"
         private const val CANAL_URGENT = "urgent"
+        private const val CANAL_RADIO = "radio"
+        private const val CANAL_ETAT = "etat"
         private const val TACHE = "veille"
         private const val ID_GEOLOC = 7_001
 

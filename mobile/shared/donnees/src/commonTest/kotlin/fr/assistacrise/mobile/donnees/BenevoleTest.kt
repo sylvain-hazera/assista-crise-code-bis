@@ -59,7 +59,10 @@ private class BancBenevole(
     val missions = DepotMissions(api, magasin, file)
     val equipes = DepotEquipes(api, magasin, file)
     val benevole = DepotBenevole(api, magasin)
-    val veille = Veille(magasin, notifications, equipes, missions)
+    val veille = Veille(magasin, notifications, equipes, missions) { relire ->
+        if (relire) benevole.chargerLesDossiers(equipes.equipes.value.map { it.id }.toSet())
+        benevole.dossiers.value
+    }
 
     suspend fun connecte() = apply { session.ouvrir("A", "R", Compte(id = "u1")) }
     fun repond(chemin: String, corps: String) { reponses[chemin] = corps }
@@ -146,6 +149,20 @@ class VeilleTest {
         val sonnees = banc.veille.relever { true }!!
         assertEquals(setOf(Alerte.Genre.NOTIFICATION, Alerte.Genre.MISSION, Alerte.Genre.MESSAGE), sonnees.map { it.genre }.toSet())
         assertEquals("Équipe Nord", sonnees.first { it.genre == Alerte.Genre.MESSAGE }.titre)
+        assertEquals(emptyList(), banc.veille.relever { true })
+    }
+
+    @Test fun unDossierNouvellementConfieAMonEquipeSonne() = runTest {
+        // 23/11/2026 : « ils attribueront des missions » -- un dossier confié sonne, comme une mission.
+        val banc = BancBenevole().connecte()
+        banc.repond("teams/mes-equipes/", """[{"id":"t1","name":"Équipe Nord"}]""")
+        banc.repond("dossiers/", "[]")
+        banc.veille.relever { true }
+        banc.repond("dossiers/", """[{"id":"d9","titre":"Cave inondée","commune":"Rive-de-Gier","equipe":"t1","equipe_nom":"Équipe Nord","priorite":"URGENTE","statut":"AFFECTE"}]""")
+        val sonnees = banc.veille.relever { true }!!
+        val dossier = sonnees.single { it.genre == Alerte.Genre.DOSSIER }
+        assertEquals("d9", dossier.cible)
+        assertTrue(dossier.urgent)
         assertEquals(emptyList(), banc.veille.relever { true })
     }
 

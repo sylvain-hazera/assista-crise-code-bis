@@ -69,6 +69,54 @@ class Application : android.app.Application() {
     private val porteeBascule = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     @Volatile private var rechercheEnCours = false
 
+    override fun onCreate() {
+        super.onCreate()
+        surveillerPourNotifier()
+    }
+
+    /**
+     * Notifications d'état (23/11/2026, POC hors réseau) : au retour du réseau, « vos envois en
+     * attente sont partis » ; un envoi refusé par le serveur ; la radio perdue puis retrouvée.
+     * Rien quand l'application est à l'écran pour l'envoi : le bandeau de l'écran le dit déjà.
+     */
+    private fun surveillerPourNotifier() {
+        porteeBascule.launch {
+            var attente = -1
+            var refusees = -1
+            file.actions.collect { actions ->
+                val n = actions.count { it.etat == fr.assistacrise.mobile.domaine.EtatAction.EN_ATTENTE }
+                val r = actions.count { it.etat == fr.assistacrise.mobile.domaine.EtatAction.REFUSEE }
+                if (attente > 0 && n == 0 && !premierPlan) {
+                    alertes.etat("envois-partis", "Synchronisation faite",
+                        "Les $attente envoi(s) qui attendaient le réseau sont arrivés au serveur.")
+                }
+                if (refusees >= 0 && r > refusees) {
+                    alertes.etat("envois-refuses", "${r} envoi(s) refusé(s) par le serveur",
+                        "Ouvrez l'application (Compte) pour voir lesquels et pourquoi.")
+                }
+                attente = n; refusees = r
+            }
+        }
+        porteeBascule.launch {
+            val prete = mutableMapOf<Int, Boolean>()
+            radio.etats.collect { etats ->
+                etats.forEachIndexed { i, e ->
+                    val liaison = radio.toutes[i]
+                    val maintenant = e.phase == LiaisonRadio.Phase.PRETE
+                    val avant = prete[i]
+                    val id = "radio-perdue-${liaison.emplacement.name}"
+                    if (avant == true && !maintenant && liaison.choisie()) {
+                        alertes.etat(id, "Radio ${liaison.emplacement.libelle} perdue",
+                            "La liaison avec la radio est coupée : reconnexion automatique en cours. Vérifiez qu'elle est allumée et à portée.")
+                    } else if (maintenant && avant == false) {
+                        alertes.retirerEtat(id)
+                    }
+                    prete[i] = maintenant
+                }
+            }
+        }
+    }
+
     /** Le central ne répond plus : chercher le satellite (une seule recherche à la fois). */
     fun lancerLaRecherche() {
         if (rechercheEnCours) return
@@ -100,7 +148,12 @@ class Application : android.app.Application() {
     val reseau by lazy { ObservateurReseau(this) }
     val notifications by lazy { DepotNotifications(api, magasin) { UUID.randomUUID().toString() } }
     val benevole by lazy { DepotBenevole(api, magasin) }
-    val veille by lazy { Veille(magasin, notifications, equipes, depot) }
+    val veille by lazy {
+        Veille(magasin, notifications, equipes, depot) { relire ->
+            if (relire && equipes.equipes.value.isNotEmpty()) benevole.chargerLesDossiers(equipes.equipes.value.map { it.id }.toSet())
+            benevole.dossiers.value
+        }
+    }
     val alertes by lazy { Alertes(this) }
     val chef by lazy { ChefDeMission(this) }
     val messagerieRadio by lazy { MessagerieRadio(this) }

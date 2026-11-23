@@ -80,6 +80,21 @@ object EtiquetteTerrain {
         return texte.substring(0, fin) + "…"
     }
 
+    /** Une étiquette reçue par radio, lue (23/11/2026) : de quoi notifier « Danger signalé par
+     * Léa : mur fissuré » au lieu du code brut. Le texte peut être précédé de « Nom: » (MeshCore). */
+    data class Lue(val type: TypeMessageTerrain, val corps: String)
+
+    private val MOTIF = Regex("""⚑([A-Z]{2,7}) ([0-9a-f-]{6})\.([0-9a-f]{6})\.([0-9a-f]{6})(?:\.([0-9a-f]{6}))?(?: (.*))?$""",
+                              RegexOption.DOT_MATCHES_ALL)
+
+    fun lire(texte: String): Lue? {
+        val debut = texte.indexOf('⚑').takeIf { it >= 0 } ?: return null
+        val m = MOTIF.find(texte.substring(debut).trim()) ?: return null
+        val type = TypeMessageTerrain.entries.firstOrNull { it.code == m.groupValues[1] } ?: return null
+        val corps = m.groupValues[6].trim().removePrefix(type.libelle).trimStart(' ', ':').trim()
+        return Lue(type, corps)
+    }
+
     fun estTronque(type: TypeMessageTerrain, texte: String, nombre: Int?): Boolean =
         ecrire(type, "000000", "000000", "000000", texte, nombre).endsWith("…")
 }

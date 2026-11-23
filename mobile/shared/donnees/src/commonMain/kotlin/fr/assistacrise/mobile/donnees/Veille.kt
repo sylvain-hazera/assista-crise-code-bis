@@ -22,6 +22,9 @@ class Veille(
     private val notifications: DepotNotifications,
     private val equipes: DepotEquipes,
     private val missions: DepotMissions,
+    /** Les dossiers confiés à mes équipes, relus si demandé (23/11/2026) : un dossier nouvellement
+     * confié sonne, comme une mission. */
+    private val dossiersAFaire: suspend (relire: Boolean) -> List<fr.assistacrise.mobile.domaine.Dossier> = { emptyList() },
 ) {
     private val json = Json
     private val verrou = Mutex()
@@ -38,8 +41,13 @@ class Veille(
         // `relire = false` : l'appelant vient de relire missions et équipes, inutile de le refaire.
         if (relire) { missions.rafraichir(); equipes.rafraichir() }
         equipes.equipes.value.forEach { equipes.rafraichirFil(it.id) }
+        val dossiers = runCatching { dossiersAFaire(true) }.getOrDefault(emptyList())
 
-        val presentes = presentes()
+        val presentes = presentes() + dossiers.map {
+            Alerte("do:${it.id}", Alerte.Genre.DOSSIER, "Dossier confié à ${it.equipeNom ?: "votre équipe"}",
+                   listOfNotNull(it.titre.ifBlank { null }, it.commune).joinToString(" · ").ifBlank { "Nouveau dossier" },
+                   urgent = it.priorite == "URGENTE", cible = it.id)
+        }
         val dejaVues = magasin.lire(FICHIER)?.let { runCatching { json.decodeFromString(FORME, it) }.getOrNull() }
         val nouvelles = alertesNouvelles(presentes, dejaVues)
 

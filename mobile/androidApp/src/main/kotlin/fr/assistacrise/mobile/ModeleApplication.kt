@@ -470,6 +470,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     fun seConnecterAUnSatellite() = app.bascule.demanderAdresse()
 
+    /** Android affichera-t-il nos notifications ? (Relu à chaque affichage de l'écran Compte.) */
+    val notificationsAutorisees: Boolean get() = app.alertes.autorisees
+
     fun revenirAuCentral() {
         viewModelScope.launch { app.bascule.revenirAuCentral() }
     }
@@ -689,6 +692,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 Alerte.Genre.MESSAGE -> ecran == Ecran.MESSAGERIE && equipeOuverte == alerte.cible
                 Alerte.Genre.NOTIFICATION -> ecran == Ecran.NOTIFICATIONS
                 Alerte.Genre.MISSION -> ecran == Ecran.MISSIONS
+                Alerte.Genre.DOSSIER -> ecran == Ecran.DOSSIER && dossierOuvert == alerte.cible
             }
             if (sousLesYeux) {
                 if (alerte.genre == Alerte.Genre.NOTIFICATION) app.notifications.noter(Etape.VUE, listOf(alerte.cible))
@@ -730,6 +734,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 if (cible.startsWith(MessagerieRadio.CIBLE)) ouvrirConversationRadio(cible.removePrefix(MessagerieRadio.CIBLE))
                 else { equipeOuverte = cible; ecran = Ecran.MESSAGERIE }
             Alerte.Genre.MISSION.name -> ecran = Ecran.MISSIONS
+            Alerte.Genre.DOSSIER.name -> ouvrirDossier(cible)
         }
     }
 
@@ -1109,6 +1114,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     // --- Équipes et messagerie -----------------------------------------------------------
 
     fun ouvrirMessagerie(equipe: Equipe) {
+        app.alertes.retirerConversation(LiaisonRadio.idNotificationEquipe(equipe.id))
         equipeOuverte = equipe.id
         ecran = Ecran.MESSAGERIE
     }

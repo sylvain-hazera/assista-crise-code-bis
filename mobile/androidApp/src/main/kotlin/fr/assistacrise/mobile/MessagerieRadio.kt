@@ -59,17 +59,21 @@ class MessagerieRadio(private val app: Application) {
             val texte = coupe?.let { m.texte.substring(it + 2) } ?: m.texte
             val k = cle(pr, "c:${m.canal}")
             ajouter(k, Message(false, auteur, texte, maintenant))
-            // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres, si on l'a demandé.
-            if (k in notifies() && app.radio.equipeDuCanal(pr, m.canal) == null) {
+            // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres sonnent
+            // aussi, sauf ceux qu'on a fait taire (cloche) — 23/11/2026 : « un message reçu
+            // n'émet pas de notification, il en faut ».
+            if (k !in muets() && app.radio.equipeDuCanal(pr, m.canal) == null) {
                 val nom = pilote.canaux.firstOrNull { it.index == m.canal }?.nom ?: "Canal ${m.canal}"
-                alerter(k, "« $nom » · ${pr.libelle}", "${auteur.ifBlank { "?" }} : $texte")
+                alerter(k, "« $nom » · ${pr.libelle}", FormatNotification.ligneRadio(auteur, texte))
+                FormatNotification.urgenceTerrain(app, auteur, texte, CIBLE + k)
             }
         }
         for (d in directs) {
             val k = cle(pr, "d:${d.de}")
             val nom = nomDuContact(k)
             ajouter(k, Message(false, nom, d.texte, maintenant))
-            alerter(k, "$nom · message direct ${pr.libelle}", d.texte)
+            alerter(k, "$nom · message direct ${pr.libelle}", FormatNotification.ligneRadio("", d.texte))
+            FormatNotification.urgenceTerrain(app, nom, d.texte, CIBLE + k)
         }
     }
 
@@ -95,21 +99,25 @@ class MessagerieRadio(private val app: Application) {
         return ok
     }
 
+    /** Une notification par conversation, mise à jour à chaque message (Alertes.conversation). */
     private fun alerter(cle: String, titre: String, texte: String) {
         if (app.premierPlan && ouverte == cle) return
-        app.alertes.afficher(fr.assistacrise.mobile.domaine.Alerte(
-            "rc:$cle:${System.currentTimeMillis()}", fr.assistacrise.mobile.domaine.Alerte.Genre.MESSAGE, titre, texte.take(160), cible = CIBLE + cle))
+        app.alertes.conversation(idNotification(cle), titre, texte, fr.assistacrise.mobile.domaine.Alerte.Genre.MESSAGE, CIBLE + cle)
     }
 
-    // Les canaux qu'on veut entendre sonner : un choix d'affichage, pas une donnée personnelle.
+    // Les canaux qu'on a fait taire : un choix d'affichage, pas une donnée personnelle. Tous les
+    // canaux sonnent par défaut (23/11/2026) ; les messages directs sonnent toujours.
     private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
-    private fun notifies(): Set<String> = preferences.getStringSet("canaux-notifies", emptySet()) ?: emptySet()
-    fun notifie(cle: String) = cle.contains("|d:") || cle in notifies()
+    private fun muets(): Set<String> = preferences.getStringSet("canaux-muets", emptySet()) ?: emptySet()
+    fun notifie(cle: String) = cle.contains("|d:") || cle !in muets()
     fun notifier(cle: String, oui: Boolean) {
-        preferences.edit().putStringSet("canaux-notifies", if (oui) notifies() + cle else notifies() - cle).apply()
+        preferences.edit().putStringSet("canaux-muets", if (oui) muets() - cle else muets() + cle).apply()
     }
 
-    fun marquerLue(cle: String) { _nonLus.value = _nonLus.value - cle }
+    fun marquerLue(cle: String) {
+        _nonLus.value = _nonLus.value - cle
+        app.alertes.retirerConversation(idNotification(cle))
+    }
 
     fun effacer(cle: String) {
         _conversations.value = _conversations.value - cle
@@ -144,6 +152,7 @@ class MessagerieRadio(private val app: Application) {
     companion object {
         /** Préfixe de la cible d'une notification qui ouvre une conversation radio. */
         const val CIBLE = "radio:"
+        fun idNotification(cle: String) = "radio-conv:$cle"
         fun cle(protocole: Protocole, reste: String) = "${protocole.name}|$reste"
         fun lireCle(cle: String): Pair<Protocole, String>? {
             val (p, reste) = cle.split("|", limit = 2).takeIf { it.size == 2 } ?: return null

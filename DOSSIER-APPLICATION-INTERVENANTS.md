@@ -1507,3 +1507,23 @@ terminée n'est plus gardée (sauf tant qu'une action la concernant attend d'êt
 dossier clos ou résolu non plus, avec ses commentaires et photos en cache. Le reste — missions
 en cours, dossiers à faire avec leurs adresses et contacts, points de la crise, messages des
 équipes — continue d'être téléchargé à chaque synchronisation, sans geste de l'intervenant.
+
+## 24. Version 0.21.0 (23/11/2026) : notifications
+
+Avant un essai sur le terrain sans 4G : « il faut que les notifications soient fonctionnelles ;
+un message Meshtastic ou MeshCore reçu n'émet pas de notification, il en faut ».
+- **Messages radio** : tous les canaux sonnent par défaut (la cloche d'une conversation sert
+  désormais à faire TAIRE un canal bavard) ; messages directs et canaux d'équipe aussi. Une
+  notification par conversation, mise à jour à chaque message (derniers messages, nombre, une
+  seule sonnerie jusqu'à ce qu'on l'ouvre), effacée à l'ouverture. Canal Android « Messages
+  radio », réglable à part.
+- **Étiquettes de terrain reçues par radio** : mises en forme (« Danger / problème sur place —
+  Léa : mur fissuré ») ; Danger et Demande de premiers secours sonnent en plus en urgent.
+- **Dossier confié à mon équipe** : sonne comme une nouvelle mission ; le toucher ouvre la fiche.
+- **État de l'application** (canal à part) : « Synchronisation faite » au retour du réseau quand
+  des envois attendaient, envois refusés par le serveur, radio perdue (et retirée quand elle
+  revient).
+- **Notifications refusées** : l'écran Compte le signale, avec un bouton vers les réglages
+  Android de l'application.
+- Restent en place : nouvelles missions, messages d'équipe, campagnes de disponibilités
+  (relevés du serveur, application fermée compris), géolocalisation activée et coupée.

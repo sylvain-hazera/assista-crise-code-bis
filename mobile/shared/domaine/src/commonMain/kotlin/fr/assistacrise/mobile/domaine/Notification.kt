@@ -63,7 +63,7 @@ data class Alerte(
     /** L'objet à ouvrir quand on touche l'alerte : notification, équipe ou mission. */
     val cible: String = "",
 ) {
-    enum class Genre { NOTIFICATION, MESSAGE, MISSION }
+    enum class Genre { NOTIFICATION, MESSAGE, MISSION, DOSSIER }
 }
 
 /**
