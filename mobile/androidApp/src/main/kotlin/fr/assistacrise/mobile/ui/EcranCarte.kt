@@ -2,6 +2,7 @@
 
 package fr.assistacrise.mobile.ui
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -279,12 +280,17 @@ fun EcranCarte(modele: ModeleApplication) {
                 }
             }
             lieuTouche?.let { lieu ->
-                CreerIci(
-                    crises.filter { it.accepteLesDepots },
-                    surChoix = { genre, crise -> lieuTouche = null; modele.ouvrirDepot(genre, crise, Releve(lieu.latitude, lieu.longitude, System.currentTimeMillis(), 0f)) },
-                    surAbandon = { lieuTouche = null },
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                )
+                // Une fenêtre au-dessus de l'écran, et non posée sur la carte (23/11/2026) : avec
+                // plusieurs crises, elle débordait de la carte et écrasait les trois boutons.
+                androidx.compose.ui.window.Dialog(onDismissRequest = { lieuTouche = null },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+                    CreerIci(
+                        crises.filter { it.accepteLesDepots },
+                        surChoix = { genre, crise -> lieuTouche = null; modele.ouvrirDepot(genre, crise, Releve(lieu.latitude, lieu.longitude, System.currentTimeMillis(), 0f)) },
+                        surAbandon = { lieuTouche = null },
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
             }
             Text(
                 "© IGN", style = MaterialTheme.typography.labelSmall,
@@ -358,7 +364,7 @@ fun EcranCarte(modele: ModeleApplication) {
 private fun CreerIci(crises: List<Crise>, surChoix: (GenreDepot, Crise) -> Unit, surAbandon: () -> Unit, modifier: Modifier = Modifier) {
     var choisie by remember(crises) { mutableStateOf(crises.singleOrNull()) }
     Surface(shape = MaterialTheme.shapes.large, shadowElevation = 6.dp, modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Créer à cet endroit", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = surAbandon) { Text("Annuler") }

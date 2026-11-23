@@ -82,7 +82,19 @@ describe('Poste de pilotage', () => {
     const journal = http.expectOne(r => r.url === `${api}/journal-collectivite/`);
     expect(journal.request.params.get('crise')).toBe('c1');
     journal.flush([{ id: 'j1', crise: 'c1', auteur_nom: 'M. le maire', contenu: 'PC de crise ouvert', date_creation: '2026-11-21T07:00:00Z' }]);
+    // Tableaux de situation (23/11/2026) : un bloc en échec s'affiche comme tel, sans bloquer les autres.
+    http.expectOne(r => r.url === `${api}/pilotage/situation/`).flush({
+      debut: null, calcule_le: '2026-11-23T10:00:00Z',
+      veille: { vigilance_meteo: [{ departement: '69', aujourdhui: 'orange', demain: 'jaune' }], crues: [], stations: [], foyers_24h: 0, foudre_1h: 0 },
+      accueil: { centres: [{ nom: 'Gymnase', capacite: 80, presents: 12 }], places: 80, presents: 12,
+                 mises_en_securite: { declarations: 3, personnes: 7, cherchent_un_centre: 1 }, relogement: { en_recherche: 2, heberges: 1, reloges: 0 } },
+      degats: { erreur: 'Indisponible pour le moment.' },
+      moyens: { demandes_non_couvertes: [], offres_disponibles: [], renforts_24h: { demandes: 0, personnes: 0 } },
+      radio: { equipes: [{ nom: 'Équipe Nord', meshtastic: true, meshcore: false, dernier_message_radio: null }] },
+    });
     fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('cherchent un centre');
+    expect(fixture.nativeElement.textContent).toContain('Indisponible pour le moment.');
 
     const texte = fixture.nativeElement.textContent as string;
     expect(texte).toContain('Inondation de la Saône');

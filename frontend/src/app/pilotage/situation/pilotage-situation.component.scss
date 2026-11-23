@@ -66,3 +66,14 @@ p { margin: 0; }
   .chiffres { grid-template-columns: repeat(2, 1fr); }
   .colonnes { grid-template-columns: 1fr; }
 }
+
+
+/* Tableaux de situation (23/11/2026). */
+.tableaux { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 12px; margin: 12px 0; }
+.carte-sit { padding: 12px; border-radius: 10px; background: var(--ac-surface, #fff); border: 1px solid var(--ac-border, #e5e7eb);
+  h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 1rem; .material-icons { font-size: 1.15rem; color: var(--brand-primary, #2563eb); } }
+  p { margin: 2px 0; font-size: .88rem; }
+  .alerte { color: #b91c1c; font-weight: 600; } }
+.couleur { font-weight: 700; text-transform: capitalize;
+  &[data-couleur="jaune"] { color: #a16207; } &[data-couleur="orange"] { color: #c2410c; } &[data-couleur="rouge"] { color: #b91c1c; }
+  &[data-couleur="vert"] { color: #15803d; } }

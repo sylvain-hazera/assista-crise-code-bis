@@ -13,7 +13,7 @@ import { Team } from '../../shared/models/team.model';
 import { JournalCollectivite } from '../../shared/models/journal-collectivite.model';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import { dureeDepuis } from '../../shared/utils/duree.util';
-import { PilotageService } from '../pilotage.service';
+import { PilotageService, TableauxSituation } from '../pilotage.service';
 
 const CLOS = ['RESOLU', 'CLOTURE'];
 const RAFRAICHISSEMENT_MS = 60_000;
@@ -83,6 +83,8 @@ export class PilotageSituationComponent implements OnInit, OnDestroy {
   }
 
   private abonnement?: Subscription;
+  /** Veille de la zone, accueil, dégâts, moyens, radio (23/11/2026). */
+  readonly tableaux = signal<TableauxSituation | null>(null);
   private verrou: VerrouEcran | null = null;
 
   constructor() {
@@ -111,8 +113,10 @@ export class PilotageSituationComponent implements OnInit, OnDestroy {
       dossiers: this.dossiersService.getAll(),
       equipes: this.equipesService.getAll(),
       journal: this.journalService.getAll(criseId).pipe(catchError(() => of([] as JournalCollectivite[]))),
+      tableaux: this.pilotage.situation(criseId).pipe(catchError(() => of(null))),
     }), RAFRAICHISSEMENT_MS).subscribe({
-      next: ({ cellule, dossiers, equipes, journal }) => {
+      next: ({ cellule, dossiers, equipes, journal, tableaux }) => {
+        this.tableaux.set(tableaux);
         this.cellule.set(cellule);
         this.dossiers.set(dossiers);
         this.equipes.set(equipes.filter(e => e.actif !== false && e.assigned_crisis_ids?.includes(criseId)));

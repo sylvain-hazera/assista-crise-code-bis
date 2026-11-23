@@ -1497,3 +1497,7 @@ détecte le satellite et s'y connecte, et le cas échéant demande l'IP. »
   .local), vérifié dans le client HTTP lui-même ; tout le reste reste en https.
 - Non essayé sur un vrai satellite (l'émulateur n'a pas de mDNS) ; la logique de bascule est
   testée (BasculeServeurTest).
+
+**0.20.1 (23/11/2026)** : sur la carte, « Créer à cet endroit » s'ouvre dans une fenêtre au-dessus
+de l'écran, qui défile au besoin : posée sur la carte, elle débordait avec plusieurs crises et
+écrasait les trois boutons (demande, signalement, offre).

@@ -376,7 +376,7 @@ router.register(r'creneaux-equipe', CreneauEquipeViewSet)
 router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
 from .views_organisation import (  # noqa: E402
-    OrganisationView, RevueDroitsDecisionView, RevueDroitsExportView, RevueDroitsView, TableauRadioMeshCoreView,
+    OrganisationView, RevueDroitsDecisionView, RevueDroitsExportView, RevueDroitsView, SituationPilotageView, TableauRadioMeshCoreView,
 )
 
 urlpatterns = [
@@ -465,6 +465,7 @@ urlpatterns = [
     path('revue-droits/decision/', RevueDroitsDecisionView.as_view(), name='revue-droits-decision'),
     path('revue-droits/export/', RevueDroitsExportView.as_view(), name='revue-droits-export'),
     path('tableau-radio-meshcore/', TableauRadioMeshCoreView.as_view(), name='tableau-radio-meshcore'),
+    path('pilotage/situation/', SituationPilotageView.as_view(), name='pilotage-situation'),
     path('seismes/', SeismesView.as_view(), name='seismes'),
     path('volcans/', VolcansView.as_view(), name='volcans'),
     path('defibrillateurs/', DefibrillateursView.as_view(), name='defibrillateurs'),

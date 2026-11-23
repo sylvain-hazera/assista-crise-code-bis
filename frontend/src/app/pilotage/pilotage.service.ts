@@ -24,6 +24,24 @@ export interface MessageTerrainPilotage {
   pris_en_compte_par_nom?: string | null;
 }
 
+/** Les tableaux de situation d'une crise (backend/core/pilotage_situation.py). Un bloc en échec porte `erreur`. */
+export interface TableauxSituation {
+  debut: string | null;
+  calcule_le: string;
+  veille: { erreur?: string; vigilance_meteo?: { departement: string; aujourdhui: string; demain: string }[];
+            crues?: { nom: string; niveau: string }[];
+            stations?: { nom: string; cours_eau: string; hauteur_m: number; le: string | null; evolution_m: number | null }[];
+            foyers_24h?: number; foudre_1h?: number };
+  accueil: { erreur?: string; centres?: { nom: string; capacite: number | null; presents: number }[]; places?: number; presents?: number;
+             mises_en_securite?: { declarations: number; personnes: number; cherchent_un_centre: number };
+             relogement?: { en_recherche: number; heberges: number; reloges: number } };
+  degats: { erreur?: string; par_statut?: Record<string, number>; evalues?: number; adresses_zone?: number; part_evaluee?: number | null;
+            communes?: { commune_code: string; biens: number; touches: number }[] };
+  moyens: { erreur?: string; demandes_non_couvertes?: { type: string; nombre: number }[];
+            offres_disponibles?: { type: string; nombre: number }[]; renforts_24h?: { demandes: number; personnes: number } };
+  radio: { erreur?: string; equipes?: { nom: string; meshtastic: boolean; meshcore: boolean; dernier_message_radio: string | null }[] };
+}
+
 /** Le terrain en direct d'une crise : alertes à prendre en compte, statuts, derniers messages. */
 export interface VueTerrain {
   alertes: MessageTerrainPilotage[];
@@ -47,6 +65,10 @@ export class PilotageService {
   readonly alertesTerrain = computed(() => this.terrain()?.alertes.length ?? 0);
 
   constructor(private http: HttpClient) {}
+
+  situation(crise: string) {
+    return this.http.get<TableauxSituation>(`${environment.apiUrl}/pilotage/situation/`, { params: { crise } });
+  }
 
   rafraichirTerrain(): void {
     const crise = this.criseId();

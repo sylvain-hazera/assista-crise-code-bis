@@ -32,6 +32,70 @@
     </a>
   </section>
 
+  <!-- Tableaux de situation (23/11/2026) : veille de la zone, accueil, dégâts, moyens, radio. -->
+  @if (tableaux(); as t) {
+    <section class="tableaux" aria-label="Tableaux de situation">
+      <article class="carte-sit">
+        <h2><span class="material-icons" aria-hidden="true">thunderstorm</span> Veille de la zone</h2>
+        @if (t.veille.erreur) { <p class="discret">{{ t.veille.erreur }}</p> } @else {
+          @for (v of t.veille.vigilance_meteo; track v.departement) {
+            <p>Vigilance météo {{ v.departement }} : <span class="couleur" [attr.data-couleur]="v.aujourdhui">{{ v.aujourdhui }}</span>,
+               demain <span class="couleur" [attr.data-couleur]="v.demain">{{ v.demain }}</span></p>
+          }
+          @for (c of t.veille.crues; track c.nom) { <p>Crue : {{ c.nom }} — <span class="couleur" [attr.data-couleur]="c.niveau">{{ c.niveau }}</span></p> }
+          @for (s of t.veille.stations; track s.nom) {
+            <p class="discret">{{ s.nom }}@if (s.cours_eau) { ({{ s.cours_eau }}) } : {{ s.hauteur_m }} m
+              @if (s.evolution_m) { · {{ s.evolution_m > 0 ? '+' : '' }}{{ s.evolution_m }} m }</p>
+          }
+          <p class="discret">Foyers d'incendie (24 h) : {{ t.veille.foyers_24h }} · foudre (1 h) : {{ t.veille.foudre_1h }}</p>
+        }
+      </article>
+      <article class="carte-sit">
+        <h2><span class="material-icons" aria-hidden="true">night_shelter</span> Accueil et hébergement</h2>
+        @if (t.accueil.erreur) { <p class="discret">{{ t.accueil.erreur }}</p> } @else {
+          <p><strong>{{ t.accueil.presents }}</strong> accueilli(s) pour <strong>{{ t.accueil.places }}</strong> place(s)</p>
+          @for (c of t.accueil.centres; track c.nom) { <p class="discret">{{ c.nom }} : {{ c.presents }}@if (c.capacite) { / {{ c.capacite }} }</p> }
+          <p>Mis en sécurité : <strong>{{ t.accueil.mises_en_securite?.personnes }}</strong> personne(s)
+            @if (t.accueil.mises_en_securite?.cherchent_un_centre) { · <span class="alerte">{{ t.accueil.mises_en_securite?.cherchent_un_centre }} cherchent un centre</span> }</p>
+          <p>Familles à reloger : <strong>{{ t.accueil.relogement?.en_recherche }}</strong> sans solution · {{ t.accueil.relogement?.heberges }} hébergées · {{ t.accueil.relogement?.reloges }} relogées</p>
+        }
+      </article>
+      <article class="carte-sit">
+        <h2><span class="material-icons" aria-hidden="true">home_repair_service</span> Dégâts</h2>
+        @if (t.degats.erreur) { <p class="discret">{{ t.degats.erreur }}</p> } @else {
+          <p><strong>{{ t.degats.evalues }}</strong> bien(s) évalué(s)@if (t.degats.part_evaluee !== null) { · {{ t.degats.part_evaluee }} % des adresses de la zone }</p>
+          <p>Détruits <strong>{{ t.degats.par_statut?.['DETRUITE'] }}</strong> · dégâts forts <strong>{{ t.degats.par_statut?.['DEGATS_FORTS'] }}</strong> ·
+             faibles {{ t.degats.par_statut?.['DEGATS_FAIBLES'] }} · sans dégâts {{ t.degats.par_statut?.['PAS_DE_DEGATS'] }}</p>
+          @for (c of t.degats.communes; track c.commune_code) { <p class="discret">Commune {{ c.commune_code }} : {{ c.touches }} touché(s) sur {{ c.biens }}</p> }
+        }
+      </article>
+      <article class="carte-sit">
+        <h2><span class="material-icons" aria-hidden="true">inventory_2</span> Moyens</h2>
+        @if (t.moyens.erreur) { <p class="discret">{{ t.moyens.erreur }}</p> } @else {
+          @if (t.moyens.renforts_24h?.demandes) {
+            <p class="alerte">{{ t.moyens.renforts_24h?.demandes }} demande(s) de renfort du terrain (24 h)@if (t.moyens.renforts_24h?.personnes) { · {{ t.moyens.renforts_24h?.personnes }} personne(s) }</p>
+          }
+          <p>Demandes non couvertes :</p>
+          @for (d of t.moyens.demandes_non_couvertes; track d.type) { <p class="discret">{{ d.type }} : {{ d.nombre }}</p> } @empty { <p class="discret">aucune</p> }
+          <p>Offres disponibles :</p>
+          @for (o of t.moyens.offres_disponibles; track o.type) { <p class="discret">{{ o.type }} : {{ o.nombre }}</p> } @empty { <p class="discret">aucune</p> }
+        }
+      </article>
+      <article class="carte-sit">
+        <h2><span class="material-icons" aria-hidden="true">settings_input_antenna</span> Radio</h2>
+        @if (t.radio.erreur) { <p class="discret">{{ t.radio.erreur }}</p> } @else {
+          @for (e of t.radio.equipes; track e.nom) {
+            <p>{{ e.nom }} :
+              @if (e.meshtastic || e.meshcore) { {{ e.meshtastic ? 'Meshtastic' : '' }}{{ e.meshtastic && e.meshcore ? ' + ' : '' }}{{ e.meshcore ? 'MeshCore' : '' }} }
+              @else { <span class="alerte">pas de canal radio</span> }
+              @if (e.dernier_message_radio) { <span class="discret"> · dernier message radio {{ e.dernier_message_radio | date:'dd/MM HH:mm' }}</span> }
+            </p>
+          } @empty { <p class="discret">Aucune équipe engagée.</p> }
+        }
+      </article>
+    </section>
+  }
+
   <div class="colonnes">
     <section class="bloc">
       <h2>Urgent et important</h2>

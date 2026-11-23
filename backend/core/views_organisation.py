@@ -145,3 +145,21 @@ class TableauRadioMeshCoreView(APIView):
         from . import tableau_meshcore
         from .permissions import get_active_environment
         return Response(tableau_meshcore.construire(get_active_environment(request), request.query_params.get("fenetre", "24h")))
+
+
+class SituationPilotageView(APIView):
+    """GET /api/pilotage/situation/?crise= : les tableaux de situation du pilotage (23/11/2026,
+    core/pilotage_situation.py) -- veille de la zone, accueil, dégâts, moyens, radio."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from . import pilotage_situation
+        from .models import Crisis
+        from .permissions import get_active_environment
+
+        if get_effective_role(request) not in INSTITUTIONAL_TYPES:
+            raise PermissionDenied("Réservé au poste de commandement.")
+        crise = Crisis.objects.filter(pk=request.query_params.get("crise") or None).first()
+        if crise is None:
+            raise ValidationError({"error": "Crise introuvable."})
+        return Response(pilotage_situation.situation(crise, get_active_environment(request)))
