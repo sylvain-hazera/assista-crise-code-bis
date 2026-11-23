@@ -11,6 +11,7 @@ export const PILOTAGE_ROUTES: Routes = [
   { path: 'dossiers', loadComponent: () => import('../admin/dossiers/dossiers.component').then(m => m.DossiersComponent) },
   { path: 'point', loadComponent: () => import('../admin/standard-crise/standard-crise.component').then(m => m.StandardCriseComponent),
     data: { onglet: 'situation' } },
+  { path: 'decisions', loadComponent: () => import('./decisions/pilotage-decisions.component').then(m => m.PilotageDecisionsComponent) },
   { path: 'terrain', loadComponent: () => import('./terrain/pilotage-terrain.component').then(m => m.PilotageTerrainComponent) },
   { path: 'alertes', loadComponent: () => import('./alertes/pilotage-alertes.component').then(m => m.PilotageAlertesComponent) },
 ];

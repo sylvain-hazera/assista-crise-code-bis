@@ -1,0 +1,112 @@
+<h1>Décisions</h1>
+@if (!crise) {
+  <p class="vide">Choisissez une crise dans la barre du haut.</p>
+} @else {
+  <div class="onglets" role="tablist">
+    <button type="button" role="tab" [class.actif]="onglet === 'decisions'" (click)="changerOnglet('decisions')">Décisions</button>
+    <button type="button" role="tab" [class.actif]="onglet === 'actions'" (click)="changerOnglet('actions')">
+      Actions @if (enRetard) { <span class="pastille">{{ enRetard }} en retard</span> }
+    </button>
+    <button type="button" role="tab" [class.actif]="onglet === 'releve'" (click)="changerOnglet('releve')">Relève</button>
+  </div>
+  @if (erreur) { <p class="erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @if (onglet === 'decisions') {
+    <section class="bloc nouvelle">
+      <h2>Nouvelle décision</h2>
+      <textarea rows="2" [(ngModel)]="texte" placeholder="Ce que la cellule décide…" aria-label="Décision"></textarea>
+      @for (a of nouvelles; track $index; let i = $index) {
+        <div class="ligne-action">
+          <input type="text" [(ngModel)]="a.intitule" placeholder="Action" aria-label="Action">
+          <select [(ngModel)]="a.responsable" aria-label="Responsable">
+            <option [ngValue]="null">Responsable (texte libre)</option>
+            @for (m of membres; track m.id) { <option [ngValue]="m.id">{{ m.nom }}</option> }
+          </select>
+          @if (!a.responsable) { <input type="text" [(ngModel)]="a.responsable_libre" placeholder="ex. SDIS, M. le Maire" aria-label="Responsable libre"> }
+          <input type="datetime-local" [(ngModel)]="a.echeance" aria-label="Échéance">
+          <button type="button" class="lien" (click)="retirerAction(i)" aria-label="Retirer l'action">✕</button>
+        </div>
+      }
+      <div class="boutons">
+        <button type="button" class="secondaire" (click)="ajouterAction()">+ Une action</button>
+        <button type="button" class="principal" [disabled]="!texte.trim() || envoi" (click)="decider()">Enregistrer la décision</button>
+      </div>
+    </section>
+
+    @for (d of decisions; track d.id) {
+      <article class="bloc decision">
+        <div class="entete-decision"><span class="quand">{{ d.decidee_le | date:'dd/MM HH:mm' }} · {{ d.auteur_nom }}</span></div>
+        <p class="texte">{{ d.texte }}</p>
+        @if (d.actions.length) {
+          <ul class="actions">
+            @for (a of d.actions; track a.id) {
+              <li [class.retard]="a.en_retard" [class.faite]="a.statut === 'FAIT'">
+                <span class="intitule">{{ a.intitule }}</span>
+                <span class="qui">{{ a.responsable_nom || '—' }}@if (a.echeance) { · pour {{ a.echeance | date:'dd/MM HH:mm' }} }</span>
+                <select [ngModel]="a.statut" (ngModelChange)="changerStatut(a, $event)" aria-label="État de l'action">
+                  @for (s of statuts; track s.valeur) { <option [value]="s.valeur">{{ s.libelle }}</option> }
+                </select>
+              </li>
+            }
+          </ul>
+        }
+      </article>
+    } @empty { <p class="vide">Aucune décision pour l'instant.</p> }
+  }
+
+  @if (onglet === 'actions') {
+    <label class="case"><input type="checkbox" [checked]="seulementMiennes" (change)="basculerMiennes()"> Mes actions seulement</label>
+    <ul class="actions bloc">
+      @for (a of actions; track a.id) {
+        <li [class.retard]="a.en_retard" [class.faite]="a.statut === 'FAIT'">
+          <span class="intitule">{{ a.intitule }}</span>
+          <span class="qui">{{ a.responsable_nom || '—' }}@if (a.echeance) { · pour {{ a.echeance | date:'dd/MM HH:mm' }} }@if (a.en_retard) { · <strong>en retard</strong> }</span>
+          @if (a.decision_texte) { <span class="origine">Décision : {{ a.decision_texte }}</span> }
+          <select [ngModel]="a.statut" (ngModelChange)="changerStatut(a, $event)" aria-label="État de l'action">
+            @for (s of statuts; track s.valeur) { <option [value]="s.valeur">{{ s.libelle }}</option> }
+          </select>
+        </li>
+      } @empty { <li class="vide">Aucune action.</li> }
+    </ul>
+  }
+
+  @if (onglet === 'releve') {
+    <section class="bloc">
+      <h2>Préparer la relève</h2>
+      @if (apercu) {
+        <div class="chiffres">
+          <span><strong>{{ apercu.chiffres.dossiers_ouverts }}</strong> dossiers ouverts</span>
+          <span><strong>{{ apercu.chiffres.dossiers_urgents }}</strong> urgents ou importants</span>
+          <span><strong>{{ apercu.chiffres.dossiers_sans_equipe }}</strong> sans équipe</span>
+          <span><strong>{{ apercu.chiffres.equipes_engagees }}</strong> équipes engagées</span>
+        </div>
+        <p class="note">{{ apercu.decisions.length }} décision(s) depuis la dernière relève · {{ apercu.actions_ouvertes.length }} action(s) ouverte(s) · {{ apercu.alertes_terrain.length }} alerte(s) du terrain non prise(s) en compte</p>
+      }
+      <textarea rows="3" [(ngModel)]="pointsVigilance" placeholder="Points de vigilance pour l'équipe suivante…" aria-label="Points de vigilance"></textarea>
+      <div class="boutons"><button type="button" class="principal" (click)="rediger()">Rédiger la relève</button></div>
+    </section>
+    @for (r of releves; track r.id) {
+      <article class="bloc releve">
+        <div class="entete-decision">
+          <span class="quand">Rédigée le {{ r.redigee_le | date:'dd/MM HH:mm' }} par {{ r.redigee_par_nom }}</span>
+          @if (r.reprise_le) { <span class="reprise">reprise par {{ r.reprise_par_nom }} à {{ r.reprise_le | date:'HH:mm' }}</span> }
+          @else { <button type="button" class="principal" (click)="reprendre(r)">Je reprends</button> }
+          <button type="button" class="lien" (click)="imprimer()">Imprimer</button>
+        </div>
+        @if (r.points_vigilance) { <p class="texte"><strong>Vigilance :</strong> {{ r.points_vigilance }}</p> }
+        <p class="note">{{ r.instantane.chiffres.dossiers_ouverts }} dossiers ouverts ({{ r.instantane.chiffres.dossiers_urgents }} urgents) · {{ r.instantane.chiffres.equipes_engagees }} équipes engagées</p>
+        @if (r.instantane.actions_ouvertes.length) {
+          <ul class="liste">
+            @for (a of r.instantane.actions_ouvertes; track $index) {
+              <li [class.retard]="a.en_retard">{{ a.intitule }} — {{ a.responsable || '—' }} ({{ a.statut }})</li>
+            }
+          </ul>
+        }
+        @if (r.instantane.alertes_terrain.length) {
+          <p class="alerte">{{ r.instantane.alertes_terrain.length }} alerte(s) du terrain non prise(s) en compte au moment de la relève.</p>
+        }
+      </article>
+    }
+  }
+}

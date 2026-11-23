@@ -155,7 +155,14 @@ from .views import (
 from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView, RejoindreCollectiviteView
 from .views_envoi import ConnecteurSMTPViewSet
 from .views_terrain import MessageTerrainViewSet
+from .views_cellule import ActionCelluleViewSet, DecisionCelluleViewSet, ReleveCelluleViewSet  # noqa: E402
+
 router = DefaultRouter()
+# Cellule de crise dans le pilotage : décisions, actions, relève (23/11/2026).
+router.register(r'cellule/decisions', DecisionCelluleViewSet, basename='cellule-decision')
+router.register(r'cellule/actions', ActionCelluleViewSet, basename='cellule-action')
+router.register(r'cellule/releves', ReleveCelluleViewSet, basename='cellule-releve')
+
 router.register(
     r'institution-types',
     InstitutionTypeViewSet

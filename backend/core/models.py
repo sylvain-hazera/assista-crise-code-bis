@@ -13069,6 +13069,74 @@ class ControleAppareilStock(models.Model):
 #: Modèle -> jetons. Un lien envoyé par courriel (modifier sa demande, confirmer une alerte,
 #: rejoindre une association…) est retrouvé par l'empreinte du jeton, jamais par le jeton.
 
+class DecisionCellule(EnvironmentScopedModel):
+    """Une décision de la cellule de crise d'une institution (23/11/2026, core/cellule_pilotage.py) :
+    distincte de la main courante, elle porte des actions suivies. Texte chiffré."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="decisions_cellule")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="decisions_cellule")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="decisions_cellule")
+    texte = EncryptedTextField()
+    decidee_le = models.DateTimeField(default=timezone.now)
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-decidee_le"]
+
+
+class ActionCellule(EnvironmentScopedModel):
+    """Une action décidée en cellule : qui, pour quand, où elle en est (23/11/2026)."""
+
+    class Statut(models.TextChoices):
+        A_FAIRE = "A_FAIRE", "À faire"
+        EN_COURS = "EN_COURS", "En cours"
+        FAIT = "FAIT", "Fait"
+        ABANDONNEE = "ABANDONNEE", "Abandonnée"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="actions_cellule")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="actions_cellule")
+    decision = models.ForeignKey(DecisionCellule, on_delete=models.SET_NULL, null=True, blank=True, related_name="actions")
+    intitule = EncryptedTextField()
+    responsable = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="actions_cellule")
+    #: Un responsable sans compte (« le SDIS », « M. le Maire ») : texte libre, chiffré.
+    responsable_libre = EncryptedTextField(blank=True, default="")
+    equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="actions_cellule")
+    echeance = models.DateTimeField(null=True, blank=True)
+    statut = models.CharField(max_length=12, choices=Statut.choices, default=Statut.A_FAIRE)
+    faite_le = models.DateTimeField(null=True, blank=True)
+    commentaire = EncryptedTextField(blank=True, default="")
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="actions_cellule_creees")
+    cree_le = models.DateTimeField(auto_now_add=True)
+    maj_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["statut", "echeance", "cree_le"]
+
+    @property
+    def en_retard(self) -> bool:
+        return bool(self.echeance and self.statut in (self.Statut.A_FAIRE, self.Statut.EN_COURS)
+                    and self.echeance < timezone.now())
+
+
+class ReleveCellule(EnvironmentScopedModel):
+    """La relève de la cellule (23/11/2026) : l'état passé à l'équipe suivante (instantané chiffré
+    des chiffres, décisions récentes, actions ouvertes, alertes), les points de vigilance, et la
+    reprise signée par un autre compte que le rédacteur."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="releves_cellule")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="releves_cellule")
+    redigee_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="releves_redigees")
+    redigee_le = models.DateTimeField(auto_now_add=True)
+    instantane = EncryptedJSONField(default=dict, blank=True)
+    points_vigilance = EncryptedTextField(blank=True, default="")
+    reprise_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="releves_reprises")
+    reprise_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-redigee_le"]
+
+
 class EtatObservateurMeshCore(EnvironmentScopedModel):
     """Le dernier message d'état (`meshcore/<iata>/<clé>/status`) d'un observateur MeshCore
     (23/11/2026). Ces messages étaient reçus et jetés ; le tableau radio les montre.

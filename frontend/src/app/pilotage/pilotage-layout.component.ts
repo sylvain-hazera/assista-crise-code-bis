@@ -176,6 +176,7 @@ export class PilotageLayoutComponent implements OnInit, OnDestroy {
     { lien: 'situation', libelle: 'Situation', icone: 'dashboard' },
     { lien: 'cellule', libelle: 'Cellule', icone: 'hub', avecCrise: true },
     { lien: 'terrain', libelle: 'Terrain', icone: 'directions_run' },
+    { lien: 'decisions', libelle: 'Décisions', icone: 'gavel' },
     { lien: 'carte', libelle: 'Carte', icone: 'map' },
     { lien: 'dossiers', libelle: 'Dossiers', icone: 'folder_open' },
     // C'est le standard téléphonique de la crise (« Quelqu'un appelle pour… ») : nommé ainsi.
