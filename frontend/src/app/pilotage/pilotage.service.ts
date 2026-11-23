@@ -39,7 +39,18 @@ export interface TableauxSituation {
             communes?: { commune_code: string; biens: number; touches: number }[] };
   moyens: { erreur?: string; demandes_non_couvertes?: { type: string; nombre: number }[];
             offres_disponibles?: { type: string; nombre: number }[]; renforts_24h?: { demandes: number; personnes: number } };
-  radio: { erreur?: string; equipes?: { nom: string; meshtastic: boolean; meshcore: boolean; dernier_message_radio: string | null }[] };
+  radio: { erreur?: string; canal_crise?: { meshtastic: string | null; meshcore: string | null }; a_trier?: number;
+           equipes?: { nom: string; indicatif: string | null; transmissions: boolean; meshtastic: boolean; meshcore: boolean;
+                       dernier_message_radio: string | null }[] };
+}
+
+/** Un message radio du pot commun (23/11/2026) : arrivé sans destinataire, à ranger. */
+export interface MessageATrier {
+  id: string; texte: string; auteur: string; source: string; recu_par: number; emis_le: string;
+}
+export interface PotCommun {
+  conversation: string; trie_par: 'TRANSMISSIONS' | 'REGULATION';
+  messages: MessageATrier[]; equipes: { id: string; nom: string; indicatif: string | null }[];
 }
 
 /** Le terrain en direct d'une crise : alertes à prendre en compte, statuts, derniers messages. */
@@ -65,6 +76,9 @@ export class PilotageService {
   readonly alertesTerrain = computed(() => this.terrain()?.alertes.length ?? 0);
   /** Le prochain point de situation dû (cadence fixée par la cellule), relu avec le terrain. */
   readonly pointDu = signal<{ du: boolean; prochain: string | null } | null>(null);
+  /** Le pot commun des messages radio sans destinataire ; null si ce compte ne trie pas. */
+  readonly potCommun = signal<PotCommun | null>(null);
+  readonly aTrier = computed(() => this.potCommun()?.messages.length ?? 0);
 
   constructor(private http: HttpClient) {}
 
@@ -74,7 +88,11 @@ export class PilotageService {
 
   rafraichirTerrain(): void {
     const crise = this.criseId();
-    if (!crise) { this.terrain.set(null); this.pointDu.set(null); return; }
+    if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); return; }
+    this.http.get<PotCommun>(`${environment.apiUrl}/conversations/a-trier/`, { params: { crise } }).subscribe({
+      next: p => this.potCommun.set(p),
+      error: () => this.potCommun.set(null),   // ni transmissions ni régulation : pas de tri
+    });
     this.http.get<{ du: boolean; prochain: string | null }>(`${environment.apiUrl}/cellule/points/`, { params: { crise } }).subscribe({
       next: e => this.pointDu.set({ du: e.du, prochain: e.prochain }),
       error: () => this.pointDu.set(null),   // cellule non tenue par cette institution : pas de rappel
@@ -88,6 +106,12 @@ export class PilotageService {
   prendreEnCompte(id: string): Promise<MessageTerrainPilotage> {
     return firstValueFrom(this.http.post<MessageTerrainPilotage>(`${environment.apiUrl}/messages-terrain/${id}/prendre-en-compte/`, {}))
       .then(m => { this.rafraichirTerrain(); return m; });
+  }
+
+  /** Range un message du pot commun : vers une équipe, un dossier, ou classé sans suite. */
+  ranger(message: string, cible: { equipe?: string; dossier?: string; classer?: boolean }): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/conversations/a-trier/${message}/ranger/`, cible))
+      .then(r => { this.rafraichirTerrain(); return r; });
   }
 
   /** Les crises ouvertes ; garde la crise choisie si elle l'est encore, sinon la première. */

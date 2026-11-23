@@ -73,6 +73,8 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
                 <span class="material-icons" aria-hidden="true">{{ o.icone }}</span>
                 @if (o.lien === 'terrain' && pilotage.alertesTerrain()) {
                   <span class="pastille-alerte" [attr.aria-label]="pilotage.alertesTerrain() + ' alerte(s) à prendre en compte'">{{ pilotage.alertesTerrain() }}</span>
+                } @else if (o.lien === 'terrain' && pilotage.aTrier()) {
+                  <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.aTrier() + ' message(s) radio à trier'">{{ pilotage.aTrier() }}</span>
                 }
               </span>
               <span class="libelle">{{ o.libelle }}</span>
@@ -147,6 +149,7 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
     .pastille-alerte { position: absolute; top: -6px; right: -10px; min-width: 18px; height: 18px; padding: 0 4px;
                        border-radius: 9px; background: #b91c1c; color: #fff; font-size: .68rem; font-weight: 700;
                        display: inline-flex; align-items: center; justify-content: center; }
+    .pastille-alerte.a-trier { background: #b45309; }
     .plus { display: none; border: none; background: none; color: var(--ac-text-muted, #6b7280); font: inherit;
             font-size: .72rem; font-weight: 600; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
     .menu-plus { position: fixed; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 30;

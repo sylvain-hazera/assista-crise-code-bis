@@ -11288,153 +11288,61 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'post'], url_path='messagerie-unifiee')
     def messagerie_unifiee(self, request, pk=None):
-        """Fenêtre de messagerie UNIQUE pour l'équipe (demande explicite du 2026-10-05 : "le
-        régulateur n'a pas à se poser la question" du canal) -- fusionne Matrix (toujours,
-        canal par défaut, provisionné à la volée si besoin) et les canaux de diffusion
-        MeshCore/Meshtastic de l'équipe (déjà provisionnés OU auto-provisionnés ici si au moins
-        un membre équipé n'en a pas encore un) en UNE liste triée par date, chaque message
-        portant un `source`. L'envoi part sur les trois à la fois. Remplace les anciennes
-        fenêtres séparées de la vue équipe (salon_matrix_messages reste disponible tel quel,
-        inchangé, pour compat -- rien d'autre ne l'utilise plus après ce changement).
-
-        Portée volontairement exclue : les DM privés 1-à-1 (MessageMeshLog/
-        MessageMeshtasticLog, utilisés pour l'envoi de la clé de canal et les échanges
-        bilatéraux hors équipe) ne sont PAS mélangés ici -- seuls les messages du canal de
-        DIFFUSION de l'équipe le sont (mélanger du 1-à-1 privé dans une vue d'équipe partagée
-        serait un problème de confidentialité distinct, pas demandé)."""
-        from .matrix import envoyer_message_salon, lister_messages_salon
-
+        """Fenêtre de messagerie UNIQUE de l'équipe (05/10/2026 : « le régulateur n'a pas à se
+        poser la question » du canal). Depuis le 23/11/2026 : messagerie interne
+        (core/conversations.py), plus de Matrix ; l'envoi part aussi par radio, sur le canal de
+        crise préfixé de l'indicatif de l'équipe (core/routage_canaux.py). Les messages directs
+        radio 1-à-1 ne sont pas mélangés ici."""
+        # MESSAGERIE INTERNE depuis le 23/11/2026 (Matrix arrêté, core/conversations.py) : même
+        # URL et même forme de réponse, pour que l'application 0.21 continue de marcher.
+        # La conversation est celle de la crise ouverte de l'équipe, sinon celle de tous les
+        # jours (règle du 16/11, `?crise=` ou `crise` dans le corps pour la nommer).
+        from . import conversations as conv
+        from .models import SourceMessage
+        from .routage_canaux import attribuer_indicatif
         team = self.get_object()
         est_membre = team.members.filter(id=request.user.id).exists()
-        if not est_membre and not _appartient_a_equipe(request, team):
+        if not est_membre and not _appartient_a_equipe(request, team) and not conv.dans_equipe(request.user, team):
             return Response(
                 {"error": "Vous devez appartenir à cette équipe (ou à son institution) pour accéder à sa messagerie."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
         environment = get_active_environment(request)
-        nom = nom_affichable(request.user, request) or request.user.email
-
-        # Matrix "par défaut" : provisionné à la volée, jamais besoin du bouton manuel
-        # (provisionner_salon_matrix reste utilisable séparément, idempotent). room_id reste
-        # vide tant que matrix-bridge ne l'a pas créé côté Synapse (poll ~30s) -- dans ce cas
-        # on continue quand même (les canaux mesh, eux, n'ont pas cette latence).
-        #
-        # Le salon INTERVENANTS : c'est la messagerie de l'équipe, celle que ce bouton ouvre, et
-        # c'était le seul salon avant le 11/11/2026. Le salon ENCADREMENT n'est PAS provisionné
-        # ici — un intervenant qui ouvre sa messagerie n'a pas à créer le salon de
-        # l'encadrement, dont il ne fait pas forcément partie.
-        #
-        # UN SALON PAR CRISE (16/11/2026) : si l'équipe est engagée dans une crise ouverte, la
-        # messagerie est celle de la crise, et les messages du quotidien ne s'y mêlent pas.
-        # Le choix se fait ici, côté serveur : l'application mobile et la page de l'équipe
-        # n'ont rien à savoir des crises (core/salons_de_crise.py).
-        from .salons_de_crise import salon_du_contexte
-        salon = salon_du_contexte(request, team, creer=True)
-        if salon.room_id and not est_membre:
-            _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)
-
-        # Résolus via une requête fraîche (pas `getattr(team, 'canal_meshtastic'/'canal_meshcore')`,
-        # qui mettrait en cache "aucun canal" sur CET objet `team` dès le premier accès -- si ce
-        # canal est créé plus bas dans la même requête (provisionnement à la volée), cette même
-        # instance `team` continuerait sinon de répondre "aucun canal" pour le reste de la
-        # requête, empêchant silencieusement le tout premier message de partir sur mesh).
-        canal_meshtastic = CanalMeshtastic.objects.filter(equipe=team).first()
-        canal_meshcore = CanalMeshCore.objects.filter(equipe=team).first()
+        crise_id = request.query_params.get("crise") or (request.data.get("crise") if hasattr(request.data, "get") else None)
+        conversation = conv.conversation_du_contexte(team, crise_id, environment)
 
         if request.method == 'POST':
             texte = (request.data.get('texte') or '').strip()
             if not texte:
                 return Response({"error": "texte requis."}, status=status.HTTP_400_BAD_REQUEST)
             urgent = bool(request.data.get('urgent'))
-            # Application mobile, après une coupure de réseau (14/11/2026) : le téléphone a
-            # déjà émis ce message sur le canal radio de l'équipe, par la radio de
-            # l'intervenant, et le remet maintenant au serveur. On l'enregistre sur ce
-            # protocole comme DÉJÀ ENVOYÉ : le pont ne le rediffuse pas une seconde fois, et
-            # l'exemplaire qu'une passerelle aurait entendu est reconnu comme son écho
-            # (`_sans_echos`). Un protocole que le téléphone n'a pas émis reste à émettre. Depuis
-            # le 23/11/2026, un téléphone peut tenir une radio de chaque protocole : la valeur
-            # est alors une liste (« MESHTASTIC,MESHCORE »). Toute autre valeur est ignorée — un
-            # client ne peut s'en servir que pour ne PAS faire émettre son propre message.
-            deja_emis_radio = {p.strip() for p in str(request.data.get('deja_emis_radio') or '').upper().split(',')}
+            # Le téléphone a peut-être déjà émis ce message par sa propre radio (14/11/2026) :
+            # ce protocole est enregistré DÉJÀ ENVOYÉ, le pont ne le rediffuse pas.
+            deja_emis_radio = {p.strip() for p in str(request.data.get('deja_emis_radio') or '').upper().split(',') if p.strip()}
+            source = SourceMessage.APPLICATION if request.data.get('source') == 'APPLICATION' or deja_emis_radio else SourceMessage.SITE
+            message, _ = conv.ecrire(conversation, texte, auteur=request.user, source=source, urgent=urgent,
+                                     origine=str(request.data.get('identifiant') or '')[:120])
+            if conversation.crise_id:
+                attribuer_indicatif(team, conversation.crise)
+            conv.diffuser_radio(message, equipe=team, crise=conversation.crise, deja_emis=deja_emis_radio,
+                                auteur=request.user)
 
-            def _statut_radio(protocole):
-                return StatutMessageMesh.ENVOYE if protocole in deja_emis_radio else StatutMessageMesh.EN_ATTENTE
-
-            if salon.room_id:
-                envoyer_message_salon(salon.room_id, request.user, nom, texte, urgent=urgent)
-
-            # Provisionne les canaux mesh à la volée SEULEMENT s'ils n'existent pas encore --
-            # sans ça, le PREMIER message envoyé sur une équipe dont les membres viennent tout
-            # juste d'être équipés ne partirait que sur Matrix. Le garde-fou `is None` est
-            # essentiel : _assurer_canal_mesh*_et_notifier ENVOIE un DM à chaque appel, pas
-            # seulement à la création du canal -- sans lui, chaque message de la fenêtre
-            # unifiée aurait spammé tous les membres équipés de la clé du canal en boucle.
-            if canal_meshtastic is None:
-                for membre in team.members.all():
-                    _assurer_canal_meshtastic_et_notifier(request, team, membre)
-                canal_meshtastic = CanalMeshtastic.objects.filter(equipe=team).first()
-            if canal_meshcore is None:
-                for membre in team.members.all():
-                    _assurer_canal_meshcore_et_notifier(request, team, membre)
-                canal_meshcore = CanalMeshCore.objects.filter(equipe=team).first()
-
-            if canal_meshtastic is not None:
-                # contenu reste le texte brut tapé (affiché tel quel côté web, qui montre déjà
-                # l'expéditeur séparément) -- le préfixe nom/institution et la découpe sous la
-                # limite Meshtastic sont appliqués uniquement à l'envoi, voir
-                # MessageCanalMeshtasticViewSet.a_envoyer.
-                MessageCanalMeshtastic.objects.create(
-                    canal=canal_meshtastic, direction=DirectionMessageMesh.SORTANT,
-                    expediteur=request.user, contenu=texte,
-                    statut=_statut_radio("MESHTASTIC"), environment=environment,
-                )
-            if canal_meshcore is not None:
-                MessageCanalMeshCore.objects.create(
-                    canal=canal_meshcore, direction=DirectionMessageMesh.SORTANT,
-                    expediteur=request.user, contenu=texte,
-                    statut=_statut_radio("MESHCORE"), environment=environment,
-                )
-
-        noms = {str(m.id): nom_affichable(m, request) or m.email for m in team.members.all()}
-        noms[str(request.user.id)] = nom
-
-        resultat = []
-        if salon.room_id:
-            for m in lister_messages_salon(salon.room_id):
-                resultat.append({
-                    "event_id": m["event_id"], "source": "matrix",
-                    "texte": m["texte"], "horodatage": m["horodatage"],
-                    "expediteur_id": m["expediteur_id"],
-                    "expediteur_nom": noms.get(m["expediteur_id"], "Compte externe"),
-                    "moi": m["expediteur_id"] == str(request.user.id),
-                    "urgent": m["urgent"], "vu_par": [],
-                })
-
-        if canal_meshtastic is not None:
-            for m in _sans_echos(canal_meshtastic.messages.select_related('expediteur').order_by('date_creation')):
-                resultat.append({
-                    "event_id": str(m.id), "source": "meshtastic",
-                    "texte": m.contenu, "horodatage": int(m.date_creation.timestamp() * 1000),
-                    "expediteur_id": str(m.expediteur_id) if m.expediteur_id else None,
-                    "expediteur_nom": self._resoudre_expediteur_mesh(m, noms),
-                    "moi": str(m.expediteur_id) == str(request.user.id) if m.expediteur_id else False,
-                    "urgent": False, "vu_par": [],
-                })
-
-        if canal_meshcore is not None:
-            for m in _sans_echos(canal_meshcore.messages.select_related('expediteur').order_by('date_creation')):
-                resultat.append({
-                    "event_id": str(m.id), "source": "meshcore",
-                    "texte": m.contenu, "horodatage": int(m.date_creation.timestamp() * 1000),
-                    "expediteur_id": str(m.expediteur_id) if m.expediteur_id else None,
-                    "expediteur_nom": self._resoudre_expediteur_mesh(m, noms),
-                    "moi": str(m.expediteur_id) == str(request.user.id) if m.expediteur_id else False,
-                    "urgent": False, "vu_par": [],
-                })
-
-        resultat.sort(key=lambda m: m["horodatage"])
-        return Response({"messages": resultat})
+        sources = {SourceMessage.MESHTASTIC: "meshtastic", SourceMessage.MESHCORE: "meshcore",
+                   SourceMessage.TELEPHONE_RADIO: "radio"}
+        derniers = list(conversation.messages.select_related('auteur').order_by('-emis_le')[:200])
+        derniers.reverse()
+        resultat = [{
+            "event_id": str(m.id), "source": sources.get(m.source, "matrix"),
+            "texte": m.texte, "horodatage": int(m.emis_le.timestamp() * 1000),
+            "expediteur_id": str(m.auteur_id) if m.auteur_id else None,
+            "expediteur_nom": conv.nom_auteur(m, request),
+            "moi": m.auteur_id == request.user.id,
+            "urgent": m.urgent, "vu_par": [],
+            "conversation": str(conversation.id),
+        } for m in derniers]
+        conv.marquer_lu(request.user, conversation)
+        return Response({"messages": resultat, "conversation": str(conversation.id),
+                         "indicatif": team.indicatif or None})
 
     def _est_cadre_user(self, user, team) -> bool:
         """Variante de _est_cadre pour un utilisateur ARBITRAIRE (pas forcément l'appelant de la
@@ -21577,6 +21485,9 @@ def _canaux_meshcore_du_compagnon(compagnon):
     canaux = CanalMeshCore.objects.filter(actif=True).filter(Q(equipe__isnull=False) | Q(nom__startswith='#'))
     if compagnon.institution_id:
         canaux = canaux.filter(Q(institution_id=compagnon.institution_id) | Q(institution__isnull=True))
+        # Canal de crise (23/11/2026) : seulement les crises de l'institution de la radio.
+        from .canaux_locaux import crises_de
+        canaux = canaux.filter(Q(crise__isnull=True) | Q(crise__in=list(crises_de(compagnon.institution))))
     return canaux
 
 
@@ -22151,7 +22062,11 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
         if message.direction == DirectionMessageMesh.ENTRANT:
             from .messages_terrain import depuis_radio
-            depuis_radio(message.contenu, "MESHCORE")
+            from .routage_canaux import ranger_message_canal
+            terrain = depuis_radio(message.contenu, "MESHCORE")
+            # Rangé dans la messagerie interne (23/11/2026) : équipe, cellule ou pot commun.
+            ranger_message_canal(message, "MESHCORE", terrain=terrain,
+                                 recu_par=[getattr(self.request.user, "username", "") or "passerelle"])
         if message.direction == DirectionMessageMesh.ENTRANT and not _echo_de_nos_messages(MessageCanalMeshCore, message.contenu):
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             canal_urgence = canal is not None and _canal_est_dedie_urgence(canal.nom)
@@ -23087,7 +23002,11 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         # Message de terrain étiqueté (« ⚑ARR … ») : enregistré une fois (22/11/2026).
         if message.direction == DirectionMessageMesh.ENTRANT:
             from .messages_terrain import depuis_radio
-            depuis_radio(message.contenu, "MESHTASTIC")
+            from .routage_canaux import ranger_message_canal
+            terrain = depuis_radio(message.contenu, "MESHTASTIC")
+            # Rangé dans la messagerie interne (23/11/2026) : équipe, cellule ou pot commun.
+            ranger_message_canal(message, "MESHTASTIC", terrain=terrain,
+                                 recu_par=[getattr(self.request.user, "username", "") or "passerelle"])
         # Détection SOS Meshtastic coupée par défaut (settings.DETECTION_SOS_MESHTASTIC).
         if (
             message.direction == DirectionMessageMesh.ENTRANT and settings.DETECTION_SOS_MESHTASTIC

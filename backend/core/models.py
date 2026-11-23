@@ -4957,6 +4957,14 @@ class Team(EnvironmentScopedModel):
                    "pas une appartenance de plus.",
     )
 
+    #: Indicatif radio (23/11/2026) : « @ALPHA texte » sur le canal de crise range le message
+    #: dans la conversation de l'équipe. 2 à 6 lettres ou chiffres, en majuscules, unique parmi
+    #: les équipes d'une même crise (core/routage_canaux.py). Proposé depuis le nom.
+    indicatif = models.CharField(max_length=6, blank=True, default="")
+    #: Équipe transmissions (23/11/2026) : ses membres trient le pot commun des crises où elle
+    #: est engagée ; à défaut, c'est la régulation.
+    transmissions = models.BooleanField(default=False)
+
     est_equipe_rcsc = models.BooleanField(
         default=False,
         help_text="Marque cette équipe comme LA Réserve Communale de Sécurité Civile (RCSC) de "
@@ -13236,6 +13244,97 @@ class RevueDroits(EnvironmentScopedModel):
     class Meta:
         ordering = ["-revu_le"]
         indexes = [models.Index(fields=["institution", "revu_le"])]
+
+class GenreConversation(models.TextChoices):
+    EQUIPE = "EQUIPE", "Équipe"
+    ENCADREMENT = "ENCADREMENT", "Encadrement"
+    MISSION = "MISSION", "Mission"
+    INSTITUTION = "INSTITUTION", "Institution"
+    CRISE = "CRISE", "Crise (tout le monde)"
+    CELLULE = "CELLULE", "Cellule / régulation"
+    A_TRIER = "A_TRIER", "À trier"
+    COMMUNAUTAIRE = "COMMUNAUTAIRE", "Canal communautaire"
+    DIRECT = "DIRECT", "Message direct"
+    SUPERVISION = "SUPERVISION", "Supervision"
+
+
+class Conversation(EnvironmentScopedModel):
+    """Une conversation de la messagerie interne (23/11/2026) : remplace les salons Matrix.
+    Voir core/conversations.py (qui trouve ou crée la bonne) et core/routage_canaux.py (ce qui
+    vient de la radio). `crise` vide = la conversation de tous les jours (règle du 16/11)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    genre = models.CharField(max_length=14, choices=GenreConversation.choices)
+    equipe = models.ForeignKey("Team", on_delete=models.CASCADE, null=True, blank=True, related_name="conversations")
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, null=True, blank=True, related_name="conversations")
+    mission = models.ForeignKey("Mission", on_delete=models.CASCADE, null=True, blank=True, related_name="conversations")
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, null=True, blank=True,
+                                    related_name="conversations")
+    #: Canal communautaire (« Fr_EMCOM ») : nom public d'un canal radio, pas une donnée personnelle.
+    canal_nom = models.CharField(max_length=40, blank=True, default="")
+    participants = models.ManyToManyField(User, blank=True, related_name="conversations_directes")
+    cree_le = models.DateTimeField(auto_now_add=True)
+    dernier_message_le = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["genre", "equipe", "crise"])]
+
+    def __str__(self):
+        return f"{self.get_genre_display()} {self.id}"
+
+
+class SourceMessage(models.TextChoices):
+    APPLICATION = "APPLICATION", "Application"
+    SITE = "SITE", "Site"
+    MESHTASTIC = "MESHTASTIC", "Radio Meshtastic (passerelle)"
+    MESHCORE = "MESHCORE", "Radio MeshCore (passerelle)"
+    TELEPHONE_RADIO = "TELEPHONE_RADIO", "Entendu par la radio d'un téléphone"
+    MATRIX = "MATRIX", "Matrix (historique importé)"
+    SYSTEME = "SYSTEME", "Assista-Crise"
+
+
+class MessageConversation(EnvironmentScopedModel):
+    """Un message d'une conversation (23/11/2026). Texte et auteur libre chiffrés. `empreinte`
+    (HMAC du texte et de l'auteur) sert à reconnaître le même message entendu par deux
+    passerelles, deux protocoles ou un téléphone : un message, plusieurs « reçu par »."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_conversation")
+    #: Un auteur sans compte reconnu (nom d'un nœud radio, « Léa ») : chiffré.
+    auteur_libre = EncryptedTextField(null=True, blank=True)
+    texte = EncryptedTextField()
+    source = models.CharField(max_length=16, choices=SourceMessage.choices, default=SourceMessage.SITE)
+    #: Les passerelles ou appareils qui l'ont entendu (noms d'équipements) : chiffré par prudence.
+    recu_par = EncryptedJSONField(default=list, blank=True)
+    urgent = models.BooleanField(default=False)
+    emis_le = models.DateTimeField(default=timezone.now, db_index=True)
+    recu_le = models.DateTimeField(auto_now_add=True)
+    empreinte = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    #: Identifiant d'origine (événement Matrix importé, identifiant local d'un téléphone) : pour
+    #: qu'un import ou un renvoi ne crée pas de doublon. Pas une donnée personnelle.
+    origine = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    message_meshtastic = models.ForeignKey("MessageCanalMeshtastic", on_delete=models.SET_NULL, null=True, blank=True,
+                                           related_name="+")
+    message_meshcore = models.ForeignKey("MessageCanalMeshCore", on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name="+")
+    #: Pot commun : rangé (vers une équipe, un dossier) ou classé sans suite, par qui, quand.
+    range_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    range_le = models.DateTimeField(null=True, blank=True)
+    range_vers = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["emis_le"]
+        indexes = [models.Index(fields=["conversation", "emis_le"])]
+
+
+class LectureConversation(models.Model):
+    """Jusqu'où une personne a lu une conversation (non-lus, notifications)."""
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="lectures")
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="lectures_conversation")
+    lu_jusqua = models.DateTimeField()
+
+    class Meta:
+        unique_together = ("conversation", "utilisateur")
+
 
 JETONS_CHIFFRES = {
     "Request": ("deletion_token", "edition_token"),

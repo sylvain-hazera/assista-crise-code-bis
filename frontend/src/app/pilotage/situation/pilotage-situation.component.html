@@ -84,10 +84,13 @@
       <article class="carte-sit">
         <h2><span class="material-icons" aria-hidden="true">settings_input_antenna</span> Radio</h2>
         @if (t.radio.erreur) { <p class="discret">{{ t.radio.erreur }}</p> } @else {
+          @if (t.radio.canal_crise?.meshtastic || t.radio.canal_crise?.meshcore) {
+            <p>Canal de la crise : <strong>{{ t.radio.canal_crise?.meshtastic }}</strong>@if (t.radio.canal_crise?.meshcore) { · MeshCore <strong>{{ t.radio.canal_crise?.meshcore }}</strong> }</p>
+          } @else { <p class="discret">Canal de la crise créé au premier message envoyé à une équipe.</p> }
+          @if (t.radio.a_trier) { <p><span class="alerte">{{ t.radio.a_trier }} message(s) radio à trier</span> (onglet Terrain)</p> }
           @for (e of t.radio.equipes; track e.nom) {
-            <p>{{ e.nom }} :
-              @if (e.meshtastic || e.meshcore) { {{ e.meshtastic ? 'Meshtastic' : '' }}{{ e.meshtastic && e.meshcore ? ' + ' : '' }}{{ e.meshcore ? 'MeshCore' : '' }} }
-              @else { <span class="alerte">pas de canal radio</span> }
+            <p>{{ e.nom }} : @if (e.indicatif) { <strong>&#64;{{ e.indicatif }}</strong> } @else { <span class="discret">indicatif au premier message</span> }
+              @if (e.transmissions) { <span class="discret"> · transmissions</span> }
               @if (e.dernier_message_radio) { <span class="discret"> · dernier message radio {{ e.dernier_message_radio | date:'dd/MM HH:mm' }}</span> }
             </p>
           } @empty { <p class="discret">Aucune équipe engagée.</p> }

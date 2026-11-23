@@ -98,18 +98,22 @@ def test_lecture_par_l_interface_reste_cloisonnee(create_user, canal_meshcore_de
 
 @pytest.mark.django_db
 def test_messagerie_unifiee_masque_l_echo_de_nos_messages(create_user):
-    from core.models import SalonMatrixEquipe, Team
+    """Depuis le 23/11/2026 (messagerie interne) : l'écho de notre propre envoi, réentendu par une
+    passerelle, n'est pas rangé une seconde fois dans la conversation de l'équipe."""
+    from core.models import Team
     admin = create_user(username="admin-echo@test.fr", email="admin-echo@test.fr", type="ADMIN")
     equipe = Team.objects.create(name="CAI")
-    SalonMatrixEquipe.objects.create(equipe=equipe)            # sans room_id : pas d'appel Matrix
     canal = CanalMeshtastic.objects.create(nom="EquipeCAI", equipe=equipe, psk_hex="00" * 16)
-    MessageCanalMeshtastic.objects.create(canal=canal, direction="SORTANT", contenu="recois tu le mesh ?", statut="ENVOYE")
-    MessageCanalMeshtastic.objects.create(canal=canal, direction="ENTRANT", contenu="Sylvain Moi : recois tu le mesh ?")
-    MessageCanalMeshtastic.objects.create(canal=canal, direction="ENTRANT", contenu="Jean : reçu 5/5")
     client = APIClient()
     client.force_authenticate(user=admin)
+    url = reverse('team-messagerie-unifiee', args=[equipe.id])
+    assert client.post(url, {"texte": "recois tu le mesh ?"}, format="json").status_code == 200
+    for contenu in ("Sylvain Moi : recois tu le mesh ?", "Jean : reçu 5/5"):
+        r = client.post(reverse("messagecanalmeshtastic-list"), {"canal": str(canal.id), "direction": "ENTRANT",
+                                                                  "contenu": contenu}, format="json")
+        assert r.status_code == 201, r.data
 
-    reponse = client.get(reverse('team-messagerie-unifiee', args=[equipe.id]))
+    reponse = client.get(url)
 
     assert reponse.status_code == 200, reponse.data
     assert [m["texte"] for m in reponse.data["messages"]] == ["recois tu le mesh ?", "Jean : reçu 5/5"]

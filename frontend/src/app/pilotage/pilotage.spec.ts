@@ -90,10 +90,13 @@ describe('Poste de pilotage', () => {
                  mises_en_securite: { declarations: 3, personnes: 7, cherchent_un_centre: 1 }, relogement: { en_recherche: 2, heberges: 1, reloges: 0 } },
       degats: { erreur: 'Indisponible pour le moment.' },
       moyens: { demandes_non_couvertes: [], offres_disponibles: [], renforts_24h: { demandes: 0, personnes: 0 } },
-      radio: { equipes: [{ nom: 'Équipe Nord', meshtastic: true, meshcore: false, dernier_message_radio: null }] },
+      radio: { canal_crise: { meshtastic: 'CriseSaone', meshcore: '#crisesaone' }, a_trier: 2,
+               equipes: [{ nom: 'Équipe Nord', indicatif: 'NORD', transmissions: false, meshtastic: true, meshcore: false, dernier_message_radio: null }] },
     });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('cherchent un centre');
+    expect(fixture.nativeElement.textContent).toContain('@NORD');
+    expect(fixture.nativeElement.textContent).toContain('2 message(s) radio à trier');
     expect(fixture.nativeElement.textContent).toContain('Indisponible pour le moment.');
 
     const texte = fixture.nativeElement.textContent as string;
@@ -147,6 +150,7 @@ describe('Poste de pilotage', () => {
     pilotage.rafraichirTerrain();
     const alerte = { id: 'm1', auteur_nom: 'Léa', equipe_nom: 'Gier', type: 'DANGER', type_libelle: 'Danger', texte: 'Mur fissuré',
                      nombre: null, canal: 'MESHCORE', emis_le: '2026-11-23T10:00:00Z', dossier_numero: null, prioritaire: true };
+    http.expectOne(r => r.url === `${api}/conversations/a-trier/`).flush({}, { status: 403, statusText: 'Forbidden' });
     http.expectOne(r => r.url === `${api}/cellule/points/`).flush({ cadence_h: 2, prochain: '2026-11-23T09:00:00Z', du: true, points: [] });
     http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [alerte], statuts: [{ ...alerte, statut: 'Danger signalé' }], derniers: [alerte] });
     expect(pilotage.pointDu()?.du).toBeTrue();
@@ -154,9 +158,33 @@ describe('Poste de pilotage', () => {
     const promesse = pilotage.prendreEnCompte('m1');
     http.expectOne(`${api}/messages-terrain/m1/prendre-en-compte/`).flush({ ...alerte, pris_en_compte_le: '2026-11-23T10:01:00Z' });
     await promesse;
+    http.expectOne(r => r.url === `${api}/conversations/a-trier/`).flush({}, { status: 403, statusText: 'Forbidden' });
     http.expectOne(r => r.url === `${api}/cellule/points/`).flush({ cadence_h: 2, prochain: null, du: false, points: [] });
     http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
     expect(pilotage.alertesTerrain()).toBe(0);
+    expect(pilotage.potCommun()).toBeNull();     // ce compte ne trie pas : pas de bloc
+  });
+
+  it('le pot commun : un message radio sans destinataire se range vers une équipe (23/11/2026)', async () => {
+    const pilotage = TestBed.inject(PilotageService);
+    pilotage.choisir('c1');
+    pilotage.rafraichirTerrain();
+    const pot = { conversation: 'k1', trie_par: 'REGULATION',
+                  messages: [{ id: 'x1', texte: 'qui est sur la D88 ?', auteur: 'Léa', source: 'meshtastic', recu_par: 2, emis_le: '2026-11-23T10:00:00Z' }],
+                  equipes: [{ id: 't1', nom: 'Alpha', indicatif: 'ALPHA' }] };
+    http.expectOne(r => r.url === `${api}/conversations/a-trier/`).flush(pot);
+    http.expectOne(r => r.url === `${api}/cellule/points/`).flush({}, { status: 403, statusText: 'Forbidden' });
+    http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
+    expect(pilotage.aTrier()).toBe(1);
+    const promesse = pilotage.ranger('x1', { equipe: 't1' });
+    const req = http.expectOne(`${api}/conversations/a-trier/x1/ranger/`);
+    expect(req.request.body).toEqual({ equipe: 't1' });
+    req.flush({});
+    await promesse;
+    http.expectOne(r => r.url === `${api}/conversations/a-trier/`).flush({ ...pot, messages: [] });
+    http.expectOne(r => r.url === `${api}/cellule/points/`).flush({}, { status: 403, statusText: 'Forbidden' });
+    http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
+    expect(pilotage.aTrier()).toBe(0);
   });
 
   it('les alertes : la fiche s\'ouvre et l\'alerte passe lue', async () => {

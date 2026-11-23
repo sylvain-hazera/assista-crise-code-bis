@@ -28,7 +28,9 @@ def test_les_blocs_de_situation_lisent_les_tables_existantes():
     assert r.status_code == 200, r.data
     assert r.data["accueil"]["centres"] == [{"nom": "Gymnase", "capacite": 80, "presents": 12}]
     assert r.data["degats"]["par_statut"]["DETRUITE"] == 1 and r.data["degats"]["evalues"] == 3
-    assert r.data["radio"]["equipes"][0] == {"nom": "Equipe radio", "meshtastic": False, "meshcore": False, "dernier_message_radio": None}
+    assert r.data["radio"]["equipes"][0] == {"nom": "Equipe radio", "indicatif": None, "transmissions": False,
+                                             "meshtastic": False, "meshcore": False, "dernier_message_radio": None}
+    assert r.data["radio"]["canal_crise"] == {"meshtastic": None, "meshcore": None} and r.data["radio"]["a_trier"] == 0
     assert "vigilance_meteo" in r.data["veille"] and "renforts_24h" in r.data["moyens"]
 
 

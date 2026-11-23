@@ -100,38 +100,26 @@ class TestQuelSalon:
 
 @pytest.mark.django_db
 class TestMessagerie:
-    def test_lapplication_tombe_dans_le_salon_de_la_crise_sans_rien_demander(self, equipe, cadre, matrix_muet):
-        """L'application mobile et la page de l'équipe ne savent rien des crises : c'est le
-        serveur qui les met dans le bon salon, sinon la cellule écrirait à une équipe qui lit
-        ailleurs."""
-        SalonMatrixEquipe.objects.create(equipe=equipe, room_id="!quotidien:test")
+    """Depuis le 23/11/2026, la messagerie de l'équipe est interne (core/conversations.py) ; la
+    règle du 16/11 (une conversation par crise, choisie par le serveur) est inchangée."""
+
+    def test_lapplication_tombe_dans_la_conversation_de_la_crise_sans_rien_demander(self, equipe, cadre):
+        from core.conversations import conversation_equipe
         crue = _crise("Crue du Gier")
         equipe.assigned_crises.add(crue)
-        SalonMatrixEquipe.objects.create(equipe=equipe, crise=crue, room_id="!crue:test")
         url = reverse("team-messagerie-unifiee", args=[equipe.id])
 
         assert cadre.get(url).status_code == 200
         assert cadre.post(url, {"texte": "Pont coupé"}, format="json").status_code == 200
 
-        assert set(matrix_muet["lus"]) == {"!crue:test"} and matrix_muet["ecrits"] == ["!crue:test"]
+        assert [m.texte for m in conversation_equipe(equipe, crue).messages.all()] == ["Pont coupé"]
+        assert not conversation_equipe(equipe, None).messages.exists()
 
-    def test_le_salon_de_crise_nait_a_la_premiere_discussion(self, equipe, cadre, matrix_muet):
-        crue = _crise("Crue du Gier")
-        equipe.assigned_crises.add(crue)
-        assert not SalonMatrixEquipe.objects.filter(equipe=equipe, crise=crue).exists()
-
-        reponse = cadre.get(reverse("team-messagerie-unifiee", args=[equipe.id]), {"crise": str(crue.id)})
-
-        assert reponse.status_code == 200
-        assert SalonMatrixEquipe.objects.filter(equipe=equipe, crise=crue, type=TypeSalonEquipe.INTERVENANTS).count() == 1
-
-    def test_hors_crise_rien_ne_change(self, equipe, cadre, matrix_muet):
-        SalonMatrixEquipe.objects.create(equipe=equipe, room_id="!quotidien:test")
-
+    def test_hors_crise_la_conversation_de_tous_les_jours(self, equipe, cadre):
+        from core.conversations import conversation_equipe
         cadre.post(reverse("team-messagerie-unifiee", args=[equipe.id]), {"texte": "Réunion jeudi"}, format="json")
 
-        assert matrix_muet["ecrits"] == ["!quotidien:test"]
-        assert SalonMatrixEquipe.objects.filter(equipe=equipe).count() == 1
+        assert [m.texte for m in conversation_equipe(equipe, None).messages.all()] == ["Réunion jeudi"]
 
 
 @pytest.mark.django_db

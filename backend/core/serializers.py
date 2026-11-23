@@ -1993,12 +1993,25 @@ class TeamSerializer(serializers.ModelSerializer):
         code = obj.institution.commune_code if obj.institution_id else None
         return commune_center_from_code(code) if code else None
 
+    def validate_indicatif(self, valeur):
+        """Indicatif radio (23/11/2026) : 2 à 6 lettres ou chiffres, en majuscules ; vide permis
+        (il est alors proposé depuis le nom au premier message de crise)."""
+        import re as _re
+        valeur = (valeur or "").strip().upper().lstrip("@")
+        if valeur and not _re.fullmatch(r"[A-Z0-9]{2,6}", valeur):
+            raise serializers.ValidationError("2 à 6 lettres ou chiffres, sans espace ni accent.")
+        from .routage_canaux import ADRESSES_CELLULE
+        if valeur in ADRESSES_CELLULE:
+            raise serializers.ValidationError(f"« {valeur} » est réservé à la cellule.")
+        return valeur
+
     class Meta:
         model  = Team
         fields = [
             'peut_administrer',
             'id', 'name', 'description', 'color', 'created_at', 'actif',
             'est_equipe_rcsc',
+            'indicatif', 'transmissions',
             'institution',
             'institution_nom',
             'commune_centre',

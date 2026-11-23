@@ -133,7 +133,11 @@ def moyens(crise, environment, maintenant):
 
 
 def radio(crise, environment):
-    from .models import CanalMeshCore, CanalMeshtastic, MessageTerrain, Team
+    """Depuis le 23/11/2026 : un canal par crise (Meshtastic et MeshCore), chaque équipe y est
+    adressée par son indicatif (« @ALPHA »). Le pot commun compte ce qui reste à trier."""
+    from .models import (
+        CanalMeshCore, CanalMeshtastic, Conversation, GenreConversation, MessageConversation, MessageTerrain, Team,
+    )
 
     equipes = list(Team.objects.filter(assigned_crises=crise, actif=True, environment=environment).order_by("name"))
     ids = [t.id for t in equipes]
@@ -141,10 +145,18 @@ def radio(crise, environment):
     meshcore = set(CanalMeshCore.objects.filter(equipe_id__in=ids).values_list("equipe_id", flat=True))
     derniers = dict(MessageTerrain.objects.filter(equipe_id__in=ids).exclude(canal="DONNEES")
                     .values_list("equipe_id").annotate(d=Max("emis_le")).values_list("equipe_id", "d"))
-    return {"equipes": [{
-        "nom": t.name, "meshtastic": t.id in meshtastic, "meshcore": t.id in meshcore,
-        "dernier_message_radio": derniers[t.id].isoformat() if t.id in derniers else None,
-    } for t in equipes]}
+    canal_mt = CanalMeshtastic.objects.filter(crise=crise, equipe__isnull=True, actif=True).first()
+    canal_mc = CanalMeshCore.objects.filter(crise=crise, equipe__isnull=True, actif=True).first()
+    pot = Conversation.objects.filter(crise=crise, genre=GenreConversation.A_TRIER).first()
+    return {
+        "canal_crise": {"meshtastic": canal_mt.nom if canal_mt else None, "meshcore": canal_mc.nom if canal_mc else None},
+        "a_trier": MessageConversation.objects.filter(conversation=pot, range_le__isnull=True).count() if pot else 0,
+        "equipes": [{
+            "nom": t.name, "indicatif": t.indicatif or None, "transmissions": t.transmissions,
+            "meshtastic": t.id in meshtastic, "meshcore": t.id in meshcore,
+            "dernier_message_radio": derniers[t.id].isoformat() if t.id in derniers else None,
+        } for t in equipes],
+    }
 
 
 BLOCS = ("veille", "accueil", "degats", "moyens", "radio")

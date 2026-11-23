@@ -177,6 +177,27 @@ def canal_crise(crise, environnement):
     ), True
 
 
+def canal_crise_meshcore(crise, environnement):
+    """Le jumeau MeshCore du canal de crise (23/11/2026) : canal public « #<nom> », même nom
+    que le canal Meshtastic en minuscules, clé dérivée du nom comme le firmware. Le pont
+    l'installe sur les radios des institutions de la crise (`_canaux_meshcore_du_compagnon`)."""
+    from .models import CanalMeshCore
+
+    existant = CanalMeshCore.objects.filter(crise=crise, equipe__isnull=True, actif=True).first()
+    if existant is not None:
+        return existant, False
+    meshtastic, _ = canal_crise(crise, environnement)
+    nom = "#" + meshtastic.nom.lower()
+    return CanalMeshCore.objects.create(
+        crise=crise, nom=nom, cle_partagee_hex=CanalMeshCore.derive_cle_publique(nom), environment=environnement,
+    ), True
+
+
+def canaux_de_crise(crise, environnement):
+    """Les deux canaux de la crise (Meshtastic, MeshCore), créés au premier besoin."""
+    return canal_crise(crise, environnement)[0], canal_crise_meshcore(crise, environnement)[0]
+
+
 def canal_communautaire(nom):
     """Le canal communautaire déclaré sous ce nom, ou None. Sa clé vient de la déclaration —
     jamais inventée : sans déclaration, on ne peut pas le pousser sur une radio."""

@@ -53,6 +53,8 @@ export interface Team {
   institution_delegataire_nom?: string | null;
   equipe_parente?:              string | null; // UUID de l'équipe de tête à laquelle celle-ci est rattachée comme ressource (lecture seule, voir TeamService.rattacherEquipe/detacherEquipe)
   equipe_parente_nom?:          string | null;
+  indicatif?:                   string;        // Indicatif radio (« @ALPHA » sur le canal de crise), 23/11/2026
+  transmissions?:               boolean;       // Équipe transmissions : trie le pot commun des messages radio
   est_equipe_rcsc?:             boolean;       // Marque cette équipe comme LA RCSC de son institution (lecture seule, voir TeamService.designerRcsc) -- conditionne l'accès au registre des personnes vulnérables
 
   sous_equipes_info?:           { id: string; nom: string }[];

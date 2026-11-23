@@ -1201,6 +1201,20 @@
         </div>
 
         <div class="field">
+          <label>Indicatif radio</label>
+          <input type="text" formControlName="indicatif" placeholder="ALPHA" maxlength="7" autocapitalize="characters"/>
+          <span class="field-hint">Sur le canal radio de la crise, « &#64;{{ (editForm.get('indicatif')?.value || 'ALPHA') | uppercase }} texte » arrive dans la messagerie de l'équipe. 2 à 6 lettres ou chiffres ; vide : proposé depuis le nom.</span>
+          @if (editForm.get('indicatif')?.invalid) {
+            <span class="field-err">2 à 6 lettres ou chiffres, sans espace ni accent.</span>
+          }
+        </div>
+
+        <label class="field case">
+          <input type="checkbox" formControlName="transmissions"/>
+          Équipe transmissions : trie les messages radio sans destinataire (pot commun) des crises où elle est engagée.
+        </label>
+
+        <div class="field">
           <label>Chef d'équipe</label>
           <select formControlName="leader">
             <option [value]="null">— Aucun —</option>

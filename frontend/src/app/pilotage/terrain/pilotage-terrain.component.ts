@@ -1,7 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 
-import { MessageTerrainPilotage, PilotageService } from '../pilotage.service';
+import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilotage.service';
 
 /**
  * Le terrain en direct (23/11/2026) : en tête, les alertes Danger et Demande de premiers secours
@@ -36,6 +36,33 @@ import { MessageTerrainPilotage, PilotageService } from '../pilotage.service';
         </section>
       } @else {
         <p class="calme"><span class="material-icons" aria-hidden="true">check_circle</span> Aucune alerte en attente.</p>
+      }
+
+      @if (pilotage.potCommun(); as pot) {
+        <section class="bloc trier" aria-label="Messages radio à trier">
+          <h2>À trier ({{ pot.messages.length }})</h2>
+          <p class="aide">Messages reçus par radio sur le canal de la crise sans destinataire connu (pas de « &#64;INDICATIF »).
+            Rangez-les vers une équipe, ou classez-les. Tri : {{ pot.trie_par === 'TRANSMISSIONS' ? 'équipe transmissions' : 'régulation' }}.</p>
+          @if (!pot.messages.length) { <p class="vide">Rien à trier.</p> }
+          <ul class="a-trier">
+            @for (m of pot.messages; track m.id) {
+              <li>
+                <div class="texte-trier">
+                  <span class="quand">{{ m.emis_le | date:'dd/MM HH:mm' }} · {{ m.auteur }} · {{ source(m) }}</span>
+                  <span>{{ m.texte }}</span>
+                </div>
+                <div class="actions-trier">
+                  <select [attr.aria-label]="'Ranger vers une équipe : ' + m.texte" #choix>
+                    <option value="">Vers l'équipe…</option>
+                    @for (e of pot.equipes; track e.id) { <option [value]="e.id">{{ e.nom }}@if (e.indicatif) { (&#64;{{ e.indicatif }}) }</option> }
+                  </select>
+                  <button type="button" [disabled]="enCours === m.id || !choix.value" (click)="ranger(m, { equipe: choix.value })">Ranger</button>
+                  <button type="button" class="secondaire" [disabled]="enCours === m.id" (click)="ranger(m, { classer: true })">Classer</button>
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
       }
 
       <section class="bloc">
@@ -91,6 +118,16 @@ import { MessageTerrainPilotage, PilotageService } from '../pilotage.service';
     .quand { font-size: .78rem; color: var(--ac-text-muted, #6b7280); }
     .fil li { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: .88rem; padding: 4px 0; }
     .pris { font-size: .75rem; color: #15803d; }
+    .aide { margin: 0 0 8px; font-size: .82rem; color: var(--ac-text-muted, #6b7280); }
+    .a-trier { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .a-trier li { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; padding: 8px 0;
+      border-bottom: 1px solid var(--ac-border, #f3f4f6); }
+    .texte-trier { display: flex; flex-direction: column; min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
+    .actions-trier { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .actions-trier select { min-height: 40px; max-width: 100%; }
+    .actions-trier button { border: none; border-radius: 8px; padding: 8px 12px; min-height: 40px; font: inherit; font-weight: 600;
+      cursor: pointer; background: var(--brand-primary, #2563eb); color: #fff; &:disabled { opacity: .5; }
+      &.secondaire { background: transparent; color: inherit; border: 1px solid var(--ac-border, #d1d5db); } }
   `],
 })
 export class PilotageTerrainComponent {
@@ -109,6 +146,16 @@ export class PilotageTerrainComponent {
 
   canal(c: string): string {
     return c === 'MESHTASTIC' ? 'Meshtastic' : c === 'MESHCORE' ? 'MeshCore' : 'données';
+  }
+
+  source(m: MessageATrier): string {
+    const s = { meshtastic: 'Meshtastic', meshcore: 'MeshCore', radio: 'radio d\'un téléphone' }[m.source] ?? m.source;
+    return m.recu_par > 1 ? `${s}, entendu ${m.recu_par} fois` : s;
+  }
+
+  async ranger(m: MessageATrier, cible: { equipe?: string; classer?: boolean }): Promise<void> {
+    this.enCours = m.id;
+    try { await this.pilotage.ranger(m.id, cible); } finally { this.enCours = null; }
   }
 
   async prendre(a: MessageTerrainPilotage): Promise<void> {

@@ -276,6 +276,9 @@ export class TeamsComponent implements OnInit {
       name:        ['', [Validators.required, Validators.minLength(2)]],
       description: [''],
       leader:    [null],
+      // Radio (23/11/2026) : « @ALPHA texte » sur le canal de crise arrive à l'équipe.
+      indicatif:   ['', [Validators.pattern(/^@?[A-Za-z0-9]{2,6}$/)]],
+      transmissions: [false],
     });
     this.inviteForm = this.fb.group({
       first_name:   ['', Validators.required],
@@ -580,18 +583,20 @@ export class TeamsComponent implements OnInit {
     e?.stopPropagation();
     this.selectedTeam = team;
     this.selectedColor = team.color;
-    this.editForm.patchValue({ name: team.name, description: team.description, leader: team.leader });
+    this.editForm.patchValue({ name: team.name, description: team.description, leader: team.leader,
+                               indicatif: team.indicatif ?? '', transmissions: !!team.transmissions });
     this.modal = 'edit';
   }
 
   submitEdit(): void {
     if (!this.selectedTeam || this.editForm.invalid) { this.editForm.markAllAsTouched(); return; }
-    const { name, description, leader } = this.editForm.value;
+    const { name, description, leader, indicatif, transmissions } = this.editForm.value;
     this.teamService.patch(this.selectedTeam.id!, {
       name, description, leader: leader ?? null, color: this.selectedColor,
+      indicatif: (indicatif ?? '').replace(/^@/, '').toUpperCase(), transmissions: !!transmissions,
     }).subscribe({
       next: () => { this.reloadTeams(); this.showSuccess('Équipe modifiée.'); this.closeModal(); },
-      error: () => this.showError('Erreur lors de la modification.'),
+      error: (e) => this.showError(e?.error?.indicatif?.[0] ?? 'Erreur lors de la modification.'),
     });
   }
 

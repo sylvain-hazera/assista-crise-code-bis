@@ -155,6 +155,7 @@ from .views import (
 from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitutionView, RejoindreCollectiviteView
 from .views_envoi import ConnecteurSMTPViewSet
 from .views_terrain import MessageTerrainViewSet
+from . import views_conversations  # noqa: E402
 from .views_cellule import (  # noqa: E402
     ActionCelluleViewSet, ChronologieViewSet, DecisionCelluleViewSet, PointSituationViewSet, ReleveCelluleViewSet, RetexViewSet,
 )
@@ -470,6 +471,13 @@ urlpatterns = [
     path('revue-droits/decision/', RevueDroitsDecisionView.as_view(), name='revue-droits-decision'),
     path('revue-droits/export/', RevueDroitsExportView.as_view(), name='revue-droits-export'),
     path('tableau-radio-meshcore/', TableauRadioMeshCoreView.as_view(), name='tableau-radio-meshcore'),
+    # Messagerie interne (23/11/2026, core/views_conversations.py) : remplace Matrix.
+    path('conversations/', views_conversations.ConversationsView.as_view(), name='conversations'),
+    path('conversations/<uuid:ident>/messages/', views_conversations.MessagesConversationView.as_view(), name='conversation-messages'),
+    path('conversations/a-trier/', views_conversations.ATrierView.as_view(), name='conversation-a-trier'),
+    path('conversations/a-trier/<uuid:ident>/ranger/', views_conversations.RangerMessageView.as_view(), name='conversation-ranger'),
+    path('radio/entendus/', views_conversations.RadioEntendusView.as_view(), name='radio-entendus'),
+    path('radio/plan/', views_conversations.PlanRadioView.as_view(), name='radio-plan'),
     path('pilotage/situation/', SituationPilotageView.as_view(), name='pilotage-situation'),
     path('seismes/', SeismesView.as_view(), name='seismes'),
     path('volcans/', VolcansView.as_view(), name='volcans'),
