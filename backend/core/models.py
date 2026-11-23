@@ -11393,6 +11393,10 @@ class Satellite(EnvironmentScopedModel):
     agent_mise_a_jour_vu = models.DateTimeField(null=True, blank=True)
     #: Les ordres que l'agent de ce satellite dit connaitre, tels qu'il les annonce a chaque
     #: passage. Vide = agent d'avant le 17/11/2026, qui ne sait que se mettre a jour.
+    #: Où les téléphones du site joignent le site local (profil full), tel que le satellite le
+    #: rapporte à chaque signal de vie : {"ips": [...], "port_web": 80, "noms": ["assista-crise.local", …],
+    #: "recu_le": ...}. Adresses privées seulement (23/11/2026, bascule vers le satellite).
+    adresses_locales = models.JSONField(default=dict, blank=True)
     actions_agent = models.JSONField(default=list, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)

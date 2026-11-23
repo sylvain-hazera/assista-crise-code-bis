@@ -86,9 +86,16 @@ sealed class Reponse<out T> {
  */
 class ClientApi(
     private val http: HttpClient,
-    private val urlApi: String,
+    /** Relue à chaque appel : le serveur peut passer du central au satellite (23/11/2026). */
+    private val racine: () -> String,
     private val session: Session,
 ) {
+    constructor(http: HttpClient, urlApi: String, session: Session) : this(http, { urlApi }, session)
+
+    private val urlApi: String get() = racine()
+
+    /** Prévenu à chaque appel : vrai si le serveur a répondu (même une erreur), faux s'il est injoignable. */
+    var surJoignabilite: ((Boolean) -> Unit)? = null
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val verrouRafraichissement = Mutex()
 
@@ -338,6 +345,20 @@ class ClientApi(
                 json.decodeFromJsonElement(SecteurEmbarque.serializer(), JsonObject(o + ("adresses" to JsonArray(emptyList()))))
                     .copy(adresses = adresses)
             }
+
+    /** Les satellites complets de mon institution et où joindre leur site (23/11/2026). */
+    suspend fun satellitesLocaux(): Reponse<List<SatelliteConnu>> =
+        authentifie(HttpMethod.Get, "satellites/acces-local/")
+            .transformer { e -> json.decodeFromJsonElement(ListSerializer(SatelliteConnu.serializer()), e.jsonObject["satellites"] ?: JsonArray(emptyList())) }
+
+    /** Un serveur répond-il à cette adresse ? (`/api/sonde/` ; toute réponse HTTP compte.) */
+    suspend fun sonde(urlSite: String): Boolean = try {
+        http.request("${urlSite.trimEnd('/')}/api/sonde/") { method = HttpMethod.Get }.status.value < 500
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
+    }
 
     suspend fun typesBien(): Reponse<List<TypeBien>> = liste("types-bien/", TypeBien.serializer())
 
@@ -602,9 +623,11 @@ class ClientApi(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            surJoignabilite?.invoke(false)
             return Reponse.Injoignable("Le serveur est injoignable. Vérifiez votre connexion.")
         }
         val code = reponse.status.value
+        surJoignabilite?.invoke(code < 500)
         val element = runCatching { json.parseToJsonElement(texte) }.getOrNull()
         return when {
             code in 200..299 -> Reponse.Ok(element ?: JsonObject(emptyMap()))

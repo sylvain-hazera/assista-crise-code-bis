@@ -35,6 +35,19 @@ SATELLITE_EMAIL = os.environ.get("SATELLITE_EMAIL", "")
 SATELLITE_PASSWORD = os.environ.get("SATELLITE_PASSWORD", "")
 VERSION_LOGICIELLE = os.environ.get("VERSION_LOGICIELLE", "")
 INTERVALLE_CONTACT_SECONDES = int(os.environ.get("INTERVALLE_CONTACT_SECONDES", "120"))
+# Écrit par annoncer_backend_local.py (profil full, réseau de l'hôte) : les adresses où les
+# téléphones du site joignent le site local, transmises au central avec le signal de vie
+# (23/11/2026). Absent en profil gw : rien n'est transmis.
+FICHIER_ADRESSES = os.environ.get("FICHIER_ADRESSES_LOCALES", "/var/run/satellite/adresses_locales.json")
+
+
+def lire_adresses_locales(fichier=None):
+    try:
+        with open(fichier or FICHIER_ADRESSES, encoding="utf-8") as f:
+            donnees = json.load(f)
+        return donnees if isinstance(donnees, dict) else None
+    except (OSError, ValueError):
+        return None
 
 
 async def signaler_contact(client: httpx.AsyncClient) -> bool:
@@ -49,6 +62,9 @@ async def signaler_contact(client: httpx.AsyncClient) -> bool:
         )
         jeton.raise_for_status()
         corps = {"version_logicielle": VERSION_LOGICIELLE} if VERSION_LOGICIELLE else {}
+        adresses = lire_adresses_locales()
+        if adresses:
+            corps["adresses_locales"] = adresses
         reponse = await client.post(
             f"{CENTRAL_URL}/api/satellites/{SATELLITE_ID}/contact/", json=corps,
             headers={"Authorization": f"Bearer {jeton.json()['access']}"},

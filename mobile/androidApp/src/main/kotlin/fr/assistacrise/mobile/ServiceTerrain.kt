@@ -79,6 +79,8 @@ class ServiceTerrain : Service(), LocationListener {
             runCatching { app.chef.releverEtPiloter() }
             runCatching { app.synchro.envoyerLaFile() }
             runCatching { app.veille.relever { app.alertes.afficher(it) } }
+            // Sur le satellite du site : revenir au central dès qu'il répond (23/11/2026).
+            runCatching { app.bascule.verifierRetour() }
             if (!mettreAJour()) break
             delay(if (app.suivi.etat.value.actif) PERIODE_MISSION_MS else PERIODE_RADIO_MS)
         }

@@ -1,5 +1,7 @@
 package fr.assistacrise.mobile
 
+import kotlinx.coroutines.launch
+
 import fr.assistacrise.mobile.donnees.ClientApi
 import fr.assistacrise.mobile.donnees.DepotBenevole
 import fr.assistacrise.mobile.donnees.DepotCitoyen
@@ -35,6 +37,18 @@ class Application : android.app.Application() {
     val file by lazy { FileAttente(magasin) { System.currentTimeMillis() } }
     val http by lazy {
         HttpClient(OkHttp) {
+            // Garde-fou (23/11/2026) : la configuration réseau permet le http en clair pour joindre
+            // le satellite du site ; ici, on le refuse pour toute adresse qui n'est pas locale
+            // (IP privée, nom en .local, ou machine de développement). Le reste est https.
+            engine {
+                addInterceptor { chaine ->
+                    val url = chaine.request().url
+                    if (url.scheme == "http" && !adresseLocale(url.host)) {
+                        throw java.io.IOException("Connexion en clair refusée vers ${url.host} : https obligatoire hors du réseau local.")
+                    }
+                    chaine.proceed(chaine.request())
+                }
+            }
             install(HttpTimeout) {
                 connectTimeoutMillis = 10_000
                 requestTimeoutMillis = 20_000
@@ -42,7 +56,25 @@ class Application : android.app.Application() {
             }
         }
     }
-    val api by lazy { ClientApi(http, BuildConfig.URL_API, session) }
+    /** Le central, ou le satellite du site quand le central ne répond plus (23/11/2026). */
+    val serveur by lazy { fr.assistacrise.mobile.donnees.Serveur(magasin, BuildConfig.URL_SITE) }
+    val api: ClientApi by lazy {
+        ClientApi(http, { serveur.urlApi() }, session).also { client ->
+            client.surJoignabilite = { repondu -> if (bascule.noter(repondu)) lancerLaRecherche() }
+        }
+    }
+    val bascule: fr.assistacrise.mobile.donnees.BasculeServeur by lazy {
+        fr.assistacrise.mobile.donnees.BasculeServeur(serveur, session, { api.sonde(it) }, { DecouverteSatellite(this).decouvrir() })
+    }
+    private val porteeBascule = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    @Volatile private var rechercheEnCours = false
+
+    /** Le central ne répond plus : chercher le satellite (une seule recherche à la fois). */
+    fun lancerLaRecherche() {
+        if (rechercheEnCours) return
+        rechercheEnCours = true
+        porteeBascule.launch { try { bascule.chercherEtBasculer() } finally { rechercheEnCours = false } }
+    }
 
     /** La version publiée sur le site (/mobile/version.json), ou null hors réseau. */
     suspend fun versionPubliee(): fr.assistacrise.mobile.domaine.VersionPubliee? = runCatching {
@@ -87,7 +119,10 @@ class Application : android.app.Application() {
      */
     suspend fun restaurer() = verrouRestauration.withLock {
         if (restaure) return@withLock
-        session.restaurer()
+        serveur.restaurer()
+        // Sur un satellite au dernier lancement : sa session à lui, pas celle du central.
+        if (serveur.satellite.value != null) session.basculerEspace(satellite = true) else session.restaurer()
+        bascule.reprendre()
         file.restaurer()
         depot.restaurer()
         equipes.restaurer()
@@ -101,4 +136,13 @@ class Application : android.app.Application() {
         messagerieRadio.restaurer()
         restaure = true
     }
+}
+
+/** Une adresse du réseau local : IP privée (RFC 1918), nom en .local, ou la machine de développement. */
+internal fun adresseLocale(hote: String): Boolean {
+    val h = hote.lowercase()
+    if (h == "localhost" || h == "10.0.2.2" || h.endsWith(".local")) return true
+    val o = h.split('.').mapNotNull { it.toIntOrNull() }
+    if (o.size != 4 || h.count { it == '.' } != 3) return false
+    return o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && o[1] in 16..31)
 }

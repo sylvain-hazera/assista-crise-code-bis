@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Satellite du site (23/11/2026) : quand le central ne répond plus, l'application parle au
+  satellite en http, sur le réseau local (son site n'a pas de certificat reconnu). Le trafic en
+  clair est donc permis ici, mais le client HTTP de l'application REFUSE tout http vers une
+  adresse qui n'est pas locale (Application.adresseLocale : IP privée, nom en .local, machine
+  de développement) ; le central, les cartes et tout le reste restent en https. Remplace
+  l'ancienne configuration propre aux compilations de développement (localhost, 10.0.2.2).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
+</network-security-config>

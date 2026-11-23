@@ -8,6 +8,7 @@ import { ThemeService } from './services/theme.service';
 import { RelectureEnvoiComponent } from './shared/components/common/relecture-envoi/relecture-envoi.component';
 import { BandeauApplicationComponent } from './shared/components/common/bandeau-application/bandeau-application.component';
 import { ApplicationInstallableService } from './services/application-installable.service';
+import { BasculeSatelliteComponent } from './shared/components/common/bascule-satellite/bascule-satellite.component';
 
 @Component({
   selector: 'app-root',
@@ -16,6 +17,7 @@ import { ApplicationInstallableService } from './services/application-installabl
     CommonModule,
     RelectureEnvoiComponent,
     BandeauApplicationComponent,
+    BasculeSatelliteComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'

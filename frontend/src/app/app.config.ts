@@ -1,3 +1,4 @@
+import { basculeSatelliteInterceptor } from './core/bascule-satellite.interceptor';
 import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter, withInMemoryScrolling } from '@angular/router';
 
@@ -19,6 +20,8 @@ export const appConfig: ApplicationConfig = {
     // provideHttpClient(),
     provideHttpClient(withInterceptors([
       authInterceptor, collectiviteInterceptor,
+      // Compte les échecs réseau de notre API : au-delà, proposer le satellite (23/11/2026).
+      basculeSatelliteInterceptor,
       // Lit l'en-tête X-Brouillons-Envoi et ouvre la fenêtre de relecture. En dernier : il
       // n'observe que les réponses et ne modifie aucune requête.
       brouillonsEnvoiInterceptor,

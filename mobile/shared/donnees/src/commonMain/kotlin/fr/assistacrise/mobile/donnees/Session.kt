@@ -18,6 +18,18 @@ internal data class SessionEnregistree(
  * l'application ne voit que `compte`.
  */
 class Session(private val magasin: Magasin) {
+    /** La session du central, ou celle du satellite (23/11/2026) : un jeton du central ne vaut pas
+     * sur le satellite, qui a sa propre clé. Les deux sont gardées : revenir au central rend la
+     * session du central telle qu'elle était. */
+    private var fichier = FICHIER
+
+    suspend fun basculerEspace(satellite: Boolean) {
+        fichier = if (satellite) FICHIER_SATELLITE else FICHIER
+        courante = null
+        _compte.value = null
+        restaurer()
+    }
+
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private var courante: SessionEnregistree? = null
 
@@ -44,7 +56,7 @@ class Session(private val magasin: Magasin) {
 
     /** À appeler une fois au démarrage : retrouve la session du lancement précédent. */
     suspend fun restaurer() {
-        val texte = magasin.lire(FICHIER) ?: return
+        val texte = magasin.lire(fichier) ?: return
         // Un fichier illisible (format d'une autre version, clé du Keystore perdue) vaut
         // déconnexion : on redemande le mot de passe plutôt que de planter au démarrage.
         courante = runCatching { json.decodeFromString<SessionEnregistree>(texte) }.getOrNull()
@@ -71,7 +83,7 @@ class Session(private val magasin: Magasin) {
     suspend fun fermer() {
         courante = null
         _compte.value = null
-        magasin.effacer(FICHIER)
+        magasin.effacer(fichier)
         changerDEnvironnement(PROD)
     }
 
@@ -89,7 +101,7 @@ class Session(private val magasin: Magasin) {
 
     private suspend fun enregistrer(s: SessionEnregistree) {
         courante = s
-        magasin.ecrire(FICHIER, json.encodeToString(SessionEnregistree.serializer(), s))
+        magasin.ecrire(fichier, json.encodeToString(SessionEnregistree.serializer(), s))
         _compte.value = s.compte
     }
 
@@ -98,6 +110,7 @@ class Session(private val magasin: Magasin) {
         const val DEMO = "DEMO"
         private const val FICHIER_ZONE = "zone"
         private const val FICHIER = "session"
+        private const val FICHIER_SATELLITE = "session-satellite"
         private const val FICHIER_APPAREIL = "appareil"
     }
 }

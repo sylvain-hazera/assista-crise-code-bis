@@ -168,6 +168,33 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             pret = true
             if (compte.value != null) synchroniser(force = true, bavard = false)
         }
+        // Bascule vers le satellite, et retour : l'écran suit, et la personne sait où elle est.
+        viewModelScope.launch {
+            var precedent = app.bascule.etat.value
+            app.bascule.etat.collect { e ->
+                if (e == precedent) return@collect
+                when (e) {
+                    fr.assistacrise.mobile.donnees.BasculeServeur.Etat.SATELLITE -> {
+                        message = "Le central ne répond pas : vous êtes sur le satellite « ${app.serveur.satellite.value?.nom ?: "du site"} ». " +
+                            "Connectez-vous avec vos identifiants habituels."
+                        if (compte.value == null) aller(Ecran.CONNEXION)
+                    }
+                    fr.assistacrise.mobile.donnees.BasculeServeur.Etat.CENTRAL -> if (precedent == fr.assistacrise.mobile.donnees.BasculeServeur.Etat.SATELLITE) {
+                        message = "Le central répond de nouveau : retour au central."
+                        if (compte.value != null) { ecran = Ecran.MISSIONS; synchroniser(force = true, bavard = false) }
+                    }
+                    else -> Unit
+                }
+                precedent = e
+            }
+        }
+        // Sur le satellite : le central est resondé chaque minute, on y revient dès qu'il répond.
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000)
+                runCatching { app.bascule.verifierRetour() }
+            }
+        }
         viewModelScope.launch {
             app.reseau.present.collect { present ->
                 app.lien.reseau(present)
@@ -419,6 +446,34 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    // --- Satellite du site, quand le central ne répond pas (23/11/2026) ---------------------
+
+    val etatServeur = app.bascule.etat
+    val satelliteActif = app.serveur.satellite
+    var adresseSatellite by mutableStateOf(""); private set
+    var refusAdresseSatellite by mutableStateOf<String?>(null); private set
+    var essaiSatelliteEnCours by mutableStateOf(false); private set
+
+    fun saisirAdresseSatellite(texte: String) { adresseSatellite = texte; refusAdresseSatellite = null }
+
+    fun essayerAdresseSatellite() {
+        essaiSatelliteEnCours = true
+        viewModelScope.launch {
+            refusAdresseSatellite = app.bascule.essayerAdresse(adresseSatellite)
+            essaiSatelliteEnCours = false
+        }
+    }
+
+    fun chercherLeSatellite() = app.lancerLaRecherche()
+
+    fun continuerSansReseau() = app.bascule.abandonner()
+
+    fun seConnecterAUnSatellite() = app.bascule.demanderAdresse()
+
+    fun revenirAuCentral() {
+        viewModelScope.launch { app.bascule.revenirAuCentral() }
+    }
+
     private suspend fun ouvrir() {
         Alertes.planifierLaVeille(app)
         ecran = Ecran.MISSIONS
@@ -594,6 +649,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
                     if (equipes.value.isNotEmpty()) app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
                     compte.value?.id?.let { app.benevole.chargerLesMobilisations(it) }
+                    // Les satellites de mon institution, gardés pour le jour où le central se tait.
+                    if (app.serveur.satellite.value == null) {
+                        (app.api.satellitesLocaux() as? Reponse.Ok)?.let { app.serveur.retenirConnus(it.valeur) }
+                    }
                     veiller()
                 }
                 is Reponse.Refus -> if (r.code == 401) {

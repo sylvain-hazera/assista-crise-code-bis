@@ -1480,3 +1480,20 @@ Bloc déplacé après la déclaration ; démarrage vérifié sur émulateur.
 **0.19.1 (23/11/2026)** : rien ne dépasse de l'écran. Les étendues du secteur embarqué, les
 crises de la carte et les photos d'un dossier passent à la ligne au lieu de défiler hors de
 l'écran ; un message dit de cocher la crise quand les boutons sont grisés faute de crise.
+
+## 23. Version 0.20.0 (23/11/2026) : basculer vers le satellite du site
+
+« Les satellites s'annoncent en mDNS, et l'application, si elle ne se connecte pas au central,
+détecte le satellite et s'y connecte, et le cas échéant demande l'IP. »
+- Après trois échecs réseau consécutifs vers le central, l'application cherche le satellite :
+  annonce mDNS `_ac-local._tcp` sur le Wi-Fi (NsdManager), puis les adresses que le central a
+  données (GET satellites/acces-local/, gardées à chaque synchronisation), puis la dernière
+  adresse saisie ; le premier qui répond à la sonde est retenu. Rien trouvé : l'adresse IP est
+  demandée. Toujours possible à la main : Compte › Serveur.
+- Sur le satellite : bandeau ambre « Satellite … — central injoignable », session propre au
+  satellite (mêmes identifiants, recopiés sur le satellite), retour automatique au central dès
+  qu'il répond (sondé chaque minute, y compris application fermée).
+- Sécurité : le http en clair n'est accepté que vers une adresse locale (IP privée, nom en
+  .local), vérifié dans le client HTTP lui-même ; tout le reste reste en https.
+- Non essayé sur un vrai satellite (l'émulateur n'a pas de mDNS) ; la logique de bascule est
+  testée (BasculeServeurTest).

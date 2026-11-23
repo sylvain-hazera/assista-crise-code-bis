@@ -24220,6 +24220,35 @@ class VersionSatelliteViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, vi
         return Response(self.get_serializer(version).data)
 
 
+
+def _adresses_locales_valides(donnees):
+    """Les adresses locales rapportées par un satellite, nettoyées : IP privées (RFC 1918, pas
+    de bouclage), port valide, noms en .local. None si rien d'exploitable (23/11/2026)."""
+    import ipaddress
+    import re
+
+    if not isinstance(donnees, dict):
+        return None
+    ips = []
+    for brute in (donnees.get('ips') or [])[:4]:
+        try:
+            ip = ipaddress.ip_address(str(brute))
+        except ValueError:
+            continue
+        if ip.is_private and not ip.is_loopback and not ip.is_link_local:
+            ips.append(str(ip))
+    try:
+        port = int(donnees.get('port_web') or 80)
+    except (TypeError, ValueError):
+        port = 80
+    if not 1 <= port <= 65535:
+        port = 80
+    noms = [n.lower() for n in (donnees.get('noms') or [])[:4]
+            if isinstance(n, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}\.local", n.lower())]
+    if not ips and not noms:
+        return None
+    return {"ips": ips, "port_web": port, "noms": noms}
+
 class SatelliteViewSet(
     EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -24244,6 +24273,8 @@ class SatelliteViewSet(
         # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
         if self.action in ('contact', 'donnees', 'comptes', 'adresses', 'pieces', 'synchroniser', 'mesh_a_emettre', 'mesh_emis',
                            'ordre_mise_a_jour', 'rapport_mise_a_jour', 'piece_plan'):
+            return [permissions.IsAuthenticated()]
+        if self.action == 'acces_local':
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants',
                            'mettre_a_jour', 'annuler_mise_a_jour'):
@@ -24511,6 +24542,34 @@ class SatelliteViewSet(
         )
         return Response(SatelliteSerializer(satellite).data)
 
+    @action(detail=False, methods=['get'], url_path='acces-local')
+    def acces_local(self, request):
+        """GET /api/satellites/acces-local/ -- les satellites complets des institutions de
+        l'appelant, et où joindre leur site sur le réseau du site (23/11/2026). La PWA et
+        l'application les gardent pour proposer le satellite quand le central ne répond plus.
+        Aucun secret : un nom, des adresses privées, un port."""
+        from .models import ContactInstitution, ProfilSatellite, Satellite, StatutEnrolementSatellite
+
+        ids = set(ContactInstitution.objects.filter(utilisateur=request.user, actif=True)
+                  .values_list('institution_id', flat=True))
+        if getattr(request.user, 'institution_id', None):
+            ids.add(request.user.institution_id)
+        resultat = []
+        for s in Satellite.objects.filter(institution_id__in=ids, profil=ProfilSatellite.FULL,
+                                          statut_enrolement=StatutEnrolementSatellite.APPROUVE).select_related('institution'):
+            a = s.adresses_locales or {}
+            port = a.get('port_web') or 80
+            suffixe = '' if port == 80 else f':{port}'
+            urls = [f"http://{nom}{suffixe}/" for nom in (a.get('noms') or ['assista-crise.local'])]
+            urls += [f"http://{ip}{suffixe}/" for ip in a.get('ips') or []]
+            resultat.append({
+                "id": str(s.id), "nom": s.nom, "institution": s.institution.nom_affichage or s.institution.nom,
+                "urls": list(dict.fromkeys(urls)), "ips": a.get('ips') or [], "port_web": port,
+                "dernier_contact": s.dernier_contact.isoformat() if s.dernier_contact else None,
+                "adresses_recues_le": a.get('recu_le'),
+            })
+        return Response({"satellites": resultat})
+
     @action(detail=True, methods=['post'], url_path='contact')
     def contact(self, request, pk=None):
         """Appelé périodiquement par le satellite lui-même (compte de service authentifié) —
@@ -24523,6 +24582,12 @@ class SatelliteViewSet(
 
         satellite.dernier_contact = timezone.now()
         update_fields = ['dernier_contact']
+        # Où joindre le site local (23/11/2026) : seulement des adresses privées et des noms
+        # en .local -- jamais une adresse publique qu'on proposerait ensuite aux téléphones.
+        adresses = _adresses_locales_valides(request.data.get('adresses_locales'))
+        if adresses is not None:
+            satellite.adresses_locales = {**adresses, "recu_le": timezone.now().isoformat()}
+            update_fields.append('adresses_locales')
         version = request.data.get('version_logicielle')
         if version:
             satellite.version_logicielle = version

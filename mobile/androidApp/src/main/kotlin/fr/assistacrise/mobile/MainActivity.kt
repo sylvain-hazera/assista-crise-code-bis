@@ -1,5 +1,8 @@
 package fr.assistacrise.mobile
 
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -151,12 +154,25 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
-                    topBar = { fr.assistacrise.mobile.ui.BandeauFormation(modele) },
+                    topBar = {
+                        // Le premier bandeau visible prend la marge de la barre d'état ; le second
+                        // ne la reprend pas (23/11/2026).
+                        val surSatellite = modele.etatServeur.collectAsStateWithLifecycle().value ==
+                            fr.assistacrise.mobile.donnees.BasculeServeur.Etat.SATELLITE
+                        androidx.compose.foundation.layout.Column {
+                            fr.assistacrise.mobile.ui.BandeauSatellite(modele)
+                            Box(if (surSatellite) Modifier.consumeWindowInsets(WindowInsets.safeDrawing) else Modifier) {
+                                fr.assistacrise.mobile.ui.BandeauFormation(modele)
+                            }
+                        }
+                    },
                     snackbarHost = { SnackbarHost(bandeau) },
                     bottomBar = {
                         if (compte != null && modele.pret && ecran !in ECRANS_SANS_BARRE) BarreDuBas(ecran, intervenant, modele.nonVues, modele::aller)
                     },
                 ) { marges ->
+                    // Le central ne répond pas : recherche du satellite, ou adresse demandée.
+                    fr.assistacrise.mobile.ui.DialogueSatellite(modele)
                     Box(Modifier.fillMaxSize().padding(marges)) {
                         when {
                             !modele.pret -> CircularProgressIndicator(Modifier.align(Alignment.Center))

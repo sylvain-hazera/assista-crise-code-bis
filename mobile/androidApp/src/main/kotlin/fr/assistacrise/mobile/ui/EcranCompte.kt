@@ -97,6 +97,22 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
             SectionFormation(modele)
             SectionRadio(modele)
 
+            // Serveur : le central, ou le satellite du site quand le central ne répond pas (23/11/2026).
+            val etatServeur by modele.etatServeur.collectAsStateWithLifecycle()
+            val satellite by modele.satelliteActif.collectAsStateWithLifecycle()
+            Spacer(Modifier.height(24.dp))
+            Text("Serveur", style = MaterialTheme.typography.titleMedium)
+            if (etatServeur == fr.assistacrise.mobile.donnees.BasculeServeur.Etat.SATELLITE) {
+                Text("Satellite « ${satellite?.nom ?: "du site"} » (${satellite?.url ?: ""}) : le central ne répondait pas. " +
+                     "Le retour au central se fait seul dès qu'il répond.", style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = modele::revenirAuCentral, modifier = Modifier.fillMaxWidth()) { Text("Revenir au central maintenant") }
+            } else {
+                Text("Central (${BuildConfig.URL_SITE.removePrefix("https://")}). S'il ne répond pas, l'application cherche seule le " +
+                     "satellite du site sur le Wi-Fi.", style = MaterialTheme.typography.bodyMedium,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = modele::seConnecterAUnSatellite, modifier = Modifier.fillMaxWidth()) { Text("Se connecter à un satellite (adresse IP)") }
+            }
+
             Spacer(Modifier.height(28.dp))
             OutlinedButton(onClick = { confirmer = true }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Se déconnecter") }
             Spacer(Modifier.height(16.dp))

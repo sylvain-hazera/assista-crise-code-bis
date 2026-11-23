@@ -111,6 +111,30 @@ async def test_signal_de_vie_envoye_quand_en_ligne(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_le_signal_de_vie_porte_les_adresses_locales(tmp_path, monkeypatch):
+    """23/11/2026 : le central les donne à la PWA et à l'application, pour basculer sur le
+    satellite quand le central ne répond plus."""
+    fichier = tmp_path / "adresses_locales.json"
+    fichier.write_text(json.dumps({"ips": ["192.168.1.20"], "port_web": 80, "noms": ["assista-crise.local"]}))
+    monkeypatch.setattr(ec, "FICHIER_ADRESSES", str(fichier))
+    monkeypatch.setattr(ec, "SATELLITE_ID", "sat-1")
+    monkeypatch.setattr(ec, "SATELLITE_EMAIL", "x")
+    monkeypatch.setattr(ec, "SATELLITE_PASSWORD", "y")
+    corps = []
+
+    def handler(request):
+        if request.url.path == "/api/token/":
+            return httpx.Response(200, json={"access": "j"})
+        if "contact" in request.url.path:
+            corps.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await ec.boucle(client=client, fichier_etat=str(tmp_path / "etat.json"), une_seule_iteration=True)
+    assert corps and corps[0]["adresses_locales"]["ips"] == ["192.168.1.20"]
+
+
+@pytest.mark.asyncio
 async def test_pas_de_signal_de_vie_sans_identifiants(tmp_path, monkeypatch):
     monkeypatch.setattr(ec, "SATELLITE_ID", "")
     appels = []

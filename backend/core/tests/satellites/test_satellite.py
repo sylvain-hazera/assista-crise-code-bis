@@ -251,6 +251,30 @@ class TestContact:
         assert satellite_en_attente.dernier_contact is not None
         assert satellite_en_attente.version_logicielle == '0.2.0'
 
+    def test_le_signal_de_vie_garde_les_adresses_locales_privees_seulement(self, mairie_a_client, satellite_en_attente,
+                                                                            mairie_b_client):
+        """23/11/2026 : où joindre le site local, pour basculer vers le satellite quand le central
+        ne répond plus. Une adresse publique ou un nom hors .local n'est jamais retenu."""
+        identifiants = self._valider(mairie_a_client, satellite_en_attente)
+        Satellite.objects.filter(pk=satellite_en_attente.pk).update(profil='FULL')
+        from core.crypto_fields import blind_index
+        from core.models import User
+        satellite_client = APIClient()
+        satellite_client.force_authenticate(
+            user=User.objects.get(email_bidx=blind_index(identifiants['identifiants_compte_service']['email'])))
+        satellite_client.post(reverse('satellite-contact', args=[satellite_en_attente.id]), {"adresses_locales": {
+            "ips": ["192.168.1.20", "8.8.8.8", "127.0.0.1", "pas-une-ip"], "port_web": 8080,
+            "noms": ["assista-crise.local", "evil.example.com"]}}, format='json')
+        satellite_en_attente.refresh_from_db()
+        assert satellite_en_attente.adresses_locales["ips"] == ["192.168.1.20"]
+        assert satellite_en_attente.adresses_locales["noms"] == ["assista-crise.local"]
+        client, _ = mairie_a_client
+        acces = client.get(reverse('satellite-acces-local')).data["satellites"]
+        assert [s["urls"] for s in acces] == [["http://assista-crise.local:8080/", "http://192.168.1.20:8080/"]]
+        # Une autre institution ne voit pas ce satellite.
+        client_b, _ = mairie_b_client
+        assert client_b.get(reverse('satellite-acces-local')).data["satellites"] == []
+
     def test_un_autre_compte_de_service_ne_peut_pas_signaler_pour_ce_satellite(
         self, mairie_a_client, satellite_en_attente, institution_a
     ):

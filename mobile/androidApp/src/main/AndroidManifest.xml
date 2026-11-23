@@ -47,6 +47,7 @@
 
     <application
         android:name=".Application"
+        android:networkSecurityConfig="@xml/securite_reseau"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/nom_application"
