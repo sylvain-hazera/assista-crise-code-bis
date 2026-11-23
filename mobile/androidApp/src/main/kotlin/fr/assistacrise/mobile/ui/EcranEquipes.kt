@@ -79,8 +79,9 @@ fun EcranEquipes(modele: ModeleApplication) {
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
                 item { CarteSuivi(modele, suivi, equipes) }
-                item { PanneauRadio(modele) }
+                // La messagerie des équipes d'abord, la radio du nœud ensuite (23/11/2026).
                 items(equipes, key = { it.id }) { equipe -> CarteEquipe(equipe) { modele.ouvrirMessagerie(equipe) } }
+                item { PanneauRadio(modele) }
             }
         }
     }

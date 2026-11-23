@@ -12,7 +12,8 @@ import fr.assistacrise.mobile.lien.meshtastic.NoeudMeshtastic
 data class CanalRadio(val index: Int, val nom: String)
 
 /** Un message entendu par la radio sur un canal. */
-data class MessageRadio(val canal: Int, val texte: String)
+/** `de` : l'émetteur quand le protocole le dit (Meshtastic : « !1a2b3c4d ») ; MeshCore l'écrit dans le texte (« Nom: … »). */
+data class MessageRadio(val canal: Int, val texte: String, val de: String? = null)
 
 /** Un message direct reçu (22/11/2026). `de` : « !1a2b3c4d » (Meshtastic) ou le préfixe de clé (MeshCore). */
 data class MessageDirect(val de: String, val texte: String)
@@ -188,7 +189,7 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
                 else -> Reaction()
             }
             is Meshtastic.Evenement.Texte ->
-                if (evenement.vers == Meshtastic.DIFFUSION) Reaction(messages = listOf(MessageRadio(evenement.canal, evenement.texte)))
+                if (evenement.vers == Meshtastic.DIFFUSION) Reaction(messages = listOf(MessageRadio(evenement.canal, evenement.texte, "!" + evenement.de.toString(16).padStart(8, '0'))))
                 // Adressé à mon nœud : un message direct.
                 else if (evenement.vers == avance.monNoeud) Reaction(directs = listOf(MessageDirect("!" + evenement.de.toString(16).padStart(8, '0'), evenement.texte)))
                 else Reaction()

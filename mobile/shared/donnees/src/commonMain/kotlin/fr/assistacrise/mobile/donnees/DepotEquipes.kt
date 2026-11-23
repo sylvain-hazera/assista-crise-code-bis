@@ -68,20 +68,22 @@ class DepotEquipes(
      * entre dans le fil tout de suite, marqué « par radio » : sans réseau, c'est le seul
      * chemin par lequel il peut arriver.
      */
-    suspend fun entenduParRadio(idEquipe: String, texte: String, maintenant: Long) {
-        // MeshCore écrit « Nom: texte » ; Meshtastic ne dit pas qui parle.
-        val coupe = texte.indexOf(": ").takeIf { it in 1..32 }
+    /** @return le message s'il est nouveau (pour la notification), null pour un doublon. */
+    suspend fun entenduParRadio(idEquipe: String, texte: String, maintenant: Long, emetteur: String? = null): MessageEquipe? {
+        // MeshCore écrit « Nom: texte » ; Meshtastic donne l'émetteur à part (`emetteur`).
+        val coupe = if (emetteur != null) null else texte.indexOf(": ").takeIf { it in 1..32 }
         val message = MessageEquipe(
             id = "${MessageEquipe.PREFIXE_RADIO_LOCALE}$maintenant-${texte.hashCode().toUInt().toString(16)}",
             source = MessageEquipe.SOURCE_RADIO_LOCALE,
             texte = if (coupe != null) texte.substring(coupe + 2) else texte,
             horodatage = maintenant,
-            auteur = if (coupe != null) texte.substring(0, coupe) else "Par radio",
+            auteur = emetteur ?: if (coupe != null) texte.substring(0, coupe) else "Par radio",
         )
         val fil = _fils.value[idEquipe] ?: emptyList()
         // La même trame peut arriver par deux relais à quelques secondes d'écart.
-        if (fil.any { it.texte == message.texte && it.auteur == message.auteur && maintenant - it.horodatage < 120_000 }) return
+        if (fil.any { it.texte == message.texte && it.auteur == message.auteur && maintenant - it.horodatage < 120_000 }) return null
         ecrireFil(idEquipe, fil + message)
+        return message
     }
 
     internal suspend fun garderFil(idEquipe: String, messages: List<MessageEquipe>) {

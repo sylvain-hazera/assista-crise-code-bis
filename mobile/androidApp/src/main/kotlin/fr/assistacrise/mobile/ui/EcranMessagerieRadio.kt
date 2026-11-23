@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -149,6 +150,15 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                 Text(titre, style = MaterialTheme.typography.titleMedium)
                 Text("${protocole.libelle} · " + if (canal) "tous ceux qui ont ce canal l'entendent" else "message direct, par la radio",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // Un canal sonne si on le demande (les messages directs sonnent toujours).
+            if (canal) {
+                var sonne by rememberSaveable(cle) { mutableStateOf(modele.canalRadioNotifie(cle)) }
+                IconButton(onClick = { sonne = !sonne; modele.notifierCanalRadio(cle, sonne) }) {
+                    // Seule l'icône « cloche » est dans la bibliothèque de base : barrée = estompée.
+                    Icon(Icons.Filled.Notifications, if (sonne) "Ne plus notifier ce canal" else "Notifier les messages de ce canal",
+                        tint = if (sonne) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+                }
             }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = defilement, verticalArrangement = Arrangement.spacedBy(6.dp)) {

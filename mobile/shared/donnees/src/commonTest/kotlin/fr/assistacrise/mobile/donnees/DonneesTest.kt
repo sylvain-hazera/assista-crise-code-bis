@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -485,8 +486,12 @@ class CoupureReseauTest {
         var code = HttpStatusCode.ServiceUnavailable
         val banc = banc { code }
         banc.api.connecter("c@exemple.fr", "secret")
-        banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 1000)
-        banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 4000)                 // le même, par un second relais
+        assertNotNull(banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 1000))
+        // Le même, par un second relais : pas nouveau, donc pas de notification.
+        assertNull(banc.equipes.entenduParRadio("t1", "Alex: Bien reçu", 4000))
+        // Meshtastic donne l'émetteur à part : le texte n'est pas coupé (23/11/2026).
+        val mt = banc.equipes.entenduParRadio("t2", "Note: rien de grave", 1500, emetteur = "Camille")
+        assertEquals("Camille" to "Note: rien de grave", mt?.auteur to mt?.texte)
         banc.equipes.entenduParRadio("t1", "Dominique: Jamais relayé", 2000)
         val entendus = banc.equipes.fils.value.getValue("t1")
         assertEquals(listOf("Alex" to "Bien reçu", "Dominique" to "Jamais relayé"), entendus.map { it.auteur to it.texte })

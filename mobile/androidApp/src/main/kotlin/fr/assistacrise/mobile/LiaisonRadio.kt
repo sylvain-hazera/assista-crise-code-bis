@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import fr.assistacrise.mobile.domaine.Alerte
 import fr.assistacrise.mobile.domaine.Equipe
 import fr.assistacrise.mobile.lien.AdresseReseau
 import fr.assistacrise.mobile.lien.CadrageFlux
@@ -426,7 +427,11 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
             // Le canal dit de quelle équipe il s'agit ; un canal qui n'est celui d'aucune de
             // mes équipes ne me concerne pas.
             val equipe = app.equipes.equipes.value.firstOrNull { p.canalNomme(canalDe(it, p.protocole))?.index == canal.index } ?: continue
-            app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis())
+            val emetteur = message.de?.let { app.messagerieRadio.nomDuContact(MessagerieRadio.cle(p.protocole, "d:$it")) }
+            val nouveau = app.equipes.entenduParRadio(equipe.id, message.texte, System.currentTimeMillis(), emetteur) ?: continue
+            // La veille ne fait pas sonner ce que la radio a entendu : c'est ici (23/11/2026).
+            if (!(app.premierPlan && app.equipeAffichee == equipe.id)) app.alertes.afficher(Alerte(
+                "r:${nouveau.id}", Alerte.Genre.MESSAGE, "${equipe.nom} · par radio", "${nouveau.auteur} : ${nouveau.texte}".take(160), cible = equipe.id))
         }
         // Tous les canaux du nœud et les messages directs, pour la messagerie radio (22/11/2026).
         app.messagerieRadio.recevoir(reaction.messages, reaction.directs, p)

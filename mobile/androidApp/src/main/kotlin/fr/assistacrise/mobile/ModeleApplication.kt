@@ -156,6 +156,13 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     private val verrouSynchro = Mutex()
 
     init {
+        // Le fil ouvert à l'écran, pour les notifications des messages radio (23/11/2026).
+        viewModelScope.launch {
+            androidx.compose.runtime.snapshotFlow { Triple(ecran, equipeOuverte, conversationRadio) }.collect { (e, eq, conv) ->
+                app.equipeAffichee = eq.takeIf { e == Ecran.MESSAGERIE }
+                app.messagerieRadio.ouverte = conv.takeIf { e == Ecran.RADIO_CONVERSATION }
+            }
+        }
         viewModelScope.launch {
             app.restaurer()
             nonVues = app.notifications.nonVues()
@@ -208,10 +215,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      */
     fun auPremierPlan() {
         visible = true
+        app.premierPlan = true
         if (pret && compte.value != null) viewModelScope.launch { synchroniser(force = true, bavard = false) }
     }
 
-    fun enArrierePlan() { visible = false }
+    fun enArrierePlan() { visible = false; app.premierPlan = false }
 
     // --- Compte --------------------------------------------------------------------------
 
@@ -487,17 +495,19 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     fun ouvrirConversationRadio(cle: String) {
         conversationRadio = cle
-        app.messagerieRadio.ouverte = cle
         app.messagerieRadio.marquerLue(cle)
         aller(Ecran.RADIO_CONVERSATION)
     }
 
     fun fermerConversationRadio() {
-        app.messagerieRadio.ouverte = null
         aller(Ecran.EQUIPES)
     }
 
     fun nomDuContactRadio(cle: String) = app.messagerieRadio.nomDuContact(cle)
+
+    /** Notifier, ou non, les messages d'un canal radio (les messages directs le sont toujours). */
+    fun canalRadioNotifie(cle: String) = app.messagerieRadio.notifie(cle)
+    fun notifierCanalRadio(cle: String, oui: Boolean) = app.messagerieRadio.notifier(cle, oui)
 
     fun ecrireALaRadio(cle: String, texte: String) {
         viewModelScope.launch {
@@ -646,7 +656,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         if (compte.value == null || cible == null) return
         when (genre) {
             Alerte.Genre.NOTIFICATION.name -> ouvrirNotification(cible)
-            Alerte.Genre.MESSAGE.name -> { equipeOuverte = cible; ecran = Ecran.MESSAGERIE }
+            Alerte.Genre.MESSAGE.name ->
+                if (cible.startsWith(MessagerieRadio.CIBLE)) ouvrirConversationRadio(cible.removePrefix(MessagerieRadio.CIBLE))
+                else { equipeOuverte = cible; ecran = Ecran.MESSAGERIE }
             Alerte.Genre.MISSION.name -> ecran = Ecran.MISSIONS
         }
     }

@@ -73,6 +73,10 @@ class Application : android.app.Application() {
     val chef by lazy { ChefDeMission(this) }
     val messagerieRadio by lazy { MessagerieRadio(this) }
 
+    /** L'application est-elle à l'écran, et quel fil y est ouvert ? Ce qu'on lit déjà ne sonne pas. */
+    @Volatile var premierPlan = false
+    @Volatile var equipeAffichee: String? = null
+
     private val verrouRestauration = Mutex()
     private var restaure = false
 

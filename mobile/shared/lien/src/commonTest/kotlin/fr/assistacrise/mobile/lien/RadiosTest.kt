@@ -179,10 +179,12 @@ class PilotesTest {
         val envoi = pilote.envoyerSurCanal(1, "Route coupée D20", 0).single()
         // À la réception, le même paquet porte en plus l'expéditeur ; le vecteur de référence le montre.
         val recu = pilote.recevoir("12280dfecaad0b15ffffffff1801221508011211526f75746520636f7570c3a965204432303505000000".depuisHex())
-        assertEquals(listOf(MessageRadio(1, "Route coupée D20")), recu.messages)
+        // L'expéditeur (from = 0x0badcafe) est remonté : la messagerie affiche qui a écrit (23/11/2026).
+        assertEquals(listOf(MessageRadio(1, "Route coupée D20", "!0badcafe")), recu.messages)
         // Ce que le pilote envoie se relit comme ce qu'il entend : même canal, même texte.
         val relu = pilote.recevoir(envoi.copyOf().also { it[0] = 0x12 })
-        assertEquals(listOf(MessageRadio(1, "Route coupée D20")), relu.messages)
+        assertEquals(listOf("Route coupée D20"), relu.messages.map { it.texte })
+        assertEquals(1, relu.messages.single().canal)
         // Un message direct n'est pas un message de canal.
         val direct = pilote.recevoir(("123d0dfecaad0b15cdab34122215080112114172726976c3a97320737572207a6f6e6535efbeadde3d60c5" +
             "166945000050c04803609fffffffffffffffff01").depuisHex())

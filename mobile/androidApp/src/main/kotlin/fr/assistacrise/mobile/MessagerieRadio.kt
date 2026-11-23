@@ -53,11 +53,24 @@ class MessagerieRadio(private val app: Application) {
         val maintenant = System.currentTimeMillis()
         val pr = pilote.protocole
         for (m in messages) {
-            // MeshCore écrit « Nom: texte » ; Meshtastic ne dit pas qui parle sur un canal.
-            val coupe = m.texte.indexOf(": ").takeIf { it in 1..32 }
-            ajouter(cle(pr, "c:${m.canal}"), Message(false, coupe?.let { m.texte.substring(0, it) } ?: "", coupe?.let { m.texte.substring(it + 2) } ?: m.texte, maintenant))
+            // MeshCore écrit « Nom: texte » ; Meshtastic donne l'émetteur à part (nœud « !1a2b3c4d »).
+            val coupe = if (m.de != null) null else m.texte.indexOf(": ").takeIf { it in 1..32 }
+            val auteur = m.de?.let { nomDuContact(cle(pr, "d:$it")) } ?: coupe?.let { m.texte.substring(0, it) } ?: ""
+            val texte = coupe?.let { m.texte.substring(it + 2) } ?: m.texte
+            val k = cle(pr, "c:${m.canal}")
+            ajouter(k, Message(false, auteur, texte, maintenant))
+            // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres, si on l'a demandé.
+            if (k in notifies() && app.radio.equipeDuCanal(pr, m.canal) == null) {
+                val nom = pilote.canaux.firstOrNull { it.index == m.canal }?.nom ?: "Canal ${m.canal}"
+                alerter(k, "« $nom » · ${pr.libelle}", "${auteur.ifBlank { "?" }} : $texte")
+            }
         }
-        for (d in directs) ajouter(cle(pr, "d:${d.de}"), Message(false, nomDuContact(cle(pr, "d:${d.de}")), d.texte, maintenant))
+        for (d in directs) {
+            val k = cle(pr, "d:${d.de}")
+            val nom = nomDuContact(k)
+            ajouter(k, Message(false, nom, d.texte, maintenant))
+            alerter(k, "$nom · message direct ${pr.libelle}", d.texte)
+        }
     }
 
     /** Envoie sur la conversation désignée par sa clé (canal ou direct, sur la radio de son protocole). */
@@ -80,6 +93,20 @@ class MessagerieRadio(private val app: Application) {
         val ok = liaison.envoyerAdmin(trames)
         ajouter(cle, Message(true, "Moi", texte, maintenant, ok), compter = false)
         return ok
+    }
+
+    private fun alerter(cle: String, titre: String, texte: String) {
+        if (app.premierPlan && ouverte == cle) return
+        app.alertes.afficher(fr.assistacrise.mobile.domaine.Alerte(
+            "rc:$cle:${System.currentTimeMillis()}", fr.assistacrise.mobile.domaine.Alerte.Genre.MESSAGE, titre, texte.take(160), cible = CIBLE + cle))
+    }
+
+    // Les canaux qu'on veut entendre sonner : un choix d'affichage, pas une donnée personnelle.
+    private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
+    private fun notifies(): Set<String> = preferences.getStringSet("canaux-notifies", emptySet()) ?: emptySet()
+    fun notifie(cle: String) = cle.contains("|d:") || cle in notifies()
+    fun notifier(cle: String, oui: Boolean) {
+        preferences.edit().putStringSet("canaux-notifies", if (oui) notifies() + cle else notifies() - cle).apply()
     }
 
     fun marquerLue(cle: String) { _nonLus.value = _nonLus.value - cle }
@@ -115,6 +142,8 @@ class MessagerieRadio(private val app: Application) {
     }
 
     companion object {
+        /** Préfixe de la cible d'une notification qui ouvre une conversation radio. */
+        const val CIBLE = "radio:"
         fun cle(protocole: Protocole, reste: String) = "${protocole.name}|$reste"
         fun lireCle(cle: String): Pair<Protocole, String>? {
             val (p, reste) = cle.split("|", limit = 2).takeIf { it.size == 2 } ?: return null

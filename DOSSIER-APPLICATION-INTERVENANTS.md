@@ -1432,3 +1432,18 @@ de chaque message dans la fiche de la mission.
   Dans le menu radio avancé, les canaux d'équipe sont signalés (« géré par la plateforme ») ;
   les modifier ou les retirer demande de taper CONFIRMER, après l'énoncé des conséquences.
 - Ancien choix de radio (un seul fichier « radio ») : repris par l'emplacement de son protocole.
+
+## 21. Version 0.18.0 (23/11/2026) : notifications radio, ordre des messageries, auteur Meshtastic
+
+Retour du premier essai réel (radio Meshtastic et MeshCore connectées, formation) :
+- **Notifications des messages radio.** Rien ne sonnait pour ce que la radio entendait : la
+  veille l'écarte (« déjà sur le téléphone »), et la messagerie radio ne notifiait pas.
+  Désormais : un message entendu sur le **canal d'une équipe** sonne comme un message d'équipe
+  (toucher ouvre la messagerie de l'équipe) ; un **message direct** sonne toujours ; un autre
+  canal sonne si on l'a demandé (cloche dans la conversation : un canal public bavard, avec
+  des robots, ne doit pas faire vibrer le téléphone sans fin). Rien ne sonne pour la
+  conversation qu'on a sous les yeux.
+- **Ordre** : dans Équipes, la messagerie interne des équipes d'abord, la radio ensuite.
+- **Qui a écrit, en Meshtastic** : le pilote remonte l'émetteur d'un message de canal (nœud
+  « !1a2b3c4d »), affiché par son nom long, ou court, d'après la liste des nœuds. Aussi dans le
+  fil d'équipe, au lieu de « Par radio ».
