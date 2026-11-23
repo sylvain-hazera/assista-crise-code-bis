@@ -382,7 +382,8 @@ router.register(r'creneaux-equipe', CreneauEquipeViewSet)
 router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
 from .views_organisation import (  # noqa: E402
-    OrganisationView, RevueDroitsDecisionView, RevueDroitsExportView, RevueDroitsView, SituationPilotageView, TableauRadioMeshCoreView,
+    CentrePilotageView, CentresPilotageView, EtatCentreView, OrganisationView, RevueDroitsDecisionView, RevueDroitsExportView,
+    RevueDroitsView, SituationPilotageView, TableauRadioMeshCoreView,
 )
 
 urlpatterns = [
@@ -478,6 +479,9 @@ urlpatterns = [
     path('conversations/a-trier/<uuid:ident>/ranger/', views_conversations.RangerMessageView.as_view(), name='conversation-ranger'),
     path('radio/entendus/', views_conversations.RadioEntendusView.as_view(), name='radio-entendus'),
     path('radio/plan/', views_conversations.PlanRadioView.as_view(), name='radio-plan'),
+    path('pilotage/centres/', CentresPilotageView.as_view(), name='pilotage-centres'),
+    path('pilotage/centres/<uuid:ident>/', CentrePilotageView.as_view(), name='pilotage-centre'),
+    path('pilotage/centres/<uuid:ident>/etat/', EtatCentreView.as_view(), name='pilotage-centre-etat'),
     path('pilotage/situation/', SituationPilotageView.as_view(), name='pilotage-situation'),
     path('seismes/', SeismesView.as_view(), name='seismes'),
     path('volcans/', VolcansView.as_view(), name='volcans'),

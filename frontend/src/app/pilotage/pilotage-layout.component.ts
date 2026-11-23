@@ -75,6 +75,8 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
                   <span class="pastille-alerte" [attr.aria-label]="pilotage.alertesTerrain() + ' alerte(s) à prendre en compte'">{{ pilotage.alertesTerrain() }}</span>
                 } @else if (o.lien === 'terrain' && pilotage.aTrier()) {
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.aTrier() + ' message(s) radio à trier'">{{ pilotage.aTrier() }}</span>
+                } @else if (o.lien === 'centres' && pilotage.alertesCentres()) {
+                  <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.alertesCentres() + ' centre(s) presque plein(s) ou en manque'">{{ pilotage.alertesCentres() }}</span>
                 }
               </span>
               <span class="libelle">{{ o.libelle }}</span>
@@ -192,6 +194,8 @@ export class PilotageLayoutComponent implements OnInit, OnDestroy {
     { lien: 'situation', libelle: 'Situation', icone: 'dashboard' },
     { lien: 'cellule', libelle: 'Cellule', icone: 'hub', avecCrise: true },
     { lien: 'terrain', libelle: 'Terrain', icone: 'directions_run' },
+    // Centres d'accueil, de transit, de regroupement des moyens (23/11/2026) : 4e sur téléphone.
+    { lien: 'centres', libelle: 'Centres', icone: 'night_shelter' },
     { lien: 'decisions', libelle: 'Décisions', icone: 'gavel' },
     { lien: 'carte', libelle: 'Carte', icone: 'map' },
     { lien: 'dossiers', libelle: 'Dossiers', icone: 'folder_open' },

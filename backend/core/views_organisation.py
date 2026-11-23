@@ -147,6 +147,82 @@ class TableauRadioMeshCoreView(APIView):
         return Response(tableau_meshcore.construire(get_active_environment(request), request.query_params.get("fenetre", "24h")))
 
 
+class CentresPilotageView(APIView):
+    """GET /api/pilotage/centres/?crise= : centres d'accueil, de transit et de regroupement des
+    moyens de la crise (23/11/2026, core/pilotage_centres.py)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from . import pilotage_centres
+        from .models import Crisis
+        from .permissions import get_active_environment
+
+        if get_effective_role(request) not in INSTITUTIONAL_TYPES:
+            raise PermissionDenied("Réservé au poste de commandement.")
+        crise = Crisis.objects.filter(pk=request.query_params.get("crise") or None).first()
+        if crise is None:
+            raise ValidationError({"error": "Crise introuvable."})
+        return Response(pilotage_centres.liste(crise, request, get_active_environment(request)))
+
+
+def _centre(request, ident):
+    from .models import PointOperationnel
+    from .pilotage_centres import TYPES_CENTRES
+    from .permissions import _peut_gerer_stock_point, get_active_environment
+
+    point = (PointOperationnel.objects.filter(pk=ident, environment=get_active_environment(request), type__code__in=TYPES_CENTRES)
+             .select_related("type", "equipe", "responsable", "crise").first())
+    if point is None:
+        raise ValidationError({"error": "Centre introuvable."})
+    if get_effective_role(request) not in INSTITUTIONAL_TYPES and not _peut_gerer_stock_point(request, point):
+        raise PermissionDenied("Réservé au poste de commandement et à l'équipe du centre.")
+    return point
+
+
+class CentrePilotageView(APIView):
+    """GET /api/pilotage/centres/<id>/ : le détail d'un centre (registre, stock, planning)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, ident):
+        from . import pilotage_centres
+        return Response(pilotage_centres.detail(_centre(request, ident), request))
+
+
+class EtatCentreView(APIView):
+    """POST /api/pilotage/centres/<id>/etat/ {geste: ouvrir|fermer, capacite?} : réservé à qui
+    peut gérer le centre (équipe, responsable, institution qui le tient). Main courante."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, ident):
+        from . import pilotage_centres
+        from .audit import audit_log
+        from .permissions import _peut_gerer_stock_point
+
+        point = _centre(request, ident)
+        if not _peut_gerer_stock_point(request, point):
+            raise PermissionDenied("Ouvrir ou fermer un centre revient à ceux qui le tiennent.")
+        geste = request.data.get("geste") or None
+        if geste not in (None, "ouvrir", "fermer"):
+            raise ValidationError({"error": "Geste inconnu."})
+        capacite = request.data.get("capacite")
+        if capacite not in (None, ""):
+            try:
+                capacite = int(capacite)
+            except (TypeError, ValueError):
+                raise ValidationError({"error": "Capacité : un nombre entier."})
+            if not 0 <= capacite <= 100000:
+                raise ValidationError({"error": "Capacité hors limites."})
+        else:
+            capacite = None
+        champs = pilotage_centres.changer_etat(point, geste, capacite)
+        if champs:
+            quoi = {"ouvrir": "ouverture", "fermer": "fermeture"}.get(geste, "capacité")
+            audit_log(request=request, action_code="MODIFICATION", objet_type="PointOperationnel", objet_id=point.id,
+                      crise=point.crise, commentaire=f"Centre {point.nom} : {quoi}"
+                      + (f" (capacité {capacite})" if capacite is not None else ""))
+        return Response(pilotage_centres.detail(point, request))
+
+
 class SituationPilotageView(APIView):
     """GET /api/pilotage/situation/?crise= : les tableaux de situation du pilotage (23/11/2026,
     core/pilotage_situation.py) -- veille de la zone, accueil, dégâts, moyens, radio."""

@@ -44,6 +44,32 @@ export interface TableauxSituation {
                        dernier_message_radio: string | null }[] };
 }
 
+/** Un centre d'accueil, de transit ou de regroupement des moyens (23/11/2026). */
+export interface CentrePilotage {
+  id: string; nom: string; type: string | null; type_libelle: string; etat: 'OUVERT' | 'PREVU' | 'FERME';
+  ouvert_le: string | null; ferme_le: string | null;
+  occupation: { presents: number; capacite: number | null; taux: number | null; presque_plein: boolean; plein: boolean;
+                par_type: { type: string; libelle: string; nombre: number }[]; arrivees_24h: number; departs_24h: number };
+  manques: { article: string; niveau: string }[];
+  equipes: { id: string; nom: string; effectif: number }[];
+  sur_place_creneau: number;
+  responsables: { nom: string; telephone: string | null }[];
+  peut_gerer: boolean; accepte_animaux: boolean;
+}
+export interface ListeCentres {
+  crise: string; alertes: number; centres: CentrePilotage[];
+  orientation: { cherchent_un_centre: { declarations: number; personnes: number };
+                 relogement: { en_recherche: number; heberges: number; reloges: number } };
+}
+export interface DetailCentre extends CentrePilotage {
+  adresse: string | null;
+  registre: { id: string; type: string; libelle: string; nombre: number; arrivee: string | null; nom: string | null; commentaire: string | null }[];
+  mouvements: { type: string; libelle: string; nombre: number; arrivee: string | null; depart: string | null }[];
+  stock: { item: string; article: string; quantite: number; niveau: string | null; unite: string }[];
+  planning: { membre: string; creneau: string }[];
+  categories: { type: string; libelle: string }[];
+}
+
 /** Un message radio du pot commun (23/11/2026) : arrivé sans destinataire, à ranger. */
 export interface MessageATrier {
   id: string; texte: string; auteur: string; source: string; recu_par: number; emis_le: string;
@@ -79,6 +105,9 @@ export class PilotageService {
   /** Le pot commun des messages radio sans destinataire ; null si ce compte ne trie pas. */
   readonly potCommun = signal<PotCommun | null>(null);
   readonly aTrier = computed(() => this.potCommun()?.messages.length ?? 0);
+  /** Les centres de la crise, relus avec le terrain ; la pastille compte ceux qui demandent attention. */
+  readonly centres = signal<ListeCentres | null>(null);
+  readonly alertesCentres = computed(() => this.centres()?.alertes ?? 0);
 
   constructor(private http: HttpClient) {}
 
@@ -88,7 +117,8 @@ export class PilotageService {
 
   rafraichirTerrain(): void {
     const crise = this.criseId();
-    if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); return; }
+    if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); this.centres.set(null); return; }
+    this.rafraichirCentres();
     this.http.get<PotCommun>(`${environment.apiUrl}/conversations/a-trier/`, { params: { crise } }).subscribe({
       next: p => this.potCommun.set(p),
       error: () => this.potCommun.set(null),   // ni transmissions ni régulation : pas de tri
@@ -106,6 +136,46 @@ export class PilotageService {
   prendreEnCompte(id: string): Promise<MessageTerrainPilotage> {
     return firstValueFrom(this.http.post<MessageTerrainPilotage>(`${environment.apiUrl}/messages-terrain/${id}/prendre-en-compte/`, {}))
       .then(m => { this.rafraichirTerrain(); return m; });
+  }
+
+  rafraichirCentres(): void {
+    const crise = this.criseId();
+    if (!crise) { this.centres.set(null); return; }
+    this.http.get<ListeCentres>(`${environment.apiUrl}/pilotage/centres/`, { params: { crise } }).subscribe({
+      next: l => this.centres.set(l),
+      error: () => { /* réseau ou droits : on garde la dernière vue */ },
+    });
+  }
+
+  centre(id: string): Promise<DetailCentre> {
+    return firstValueFrom(this.http.get<DetailCentre>(`${environment.apiUrl}/pilotage/centres/${id}/`));
+  }
+
+  /** Ouvrir, fermer un centre, ou ajuster sa capacité. */
+  etatCentre(id: string, geste: 'ouvrir' | 'fermer' | null, capacite?: number | null): Promise<DetailCentre> {
+    const corps: Record<string, unknown> = {};
+    if (geste) corps['geste'] = geste;
+    if (capacite !== undefined && capacite !== null) corps['capacite'] = capacite;
+    return firstValueFrom(this.http.post<DetailCentre>(`${environment.apiUrl}/pilotage/centres/${id}/etat/`, corps))
+      .then(d => { this.rafraichirCentres(); return d; });
+  }
+
+  /** Une arrivée au registre de présence (API existante). */
+  arrivee(point: string, typePersonne: string, nombre: number, nom = '', commentaire = ''): Promise<unknown> {
+    const corps: Record<string, unknown> = { point, type_personne: typePersonne, nombre };
+    if (nom.trim()) corps['nom'] = nom.trim();
+    if (commentaire.trim()) corps['commentaire'] = commentaire.trim();
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/registre-presences/`, corps)).then(r => { this.rafraichirCentres(); return r; });
+  }
+
+  sortie(ligne: string): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/registre-presences/${ligne}/sortie/`, {}))
+      .then(r => { this.rafraichirCentres(); return r; });
+  }
+
+  /** Recevoir, distribuer ou compter un article du stock du centre (API existante). */
+  gesteStock(point: string, geste: 'recevoir' | 'distribuer' | 'compter', item: string, quantite: number): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/stocks/points/${point}/${geste}/`, { item, quantite }));
   }
 
   /** Range un message du pot commun : vers une équipe, un dossier, ou classé sans suite. */

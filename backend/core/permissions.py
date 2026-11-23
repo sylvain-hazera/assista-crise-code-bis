@@ -466,6 +466,12 @@ def _peut_gerer_stock_point(request, point) -> bool:
             return True
         if point.equipe.members.filter(id=user.id).exists():
             return True
+    # La cellule de crise de l'institution qui tient le centre (23/11/2026) : sans cela, elle ne
+    # pouvait pas enregistrer une arrivée depuis le poste de pilotage.
+    if get_effective_role(request) in INSTITUTIONAL_TYPES and getattr(user, "institution_id", None):
+        from .pilotage_centres import institutions_du_point
+        if user.institution_id in institutions_du_point(point):
+            return True
     return False
 
 
