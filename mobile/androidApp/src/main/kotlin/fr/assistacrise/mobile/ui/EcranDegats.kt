@@ -21,6 +21,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -105,7 +108,10 @@ fun EcranDegats(modele: ModeleApplication) {
         }
         when (val e = etape) {
             Etape.Accueil -> Accueil(modele, ouvertes.map { it.id to it.nom }, crise, { crise = it }, position, secteur?.let {
-                "Secteur embarqué le ${it.genereLe.take(16).replace('T', ' ')} : ${it.adresses.size} adresses, ${it.biens.size} biens déjà vus" +
+                val etendue = if (it.perimetre == "commune") "toute la commune" else "${(it.rayonM / 1000).let { r -> if (r >= 1) "${r.toInt()} km" else "${it.rayonM.toInt()} m" }} autour" +
+                    if (it.limiteALaCommune) " (dans la commune)" else ""
+                "Secteur embarqué le ${it.genereLe.take(16).replace('T', ' ')} — $etendue : ${it.adresses.size} adresses, ${it.biens.size} biens déjà vus" +
+                    (if (it.tronque) " — incomplet, réduisez l'étendue" else "") +
                     (if (it.constatsFaits > 0) ", ${it.constatsFaits} constat(s) à envoyer" else "")
             }) { etape = Etape.Tournee }
             Etape.Tournee -> Tournee(modele, crise!!, position, dernier, surPoint = { etape = Etape.Position(it) },
@@ -134,12 +140,32 @@ private fun Accueil(modele: ModeleApplication, crises: List<Pair<String, String>
                 Text(nom.ifBlank { "Crise" })
             }
         }
+        // Comment ça marche (23/11/2026 : « j'ai 4 000 adresses chargées, et ensuite ? »).
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Comment ça marche", style = MaterialTheme.typography.titleSmall)
+                Text("1. Choisissez la crise, et embarquez un secteur si vous partez sans réseau.", style = MaterialTheme.typography.bodySmall)
+                Text("2. « Commencer la tournée » : les adresses les plus proches de vous s'affichent, la plus proche en tête.", style = MaterialTheme.typography.bodySmall)
+                Text("3. Devant un bâtiment : « Je suis devant… », vérifiez que le point est bien placé, puis évaluez (état, photos).", style = MaterialTheme.typography.bodySmall)
+                Text("4. Avancez : la liste suit votre marche. Les constats partent seuls dès que le réseau revient.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Sans réseau", style = MaterialTheme.typography.titleMedium)
-                Text(resumeSecteur ?: "Avant de partir, embarquez le secteur : adresses, biens déjà vus, dossiers ouverts, à 1 km autour de vous. Il s'efface de ce téléphone dès que vos constats sont partis.",
+                Text(resumeSecteur ?: "Avant de partir, embarquez le secteur : adresses, biens déjà vus, dossiers ouverts. Il s'efface de ce téléphone dès que vos constats sont partis.",
                      style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = { if (crise != null && position != null) modele.embarquerSecteur(crise, position) },
+                // Étendue : un rayon jusqu'à 20 km, ou toute la commune — jamais au-delà de votre commune.
+                var etendue by rememberSaveable { mutableStateOf(1000) }     // 0 = toute la commune
+                Text("Étendue", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(1000 to "1 km", 3000 to "3 km", 5000 to "5 km", 10000 to "10 km", 20000 to "20 km", 0 to "Toute ma commune").forEach { (valeur, libelle) ->
+                        FilterChip(selected = etendue == valeur, onClick = { etendue = valeur }, label = { Text(libelle) })
+                    }
+                }
+                Text("Limité à votre commune. Plus l'étendue est grande, plus le téléchargement est long : Wi-Fi conseillé.",
+                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { if (crise != null && position != null) modele.embarquerSecteur(crise, position, if (etendue == 0) 1000 else etendue, etendue == 0) },
                        enabled = crise != null && position != null && !modele.embarquementEnCours, modifier = Modifier.fillMaxWidth()) {
                     if (modele.embarquementEnCours) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else Text(if (resumeSecteur == null) "Embarquer ce secteur" else "Réembarquer ici")

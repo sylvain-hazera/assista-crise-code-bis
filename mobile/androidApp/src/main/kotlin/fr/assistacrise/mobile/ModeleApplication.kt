@@ -952,11 +952,14 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
-    fun embarquerSecteur(crise: String, ici: Releve) {
+    /** `rayonM` : 1 à 20 km ; `toutLaCommune` : tout le territoire communal (23/11/2026). */
+    fun embarquerSecteur(crise: String, ici: Releve, rayonM: Int = 1000, toutLaCommune: Boolean = false) {
         embarquementEnCours = true
         viewModelScope.launch {
-            message = when (val r = app.degats.embarquer(crise, ici.latitude, ici.longitude)) {
-                is Reponse.Ok -> "Secteur embarqué : ${r.valeur.adresses.size} adresses, ${r.valeur.biens.size} biens déjà vus. Il s'effacera de ce téléphone dès que vos constats seront partis."
+            message = when (val r = app.degats.embarquer(crise, ici.latitude, ici.longitude, rayonM, toutLaCommune)) {
+                is Reponse.Ok -> "Secteur embarqué : ${r.valeur.adresses.size} adresses, ${r.valeur.biens.size} biens déjà vus" +
+                    (if (r.valeur.tronque) " (incomplet : réduisez le rayon)" else "") +
+                    ". Appuyez maintenant sur « Commencer la tournée »."
                 is Reponse.Refus -> r.message
                 is Reponse.Injoignable -> "Pas de réseau : le secteur n'a pas pu être embarqué."
             }

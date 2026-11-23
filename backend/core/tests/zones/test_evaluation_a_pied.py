@@ -216,6 +216,21 @@ class TestPourLApplication:
             assert terrain["autre"].get("/api/habitations/secteur/", {"crise": str(terrain["feu"].id), "latitude": 44.87,
                                                                       "longitude": -1.2}).status_code == 403
 
+    def test_rayon_jusqu_a_20_km_ou_toute_la_commune_jamais_au_dela(self, terrain):
+        """23/11/2026 : rayon réglable jusqu'à 20 km, ou « mon territoire communal » ; un compte de
+        mairie n'embarque jamais les adresses d'une autre commune."""
+        AdresseBAN.objects.create(ban_id="33529_0001_00001", commune_code="33529", commune_nom="Lacanau", code_postal="33680",
+                                  numero="1", voie="Route de Lacanau", location=Point(-1.199, 44.87, srid=4326),
+                                  modifie_le=datetime.datetime(2026, 11, 1, tzinfo=UTC))
+        params = {"crise": str(terrain["feu"].id), "latitude": 44.87, "longitude": -1.2}
+        with patch("core.views.commune_code_from_point", return_value=COMMUNE):
+            large = terrain["elue"].get("/api/habitations/secteur/", {**params, "rayon_m": 15000})
+            commune = terrain["elue"].get("/api/habitations/secteur/", {**params, "perimetre": "commune"})
+        assert large.status_code == 200 and large.data["rayon_m"] == 15000 and large.data["limite_a_la_commune"]
+        assert {a[0] for a in large.data["adresses"]} == {"33333_0010_00000", "33333_0010_00001", "33333_0010_00002"}
+        assert commune.data["perimetre"] == "commune" and not commune.data["tronque"]
+        assert {a[0] for a in commune.data["adresses"]} == {"33333_0010_00000", "33333_0010_00001", "33333_0010_00002"}
+
 
 @pytest.mark.django_db
 class TestReevaluer:

@@ -8403,15 +8403,32 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         motif = terrain.motif_de_refus(request, commune_code, crise)
         if motif:
             raise PermissionDenied(motif)
-        rayon = _flottant(request.query_params.get('rayon_m'), 100, self.RAYON_SECTEUR_MAX_M) or self.RAYON_SECTEUR_M
-        ecart_lat = rayon / 111_320
-        ecart_lon = rayon / (111_320 * max(0.1, math.cos(math.radians(latitude))))
-        emprise = Polygon.from_bbox((longitude - ecart_lon, latitude - ecart_lat, longitude + ecart_lon, latitude + ecart_lat))
+        # 23/11/2026 : « un rayon plus large, réglable, jusqu'à 20 km — ou une zone prédéfinie :
+        # mon territoire communal au maximum ». `perimetre=commune` : toute la commune du point.
+        # Sinon un rayon, et pour un compte de mairie le rayon est rogné à sa commune : on
+        # n'embarque pas des adresses qu'on n'a pas le droit d'évaluer.
         environment = get_active_environment(request)
+        toute_la_commune = request.query_params.get('perimetre') == 'commune' and bool(commune_code)
+        rogner = toute_la_commune or (get_effective_role(request) != UserRole.ADMINISTRATOR and bool(commune_code))
+        adresses_qs = AdresseBAN.objects.filter(retiree_le__isnull=True)
+        biens_qs = Habitation.objects.filter(crise=crise, environment=environment, fusionne_dans__isnull=True)
+        if toute_la_commune:
+            rayon = None
+        else:
+            rayon = _flottant(request.query_params.get('rayon_m'), 100, self.RAYON_SECTEUR_MAX_M) or self.RAYON_SECTEUR_M
+            ecart_lat = rayon / 111_320
+            ecart_lon = rayon / (111_320 * max(0.1, math.cos(math.radians(latitude))))
+            emprise = Polygon.from_bbox((longitude - ecart_lon, latitude - ecart_lat, longitude + ecart_lon, latitude + ecart_lat))
+            adresses_qs = adresses_qs.filter(location__within=emprise)
+            biens_qs = biens_qs.filter(location__within=emprise)
+        if rogner:
+            adresses_qs = adresses_qs.filter(commune_code=commune_code)
+            biens_qs = biens_qs.filter(commune_code=commune_code)
         adresses = [[a.ban_id, a.libelle, round(a.location.y, 6), round(a.location.x, 6)]
-                    for a in AdresseBAN.objects.filter(retiree_le__isnull=True, location__within=emprise)[:self.ADRESSES_SECTEUR_MAX]]
-        biens = list(Habitation.objects.filter(crise=crise, environment=environment, fusionne_dans__isnull=True,
-                                               location__within=emprise).select_related('type_bien'))
+                    for a in adresses_qs[:self.ADRESSES_SECTEUR_MAX + 1]]
+        tronque = len(adresses) > self.ADRESSES_SECTEUR_MAX
+        adresses = adresses[:self.ADRESSES_SECTEUR_MAX]
+        biens = list(biens_qs.select_related('type_bien'))
         dossiers = Dossier.objects.filter(crise=crise, environment=environment, habitation__in=biens).exclude(
             statut__in=[Dossier.Statut.RESOLU, Dossier.Statut.CLOTURE])
         cercles = []
@@ -8426,7 +8443,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                           exposition=AuditLog.Exposition.LISTE_SANS_COORDONNEES, objets_ids=fiches,
                           commentaire=f"Secteur embarqué pour l'évaluation des dégâts, commune {commune_code} : {len(cercles)} cercle(s)")
         return Response({
-            "crise": str(crise.id), "latitude": latitude, "longitude": longitude, "rayon_m": rayon,
+            "crise": str(crise.id), "latitude": latitude, "longitude": longitude, "rayon_m": rayon or 0,
+            "perimetre": "commune" if toute_la_commune else "rayon", "commune_code": commune_code or "",
+            "limite_a_la_commune": rogner, "tronque": tronque,
             "genere_le": timezone.now().isoformat(),
             "adresses": adresses,
             "biens": [{"id": str(b.id), "ban_id": b.ban_id, "adresse": b.adresse, "latitude": round(b.location.y, 6),
@@ -8438,8 +8457,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "cercles": cercles,
         })
 
-    #: Rayon embarqué par défaut et au plus (un village, un quartier), et plafond d'adresses.
-    RAYON_SECTEUR_M, RAYON_SECTEUR_MAX_M, ADRESSES_SECTEUR_MAX = 1000, 3000, 20000
+    #: Rayon embarqué par défaut et au plus (20 km depuis le 23/11/2026), et plafond d'adresses
+    #: (une grande commune entière : Bordeaux compte quelque 40 000 adresses).
+    RAYON_SECTEUR_M, RAYON_SECTEUR_MAX_M, ADRESSES_SECTEUR_MAX = 1000, 20000, 60000
 
     @action(detail=True, methods=['post'], url_path='rapprocher')
     def rapprocher(self, request, pk=None):

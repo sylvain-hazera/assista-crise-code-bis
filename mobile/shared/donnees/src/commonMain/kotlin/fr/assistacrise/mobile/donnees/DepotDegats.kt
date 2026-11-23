@@ -53,9 +53,10 @@ class DepotDegats(
     }
 
     /** « Embarquer ce secteur » : adresses, biens, dossiers et cercles autour de moi, pour la crise. */
-    suspend fun embarquer(crise: String, latitude: Double, longitude: Double, rayonM: Int = RAYON_EMBARQUE_M): Reponse<SecteurEmbarque> {
+    suspend fun embarquer(crise: String, latitude: Double, longitude: Double, rayonM: Int = RAYON_EMBARQUE_M,
+                          toutLaCommune: Boolean = false): Reponse<SecteurEmbarque> {
         chargerTypes()
-        return api.secteurEmbarque(crise, latitude, longitude, rayonM).also { r ->
+        return api.secteurEmbarque(crise, latitude, longitude, rayonM, toutLaCommune).also { r ->
             if (r is Reponse.Ok) enregistrer(r.valeur)
         }
     }

@@ -323,8 +323,10 @@ class ClientApi(
             .transformer { e -> (e.jsonObject["points"] ?: JsonArray(emptyList())).let { json.decodeFromJsonElement(ListSerializer(PointTournee.serializer()), it) } }
 
     /** Ce qu'il faut pour évaluer hors réseau autour d'un point (adresses, biens, dossiers, cercles). */
-    suspend fun secteurEmbarque(crise: String, latitude: Double, longitude: Double, rayonM: Int): Reponse<SecteurEmbarque> =
-        authentifie(HttpMethod.Get, "habitations/secteur/?crise=$crise&latitude=$latitude&longitude=$longitude&rayon_m=$rayonM")
+    suspend fun secteurEmbarque(crise: String, latitude: Double, longitude: Double, rayonM: Int,
+                                toutLaCommune: Boolean = false): Reponse<SecteurEmbarque> =
+        authentifie(HttpMethod.Get, "habitations/secteur/?crise=$crise&latitude=$latitude&longitude=$longitude&rayon_m=$rayonM" +
+            if (toutLaCommune) "&perimetre=commune" else "")
             .transformer { e ->
                 val o = e.jsonObject
                 // Les adresses arrivent compactes : [identifiant, libellé, latitude, longitude].

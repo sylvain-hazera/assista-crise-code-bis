@@ -60,6 +60,12 @@ data class SecteurEmbarque(
     val longitude: Double,
     @SerialName("rayon_m") val rayonM: Double,
     @SerialName("genere_le") val genereLe: String,
+    /** « rayon » ou « commune » (toute la commune, 23/11/2026). */
+    val perimetre: String = "rayon",
+    /** Le serveur a rogné le secteur à la commune : on n'embarque pas ce qu'on n'a pas le droit d'évaluer. */
+    @SerialName("limite_a_la_commune") val limiteALaCommune: Boolean = false,
+    /** Plus d'adresses que le plafond : le secteur est incomplet, il faut le réduire. */
+    val tronque: Boolean = false,
     val adresses: List<AdresseEmbarquee> = emptyList(),
     val biens: List<BienEmbarque> = emptyList(),
     val dossiers: List<DossierEmbarque> = emptyList(),

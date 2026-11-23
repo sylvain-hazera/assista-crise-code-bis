@@ -1464,3 +1464,15 @@ Bloc déplacé après la déclaration ; démarrage vérifié sur émulateur.
   dégâts dit maintenant la vraie raison (hors de sa commune, compte non rattaché, ou module
   dégâts non activé par la mairie pour la crise, avec où l'activer). Même chose pour
   « Embarquer ce secteur », qui passe par la même règle.
+
+## 22. Version 0.19.0 (23/11/2026) : secteur embarqué réglable, parcours expliqué
+
+- **Étendue du secteur embarqué** pour l'évaluation des dégâts : 1, 3, 5, 10 ou 20 km, ou
+  **toute ma commune**. Le serveur accepte un rayon jusqu'à 20 km (3 auparavant) et une commune
+  entière (60 000 adresses au plus, signalé si tronqué) ; pour un compte de mairie, le secteur
+  est toujours **rogné à sa commune** : on n'embarque pas des adresses qu'on n'a pas le droit
+  d'évaluer.
+- **« Comment ça marche »** en tête de l'écran : embarquer → « Commencer la tournée » → « Je
+  suis devant… » → vérifier le point → évaluer → avancer. Après l'embarquement, le message dit
+  d'appuyer sur « Commencer la tournée » (retour d'essai : « j'ai 4 000 adresses chargées, et
+  ensuite ? »).
