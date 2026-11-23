@@ -1546,3 +1546,11 @@ régulation).
   radio sur la crise » ajoute Fr_Balise, Fr_EMCOM et le canal de la crise dans des emplacements
   libres (il faut le réseau pour lire le plan). Pas encore : l'alignement hors réseau par QR
   code entre téléphones, et le compte rendu de l'alignement au pilotage.
+
+**0.22.1 (23/11/2026) : mentions et non-lus.** « @Léa », « @Léa Martin », « @[Léa Martin] »
+(forme MeshCore) ou le nom de mon nœud radio, dans une équipe ou un canal radio : notification à
+part (canal Android « Mentions », prioritaire, qui sonne même sur un canal muet). Les non-lus se
+lisent en trois niveaux : la pastille de l'enveloppe (onglet Équipes), puis le moyen (Chat,
+Meshtastic, MeshCore), puis l'équipe ou le canal ; bleue, rouge avec « @ » quand on m'a
+mentionné. Les canaux radio s'affichent pour toute radio connectée, plus seulement en mode
+avancé.

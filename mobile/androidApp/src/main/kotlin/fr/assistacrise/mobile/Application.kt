@@ -71,8 +71,25 @@ class Application : android.app.Application() {
 
     override fun onCreate() {
         super.onCreate()
+        alertes.mesNoms = ::mesNoms
         surveillerPourNotifier()
     }
+
+    /** Les noms sous lesquels on peut me mentionner : mon prénom, mon nom complet, le nom (long et
+     * court) de chacun de mes nœuds radio (23/11/2026). */
+    fun mesNoms(): Set<String> = buildSet {
+        session.compte.value?.let { c ->
+            if (c.prenom.isNotBlank()) add(c.prenom)
+            add(listOf(c.prenom, c.nom).filter { it.isNotBlank() }.joinToString(" "))
+        }
+        radio.toutes.forEach { l ->
+            val p = l.piloteCourant ?: return@forEach
+            p.identite?.let(::add)
+            val a = p.avance
+            a.monNoeud?.let { a.noeuds[it] }?.let { n -> add(n.nomLong); add(n.nomCourt) }
+            a.moi?.nom?.let(::add)
+        }
+    }.filter { it.trim().length >= 2 }.toSet()
 
     /**
      * Notifications d'état (23/11/2026, POC hors réseau) : au retour du réseau, « vos envois en

@@ -168,7 +168,8 @@ class MainActivity : ComponentActivity() {
                     },
                     snackbarHost = { SnackbarHost(bandeau) },
                     bottomBar = {
-                        if (compte != null && modele.pret && ecran !in ECRANS_SANS_BARRE) BarreDuBas(ecran, intervenant, modele.nonVues, modele::aller)
+                        val messages by modele.totalMessages.collectAsStateWithLifecycle()
+                        if (compte != null && modele.pret && ecran !in ECRANS_SANS_BARRE) BarreDuBas(ecran, intervenant, modele.nonVues, modele::aller, messages.messages, messages.mentions)
                     },
                 ) { marges ->
                     // Le central ne répond pas : recherche du satellite, ou adresse demandée.

@@ -53,14 +53,15 @@ fun EcranEquipes(modele: ModeleApplication) {
     val equipes by modele.equipes.collectAsStateWithLifecycle()
     val suivi by modele.suivi.collectAsStateWithLifecycle()
     val lien by modele.lien.collectAsStateWithLifecycle()
+    val nonLus by modele.nonLusEquipes.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Mes équipes", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             PastilleLien(lien)
         }
-        // La radio du nœud (utilisateur radio avancé) : canaux, contacts, messages directs.
-        if (equipes.isEmpty() && modele.modeRadioAvance) {
+        // La radio du nœud : canaux, contacts, messages directs.
+        if (equipes.isEmpty()) {
             Column(Modifier.padding(16.dp)) { PanneauRadio(modele) }
         }
         if (equipes.isEmpty()) {
@@ -79,8 +80,17 @@ fun EcranEquipes(modele: ModeleApplication) {
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
                 item { CarteSuivi(modele, suivi, equipes) }
-                // La messagerie des équipes d'abord, la radio du nœud ensuite (23/11/2026).
-                items(equipes, key = { it.id }) { equipe -> CarteEquipe(equipe) { modele.ouvrirMessagerie(equipe) } }
+                // La messagerie des équipes d'abord, la radio du nœud ensuite (23/11/2026) ;
+                // chaque niveau dit ce qui n'est pas lu : le moyen, puis l'équipe ou le canal.
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Chat", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        PastilleNonLus(nonLus.values.sumOf { it.messages }, nonLus.values.sumOf { it.mentions })
+                    }
+                }
+                items(equipes, key = { it.id }) { equipe ->
+                    CarteEquipe(equipe, nonLus[equipe.id] ?: ModeleApplication.NonLus()) { modele.ouvrirMessagerie(equipe) }
+                }
                 item { PanneauRadio(modele) }
             }
         }
@@ -88,7 +98,7 @@ fun EcranEquipes(modele: ModeleApplication) {
 }
 
 @Composable
-private fun CarteEquipe(equipe: Equipe, surClic: () -> Unit) {
+private fun CarteEquipe(equipe: Equipe, nonLus: ModeleApplication.NonLus, surClic: () -> Unit) {
     Card(
         onClick = surClic,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -98,6 +108,8 @@ private fun CarteEquipe(equipe: Equipe, surClic: () -> Unit) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(equipe.nom, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                PastilleNonLus(nonLus.messages, nonLus.mentions)
+                if (nonLus.messages > 0) Spacer(Modifier.width(8.dp))
                 if (equipe.engagee) {
                     Surface(color = EnLigne.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
                         Text("Engagée", style = MaterialTheme.typography.labelMedium, color = EnLigne, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))

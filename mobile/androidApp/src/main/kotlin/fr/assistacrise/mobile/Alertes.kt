@@ -29,6 +29,38 @@ import java.util.concurrent.TimeUnit
 class Alertes(private val contexte: Context) {
     private val gestionnaire = NotificationManagerCompat.from(contexte)
 
+    /** Mes noms (compte, nœuds radio), pour reconnaître une mention « @Léa » (23/11/2026). */
+    var mesNoms: () -> Collection<String> = { emptyList() }
+
+    fun estUneMention(texte: String): Boolean = fr.assistacrise.mobile.domaine.Mentions.mentionne(texte, mesNoms())
+
+    /**
+     * On m'a mentionné : une notification à part, sur son propre canal Android (plus insistant que
+     * les messages), qui sonne même si la conversation a déjà sonné ou si le canal radio est muet.
+     */
+    @Suppress("MissingPermission")   // vérifiée par `autorisees`
+    fun mention(id: String, ou: String, texte: String, genre: Alerte.Genre, cible: String): Boolean {
+        if (!autorisees) return false
+        creerLesCanaux()
+        val ouvrir = Intent(contexte, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_GENRE, genre.name)
+            putExtra(EXTRA_CIBLE, cible)
+        }
+        val n = NotificationCompat.Builder(contexte, CANAL_MENTION)
+            .setSmallIcon(R.drawable.ic_alerte)
+            .setContentTitle("Vous êtes mentionné · $ou")
+            .setContentText(texte.take(160))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(texte.take(400)))
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(PendingIntent.getActivity(contexte, "mention:$id".hashCode(), ouvrir, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
+        return runCatching { gestionnaire.notify("mention:$id".hashCode(), n) }.isSuccess
+    }
+
     /** Le système affichera-t-il ce qu'on lui confie ? Dit au serveur, qui le montre à l'encadrement. */
     val autorisees: Boolean
         get() = gestionnaire.areNotificationsEnabled() && (
@@ -43,6 +75,9 @@ class Alertes(private val contexte: Context) {
     @Suppress("MissingPermission")   // vérifiée par `autorisees`
     fun afficher(alerte: Alerte): Boolean {
         if (!autorisees) return false
+        if (alerte.genre == Alerte.Genre.MESSAGE && estUneMention(alerte.texte)) {
+            return mention(alerte.cle, alerte.titre, alerte.texte, alerte.genre, alerte.cible)
+        }
         creerLesCanaux()
         val ouvrir = Intent(contexte, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -117,6 +152,7 @@ class Alertes(private val contexte: Context) {
     fun conversation(id: String, titre: String, ligne: String, genre: Alerte.Genre, cible: String, radio: Boolean = true): Boolean {
         if (!autorisees) return false
         creerLesCanaux()
+        if (estUneMention(ligne)) mention("$id:${ligne.hashCode()}", titre, ligne, genre, cible)
         val lignes = lignesParConversation.getOrPut(id) { mutableListOf() }
         synchronized(lignes) { lignes += ligne.take(160); while (lignes.size > 6) lignes.removeAt(0) }
         val total = (compteParConversation.merge(id, 1, Int::plus) ?: 1)
@@ -179,6 +215,11 @@ class Alertes(private val contexte: Context) {
             },
         )
         systeme.createNotificationChannel(
+            NotificationChannel(CANAL_MENTION, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Quelqu'un vous mentionne (« @votre nom ») dans une équipe ou un canal radio."
+            },
+        )
+        systeme.createNotificationChannel(
             NotificationChannel(CANAL_RADIO, "Messages radio", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Messages reçus par la radio Meshtastic ou MeshCore : canaux, équipes, messages directs."
             },
@@ -202,6 +243,7 @@ class Alertes(private val contexte: Context) {
         private const val CANAL = "messages"
         private const val CANAL_URGENT = "urgent"
         private const val CANAL_RADIO = "radio"
+        private const val CANAL_MENTION = "mention"
         private const val CANAL_ETAT = "etat"
         private const val TACHE = "veille"
         private const val ID_GEOLOC = 7_001

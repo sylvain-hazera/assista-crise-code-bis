@@ -52,6 +52,8 @@ fun EcranMessagerie(modele: ModeleApplication) {
     if (equipe == null) { LaunchedEffect(Unit) { modele.aller(Ecran.EQUIPES) }; return }
 
     val messages = filDeMessages(fils[equipe.id] ?: emptyList(), file, equipe.id)
+    // Ce qui arrive pendant qu'on lit est lu.
+    LaunchedEffect(equipe.id, fils[equipe.id]?.size) { modele.marquerEquipeLue(equipe.id) }
     val liste = rememberLazyListState()
     var brouillon by rememberSaveable { mutableStateOf("") }
 

@@ -40,6 +40,9 @@ class MessagerieRadio(private val app: Application) {
     val conversations: StateFlow<Map<String, List<Message>>> = _conversations
     private val _nonLus = MutableStateFlow<Map<String, Int>>(emptyMap())
     val nonLus: StateFlow<Map<String, Int>> = _nonLus
+    /** Parmi les non-lus, ceux où l'on me mentionne (« @Léa »), par conversation (23/11/2026). */
+    private val _mentions = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val mentions: StateFlow<Map<String, Int>> = _mentions
     /** La conversation à l'écran : ce qui y arrive n'est pas « non lu ». */
     @Volatile var ouverte: String? = null
 
@@ -58,7 +61,8 @@ class MessagerieRadio(private val app: Application) {
             val auteur = m.de?.let { nomDuContact(cle(pr, "d:$it")) } ?: coupe?.let { m.texte.substring(0, it) } ?: ""
             val texte = coupe?.let { m.texte.substring(it + 2) } ?: m.texte
             val k = cle(pr, "c:${m.canal}")
-            ajouter(k, Message(false, auteur, texte, maintenant))
+            val mention = app.alertes.estUneMention(texte)
+            ajouter(k, Message(false, auteur, texte, maintenant), mention = mention)
             // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres sonnent
             // aussi, sauf ceux qu'on a fait taire (cloche) — 23/11/2026 : « un message reçu
             // n'émet pas de notification, il en faut ».
@@ -68,7 +72,8 @@ class MessagerieRadio(private val app: Application) {
             val canalDeCrise = equipeDuCanal?.canalCrise?.let { cc ->
                 pilote.canalNomme(cc.nomPour(pr == fr.assistacrise.mobile.lien.Protocole.MESHCORE))?.index == m.canal } == true
             val sansAdresse = !Regex("""(?:^|:\s)@[A-Za-z0-9]{2,8}\b""").containsMatchIn(m.texte)
-            if (k !in muets() && (equipeDuCanal == null || (canalDeCrise && sansAdresse))) {
+            // Une mention sonne toujours, même sur un canal muet ou adressé à une autre équipe.
+            if (mention || (k !in muets() && (equipeDuCanal == null || (canalDeCrise && sansAdresse)))) {
                 val nom = pilote.canaux.firstOrNull { it.index == m.canal }?.nom ?: "Canal ${m.canal}"
                 alerter(k, "« $nom » · ${pr.libelle}", FormatNotification.ligneRadio(auteur, texte))
                 FormatNotification.urgenceTerrain(app, auteur, texte, CIBLE + k)
@@ -77,7 +82,7 @@ class MessagerieRadio(private val app: Application) {
         for (d in directs) {
             val k = cle(pr, "d:${d.de}")
             val nom = nomDuContact(k)
-            ajouter(k, Message(false, nom, d.texte, maintenant))
+            ajouter(k, Message(false, nom, d.texte, maintenant), mention = app.alertes.estUneMention(d.texte))
             alerter(k, "$nom · message direct ${pr.libelle}", FormatNotification.ligneRadio("", d.texte))
             FormatNotification.urgenceTerrain(app, nom, d.texte, CIBLE + k)
         }
@@ -122,16 +127,18 @@ class MessagerieRadio(private val app: Application) {
 
     fun marquerLue(cle: String) {
         _nonLus.value = _nonLus.value - cle
+        _mentions.value = _mentions.value - cle
         app.alertes.retirerConversation(idNotification(cle))
     }
 
     fun effacer(cle: String) {
         _conversations.value = _conversations.value - cle
         _nonLus.value = _nonLus.value - cle
+        _mentions.value = _mentions.value - cle
         sauver()
     }
 
-    suspend fun toutEffacer() { _conversations.value = emptyMap(); _nonLus.value = emptyMap(); app.magasin.effacer(FICHIER) }
+    suspend fun toutEffacer() { _conversations.value = emptyMap(); _nonLus.value = emptyMap(); _mentions.value = emptyMap(); app.magasin.effacer(FICHIER) }
 
     /** Le nom d'un contact, d'après sa clé de conversation directe. */
     fun nomDuContact(cleConversation: String): String {
@@ -144,9 +151,10 @@ class MessagerieRadio(private val app: Application) {
         }?.ifBlank { null } ?: contact.take(12)
     }
 
-    private fun ajouter(cle: String, m: Message, compter: Boolean = true) {
+    private fun ajouter(cle: String, m: Message, compter: Boolean = true, mention: Boolean = false) {
         _conversations.value = _conversations.value + (cle to ((_conversations.value[cle] ?: emptyList()) + m).takeLast(MAX))
         if (compter && cle != ouverte) _nonLus.value = _nonLus.value + (cle to ((_nonLus.value[cle] ?: 0) + 1))
+        if (mention && compter && cle != ouverte) _mentions.value = _mentions.value + (cle to ((_mentions.value[cle] ?: 0) + 1))
         sauver()
     }
 

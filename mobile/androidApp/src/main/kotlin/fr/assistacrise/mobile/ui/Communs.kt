@@ -105,7 +105,8 @@ fun PastilleLien(etat: EtatLien, modifier: Modifier = Modifier) {
 
 /** La barre du bas. Un citoyen n'y voit que ce qui le concerne : l'aide et son compte. */
 @Composable
-fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, nonVues: Int, aller: (fr.assistacrise.mobile.Ecran) -> Unit) {
+fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, nonVues: Int, aller: (fr.assistacrise.mobile.Ecran) -> Unit,
+               messages: Int = 0, mentions: Int = 0) {
     val lieux = buildList {
         if (intervenant) {
             add(Triple(fr.assistacrise.mobile.Ecran.MISSIONS, "Missions", Icons.AutoMirrored.Filled.List))
@@ -124,12 +125,27 @@ fun BarreDuBas(ecran: fr.assistacrise.mobile.Ecran, intervenant: Boolean, nonVue
                     // La pastille est sur « Compte » : c'est là que s'ouvrent les notifications.
                     if (lieu == fr.assistacrise.mobile.Ecran.COMPTE && nonVues > 0) {
                         BadgedBox(badge = { Badge { Text("$nonVues") } }) { Icon(icone, contentDescription = "$nonVues notification(s) non vue(s)") }
+                    } else if (lieu == fr.assistacrise.mobile.Ecran.EQUIPES && messages > 0) {
+                        // L'enveloppe (23/11/2026) : messages non lus, en rouge avec « @ » si l'on m'a mentionné.
+                        BadgedBox(badge = { PastilleNonLus(messages, mentions) }) {
+                            Icon(icone, contentDescription = "$messages message(s) non lu(s)" + if (mentions > 0) ", dont $mentions mention(s)" else "")
+                        }
                     } else Icon(icone, contentDescription = null)
                 },
                 label = { Text(nom) },
             )
         }
     }
+}
+
+/** Une pastille de non-lus : bleue, rouge avec « @ » quand on m'a mentionné (23/11/2026). */
+@Composable
+fun PastilleNonLus(messages: Int, mentions: Int) {
+    if (messages <= 0 && mentions <= 0) return
+    Badge(
+        containerColor = if (mentions > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        contentColor = if (mentions > 0) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+    ) { Text(if (mentions > 0) "@ $messages" else "$messages") }
 }
 
 /** « il y a 12 min », à partir d'un instant en millisecondes. */

@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -79,6 +80,54 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         .map { l -> l.filter { it.genre != fr.assistacrise.mobile.domaine.ActionEnAttente.GENRE_ENTENDU_RADIO } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val equipes = app.equipes.equipes
+
+    // --- Non-lus et mentions de la messagerie d'équipe (23/11/2026) ---------------------------
+    // « Le petit chiffre sur l'enveloppe, puis le moyen (chat, Meshtastic, MeshCore), puis le
+    // canal. » Ce qu'on a lu, équipe par équipe : un horodatage, rien de personnel.
+    private val lecturesEquipes = app.getSharedPreferences("lectures-equipes", android.content.Context.MODE_PRIVATE)
+    private val _luesEquipes = MutableStateFlow(lecturesEquipes.all.mapNotNull { (k, v) -> (v as? Long)?.let { k to it } }.toMap())
+
+    data class NonLus(val messages: Int = 0, val mentions: Int = 0)
+
+    /** Par équipe : messages non lus (hors les miens), et parmi eux ceux qui me mentionnent. Une
+     * équipe jamais ouverte sur ce téléphone part de zéro (pas tout l'historique d'un coup). */
+    val nonLusEquipes: StateFlow<Map<String, NonLus>> = combine(app.equipes.fils, _luesEquipes) { fils, lues ->
+        val noms = app.mesNoms()
+        fils.mapValues { (id, fil) ->
+            val depuis = lues[id] ?: return@mapValues NonLus()
+            val nouveaux = fil.filter { !it.moi && it.horodatage > depuis }
+            NonLus(nouveaux.size, nouveaux.count { fr.assistacrise.mobile.domaine.Mentions.mentionne(it.texte, noms) })
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    init {
+        // Le point de départ d'une équipe jamais ouverte ici : son dernier message connu.
+        viewModelScope.launch {
+            app.equipes.fils.collect { fils ->
+                val manquantes = fils.filterKeys { it !in _luesEquipes.value }
+                if (manquantes.isNotEmpty()) {
+                    val depart = manquantes.mapValues { (_, fil) -> fil.maxOfOrNull { it.horodatage } ?: System.currentTimeMillis() }
+                    lecturesEquipes.edit().apply { depart.forEach { (k, v) -> putLong(k, v) } }.apply()
+                    _luesEquipes.value = _luesEquipes.value + depart
+                }
+            }
+        }
+    }
+
+    /** L'équipe est lue jusqu'à son dernier message. */
+    fun marquerEquipeLue(id: String) {
+        val dernier = app.equipes.fils.value[id]?.maxOfOrNull { it.horodatage } ?: System.currentTimeMillis()
+        val t = maxOf(dernier, _luesEquipes.value[id] ?: 0L)
+        lecturesEquipes.edit().putLong(id, t).apply()
+        _luesEquipes.value = _luesEquipes.value + (id to t)
+    }
+
+    val mentionsRadio = app.messagerieRadio.mentions
+
+    /** Le chiffre de l'enveloppe : tout ce qui n'est pas lu (équipes et radio), et les mentions. */
+    val totalMessages: StateFlow<NonLus> = combine(nonLusEquipes, app.messagerieRadio.nonLus, app.messagerieRadio.mentions) { eq, radio, men ->
+        NonLus(eq.values.sumOf { it.messages } + radio.values.sum(), eq.values.sumOf { it.mentions } + men.values.sum())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, NonLus())
     val fils = app.equipes.fils
     val suivi = app.suivi.etat
     /** Les deux liaisons radio (23/11/2026) : Meshtastic puis MeshCore. */
@@ -1120,6 +1169,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     fun ouvrirMessagerie(equipe: Equipe) {
         app.alertes.retirerConversation(LiaisonRadio.idNotificationEquipe(equipe.id))
+        marquerEquipeLue(equipe.id)
         equipeOuverte = equipe.id
         ecran = Ecran.MESSAGERIE
     }

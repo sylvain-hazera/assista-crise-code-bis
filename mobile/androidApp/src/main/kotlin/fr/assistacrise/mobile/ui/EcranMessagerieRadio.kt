@@ -64,9 +64,16 @@ fun PanneauRadio(modele: ModeleApplication) {
     val avance by modele.radioAvance.collectAsStateWithLifecycle()
     val conversations by modele.conversationsRadio.collectAsStateWithLifecycle()
     val nonLus by modele.nonLusRadio.collectAsStateWithLifecycle()
+    val mentions by modele.mentionsRadio.collectAsStateWithLifecycle()
     var onglet by rememberSaveable { mutableStateOf(0) }
     var recherche by rememberSaveable { mutableStateOf("") }
-    if (!modele.modeRadioAvance || etat.phase != LiaisonRadio.Phase.PRETE) return
+    // Toute radio connectée, plus seulement en mode avancé (23/11/2026) : ses canaux sont des
+    // moyens de conversation comme les autres. Le mode avancé garde les réglages.
+    if (etats.none { it.phase == LiaisonRadio.Phase.PRETE }) return
+    if (etat.phase != LiaisonRadio.Phase.PRETE) {
+        etats.firstOrNull { it.phase == LiaisonRadio.Phase.PRETE }?.protocole?.let { p -> LaunchedEffect(p) { modele.choisirRadio(p) } }
+        return
+    }
     val pilote = modele.piloteRadio ?: return
     val pr = pilote.protocole
     fun k(reste: String) = MessagerieRadio.cle(pr, reste)
@@ -88,14 +95,16 @@ fun PanneauRadio(modele: ModeleApplication) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("Radio ${etat.protocole?.libelle ?: ""} · ${etat.nom ?: ""}", style = MaterialTheme.typography.titleMedium)
-            // Deux radios sur le téléphone (23/11/2026) : on choisit celle qu'on regarde.
+            // Le moyen (Meshtastic, MeshCore), avec ses non-lus et ses mentions ; deux radios sur
+            // le téléphone : on choisit celle qu'on regarde.
             val pretes = etats.filter { it.phase == LiaisonRadio.Phase.PRETE }
-            if (pretes.size > 1) Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pretes.forEach { e ->
                     val p = e.protocole ?: return@forEach
                     val nonLu = nonLus.filterKeys { it.startsWith(p.name + "|") }.values.sum()
+                    val mention = mentions.filterKeys { it.startsWith(p.name + "|") }.values.sum()
                     FilterChip(selected = p == pr, onClick = { modele.choisirRadio(p) },
-                        label = { Text(p.libelle + if (nonLu > 0) " ($nonLu)" else "") })
+                        label = { Text(p.libelle) }, trailingIcon = { PastilleNonLus(nonLu, mention) })
                 }
             }
             TabRow(selectedTabIndex = onglet) {
@@ -118,7 +127,7 @@ fun PanneauRadio(modele: ModeleApplication) {
                         Text(dernier?.let { "${if (it.moi) "Moi" else it.auteur.ifBlank { "?" }} : ${it.texte}" } ?: e.detail,
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
-                    nonLus[e.cle]?.takeIf { it > 0 }?.let { Badge { Text("$it") } }
+                    PastilleNonLus(nonLus[e.cle] ?: 0, mentions[e.cle] ?: 0)
                 }
                 HorizontalDivider()
             }
