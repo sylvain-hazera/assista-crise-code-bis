@@ -45,4 +45,23 @@ class PurgeTest {
         benevole.chargerLesDossiers(setOf("t1"))
         assertEquals(listOf("d1"), benevole.dossiers.value.map { it.id })
     }
+
+    @Test fun seulesLesMissionsDeMesEquipesRestent() = runTest {
+        val magasin = MagasinEnMemoire()
+        val session = Session(magasin)
+        val file = FileAttente(magasin) { 1_000_000L }
+        val api = ClientApi(HttpClient(MockEngine { d ->
+            if (d.url.encodedPath.endsWith("token/")) respond(compte, HttpStatusCode.OK, json)
+            else respond("""[{"id":"m1","titre":"La mienne","statut":"EN_COURS","equipe_ids":["t1"]},
+                             {"id":"m2","titre":"Celle d'une autre institution","statut":"EN_COURS","equipe_ids":["t9"]}]""", HttpStatusCode.OK, json)
+        }), "https://exemple.test/api", session)
+        api.connecter("c@exemple.fr", "secret")
+        val missions = DepotMissions(api, magasin, file) { setOf("t1") }
+        missions.rafraichir()
+        assertEquals(listOf("m1"), missions.missions.value.map { it.id })
+        // Équipes pas encore connues : rien n'est retiré.
+        val sansEquipes = DepotMissions(api, magasin, file)
+        sansEquipes.rafraichir()
+        assertEquals(listOf("m1", "m2"), sansEquipes.missions.value.map { it.id })
+    }
 }

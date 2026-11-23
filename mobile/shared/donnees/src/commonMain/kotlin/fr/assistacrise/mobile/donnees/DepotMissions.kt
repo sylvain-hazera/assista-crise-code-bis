@@ -17,6 +17,11 @@ class DepotMissions(
     private val api: ClientApi,
     private val magasin: Magasin,
     private val file: FileAttente,
+    /** Mes équipes (23/11/2026) : le téléphone ne garde que leurs missions. Un compte
+     * administrateur reçoit du serveur toutes celles de la zone ; l'application de terrain n'en a
+     * que faire (« pourquoi j'ai ces missions ? »). Vide : on ne filtre pas (équipes pas encore
+     * lues ; un intervenant ne reçoit de toute façon que les missions de ses équipes). */
+    private val mesEquipes: () -> Set<String> = { emptySet() },
 ) {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
@@ -36,7 +41,9 @@ class DepotMissions(
             // est terminée et transférée, ça s'efface ») -- sauf tant qu'une action la concernant
             // attend d'être envoyée. Le serveur, lui, garde tout.
             val enAttente = file.actions.value.map { it.cible }.toSet()
+            val equipes = mesEquipes()
             val gardees = r.valeur.filter { it.statut != StatutMission.TERMINEE || it.id in enAttente }
+                .filter { equipes.isEmpty() || it.equipes.any(equipes::contains) || it.id in enAttente }
             magasin.ecrire(FICHIER, json.encodeToString(ListSerializer(Mission.serializer()), gardees))
             _missions.value = gardees
             Reponse.Ok(Unit)

@@ -1554,3 +1554,8 @@ lisent en trois niveaux : la pastille de l'enveloppe (onglet Équipes), puis le 
 Meshtastic, MeshCore), puis l'équipe ou le canal ; bleue, rouge avec « @ » quand on m'a
 mentionné. Les canaux radio s'affichent pour toute radio connectée, plus seulement en mode
 avancé.
+
+**0.22.2 (23/11/2026) : seulement les missions de mes équipes.** Un compte administrateur recevait
+toutes les missions de la zone (« pourquoi j'ai ces missions ? ») ; le téléphone ne garde
+désormais que celles de ses équipes (et celles qu'une action en attente concerne). Tant que les
+équipes ne sont pas encore lues, rien n'est retiré.

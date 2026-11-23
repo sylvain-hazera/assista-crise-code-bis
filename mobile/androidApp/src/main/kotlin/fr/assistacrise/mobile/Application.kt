@@ -148,7 +148,7 @@ class Application : android.app.Application() {
         kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             .decodeFromString(fr.assistacrise.mobile.domaine.VersionPubliee.serializer(), texte)
     }.getOrNull()
-    val depot by lazy { DepotMissions(api, magasin, file) }
+    val depot by lazy { DepotMissions(api, magasin, file) { equipes.equipes.value.map { it.id }.toSet() } }
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
     val citoyen by lazy { DepotCitoyen(api, magasin, file) }
