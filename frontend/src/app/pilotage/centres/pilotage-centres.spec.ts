@@ -59,6 +59,10 @@ describe('Pilotage — centres (23/11/2026)', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Famille');
     expect(fixture.nativeElement.textContent).toContain('Groupe');
+    // L'admission d'abord, les présents ensuite.
+    const formulaire = fixture.nativeElement.querySelector('form.secretariat-form');
+    const presents = fixture.nativeElement.querySelector('.headcount');
+    expect(formulaire.compareDocumentPosition(presents) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Régime alimentaire');
     fixture.componentInstance.fermerSecretariat();
     fixture.detectChanges();
