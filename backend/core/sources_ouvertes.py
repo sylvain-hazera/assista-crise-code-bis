@@ -26,7 +26,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    antennes_mobiles, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
+    antennes_mobiles, cartographie_meshcore, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
     doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie, referentiel_adresses,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
@@ -134,6 +134,10 @@ SOURCES = {
                datetime.timedelta(hours=6), datetime.timedelta(hours=36), "Météo-France"),
         # Le service ne reçoit les mesures que par paquets, avec du retard : un relevé toutes les
         # vingt minutes n'en perd aucune, et ménage un service qui n'est pas une API publiée.
+        # Cartographie MeshCore publique des instances CoreScope (meshstats), 23/11/2026 : un
+        # seul import manuel jusque-là. Les instances recalculent leurs scores à l'heure.
+        Source("CARTOGRAPHIE_MESHCORE", "Cartographie MeshCore publique (CoreScope)", cartographie_meshcore.relever,
+               datetime.timedelta(minutes=59), datetime.timedelta(hours=6), "CoreScope (instances meshstats)"),
         Source("RADIOACTIVITE", "Radioactivité ambiante (balises Téléray)", radioactivite.relever,
                datetime.timedelta(minutes=19), datetime.timedelta(hours=3),
                "ASNR - réseau Téléray"),

@@ -25,7 +25,7 @@ from django.core.management.base import CommandError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.management.commands.importer_cartographie_meshcore import ROLES
+from core.cartographie_meshcore import ROLES
 from core.models import (
     Environment, NoeudPublicMeshCore, NoeudUtilisateurMeshtastic,
 )
@@ -91,7 +91,7 @@ def importer(par_role, **options):
     sortie = StringIO()
     faux = FauxClient(par_role)
     faux.headers = {}
-    with patch('core.management.commands.importer_cartographie_meshcore.requests.Session',
+    with patch('core.cartographie_meshcore.requests.Session',
                return_value=faux):
         call_command('importer_cartographie_meshcore', instance=INSTANCE, stdout=sortie,
                      **options)
@@ -189,7 +189,7 @@ class TestImport:
             def get(self, *_a, **_kw):
                 raise requests.RequestException("connexion refusée")
 
-        with patch('core.management.commands.importer_cartographie_meshcore.requests.Session',
+        with patch('core.cartographie_meshcore.requests.Session',
                    return_value=ClientQuiEchoue({})):
             with pytest.raises(CommandError, match="Échec de lecture"):
                 call_command('importer_cartographie_meshcore', instance=INSTANCE,
@@ -295,3 +295,28 @@ class TestServiceALaCarte:
         client.force_authenticate(user=operateur)
         reponse = client.post(URL_LISTE, {'pubkey_hex': 'ff' * 32}, format='json')
         assert reponse.status_code in (403, 405)
+
+
+@pytest.mark.django_db
+def test_la_veille_resynchronise_chaque_instance_connue():
+    """23/11/2026 : un seul import manuel jusque-là ; la veille du territoire le refait chaque heure,
+    pour chaque instance déjà importée, et une instance en panne n'arrête pas les autres."""
+    from django.utils import timezone
+    from core import cartographie_meshcore, sources_ouvertes
+    from core.models import NoeudPublicMeshCore
+
+    assert "CARTOGRAPHIE_MESHCORE" in sources_ouvertes.SOURCES
+    for instance in ("https://a.invalide", "https://b.invalide/"):
+        NoeudPublicMeshCore.objects.create(instance=instance, pubkey_hex="ab" * 32, nom="x", role="repeater",
+                                           date_import=timezone.now())
+    appels = []
+
+    def faux_import(instance, *a, **k):
+        appels.append(instance)
+        if "a.invalide" in instance:
+            raise cartographie_meshcore.ImportImpossible("panne")
+        return {"lus": 12, "crees": 0, "majs": 12, "hashs": {}}
+
+    with patch("core.cartographie_meshcore.importer", side_effect=faux_import):
+        assert cartographie_meshcore.relever() == 12
+    assert appels == ["https://a.invalide", "https://b.invalide"]
