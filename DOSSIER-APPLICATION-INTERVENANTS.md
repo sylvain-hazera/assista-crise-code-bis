@@ -1501,3 +1501,9 @@ détecte le satellite et s'y connecte, et le cas échéant demande l'IP. »
 **0.20.1 (23/11/2026)** : sur la carte, « Créer à cet endroit » s'ouvre dans une fenêtre au-dessus
 de l'écran, qui défile au besoin : posée sur la carte, elle débordait avec plusieurs crises et
 écrasait les trois boutons (demande, signalement, offre).
+
+**0.20.2 (23/11/2026)** : ce qui est terminé et transmis quitte le téléphone. Une mission
+terminée n'est plus gardée (sauf tant qu'une action la concernant attend d'être envoyée), un
+dossier clos ou résolu non plus, avec ses commentaires et photos en cache. Le reste — missions
+en cours, dossiers à faire avec leurs adresses et contacts, points de la crise, messages des
+équipes — continue d'être téléchargé à chaque synchronisation, sans geste de l'intervenant.

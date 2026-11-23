@@ -238,7 +238,8 @@ class BenevoleTest {
             {"id":"d3","titre":"Ailleurs","equipe":"t9","priorite":"URGENTE","statut":"AFFECTE"},
             {"id":"d4","titre":"Fini","equipe":"t1","priorite":"URGENTE","statut":"CLOTURE"}]""")
         banc.benevole.chargerLesDossiers(setOf("t1"))
-        assertEquals(listOf("d2", "d1", "d4"), banc.benevole.dossiers.value.map(Dossier::id))
+        // Le dossier clos (d4) ne reste pas sur le téléphone (23/11/2026).
+        assertEquals(listOf("d2", "d1"), banc.benevole.dossiers.value.map(Dossier::id))
     }
 
     @Test fun laFicheNEnvoieJamaisLeSecteur() = runTest {

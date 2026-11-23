@@ -647,7 +647,12 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     // Les points des crises ouvertes, pour le GPS hors ligne.
                     app.points.rafraichir(crises.value.filter { it.ouverte }.map { it.id })
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
-                    if (equipes.value.isNotEmpty()) app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet())
+                    if (equipes.value.isNotEmpty()) {
+                        if (app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet()) is Reponse.Ok) {
+                            // Ce qui n'est plus à faire quitte le téléphone, photos et commentaires compris.
+                            app.dossiers.garderSeulement(app.benevole.dossiers.value.map { it.id }.toSet())
+                        }
+                    }
                     compte.value?.id?.let { app.benevole.chargerLesMobilisations(it) }
                     // Les satellites de mon institution, gardés pour le jour où le central se tait.
                     if (app.serveur.satellite.value == null) {

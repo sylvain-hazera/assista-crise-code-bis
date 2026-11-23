@@ -112,5 +112,14 @@ class DepotDossiers(
     private suspend fun <T> lire(nom: String, forme: KSerializer<T>): T? =
         magasin.lire(nom)?.let { runCatching { json.decodeFromString(forme, it) }.getOrNull() }
 
+    /** Oublie commentaires et photos en cache des dossiers qui ne sont plus à faire (23/11/2026). */
+    suspend fun garderSeulement(dossiers: Set<String>) {
+        (_commentaires.value.keys + _photos.value.keys).filter { it !in dossiers }.forEach {
+            magasin.effacer("commentaires-$it"); magasin.effacer("photos-$it")
+        }
+        _commentaires.value = _commentaires.value.filterKeys { it in dossiers }
+        _photos.value = _photos.value.filterKeys { it in dossiers }
+    }
+
     private suspend fun <T> garder(nom: String, forme: KSerializer<T>, valeur: T) = magasin.ecrire(nom, json.encodeToString(forme, valeur))
 }

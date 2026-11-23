@@ -32,8 +32,13 @@ class DepotMissions(
 
     suspend fun rafraichir(): Reponse<Unit> = when (val r = api.missions()) {
         is Reponse.Ok -> {
-            magasin.ecrire(FICHIER, json.encodeToString(ListSerializer(Mission.serializer()), r.valeur))
-            _missions.value = r.valeur
+            // Une mission terminée ne reste pas sur le téléphone (23/11/2026 : « quand la mission
+            // est terminée et transférée, ça s'efface ») -- sauf tant qu'une action la concernant
+            // attend d'être envoyée. Le serveur, lui, garde tout.
+            val enAttente = file.actions.value.map { it.cible }.toSet()
+            val gardees = r.valeur.filter { it.statut != StatutMission.TERMINEE || it.id in enAttente }
+            magasin.ecrire(FICHIER, json.encodeToString(ListSerializer(Mission.serializer()), gardees))
+            _missions.value = gardees
             Reponse.Ok(Unit)
         }
         is Reponse.Refus -> r

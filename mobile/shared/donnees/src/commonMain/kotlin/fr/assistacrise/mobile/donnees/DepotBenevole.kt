@@ -133,7 +133,9 @@ class DepotBenevole(
     /** Les dossiers de MES équipes : le serveur en rend parfois davantage, selon le rôle. */
     suspend fun chargerLesDossiers(mesEquipes: Set<String>): Reponse<Unit> = when (val r = api.dossiers()) {
         is Reponse.Ok -> {
-            val miens = Dossier.trier(r.valeur.filter { it.equipe != null && it.equipe in mesEquipes })
+            // Les dossiers clos ou résolus ne restent pas sur le téléphone (23/11/2026) : seul ce
+            // qui reste à faire est gardé hors réseau. Le serveur garde tout.
+            val miens = Dossier.trier(r.valeur.filter { it.equipe != null && it.equipe in mesEquipes && !it.clos })
             garder("dossiers", ListSerializer(Dossier.serializer()), miens)
             _dossiers.value = miens
             Reponse.Ok(Unit)
