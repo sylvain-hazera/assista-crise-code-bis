@@ -14153,16 +14153,26 @@ class PerimetreAdminView(APIView):
                           if mienne is not None else None)
         etat["institutions"] = []
         if etat["administrateur"]:
-            institutions = Institution.objects.filter(actif=True, environment=get_active_environment(request))
+            # 23/11/2026 : la liste entière était coupée à 500 (plus de 550 institutions après
+            # l'amorçage de la Gironde) -- les dernières par ordre alphabétique n'y figuraient
+            # jamais. Le sélecteur cherche désormais : quelques lettres du nom, de la commune ou
+            # du code postal, et 50 résultats au plus. Sans recherche, rien n'est envoyé.
             recherche = (request.query_params.get("q") or "").strip()
-            if recherche:
-                institutions = institutions.filter(
-                    Q(nom__icontains=recherche) | Q(nom_affichage__icontains=recherche))
-            etat["institutions"] = [
-                {"id": str(i.id), "nom": i.nom_affichage or i.nom,
-                 "type_libelle": i.type.libelle if i.type_id else ""}
-                for i in institutions.select_related("type").order_by("nom")[:500]
-            ]
+            if len(recherche) >= 2:
+                institutions = Institution.objects.filter(actif=True, environment=get_active_environment(request)).filter(
+                    Q(nom__icontains=recherche) | Q(nom_affichage__icontains=recherche)
+                    | Q(commune_nom__icontains=recherche) | Q(commune_code_postal__startswith=recherche))
+                etat["institutions"] = [
+                    {"id": str(i.id), "nom": i.nom_affichage or i.nom,
+                     "type_libelle": i.type.libelle if i.type_id else "",
+                     "code_postal": i.commune_code_postal or "", "commune": i.commune_nom or ""}
+                    for i in institutions.select_related("type").order_by("nom")[:50]
+                ]
+        institution = etat.get("institution")
+        if institution:
+            regardee = Institution.objects.filter(pk=institution["id"]).first()
+            if regardee is not None:
+                institution["code_postal"] = regardee.commune_code_postal or ""
         return Response(etat)
 
 

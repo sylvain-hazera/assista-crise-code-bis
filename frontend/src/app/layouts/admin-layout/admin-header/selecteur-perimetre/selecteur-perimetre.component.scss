@@ -1,27 +1,54 @@
 .perimetre {
-  display: flex; align-items: center; gap: .35rem;
-  padding: .25rem .6rem; border-radius: 999px;
-  border: 1px solid var(--ac-border-strong, #d1d5db);
-  background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #374151);
-  font-size: .85rem;
-
-  .material-icons { font-size: 1.1rem; }
-  .perimetre-titre { font-weight: 600; white-space: nowrap; }
-  select {
-    max-width: 16rem; padding: .15rem .25rem; border: none; border-radius: 6px;
-    background: transparent; color: inherit; font: inherit; cursor: pointer;
+  position: relative;
+  .declencheur {
+    display: flex; align-items: center; gap: .35rem; max-width: 22rem;
+    padding: .25rem .6rem; border-radius: 999px; cursor: pointer; font: inherit; font-size: .85rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #374151);
     &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 1px; }
   }
+  .material-icons { font-size: 1.1rem; }
+  .perimetre-titre { font-weight: 600; white-space: nowrap; }
+  .libelle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
   // On ne regarde pas son institution : le sélecteur se voit, pour qu'une liste « trop pleine »
   // ou « trop vide » s'explique d'un coup d'œil.
-  &.ailleurs {
+  &.ailleurs .declencheur {
     border-color: var(--ac-amber-text, #92400e);
     background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e);
   }
 }
 
+.voile { position: fixed; inset: 0; z-index: 90; }
+.panneau {
+  position: absolute; top: calc(100% + .35rem); left: 0; z-index: 91; width: min(26rem, 92vw);
+  display: flex; flex-direction: column; gap: .4rem; padding: .5rem;
+  background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+  border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+
+  button {
+    display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left; cursor: pointer;
+    border: none; background: none; padding: .5rem .55rem; border-radius: 6px; font: inherit; font-size: .9rem; color: inherit;
+    &:hover, &:focus-visible { background: var(--ac-surface-2, #f3f4f6); outline: none; }
+    &[aria-selected="true"] { font-weight: 600; color: var(--brand-primary, #2563eb); }
+  }
+  .fixes { display: flex; flex-direction: column; border-bottom: 1px solid var(--ac-border, #e5e7eb); padding-bottom: .3rem; }
+  .recherche {
+    display: flex; align-items: center; gap: .4rem; padding: .35rem .5rem;
+    border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px;
+    input { flex: 1; border: none; outline: none; background: transparent; color: inherit; font: inherit; font-size: .9rem; min-width: 0; }
+  }
+  .resultats { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column;
+    button { flex-direction: column; align-items: flex-start; gap: .1rem; } }
+  .nom { font-weight: 500; }
+  .details { font-size: .78rem; color: var(--ac-text-muted, #6b7280); }
+  .cp { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ac-text, #374151); margin-right: .2rem; }
+  .aide { margin: .3rem .5rem; font-size: .82rem; color: var(--ac-text-muted, #6b7280); }
+}
+
 @media (max-width: 900px) {
   .perimetre-titre { display: none; }
-  .perimetre select { max-width: 9rem; }
+  .perimetre .declencheur { max-width: 11rem; }
+  // Téléphone : le panneau prend la largeur de l'écran, sous la barre du haut.
+  .panneau { position: fixed; top: 3.6rem; left: 4vw; width: 92vw; }
 }

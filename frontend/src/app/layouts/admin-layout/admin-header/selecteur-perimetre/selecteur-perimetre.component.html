@@ -1,20 +1,53 @@
 @if (visible) {
-  <label class="perimetre" [class.ailleurs]="horsDeChezSoi"
-         title="Ce que montrent les listes : votre institution, une autre, ou toute la plateforme. Ne retire aucun droit.">
-    <span class="material-icons" aria-hidden="true">visibility</span>
-    <span class="perimetre-titre">Je regarde</span>
-    <select [ngModel]="choix" (ngModelChange)="choisir($event)" aria-label="Périmètre affiché">
-      @if (etat!.mienne) {
-        <option [value]="MIENNE">Mon institution — {{ etat!.mienne!.nom }}</option>
-      }
-      <option [value]="TOUT">Toute la plateforme</option>
-      @if (autres.length) {
-        <optgroup label="Une autre institution">
-          @for (institution of autres; track institution.id) {
-            <option [value]="institution.id">{{ institution.nom }}</option>
+  <div class="perimetre" [class.ailleurs]="horsDeChezSoi" (keydown.escape)="fermer()"
+       title="Ce que montrent les listes : votre institution, une autre, ou toute la plateforme. Ne retire aucun droit.">
+    <button type="button" class="declencheur" (click)="basculer()" [attr.aria-expanded]="ouvert"
+            aria-haspopup="listbox" aria-label="Périmètre affiché">
+      <span class="material-icons" aria-hidden="true">visibility</span>
+      <span class="perimetre-titre">Je regarde</span>
+      <span class="libelle">{{ libelleCourant }}</span>
+      <span class="material-icons" aria-hidden="true">{{ ouvert ? 'expand_less' : 'expand_more' }}</span>
+    </button>
+
+    @if (ouvert) {
+      <div class="voile" (click)="fermer()"></div>
+      <div class="panneau" role="dialog" aria-label="Choisir le périmètre">
+        <div class="fixes" role="listbox">
+          @if (etat!.mienne) {
+            <button type="button" role="option" [attr.aria-selected]="choix === MIENNE" (click)="choisir(MIENNE)">
+              <span class="material-icons" aria-hidden="true">home</span> Mon institution — {{ etat!.mienne!.nom }}
+            </button>
           }
-        </optgroup>
-      }
-    </select>
-  </label>
+          <button type="button" role="option" [attr.aria-selected]="choix === TOUT" (click)="choisir(TOUT)">
+            <span class="material-icons" aria-hidden="true">public</span> Toute la plateforme
+          </button>
+        </div>
+        <label class="recherche">
+          <span class="material-icons" aria-hidden="true">search</span>
+          <input #champ type="search" [ngModel]="recherche" (ngModelChange)="taper($event)" (keydown.enter)="premier()"
+                 placeholder="Nom, commune ou code postal…" aria-label="Rechercher une institution" autocomplete="off">
+        </label>
+        <div class="resultats" role="listbox" aria-label="Institutions trouvées">
+          @if (recherche.trim().length < 2) {
+            <p class="aide">Tapez au moins deux lettres (ou le début d'un code postal).</p>
+          } @else if (cherche) {
+            <p class="aide">Recherche…</p>
+          } @else if (!autres.length) {
+            <p class="aide">Aucune institution ne correspond.</p>
+          } @else {
+            @for (i of autres; track i.id) {
+              <button type="button" role="option" [attr.aria-selected]="choix === i.id" (click)="choisir(i.id)">
+                <span class="nom">{{ i.nom }}</span>
+                <span class="details">
+                  @if (i.code_postal) { <span class="cp">{{ i.code_postal }}</span> }
+                  {{ i.commune }}@if (i.type_libelle) { · {{ i.type_libelle }} }
+                </span>
+              </button>
+            }
+            @if (autres.length >= 50) { <p class="aide">50 premiers résultats : précisez la recherche.</p> }
+          }
+        </div>
+      </div>
+    }
+  </div>
 }

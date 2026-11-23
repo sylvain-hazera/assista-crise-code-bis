@@ -206,14 +206,24 @@ class TestLeSelecteur:
         assert reponse["administrateur"] is True and reponse["mode"] == "INSTITUTION"
         assert reponse["institution"]["nom"] == "Mairie de Saint-Étienne"
         assert reponse["mienne"]["id"] == str(monde["ici"].id)
-        # Même en regardant sa mairie, la liste est entière : sinon on ne pourrait plus en sortir.
-        assert {"Mairie de Lille", "Mairie de Saint-Étienne"} <= {i["nom"] for i in reponse["institutions"]}
+        # 23/11/2026 : sans recherche, aucune liste (elle était coupée à 500) ; le sélecteur
+        # cherche. Même en regardant sa mairie, la recherche porte sur toute la plateforme :
+        # sinon on ne pourrait plus en sortir.
+        assert reponse["institutions"] == []
+        cherche = _client(monde["admin"]).get(reverse("perimetre_admin"), {"q": "mairie"}, HTTP_X_PERIMETRE="MIENNE", **PROD).json()
+        assert {"Mairie de Lille", "Mairie de Saint-Étienne"} <= {i["nom"] for i in cherche["institutions"]}
 
     def test_la_recherche_restreint_la_liste(self, monde):
         reponse = _client(monde["admin"]).get(reverse("perimetre_admin"), {"q": "lille"}, **PROD).json()
 
         assert [i["nom"] for i in reponse["institutions"]] == ["Mairie de Lille"]
         assert reponse["mode"] == "TOUT"
+
+    def test_la_recherche_par_code_postal_et_le_code_affiche(self, monde):
+        from core.models import Institution
+        Institution.objects.filter(nom="Mairie de Lille").update(commune_code_postal="59000", commune_nom="Lille")
+        reponse = _client(monde["admin"]).get(reverse("perimetre_admin"), {"q": "590"}, **PROD).json()
+        assert [(i["nom"], i["code_postal"], i["commune"]) for i in reponse["institutions"]] == [("Mairie de Lille", "59000", "Lille")]
 
     def test_un_choix_qui_ne_designe_plus_rien_est_signale_sans_bloquer(self, monde):
         """Institution supprimée depuis : l'écran doit pouvoir revenir à « mon institution »."""

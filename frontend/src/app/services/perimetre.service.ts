@@ -12,9 +12,18 @@ export interface EtatPerimetre {
   administrateur: boolean;
   /** `INVALIDE` : le choix gardé ne désigne plus rien (institution supprimée). */
   mode: 'TOUT' | 'INSTITUTION' | 'INVALIDE' | null;
-  institution: { id: string; nom: string } | null;
+  institution: { id: string; nom: string; code_postal?: string } | null;
   mienne: { id: string; nom: string } | null;
-  institutions: { id: string; nom: string; type_libelle: string }[];
+  /** Rendue seulement pour une recherche (2 lettres au moins), 50 au plus (23/11/2026). */
+  institutions: InstitutionPerimetre[];
+}
+
+export interface InstitutionPerimetre {
+  id: string;
+  nom: string;
+  type_libelle: string;
+  code_postal?: string;
+  commune?: string;
 }
 
 /** Périmètre de consultation d'un administrateur de la plateforme.
@@ -50,5 +59,10 @@ export class PerimetreService {
 
   etat(): Observable<EtatPerimetre> {
     return this.http.get<EtatPerimetre>(`${environment.apiUrl}/me/perimetre/`);
+  }
+
+  /** Quelques lettres du nom, de la commune ou du code postal. */
+  rechercher(q: string): Observable<EtatPerimetre> {
+    return this.http.get<EtatPerimetre>(`${environment.apiUrl}/me/perimetre/`, { params: { q } });
   }
 }

@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -55,15 +55,40 @@ describe('SelecteurPerimetreComponent', () => {
 
   afterEach(() => { http.verify(); localStorage.removeItem(PerimetreService.CLE); });
 
-  it('propose d’abord sa propre institution, puis toute la plateforme, puis les autres', () => {
+  it('propose d’abord sa propre institution, puis toute la plateforme, puis cherche les autres', fakeAsync(() => {
     creer();
-    const options: HTMLOptionElement[] = Array.from(fixture.nativeElement.querySelectorAll('option'));
-
-    expect(options.map(o => o.textContent!.trim())).toEqual(
-      ['Mon institution — Mairie de Saint-Étienne', 'Toute la plateforme', 'Mairie de Lille']);
+    component.basculer();
+    fixture.detectChanges();
+    const fixes: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.fixes button'));
+    expect(fixes.map(b => b.textContent!.replace(/home|public/, '').trim())).toEqual(
+      ['Mon institution — Mairie de Saint-Étienne', 'Toute la plateforme']);
     expect(component.choix).toBe('MIENNE');
     expect(fixture.nativeElement.querySelector('.perimetre').classList).not.toContain('ailleurs');
-  });
+
+    // 23/11/2026 : la liste était coupée à 500 ; on cherche, et le code postal s'affiche.
+    component.taper('li');
+    tick(300);
+    http.expectOne(r => r.url === `${api}/me/perimetre/` && r.params.get('q') === 'li').flush({
+      ...ETAT, institutions: [
+        { id: 'ici', nom: 'Mairie de Saint-Étienne', type_libelle: 'Mairie' },
+        { id: 'ailleurs', nom: 'Mairie de Lille', type_libelle: 'Mairie', code_postal: '59000', commune: 'Lille' },
+      ],
+    });
+    fixture.detectChanges();
+    const trouves: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.resultats button'));
+    expect(trouves.length).toBe(1);
+    expect(trouves[0].textContent).toContain('Mairie de Lille');
+    expect(trouves[0].textContent).toContain('59000');
+    component.premier();
+    expect(localStorage.getItem(PerimetreService.CLE)).toBe('ailleurs');
+  }));
+
+  it('ne cherche pas avant deux lettres', fakeAsync(() => {
+    creer();
+    component.taper('l');
+    tick(300);
+    expect(component.autres).toEqual([]);
+  }));
 
   it('n’existe pas pour un compte qui n’est pas administrateur, et ne demande rien', () => {
     role = UserRole.LOCAL_AUTH;
@@ -106,7 +131,7 @@ describe('SelecteurPerimetreComponent', () => {
     creer({ ...ETAT, mode: 'TOUT', institution: null, mienne: null });
 
     expect(component.choix).toBe('TOUT');
-    expect(fixture.nativeElement.querySelector('option').textContent.trim()).toBe('Toute la plateforme');
+    expect(component.libelleCourant).toBe('Toute la plateforme');
   });
 
   describe('le choix part avec chaque requête', () => {
