@@ -106,12 +106,32 @@
             }
 
             @if (ongletRessource === 'offres') {
+              <!-- Bénévoles spontanés → une équipe, en un geste (23/11/2026). -->
+              <div class="barre-benevoles">
+                <label class="case"><input type="checkbox" [(ngModel)]="seulementBenevoles"> Bénévoles seulement</label>
+                @if (selectionBenevoles.size) {
+                  <span>{{ selectionBenevoles.size }} bénévole(s) sélectionné(s)</span>
+                  <button type="button" class="btn-equipe" (click)="ouvrirEquipeBenevoles()">
+                    <span class="material-icons" aria-hidden="true">group_add</span> Créer une équipe avec la sélection
+                  </button>
+                  <button type="button" class="lien" (click)="selectionBenevoles.clear()">Vider</button>
+                } @else {
+                  <span class="hint-petit">Cochez des bénévoles pour constituer une équipe.</span>
+                }
+              </div>
               <table class="table-dense table-fiches">
                 <thead><tr><th></th><th>Offre</th><th>Compétences</th><th>Distance</th><th>Affecter à</th></tr></thead>
                 <tbody>
-                  @for (o of offresDisponibles; track o.id) {
+                  @for (o of offresAffichees; track o.id) {
                     <tr class="ligne-fiche genre-offre" [class.ouverte]="estOuvert('o:' + o.id)">
-                      <td><span class="genre-badge"><span class="material-icons">{{ iconeGenre('offre') }}</span></span></td>
+                      <td>
+                        @if (estBenevolat(o)) {
+                          <input type="checkbox" [checked]="selectionBenevoles.has(o.id!)" (change)="basculerBenevole(o)"
+                                 [attr.aria-label]="'Sélectionner ' + o.title">
+                        } @else {
+                          <span class="genre-badge"><span class="material-icons">{{ iconeGenre('offre') }}</span></span>
+                        }
+                      </td>
                       <td class="cellule-titre" (click)="basculerApercu('o:' + o.id, 'offre', o.id, o.has_photo)" title="Voir l'aperçu">
                         <span class="titre">{{ o.title }}</span>
                         @if (o.has_photo) { <span class="material-icons icone-photo" title="Photo">photo_camera</span> }
@@ -470,4 +490,21 @@
     (acceptee)="onImplicationAcceptee()"
     (fermee)="implicationAAccepter = null">
   </app-zone-acceptation-modal>
+}
+
+@if (equipeBenevoles; as e) {
+  <div class="voile-equipe" (click)="equipeBenevoles = null"></div>
+  <div class="dialogue-equipe" role="dialog" aria-modal="true" aria-labelledby="titre-equipe-benevoles">
+    <h2 id="titre-equipe-benevoles">Nouvelle équipe de {{ selectionBenevoles.size }} bénévole(s)</h2>
+    <label>Nom de l'équipe <input type="text" [(ngModel)]="e.nom" maxlength="100"></label>
+    <label>Couleur <input type="color" [(ngModel)]="e.couleur"></label>
+    <label>Description (facultatif) <textarea rows="2" [(ngModel)]="e.description"></textarea></label>
+    <p class="hint-petit">L'équipe est rattachée à cette crise et à votre institution. Chaque bénévole est prévenu et invité à confirmer.</p>
+    <div class="boutons-equipe">
+      <button type="button" class="lien" (click)="equipeBenevoles = null">Annuler</button>
+      <button type="button" class="btn-equipe" [disabled]="!e.nom.trim() || creationEquipeEnCours" (click)="creerEquipeBenevoles()">
+        {{ creationEquipeEnCours ? 'Création…' : "Créer l'équipe" }}
+      </button>
+    </div>
+  </div>
 }

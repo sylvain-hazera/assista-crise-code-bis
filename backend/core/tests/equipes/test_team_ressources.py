@@ -730,3 +730,50 @@ class TestCycleDeVieRessource:
         offer.refresh_from_db()
         assert offer.status == 'INDISPONIBLE'
         assert team_b.assigned_offers.filter(id=offer.id).exists()
+
+
+@pytest.mark.django_db
+class TestEquipeDepuisBenevolesSpontanes:
+    """23/11/2026 : constituer une équipe à partir d'offres de bénévolat, en un geste."""
+
+    def _benevoles(self, create_user, n=2):
+        ot, _ = OfferType.objects.get_or_create(type='Bénévolat', defaults={'description': ''})
+        offres = []
+        for i in range(n):
+            auteur = create_user(username=f'benev-spont{i}@test.fr', email=f'benev-spont{i}@test.fr', type='UTIL_SIMPLE')
+            offres.append(Offer.objects.create(title=f'Bras {i}', first_name_offer='B', last_name_offer=f'N{i}',
+                                               email_offer=f'benev-spont{i}@test.fr', status='DISPONIBLE',
+                                               offer_type=ot, author=auteur))
+        return offres
+
+    def test_cree_l_equipe_sur_la_crise_et_retient_les_benevoles(self, mairie_client, institution_a, create_user):
+        client, user = mairie_client
+        user.institution = institution_a
+        user.save()
+        crise = Crisis.objects.create(name='Crue test spontanes', type='INONDATION', location='POINT(4.5 45.4)')
+        offres = self._benevoles(create_user)
+        r = client.post(reverse('team-depuis-offres'), {
+            'nom': 'Bénévoles — Rive-de-Gier', 'crise': str(crise.id), 'offres': [str(o.id) for o in offres],
+        }, format='json')
+        assert r.status_code == 201, r.data
+        equipe = Team.objects.get(pk=r.data['id'])
+        assert equipe.institution == institution_a and crise in equipe.assigned_crises.all()
+        assert all(o.status == 'INDISPONIBLE' for o in Offer.objects.filter(pk__in=[o.id for o in offres]))
+        assert set(equipe.members.values_list('email_bidx', flat=True)) >= {blind_index(f'benev-spont{i}@test.fr') for i in range(2)}
+
+    def test_tout_ou_rien_si_une_offre_est_deja_retenue(self, mairie_client, institution_a, create_user):
+        client, _ = mairie_client
+        crise = Crisis.objects.create(name='Crue test spontanes 2', type='INONDATION', location='POINT(4.5 45.4)')
+        offres = self._benevoles(create_user)
+        Offer.objects.filter(pk=offres[1].pk).update(status='INDISPONIBLE')
+        r = client.post(reverse('team-depuis-offres'), {
+            'nom': 'Equipe', 'crise': str(crise.id), 'offres': [str(o.id) for o in offres]}, format='json')
+        assert r.status_code == 409
+        assert not Team.objects.filter(name='Equipe').exists()
+        assert Offer.objects.get(pk=offres[0].pk).status == 'DISPONIBLE'
+
+    def test_reserve_aux_acteurs_institutionnels(self, create_user):
+        citoyen = create_user(username='cit-spont@test.fr', email='cit-spont@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=citoyen)
+        assert client.post(reverse('team-depuis-offres'), {}, format='json').status_code == 403

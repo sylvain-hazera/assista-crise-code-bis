@@ -85,6 +85,11 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   dossiersNonAffectes: Dossier[] = [];
   signalementsNonAffectes: Dossier[] = [];
   offresDisponibles: Offer[] = [];
+  // --- Équipe à partir de bénévoles spontanés (23/11/2026) ---
+  seulementBenevoles = false;
+  selectionBenevoles = new Set<string>();
+  equipeBenevoles: { nom: string; couleur: string; description: string } | null = null;
+  creationEquipeEnCours = false;
   disponibilites: DisponibiliteOffre[] = [];
   retoursExternes: Offer[] = [];
   chargementRessource = false;
@@ -356,6 +361,49 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
 
   /** Équipes de la crise pour ce dossier : la suggérée, puis celles qui prennent déjà sa
    * compétence, puis les autres. */
+  /** Une offre de bénévolat (type d'offre « Bénévolat ») : de quoi constituer une équipe. */
+  estBenevolat(o: Offer): boolean {
+    return (o.offer_type_nom || '').toLowerCase().startsWith('bénévol');
+  }
+
+  get offresAffichees(): Offer[] {
+    return this.seulementBenevoles ? this.offresDisponibles.filter(o => this.estBenevolat(o)) : this.offresDisponibles;
+  }
+
+  basculerBenevole(o: Offer): void {
+    if (this.selectionBenevoles.has(o.id!)) this.selectionBenevoles.delete(o.id!); else this.selectionBenevoles.add(o.id!);
+  }
+
+  /** Ouvre le dialogue, avec un nom proposé d'après la commune la plus représentée. */
+  ouvrirEquipeBenevoles(): void {
+    const choisies = this.offresDisponibles.filter(o => this.selectionBenevoles.has(o.id!));
+    const communes = choisies.map(o => o.commune).filter((c): c is string => !!c);
+    const plusFrequente = communes.sort((a, b) => communes.filter(c => c === b).length - communes.filter(c => c === a).length)[0];
+    this.equipeBenevoles = { nom: `Bénévoles${plusFrequente ? ' — ' + plusFrequente : ''}`, couleur: '#16a34a', description: '' };
+  }
+
+  creerEquipeBenevoles(): void {
+    const e = this.equipeBenevoles;
+    if (!e || !e.nom.trim() || !this.criseId || this.creationEquipeEnCours) return;
+    this.creationEquipeEnCours = true;
+    const offres = [...this.selectionBenevoles];
+    this.teamService.depuisOffres({ nom: e.nom.trim(), couleur: e.couleur, description: e.description.trim(), crise: this.criseId, offres })
+      .subscribe({
+        next: (equipe) => {
+          this.creationEquipeEnCours = false;
+          this.equipeBenevoles = null;
+          this.selectionBenevoles.clear();
+          this.offresDisponibles = this.offresDisponibles.filter(o => !offres.includes(o.id!));
+          this.afficherToast(`Équipe « ${teamDisplayName(equipe)} » créée avec ${offres.length} bénévole(s) : ils sont prévenus et invités à confirmer.`);
+          this.chargerEquipes();
+        },
+        error: (err) => {
+          this.creationEquipeEnCours = false;
+          alert(this.messageErreur(err, "Impossible de créer l'équipe."));
+        },
+      });
+  }
+
   /** Le nom complet de l'équipe choisie pour ce dossier : le menu, étroit sur téléphone, le
    * tronque ; il s'affiche dessous, sur plusieurs lignes (23/11/2026). */
   libelleEquipe(d: Dossier): string {

@@ -349,3 +349,21 @@
 @media (max-width: 800px) {
   .apercu { grid-template-columns: 1fr; }
 }
+
+
+/* Bénévoles spontanés → équipe (23/11/2026). */
+.barre-benevoles { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: .4rem 0 .6rem; font-size: .85rem;
+  .case { display: inline-flex; gap: .3rem; align-items: center; }
+  .lien { border: none; background: none; color: var(--brand-primary, #2563eb); cursor: pointer; text-decoration: underline; } }
+.btn-equipe { display: inline-flex; align-items: center; gap: .3rem; border: none; border-radius: 6px; padding: .4rem .7rem;
+  background: #15803d; color: #fff; cursor: pointer; font: inherit; font-size: .85rem;
+  &:disabled { opacity: .55; cursor: default; } .material-icons { font-size: 1.1rem; } }
+.voile-equipe { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 60; }
+.dialogue-equipe { position: fixed; z-index: 61; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(28rem, 92vw);
+  display: flex; flex-direction: column; gap: .6rem; padding: 1.1rem; border-radius: 10px;
+  background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+  h2 { margin: 0; font-size: 1.1rem; }
+  label { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; }
+  input[type=text], textarea { font: inherit; padding: .4rem .5rem; border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px; }
+  .boutons-equipe { display: flex; justify-content: flex-end; gap: .5rem; align-items: center;
+    .lien { border: none; background: none; cursor: pointer; text-decoration: underline; color: inherit; } } }

@@ -30,4 +30,26 @@ describe('CelluleCriseComponent', () => {
     expect(patch).not.toHaveBeenCalled();
     expect(component.equipeOffre['offre-1']).toBeUndefined();
   });
+
+  it('constitue une équipe à partir des bénévoles cochés (23/11/2026)', () => {
+    const equipes = TestBed.inject(TeamService);
+    const creer = spyOn(equipes, 'depuisOffres').and.returnValue(of({ id: 'eq-9', name: 'Bénévoles — Rive-de-Gier' } as any));
+    spyOn(component as any, 'chargerEquipes');
+    component.criseId = 'crise-1';
+    component.offresDisponibles = [
+      { id: 'b1', title: 'Bras', offer_type_nom: 'Bénévolat', commune: 'Rive-de-Gier' },
+      { id: 'b2', title: 'Bras 2', offer_type_nom: 'Bénévolat', commune: 'Rive-de-Gier' },
+      { id: 'm1', title: 'Cuve', offer_type_nom: 'Matériel', commune: 'Lorette' },
+    ] as any;
+    component.seulementBenevoles = true;
+    expect(component.offresAffichees.map(o => o.id)).toEqual(['b1', 'b2']);
+    component.basculerBenevole(component.offresDisponibles[0]);
+    component.basculerBenevole(component.offresDisponibles[1]);
+    component.ouvrirEquipeBenevoles();
+    expect(component.equipeBenevoles?.nom).toBe('Bénévoles — Rive-de-Gier');
+    component.creerEquipeBenevoles();
+    expect(creer).toHaveBeenCalledWith(jasmine.objectContaining({ crise: 'crise-1', offres: ['b1', 'b2'] }));
+    expect(component.offresDisponibles.map(o => o.id)).toEqual(['m1']);
+    expect(component.equipeBenevoles).toBeNull();
+  });
 });

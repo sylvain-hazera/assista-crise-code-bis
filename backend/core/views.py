@@ -9492,7 +9492,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'rattacher_equipe', 'detacher_equipe', 'definir_encadrement',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'equipes_institution', 'institutions_liees',
             'ressources_mobilisees', 'assigner_crise', 'provisionner_canal_meshcore',
-            'provisionner_canal_meshtastic', 'provisionner_salon_matrix', 'designer_rcsc',
+            'provisionner_canal_meshtastic', 'provisionner_salon_matrix', 'designer_rcsc', 'depuis_offres',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -10550,6 +10550,53 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         _affecter_ressource(request, team, offer)
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=['post'], url_path='depuis-offres', permission_classes=[IsInstitutionalActor])
+    def depuis_offres(self, request):
+        """POST /api/teams/depuis-offres/ {nom, couleur?, description?, crise, offres[]} -- crée une
+        équipe à partir de bénévoles spontanés (offres d'aide), en un geste depuis la cellule de
+        crise (23/11/2026).
+
+        Mêmes règles que les deux gestes qu'il enchaîne : la création d'équipe (perform_create :
+        institution de l'appelant, salons, main courante) puis l'affectation de chaque offre
+        (_affecter_ressource : offre retenue, bénévole invité et ajouté, lien de confirmation).
+        Tout ou rien : une offre déjà retenue ailleurs fait échouer l'ensemble, sans équipe
+        à moitié créée."""
+        nom = (request.data.get('nom') or '').strip()[:100]
+        offre_ids = request.data.get('offres') or []
+        crise = Crisis.objects.filter(pk=request.data.get('crise') or None,
+                                      environment=get_active_environment(request)).first()
+        if not nom:
+            return Response({"error": "Donnez un nom à l'équipe."}, status=status.HTTP_400_BAD_REQUEST)
+        if crise is None:
+            return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(offre_ids, list) or not offre_ids:
+            return Response({"error": "Sélectionnez au moins un bénévole."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            offres = list(Offer.objects.filter(pk__in=offre_ids, environment=get_active_environment(request)))
+        except (ValueError, DjangoValidationError):
+            return Response({"error": "Identifiant d'offre invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(offres) != len(set(map(str, offre_ids))):
+            return Response({"error": "Une ou plusieurs offres sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+        retenues = [o for o in offres if o.status != Status.AVAILABLE or o.actif is False]
+        if retenues:
+            return Response({"error": f"{len(retenues)} offre(s) ne sont plus disponibles (déjà retenues ou retirées) : "
+                                      "rechargez la liste."}, status=status.HTTP_409_CONFLICT)
+        serializer = TeamSerializer(data={
+            'name': nom, 'color': (request.data.get('couleur') or '#3b82f6')[:7],
+            'description': (request.data.get('description') or '')[:2000] or None,
+            'assigned_crisis_ids': [str(crise.id)],
+        }, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            self.perform_create(serializer)
+            team = serializer.instance
+            for offre in offres:
+                _affecter_ressource(request, team, offre)
+            audit_log(request=request, action_code="CREATION", objet_type="Team", objet_id=team.id, crise=crise,
+                      commentaire=f"Équipe « {team.name} » constituée de {len(offres)} bénévole(s) spontané(s)")
+        team.refresh_from_db()
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='assigner-ressources')
     def assigner_ressources(self, request, pk=None):

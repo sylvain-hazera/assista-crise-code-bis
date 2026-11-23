@@ -83,6 +83,11 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${id}/assigner-ressource/`, { offer_id: offerId });
   }
 
+  /** Crée une équipe à partir de bénévoles spontanés (offres d'aide), en un geste (23/11/2026). */
+  depuisOffres(corps: { nom: string; couleur?: string; description?: string; crise: string; offres: string[] }): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/depuis-offres/`, corps);
+  }
+
   /** Plusieurs offres d'un coup (page Signalements) : mêmes règles qu'assignerRessource, les
    * offres déjà dans l'équipe sont ignorées. */
   assignerRessources(id: string, offerIds: string[]): Observable<{ team: Team; ajoutees: number; deja_affectees: number }> {
