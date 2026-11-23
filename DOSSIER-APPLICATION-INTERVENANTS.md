@@ -1559,3 +1559,8 @@ avancé.
 toutes les missions de la zone (« pourquoi j'ai ces missions ? ») ; le téléphone ne garde
 désormais que celles de ses équipes (et celles qu'une action en attente concerne). Tant que les
 équipes ne sont pas encore lues, rien n'est retiré.
+
+**0.22.3 (23/11/2026) : le haut des écrans hors formation.** Sans bandeau (ni formation, ni
+satellite), la barre du haut était vide et ne réservait plus la place de la barre d'état :
+titres et boutons (écran Carte : « Carte », « Hors ligne », « En ligne ») passaient sous l'heure
+et les icônes. Cette place est désormais réservée.

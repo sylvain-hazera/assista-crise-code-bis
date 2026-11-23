@@ -3,6 +3,8 @@ package fr.assistacrise.mobile
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -159,10 +161,18 @@ class MainActivity : ComponentActivity() {
                         // ne la reprend pas (23/11/2026).
                         val surSatellite = modele.etatServeur.collectAsStateWithLifecycle().value ==
                             fr.assistacrise.mobile.donnees.BasculeServeur.Etat.SATELLITE
+                        val enFormation = modele.zone.collectAsStateWithLifecycle().value == fr.assistacrise.mobile.donnees.Session.DEMO
                         androidx.compose.foundation.layout.Column {
                             fr.assistacrise.mobile.ui.BandeauSatellite(modele)
                             Box(if (surSatellite) Modifier.consumeWindowInsets(WindowInsets.safeDrawing) else Modifier) {
                                 fr.assistacrise.mobile.ui.BandeauFormation(modele)
+                            }
+                            // Sans bandeau, la barre du haut était vide et ne réservait plus la
+                            // place de la barre d'état : titres et boutons passaient sous l'heure
+                            // et les icônes (écran Carte, 23/11/2026).
+                            if (!surSatellite && !enFormation) {
+                                androidx.compose.foundation.layout.Spacer(
+                                    Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.safeDrawing))
                             }
                         }
                     },
