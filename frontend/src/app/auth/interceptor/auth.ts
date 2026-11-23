@@ -40,14 +40,35 @@ function isAuthEndpoint(url: string): boolean {
 // pour l'autocomplétion d'adresse) : un serveur externe qui ne les déclare pas dans son
 // Access-Control-Allow-Headers fait échouer le préflight CORS entier, cassant la requête
 // même pour un usage anonyme sans token (observé avec X-Environment sur l'API BAN).
-function isOwnApiRequest(url: string): boolean {
-  return url.startsWith(environment.apiUrl);
+/**
+ * L'adresse à employer si `url` vise notre API, ou null sinon.
+ *
+ * 23/11/2026 : en production, `apiUrl` est relatif (« /api »), mais les liens de pagination que
+ * rend le serveur (`next`) sont absolus (« https://www.assista-crise.fr/api/…?page=2 »). Ils
+ * n'étaient pas reconnus comme les nôtres : partis sans jeton, refusés (401), et la page
+ * Institutions affichait « Impossible de charger les données » dès qu'une seconde page
+ * existait. Une adresse absolue du même hôte, sous le chemin de l'API, est la nôtre ; on la
+ * ramène alors à la forme de `apiUrl` (relative en production : ni hôte ni schéma à recopier).
+ */
+export function adresseDeNotreApi(url: string, apiUrl: string = environment.apiUrl,
+                                  origine: string = globalThis.location?.origin ?? ''): string | null {
+  if (url.startsWith(apiUrl)) return url;
+  try {
+    const cible = new URL(url);
+    const base = new URL(apiUrl, origine || cible.origin);
+    if (cible.host !== base.host || !cible.pathname.startsWith(base.pathname)) return null;
+    return apiUrl.startsWith('/') ? cible.pathname + cible.search : base.origin + cible.pathname + cible.search;
+  } catch {
+    return null;   // adresse relative étrangère à l'API, ou illisible
+  }
 }
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  if (!isOwnApiRequest(req.url)) {
+  const adresse = adresseDeNotreApi(req.url);
+  if (adresse === null) {
     return next(req);
   }
+  if (adresse !== req.url) req = req.clone({ url: adresse });
 
   const authService = inject(AuthService);
   const token = authService.getToken();
