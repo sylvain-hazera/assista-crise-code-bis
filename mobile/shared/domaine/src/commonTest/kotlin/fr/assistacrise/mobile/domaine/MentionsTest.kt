@@ -20,4 +20,12 @@ class MentionsTest {
         assertFalse(Mentions.mentionne("lea@exemple.fr", moi))
         assertFalse(Mentions.mentionne("@ALPHA on arrive", moi))
     }
+
+    @Test fun taguerEtRepondre() {
+        kotlin.test.assertEquals("@Léa", Mentions.etiquette("Léa"))
+        kotlin.test.assertEquals("@[Léa Martin]", Mentions.etiquette("Léa Martin"))
+        val r = Mentions.reponse("Léa Martin", "rendez-vous au pont de la D88 dans dix minutes", "c'est noté")
+        kotlin.test.assertEquals("↪ @[Léa Martin] « rendez-vous au pont de la D88… » c'est noté", r)
+        assertTrue(Mentions.mentionne(r, moi))   // la personne à qui l'on répond est notifiée
+    }
 }

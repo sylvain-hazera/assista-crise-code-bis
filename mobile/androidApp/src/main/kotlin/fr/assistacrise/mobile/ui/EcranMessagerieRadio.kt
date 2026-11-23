@@ -148,6 +148,7 @@ fun EcranConversationRadio(modele: ModeleApplication) {
     val titre = if (canal) pilote?.canaux?.firstOrNull { "c:${it.index}" == reste }?.let { "Canal « ${it.nom} »" } ?: "Canal ${reste.removePrefix("c:")}"
                 else modele.nomDuContactRadio(cle)
     var texte by rememberSaveable(cle) { mutableStateOf("") }
+    var repondreA by androidx.compose.runtime.remember(cle) { mutableStateOf<fr.assistacrise.mobile.domaine.MessageConversationRadio?>(null) }
     val defilement = rememberLazyListState()
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) defilement.animateScrollToItem(messages.size - 1) }
     val heure = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
@@ -173,6 +174,7 @@ fun EcranConversationRadio(modele: ModeleApplication) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = defilement, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(messages) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.moi) Alignment.CenterEnd else Alignment.CenterStart) {
+                  AvecMenuMessage(m.auteur, m.texte, m.moi, { repondreA = m }, { texte = taguer(texte, m.auteur) }) {
                     Column(Modifier.widthIn(max = 300.dp).background(
                         if (m.moi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(10.dp)) {
                         if (!m.moi && m.auteur.isNotBlank()) Text(m.auteur, style = MaterialTheme.typography.labelMedium)
@@ -180,12 +182,19 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                         Text(heure.format(Date(m.horodatage)) + if (m.moi && !m.envoye) " · non parti" else "",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                  }
                 }
             }
         }
+        repondreA?.let { r -> BandeauReponse(if (r.moi) "" else r.auteur, r.texte) { repondreA = null } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(texte, { texte = it }, label = { Text("Message") }, modifier = Modifier.weight(1f), maxLines = 4)
-            IconButton(enabled = texte.isNotBlank(), onClick = { modele.ecrireALaRadio(cle, texte.trim()); texte = "" }) {
+            IconButton(enabled = texte.isNotBlank(), onClick = {
+                val r = repondreA
+                // Une trame radio est petite : la citation est courte (20 caractères).
+                modele.ecrireALaRadio(cle, if (r != null) fr.assistacrise.mobile.domaine.Mentions.reponse(if (r.moi) "" else r.auteur, r.texte, texte, 20) else texte.trim())
+                texte = ""; repondreA = null
+            }) {
                 Icon(Icons.AutoMirrored.Filled.Send, "Envoyer")
             }
         }

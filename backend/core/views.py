@@ -9813,6 +9813,40 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 commentaire=f"Membres — {' / '.join(parts)}",
             )
 
+    @action(detail=True, methods=['post'], url_path='quitter')
+    def quitter(self, request, pk=None):
+        """Quitter une équipe (23/11/2026, Sylvain : « ne plus être dans ces missions sans les
+        supprimer »). Seul le compte de l'appelant sort : de ses membres, de son encadrement, et
+        de son rôle de chef ou de régulateur s'il l'avait. L'équipe, ses missions et ses dossiers
+        restent. Main courante."""
+        team = Team.objects.filter(pk=pk).first()
+        if team is None:
+            return Response({"error": "Équipe introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        user = request.user
+        roles = []
+        if team.members.filter(pk=user.pk).exists():
+            team.members.remove(user)
+            roles.append("membre")
+        if team.membres_encadrement.filter(pk=user.pk).exists():
+            team.membres_encadrement.remove(user)
+            roles.append("encadrement")
+        champs = []
+        if team.leader_id == user.id:
+            team.leader = None
+            champs.append("leader")
+            roles.append("chef d'équipe")
+        if team.regulateur_id == user.id:
+            team.regulateur = None
+            champs.append("regulateur")
+            roles.append("régulateur")
+        if champs:
+            team.save(update_fields=champs)
+        if not roles:
+            return Response({"error": "Vous ne faites pas partie de cette équipe."}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Team", objet_id=team.id,
+                  commentaire=f"{nom_affichable(user, request) or user.username} a quitté l'équipe {team.name} ({', '.join(roles)})")
+        return Response({"quitte": True, "roles": roles})
+
     @action(detail=False, methods=['get'], url_path='mes-equipes')
     def mes_equipes(self, request):
         """Équipes dont l'utilisateur connecté est membre, chef ou régulateur — point d'entrée

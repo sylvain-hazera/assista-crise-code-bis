@@ -1564,3 +1564,13 @@ désormais que celles de ses équipes (et celles qu'une action en attente concer
 satellite), la barre du haut était vide et ne réservait plus la place de la barre d'état :
 titres et boutons (écran Carte : « Carte », « Hors ligne », « En ligne ») passaient sous l'heure
 et les icônes. Cette place est désormais réservée.
+
+**0.22.4 (23/11/2026) : quitter une équipe, répondre et taguer.**
+- « Quitter » sur la carte d'une équipe (avec confirmation) : mon compte sort de ses membres,
+  de son encadrement, et de son rôle de chef ou de régulateur ; l'équipe, ses missions et ses
+  dossiers restent (`POST /api/teams/<id>/quitter/`, main courante). Ses missions quittent le
+  téléphone ; sans plus aucune équipe, plus aucune mission.
+- Appui long sur un message (messagerie d'équipe et messagerie radio) : Répondre (le message
+  cité et son auteur tagué : « ↪ @[Léa Martin] « rendez-vous au pont… » c'est noté », citation
+  plus courte par radio), Taguer l'auteur (`@Léa`, `@[Léa Martin]`), Copier le texte. La
+  personne à qui l'on répond reçoit la notification de mention.

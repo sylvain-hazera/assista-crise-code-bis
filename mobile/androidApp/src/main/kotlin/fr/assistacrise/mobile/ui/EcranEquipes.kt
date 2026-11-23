@@ -89,7 +89,7 @@ fun EcranEquipes(modele: ModeleApplication) {
                     }
                 }
                 items(equipes, key = { it.id }) { equipe ->
-                    CarteEquipe(equipe, nonLus[equipe.id] ?: ModeleApplication.NonLus()) { modele.ouvrirMessagerie(equipe) }
+                    CarteEquipe(equipe, nonLus[equipe.id] ?: ModeleApplication.NonLus(), { modele.quitterEquipe(equipe) }) { modele.ouvrirMessagerie(equipe) }
                 }
                 item { PanneauRadio(modele) }
             }
@@ -98,7 +98,15 @@ fun EcranEquipes(modele: ModeleApplication) {
 }
 
 @Composable
-private fun CarteEquipe(equipe: Equipe, nonLus: ModeleApplication.NonLus, surClic: () -> Unit) {
+private fun CarteEquipe(equipe: Equipe, nonLus: ModeleApplication.NonLus, surQuitter: () -> Unit, surClic: () -> Unit) {
+    var confirmer by rememberSaveable { mutableStateOf(false) }
+    if (confirmer) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmer = false },
+        title = { Text("Quitter « ${equipe.nom} » ?") },
+        text = { Text("Vous ne recevrez plus ses messages, ses missions ni ses dossiers. L'équipe, ses missions et ses dossiers restent : rien n'est supprimé. Un responsable pourra vous y remettre.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false; surQuitter() }) { Text("Quitter l'équipe") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false }) { Text("Annuler") } },
+    )
     Card(
         onClick = surClic,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -119,7 +127,10 @@ private fun CarteEquipe(equipe: Equipe, nonLus: ModeleApplication.NonLus, surCli
             equipe.institutionNom?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             equipe.missionTitre?.let { Text("Mission : $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.height(6.dp))
-            Text("Ouvrir la messagerie", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Ouvrir la messagerie", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = { confirmer = true }) { Text("Quitter") }
+            }
         }
     }
 }

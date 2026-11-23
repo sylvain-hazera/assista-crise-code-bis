@@ -63,5 +63,9 @@ class PurgeTest {
         val sansEquipes = DepotMissions(api, magasin, file)
         sansEquipes.rafraichir()
         assertEquals(listOf("m1", "m2"), sansEquipes.missions.value.map { it.id })
+        // Plus aucune équipe (je les ai quittées) : plus aucune mission.
+        val aucune = DepotMissions(api, magasin, file) { emptySet() }
+        aucune.rafraichir()
+        assertEquals(emptyList(), aucune.missions.value.map { it.id })
     }
 }

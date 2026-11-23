@@ -25,13 +25,18 @@ class DepotEquipes(
 
     private val _equipes = MutableStateFlow<List<Equipe>>(emptyList())
     val equipes: StateFlow<List<Equipe>> = _equipes
+    /** Vrai dès que la liste a été lue (du disque ou du serveur) : une liste vide veut alors dire
+     * « aucune équipe », pas « pas encore su » (23/11/2026, filtre des missions). */
+    var connues: Boolean = false; private set
 
     /** Fils de messages, par identifiant d'équipe. */
     private val _fils = MutableStateFlow<Map<String, List<MessageEquipe>>>(emptyMap())
     val fils: StateFlow<Map<String, List<MessageEquipe>>> = _fils
 
     suspend fun restaurer() {
-        _equipes.value = lire(FICHIER, ListSerializer(Equipe.serializer())) ?: emptyList()
+        val lues = lire(FICHIER, ListSerializer(Equipe.serializer()))
+        _equipes.value = lues ?: emptyList()
+        if (lues != null) connues = true
         _fils.value = _equipes.value.mapNotNull { e ->
             lire(fichierFil(e.id), ListSerializer(MessageEquipe.serializer()))?.let { e.id to it }
         }.toMap()
@@ -41,6 +46,7 @@ class DepotEquipes(
         is Reponse.Ok -> {
             magasin.ecrire(FICHIER, json.encodeToString(ListSerializer(Equipe.serializer()), r.valeur))
             _equipes.value = r.valeur
+            connues = true
             Reponse.Ok(Unit)
         }
         is Reponse.Refus -> r
@@ -107,6 +113,7 @@ class DepotEquipes(
         _equipes.value.forEach { magasin.effacer(fichierFil(it.id)) }
         magasin.effacer(FICHIER)
         _equipes.value = emptyList()
+        connues = false
         _fils.value = emptyMap()
     }
 

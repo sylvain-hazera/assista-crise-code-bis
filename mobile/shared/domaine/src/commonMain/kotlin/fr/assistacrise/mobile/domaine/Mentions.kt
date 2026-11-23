@@ -15,6 +15,21 @@ object Mentions {
         }
     }
 
+    /** Le tag d'une personne : `@Léa`, ou `@[Léa Martin]` si le nom a plusieurs mots (forme
+     * MeshCore, lue telle quelle par les autres applications). */
+    fun etiquette(nom: String): String {
+        val propre = nom.trim().removePrefix("@").removePrefix("[").removeSuffix("]").trim()
+        return if (propre.any { it.isWhitespace() }) "@[$propre]" else "@$propre"
+    }
+
+    /** Une réponse précise à un message : on tague son auteur et on cite le début du message,
+     * court (une trame radio est petite) : « ↪ @Léa « rdv au pont… » c'est noté ». */
+    fun reponse(auteur: String, cite: String, texte: String, longueurCitation: Int = 30): String {
+        val extrait = cite.trim().replace(Regex("\\s+"), " ").let { if (it.length > longueurCitation) it.take(longueurCitation - 1).trimEnd() + "…" else it }
+        val qui = auteur.takeIf { it.isNotBlank() }?.let { etiquette(it) + " " } ?: ""
+        return "↪ $qui« $extrait » ${texte.trim()}".trim()
+    }
+
     private val ACCENTS = mapOf(
         'à' to 'a', 'â' to 'a', 'ä' to 'a', 'á' to 'a', 'ç' to 'c', 'é' to 'e', 'è' to 'e', 'ê' to 'e', 'ë' to 'e',
         'î' to 'i', 'ï' to 'i', 'í' to 'i', 'ô' to 'o', 'ö' to 'o', 'ó' to 'o', 'ù' to 'u', 'û' to 'u', 'ü' to 'u',

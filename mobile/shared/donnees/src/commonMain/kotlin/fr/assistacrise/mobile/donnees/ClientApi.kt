@@ -267,6 +267,10 @@ class ClientApi(
         json.decodeFromJsonElement(ListSerializer(Equipe.serializer()), liste)
     }
 
+    /** Quitter une équipe (23/11/2026) : l'équipe et ses missions restent, seul mon compte en sort. */
+    suspend fun quitterEquipe(idEquipe: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "teams/$idEquipe/quitter/").sansValeur()
+
     /** Le fil unique de l'équipe : salon Matrix et canaux radio, déjà fusionnés par le serveur. */
     suspend fun messagerie(idEquipe: String): Reponse<List<MessageEquipe>> =
         authentifie(HttpMethod.Get, "teams/$idEquipe/messagerie-unifiee/").transformer(::lireMessages)

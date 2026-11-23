@@ -1175,6 +1175,22 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     /** Relit le fil ouvert. Appelé en boucle par l'écran tant qu'il est affiché. */
+    /** Quitter une équipe (23/11/2026) : ses missions et ses dossiers ne sont plus sur ce
+     * téléphone, mais rien n'est supprimé sur le serveur. */
+    fun quitterEquipe(equipe: Equipe) {
+        viewModelScope.launch {
+            message = when (val r = app.api.quitterEquipe(equipe.id)) {
+                is Reponse.Ok -> {
+                    app.equipes.rafraichir(); app.depot.rafraichir()
+                    if (equipeOuverte == equipe.id) ecran = Ecran.EQUIPES
+                    "Vous avez quitté « ${equipe.nom} ». L'équipe et ses missions restent."
+                }
+                is Reponse.Refus -> r.message
+                is Reponse.Injoignable -> "Il faut le réseau pour quitter une équipe."
+            }
+        }
+    }
+
     suspend fun relireLeFil() {
         val id = equipeOuverte ?: return
         val r = app.equipes.rafraichirFil(id)

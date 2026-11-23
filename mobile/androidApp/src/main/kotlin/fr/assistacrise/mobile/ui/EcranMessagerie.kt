@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +57,8 @@ fun EcranMessagerie(modele: ModeleApplication) {
     LaunchedEffect(equipe.id, fils[equipe.id]?.size) { modele.marquerEquipeLue(equipe.id) }
     val liste = rememberLazyListState()
     var brouillon by rememberSaveable { mutableStateOf("") }
+    // Le message auquel on répond (appui long, 23/11/2026).
+    var repondreA by remember { mutableStateOf<MessageAffiche?>(null) }
 
     // Le fil est relu tant que l'écran est affiché ; il s'arrête dès qu'on le quitte.
     LaunchedEffect(equipe.id) {
@@ -87,17 +90,24 @@ fun EcranMessagerie(modele: ModeleApplication) {
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items(messages, key = { it.cle }) { Bulle(it) }
+                items(messages, key = { it.cle }) { m ->
+                    Bulle(m, { repondreA = m }, { brouillon = taguer(brouillon, m.auteur) })
+                }
             }
         }
 
+        repondreA?.let { r -> BandeauReponse(if (r.moi) "" else r.auteur, r.texte) { repondreA = null } }
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, bottom = 8.dp, top = 4.dp), verticalAlignment = Alignment.Bottom) {
             OutlinedTextField(
                 value = brouillon, onValueChange = { brouillon = it },
                 placeholder = { Text("Écrire à l'équipe") },
                 modifier = Modifier.weight(1f), maxLines = 4,
             )
-            IconButton(onClick = { modele.ecrire(equipe, brouillon); brouillon = "" }, enabled = brouillon.isNotBlank()) {
+            IconButton(onClick = {
+                val r = repondreA
+                modele.ecrire(equipe, if (r != null) fr.assistacrise.mobile.domaine.Mentions.reponse(if (r.moi) "" else r.auteur, r.texte, brouillon) else brouillon)
+                brouillon = ""; repondreA = null
+            }, enabled = brouillon.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Envoyer")
             }
         }
@@ -105,13 +115,14 @@ fun EcranMessagerie(modele: ModeleApplication) {
 }
 
 @Composable
-private fun Bulle(m: MessageAffiche) {
+private fun Bulle(m: MessageAffiche, surRepondre: () -> Unit, surTaguer: () -> Unit) {
     val fond = when {
         m.refus != null -> Refus.copy(alpha = 0.12f)
         m.moi -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.moi) Arrangement.End else Arrangement.Start) {
+      AvecMenuMessage(m.auteur, m.texte, m.moi, surRepondre, surTaguer) {
         Column(
             Modifier.widthIn(max = 300.dp).background(fond, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
@@ -132,6 +143,7 @@ private fun Bulle(m: MessageAffiche) {
                 color = when { m.refus != null -> Refus; m.enAttente -> Attente; else -> MaterialTheme.colorScheme.onSurfaceVariant },
             )
         }
+      }
     }
 }
 
