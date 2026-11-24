@@ -133,7 +133,7 @@ export function infobullePointEau(p: PointEau, echapper: (t: string) => string):
     OSM: 'OpenStreetMap (indicatif, non validé par le SDIS)', SDIS: 'Base du SDIS', TERRAIN: 'Signalé et validé par la commune',
   };
   const lignes = [`<strong>${echapper(p.type_libelle)}</strong>${p.ref_terrain ? ' ' + echapper(p.ref_terrain) : ''}`,
-                  echapper(etats[p.etat] || p.etat)];
+                  p.actif_crise ? '<strong>Pompe en place : remplissage possible</strong>' : echapper(etats[p.etat] || p.etat)];
   if (p.debit) lignes.push(`Débit : ${p.debit} m³/h`);
   if (p.volume) lignes.push(`Volume : ${p.volume} m³`);
   if (p.diametre) lignes.push(`Diamètre : ${p.diametre} mm`);
@@ -626,10 +626,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             type: 'FeatureCollection',
             features: reponse.resultats.map(p => ({
               type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
-              properties: { etat: p.etat, source: p.source, infobulle: infobullePointEau(p, (t) => this.echapper(t)) },
+              properties: { etat: p.etat, source: p.source, actif: p.actif_crise ? 'oui' : 'non',
+                            infobulle: infobullePointEau(p, (t) => this.echapper(t)) },
             })),
-          // Rouge : indisponible. Orange : défaut. Bleu clair : OSM (indicatif). Bleu : SDIS ou validé.
-          }, ['case', ['==', ['get', 'etat'], 'INDISPONIBLE'], '#dc2626', ['==', ['get', 'etat'], 'DEFAUT'], '#f59e0b',
+          // Vert : pompe en place (circuit feu). Rouge : indisponible. Orange : défaut.
+          // Bleu clair : OSM (indicatif). Bleu : SDIS ou validé.
+          }, ['case', ['==', ['get', 'actif'], 'oui'], '#15803d', ['==', ['get', 'etat'], 'INDISPONIBLE'], '#dc2626', ['==', ['get', 'etat'], 'DEFAUT'], '#f59e0b',
               ['==', ['get', 'source'], 'OSM'], '#60a5fa', '#1d4ed8'], this.layerVisibility.pointsEau);
         },
         error: () => {},

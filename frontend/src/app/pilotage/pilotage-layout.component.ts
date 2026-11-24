@@ -77,6 +77,10 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.aTrier() + ' message(s) radio à trier'">{{ pilotage.aTrier() }}</span>
                 } @else if (o.lien === 'centres' && pilotage.alertesCentres()) {
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.alertesCentres() + ' centre(s) presque plein(s) ou en manque'">{{ pilotage.alertesCentres() }}</span>
+                } @else if (o.lien === 'eau' && pilotage.circuitEau()?.codis_sans_accuse) {
+                  <span class="pastille-alerte" [attr.aria-label]="'CODIS sans accusé de réception'">!</span>
+                } @else if (o.lien === 'eau' && (pilotage.circuitEau()?.propose || pilotage.pointsEauActifs())) {
+                  <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.pointsEauActifs() + ' point(s) d’eau actif(s)'">{{ pilotage.circuitEau()?.propose ? '!' : pilotage.pointsEauActifs() }}</span>
                 } @else if (o.lien === 'carte' && pilotage.peiAValider()) {
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.peiAValider() + ' signalement(s) de point d’eau à valider'">{{ pilotage.peiAValider() }}</span>
                 }
@@ -198,6 +202,8 @@ export class PilotageLayoutComponent implements OnInit, OnDestroy {
     { lien: 'terrain', libelle: 'Terrain', icone: 'directions_run' },
     // Centres d'accueil, de transit, de regroupement des moyens (23/11/2026) : 4e sur téléphone.
     { lien: 'centres', libelle: 'Centres', icone: 'night_shelter' },
+    // Circuit réflexe feu → points d'eau → binômes → CODIS (24/11/2026).
+    { lien: 'eau', libelle: 'Eau', icone: 'fire_hydrant_alt' },
     { lien: 'decisions', libelle: 'Décisions', icone: 'gavel' },
     { lien: 'carte', libelle: 'Carte', icone: 'map' },
     { lien: 'dossiers', libelle: 'Dossiers', icone: 'folder_open' },

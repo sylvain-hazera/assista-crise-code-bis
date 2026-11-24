@@ -14,6 +14,7 @@ export const PILOTAGE_ROUTES: Routes = [
   { path: 'decisions', loadComponent: () => import('./decisions/pilotage-decisions.component').then(m => m.PilotageDecisionsComponent) },
   { path: 'centres', loadComponent: () => import('./centres/pilotage-centres.component').then(m => m.PilotageCentresComponent) },
   { path: 'centres/:id', loadComponent: () => import('./centres/pilotage-centre.component').then(m => m.PilotageCentreComponent) },
+  { path: 'eau', loadComponent: () => import('./eau/pilotage-eau.component').then(m => m.PilotageEauComponent) },
   { path: 'terrain', loadComponent: () => import('./terrain/pilotage-terrain.component').then(m => m.PilotageTerrainComponent) },
   { path: 'alertes', loadComponent: () => import('./alertes/pilotage-alertes.component').then(m => m.PilotageAlertesComponent) },
 ];

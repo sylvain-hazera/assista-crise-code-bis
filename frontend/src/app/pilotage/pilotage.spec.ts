@@ -126,9 +126,9 @@ describe('Poste de pilotage', () => {
     fixture.detectChanges();
     http.expectOne(`${api}/crises/`).flush([]);
     const onglets = Array.from(fixture.nativeElement.querySelectorAll('.rail a .libelle')).map((a: any) => a.textContent.trim());
-    expect(onglets).toEqual(['Situation', 'Cellule', 'Terrain', 'Centres', 'Décisions', 'Carte', 'Dossiers', 'Standard', 'Alertes']);
+    expect(onglets).toEqual(['Situation', 'Cellule', 'Terrain', 'Centres', 'Eau', 'Décisions', 'Carte', 'Dossiers', 'Standard', 'Alertes']);
     expect(fixture.nativeElement.querySelector('a.administration')).not.toBeNull();
-    expect(PILOTAGE_ROUTES.map(r => r.path)).toEqual(['', 'situation', 'cellule', 'carte', 'dossiers', 'point', 'decisions', 'centres', 'centres/:id', 'terrain', 'alertes']);
+    expect(PILOTAGE_ROUTES.map(r => r.path)).toEqual(['', 'situation', 'cellule', 'carte', 'dossiers', 'point', 'decisions', 'centres', 'centres/:id', 'eau', 'terrain', 'alertes']);
     fixture.destroy();
   });
 

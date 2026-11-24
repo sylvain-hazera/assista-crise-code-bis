@@ -91,6 +91,28 @@ export interface VueTerrain {
  * écrans (situation, cellule, carte, dossiers) et elle est retenue sur l'appareil : le directeur
  * des opérations rouvre l'iPad sur sa crise. Un identifiant de crise n'a rien de personnel.
  */
+/** Un point d'eau ouvert pendant une crise feu (circuit réflexe du 24/11/2026). */
+export interface ActivationPointEau {
+  id: string; nom: string; type_pei: string; debit: number | null; volume: number | null;
+  latitude: number; longitude: number; pei: number | null;
+  statut: 'DEMANDE' | 'EN_ROUTE' | 'ACTIF' | 'FERME' | 'ANNULE'; statut_libelle: string;
+  equipe: string | null; indicatif: string | null; equipe_id: string | null; mission: string | null;
+  demande_le: string; en_route_le: string | null; actif_le: string | null; ferme_le: string | null;
+  codis_prevenu_le: string | null;
+}
+
+export interface CircuitEau {
+  crise: string; type: string; propose: boolean; peut_piloter: boolean;
+  activations: ActivationPointEau[]; actifs: number; lien_codis: string | null;
+  prevenances_codis: { id: string; organisme: string; point: string; statut: string; statut_libelle: string;
+                       envoye_le: string | null; accuse_le: string | null }[];
+  codis_sans_accuse: number; interlocuteurs_codis: number;
+  candidats?: { id: number; source: string; ref: string; type_pei: string; type_libelle: string; ref_terrain: string;
+                debit: number | null; volume: number | null; etat: string; distance_km: number | null;
+                latitude: number; longitude: number; attribution: string | null }[];
+  equipes?: { id: string; nom: string; indicatif: string | null; effectif: number }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class PilotageService {
   readonly crises = signal<Crisis[]>([]);
@@ -110,6 +132,9 @@ export class PilotageService {
   readonly alertesCentres = computed(() => this.centres()?.alertes ?? 0);
   /** Signalements de points d'eau incendie qui attendent la commune de ce compte (24/11/2026). */
   readonly peiAValider = signal(0);
+  /** Circuit réflexe feu → points d'eau → binômes → CODIS (24/11/2026), relu avec le terrain. */
+  readonly circuitEau = signal<CircuitEau | null>(null);
+  readonly pointsEauActifs = computed(() => this.circuitEau()?.actifs ?? 0);
 
   constructor(private http: HttpClient) {}
 
@@ -121,6 +146,7 @@ export class PilotageService {
     const crise = this.criseId();
     if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); this.centres.set(null); return; }
     this.rafraichirCentres();
+    this.rafraichirCircuitEau(false);
     this.http.get<{ a_valider_ma_commune: number }>(`${environment.apiUrl}/points-eau/couverture/`).subscribe({
       next: c => this.peiAValider.set(c.a_valider_ma_commune || 0),
       error: () => this.peiAValider.set(0),
@@ -142,6 +168,37 @@ export class PilotageService {
   prendreEnCompte(id: string): Promise<MessageTerrainPilotage> {
     return firstValueFrom(this.http.post<MessageTerrainPilotage>(`${environment.apiUrl}/messages-terrain/${id}/prendre-en-compte/`, {}))
       .then(m => { this.rafraichirTerrain(); return m; });
+  }
+
+  /** L'état du circuit points d'eau ; `avecCandidats` relit aussi les points proches et les équipes. */
+  rafraichirCircuitEau(avecCandidats = true): void {
+    const crise = this.criseId();
+    if (!crise) { this.circuitEau.set(null); return; }
+    const params: Record<string, string> = { crise };
+    if (!avecCandidats) params['candidats'] = 'non';
+    this.http.get<CircuitEau>(`${environment.apiUrl}/circuit-eau/`, { params }).subscribe({
+      next: c => {
+        // La relecture légère garde les candidats déjà chargés par l'onglet Eau.
+        const avant = this.circuitEau();
+        this.circuitEau.set(avecCandidats || !avant ? c : { ...c, candidats: avant.candidats, equipes: avant.equipes });
+      },
+      error: () => this.circuitEau.set(null),   // hors de la crise : pas de circuit
+    });
+  }
+
+  activerPointsEau(affectations: { pei: number; equipe: string }[]): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/circuit-eau/activer/`, { crise: this.criseId(), affectations }))
+      .then(r => { this.rafraichirCircuitEau(); return r; });
+  }
+
+  etatPointEau(id: string, etat: 'EN_ROUTE' | 'ACTIF' | 'FERME' | 'ANNULE'): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${environment.apiUrl}/circuit-eau/${id}/etat/`, { etat }))
+      .then(r => { this.rafraichirCircuitEau(false); return r; });
+  }
+
+  lienCodis(geste: 'creer' | 'renouveler' | 'revoquer'): Promise<{ lien_codis: string | null }> {
+    return firstValueFrom(this.http.post<{ lien_codis: string | null }>(`${environment.apiUrl}/circuit-eau/lien-codis/`,
+      { crise: this.criseId(), geste })).then(r => { this.rafraichirCircuitEau(false); return r; });
   }
 
   rafraichirCentres(): void {

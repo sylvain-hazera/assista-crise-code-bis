@@ -17,6 +17,13 @@
 
   @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
 
+  @if (pilotage.circuitEau()?.propose && pilotage.circuitEau()?.peut_piloter) {
+    <a class="proposition-eau" routerLink="/pilotage/eau">
+      <span class="material-icons" aria-hidden="true">fire_hydrant_alt</span>
+      <span><strong>Feu : activer les points d'eau ?</strong> Choisissez les points et les binômes RCSC ; la cellule et le CODIS seront prévenus.</span>
+    </a>
+  }
+
   <section class="chiffres" aria-label="Chiffres clés">
     <a class="chiffre" routerLink="/pilotage/cellule" [queryParams]="{ crise: pilotage.criseId() }" [class.alerte]="(aAffecter() ?? 0) > 0">
       <strong>{{ aAffecter() ?? '—' }}</strong><span>en attente d'affectation</span>

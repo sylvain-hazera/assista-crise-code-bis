@@ -834,6 +834,8 @@ export interface PointEau {
   longitude: number;
   attribution: string | null;
   distance_km: number | null;
+  /** Ouvert par le circuit feu (pompe en place) sur une crise en cours. */
+  actif_crise?: boolean;
 }
 
 export interface PointsEau { emprise_connue: boolean; tronque: boolean; total: number; resultats: PointEau[]; }

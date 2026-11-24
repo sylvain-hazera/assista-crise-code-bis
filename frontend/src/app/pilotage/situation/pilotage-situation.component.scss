@@ -77,3 +77,10 @@ p { margin: 0; }
 .couleur { font-weight: 700; text-transform: capitalize;
   &[data-couleur="jaune"] { color: #a16207; } &[data-couleur="orange"] { color: #c2410c; } &[data-couleur="rouge"] { color: #b91c1c; }
   &[data-couleur="vert"] { color: #15803d; } }
+
+.proposition-eau {
+  display: flex; gap: .6rem; align-items: center; padding: .75rem 1rem; margin: .5rem 0; border-radius: 10px;
+  background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); text-decoration: none;
+  border: 2px solid currentColor;
+  .material-icons { font-size: 28px; }
+}

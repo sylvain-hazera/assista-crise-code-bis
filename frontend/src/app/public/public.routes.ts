@@ -89,6 +89,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.EngagementRessourceComponent)
       },
       {
+        // Carte des points d'eau d'une crise feu pour le CODIS, sans compte (24/11/2026).
+        path: 'codis/:jeton',
+        loadComponent: () => import('./codis/carte-codis.component').then(m => m.CarteCodisComponent)
+      },
+      {
         path: 'confirmation-pcs/:token',
         loadComponent: () => import('./confirmation-pcs/confirmation-pcs.component')
           .then(m => m.ConfirmationPcsComponent)
