@@ -36,6 +36,12 @@ export class DeclarationSecuriteService {
     return this.http.patch<DeclarationSecurite>(`${this.url}/${id}/`, data);
   }
 
+  /** POST /api/declarations-securite/:id/contact/ — ajoute après coup l'email ou le téléphone
+   * d'une admission enregistrée sans contact (24/11/2026). */
+  completerContact(id: string, contact: string): Observable<{ id: string; contact_a_completer: boolean }> {
+    return this.http.post<{ id: string; contact_a_completer: boolean }>(`${this.url}/${id}/contact/`, { contact_referent: contact });
+  }
+
   /** DELETE /api/declarations-securite/:id/ — l'auteur peut supprimer sa propre déclaration. */
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);

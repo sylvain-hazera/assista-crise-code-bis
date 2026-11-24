@@ -18511,7 +18511,7 @@ class FicheMaterielView(generics.GenericAPIView):
 class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Registre de présence ("secrétariat") d'un point opérationnel."""
 
-    queryset = RegistrePresence.objects.select_related("point", "enregistre_par").all()
+    queryset = RegistrePresence.objects.select_related("point", "enregistre_par", "declaration_securite").all()
     serializer_class = RegistrePresenceSerializer
     filterset_fields = ["point", "type_personne"]
 
@@ -18727,6 +18727,34 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             self.request, declaration.crise, "Déclaration de sécurité mise à jour",
             f"{declaration.prenom_referent} {declaration.nom_referent} : {declaration.get_situation_display()}.",
         )
+
+    @action(detail=True, methods=["post"], url_path="contact", permission_classes=[permissions.IsAuthenticated])
+    def completer_contact(self, request, pk=None):
+        """Ajoute après coup l'email ou le téléphone d'une admission enregistrée sans contact
+        (24/11/2026). Seul le contact change : pas de passage par perform_update, qui
+        recalculerait la présence au centre."""
+        declaration = self.get_object()
+        centre = declaration.centre_accueil
+        autorise = (
+            IsInstitutionalActor().has_permission(request, self)
+            or declaration.declare_par_id == request.user.id
+            or (centre is not None and _peut_gerer_stock_point(request, centre))
+        )
+        if not autorise:
+            return Response({"detail": "Vous ne pouvez pas modifier cette admission."}, status=status.HTTP_403_FORBIDDEN)
+        contact = str(request.data.get("contact_referent") or "").strip()
+        if not contact:
+            return Response({"contact_referent": "Indiquez un email ou un téléphone."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(contact) > 255:
+            return Response({"contact_referent": "255 caractères au plus."}, status=status.HTTP_400_BAD_REQUEST)
+        declaration.contact_referent = contact
+        declaration.save(update_fields=["contact_referent"])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="DeclarationSecurite",
+            objet_id=declaration.id, crise=declaration.crise,
+            commentaire=f"Contact complété : {declaration.prenom_referent} {declaration.nom_referent}",
+        )
+        return Response({"id": str(declaration.id), "contact_a_completer": False})
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
     def vue_mairie(self, request):

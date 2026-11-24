@@ -600,3 +600,63 @@ class TestDeclarationSecuriteAdresse:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['latitude'] == pytest.approx(45.18)
         assert response.data['longitude'] == pytest.approx(5.72)
+
+
+@pytest.mark.django_db
+class TestAdmissionSansContact:
+    """Case « aucun email communiqué à l'entrée » du secrétariat (24/11/2026) : l'admission
+    passe sans contact, qui se complète ensuite."""
+
+    def _payload(self, point, **champs):
+        return {'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupond', 'prenom_referent': 'Jean',
+                'nombre_adultes': 1, 'nombre_enfants': 0, 'centre_accueil': str(point.id), **champs}
+
+    def test_sans_contact_ni_case_refuse(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'), self._payload(point), format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'contact_referent' in response.data
+
+    def test_public_ne_peut_pas_cocher_la_case(self, api_client):
+        point = _make_point(crise=_make_crisis())
+        response = api_client.post(reverse('declarationsecurite-list'),
+                                   self._payload(point, contact_non_communique=True), format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_case_cochee_puis_contact_complete(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_non_communique=True), format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.contact_referent == ''
+        registre = client.get(reverse('registrepresence-list'), {'point': str(point.id)}).data
+        lignes = registre['results'] if isinstance(registre, dict) else registre
+        assert lignes[0]['declaration'] == str(declaration.id)
+        assert lignes[0]['contact_a_completer'] is True
+        assert 'contact_referent' not in lignes[0]
+
+        url = reverse('declarationsecurite-completer-contact', args=[declaration.id])
+        assert client.post(url, {'contact_referent': '  '}, format='json').status_code == 400
+        response = client.post(url, {'contact_referent': 'jean@example.org'}, format='json')
+        assert response.status_code == status.HTTP_200_OK
+        declaration.refresh_from_db()
+        assert declaration.contact_referent == 'jean@example.org'
+        assert declaration.registre_presence.date_depart is None
+        lignes = client.get(reverse('registrepresence-list'), {'point': str(point.id)}).data
+        lignes = lignes['results'] if isinstance(lignes, dict) else lignes
+        assert lignes[0]['contact_a_completer'] is False
+
+    def test_completer_contact_refuse_a_un_inconnu(self, authenticated_client, api_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_non_communique=True), format='json')
+        autre = User.objects.create_user(username='autre-benevole', email='autre@example.org', password='x-essai-1')
+        autre.type = 'UTIL_SIMPLE'
+        autre.save()
+        api_client.force_authenticate(autre)
+        url = reverse('declarationsecurite-completer-contact', args=[response.data['id']])
+        assert api_client.post(url, {'contact_referent': 'x@example.org'}, format='json').status_code == 403

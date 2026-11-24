@@ -61,6 +61,9 @@ export class PointSecretariatModalComponent implements OnInit {
       nom_referent: [''],
       prenom_referent: [''],
       contact_referent: [''],
+      // « Aucun email communiqué à l'entrée » : l'admission passe, le contact se complète
+      // ensuite depuis la liste des présents (24/11/2026).
+      contact_non_communique: [false],
       nombre_adultes: [1, [Validators.min(1)]],
       nombre_enfants: [0, [Validators.min(0)]],
       regime_alimentaire_specifique: [false],
@@ -115,6 +118,7 @@ export class PointSecretariatModalComponent implements OnInit {
     this.form.reset({
       type_personne: 'EVACUE', nom: '', nombre: 1, commentaire: '',
       type_declarant: 'PERSONNE_SEULE', nom_referent: '', prenom_referent: '', contact_referent: '',
+      contact_non_communique: false,
       nombre_adultes: 1, nombre_enfants: 0, regime_alimentaire_specifique: false,
     });
     this.agesEnfants = [];
@@ -130,11 +134,13 @@ export class PointSecretariatModalComponent implements OnInit {
     return [
       vide(v.prenom_referent) ? 'le prénom' : '',
       vide(v.nom_referent) ? 'le nom' : '',
-      vide(v.contact_referent) ? 'un contact (email ou téléphone)' : '',
+      vide(v.contact_referent) && !v.contact_non_communique
+        ? "un contact (email ou téléphone), ou cocher « Aucun email communiqué à l'entrée »" : '',
     ].filter(Boolean);
   }
 
   manque(champ: 'prenom_referent' | 'nom_referent' | 'contact_referent'): boolean {
+    if (champ === 'contact_referent' && this.form.value.contact_non_communique) return false;
     return this.tente && this.isEvacue && !String(this.form.value[champ] ?? '').trim();
   }
 
@@ -168,7 +174,8 @@ export class PointSecretariatModalComponent implements OnInit {
         type_declarant: v.type_declarant,
         nom_referent: v.nom_referent,
         prenom_referent: v.prenom_referent,
-        contact_referent: v.contact_referent,
+        contact_referent: (v.contact_referent || '').trim(),
+        contact_non_communique: !!v.contact_non_communique && !(v.contact_referent || '').trim(),
         nombre_adultes: v.type_declarant === 'PERSONNE_SEULE' ? 1 : v.nombre_adultes,
         nombre_enfants: v.type_declarant === 'PERSONNE_SEULE' ? 0 : v.nombre_enfants,
         ages_enfants: v.type_declarant === 'PERSONNE_SEULE'
@@ -194,6 +201,33 @@ export class PointSecretariatModalComponent implements OnInit {
     this.registreService.create(payload).subscribe({
       next: () => { this.load(); this.resetForm(); },
       error: err => this.echec(err),
+    });
+  }
+
+  // Complément du contact d'une admission enregistrée sans (une ligne à la fois).
+  contactEnCours: string | null = null;
+  contactSaisi = '';
+  erreurContact: string | null = null;
+
+  ouvrirContact(entree: RegistrePresence): void {
+    this.contactEnCours = entree.id;
+    this.contactSaisi = '';
+    this.erreurContact = null;
+  }
+
+  enregistrerContact(entree: RegistrePresence): void {
+    const contact = this.contactSaisi.trim();
+    if (!contact) {
+      this.erreurContact = 'Indiquez un email ou un téléphone.';
+      return;
+    }
+    if (!entree.declaration) return;
+    this.declarationSecuriteService.completerContact(entree.declaration, contact).subscribe({
+      next: () => { this.contactEnCours = null; this.load(); },
+      error: err => {
+        const corps = err?.error;
+        this.erreurContact = (corps && (corps.contact_referent || corps.detail)) || "Le contact n'a pas pu être enregistré.";
+      },
     });
   }
 

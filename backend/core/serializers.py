@@ -1350,11 +1350,30 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
 
     type_personne_libelle = serializers.CharField(source="get_type_personne_display", read_only=True)
     enregistre_par_nom = serializers.SerializerMethodField()
+    # La déclaration d'où vient la ligne (admission d'un évacué) et si son contact reste à
+    # compléter (24/11/2026 : « aucun email communiqué à l'entrée »). Jamais le contact lui-même.
+    declaration = serializers.SerializerMethodField()
+    contact_a_completer = serializers.SerializerMethodField()
 
     class Meta:
         model = RegistrePresence
         fields = '__all__'
         read_only_fields = ['date_arrivee']
+
+    @staticmethod
+    def _declaration(obj):
+        try:
+            return obj.declaration_securite
+        except Exception:
+            return None
+
+    def get_declaration(self, obj):
+        d = self._declaration(obj)
+        return str(d.id) if d else None
+
+    def get_contact_a_completer(self, obj):
+        d = self._declaration(obj)
+        return bool(d and not (d.contact_referent or "").strip())
 
     def get_enregistre_par_nom(self, obj):
         if not obj.enregistre_par:
@@ -1407,13 +1426,18 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     # Déclaré explicitement : EncryptedJSONField hérite de TextField, DRF en ferait une chaîne.
     ages_enfants = serializers.JSONField(required=False)
+    # Case du secrétariat « aucun email communiqué à l'entrée » (24/11/2026) : seule façon
+    # d'enregistrer sans contact, réservée à qui gère le centre ; le contact se complète ensuite
+    # (`declarations-securite/<id>/contact/`).
+    contact_non_communique = serializers.BooleanField(required=False, default=False, write_only=True)
 
     class Meta:
         model = DeclarationSecurite
         fields = '__all__'
         read_only_fields = ['id', 'date_declaration', 'declare_par', 'registre_presence']
         # Optionnelle à la saisie : déduite de centre_accueil.crise pour une saisie au secrétariat.
-        extra_kwargs = {'crise': {'required': False}}
+        extra_kwargs = {'crise': {'required': False},
+                        'contact_referent': {'required': False, 'allow_blank': True}}
 
     def get_declare_par_nom(self, obj):
         if not obj.declare_par:
@@ -1449,6 +1473,21 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         if crise:
             validate_crisis_open(crise)
+        sans_contact = attrs.pop('contact_non_communique', False)
+        if self.instance is None or 'contact_referent' in attrs:
+            contact = (attrs.get('contact_referent') or '').strip()
+            attrs['contact_referent'] = contact
+            if not contact:
+                request = self.context.get('request')
+                centre = attrs.get('centre_accueil')
+                admis_sans_contact = bool(
+                    self.instance is None and sans_contact and centre is not None and request is not None
+                    and request.user.is_authenticated and _peut_gerer_stock_point(request, centre)
+                )
+                if not admis_sans_contact:
+                    raise serializers.ValidationError({'contact_referent': (
+                        "Indiquez un email ou un téléphone, ou cochez « Aucun email communiqué à l'entrée »."
+                    )})
         return attrs
 
 

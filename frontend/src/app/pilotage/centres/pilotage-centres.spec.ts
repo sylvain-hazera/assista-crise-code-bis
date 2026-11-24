@@ -72,6 +72,32 @@ describe('Pilotage — centres (23/11/2026)', () => {
     expect(fixture.nativeElement.querySelector('.erreur-text').textContent).toContain('un contact (email ou téléphone)');
     expect(fixture.nativeElement.querySelectorAll('input.manquant').length).toBe(1);
     http.expectNone(r => r.method === 'POST');
+    // La case « aucun email communiqué à l'entrée » débloque l'admission…
+    modale.form.patchValue({ contact_non_communique: true });
+    formulaire.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+    const envoi = http.expectOne(r => r.method === 'POST' && r.url.includes('declarations-securite'));
+    expect(envoi.request.body.contact_non_communique).toBeTrue();
+    expect(envoi.request.body.contact_referent).toBe('');
+    envoi.flush({ id: 'd1' });
+    http.expectOne(r => r.url.includes('registre-presences')).flush([
+      { id: 'r1', point: 'p1', type_personne: 'EVACUE', type_personne_libelle: 'Personne évacuée', nom: 'Jean Dupond',
+        nombre: 1, date_arrivee: '2026-11-24T08:00:00Z', date_depart: null, enregistre_par: null,
+        declaration: 'd1', contact_a_completer: true },
+    ]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('contact à compléter');
+    // … et l'email s'ajoute ensuite depuis la liste des présents.
+    const ajouter = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(b => b.textContent?.includes("Ajouter l'email"))!;
+    ajouter.click();
+    fixture.detectChanges();
+    modale.contactSaisi = 'jean@example.org';
+    modale.enregistrerContact(modale.presents[0]);
+    const complement = http.expectOne(`${api}/declarations-securite/d1/contact/`);
+    expect(complement.request.body).toEqual({ contact_referent: 'jean@example.org' });
+    complement.flush({ id: 'd1', contact_a_completer: false });
+    http.expectOne(r => r.url.includes('registre-presences')).flush([]);
     fixture.componentInstance.fermerSecretariat();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-point-secretariat-modal')).toBeNull();

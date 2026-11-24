@@ -12,6 +12,9 @@ export interface RegistrePresence {
   commentaire?: string | null;
   enregistre_par: string | null;
   enregistre_par_nom?: string | null;
+  /** Admission d'un évacué : sa déclaration, et si son contact reste à compléter. */
+  declaration?: string | null;
+  contact_a_completer?: boolean;
 }
 
 export interface RegistrePresencePayload {
