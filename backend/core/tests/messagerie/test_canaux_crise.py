@@ -42,7 +42,7 @@ def _recevoir(scene, protocole, contenu, canal=None):
     nom_url = "messagecanalmeshtastic-list" if protocole == "MESHTASTIC" else "messagecanalmeshcore-list"
     canal = canal or (scene["mt"] if protocole == "MESHTASTIC" else scene["mc"])
     r = scene["pont"].post(reverse(nom_url), {"canal": str(canal.id), "direction": "ENTRANT", "contenu": contenu}, format="json")
-    assert r.status_code == 201, r.data
+    assert r.status_code in (200, 201), r.data      # 200 : copie d'un message déjà reçu
 
 
 def _textes(conversation):

@@ -347,10 +347,11 @@ class DjangoClient:
         response = await self._request("GET", "/messages-canal-meshcore/a-envoyer/", params={"compagnon": compagnon_id})
         return response.json()
 
-    async def logger_message_canal_entrant(self, canal_id, contenu):
-        await self._request("POST", "/messages-canal-meshcore/", json={
-            "canal": canal_id, "direction": "ENTRANT", "contenu": contenu,
-        })
+    async def logger_message_canal_entrant(self, canal_id, contenu, cle_radio=None):
+        corps = {"canal": canal_id, "direction": "ENTRANT", "contenu": contenu}
+        if cle_radio:
+            corps["cle_radio"] = cle_radio
+        await self._request("POST", "/messages-canal-meshcore/", json=corps)
 
     async def marquer_message_canal(self, message_id, statut, erreur=None):
         payload = {"statut": statut}
@@ -517,6 +518,42 @@ async def boucle_rapport_observations(django, compagnon_id, observations):
             del observations[:max(0, len(observations) - OBSERVATIONS_MAX)]
 
 
+def cle_radio(sender_timestamp, texte):
+    """L'identité d'un message de canal, celle des clients MeshCore : l'horodatage posé par
+    l'émetteur et l'empreinte du texte, que les relais ne changent pas. Calculée de la même façon
+    sur les deux chemins (firmware et décodage logiciel), pour qu'un même message entendu par deux
+    radios ait la même identité au serveur (24/11/2026). None sans horodatage."""
+    if not sender_timestamp:
+        return None
+    try:
+        horodatage = int(sender_timestamp)
+    except (TypeError, ValueError):
+        return None
+    empreinte = hashlib.sha256(horodatage.to_bytes(4, "little", signed=False) + (texte or "").encode("utf-8")).hexdigest()[:8]
+    return f"{horodatage}:{empreinte}"
+
+
+class DejaVus:
+    """Les messages déjà transmis récemment : le décodage logiciel lit CHAQUE paquet reçu, donc
+    une copie par relais entendu ; le firmware, lui, ne remonte qu'une fois (24/11/2026)."""
+
+    def __init__(self, duree_s=1800, plafond=2000, horloge=None):
+        import time
+        self.duree_s, self.plafond, self.horloge = duree_s, plafond, horloge or time.monotonic
+        self.vus = {}
+
+    def nouveau(self, cle):
+        """Vrai la première fois qu'on voit `cle` dans la fenêtre ; faux pour ses copies."""
+        maintenant = self.horloge()
+        if len(self.vus) > self.plafond:
+            self.vus = {c: t for c, t in self.vus.items() if maintenant - t < self.duree_s}
+        vu = self.vus.get(cle)
+        if vu is not None and maintenant - vu < self.duree_s:
+            return False
+        self.vus[cle] = maintenant
+        return True
+
+
 def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canaux_idx_map, canaux_detectes_compteur, canaux_virtuels_par_hash,
                           observations=None):
     """`canaux_idx_map` (dict canal_idx -> canal_id, partagé avec boucle_provisionnement_canaux)
@@ -532,6 +569,7 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canau
     boucle_decodage_logiciel_canaux) : canaux déchiffrés EN LOGICIEL (voir le plan de conception
     "Décodage logiciel des canaux MeshCore", 12/10) -- indépendant de canaux_idx_map, qui ne
     couvre que les canaux physiquement provisionnés (set_channel)."""
+    deja_vus = DejaVus()
 
     async def _sur_message(event):
         payload = event.payload or {}
@@ -558,9 +596,12 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canau
         if canal_id is None:
             logger.warning("Message reçu sur le canal local %s, non rattaché à un CanalMeshCore connu — ignoré.", canal_idx)
             return
+        cle = cle_radio(payload.get("sender_timestamp"), texte)
+        if cle and not deja_vus.nouveau((canal_id, cle)):
+            return
         logger.info("Message reçu sur le canal %s (%d caractères).", canal_id, len(texte))
         try:
-            await django.logger_message_canal_entrant(canal_id, texte)
+            await django.logger_message_canal_entrant(canal_id, texte, cle)
         except Exception:
             logger.exception("Échec de journalisation d'un message de canal entrant côté API.")
 
@@ -594,9 +635,13 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canau
         if chan_hash and message:
             canal_id = canaux_virtuels_par_hash.get(chan_hash)
             if canal_id:
+                # Une copie par relais entendu : seule la première part au serveur.
+                cle = cle_radio(payload.get("sender_timestamp"), message)
+                if not deja_vus.nouveau((canal_id, cle or payload.get("pkt_hash") or message)):
+                    return
                 logger.info("Message décodé en logiciel sur le canal %s (%d caractères).", canal_id, len(message))
                 try:
-                    await django.logger_message_canal_entrant(canal_id, message)
+                    await django.logger_message_canal_entrant(canal_id, message, cle)
                 except Exception:
                     logger.exception("Échec de journalisation d'un message de canal décodé en logiciel.")
                 return

@@ -4930,10 +4930,13 @@ class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
     canal_nom = serializers.CharField(source='canal.nom', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
+    #: Identité radio du message (« horodatage:empreinte »), donnée par le pont ; jamais rendue,
+    #: gardée en HMAC dans `empreinte_radio` (voir MessageCanalMeshCoreViewSet.create).
+    cle_radio = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=64)
 
     class Meta:
         model = MessageCanalMeshCore
-        fields = "__all__"
+        exclude = ['empreinte_radio']
         # Modifiables par le PATCH du pont (même piège que MessageMeshLogSerializer).
         read_only_fields = ['expediteur']
 

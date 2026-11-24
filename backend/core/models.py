@@ -10010,6 +10010,11 @@ class MessageCanalMeshCore(EnvironmentScopedModel):
 
     erreur = models.TextField(null=True, blank=True)
 
+    #: L'identité radio du message (horodatage de l'émetteur + empreinte du texte, la même que les
+    #: clients MeshCore utilisent pour ne l'afficher qu'une fois), passée par le pont et gardée en
+    #: HMAC : un message entendu par plusieurs relais ou plusieurs radios n'est enregistré qu'une
+    #: fois (24/11/2026).
+    empreinte_radio = models.CharField(max_length=64, null=True, blank=True, db_index=True, editable=False)
     date_creation = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

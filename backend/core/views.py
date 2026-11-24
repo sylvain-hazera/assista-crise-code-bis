@@ -22146,15 +22146,43 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             return [PeutEcrireMessageCanal()]
         return [PeutAgirPourCompagnon()]
 
+    def create(self, request, *args, **kwargs):
+        """Un message entendu plusieurs fois (plusieurs relais, plusieurs radios) n'est enregistré
+        qu'une fois : la copie rend le message déjà connu, et la radio qui l'a entendue s'ajoute à
+        « reçu par » dans la messagerie (core/doublons_radio.py, 24/11/2026)."""
+        from .doublons_radio import doublon, empreinte_radio
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        donnees = serializer.validated_data
+        if donnees.get('direction') == DirectionMessageMesh.ENTRANT:
+            canal = donnees.get('canal')
+            empreinte = empreinte_radio("MESHCORE", getattr(canal, 'pk', None), donnees.get('cle_radio'))
+            connu = doublon(MessageCanalMeshCore, canal, donnees.get('contenu'), empreinte)
+            if connu is not None:
+                try:
+                    from .routage_canaux import ranger_message_canal
+                    ranger_message_canal(connu, "MESHCORE", recu_par=[getattr(request.user, "username", "") or "passerelle"])
+                except Exception:
+                    logger.exception("Doublon radio MeshCore : « reçu par » non complété (message %s).", connu.id)
+                return Response(self.get_serializer(connu).data, status=status.HTTP_200_OK)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(serializer.data))
+
     def perform_create(self, serializer):
+        from .doublons_radio import empreinte_radio
+
         direction = serializer.validated_data.get('direction')
         expediteur = self.request.user if direction == DirectionMessageMesh.SORTANT and self.request.user.is_authenticated else None
         canal = serializer.validated_data.get('canal')
+        cle_radio = serializer.validated_data.pop('cle_radio', '')
         environment = _environnement_message_canal(self.request, direction, canal)
         if direction == DirectionMessageMesh.SORTANT:
             _verifier_debit_mesh_sortant(MessageCanalMeshCore, expediteur, environment, canal=canal)
 
         save_kwargs = dict(environment=environment, expediteur=expediteur)
+        if direction == DirectionMessageMesh.ENTRANT:
+            save_kwargs['empreinte_radio'] = empreinte_radio("MESHCORE", getattr(canal, 'pk', None), cle_radio)
         if direction == DirectionMessageMesh.SORTANT and environment == Environment.DEMO:
             save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
 
@@ -23079,6 +23107,28 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         if self.action == 'create':
             return [PeutEcrireMessageCanal()]
         return [PeutAgirPourCompagnon()]
+
+    def create(self, request, *args, **kwargs):
+        """Même dédoublonnage que MeshCore (core/doublons_radio.py) : même canal, même nœud, même
+        texte dans les deux minutes — un message relayé par la radio locale ET une passerelle
+        MQTT n'apparaît qu'une fois."""
+        from .doublons_radio import doublon
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        donnees = serializer.validated_data
+        if donnees.get('direction') == DirectionMessageMesh.ENTRANT:
+            connu = doublon(MessageCanalMeshtastic, donnees.get('canal'), donnees.get('contenu'),
+                            contact_node_num=donnees.get('contact_node_num'))
+            if connu is not None:
+                try:
+                    from .routage_canaux import ranger_message_canal
+                    ranger_message_canal(connu, "MESHTASTIC", recu_par=[getattr(request.user, "username", "") or "passerelle"])
+                except Exception:
+                    logger.exception("Doublon radio Meshtastic : « reçu par » non complété (message %s).", connu.id)
+                return Response(self.get_serializer(connu).data, status=status.HTTP_200_OK)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(serializer.data))
 
     def perform_create(self, serializer):
         direction = serializer.validated_data.get('direction')
