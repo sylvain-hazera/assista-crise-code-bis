@@ -70,6 +70,16 @@ describe('LoginComponent', () => {
     component.onSubmit();
     http.expectOne(`${api}/connexion/code/`).flush({ jeton_etape: 'jeton-etape' });
     expect(component.etape).toBe('mot_de_passe');
+    // Le code accepté reste visible, verrouillé et confirmé ; le mot de passe vient dessous (24/11/2026).
+    fixture.detectChanges();
+    const code = fixture.nativeElement.querySelector('#code') as HTMLInputElement;
+    const motDePasse = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
+    expect(code).not.toBeNull();
+    expect(code.readOnly).toBeTrue();
+    expect(code.classList).toContain('valide');
+    expect(fixture.nativeElement.textContent).toContain('Code accepté');
+    expect(code.compareDocumentPosition(motDePasse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fixture.nativeElement.textContent).not.toContain('Recevoir un code par e-mail');
 
     component.loginForm.patchValue({ password: 'secret' });
     component.onSubmit();

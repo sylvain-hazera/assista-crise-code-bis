@@ -395,3 +395,41 @@
   font-size: .85rem;
   color: var(--ac-text-muted, #6b7280);
 }
+
+// Code accepté (24/11/2026) : visible, verrouillé, en vert, au-dessus du mot de passe.
+.code-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.code-input.valide,
+.form-input.code-input.valide[readonly] {
+  border: 2px solid #15803d;
+  background: #f0fdf4;
+  color: #14532d;
+  padding-right: 2.75rem;
+}
+
+.coche {
+  position: absolute;
+  right: .75rem;
+  color: #15803d;
+  font-size: 1.6rem;
+  pointer-events: none;
+}
+
+.bandeau-accepte {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: .5rem 0 0;
+  padding: .55rem .75rem;
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #14532d;
+  font-weight: 600;
+  font-size: .9rem;
+
+  .material-icons { font-size: 20px; }
+}

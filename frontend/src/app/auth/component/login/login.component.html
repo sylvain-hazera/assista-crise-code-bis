@@ -53,34 +53,50 @@
         }
       </div>
 
-      <!-- Code de sécurité : seulement pour un compte protégé, et AVANT le mot de passe -->
-      @if (etape === 'code') {
-        <div class="form-group">
+      <!-- Code de sécurité : seulement pour un compte protégé, et AVANT le mot de passe. Une fois
+           accepté, la case reste là, verrouillée et en vert ; le mot de passe vient en dessous. -->
+      @if (etape === 'code' || codeAccepte) {
+        <div class="form-group" [class.code-accepte]="codeAccepte">
           <label for="code" class="form-label">
-            Code de sécurité <span class="required">*</span>
+            Code de sécurité @if (!codeAccepte) { <span class="required">*</span> }
           </label>
-          <input
-            type="text"
-            id="code"
-            formControlName="code"
-            class="form-input code-input"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="20"
-            placeholder="123456"
-            autofocus>
-          <p class="aide-etape">
-            Les 6 chiffres affichés par votre application d'authentification, un code reçu
-            par e-mail, ou l'un de vos codes de secours.
-          </p>
-          <button type="button" class="lien-etape" (click)="renvoyerCode()" [disabled]="envoiEnCours">
-            Recevoir un code par e-mail
-          </button>
-          <p class="aide-etape">
-            Pas votre téléphone sous la main ? Nous vous envoyons un code, valable 5 minutes.
-          </p>
-          @if (messageEnvoi) {
-            <p class="aide-etape">{{ messageEnvoi }}</p>
+          <div class="code-wrapper">
+            <input
+              type="text"
+              id="code"
+              formControlName="code"
+              class="form-input code-input"
+              [class.valide]="codeAccepte"
+              [readonly]="codeAccepte"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="20"
+              placeholder="123456"
+              [attr.aria-describedby]="codeAccepte ? 'code-accepte' : null"
+              autofocus>
+            @if (codeAccepte) {
+              <span class="material-icons coche" aria-hidden="true">check_circle</span>
+            }
+          </div>
+          @if (codeAccepte) {
+            <p class="bandeau-accepte" id="code-accepte" role="status">
+              <span class="material-icons" aria-hidden="true">verified_user</span>
+              Code accepté. Saisissez maintenant votre mot de passe ci-dessous.
+            </p>
+          } @else {
+            <p class="aide-etape">
+              Les 6 chiffres affichés par votre application d'authentification, un code reçu
+              par e-mail, ou l'un de vos codes de secours.
+            </p>
+            <button type="button" class="lien-etape" (click)="renvoyerCode()" [disabled]="envoiEnCours">
+              Recevoir un code par e-mail
+            </button>
+            <p class="aide-etape">
+              Pas votre téléphone sous la main ? Nous vous envoyons un code, valable 5 minutes.
+            </p>
+            @if (messageEnvoi) {
+              <p class="aide-etape">{{ messageEnvoi }}</p>
+            }
           }
         </div>
       }

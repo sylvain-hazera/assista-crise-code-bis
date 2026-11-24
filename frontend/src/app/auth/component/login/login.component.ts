@@ -31,6 +31,10 @@ export class LoginComponent implements OnInit {
   returnUrl = '/accueil';
   /** Preuve que le code a été donné, à joindre au mot de passe. Valable cinq minutes. */
   private jetonEtape = '';
+  /** Le code a été accepté : sa case reste visible, verrouillée et en vert, au-dessus de celle
+   * du mot de passe (24/11/2026 : elle était remplacée par le mot de passe, on ne voyait pas
+   * que le code était passé). */
+  codeAccepte = false;
 
   constructor(
     private formBuilder: FormBuilder,
@@ -95,6 +99,7 @@ export class LoginComponent implements OnInit {
       this.authService.verifierCode(email.trim(), code.trim()).subscribe({
         next: (jeton) => {
           this.jetonEtape = jeton;
+          this.codeAccepte = true;
           this.allerA('mot_de_passe');
         },
         error: (error) => {
@@ -148,6 +153,7 @@ export class LoginComponent implements OnInit {
   /** Revenir à l'adresse : tout ce qui a été saisi ensuite est oublié. */
   recommencer(): void {
     this.jetonEtape = '';
+    this.codeAccepte = false;
     this.messageEnvoi = '';
     this.loginForm.patchValue({ code: '', password: '' });
     this.allerA('adresse');
