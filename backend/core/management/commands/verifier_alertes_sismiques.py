@@ -29,9 +29,9 @@ limite de charge utile du protocole sont déjà appliqués par les endpoints `a_
 au moment où le pont les récupère (voir _prefixe_expediteur_mesh_sortant/_decouper_message_mesh
 dans core/views.py) -- jamais dupliqués ici.
 
-En plus de la diffusion mesh : DM Matrix à chaque administrateur assista-crise à chaque
-diffusion réelle (demande utilisateur du 10/10, même mécanisme -- envoyer_dm -- que l'alerte
-SOS mesh, voir core.views._signaler_sos_mesh). Jamais d'email ici, contrairement à l'alerte
+En plus de la diffusion mesh : notification à chaque administrateur assista-crise à chaque
+diffusion réelle (demande utilisateur du 10/10 ; par l'application et le site depuis l'arrêt de
+Matrix, 24/11/2026 -- voir core.notifications_application.prevenir). Jamais d'email ici, contrairement à l'alerte
 SOS : pas demandé, et une diffusion sismique peut survenir plusieurs fois par cycle de 2
 minutes si plusieurs institutions/séismes se recoupent, l'email serait vite trop bruyant.
 
@@ -74,9 +74,9 @@ from django.utils.dateparse import parse_datetime
 from core.models import (
     Commune, ConfigurationAlerteSismique, SeismeDiffuse,
     CanalMeshCore, CanalMeshtastic, MessageCanalMeshCore, MessageCanalMeshtastic,
-    CompagnonMeshtastic, DirectionMessageMesh, StatutMessageMesh, User, UserRole,
+    CompagnonMeshtastic, DirectionMessageMesh, StatutMessageMesh,
 )
-from core.matrix import envoyer_dm
+from core.notifications_application import prevenir_administrateurs
 from core.views import _canal_est_dedie_urgence
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,9 @@ def _recuperer_evenements_emsc(magnitude_min, depuis):
         timeout=15,
     )
     reponse.raise_for_status()
+    # EMSC répond 204 sans corps quand il n'y a aucun séisme : ce n'est pas une panne.
+    if reponse.status_code == 204 or not reponse.content.strip():
+        return []
     evenements = []
     for feature in reponse.json().get("features", []):
         props = feature.get("properties", {})
@@ -265,16 +268,20 @@ class Command(BaseCommand):
             evenements_fr = _recuperer_evenements_france(magnitude_min_globale, depuis)
         except requests.RequestException as exc:
             logger.warning("Échec de requête à l'API sismique française (%s) -- retentée au prochain passage.", exc)
-            evenements_fr = []
+            evenements_fr = None
 
         try:
             evenements_emsc = _recuperer_evenements_emsc(magnitude_min_globale, depuis)
         except requests.RequestException as exc:
             logger.warning("Échec de requête à l'API sismique EMSC (%s) -- retentée au prochain passage.", exc)
-            evenements_emsc = []
+            evenements_emsc = None
 
-        if not evenements_fr and not evenements_emsc:
+        if evenements_fr is None and evenements_emsc is None:
             self.stdout.write("Alertes sismiques : aucune des deux API n'a répondu, rien à faire.")
+            return
+        evenements_fr, evenements_emsc = evenements_fr or [], evenements_emsc or []
+        if not evenements_fr and not evenements_emsc:
+            self.stdout.write("Alertes sismiques : aucun séisme sur la période.")
             return
 
         evenements = _fusionner_evenements(evenements_fr, evenements_emsc)
@@ -352,15 +359,13 @@ class Command(BaseCommand):
             institution.nom, texte, ", ".join(sorted(evt["sources"])),
         )
 
-        # DM Matrix aux administrateurs (demande utilisateur du 10/10) -- jamais d'exception
-        # propagée : un échec Element ne doit jamais faire perdre la diffusion mesh déjà faite
-        # ci-dessus, ni la trace SeismeDiffuse déjà enregistrée.
-        texte_dm = f"[assista-crise] {texte} ({institution.nom}, sources : {', '.join(sorted(evt['sources']))})"
-        for admin in User.objects.filter(type=UserRole.ADMINISTRATOR, is_active=True):
-            try:
-                envoyer_dm(admin, texte_dm)
-            except Exception:
-                logger.exception("Échec de notification Matrix de l'alerte sismique (destinataire %s).", admin.id)
+        # Les administrateurs, par l'application et le site (Matrix arrêté, 24/11/2026) --
+        # `prevenir` ne lève jamais : la diffusion mesh et la trace SeismeDiffuse restent.
+        prevenir_administrateurs(
+            f"Séisme M{evt['magnitude']:.1f} près de {lieu}",
+            f"{texte} ({institution.nom}, sources : {', '.join(sorted(evt['sources']))})",
+            urgent=evt["magnitude"] >= 4.5, lien="/admin/veille",
+        )
 
     def _diffuser_emcom(self, evt) -> bool:
         """Diffusion communautaire, à la fois sur le canal Meshtastic "Fr_EMCOM" (ou équivalent)
@@ -393,12 +398,11 @@ class Command(BaseCommand):
             ", ".join(canaux_touches), texte, ", ".join(sorted(evt["sources"])),
         )
 
-        texte_dm = f"[assista-crise] {texte} (canaux {', '.join(canaux_touches)}, sources : {', '.join(sorted(evt['sources']))})"
-        for admin in User.objects.filter(type=UserRole.ADMINISTRATOR, is_active=True):
-            try:
-                envoyer_dm(admin, texte_dm)
-            except Exception:
-                logger.exception("Échec de notification Matrix de l'alerte Fr_EMCOM (destinataire %s).", admin.id)
+        prevenir_administrateurs(
+            f"Séisme M{evt['magnitude']:.1f} près de {lieu}",
+            f"{texte} (canaux {', '.join(canaux_touches)}, sources : {', '.join(sorted(evt['sources']))})",
+            urgent=evt["magnitude"] >= 4.5, lien="/admin/veille",
+        )
 
         return True
 

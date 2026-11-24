@@ -21,7 +21,6 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from .matrix import envoyer_dm
 from .models import InterlocuteurAlertePCS, ModeAlertePCS, NotificationAlertePCS, StatutNotificationPCS
 from .permissions import send_mail_env_aware
 
@@ -106,11 +105,16 @@ def _envoyer_email(interlocuteur, crise, notification, message, request):
     )
 
 
-def _envoyer_matrix(interlocuteur, crise, notification, message, request):
+def _envoyer_application(interlocuteur, crise, notification, message, request):
+    """Mode « application » (valeur stockée MATRIX, d'avant l'arrêt de Matrix le 24/11/2026) :
+    notification du site et de l'application au compte lié, avec le lien d'accusé."""
+    from .notifications_application import prevenir
+
     if not interlocuteur.utilisateur:
-        raise ValueError("Aucun compte utilisateur lié -- envoi Matrix impossible.")
+        raise ValueError("Aucun compte utilisateur lié -- notification dans l'application impossible.")
     texte = f"{message}\n\nAccuser réception : {_lien_accuse_reception(notification)}"
-    envoyer_dm(interlocuteur.utilisateur, texte)
+    prevenir(interlocuteur.utilisateur, f"[PCS] {crise.name}", texte, urgent=True, crise=crise,
+             environment=notification.environment)
 
 
 # Un canal absent de ce registre (TELEPHONE/SMS/API_TIERCE/AUCUN) n'est jamais sélectionnable
@@ -119,7 +123,7 @@ def _envoyer_matrix(interlocuteur, crise, notification, message, request):
 # Facebook...) : une fonction + une entrée ici, rien d'autre à changer.
 _REGISTRE_ENVOI = {
     ModeAlertePCS.EMAIL: _envoyer_email,
-    ModeAlertePCS.MATRIX: _envoyer_matrix,
+    ModeAlertePCS.MATRIX: _envoyer_application,
 }
 
 STATUTS_TERMINAUX = {

@@ -416,9 +416,9 @@ export class CampagnesDisponibiliteComponent implements OnInit {
   get coutTotalCentimes(): number | null {
     const retenus = this.canaux.filter(c => this.canalCoche(c.code) && c.disponible);
     if (!retenus.length) { return 0; }
-    // Matrix est gratuit pour de vrai ; ailleurs, un total nul veut dire tarif non
+    // L'application est gratuite pour de vrai ; ailleurs, un total nul veut dire tarif non
     // renseigné, et on ne l'additionne pas comme s'il valait zéro.
-    if (retenus.some(c => c.code !== 'MATRIX' && c.destinataires > 0
+    if (retenus.some(c => c.code !== 'APPLICATION' && c.destinataires > 0
                           && c.cout_total_centimes === null)) {
       return null;
     }

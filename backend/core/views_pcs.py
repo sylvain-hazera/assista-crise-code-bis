@@ -718,7 +718,7 @@ class AlertesPopulationView(APIView):
         if not isinstance(canaux, list) or not isinstance(terrain, list) or not isinstance(relayer, list):
             raise ValidationError({"canaux": "Choisissez au moins un canal ou un moyen de terrain."})
         # Une alerte peut ne passer QUE par le terrain : la sirène n'a pas besoin d'Internet.
-        if not [c for c in canaux if c in alerte_population.CODES] and not terrain:
+        if not [c for c in canaux if c in alerte_population.CODES or c == alerte_population.MATRIX] and not terrain:
             raise ValidationError({"canaux": "Choisissez au moins un canal ou un moyen de terrain."})
         crise = _crise_demandee(request, request.data.get("crise"))
         alerte = alerte_population.envoyer(request, institution, crise, titre, message, canaux,

@@ -224,6 +224,13 @@ def pousser_notification_site_task(notification_id: str):
     return pousser_notification_site(notification_id)
 
 
+@shared_task(time_limit=120, soft_time_limit=100)
+def alerter_administrateurs_erreur_task(titre: str, texte: str):
+    """Une erreur serveur, aux administrateurs (site et application) -- voir core/logging_handlers.py."""
+    from .notifications_application import prevenir_administrateurs
+    return prevenir_administrateurs(titre, texte, lien="/pilotage/alertes")
+
+
 
 @shared_task(queue=FILE_LOURDE, acks_late=True, time_limit=4 * 3600, soft_time_limit=4 * 3600 - 60)
 def amorcer_departement_task(amorcage_id: str, etapes=None, jeton=None):

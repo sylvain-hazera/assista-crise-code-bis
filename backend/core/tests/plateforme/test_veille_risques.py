@@ -473,7 +473,7 @@ class TestAnnonceDesFoyers:
 
     @pytest.fixture(autouse=True)
     def sans_messagerie(self):
-        with mock.patch("core.matrix.envoyer_dm") as envoi:
+        with mock.patch("core.notifications_application.prevenir") as envoi:
             self.envoi = envoi
             yield
 

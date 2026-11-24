@@ -3876,7 +3876,7 @@ class ModeAlertePCS(models.TextChoices):
     """Canal d'alerte préféré d'un interlocuteur PCS. TELEPHONE est manuel ; SMS et API_TIERCE
     sont réservés (aucun envoi implémenté, voir core/alertes_pcs.py)."""
     EMAIL = "EMAIL", "Email"
-    MATRIX = "MATRIX", "Message Matrix"
+    MATRIX = "MATRIX", "Notification dans l'application"
     TELEPHONE = "TELEPHONE", "Téléphone (manuel uniquement)"
     SMS = "SMS", "SMS (pas encore disponible)"
     API_TIERCE = "API_TIERCE", "Intégration tierce (Intramuros, Facebook...) -- pas encore disponible"
@@ -12074,9 +12074,9 @@ class CampagneDisponibilite(EnvironmentScopedModel):
 
         Même parti pris que `creneaux_effectifs` : une campagne créée avant l'ajout des
         canaux, ou enregistrée sans y toucher, continue de partir comme avant."""
-        from .canaux_campagne import CANAL_EMAIL
+        from .canaux_campagne import CANAL_EMAIL, sans_matrix
 
-        return list(self.canaux) if self.canaux else [CANAL_EMAIL]
+        return sans_matrix(self.canaux) if self.canaux else [CANAL_EMAIL]
 
     @property
     def creneaux_effectifs(self):

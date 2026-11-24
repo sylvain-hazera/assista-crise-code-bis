@@ -8,7 +8,8 @@ Quatre canaux, chacun pour ce qu'il sait faire :
 - la **notification du site** (`Notification`), pour la personne concernée ;
 - l'**application mobile** (`notifications_application.notifier`), si elle l'a sur son téléphone ;
 - le **courriel**, par `send_branded_mail` : signature et adresse de l'institution qui écrit ;
-- le **salon Matrix des permanents** de l'institution destinataire, pour que l'équipe le voie.
+- l'**équipe de l'institution destinataire** (ses contacts principaux, à défaut son bureau),
+  par l'application et le site — c'était son salon Matrix avant l'arrêt de Matrix (24/11/2026).
 
 On prévient des PERSONNES PRÉCISES (qui a lancé l'appel, qui s'est engagé), jamais tout un
 annuaire : un appel qui écrit à cent personnes à chaque engagement, plus personne ne le lit.
@@ -32,12 +33,12 @@ def prevenir(*, de, vers, titre, corps, personnes=(), courriels=(), request=None
     `personnes` : les comptes à notifier ; `courriels` : adresses en plus (le contact de l'appel).
     Rend ce qui est parti, canal par canal."""
     from .branding import send_branded_mail, send_branded_mail_env_aware
-    from .models import Environment, GenreNotification, Notification, SalonMatrixInstitution, TypeSalonInstitution
+    from .models import Environment, GenreNotification, Notification
     from .notifications_application import notifier
 
     environment = environment or Environment.PROD
     personnes = [p for p in {p.pk: p for p in personnes if p is not None}.values()]
-    bilan = {"site": 0, "application": 0, "courriels": 0, "matrix": False}
+    bilan = {"site": 0, "application": 0, "courriels": 0, "equipe": 0}
 
     for personne in personnes:
         try:
@@ -64,27 +65,24 @@ def prevenir(*, de, vers, titre, corps, personnes=(), courriels=(), request=None
             logger.warning("Courriel d'appel aux dons non parti (%s).", type(exc).__name__)
 
     if vers is not None:
-        try:
-            salon = SalonMatrixInstitution.objects.filter(institution=vers, type=TypeSalonInstitution.PERMANENTS,
-                                                          room_id__isnull=False).exclude(room_id="").first()
-            if salon is not None:
-                _dire_au_salon(salon.room_id, f"Appel aux dons — {titre}\n{corps}")
-                bilan["matrix"] = True
-        except Exception as exc:
-            logger.warning("Message Matrix d'appel aux dons non parti (%s).", type(exc).__name__)
+        from .notifications_application import prevenir
+
+        deja = {p.pk for p in personnes}
+        for membre in equipe_de(vers):
+            if membre.pk not in deja:
+                prevenir(membre, titre, corps, lien=LIEN, institution=vers, crise=crise, environment=environment)
+                bilan["equipe"] += 1
     return bilan
 
 
-def _dire_au_salon(room_id: str, texte: str) -> None:
-    """Message du robot dans un salon. Pas `matrix.envoyer_message_salon`, qui signe au nom d'une
-    personne : ici c'est l'application qui parle, y compris depuis une tâche planifiée."""
-    import uuid
+def equipe_de(institution) -> list:
+    """Qui prévenir dans une institution : ses contacts principaux, à défaut son bureau."""
+    from .models import ContactInstitution
 
-    import requests
-
-    from .matrix import SYNAPSE_URL, _bot_headers
-    requests.put(f"{SYNAPSE_URL}/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{uuid.uuid4().hex}",
-                 headers=_bot_headers(), json={"msgtype": "m.text", "body": texte}, timeout=10).raise_for_status()
+    contacts = list(ContactInstitution.objects.filter(institution=institution, actif=True, utilisateur__is_active=True)
+                    .select_related("utilisateur"))
+    choisis = [c for c in contacts if c.contact_principal] or [c for c in contacts if c.membre_bureau]
+    return [c.utilisateur for c in choisis]
 
 
 def contacts_de(appel) -> tuple[list, list]:
@@ -98,7 +96,7 @@ def prevenir_le_reseau(appel) -> dict:
     17/11/2026 : « oui, il faut prévenir les autres institutions »).
 
     Dans chaque institution, on écrit à ses contacts principaux, à défaut à son bureau — pas à
-    tous ses membres — et à son salon Matrix. Une institution n'est prévenue qu'UNE fois par
+    tous ses membres. Une institution n'est prévenue qu'UNE fois par
     appel : élargir le périmètre ne réécrit qu'aux nouvelles venues. Celles qu'on ne sait pas
     situer ne reçoivent rien d'un appel à portée limitée : elles le voient dans le réseau, mais
     on n'écrit pas à toute la France pour un appel lancé à cinquante kilomètres."""

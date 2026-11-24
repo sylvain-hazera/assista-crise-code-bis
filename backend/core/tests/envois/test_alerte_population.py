@@ -40,8 +40,11 @@ def habitant(create_user):
 @pytest.fixture
 def envois(monkeypatch):
     """Les canaux simulés : on retient ce qui serait parti, rien ne sort."""
-    partis = {"matrix": [], "sms": []}
-    monkeypatch.setattr(matrix, "envoyer_dm", lambda user, texte, *a, **k: partis["matrix"].append((user.id, texte)))
+    partis = {"sms": []}
+
+    def matrix_interdit(*a, **k):
+        raise AssertionError("Matrix est arrêté : plus rien ne doit y partir")
+    monkeypatch.setattr(matrix, "envoyer_dm", matrix_interdit)
     monkeypatch.setattr("core.envoi_sms.envoyer_sms_pour_institution",
                         lambda institution, numero, message: (partis["sms"].append((numero, message)) or True, "ok"))
     return partis
@@ -80,19 +83,20 @@ class TestQuiRecoit:
 
 @pytest.mark.django_db
 class TestEnvoi:
-    def test_par_defaut_lalerte_part_par_la_messagerie_et_lapplication(self, agent, mairie, habitant, envois):
+    def test_par_defaut_lalerte_part_par_lapplication(self, agent, mairie, habitant, envois):
         avec_appli, sans_appli = habitant("avec-appli"), habitant("sans-appli")
         for h in (avec_appli, sans_appli):
             _abonner(h, mairie)
         notifications_application.enregistrer_appareil(avec_appli, "installation-1")
         defaut = agent.get(URL).data["par_defaut"]
-        assert defaut == ["MATRIX", "APPLICATION"]
+        assert defaut == ["APPLICATION"]
+        assert "MATRIX" not in [c["code"] for c in agent.get(URL).data["apercu"]["canaux"]]
 
         reponse = agent.post(URL, {"titre": "Crue du Gier", "message": "Évacuez le quartier bas.", "canaux": defaut}, format="json")
 
         assert reponse.status_code == 201, reponse.data
         assert reponse.data["destinataires"] == 2
-        assert reponse.data["bilan"]["MATRIX"]["partis"] == 2 and len(envois["matrix"]) == 2
+        assert "MATRIX" not in reponse.data["bilan"]
         # L'application ne compte que ceux qu'elle peut réellement joindre.
         assert reponse.data["bilan"]["APPLICATION"]["partis"] == 1
         notification = NotificationApplication.objects.get(utilisateur=avec_appli)
@@ -137,10 +141,10 @@ class TestEnvoi:
 
         canal = next(c for c in agent.get(URL).data["apercu"]["canaux"] if c["code"] == "INTRAMUROS")
         assert canal["disponible"] is False and "pas encore branché" in canal["motif"]
-        reponse = agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": ["INTRAMUROS", "MATRIX"]}, format="json")
+        reponse = agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": ["INTRAMUROS", "EMAIL"]}, format="json")
 
         assert reponse.data["bilan"]["INTRAMUROS"]["partis"] == 0 and "pas encore branché" in reponse.data["bilan"]["INTRAMUROS"]["note"]
-        assert reponse.data["bilan"]["MATRIX"]["partis"] == 1   # le reste part quand même
+        assert reponse.data["bilan"]["EMAIL"]["partis"] == 1   # le reste part quand même
 
     def test_un_canal_en_panne_narrete_pas_les_autres(self, agent, mairie, habitant, monkeypatch):
         cible = habitant("resilient")
@@ -148,12 +152,12 @@ class TestEnvoi:
         notifications_application.enregistrer_appareil(cible, "installation-2")
 
         def panne(*a, **k):
-            raise RuntimeError("messagerie indisponible")
-        monkeypatch.setattr(matrix, "envoyer_dm", panne)
+            raise RuntimeError("application indisponible")
+        monkeypatch.setattr(notifications_application, "notifier", panne)
 
-        bilan = agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": ["MATRIX", "APPLICATION"]}, format="json").data["bilan"]
+        bilan = agent.post(URL, {"titre": "Crue", "message": "Texte", "canaux": ["APPLICATION", "EMAIL"]}, format="json").data["bilan"]
 
-        assert bilan["MATRIX"] == {"partis": 0, "echecs": 1, "note": ""} and bilan["APPLICATION"]["partis"] == 1
+        assert bilan["APPLICATION"] == {"partis": 0, "echecs": 1, "note": ""} and bilan["EMAIL"]["partis"] == 1
 
     def test_en_zone_de_demonstration_lalerte_ne_part_qua_celui_qui_lenvoie(self, mairie, habitant, envois, create_user, monkeypatch):
         """Il constate le fonctionnement, et aucun habitant ne reçoit une fausse alerte."""
@@ -171,10 +175,10 @@ class TestEnvoi:
         alerte = alerte_population.envoyer(requete, mairie, None, "Essai", "Texte", ["MATRIX", "APPLICATION"])
 
         assert alerte.destinataires == 1                               # ce qu'elle aurait touché
-        assert [destinataire for destinataire, _ in envois["matrix"]] == [auteur.id]
         assert NotificationApplication.objects.filter(utilisateur=auteur).count() == 1
         assert not NotificationApplication.objects.filter(utilisateur=cible).exists()
-        assert alerte.bilan["MATRIX"]["partis"] == 1 and "vous seul" in alerte.bilan["MATRIX"]["note"]
+        assert "MATRIX" not in alerte.bilan
+        assert alerte.bilan["APPLICATION"]["partis"] == 1 and "vous seul" in alerte.bilan["APPLICATION"]["note"]
 
 
 @pytest.mark.django_db

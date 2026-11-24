@@ -21,7 +21,7 @@ export class NotificationAlertePCSService {
     return this.http.post<NotificationAlertePCS>(`${this.url}/${id}/confirmer/`, {});
   }
 
-  /** Envoi explicite (email/Matrix) pour les lignes sélectionnées, avec le message choisi/
+  /** Envoi explicite (email/application) pour les lignes sélectionnées, avec le message choisi/
    * modifié par l'utilisateur pour cette fois uniquement. */
   envoyerLot(criseId: string, notificationIds: string[], message: string): Observable<{ traitees: number; notifications: NotificationAlertePCS[] }> {
     return this.http.post<{ traitees: number; notifications: NotificationAlertePCS[] }>(`${this.url}/envoyer_lot/`, {

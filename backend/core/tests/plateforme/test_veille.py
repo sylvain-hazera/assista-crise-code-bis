@@ -91,8 +91,8 @@ def abonnement(mairie):
 
 @pytest.fixture
 def sans_messagerie():
-    """Le message privé passe par Matrix, absent des tests : on vérifie qu'il est demandé."""
-    with mock.patch("core.matrix.envoyer_dm") as envoi:
+    """La notification (site et application, depuis l'arrêt de Matrix) : on vérifie qu'elle est demandée."""
+    with mock.patch("core.notifications_application.prevenir") as envoi:
         yield envoi
 
 
@@ -380,7 +380,7 @@ class TestAnnonceAuxInstitutions:
 
         assert len(annonces) == 2
         resumes = [appel for appel in sans_messagerie.call_args_list if appel.args[0] == administrateur]
-        assert len(resumes) == 1 and "vent violent" in resumes[0].args[1] and "orages" in resumes[0].args[1]
+        assert len(resumes) == 1 and "vent violent" in resumes[0].args[2] and "orages" in resumes[0].args[2]
 
     def test_un_echec_de_messagerie_n_empeche_pas_l_annonce_radio(self, mairie, abonnement, create_user):
         agent = create_user(username="agent-veille2@test.fr", email="agent-veille2@test.fr", type="AUT_LOCALE")
@@ -389,7 +389,7 @@ class TestAnnonceAuxInstitutions:
                                              cle_partagee_hex="00" * 16)
         _enregistrer(ORANGE_VENT_42)
 
-        with mock.patch("core.matrix.envoyer_dm", side_effect=RuntimeError("Matrix en panne")):
+        with mock.patch("core.notifications_application.notifier", side_effect=RuntimeError("application en panne")):
             annonces = meteo_france.diffuser_alertes(MAINTENANT)
 
         assert len(annonces) == 1

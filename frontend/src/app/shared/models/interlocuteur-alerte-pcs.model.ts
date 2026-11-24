@@ -29,7 +29,9 @@ export const CATEGORIES_INTERLOCUTEUR_PCS: { value: CategorieInterlocuteurPCS; l
 
 export const MODES_ALERTE_PCS: { value: ModeAlertePCS; label: string; disponible: boolean }[] = [
   { value: 'EMAIL', label: 'Email', disponible: true },
-  { value: 'MATRIX', label: 'Message Matrix (compte lié requis)', disponible: true },
+  // Valeur MATRIX conservée en base ; depuis l'arrêt de Matrix (24/11/2026), c'est une
+  // notification dans l'application et sur le site.
+  { value: 'MATRIX', label: "Notification dans l'application (compte lié requis)", disponible: true },
   { value: 'TELEPHONE', label: 'Téléphone (manuel uniquement)', disponible: true },
   { value: 'SMS', label: 'SMS — pas encore disponible', disponible: false },
   { value: 'API_TIERCE', label: 'Intégration tierce (Intramuros, Facebook...) — pas encore disponible', disponible: false },

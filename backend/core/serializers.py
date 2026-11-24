@@ -6273,11 +6273,12 @@ class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
         On n'exige PAS qu'ils soient configurés : une campagne se prépare souvent avant que
         le compte SMS ne le soit, et refuser la préparation obligerait à tout ressaisir
         ensuite. L'écran dit ce qui est prêt, et l'envoi ne part que par ce qui l'est."""
-        from .canaux_campagne import CANAUX
+        from .canaux_campagne import CANAUX, sans_matrix
 
         connus = {c["code"] for c in CANAUX}
         if not isinstance(valeur, list):
             raise serializers.ValidationError("Liste attendue.")
+        valeur = sans_matrix(valeur)   # ancien écran : Matrix part par l'application
         inconnus = [v for v in valeur if v not in connus]
         if inconnus:
             raise serializers.ValidationError(

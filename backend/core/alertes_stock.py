@@ -2,7 +2,7 @@
 
 Avant, un seuil franchi, un lot périmé ou un prêt en retard ne se voyaient que sur la page
 « Stocks ». Ce module en fait un relevé par institution, envoyé par les canaux de
-`notifications_dons.prevenir` (site, application, courriel, salon Matrix des permanents).
+`notifications_dons.prevenir` (site, application, courriel, équipe de l'institution).
 
 **Un relevé ne part que s'il a changé.** La même liste tous les matins, personne ne la lit plus
 au bout de trois jours : on garde l'empreinte du dernier relevé envoyé (`AlerteStockEnvoyee`) et

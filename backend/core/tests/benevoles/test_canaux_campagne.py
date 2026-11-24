@@ -76,12 +76,11 @@ class TestCeQueChaqueCanalAtteint:
         # choisit « le moins cher ».
         assert canaux[CANAL_SMS]["non_joignables"] == 1
 
-    def test_matrix_n_est_pas_presente_comme_equivalent_aux_autres(self, campagne):
-        """Gratuit, mais partiel : le dire est le seul moyen que ce ne soit pas un piège."""
-        matrix = _par_code(apercu_des_canaux(campagne, []))[CANAL_MATRIX]
-
-        assert "estimation haute" in matrix["detail"]
-        assert matrix["cout_unitaire_centimes"] == 0
+    def test_matrix_n_est_plus_propose_et_part_par_l_application(self, campagne):
+        """Matrix arrêté (24/11/2026) : plus proposé ; une campagne qui le cite part par l'application."""
+        assert CANAL_MATRIX not in _par_code(apercu_des_canaux(campagne, []))
+        campagne.canaux = [CANAL_MATRIX, CANAL_EMAIL]
+        assert campagne.canaux_effectifs == ["APPLICATION", CANAL_EMAIL]
 
 
 class TestLeCout:

@@ -110,6 +110,41 @@ def notifier(utilisateur, genre, titre, corps="", *, urgent=False, institution=N
     return notification
 
 
+def prevenir(utilisateur, titre, corps="", *, urgent=False, lien="", institution=None, crise=None,
+             environment=None):
+    """Prévenir une personne : la notification du site (cloche, et poussée vers le site installé
+    sur son téléphone) ET l'application Android si elle l'a.
+
+    Remplace les messages privés Matrix depuis l'arrêt de Matrix (demande de Sylvain du
+    24/11/2026 : « tout ce qui passe par Matrix doit passer par l'application »). Ne lève
+    jamais : une alerte qui n'a pas pu être déposée ne doit pas faire perdre le geste qui l'a
+    déclenchée. Rend vrai si l'application Android porte le message."""
+    from .models import Environment, GenreNotification, Notification
+
+    environment = environment or getattr(crise, "environment", None) or Environment.PROD
+    titre = (titre or "Notification").strip()[:200]
+    try:
+        Notification.objects.create(utilisateur=utilisateur, titre=titre, message=corps or "", crise=crise,
+                                    lien=lien_relatif(lien, defaut="") if lien else "", environment=environment)
+    except Exception:
+        logger.exception("Notification du site non déposée (destinataire %s).", getattr(utilisateur, "id", None))
+    try:
+        return notifier(utilisateur, GenreNotification.INFORMATION, titre, corps, urgent=urgent,
+                        institution=institution, environment=environment) is not None
+    except Exception:
+        logger.exception("Notification d'application non déposée (destinataire %s).", getattr(utilisateur, "id", None))
+        return False
+
+
+def prevenir_administrateurs(titre, corps="", *, urgent=False, lien=""):
+    """Les administrateurs de la plateforme, chacun par `prevenir`. Rend le nombre atteint par
+    l'application."""
+    from .models import User, UserRole
+
+    return sum(1 for admin in User.objects.filter(type=UserRole.ADMINISTRATOR, is_active=True)
+               if prevenir(admin, titre, corps, urgent=urgent, lien=lien))
+
+
 # ── Notifications poussées vers les applications web (DOSSIER-PWA-INTERVENANTS.md, lot 4) ──
 #
 # Seule exception au « le téléphone vient chercher » : sur iPhone, une application web fermée ne

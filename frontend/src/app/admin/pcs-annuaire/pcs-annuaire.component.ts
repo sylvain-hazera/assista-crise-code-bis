@@ -27,7 +27,7 @@ interface Saisie {
  * place, sous son nom.
  *
  * L'annuaire sert à l'ouverture d'une crise : ses interlocuteurs sont proposés pour être
- * prévenus, par courriel, par Matrix ou au téléphone, et l'on suit qui a accusé réception.
+ * prévenus, par courriel, par l'application ou au téléphone, et l'on suit qui a accusé réception.
  */
 @Component({
   selector: 'app-pcs-annuaire',

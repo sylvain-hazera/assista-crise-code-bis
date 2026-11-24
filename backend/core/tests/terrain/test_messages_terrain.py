@@ -34,7 +34,7 @@ def terrain(db):
 
 
 def _envoyer(u, mission, type_, **extra):
-    with mock.patch("core.matrix.envoyer_dm"):
+    with mock.patch("core.notifications_application.prevenir"):
         return _client(u).post(reverse("messageterrain-list"),
                                {"mission": str(mission.id), "type": type_, "identifiant_client": extra.pop("ident", "a1b2c3"), **extra},
                                format="json")
@@ -114,7 +114,7 @@ def test_le_message_radio_entrant_d_un_canal_meshcore_est_reconnu(terrain):
     admin = User.objects.create_user(username="pont-t@test.fr", email="pont-t@test.fr", password="x", type="ADMIN")
     canal = CanalMeshCore.objects.create(nom="Equipe Gier", environment="PROD")
     benevole, mission = terrain["benevole"], terrain["mission"]
-    with mock.patch("core.matrix.envoyer_dm"):
+    with mock.patch("core.notifications_application.prevenir"):
         r = _client(admin).post(reverse("messagecanalmeshcore-list"), {
             "canal": canal.id, "direction": "ENTRANT",
             "contenu": f"Léa: ⚑FIN {mission.id.hex[:6]}.{benevole.id.hex[:6]}.c0ffee Intervention terminée"}, format="json")
@@ -132,7 +132,7 @@ def test_en_formation_l_alerte_ne_part_qu_a_l_auteur(terrain):
     assert sans_role.status_code == 403
     terrain["benevole"].demo_role = "UTIL_SIMPLE"
     terrain["benevole"].save(update_fields=["demo_role"])
-    with mock.patch("core.matrix.envoyer_dm") as dm:
+    with mock.patch("core.notifications_application.prevenir") as dm:
         r = _client(terrain["benevole"]).post(reverse("messageterrain-list"), {
             "mission": str(mission.id), "type": "DANGER", "texte": "toit instable", "identifiant_client": "d3m0d3"},
             format="json", HTTP_X_ENVIRONMENT="DEMO")
@@ -149,7 +149,7 @@ def test_le_message_porte_son_dossier_par_les_donnees_et_par_radio(terrain):
     benevole, mission = terrain["benevole"], terrain["mission"]
     dossier = Dossier.objects.create(numero="D-42", titre="Cave inondée", crise=terrain["crise"], equipe=terrain["equipe"], mission=mission)
     # Par les données, le dossier seul suffit : la mission s'en déduit.
-    with mock.patch("core.matrix.envoyer_dm"):
+    with mock.patch("core.notifications_application.prevenir"):
         r = _client(benevole).post(reverse("messageterrain-list"), {"dossier": str(dossier.id), "type": "ARRIVE",
                                                                     "identifiant_client": "aaaaa1"}, format="json")
     assert r.status_code == 201, r.data

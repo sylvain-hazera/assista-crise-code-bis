@@ -9,11 +9,12 @@ qui ont demandé à recevoir ses alertes (`AbonnementAlerte`) et aux personnes d
 la crise (`User.affected_crisis`). On n'écrit pas à quelqu'un parce qu'il habite là : le
 consentement fait la liste.
 
-**Sept canaux, sur le même registre que les campagnes** (`core/canaux_campagne.py`) :
+**Six canaux, sur le même registre que les campagnes** (`core/canaux_campagne.py`). La
+messagerie Matrix n'en est plus un depuis son arrêt (24/11/2026) : une demande qui la cite
+encore (ancien écran) part par l'application.
 
 | Canal | État | Par défaut |
 |---|---|---|
-| Messagerie (Matrix) | en service : un message privé à chaque personne qui s'y est connectée | oui |
 | Application mobile | en service : une notification urgente, avec son suivi (reçue, vue, lue) | oui |
 | Courriel | en service, à cocher : par l'adresse de la collectivité si elle en a une | non |
 | SMS | en service, à cocher : seulement si la collectivité a un fournisseur, et il se paie | non |
@@ -52,8 +53,6 @@ LONGUEUR_RADIO = 200
 
 #: Dans l'ordre où l'écran les propose. `defaut` : coché d'office.
 CANAUX = [
-    {"code": MATRIX, "libelle": "Messagerie (Matrix)", "defaut": True,
-     "detail": "Gratuit et immédiat. Ne touche que les personnes qui se sont déjà connectées à la messagerie."},
     {"code": APPLICATION, "libelle": "Application mobile", "defaut": True,
      "detail": "Gratuit, et le seul canal qui dit ce que le message est devenu : reçu, vu, lu. "
                "Application fermée, la notification peut mettre jusqu'à un quart d'heure à sonner."},
@@ -106,7 +105,7 @@ def canaux_radio(institution, crise, environment):
 def disponibilite(institution, crise=None, environment=None) -> dict:
     """Pour chaque canal : peut-on s'en servir pour cette collectivité, et sinon pourquoi."""
     config = _configuration(institution)
-    etat = {MATRIX: (True, ""), APPLICATION: (True, ""), EMAIL: (True, "")}
+    etat = {APPLICATION: (True, ""), EMAIL: (True, "")}
     meshcore, meshtastic = canaux_radio(institution, crise, environment or Environment.PROD)
     for code, canaux, nom in ((MESHCORE, meshcore, "MeshCore"), (MESHTASTIC, meshtastic, "Meshtastic")):
         present = canaux.exists()
@@ -205,9 +204,6 @@ def apercu(institution, crise, environment) -> dict:
     personnes = list(destinataires(institution, crise, environment).only("id", "email", "phone_number"))
     par_application = joignables_par_application([p.id for p in personnes])
     joignables = {
-        # Estimation haute, comme pour les campagnes : savoir qui s'est connecté à la messagerie
-        # demanderait un appel réseau par personne.
-        MATRIX: len(personnes),
         APPLICATION: len(par_application),
         EMAIL: sum(1 for p in personnes if p.email),
         SMS: sum(1 for p in personnes if p.phone_number),
@@ -247,7 +243,8 @@ def envoyer(request, institution, crise, titre, message, canaux, urgent=True, te
 
     environment = get_active_environment(request)
     demonstration = environment == Environment.DEMO
-    canaux = [c for c in CODES if c in set(canaux)]
+    demandes = {APPLICATION if c == MATRIX else c for c in canaux}
+    canaux = [c for c in CODES if c in demandes]
     personnes = list(destinataires(institution, crise, environment))
     etat = disponibilite(institution, crise, environment)
     bilan = {code: {"partis": 0, "echecs": 0, "note": ""} for code in canaux}
@@ -322,12 +319,6 @@ def _diffuser_radio(request, institution, crise, code, titre, message, environme
 
 def _envoyer_a(request, institution, personne, code, titre, message, texte, urgent, environment) -> bool:
     """Un message, à une personne, par un canal. Vrai s'il est parti."""
-    if code == MATRIX:
-        from .matrix import envoyer_dm
-        # Silencieux si la personne ne s'est jamais connectée à la messagerie : c'est pourquoi
-        # ce canal est annoncé comme une estimation haute.
-        envoyer_dm(personne, texte)
-        return True
     if code == APPLICATION:
         from .notifications_application import notifier
         return notifier(personne, GenreNotification.INFORMATION, titre, message, urgent=urgent,

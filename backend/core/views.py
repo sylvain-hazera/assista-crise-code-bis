@@ -6057,7 +6057,7 @@ def _signaler_sos_mesh(
     expediteur_identifiant=None, expediteur_nom='',
 ) -> "AlerteMeshSOS":
     """Enregistre une détection SOS (voir docstring d'AlerteMeshSOS) et notifie les
-    administrateurs assista-crise (email + DM Matrix, demande utilisateur du 10/10) -- jamais
+    administrateurs assista-crise (email + application et site, demande utilisateur du 10/10) -- jamais
     les administrateurs d'une institution précise ici, contrairement à _alerter_panne_companion :
     une urgence détectée sur le mesh doit atteindre QUELQU'UN capable d'agir même si
     l'institution n'est pas encore identifiée (canal/contact inconnu).
@@ -6069,7 +6069,7 @@ def _signaler_sos_mesh(
     échec d'email ou de Matrix ne doit jamais faire perdre le message original qui a déclenché
     la détection (voir les appelants, qui enveloppent déjà leur propre perform_create)."""
     from datetime import timedelta
-    from .matrix import envoyer_dm
+    from .notifications_application import prevenir
 
     notification_recente = False
     if expediteur_identifiant:
@@ -6108,11 +6108,11 @@ def _signaler_sos_mesh(
             send_mail_logged(request, sujet, corps, settings.DEFAULT_FROM_EMAIL, [u.email for u in admins])
     except Exception:
         logger.exception("Échec de notification email pour l'alerte SOS mesh %s.", alerte.id)
-    for u in admins:
-        try:
-            envoyer_dm(u, f"{sujet}\n\n{corps}")
-        except Exception:
-            logger.exception("Échec de notification Matrix pour l'alerte SOS mesh %s (destinataire %s).", alerte.id, u.id)
+    # Application et site (Matrix arrêté le 24/11/2026) : TOUS les administrateurs, y compris
+    # ceux sans adresse email. `prevenir` ne lève jamais.
+    for u in User.objects.filter(type=UserRole.ADMINISTRATOR, is_active=True):
+        prevenir(u, f"🆘 Alerte SOS radio ({protocole})", corps, urgent=True, lien="/admin/radio",
+                 institution=institution)
     alerte.notification_envoyee = True
     alerte.save(update_fields=['notification_envoyee'])
     return alerte
@@ -6127,7 +6127,7 @@ def _alerter_panne_companion(request, compagnon, en_panne: bool) -> None:
     les champs utilisés ici (nom/connexion_type/institution/derniere_erreur). Inspiré du
     watchdog de santé radio de meshcore-bot (github.com/agessaman/meshcore-bot), demande
     utilisateur du 10/10."""
-    from .matrix import envoyer_dm
+    from .notifications_application import prevenir
 
     if en_panne:
         logger.error(
@@ -6152,10 +6152,8 @@ def _alerter_panne_companion(request, compagnon, en_panne: bool) -> None:
         return
     # Filtrage Python, pas SQL -- voir le commentaire équivalent dans _signaler_sos_mesh
     # (User.email est chiffré, `.exclude(email='')` ne filtrerait rien).
-    destinataires = [
-        u for u in User.objects.filter(institution=compagnon.institution, type__in=INSTITUTIONAL_TYPES, is_active=True)
-        if u.email
-    ]
+    membres = list(User.objects.filter(institution=compagnon.institution, type__in=INSTITUTIONAL_TYPES, is_active=True))
+    destinataires = [u for u in membres if u.email]
     emails = {u.email for u in destinataires}
     if compagnon.institution.email:
         emails.add(compagnon.institution.email)
@@ -6164,11 +6162,9 @@ def _alerter_panne_companion(request, compagnon, en_panne: bool) -> None:
             send_mail_logged(request, sujet, corps, settings.DEFAULT_FROM_EMAIL, list(emails))
     except Exception:
         logger.exception("Échec de notification email de panne companion %s.", compagnon.id)
-    for u in destinataires:
-        try:
-            envoyer_dm(u, f"{sujet}\n\n{corps}")
-        except Exception:
-            logger.exception("Échec de notification Matrix de panne companion %s (destinataire %s).", compagnon.id, u.id)
+    for u in membres:
+        prevenir(u, sujet.replace("[assista-crise] ", ""), corps, lien="/admin/radio",
+                 institution=compagnon.institution)
 
 
 # Débit maximal d'envoi SORTANT par expéditeur humain et par cible (canal, ou contact pour un

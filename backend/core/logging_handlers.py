@@ -1,43 +1,67 @@
 """Handler de logging qui relaie les erreurs (niveau ERROR et au-dessus, voir LOGGING dans
-config/settings.py) dans un salon Matrix dédié -- même esprit que AdminEmailHandler de Django
+config/settings.py) aux administrateurs -- même esprit que AdminEmailHandler de Django
 (mail_admins), pour qu'une erreur serveur ou un échec d'envoi d'email ne reste jamais
 invisible. Ajouté après l'incident du 07/10 : un compte "Autorité locale" créé sans que
-l'email d'activation ne parte jamais, sans aucune trace exploitable -- la config de logging
-par défaut de Django n'attache un handler console qu'en DEBUG=True (require_debug_true), donc
-tout logger.exception()/logger.error() en production (DEBUG=False) partait dans le vide."""
+l'email d'activation ne parte jamais, sans aucune trace exploitable.
+
+Jusqu'au 24/11/2026, dans un salon Matrix d'exploitation ; Matrix arrêté, l'erreur part en
+notification (site et application) aux administrateurs, par une tâche Celery : le gestionnaire
+de journaux ne touche jamais la base lui-même (il peut être appelé au milieu d'une transaction
+cassée). Garde-fous, une rafale d'erreurs ne doit pas faire sonner un téléphone cent fois :
+le même message au plus une fois par heure, six alertes par heure au plus."""
+import hashlib
 import logging
-import os
-import uuid
+import threading
+import time
 
-import requests
+#: Au plus une alerte par message et par heure, et six par heure en tout.
+FENETRE_S = 3600
+PLAFOND_PAR_FENETRE = 6
+#: Les journaux qui ne déclenchent jamais d'alerte : la base (une panne en produirait une par
+#: requête) et la chaîne de notification elle-même (boucle).
+IGNORES = ("django.db", "core.notifications_application", "core.logging_handlers", "celery", "kombu")
 
-from .matrix import SYNAPSE_URL, _bot_headers
-
-MATRIX_ALERT_ROOM_ID = os.environ.get("MATRIX_ALERT_ROOM_ID", "")
-
-_MAX_BODY_LEN = 4000
+_MAX_BODY_LEN = 2000
+_local = threading.local()
 
 
-class MatrixAlertHandler(logging.Handler):
-    """Poste chaque enregistrement de log comme message texte dans MATRIX_ALERT_ROOM_ID. Ne
-    doit JAMAIS lever d'exception vers l'appelant (contrat standard de logging.Handler) : un
-    salon non configuré ou une panne du pont Matrix lui-même ne doit jamais faire planter le
-    code qui a déclenché le log initial -- toute erreur ici passe par self.handleError,
-    jamais propagée."""
+def _autorise(cle_message) -> bool:
+    """Vrai si cette alerte peut partir (cache partagé entre processus)."""
+    from django.core.cache import cache
+
+    if not cache.add(f"alerte-erreur:{cle_message}", 1, FENETRE_S):
+        return False
+    cle = f"alerte-erreur-compte:{int(time.time() // FENETRE_S)}"
+    cache.add(cle, 0, FENETRE_S)
+    return cache.incr(cle) <= PLAFOND_PAR_FENETRE
+
+
+class AlerteAdministrateursHandler(logging.Handler):
+    """Chaque erreur, une notification aux administrateurs (voir le module). Ne lève JAMAIS vers
+    l'appelant (contrat de logging.Handler) : toute erreur ici passe par self.handleError."""
 
     def emit(self, record):
-        if not MATRIX_ALERT_ROOM_ID:
+        if record.levelno < logging.ERROR or record.name.startswith(IGNORES) or getattr(_local, "actif", False):
             return
+        _local.actif = True
         try:
             texte = self.format(record)
             if len(texte) > _MAX_BODY_LEN:
                 texte = texte[:_MAX_BODY_LEN] + "\n… (tronqué)"
-            txn_id = uuid.uuid4().hex
-            requests.put(
-                f"{SYNAPSE_URL}/_matrix/client/v3/rooms/{MATRIX_ALERT_ROOM_ID}/send/m.room.message/{txn_id}",
-                headers=_bot_headers(),
-                json={"msgtype": "m.text", "body": f"⚠️ {texte}"},
-                timeout=10,
+            empreinte = hashlib.sha256(
+                f"{record.name}|{record.getMessage()[:300]}".encode("utf-8", "replace")).hexdigest()[:32]
+            if not _autorise(empreinte):
+                return
+            from .tasks import alerter_administrateurs_erreur_task
+
+            alerter_administrateurs_erreur_task.apply_async(
+                args=[f"Erreur serveur : {record.name}", texte], retry=False,
             )
         except Exception:
             self.handleError(record)
+        finally:
+            _local.actif = False
+
+
+#: Ancien nom, encore cité par la configuration des journaux.
+MatrixAlertHandler = AlerteAdministrateursHandler

@@ -126,12 +126,12 @@ def _nom(user):
 
 def alerter(message, request=None):
     """Danger ou demande de secours : le régulateur et le chef de l'équipe, l'institution de la
-    mission, par courriel et message Matrix, tout de suite."""
+    mission, par courriel et par l'application (et le site), tout de suite."""
     from django.conf import settings
 
     from .audit import send_mail_logged
-    from .matrix import envoyer_dm
     from .models import User
+    from .notifications_application import prevenir
     from .permissions import INSTITUTIONAL_TYPES
 
     destinataires = set()
@@ -166,10 +166,8 @@ def alerter(message, request=None):
     if emails:
         send_mail_logged(request, f"[assista-crise] {titre}", corps, settings.DEFAULT_FROM_EMAIL, emails)
     for u in destinataires:
-        try:
-            envoyer_dm(u, corps)
-        except Exception:
-            logger.exception("Message Matrix non envoyé pour l'alerte de terrain %s.", message.id)
+        prevenir(u, titre, corps, urgent=True, lien="/pilotage/terrain", crise=message.crise,
+                 environment=message.environment)
 
 
 def depuis_radio(texte, canal):

@@ -592,8 +592,8 @@ def texte_alerte(code, phenomene, niveau, maintenant=None):
 
 def _annoncer(institution, texte):
     """Dépose l'annonce sur les canaux radio de l'institution et l'envoie en message privé aux
-    personnes qui lui sont rattachées. Un échec de messagerie n'empêche jamais le reste."""
-    from .matrix import envoyer_dm
+    personnes qui lui sont rattachées (application et site, depuis l'arrêt de Matrix le
+    24/11/2026). Un échec de notification n'empêche jamais le reste."""
     from .models import (
         CanalMeshCore, CanalMeshtastic, ContactInstitution, DirectionMessageMesh,
         MessageCanalMeshCore, MessageCanalMeshtastic, StatutMessageMesh,
@@ -613,11 +613,13 @@ def _annoncer(institution, texte):
     contacts = (ContactInstitution.objects
                 .filter(institution=institution, actif=True, utilisateur__is_active=True)
                 .select_related("utilisateur"))
+    from .notifications_application import prevenir
+
+    titre = texte.split(" - ", 1)[0]
+    rouge = "ROUGE" in titre or "VIOLET" in titre
     for contact in contacts:
-        try:
-            envoyer_dm(contact.utilisateur, f"[assista-crise] {texte}")
-        except Exception:
-            logger.exception("Vigilance : message non remis (destinataire %s).", contact.utilisateur_id)
+        prevenir(contact.utilisateur, titre, texte, urgent=rouge, lien="/admin/carte-meteo",
+                 institution=institution)
 
 
 def diffuser_alertes(maintenant=None):
@@ -685,14 +687,9 @@ def diffuser_alertes(maintenant=None):
 def _prevenir_administrateurs(annonces):
     """Un seul message par relevé aux administrateurs, quel que soit le nombre d'institutions
     touchées : un épisode orange sur un département peut en concerner des dizaines."""
-    from .matrix import envoyer_dm
-    from .models import User, UserRole
+    from .notifications_application import prevenir_administrateurs
 
-    texte = "[assista-crise] Vigilance annoncée :\n" + "\n".join(annonces[:20])
+    texte = "\n".join(annonces[:20])
     if len(annonces) > 20:
         texte += f"\n… et {len(annonces) - 20} autres."
-    for administrateur in User.objects.filter(type=UserRole.ADMINISTRATOR, is_active=True):
-        try:
-            envoyer_dm(administrateur, texte)
-        except Exception:
-            logger.exception("Vigilance : résumé non remis (destinataire %s).", administrateur.id)
+    prevenir_administrateurs(f"Vigilance annoncée ({len(annonces)})", texte, lien="/admin/carte-meteo")

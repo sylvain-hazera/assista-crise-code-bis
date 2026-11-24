@@ -267,7 +267,7 @@ def envoyer_campagne(campagne, request):
     rotation = _phrase_rotation(campagne)
 
     from .canaux_campagne import (
-        CANAL_APPLICATION, CANAL_EMAIL, CANAL_MATRIX, CANAL_MOBIMEL, CANAL_SMS,
+        CANAL_APPLICATION, CANAL_EMAIL, CANAL_MOBIMEL, CANAL_SMS,
     )
     from .models import GenreNotification
     from .notifications_application import notifier
@@ -340,16 +340,7 @@ def envoyer_campagne(campagne, request):
                     par_canal[code] += 1
                     atteint = True
 
-            if CANAL_MATRIX in canaux:
-                from .matrix import envoyer_dm
-
-                # Silencieux si la personne ne s'est jamais connectée à la messagerie : c'est
-                # le comportement d'`envoyer_dm`, et c'est pourquoi Matrix est annoncé comme
-                # une estimation haute à l'écran.
-                envoyer_dm(cible.utilisateur, _texte_sms(campagne, periode, lien))
-                par_canal[CANAL_MATRIX] += 1
-
-            if not atteint and CANAL_MATRIX not in canaux:
+            if not atteint:
                 raise RuntimeError(
                     "Aucun canal retenu ne permet de joindre cette personne "
                     "(ni application, ni adresse email, ni numéro de téléphone selon les "

@@ -10,10 +10,8 @@ dizaines d'euros), et la décision se prend au moment de composer la campagne �
 la facture. L'écran annonce donc, pour chaque canal : ce qu'il consomme, ce qu'il reste, et s'il
 suffit pour cette campagne-ci.
 
-**Matrix ne coûte rien et ne touche pas tout le monde.** C'est le salon de l'équipe : gratuit,
-instantané, mais il ne joint que les personnes déjà inscrites à la messagerie. On l'affiche
-avec sa vraie portée plutôt que comme une option équivalente aux autres — proposer « gratuit »
-sans dire « et seulement la moitié de vos bénévoles » serait un piège.
+**Matrix n'est plus un canal** depuis son arrêt (24/11/2026) : une campagne qui le cite encore
+part par l'application (`CANAL_MATRIX` reste connu pour être relu, jamais proposé).
 
 **On ne bloque pas un envoi faute de crédits**, on prévient. Une association qui sait son
 compte à sec peut vouloir partir quand même sur les cent premières personnes, ou basculer sur
@@ -30,6 +28,11 @@ CANAL_SMS = "BREVO_SMS"
 CANAL_MOBIMEL = "MOBIMEL"
 CANAL_MATRIX = "MATRIX"
 CANAL_APPLICATION = "APPLICATION"
+
+
+def sans_matrix(canaux):
+    """Les canaux, Matrix remplacé par l'application (arrêt de Matrix, 24/11/2026), sans doublon."""
+    return list(dict.fromkeys(CANAL_APPLICATION if c == CANAL_MATRIX else c for c in canaux))
 
 #: Ce que chaque canal sait faire, dans l'ordre où on le propose : du plus large au plus cher.
 CANAUX = [
@@ -62,14 +65,6 @@ CANAUX = [
         "detail": "Second opérateur SMS, si votre contrat y est.",
         "unite": "SMS",
     },
-    {
-        "code": CANAL_MATRIX,
-        "libelle": "Messagerie d'équipe (Matrix)",
-        "detail": "Gratuit et instantané, mais ne touche que les personnes déjà inscrites "
-                  "à la messagerie — jamais l'ensemble de vos bénévoles. Le nombre "
-                  "annoncé est une estimation haute.",
-        "unite": None,
-    },
 ]
 
 
@@ -77,35 +72,14 @@ def _joignables(campagne, cibles):
     """Combien de personnes chaque canal peut réellement atteindre.
 
     Un canal qui n'atteint personne est pire qu'un canal cher : on compte donc les
-    destinataires AVANT de parler d'argent.
-
-    Pour Matrix, il n'existe pas de « compte Matrix » par personne : la messagerie passe par
-    le salon d'une ÉQUIPE, et l'on n'y joint que les membres d'une équipe de l'institution
-    dont le salon est réellement créé (`room_id` posé par le pont). C'est ce qui rend ce canal
-    gratuit et partiel à la fois."""
-    from .models import SalonMatrixEquipe, Team
-
+    destinataires AVANT de parler d'argent."""
     email = sum(1 for c in cibles if c.utilisateur.email)
     sms = sum(1 for c in cibles if c.utilisateur.phone_number)
-
-    equipes_avec_salon = SalonMatrixEquipe.objects.filter(
-        equipe__institution=campagne.institution, equipe__actif=True,
-    ).exclude(room_id="").values_list("equipe_id", flat=True)
-    joignables_matrix = set(
-        Team.objects.filter(id__in=list(equipes_avec_salon))
-        .values_list("members__id", flat=True)
-    )
-    # ESTIMATION HAUTE, et l'écran le dit : être membre d'une équipe dotée d'un salon ne
-    # garantit pas de s'être connecté à la messagerie. Le vérifier personne par personne
-    # demanderait un appel réseau par bénévole — insoutenable pour un aperçu de quatre cents
-    # destinataires. À l'envoi, `matrix.envoyer_dm` ignore silencieusement qui n'a pas de
-    # compte, et le bilan rend le nombre réellement atteint.
-    matrix = sum(1 for c in cibles if c.utilisateur_id in joignables_matrix)
     from .notifications_application import joignables_par_application
 
     # Un téléphone qui a parlé au serveur récemment : un fait, pas une estimation.
     application = len(joignables_par_application(c.utilisateur_id for c in cibles))
-    return {"email": email, "sms": sms, "matrix": matrix, "application": application}
+    return {"email": email, "sms": sms, "application": application}
 
 
 def apercu_des_canaux(campagne, cibles):
@@ -123,14 +97,12 @@ def apercu_des_canaux(campagne, cibles):
         CANAL_EMAIL: getattr(config, "brevo_credits_email", None) if config else None,
         CANAL_SMS: getattr(config, "brevo_credits_sms", None) if config else None,
         CANAL_MOBIMEL: None,   # Pas d'API de solde tant que l'adaptateur n'est pas écrit.
-        CANAL_MATRIX: None,
         CANAL_APPLICATION: None,
     }
     tarifs = {
         CANAL_EMAIL: getattr(config, "cout_unitaire_email", 0) if config else 0,
         CANAL_SMS: getattr(config, "cout_unitaire_sms", 0) if config else 0,
         CANAL_MOBIMEL: getattr(config, "cout_unitaire_sms_mobimel", 0) if config else 0,
-        CANAL_MATRIX: 0,
         CANAL_APPLICATION: 0,
     }
     disponible = {
@@ -138,7 +110,6 @@ def apercu_des_canaux(campagne, cibles):
         CANAL_SMS: bool(config and config.fournisseur_sms == "BREVO" and config.sms_configure),
         CANAL_MOBIMEL: bool(config and config.fournisseur_sms == "MOBIMEL"
                             and config.sms_configure),
-        CANAL_MATRIX: portee["matrix"] > 0,
         CANAL_APPLICATION: portee["application"] > 0,
     }
 
@@ -147,7 +118,7 @@ def apercu_des_canaux(campagne, cibles):
         code = canal["code"]
         destinataires = {
             CANAL_EMAIL: portee["email"], CANAL_SMS: portee["sms"],
-            CANAL_MOBIMEL: portee["sms"], CANAL_MATRIX: portee["matrix"],
+            CANAL_MOBIMEL: portee["sms"],
             CANAL_APPLICATION: portee["application"],
         }[code]
         restant = restants[code]
