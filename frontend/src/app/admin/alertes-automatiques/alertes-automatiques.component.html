@@ -1,0 +1,185 @@
+<div class="alertes-page">
+  <header class="page-header">
+    <div>
+      <h1><span class="material-icons">notifications_active</span> Alertes automatiques</h1>
+      <p class="subtitle">
+        Choisissez, phénomène par phénomène, quand la collectivité est prévenue. L'application et le site
+        préviennent toujours ; le courriel si la case est cochée ; la radio de la commune seulement pour un
+        événement exceptionnel. La nuit (22 h – 7 h), seul l'exceptionnel réveille.
+      </p>
+    </div>
+    @if (matrice) {
+      <div class="entete-actions">
+        @if (matrice.choix.length > 1) {
+          <label class="choix-institution">
+            Collectivité
+            <select [ngModel]="institution" (ngModelChange)="changerInstitution($event)">
+              @for (c of matrice.choix; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+            </select>
+          </label>
+        }
+        <button type="button" class="btn-primary" [disabled]="enCours === 'tout'" (click)="tout(true)">
+          Tout activer (valeurs conseillées)
+        </button>
+        <button type="button" class="btn-secondaire" [disabled]="enCours === 'tout'" (click)="tout(false)">Tout couper</button>
+      </div>
+    }
+  </header>
+
+  @if (chargement) { <p class="etat">Chargement…</p> }
+  @if (erreur) { <p class="bandeau erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="bandeau succes" role="status">{{ message }}</p> }
+
+  @if (matrice) {
+    <p class="resume">
+      <strong>{{ matrice.institution.nom }}</strong> —
+      @if (matrice.perimetre) {
+        périmètre : {{ matrice.perimetre.niveau }} {{ matrice.perimetre.code }}
+        ({{ matrice.perimetre.communes }} commune{{ matrice.perimetre.communes > 1 ? 's' : '' }}) ·
+      } @else {
+        <span class="alerte-texte">aucun périmètre connu (commune de la collectivité non renseignée) : rien ne sera détecté ·</span>
+      }
+      {{ actives }} alerte{{ actives > 1 ? 's' : '' }} active{{ actives > 1 ? 's' : '' }} sur {{ total }}
+    </p>
+
+    <section class="historique" aria-labelledby="titre-historique">
+      <h2 id="titre-historique">Dernières alertes</h2>
+      @if (!matrice.alertes.length) {
+        <p class="vide">Aucune alerte émise pour l'instant.</p>
+      }
+      <ul class="alertes">
+        @for (a of matrice.alertes; track a.id) {
+          <li class="alerte" [attr.data-niveau]="a.niveau" [class.ouverte]="ouverte?.id === a.id">
+            <button type="button" class="alerte-ligne" (click)="ouvrir(a)" [attr.aria-expanded]="ouverte?.id === a.id">
+              <span class="pastille" [attr.data-niveau]="a.niveau">{{ a.niveau === 'EXCEPTIONNEL' ? 'Exceptionnel' : 'Alerte' }}</span>
+              <span class="alerte-titre">{{ a.titre }}</span>
+              <span class="alerte-date">{{ a.emise_le | date:'dd/MM HH:mm' }}</span>
+            </button>
+            @if (ouverte?.id === a.id) {
+              <div class="alerte-fiche">
+                @if (a.detail) { <p class="detail">{{ a.detail }}</p> }
+                <p class="bilan">
+                  {{ a.phenomene_libelle }} · prévenus : {{ a.bilan.personnes ?? 0 }} personne(s)
+                  @if (a.bilan.courriels) { · {{ a.bilan.courriels }} courriel(s) }
+                  @if (a.bilan.radio) { · radio sur {{ a.bilan.radio }} canal(aux) }
+                </p>
+                <div class="gestes">
+                  @if (a.crise) {
+                    <span class="lien-fait">Crise ouverte : {{ a.crise_nom }}</span>
+                  } @else {
+                    <button type="button" class="btn-primary" (click)="ouvrirUneCrise(a)">
+                      <span class="material-icons">add_alert</span> Ouvrir une crise
+                    </button>
+                  }
+                  <button type="button" class="btn-secondaire" [disabled]="enCours === 'dispo-' + a.id"
+                          (click)="demanderDisponibilites(a)">
+                    <span class="material-icons">how_to_reg</span>
+                    {{ a.campagne ? 'Voir la demande de disponibilités' : 'Préparer le déclenchement : demander les disponibilités' }}
+                  </button>
+                </div>
+                <p class="aide">Rien ne part d'office : la crise et la demande s'ouvrent pour être relues avant validation.</p>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section aria-labelledby="titre-matrice">
+      <h2 id="titre-matrice">Réglages par phénomène</h2>
+      <div class="table-defilante">
+        <table class="matrice">
+          <thead>
+            <tr>
+              <th scope="col">Phénomène</th>
+              <th scope="col">Active</th>
+              <th scope="col">Alerte à partir de</th>
+              <th scope="col">Exceptionnel à partir de</th>
+              <th scope="col">Réglage</th>
+              <th scope="col">Courriel</th>
+              <th scope="col">Radio si exceptionnel</th>
+              <th scope="col">Silence la nuit</th>
+              <th scope="col">Source</th>
+              <th scope="col"><span class="sr-only">Enregistrer</span></th>
+            </tr>
+          </thead>
+          @for (famille of familles; track famille.nom) {
+            <tbody>
+              <tr class="famille"><th colspan="10" scope="rowgroup">{{ famille.nom }}</th></tr>
+              @for (l of famille.lignes; track l.phenomene.code) {
+                <tr [class.inactive]="!l.actif" [attr.data-code]="l.phenomene.code">
+                  <th scope="row">
+                    {{ l.phenomene.libelle }}
+                    @if (l.phenomene.derniere_alerte) {
+                      <small class="derniere">dernière alerte {{ l.phenomene.derniere_alerte | date:'dd/MM HH:mm' }}</small>
+                    }
+                  </th>
+                  <td>
+                    <button type="button" class="interrupteur" role="switch" [attr.aria-checked]="l.actif"
+                            [attr.aria-label]="'Activer : ' + l.phenomene.libelle" [disabled]="enCours === l.phenomene.code"
+                            (click)="basculer(l)">
+                      <span></span>
+                    </button>
+                  </td>
+                  <td>
+                    @if (aUneEchelle(l.phenomene)) {
+                      <select [(ngModel)]="l.alerte" (ngModelChange)="toucher(l)" [attr.aria-label]="'Seuil d’alerte : ' + l.phenomene.libelle">
+                        @for (v of valeursEchelle(l.phenomene); track v) { <option [ngValue]="v">{{ libelleValeur(l.phenomene, v) }}</option> }
+                      </select>
+                    } @else {
+                      <span class="saisie">
+                        <input type="number" [min]="l.phenomene.minimum" [max]="l.phenomene.maximum" [step]="l.phenomene.pas"
+                               [(ngModel)]="l.alerte" (ngModelChange)="toucher(l)" [attr.aria-label]="'Seuil d’alerte : ' + l.phenomene.libelle">
+                        <span class="unite">{{ l.phenomene.unite }}</span>
+                      </span>
+                    }
+                  </td>
+                  <td>
+                    @if (aUneEchelle(l.phenomene)) {
+                      <select [(ngModel)]="l.exceptionnel" (ngModelChange)="toucher(l)" [attr.aria-label]="'Seuil exceptionnel : ' + l.phenomene.libelle">
+                        @for (v of valeursEchelle(l.phenomene); track v) { <option [ngValue]="v">{{ libelleValeur(l.phenomene, v) }}</option> }
+                      </select>
+                    } @else {
+                      <span class="saisie">
+                        <input type="number" [min]="l.phenomene.minimum" [max]="l.phenomene.maximum" [step]="l.phenomene.pas"
+                               [(ngModel)]="l.exceptionnel" (ngModelChange)="toucher(l)" [attr.aria-label]="'Seuil exceptionnel : ' + l.phenomene.libelle">
+                        <span class="unite">{{ l.phenomene.unite }}</span>
+                      </span>
+                    }
+                  </td>
+                  <td>
+                    @for (nom of nomsReglages(l.phenomene); track nom) {
+                      <span class="saisie">
+                        <input type="number" [min]="l.phenomene.reglages[nom].minimum" [max]="l.phenomene.reglages[nom].maximum"
+                               [(ngModel)]="l.reglages[nom]" (ngModelChange)="toucher(l)"
+                               [attr.aria-label]="(libellesReglages[nom] || nom) + ' : ' + l.phenomene.libelle">
+                        <span class="unite">{{ nom === 'rayon_km' ? 'km' : '' }}</span>
+                      </span>
+                    } @empty { <span class="neutre">périmètre</span> }
+                  </td>
+                  <td><input type="checkbox" [(ngModel)]="l.email" (ngModelChange)="toucher(l)" [attr.aria-label]="'Courriel : ' + l.phenomene.libelle"></td>
+                  <td>
+                    @if (l.phenomene.radio_possible) {
+                      <input type="checkbox" [(ngModel)]="l.radio" (ngModelChange)="toucher(l)" [attr.aria-label]="'Radio : ' + l.phenomene.libelle">
+                    } @else { <span class="neutre" title="Pas un phénomène pour la radio">—</span> }
+                  </td>
+                  <td><input type="checkbox" [(ngModel)]="l.nuit" (ngModelChange)="toucher(l)" [attr.aria-label]="'Silence la nuit : ' + l.phenomene.libelle"></td>
+                  <td>
+                    <span class="source" [class.perimee]="l.phenomene.source.perime">
+                      {{ l.phenomene.source.perime ? 'en retard' : 'à jour' }}
+                    </span>
+                  </td>
+                  <td>
+                    @if (l.modifiee) {
+                      <button type="button" class="btn-petit" [disabled]="enCours === l.phenomene.code" (click)="enregistrer(l)">Enregistrer</button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          }
+        </table>
+      </div>
+    </section>
+  }
+</div>

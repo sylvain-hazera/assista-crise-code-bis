@@ -657,95 +657,19 @@
           }
 
           @if (detailTab === 'alertes') {
+            <!-- 24/11/2026 : séisme, vigilance et feux satellite rejoignent tous les autres phénomènes
+                 dans la matrice des alertes automatiques ; les réglages déjà faits y ont été repris. -->
             <p class="hint">
-              Diffuse automatiquement une alerte sur les canaux mesh actifs de cette institution
-              quand un séisme dépasse le seuil ci-dessous à portée de sa commune (sources :
-              catalogue officiel français BCSF-Rénass/EOST et EMSC, recoupés entre eux, vérifiés
-              toutes les 2 minutes).
+              Les alertes automatiques (séisme, vigilance Météo-France, crues, orages, foudre, feux,
+              avalanches, qualité de l'air, radioactivité…) se règlent désormais phénomène par phénomène
+              dans une seule page : seuils, courriel, radio pour l'exceptionnel, silence la nuit.
               @if (!selectedInstitution.commune_code) {
-                <strong> Aucune commune renseignée pour cette institution — l'alerte ne peut pas
-                calculer de distance tant que ce n'est pas le cas.</strong>
+                <strong> Aucune commune renseignée pour cette institution : sans elle, aucun périmètre à surveiller.</strong>
               }
             </p>
-            <form class="inline-form" [formGroup]="alerteSismiqueForm" (ngSubmit)="submitAlerteSismique()">
-              <label class="checkbox-label">
-                <input type="checkbox" formControlName="actif">
-                Diffusion active
-              </label>
-              <label>
-                Magnitude minimale
-                <input type="number" step="0.1" min="0" formControlName="magnitude_min" class="form-input-sm">
-                <span class="hint-sm">~3.5 = ressenti localement · ~4-4.5 = risque réel de dégâts légers</span>
-              </label>
-              <label>
-                Rayon de couverture (km)
-                <input type="number" step="1" min="1" formControlName="rayon_km" class="form-input-sm">
-              </label>
-              <button type="submit" class="btn-primary sm" [disabled]="savingAlerteSismique">
-                {{ configAlerteSismique ? 'Mettre à jour' : 'Activer' }}
-              </button>
-            </form>
-
-            <h4 class="sous-titre-alertes">Vigilance Météo-France</h4>
-            <p class="hint">
-              Annonce la vigilance météorologique du département de cette institution quand elle
-              atteint le niveau choisi : sur ses canaux mesh actifs, et par message privé aux
-              personnes qui lui sont rattachées. Une annonce par épisode et par phénomène, puis
-              seulement si la couleur monte. Le détail se lit à tout moment dans
-              <a routerLink="/admin/veille">Veille du territoire</a>.
-              @if (!selectedInstitution.commune_code) {
-                <strong> Aucune commune renseignée pour cette institution — impossible de savoir
-                quel département surveiller tant que ce n'est pas le cas.</strong>
-              }
-            </p>
-            <form class="inline-form" [formGroup]="alerteVigilanceForm" (ngSubmit)="submitAlerteVigilance()">
-              <label class="checkbox-label">
-                <input type="checkbox" formControlName="actif">
-                Annonce active
-              </label>
-              <label>
-                À partir de
-                <select formControlName="couleur_min" class="form-input-sm">
-                  <option [ngValue]="2">Jaune</option>
-                  <option [ngValue]="3">Orange</option>
-                  <option [ngValue]="4">Rouge</option>
-                </select>
-                <span class="hint-sm">Orange conseillé : le jaune revient plusieurs fois par semaine</span>
-              </label>
-              <button type="submit" class="btn-primary sm" [disabled]="savingAlerteVigilance">
-                {{ configAlerteVigilance ? 'Mettre à jour' : 'Activer' }}
-              </button>
-              @if (alerteVigilanceEnregistree) { <span class="hint-sm" role="status">Enregistré.</span> }
-            </form>
-
-            <h4 class="sous-titre-alertes">Foyers d'incendie vus par satellite</h4>
-            <p class="hint">
-              Annonce un foyer détecté par satellite près de la commune de cette institution : sur
-              ses canaux mesh actifs, et par message privé aux personnes qui lui sont rattachées.
-              Il faut deux détections proches (ou une de confiance élevée) ; un même feu n'est
-              annoncé qu'une fois en trois jours, et les usines repérées comme telles jamais.
-              <strong>Le signal a des faux positifs</strong> — écobuage, feu de chaume, brûlage — et
-              arrive environ trois heures après le passage du satellite : c'est un appel à
-              vérifier, pas une alerte.
-              @if (!selectedInstitution.commune_code) {
-                <strong> Aucune commune renseignée pour cette institution — impossible de savoir
-                où regarder tant que ce n'est pas le cas.</strong>
-              }
-            </p>
-            <form class="inline-form" [formGroup]="alerteFeuForm" (ngSubmit)="submitAlerteFeu()">
-              <label class="checkbox-label">
-                <input type="checkbox" formControlName="actif">
-                Annonce active
-              </label>
-              <label>
-                Rayon autour de la commune (km)
-                <input type="number" step="1" min="2" max="60" formControlName="rayon_km" class="form-input-sm">
-              </label>
-              <button type="submit" class="btn-primary sm" [disabled]="savingAlerteFeu">
-                {{ configAlerteFeu ? 'Mettre à jour' : 'Activer' }}
-              </button>
-              @if (alerteFeuEnregistree) { <span class="hint-sm" role="status">Enregistré.</span> }
-            </form>
+            <a class="btn-primary sm" routerLink="/admin/alertes-automatiques" [queryParams]="{ institution: selectedInstitution.id }">
+              Régler les alertes automatiques
+            </a>
           }
 
           <!-- 18/11/2026 : la même page que « Annuaire de crise » du plan de sauvegarde, pas une

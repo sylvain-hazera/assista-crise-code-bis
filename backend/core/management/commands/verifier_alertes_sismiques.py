@@ -1,9 +1,9 @@
 """Interroge DEUX catalogues sismiques (BCSF-Rénass/EOST français -- api.franceseisme.fr -- et
 EMSC, le centre euro-méditerranéen -- seismicportal.eu -- demande utilisateur du 10/10 : "mettre
-l'alerting... recouper avec EMSC") et diffuse une alerte texte sur les canaux mesh actifs de
-chaque institution ayant activé ConfigurationAlerteSismique, si l'évènement dépasse son seuil
-de magnitude et se trouve dans son rayon de couverture (centre résolu depuis
-Institution.commune_code).
+l'alerting... recouper avec EMSC"). Depuis le 24/11/2026, les alertes aux collectivités passent
+par la matrice des alertes automatiques (core/alertes_naturelles.py, phénomène SEISME) : ce
+cycle de deux minutes lui donne les séismes lus et fait passer ses phénomènes rapides ; reste
+ici la diffusion communautaire décrite plus bas.
 
 Pourquoi recouper deux catalogues plutôt qu'un seul : chaque réseau localise/estime la
 magnitude d'un même séisme un peu différemment (traitement automatisé propre à chacun, pas un
@@ -72,7 +72,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from core.models import (
-    Commune, ConfigurationAlerteSismique, SeismeDiffuse,
+    SeismeDiffuse,
     CanalMeshCore, CanalMeshtastic, MessageCanalMeshCore, MessageCanalMeshtastic,
     CompagnonMeshtastic, DirectionMessageMesh, StatutMessageMesh,
 )
@@ -251,17 +251,13 @@ class Command(BaseCommand):
     help = "Diffuse une alerte mesh pour tout séisme récent (France + recoupement EMSC) dépassant le seuil configuré par une institution."
 
     def handle(self, *args, **options):
-        configs = list(
-            ConfigurationAlerteSismique.objects.filter(actif=True).select_related('institution')
-        )
+        from core import alertes_naturelles
+        from core.models import RegleAlerte
 
-        # Le minimum à récupérer côté API doit couvrir À LA FOIS les seuils par institution ET
-        # le seuil fixe de la diffusion communautaire Fr_EMCOM (EMCOM_MAGNITUDE_MIN) -- cette
-        # dernière tourne même si AUCUNE institution n'a de config active, voir plus bas : seule
-        # la boucle par institution dépend de `configs`, pas la diffusion EMCOM (demande
-        # utilisateur du 10/10, indépendante de tout opt-in institutionnel).
-        seuils = [c.magnitude_min for c in configs] + [EMCOM_MAGNITUDE_MIN]
-        magnitude_min_globale = min(seuils)
+        # Le minimum à récupérer couvre à la fois les seuils des collectivités (matrice des
+        # alertes automatiques, 24/11/2026) et le seuil fixe de la diffusion communautaire.
+        seuils = [r.seuil("ALERTE") for r in RegleAlerte.objects.filter(actif=True, phenomene="SEISME")]
+        magnitude_min_globale = min(seuils + [EMCOM_MAGNITUDE_MIN])
         depuis = (timezone.now() - timezone.timedelta(hours=FENETRE_RECHERCHE_HEURES)).strftime("%Y-%m-%dT%H:%M:%S")
 
         try:
@@ -276,38 +272,17 @@ class Command(BaseCommand):
             logger.warning("Échec de requête à l'API sismique EMSC (%s) -- retentée au prochain passage.", exc)
             evenements_emsc = None
 
-        if evenements_fr is None and evenements_emsc is None:
-            self.stdout.write("Alertes sismiques : aucune des deux API n'a répondu, rien à faire.")
+        repondu = evenements_fr is not None or evenements_emsc is not None
+        evenements = _fusionner_evenements(evenements_fr or [], evenements_emsc or []) if repondu else []
+
+        # Les phénomènes rapides de la matrice (séisme, orages, foudre, feux suivis, pluie) passent
+        # à chaque cycle de deux minutes, qu'il y ait eu un séisme ou non.
+        alertes = alertes_naturelles.evaluer(alertes_naturelles.PHENOMENES_RAPIDES,
+                                             contexte={"seismes": evenements if repondu else None})
+
+        if not repondu:
+            self.stdout.write(f"Alertes sismiques : aucune des deux API n'a répondu ; {len(alertes)} alerte(s) automatique(s).")
             return
-        evenements_fr, evenements_emsc = evenements_fr or [], evenements_emsc or []
-        if not evenements_fr and not evenements_emsc:
-            self.stdout.write("Alertes sismiques : aucun séisme sur la période.")
-            return
-
-        evenements = _fusionner_evenements(evenements_fr, evenements_emsc)
-
-        diffusions = 0
-        for config in configs:
-            institution = config.institution
-            if not institution.commune_code:
-                continue
-            commune = Commune.objects.filter(code=institution.commune_code).first()
-            if not commune or commune.centre_latitude is None or commune.centre_longitude is None:
-                continue
-
-            for evt in evenements:
-                if evt["magnitude"] < config.magnitude_min:
-                    continue
-                distance = _distance_km(
-                    commune.centre_latitude, commune.centre_longitude, evt["latitude"], evt["longitude"],
-                )
-                if distance > config.rayon_km:
-                    continue
-                if SeismeDiffuse.objects.filter(institution=institution, event_id=evt["event_id"]).exists():
-                    continue
-
-                self._diffuser(institution, evt, distance, config.environment)
-                diffusions += 1
 
         diffusions_emcom = 0
         for evt in evenements:
@@ -321,50 +296,9 @@ class Command(BaseCommand):
                 diffusions_emcom += 1
 
         self.stdout.write(
-            f"Alertes sismiques : {len(evenements_fr)} évènement(s) FR, {len(evenements_emsc)} EMSC, "
-            f"{len(evenements)} après fusion, {diffusions} diffusion(s) institution, "
+            f"Alertes sismiques : {len(evenements_fr or [])} évènement(s) FR, {len(evenements_emsc or [])} EMSC, "
+            f"{len(evenements)} après fusion, {len(alertes)} alerte(s) automatique(s), "
             f"{diffusions_emcom} diffusion(s) Fr_EMCOM."
-        )
-
-    def _diffuser(self, institution, evt, distance_km, environment):
-        # evt["lieu"] côté France (EventLocationName) répète déjà la magnitude en anglais (ex:
-        # "Event of magnitude 2.2, near Biarritz (France hexagonale)") -- on n'en garde que le
-        # nom du lieu pour construire une phrase française propre, sans redite. Côté EMSC, c'est
-        # déjà un nom de lieu simple (flynn_region), rien à retirer.
-        lieu_brut = evt["lieu"]
-        lieu = lieu_brut.split("near ", 1)[1] if "near " in lieu_brut else lieu_brut
-        texte = f"Seisme M{evt['magnitude']:.1f} pres de {lieu}, a ~{distance_km:.0f}km."
-
-        canaux_meshcore = CanalMeshCore.objects.filter(institution=institution, actif=True)
-        for canal in canaux_meshcore:
-            MessageCanalMeshCore.objects.create(
-                canal=canal, direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE,
-                contenu=texte, environment=canal.environment,
-            )
-
-        canaux_meshtastic = CanalMeshtastic.objects.filter(institution=institution, actif=True)
-        for canal in canaux_meshtastic:
-            MessageCanalMeshtastic.objects.create(
-                canal=canal, direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE,
-                contenu=texte, environment=canal.environment,
-            )
-
-        SeismeDiffuse.objects.create(
-            institution=institution, event_id=evt["event_id"], magnitude=evt["magnitude"], lieu=evt["lieu"],
-            latitude=evt["latitude"], longitude=evt["longitude"], date_evenement=evt["date"],
-            environment=environment,
-        )
-        logger.info(
-            "Alerte sismique diffusée à %s : %s (sources : %s)",
-            institution.nom, texte, ", ".join(sorted(evt["sources"])),
-        )
-
-        # Les administrateurs, par l'application et le site (Matrix arrêté, 24/11/2026) --
-        # `prevenir` ne lève jamais : la diffusion mesh et la trace SeismeDiffuse restent.
-        prevenir_administrateurs(
-            f"Séisme M{evt['magnitude']:.1f} près de {lieu}",
-            f"{texte} ({institution.nom}, sources : {', '.join(sorted(evt['sources']))})",
-            urgent=evt["magnitude"] >= 4.5, lien="/admin/veille",
         )
 
     def _diffuser_emcom(self, evt) -> bool:

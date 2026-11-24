@@ -16,7 +16,7 @@ import tempfile
 
 from django.core.management.base import BaseCommand
 
-from core import foyers_actifs, meteo_france, sources_ouvertes
+from core import sources_ouvertes
 
 
 class Command(BaseCommand):
@@ -60,21 +60,20 @@ class Command(BaseCommand):
             return
         codes = [options["source"]] if options["source"] else [
             code for code in sources_ouvertes.SOURCES if code not in sources_ouvertes.SOURCES_EN_CONTINU]
-        resultats, annonces, foyers = {}, [], []
+        from core import alertes_naturelles
+
+        resultats, alertes = {}, []
         for code in codes:
             resultats[code] = sources_ouvertes.relever_source(code, forcer=options["forcer"])
-            # L'annonce part AUSSITÔT la vigilance relevée, sans attendre les autres sources :
-            # certaines sont longues (35 bulletins d'avalanche, un fichier de 80 Mo pour les
-            # arrêtés de circulation) et une vigilance orange n'a pas à patienter derrière elles.
-            # Elle ne suit qu'un relevé RÉUSSI à l'instant : sur une copie non rafraîchie il n'y
-            # a rien de neuf à annoncer, et diffuser_alertes refuse de toute façon une copie
-            # trop ancienne.
-            if code in ("VIGILANCE_METEO", "VIGILANCE_OUTRE_MER") and resultats[code] == "réussi":
-                annonces += meteo_france.diffuser_alertes()
-            # Même principe pour les foyers vus par satellite : annoncés dès leur relevé.
-            if code == "FOYERS_ACTIFS" and resultats[code] == "réussi":
-                foyers = foyers_actifs.diffuser_alertes()
+            # Les alertes automatiques des collectivités (24/11/2026) partent AUSSITÔT la source
+            # relevée, sans attendre les autres : certaines sont longues (35 bulletins
+            # d'avalanche, 80 Mo d'arrêtés) et une vigilance orange n'a pas à patienter derrière
+            # elles. Seulement après un relevé RÉUSSI : sur une copie non rafraîchie il n'y a
+            # rien de neuf. Les phénomènes rapides passent toutes les deux minutes
+            # (verifier_alertes_sismiques).
+            phenomenes = alertes_naturelles.phenomenes_de_source(code)
+            if phenomenes and resultats[code] == "réussi":
+                alertes += alertes_naturelles.evaluer(phenomenes)
 
         detail = ", ".join(f"{code} {resultat}" for code, resultat in resultats.items())
-        self.stdout.write(f"Veille : {detail} ; {len(annonces)} annonce(s) de vigilance, "
-                          f"{len(foyers)} annonce(s) de foyer.")
+        self.stdout.write(f"Veille : {detail} ; {len(alertes)} alerte(s) automatique(s).")

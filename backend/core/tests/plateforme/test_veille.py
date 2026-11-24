@@ -1406,43 +1406,38 @@ class TestCommandeDeReleve:
             ordre.append(code)
             return resultats.get(code, "réussi")
 
-        def annoncer():
-            ordre.append("ANNONCE")
-            return ["Mairie : Vigilance ORANGE"]
-
-        def annoncer_un_foyer():
-            ordre.append("ANNONCE_FOYER")
-            return []
+        def evaluer(phenomenes):
+            ordre.append("ALERTES:" + ",".join(phenomenes))
+            return ["une alerte"] if "VIGILANCE_METEO" in phenomenes else []
 
         sortie = io.StringIO()
         with mock.patch("core.sources_ouvertes.relever_source", side_effect=relever), \
-                mock.patch("core.meteo_france.diffuser_alertes", side_effect=annoncer), \
-                mock.patch("core.foyers_actifs.diffuser_alertes", side_effect=annoncer_un_foyer):
+                mock.patch("core.alertes_naturelles.evaluer", side_effect=evaluer):
             call_command("relever_sources_ouvertes", *arguments, stdout=sortie)
         return ordre, sortie.getvalue()
 
-    def test_l_annonce_part_aussitot_la_vigilance_relevee_sans_attendre_les_sources_lentes(self):
+    def test_l_alerte_part_aussitot_la_vigilance_relevee_sans_attendre_les_sources_lentes(self):
         ordre, sortie = self._lancer({})
 
-        # Métropole, puis outre-mer : chacune annoncée dès son propre relevé.
-        assert ordre[:4] == ["VIGILANCE_METEO", "ANNONCE", "VIGILANCE_OUTRE_MER", "ANNONCE"]
-        assert set(ordre[4:]) == (set(sources_ouvertes.SOURCES) - sources_ouvertes.SOURCES_EN_CONTINU
-                                  - {"VIGILANCE_METEO", "VIGILANCE_OUTRE_MER"}) | {"ANNONCE_FOYER"}
-        # Les foyers aussi sont annoncés dès leur relevé, sans attendre la suite.
-        assert ordre[ordre.index("FOYERS_ACTIFS") + 1] == "ANNONCE_FOYER"
-        assert "2 annonce(s) de vigilance" in sortie
+        # Métropole, puis outre-mer : chacune passée dès son propre relevé.
+        assert ordre[:4] == ["VIGILANCE_METEO", "ALERTES:VIGILANCE_METEO", "VIGILANCE_OUTRE_MER", "ALERTES:VIGILANCE_METEO"]
+        assert {o for o in ordre if not o.startswith("ALERTES:")} == (
+            set(sources_ouvertes.SOURCES) - sources_ouvertes.SOURCES_EN_CONTINU)
+        # Les foyers aussi passent dès leur relevé, sans attendre la suite.
+        assert ordre[ordre.index("FOYERS_ACTIFS") + 1] == "ALERTES:FOYERS"
+        assert "2 alerte(s) automatique(s)" in sortie
 
-    def test_rien_n_est_annonce_sur_une_vigilance_non_rafraichie(self):
+    def test_rien_n_est_evalue_sur_une_vigilance_non_rafraichie(self):
         for resultat in ("échec", "ignoré"):
             ordre, sortie = self._lancer({"VIGILANCE_METEO": resultat, "VIGILANCE_OUTRE_MER": resultat})
 
-            assert "ANNONCE" not in ordre and "0 annonce(s)" in sortie
+            assert "ALERTES:VIGILANCE_METEO" not in ordre and "0 alerte(s)" in sortie
 
-    def test_l_outre_mer_est_annonce_meme_si_la_metropole_n_a_pas_ete_relevee(self):
+    def test_l_outre_mer_est_evalue_meme_si_la_metropole_n_a_pas_ete_relevee(self):
         ordre, sortie = self._lancer({"VIGILANCE_METEO": "échec"})
 
-        assert ordre[:3] == ["VIGILANCE_METEO", "VIGILANCE_OUTRE_MER", "ANNONCE"]
-        assert ordre.count("ANNONCE") == 1 and "1 annonce(s) de vigilance" in sortie
+        assert ordre[:3] == ["VIGILANCE_METEO", "VIGILANCE_OUTRE_MER", "ALERTES:VIGILANCE_METEO"]
+        assert ordre.count("ALERTES:VIGILANCE_METEO") == 1 and "1 alerte(s) automatique(s)" in sortie
 
     def test_un_second_releve_lance_en_meme_temps_se_retire(self):
         """Constaté en service le 15/11/2026 : deux relevés forcés tournaient ensemble."""

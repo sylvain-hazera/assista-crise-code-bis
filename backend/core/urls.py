@@ -29,6 +29,10 @@ from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, GeorisquesView, RapportGeorisquesView, ZonagesOfficielsView,
     CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FichesConseilView, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
+from .views_alertes_naturelles import (  # noqa: E402
+    AlerteNaturelleView, AlertesAutomatiquesView, CriseDepuisAlerteView, DisponibilitesDepuisAlerteView,
+    RegleAlerteView, ToutesReglesAlerteView,
+)
 from .views_circuit_eau import (  # noqa: E402
     ActiverCircuitEauView, CarteCodisPublicView, CircuitEauView, EtatActivationPointEauView, LienCodisView,
 )
@@ -506,6 +510,13 @@ urlpatterns = [
     # Circuit réflexe feu → points d'eau → binômes → cellule → CODIS (24/11/2026), core/circuit_eau.py.
     path('circuit-eau/', CircuitEauView.as_view(), name='circuit-eau'),
     path('circuit-eau/activer/', ActiverCircuitEauView.as_view(), name='circuit-eau-activer'),
+    path('alertes-automatiques/', AlertesAutomatiquesView.as_view(), name='alertes-automatiques'),
+    path('alertes-automatiques/regle/', RegleAlerteView.as_view(), name='alertes-automatiques-regle'),
+    path('alertes-automatiques/toutes/', ToutesReglesAlerteView.as_view(), name='alertes-automatiques-toutes'),
+    path('alertes-automatiques/<uuid:alerte_id>/', AlerteNaturelleView.as_view(), name='alerte-naturelle'),
+    path('alertes-automatiques/<uuid:alerte_id>/crise/', CriseDepuisAlerteView.as_view(), name='alerte-naturelle-crise'),
+    path('alertes-automatiques/<uuid:alerte_id>/disponibilites/', DisponibilitesDepuisAlerteView.as_view(),
+         name='alerte-naturelle-disponibilites'),
     path('circuit-eau/lien-codis/', LienCodisView.as_view(), name='circuit-eau-lien-codis'),
     path('circuit-eau/<uuid:ident>/etat/', EtatActivationPointEauView.as_view(), name='circuit-eau-etat'),
     path('public/codis/<str:jeton>/', CarteCodisPublicView.as_view(), name='carte-codis'),

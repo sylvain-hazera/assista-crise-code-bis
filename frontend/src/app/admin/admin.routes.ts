@@ -30,6 +30,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'carte', loadComponent: () => import('../shared/components/common/map/map.component').then(m => m.MapComponent), canActivate: [institutionalEffectiveGuard] },
   // Ce que l'Etat publie en ce moment pour le territoire : vigilance meteo, routes, carburant.
   { path: 'veille', loadComponent: () => import('./veille/veille.component').then(m => m.VeilleComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'alertes-automatiques', loadComponent: () => import('./alertes-automatiques/alertes-automatiques.component').then(m => m.AlertesAutomatiquesComponent), canActivate: [institutionalEffectiveGuard] },
   // Carte meteo : radar, orages, foudre, previsions, et leur retranscription (20/11/2026).
   { path: 'carte-meteo', loadComponent: () => import('./carte-meteo/carte-meteo.component').then(m => m.CarteMeteoComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'main-courante', loadComponent: () => import('./audit-logs/audit-logs.component').then(m => m.AuditLogsComponent), canActivate: [sysAdminGuard] },

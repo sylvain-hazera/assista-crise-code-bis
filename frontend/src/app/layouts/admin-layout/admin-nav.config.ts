@@ -119,6 +119,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   // Vigilance, routes, carburant : relevés par le serveur (core/sources_ouvertes.py).
   { icon: 'radar', label: 'Veille du territoire', route: '/admin/veille', groupe: 'crise', sousGroupe: 'crise-comprendre' },
+  // Seuils par phénomène naturel, et ce qui part quand ils sont franchis (core/alertes_naturelles.py).
+  { icon: 'notifications_active', label: 'Alertes automatiques', route: '/admin/alertes-automatiques', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   // Pluie observée, orages, foudre et prévisions sur une carte, avec leur retranscription.
   { icon: 'thunderstorm', label: 'Carte météo', route: '/admin/carte-meteo', groupe: 'crise', sousGroupe: 'crise-comprendre' },
   // Les chiffres de la crise, pour le point avec la préfecture (core/point_situation.py).

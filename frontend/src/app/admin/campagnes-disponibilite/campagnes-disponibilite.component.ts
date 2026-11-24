@@ -1,6 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { AssociationService } from '../../services/association.service';
@@ -97,7 +98,12 @@ export class CampagnesDisponibiliteComponent implements OnInit {
     private crisisService: CrisisService,
   ) {}
 
+  private route = inject(ActivatedRoute, { optional: true });
+  /** Campagne à ouvrir dès son institution chargée (venue d'une alerte automatique, 24/11/2026). */
+  private aOuvrir: string | null = null;
+
   ngOnInit(): void {
+    this.aOuvrir = this.route?.snapshot.queryParamMap.get('campagne') ?? null;
     this.charger();
   }
 
@@ -140,7 +146,10 @@ export class CampagnesDisponibiliteComponent implements OnInit {
         this.chargement = false;
         // Une seule institution possible : il n'y a rien à choisir. Dès qu'il y en a
         // plusieurs — et toujours pour un administrateur — on attend que la personne désigne.
-        if (!this.estAdministrateur && this.mesInstitutions.length === 1) {
+        const demandee = this.route?.snapshot.queryParamMap.get('institution');
+        if (demandee) {
+          this.changerInstitution(demandee);
+        } else if (!this.estAdministrateur && this.mesInstitutions.length === 1) {
           this.changerInstitution(this.mesInstitutions[0].id);
         }
       },
@@ -198,6 +207,8 @@ export class CampagnesDisponibiliteComponent implements OnInit {
       next: (liste) => {
         if (this.institutionChoisie === id) {
           this.campagnes = liste.filter(c => c.institution === id);
+          const ouvrir = this.campagnes.find(c => c.id === this.aOuvrir);
+          if (ouvrir) { this.aOuvrir = null; this.reprendre(ouvrir); }
         }
       },
       error: () => this.erreur = 'Impossible de charger les campagnes.',

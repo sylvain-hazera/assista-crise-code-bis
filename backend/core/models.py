@@ -3830,6 +3830,71 @@ class ConfigurationAlerteVigilance(EnvironmentScopedModel):
         return f"Alerte vigilance {self.institution.nom} ({'active' if self.actif else 'inactive'})"
 
 
+class RegleAlerte(EnvironmentScopedModel):
+    """Une ligne de la matrice des alertes automatiques d'une collectivité : un phénomène naturel,
+    ses deux seuils et comment prévenir (core/alertes_naturelles.py, 24/11/2026). Les seuils et
+    réglages sont ceux du catalogue, ramenés dans ses bornes à l'enregistrement."""
+
+    DESTINATAIRES = [("CONTACTS", "Contacts de la collectivité"), ("PRINCIPAUX", "Contacts principaux seulement")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="regles_alerte")
+    phenomene = models.CharField(max_length=30)
+    actif = models.BooleanField(default=False)
+    seuils = models.JSONField(default=dict, blank=True)
+    email = models.BooleanField(default=True)
+    radio_si_exceptionnel = models.BooleanField(default=True)
+    silence_nuit = models.BooleanField(default=True)
+    destinataires = models.CharField(max_length=12, choices=DESTINATAIRES, default="CONTACTS")
+    modifie_le = models.DateTimeField(auto_now=True)
+    modifie_par = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["institution", "phenomene", "environment"],
+                                               name="uq_regle_alerte_institution_phenomene")]
+
+    def _valeurs(self):
+        from .alertes_naturelles import PAR_CODE, valeurs_conseillees
+        return {**valeurs_conseillees(PAR_CODE[self.phenomene]), **(self.seuils or {})}
+
+    def seuil(self, niveau):
+        return float(self._valeurs()["exceptionnel" if niveau == "EXCEPTIONNEL" else "alerte"])
+
+    def reglage(self, nom):
+        return float(self._valeurs()[nom])
+
+    def __str__(self):
+        return f"{self.phenomene} — {self.institution.nom} ({'active' if self.actif else 'inactive'})"
+
+
+class AlerteNaturelle(EnvironmentScopedModel):
+    """Une alerte émise par le moteur : l'historique de la collectivité, l'anti-doublon (`cle` =
+    l'événement), et le support des deux gestes « ouvrir une crise » et « demander les
+    disponibilités ». Titre et détail chiffrés : ils situent un danger avant qu'il soit public."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="alertes_naturelles")
+    phenomene = models.CharField(max_length=30)
+    cle = models.CharField(max_length=120)
+    niveau = models.CharField(max_length=12, choices=[("ALERTE", "Alerte"), ("EXCEPTIONNEL", "Exceptionnel")])
+    valeur = models.FloatField(null=True, blank=True)
+    titre = EncryptedTextField()
+    detail = EncryptedTextField(blank=True, default="")
+    lieu = gis_models.PointField(srid=4326, null=True, blank=True)
+    emise_le = models.DateTimeField(db_index=True)
+    bilan = models.JSONField(default=dict, blank=True)
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="alertes_naturelles")
+    campagne = models.ForeignKey("CampagneDisponibilite", on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="alertes_naturelles")
+
+    class Meta:
+        indexes = [models.Index(fields=["institution", "phenomene", "cle"])]
+        ordering = ["-emise_le"]
+
+    def __str__(self):
+        return f"{self.phenomene} {self.niveau} — {self.institution_id}"
+
+
 class VigilanceDiffusee(EnvironmentScopedModel):
     """Niveau de vigilance déjà annoncé à une institution pour un phénomène (anti-doublon entre
     deux relevés). Une ligne par institution et par phénomène tant que l'épisode dure ; elle est

@@ -10,8 +10,8 @@ from django.test import RequestFactory, override_settings
 
 from core import matrix, notifications_application
 from core.models import (
-    Commune, ConfigurationAlerteSismique, ContactInstitution, Institution, InstitutionType, Notification,
-    NotificationApplication, SeismeDiffuse,
+    Commune, ContactInstitution, Institution, InstitutionType, Notification,
+    NotificationApplication,
 )
 
 CACHE_LOCAL = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "prevenance"}}
@@ -70,20 +70,27 @@ class TestSeisme:
     EVENEMENT = {"event_id": "fr-1", "date": None, "latitude": 45.5, "longitude": 4.4, "magnitude": 4.8,
                  "lieu": "Event of magnitude 4.8, near Saint-Etienne (France hexagonale)", "sources": {"FR"}}
 
-    def test_l_alerte_de_la_commune_previent_les_administrateurs_par_l_application(self, mairie, admin_avec_telephone):
+    def test_l_alerte_de_la_commune_previent_par_l_application(self, mairie, admin_avec_telephone, create_user):
         from django.core.management import call_command
         from django.utils import timezone
 
-        ConfigurationAlerteSismique.objects.create(institution=mairie, actif=True, rayon_km=100, magnitude_min=3.5)
+        from core.models import AlerteNaturelle, RegleAlerte
+
+        agent = create_user(username="agent-seisme@test.fr", email="agent-seisme@test.fr", type="AUT_LOCALE")
+        notifications_application.enregistrer_appareil(agent, "installation-agent-seisme")
+        ContactInstitution.objects.create(institution=mairie, utilisateur=agent, actif=True)
+        RegleAlerte.objects.create(institution=mairie, phenomene="SEISME", actif=True)
         evenement = {**self.EVENEMENT, "date": timezone.now()}
         commande = "core.management.commands.verifier_alertes_sismiques"
         with mock.patch(f"{commande}._recuperer_evenements_france", return_value=[evenement]), \
              mock.patch(f"{commande}._recuperer_evenements_emsc", return_value=[]):
             call_command("verifier_alertes_sismiques")
 
-        assert SeismeDiffuse.objects.filter(institution=mairie, event_id="fr-1").exists()
-        _, (appli,) = _recu(admin_avec_telephone)
-        assert appli.titre == "Séisme M4.8 près de Saint-Etienne (France hexagonale)" and appli.urgent
+        assert AlerteNaturelle.objects.filter(institution=mairie, cle="seisme-fr-1", niveau="EXCEPTIONNEL").exists()
+        _, (appli,) = _recu(agent)
+        assert appli.titre.startswith("Séisme de magnitude 4.8") and appli.urgent
+        _, (resume,) = _recu(admin_avec_telephone)
+        assert resume.titre == "Alertes automatiques (1)"
 
     def test_une_reponse_vide_d_emsc_n_est_pas_une_panne(self):
         from core.management.commands import verifier_alertes_sismiques as commande

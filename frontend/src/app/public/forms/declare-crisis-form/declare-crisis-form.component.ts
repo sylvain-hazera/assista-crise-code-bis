@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { CrisisService } from '../../../services/crisis.service';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertesAutomatiquesService } from '../../../services/alertes-automatiques.service';
 import { Status } from '../../../shared/models/status.model';
 import { CommonModule } from '@angular/common';
 import { CrisisPayload } from '../../../shared/models/crisis.model';
@@ -154,9 +155,34 @@ export class DeclareCrisisFormComponent implements OnInit{
     private implicationService: ImplicationService,
   ) {}
 
+  private route = inject(ActivatedRoute, { optional: true });
+  private alertesService = inject(AlertesAutomatiquesService);
+  /** L'alerte automatique d'où vient cette déclaration (24/11/2026) : reliée à la crise créée. */
+  private alerteSource: string | null = null;
+
   ngOnInit() {
     this.initForm();
+    this.preremplirDepuisAlerte();
     this.loadInstitutionContext();
+  }
+
+  /** Une crise ouverte depuis une alerte automatique arrive préremplie (type, titre, lieu) ;
+   * la personne relit et valide comme d'habitude. */
+  private preremplirDepuisAlerte(): void {
+    const p = this.route?.snapshot.queryParamMap;
+    if (!p?.get('alerte')) { return; }
+    this.alerteSource = p.get('alerte');
+    const type = p.get('type') ?? '';
+    this.crisisForm.patchValue({
+      eventType: this.eventTypeOptions.some(o => o.value === type) ? type : 'AUTRE',
+      title: p.get('titre') ?? '',
+      description: p.get('description') ?? '',
+    });
+    const latitude = Number(p.get('latitude')), longitude = Number(p.get('longitude'));
+    if (p.get('latitude') && p.get('longitude') && !isNaN(latitude) && !isNaN(longitude)) {
+      this.onAddressSelected({ label: `Lieu de l'alerte (${latitude.toFixed(3)}, ${longitude.toFixed(3)})`, street: '',
+                               postcode: '', city: '', citycode: '', latitude, longitude });
+    }
   }
 
   private loadInstitutionContext(): void {
@@ -261,6 +287,9 @@ export class DeclareCrisisFormComponent implements OnInit{
         next: (response: any) => {
           console.log('Crisis créée:', response);
           this.declareInstitutionImplication(response.id);
+          if (this.alerteSource) {
+            this.alertesService.relierCrise(this.alerteSource, response.id).subscribe({ error: () => {} });
+          }
           // Propose d'enchaîner sur le démarrage de crise (CriseDemarrageComponent).
           const configurerMaintenant = confirm(
             "Votre crise a été enregistrée avec succès !\n\n" +
