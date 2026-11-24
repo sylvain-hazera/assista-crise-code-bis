@@ -84,7 +84,8 @@ class TestActivation:
         assert reponse.status_code == 201, reponse.data
         assert ActivationPointEau.objects.count() == 2
         mission = ActivationPointEau.objects.get(pei=scene["borne"]).mission
-        assert mission.titre == "Pompe au point d'eau Poteau d'incendie BI-12"
+        assert mission.titre.startswith("Pompe au point d'eau Poteau d'incendie n° BI-12")
+        assert "Lambert 93 X" in mission.description
         assert list(mission.equipes.all()) == [scene["rcsc"]] and mission.statut == "EN_COURS"
         assert JalonCrise.objects.filter(crise=scene["feu"]).count() == 1
         assert _activer(scene).status_code == 201 and ActivationPointEau.objects.count() == 2

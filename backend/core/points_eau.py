@@ -110,7 +110,7 @@ def visibles(environment, avec_osm_partout=False):
     return qs
 
 
-def en_dict(point, distance_km=None):
+def en_dict(point, distance_km=None, avec_localisation=False):
     from .models import SourcePEI, TypePEI
     from .points_eau_osm import ATTRIBUTION
 
@@ -125,7 +125,63 @@ def en_dict(point, distance_km=None):
         "latitude": point.location.y, "longitude": point.location.x,
         "attribution": ATTRIBUTION if point.source == SourcePEI.OSM else None,
         "distance_km": distance_km,
+        "nom": nom_du_point(point),
+        **(localisation(point.location, point.insee) if avec_localisation else {}),
     }
+
+
+#: Au-delà, l'adresse la plus proche n'aide plus à trouver le point : on donne la commune.
+RAYON_ADRESSE_M = 250
+
+
+def lambert93(location):
+    """(X, Y) en Lambert 93 (EPSG:2154), au mètre — le système des SDIS et des cartes IGN."""
+    projete = location.transform(2154, clone=True)
+    return round(projete.x), round(projete.y)
+
+
+def _adresse_proche(latitude, longitude, insee=""):
+    """« à 40 m du 12 rue de la Gare, 43000 Le Puy-en-Velay », ou la commune à défaut. Lu dans la
+    copie locale de la Base Adresse Nationale : aucune question ne sort. Gardé une journée."""
+    from django.core.cache import cache
+
+    from .models import Commune
+    from .referentiel_adresses import proches as adresses_proches
+
+    cle = f"pei-adresse:{latitude:.5f}:{longitude:.5f}"
+    connue = cache.get(cle)
+    if connue is not None:
+        return connue
+    texte = ""
+    trouvees = adresses_proches(latitude, longitude, rayon_m=RAYON_ADRESSE_M, nombre=1)
+    if trouvees:
+        a = trouvees[0]
+        voie = " ".join(x for x in (a.numero, a.suffixe, a.voie or a.lieu_dit) if x)
+        lieu = " ".join(x for x in (a.code_postal, a.commune_nom) if x)
+        distance = "devant le" if a.distance_m < 15 else f"à {a.distance_m:.0f} m du"
+        texte = f"{distance} {voie}, {lieu}".strip(", ") if voie else lieu
+    if not texte and insee:
+        commune = Commune.objects.filter(code=insee).only("nom").first()
+        texte = f"{commune.nom} ({insee})" if commune and commune.nom else ""
+    cache.set(cle, texte, 24 * 3600)
+    return texte
+
+
+def nom_du_point(point):
+    """« Poteau d'incendie n° 12 » : la nature, et le numéro que porte le point sur le terrain."""
+    from .models import TypePEI
+
+    libelle = dict(TypePEI.choices).get(point.type_pei, "Point d'eau") if point.type_pei else "Point d'eau"
+    reference = point.ref_terrain or (point.ref_source if point.source != "OSM" else "")
+    return f"{libelle} n° {reference}" if reference else libelle
+
+
+def localisation(location, insee=""):
+    """Ce qui permet de trouver un point sur le terrain : l'adresse la plus proche, le GPS (WGS 84)
+    et le Lambert 93."""
+    x, y = lambert93(location)
+    return {"adresse": _adresse_proche(location.y, location.x, insee),
+            "gps": f"{location.y:.5f}, {location.x:.5f}", "lambert93": {"x": x, "y": y}}
 
 
 def proches(environment, latitude, longitude, rayon_m=RAYON_DOUBLON_M):

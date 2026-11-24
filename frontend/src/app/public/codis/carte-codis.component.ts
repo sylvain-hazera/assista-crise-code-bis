@@ -11,6 +11,7 @@ interface PointCodis {
   id: string; nom: string; type_pei: string; debit: number | null; volume: number | null;
   latitude: number; longitude: number; statut: string; statut_libelle: string; indicatif: string | null;
   actif_le: string | null; ferme_le: string | null; demande_le: string;
+  lambert93?: { x: number; y: number };
 }
 interface CarteCodis { crise: string; maj: string; actifs: number; points: PointCodis[]; centre: { latitude: number; longitude: number }; }
 
@@ -51,7 +52,8 @@ export function couleurCodis(statut: string): string {
                 @if (p.statut === 'ACTIF' && p.actif_le) { depuis {{ p.actif_le | date:'HH:mm' }} }
                 @if (p.statut === 'FERME' && p.ferme_le) { à {{ p.ferme_le | date:'HH:mm' }} }
                 <br><span class="detail">
-                  {{ p.latitude | number:'1.5-5' }}, {{ p.longitude | number:'1.5-5' }}
+                  GPS {{ p.latitude | number:'1.5-5' }}, {{ p.longitude | number:'1.5-5' }}
+                  @if (p.lambert93) { · Lambert 93 X {{ p.lambert93.x }} Y {{ p.lambert93.y }} }
                   @if (p.debit) { · {{ p.debit | number:'1.0-0' }} m³/h }@if (p.volume) { · {{ p.volume | number:'1.0-0' }} m³ }
                   @if (p.indicatif) { · équipe {{ p.indicatif }} }
                   · <a [href]="'https://www.openstreetmap.org/?mlat=' + p.latitude + '&mlon=' + p.longitude + '#map=17/' + p.latitude + '/' + p.longitude" target="_blank" rel="noopener">itinéraire</a>

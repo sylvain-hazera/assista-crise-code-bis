@@ -3,6 +3,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { ActivationPointEau, PilotageService } from '../pilotage.service';
+import { MiniCartePointsEauComponent } from './mini-carte-points-eau.component';
 
 /**
  * Le circuit réflexe des points d'eau en feu de forêt (24/11/2026) : la cellule choisit à chaud
@@ -13,7 +14,7 @@ import { ActivationPointEau, PilotageService } from '../pilotage.service';
 @Component({
   selector: 'app-pilotage-eau',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, FormsModule],
+  imports: [DatePipe, DecimalPipe, FormsModule, MiniCartePointsEauComponent],
   template: `
     <h1>Points d'eau</h1>
     @if (!pilotage.criseId()) {
@@ -28,6 +29,11 @@ import { ActivationPointEau, PilotageService } from '../pilotage.service';
       }
       @if (erreur()) { <p class="erreur" role="alert">{{ erreur() }}</p> }
 
+      @if (c.activations.length || c.candidats?.length) {
+        <app-mini-carte-points-eau [candidats]="c.peut_piloter ? (c.candidats || []) : []" [activations]="c.activations"
+                                   [choix]="choix" (basculer)="basculer($event)" />
+      }
+
       @if (c.activations.length) {
         <section>
           <h2>Points ouverts <span class="discret">({{ c.actifs }} actif(s), remplissage possible)</span></h2>
@@ -37,7 +43,10 @@ import { ActivationPointEau, PilotageService } from '../pilotage.service';
               @for (a of c.activations; track a.id) {
                 <tr [attr.data-statut]="a.statut">
                   <td><a [href]="lienCarte(a)" target="_blank" rel="noopener">{{ a.nom }}</a>
-                    @if (a.debit) { <span class="discret"> · {{ a.debit | number:'1.0-0' }} m³/h</span> }</td>
+                    @if (a.debit) { <span class="discret"> · {{ a.debit | number:'1.0-0' }} m³/h</span> }
+                    @if (a.gps) {
+                      <span class="coordonnees">GPS {{ a.gps }}@if (a.lambert93) { · Lambert 93 X {{ a.lambert93.x }} Y {{ a.lambert93.y }} }</span>
+                    }</td>
                   <td>{{ a.indicatif || a.equipe || '—' }}</td>
                   <td><span class="etat">{{ a.statut_libelle }}</span></td>
                   <td>{{ depuis(a) | date:'HH:mm' }}</td>
@@ -102,7 +111,11 @@ import { ActivationPointEau, PilotageService } from '../pilotage.service';
                 <label class="candidat" [class.choisi]="choix[p.id]">
                   <input type="checkbox" [(ngModel)]="choix[p.id]">
                   <span class="libelle">
-                    <strong>{{ p.type_libelle }}@if (p.ref_terrain) { {{ p.ref_terrain }} }</strong>
+                    <strong>{{ p.nom || p.type_libelle + (p.ref_terrain ? ' ' + p.ref_terrain : '') }}</strong>
+                    @if (p.adresse) { <span class="adresse">{{ p.adresse }}</span> }
+                    @if (p.gps) {
+                      <span class="coordonnees">GPS {{ p.gps }}@if (p.lambert93) { · Lambert 93 X {{ p.lambert93.x }} Y {{ p.lambert93.y }} }</span>
+                    }
                     <span class="discret">{{ p.distance_km | number:'1.1-1' }} km
                       @if (p.debit) { · {{ p.debit | number:'1.0-0' }} m³/h }@if (p.volume) { · {{ p.volume | number:'1.0-0' }} m³ }
                       · {{ p.source === 'OSM' ? 'OSM, indicatif' : p.source === 'SDIS' ? 'SDIS' : 'validé commune' }}
@@ -146,6 +159,8 @@ import { ActivationPointEau, PilotageService } from '../pilotage.service';
     .lien { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
     .lien input { flex: 1 1 16rem; min-width: 0; padding: .4rem .6rem; border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px; }
     .candidats { display: flex; flex-direction: column; gap: .35rem; }
+    .adresse, .coordonnees { display: block; font-size: .82rem; color: var(--ac-text-muted, #9ca3af); }
+    .coordonnees { font-variant-numeric: tabular-nums; }
     .candidat { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; padding: .55rem .7rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; cursor: pointer; }
     .candidat.choisi { border-color: #1d4ed8; background: var(--ac-blue-bg, #eff6ff); }
     .candidat .libelle { display: flex; flex-direction: column; flex: 1 1 14rem; min-width: 0; }
@@ -164,6 +179,9 @@ export class PilotageEauComponent implements OnInit {
   equipes: Record<number, string | undefined> = {};
 
   ngOnInit(): void { this.pilotage.rafraichirCircuitEau(true); }
+
+  /** Un point touché sur la mini-carte : coché ou décoché, comme dans la liste. */
+  basculer(id: number): void { this.choix = { ...this.choix, [id]: !this.choix[id] }; }
 
   nbChoisis(): number { return Object.values(this.choix).filter(Boolean).length; }
 

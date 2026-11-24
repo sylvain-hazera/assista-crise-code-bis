@@ -81,10 +81,16 @@ def propose(crise):
             and not crise.activations_point_eau.exclude(statut="ANNULE").exists())
 
 
+def _lambert93(location):
+    from .points_eau import lambert93
+    return lambert93(location)
+
+
 def activation_en_dict(a, avec_noms=True):
     return {
         "id": str(a.id), "nom": a.nom, "type_pei": a.type_pei, "debit": a.debit, "volume": a.volume,
-        "latitude": a.location.y, "longitude": a.location.x, "pei": a.pei_id, "statut": a.statut,
+        "latitude": a.location.y, "longitude": a.location.x, "gps": f"{a.location.y:.5f}, {a.location.x:.5f}",
+        "lambert93": dict(zip(("x", "y"), _lambert93(a.location))), "pei": a.pei_id, "statut": a.statut,
         "statut_libelle": a.get_statut_display(),
         "equipe": (a.equipe.name if avec_noms else None) if a.equipe_id else None,
         "indicatif": (a.equipe.indicatif or None) if a.equipe_id else None,
@@ -106,10 +112,10 @@ def candidats(crise):
     qs = (points_eau.visibles(crise.environment).filter(location__distance_lte=(crise.location, D(km=rayon)))
           .exclude(pk__in=[d for d in deja if d]))
     from .views_veille import _distance_km
-    points = [points_eau.en_dict(p, round(_distance_km(crise.location.y, crise.location.x, p.location.y, p.location.x), 2))
-              for p in qs[:CANDIDATS_MAX * 3]]
-    points.sort(key=lambda p: p["distance_km"])
-    return points[:CANDIDATS_MAX]
+    points = sorted(((round(_distance_km(crise.location.y, crise.location.x, p.location.y, p.location.x), 2), p)
+                     for p in qs[:CANDIDATS_MAX * 3]), key=lambda c: c[0])[:CANDIDATS_MAX]
+    # Adresse, GPS et Lambert 93 : de quoi trouver le point sur le terrain (24/11/2026).
+    return [points_eau.en_dict(p, d, avec_localisation=True) for d, p in points]
 
 
 def equipes_mobilisables(crise, user):
@@ -157,9 +163,13 @@ def etat(crise, user):
 # ── Activation ───────────────────────────────────────────────────────────────
 
 def nom_du_point(point):
-    reference = point.ref_terrain or (point.ref_source if point.source != "OSM" else "")
-    libelle = point.get_type_pei_display() if point.type_pei else "Point d'eau"
-    return f"{libelle} {reference}".strip()
+    """« Poteau d'incendie n° 12 — à 40 m du 12 rue de la Gare, 43000 Le Puy-en-Velay » : le nom
+    porté par l'activation, la mission et la carte du CODIS."""
+    from . import points_eau
+
+    adresse = points_eau.localisation(point.location, point.insee)["adresse"]
+    nom = points_eau.nom_du_point(point)
+    return f"{nom} — {adresse}" if adresse else nom
 
 
 @transaction.atomic
@@ -191,7 +201,8 @@ def activer(crise, affectations, request):
         nom = nom_du_point(point)
         mission = Mission.objects.create(
             titre=f"Pompe au point d'eau {nom}"[:200],
-            description=(f"Mettre une pompe en place au point d'eau « {nom} » ({point.location.y:.5f}, {point.location.x:.5f}) "
+            description=(f"Mettre une pompe en place au point d'eau « {nom} » (GPS {point.location.y:.5f}, {point.location.x:.5f} ; "
+                         f"Lambert 93 X {_lambert93(point.location)[0]} Y {_lambert93(point.location)[1]}) "
                          "et le déclarer actif dans l'application : les pompiers pourront venir y remplir leurs camions."),
             crise=crise, statut=Mission.Statut.EN_COURS, environment=crise.environment, institution=institution,
         )
@@ -340,7 +351,8 @@ def envoyer_codis(activation, institution, lien, request):
         )
         message = (
             f"{'OUVERT' if ouvert else 'FERMÉ'} — point d'eau {activation.nom}, crise « {activation.crise.name} ».\n"
-            f"Position : {activation.location.y:.5f}, {activation.location.x:.5f}"
+            f"Position GPS : {activation.location.y:.5f}, {activation.location.x:.5f}"
+            f" — Lambert 93 : X {_lambert93(activation.location)[0]} Y {_lambert93(activation.location)[1]}"
             f" (https://www.openstreetmap.org/?mlat={activation.location.y:.5f}&mlon={activation.location.x:.5f}#map=17/"
             f"{activation.location.y:.5f}/{activation.location.x:.5f})\n"
             + (f"Débit indiqué : {activation.debit:g} m3/h\n" if activation.debit else "")

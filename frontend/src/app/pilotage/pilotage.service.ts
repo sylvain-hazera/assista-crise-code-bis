@@ -95,6 +95,8 @@ export interface VueTerrain {
 export interface ActivationPointEau {
   id: string; nom: string; type_pei: string; debit: number | null; volume: number | null;
   latitude: number; longitude: number; pei: number | null;
+  /** Pour trouver le point sur le terrain (24/11/2026). */
+  gps?: string; lambert93?: { x: number; y: number };
   statut: 'DEMANDE' | 'EN_ROUTE' | 'ACTIF' | 'FERME' | 'ANNULE'; statut_libelle: string;
   equipe: string | null; indicatif: string | null; equipe_id: string | null; mission: string | null;
   demande_le: string; en_route_le: string | null; actif_le: string | null; ferme_le: string | null;
@@ -109,7 +111,8 @@ export interface CircuitEau {
   codis_sans_accuse: number; interlocuteurs_codis: number;
   candidats?: { id: number; source: string; ref: string; type_pei: string; type_libelle: string; ref_terrain: string;
                 debit: number | null; volume: number | null; etat: string; distance_km: number | null;
-                latitude: number; longitude: number; attribution: string | null }[];
+                latitude: number; longitude: number; attribution: string | null;
+                nom?: string; adresse?: string; gps?: string; lambert93?: { x: number; y: number } }[];
   equipes?: { id: string; nom: string; indicatif: string | null; effectif: number }[];
 }
 
