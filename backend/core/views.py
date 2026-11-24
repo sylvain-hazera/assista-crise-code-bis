@@ -18752,21 +18752,33 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return Response({"contact_referent": "Indiquez un email ou un téléphone."}, status=status.HTTP_400_BAD_REQUEST)
         if len(contact) > 255:
             return Response({"contact_referent": "255 caractères au plus."}, status=status.HTTP_400_BAD_REQUEST)
-        champs = []
         if contact:
+            from django.core.validators import validate_email
+            try:
+                validate_email(contact)
+            except DjangoValidationError:
+                return Response({"contact_referent": "Adresse email invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        champs = set()
+        ancien = (declaration.contact_referent or "").strip()
+        if contact:
+            # Un ancien contact sans « @ » est un numéro (champ unique avant le 24/11/2026) : il
+            # passe dans le téléphone plutôt que d'être écrasé par l'email.
+            if ancien and "@" not in ancien and not telephone and not (declaration.telephone_referent or "").strip():
+                declaration.telephone_referent = ancien
+                champs.add("telephone_referent")
             declaration.contact_referent = contact
-            champs.append("contact_referent")
+            champs.add("contact_referent")
         if telephone:
             declaration.telephone_referent = telephone
-            champs.append("telephone_referent")
-        declaration.save(update_fields=champs)
+            champs.add("telephone_referent")
+        declaration.save(update_fields=sorted(champs))
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="DeclarationSecurite",
             objet_id=declaration.id, crise=declaration.crise,
             commentaire=f"Contact complété : {declaration.prenom_referent} {declaration.nom_referent}",
         )
         return Response({"id": str(declaration.id), "contact_a_completer": False,
-                         "email_manquant": not (declaration.contact_referent or "").strip(),
+                         "email_manquant": "@" not in (declaration.contact_referent or ""),
                          "telephone_manquant": not (declaration.telephone_referent or "").strip()})
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])

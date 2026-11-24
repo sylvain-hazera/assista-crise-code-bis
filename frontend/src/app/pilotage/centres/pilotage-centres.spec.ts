@@ -93,7 +93,7 @@ describe('Pilotage — centres (23/11/2026)', () => {
       .find(b => b.textContent?.includes('Compléter le contact'))!;
     ajouter.click();
     fixture.detectChanges();
-    // Les deux champs manquants sont proposés ; ici, seul le téléphone de la famille est donné.
+    // Les deux lignes sont toujours proposées ; ici, seul le téléphone de la famille est donné.
     expect(fixture.nativeElement.querySelector('.ligne-contact input[type="email"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('.ligne-contact input[type="tel"]')).not.toBeNull();
     modale.telephoneSaisi = '06 12 34 56 78';
@@ -101,7 +101,20 @@ describe('Pilotage — centres (23/11/2026)', () => {
     const complement = http.expectOne(`${api}/declarations-securite/d1/contact/`);
     expect(complement.request.body).toEqual({ telephone_referent: '06 12 34 56 78' });
     complement.flush({ id: 'd1', contact_a_completer: false });
-    http.expectOne(r => r.url.includes('registre-presences')).flush([]);
+    // Email et téléphone renseignés : « Modifier le contact », les deux lignes restent là pour corriger.
+    http.expectOne(r => r.url.includes('registre-presences')).flush([
+      { id: 'r1', point: 'p1', type_personne: 'EVACUE', type_personne_libelle: 'Personne évacuée', nom: 'Jean Dupond',
+        nombre: 1, date_arrivee: '2026-11-24T08:00:00Z', date_depart: null, enregistre_par: null,
+        declaration: 'd1', contact_a_completer: false, email_manquant: false, telephone_manquant: false },
+    ]);
+    fixture.detectChanges();
+    const modifier = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(b => b.textContent?.includes('Modifier le contact'))!;
+    expect(modifier).toBeTruthy();
+    modifier.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.ligne-contact input[type="email"]').getAttribute('placeholder')).toContain('déjà renseigné');
+    expect(fixture.nativeElement.querySelector('.ligne-contact input[type="tel"]').getAttribute('placeholder')).toContain('déjà renseigné');
     fixture.componentInstance.fermerSecretariat();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-point-secretariat-modal')).toBeNull();

@@ -701,3 +701,32 @@ class TestAdmissionSansContact:
         declaration = DeclarationSecurite.objects.get(id=response.data['id'])
         assert declaration.contact_referent == 'jean@example.org'
         assert declaration.telephone_referent == '+33 6 12 34 56 78'
+
+    def test_ancien_contact_telephone_propose_l_email_et_n_est_pas_perdu(self, authenticated_client):
+        """Avant le 24/11/2026, un seul champ « email ou téléphone » : un numéro y est resté."""
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_referent='0612345678'), format='json')
+        lignes = client.get(reverse('registrepresence-list'), {'point': str(point.id)}).data
+        lignes = lignes['results'] if isinstance(lignes, dict) else lignes
+        assert lignes[0]['email_manquant'] is True
+        url = reverse('declarationsecurite-completer-contact', args=[response.data['id']])
+        assert client.post(url, {'contact_referent': 'pas-un-email'}, format='json').status_code == 400
+        reponse = client.post(url, {'contact_referent': 'jean@example.org'}, format='json')
+        assert reponse.status_code == 200 and reponse.data['email_manquant'] is False
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.contact_referent == 'jean@example.org'
+        assert declaration.telephone_referent == '0612345678'
+
+    def test_corriger_un_email_deja_renseigne(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_referent='faux@example.org', telephone_referent='0611111111'),
+                               format='json')
+        url = reverse('declarationsecurite-completer-contact', args=[response.data['id']])
+        assert client.post(url, {'contact_referent': 'bon@example.org'}, format='json').status_code == 200
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.contact_referent == 'bon@example.org'
+        assert declaration.telephone_referent == '0611111111'

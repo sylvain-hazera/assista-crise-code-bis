@@ -1378,8 +1378,10 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
         return bool(d and not (d.contact_referent or "").strip() and not (d.telephone_referent or "").strip())
 
     def get_email_manquant(self, obj):
+        # Avant le 24/11/2026, un seul champ « email ou téléphone » : un contact sans « @ » est un
+        # numéro, l'email reste à demander.
         d = self._declaration(obj)
-        return bool(d and not (d.contact_referent or "").strip())
+        return bool(d and "@" not in (d.contact_referent or ""))
 
     def get_telephone_manquant(self, obj):
         d = self._declaration(obj)
