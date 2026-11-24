@@ -26,6 +26,7 @@ class Synchronisation(
     private val terrain: DepotTerrain? = null,
     /** Le nom de l'appareil, pour « entendu par » (un modèle de téléphone, rien de personnel). */
     private val appareil: String = "téléphone",
+    private val pointsEau: DepotPointsEau? = null,
 ) {
     /**
      * Envoie ce qui attend, puis relit ce qui a changé — pour que l'affichage repose sur ce
@@ -90,6 +91,12 @@ class Synchronisation(
                     else -> r
                 }
                 ActionEnAttente.GENRE_PHOTO_CONSTAT -> envoyerPhotoConstat(action)
+                // Points d'eau (24/11/2026) : un serveur pas encore à jour (404) garde la file.
+                ActionEnAttente.GENRE_SIGNALEMENT_PEI -> when (val r = api.envoyerSignalementPei(action.charge)) {
+                    is Reponse.Refus -> if (r.code == 404) Reponse.Injoignable("Serveur pas encore à jour.") else r
+                    else -> r
+                }
+                ActionEnAttente.GENRE_PHOTO_SIGNALEMENT_PEI -> envoyerPhotoSignalementPei(action)
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }
         }
@@ -98,6 +105,25 @@ class Synchronisation(
         // Tout ce qui a été saisi dans le secteur embarqué est parti : il s'efface (décision du 20/11/2026).
         degats?.apresSynchronisation()
         return accusees
+    }
+
+    private suspend fun envoyerPhotoSignalementPei(action: ActionEnAttente): Reponse<Unit> {
+        val depot = pointsEau ?: return Reponse.Refus(400, "Action inconnue de cette version de l'application.")
+        val photo = depot.lirePhoto(action) ?: return Reponse.Refus(400, "Photo illisible.")
+        val octets = depot.octets(photo) ?: return Reponse.Refus(400, "Les données de cette photo ne sont plus sur ce téléphone.")
+        return when (val r = api.envoyerPhotoSignalementPei(action.cible, octets, photo.commentaire)) {
+            is Reponse.Ok -> {
+                val recue = r.valeur
+                if (recue != null && !recue.equals(photo.empreinte, ignoreCase = true)) {
+                    Reponse.Refus(409, "L'empreinte de la photo reçue par le serveur ne correspond pas à celle prise ici. Signalez-le à votre encadrement.")
+                } else {
+                    depot.oublierLesOctets(action)
+                    Reponse.Ok(Unit)
+                }
+            }
+            is Reponse.Refus -> if (r.code == 404) Reponse.Injoignable("Serveur pas encore à jour.") else r
+            is Reponse.Injoignable -> r
+        }
     }
 
     private suspend fun envoyerPhotoConstat(action: ActionEnAttente): Reponse<Unit> {

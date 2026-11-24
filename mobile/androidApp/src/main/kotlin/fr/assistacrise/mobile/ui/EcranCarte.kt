@@ -111,6 +111,11 @@ fun EcranCarte(modele: ModeleApplication) {
     /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
     var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
     val points by modele.pointsCrise.collectAsStateWithLifecycle()
+    // Points d'eau incendie (24/11/2026) : gardés sur le téléphone pour la carte hors réseau.
+    val pointsEau by modele.pointsEau.collectAsStateWithLifecycle()
+    val suiviPointsEau by modele.suiviPointsEau.collectAsStateWithLifecycle()
+    var pointEauTouche by remember { mutableStateOf<fr.assistacrise.mobile.domaine.PointEau?>(null) }
+    var signalementPei by remember { mutableStateOf<Pair<fr.assistacrise.mobile.domaine.GenreSignalementPei, fr.assistacrise.mobile.domaine.PointEau?>?>(null) }
     var destination by remember { mutableStateOf<Destination?>(null) }
     var horsLigne by remember { mutableStateOf(false) }
     var capGps by remember { mutableStateOf<Float?>(null) }
@@ -148,6 +153,7 @@ fun EcranCarte(modele: ModeleApplication) {
             // Le style est un fichier de l'application : le même sert aux cartes embarquées.
             m.setStyle(Style.Builder().fromUri(fr.assistacrise.mobile.CartesHorsLigne.STYLE)) { style ->
                 style.addSource(GeoJsonSource("zones"))
+                style.addSource(GeoJsonSource("pei"))
                 style.addSource(GeoJsonSource("points"))
                 style.addSource(GeoJsonSource("dossiers"))
                 style.addSource(GeoJsonSource("lieu"))
@@ -156,6 +162,15 @@ fun EcranCarte(modele: ModeleApplication) {
                 // Dessous d'abord : les périmètres de crise, puis les dossiers, puis les personnes.
                 style.addLayer(FillLayer("zones-fond", "zones").withProperties(fillColor("#b91c1c"), fillOpacity(0.10f)))
                 style.addLayer(LineLayer("zones-bord", "zones").withProperties(lineColor("#b91c1c"), lineWidth(2f)))
+                // Points d'eau incendie, sous les dossiers : rouge indisponible, orange défaut,
+                // bleu clair OpenStreetMap (indicatif), bleu SDIS ou validé par la commune.
+                style.addLayer(CircleLayer("pei-points", "pei").withProperties(
+                    circleRadius(6f), circleStrokeColor("#ffffff"), circleStrokeWidth(1.5f),
+                    circleColor(Expression.switchCase(
+                        Expression.eq(Expression.get("etat"), Expression.literal("INDISPONIBLE")), Expression.color(android.graphics.Color.parseColor("#dc2626")),
+                        Expression.eq(Expression.get("etat"), Expression.literal("DEFAUT")), Expression.color(android.graphics.Color.parseColor("#f59e0b")),
+                        Expression.eq(Expression.get("source"), Expression.literal("OSM")), Expression.color(android.graphics.Color.parseColor("#60a5fa")),
+                        Expression.color(android.graphics.Color.parseColor("#1d4ed8"))))))
                 // Forme ET couleur : un dossier est un point orange cerclé de sombre, plus gros
                 // qu'une personne ; l'urgent est rouge. La liste sous la carte les nomme.
                 style.addLayer(CircleLayer("dossiers-points", "dossiers").withProperties(
@@ -177,12 +192,14 @@ fun EcranCarte(modele: ModeleApplication) {
                 val ecran = m.projection.toScreenLocation(point)
                 val touche = m.queryRenderedFeatures(ecran, "dossiers-points").firstOrNull()?.getStringProperty("id")
                 val pointCrise = m.queryRenderedFeatures(ecran, "points-crise").firstOrNull()?.getStringProperty("id")
+                val pei = m.queryRenderedFeatures(ecran, "pei-points").firstOrNull()?.getStringProperty("id")?.toLongOrNull()
                 when {
                     touche != null -> { modele.ouvrirDossier(touche); true }
                     pointCrise != null -> {
                         points.firstOrNull { it.id == pointCrise }?.let { p -> destination = Destination(p.nom, p.latitude!!, p.longitude!!, "point") }
                         true
                     }
+                    pei != null -> { pointEauTouche = modele.pointsEau.value.firstOrNull { it.id == pei }; true }
                     else -> { lieuTouche = null; false }
                 }
             }
@@ -227,6 +244,15 @@ fun EcranCarte(modele: ModeleApplication) {
 
     // Les points suivent les données ; la carte ne se recadre qu'une fois, pour ne pas
     // arracher la vue des mains de quelqu'un qui est en train de la déplacer.
+    LaunchedEffect(carte, pointsEau) {
+        val style = carte?.style ?: return@LaunchedEffect
+        (style.getSource("pei") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(pointsEau.map { p ->
+            Feature.fromGeometry(Point.fromLngLat(p.longitude, p.latitude)).apply {
+                addStringProperty("id", p.id.toString()); addStringProperty("etat", p.etat); addStringProperty("source", p.source)
+            }
+        }))
+    }
+
     LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche, points) {
         val m = carte ?: return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
@@ -263,6 +289,7 @@ fun EcranCarte(modele: ModeleApplication) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Carte", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { signalementPei = fr.assistacrise.mobile.domaine.GenreSignalementPei.NOUVEAU to null }) { Text("Point d'eau") }
             TextButton(onClick = { horsLigne = true }) { Text("Hors ligne") }
             PastilleLien(lien)
         }
@@ -351,6 +378,20 @@ fun EcranCarte(modele: ModeleApplication) {
         }
     }
     if (horsLigne) DialogueHorsLigne(modele, carte, crises, situes, points) { horsLigne = false }
+    pointEauTouche?.let { p ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { pointEauTouche = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            FichePointEau(p, moi, suiviPointsEau, surSignaler = { g -> pointEauTouche = null; signalementPei = g to p },
+                          surFermer = { pointEauTouche = null }, modifier = Modifier.padding(16.dp))
+        }
+    }
+    signalementPei?.let { (genre, p) ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { signalementPei = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            SignalerPointEau(modele, genre, p, moi, pointsEau, crises.firstOrNull { it.ouverte }?.id,
+                             surFin = { signalementPei = null }, modifier = Modifier.padding(16.dp))
+        }
+    }
     destination?.let { d ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { destination = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {

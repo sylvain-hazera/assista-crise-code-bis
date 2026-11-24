@@ -68,6 +68,14 @@ data class ActionEnAttente(
          * d'équipe, EMCOM), remis au serveur au retour du réseau (23/11/2026) : rien ne se perd
          * hors de portée des passerelles. `charge` : le JSON attendu par `radio/entendus/`. */
         const val GENRE_ENTENDU_RADIO = "ENTENDU_RADIO"
+
+        /** Un signalement de point d'eau incendie (24/11/2026) : `cible` est son identifiant
+         * (tiré ici), `charge` le `SignalementPei` en JSON. */
+        const val GENRE_SIGNALEMENT_PEI = "SIGNALEMENT_PEI"
+
+        /** Une photo d'un signalement de point d'eau : `cible` est le signalement, `charge` un
+         * `PhotoEnAttente`. Elle part après son signalement (la file garde l'ordre). */
+        const val GENRE_PHOTO_SIGNALEMENT_PEI = "PHOTO_SIGNALEMENT_PEI"
     }
 }
 

@@ -400,6 +400,33 @@ class ClientApi(
             })
         }).transformer { (it.jsonObject["empreinte"] as? JsonPrimitive)?.content }
 
+    // --- Points d'eau incendie (24/11/2026) --------------------------------------------
+
+    /** Les points d'eau autour d'un lieu (comptes connectés seulement). */
+    suspend fun pointsEau(latitude: Double, longitude: Double, rayonKm: Int): Reponse<List<fr.assistacrise.mobile.domaine.PointEau>> =
+        authentifie(HttpMethod.Get, "points-eau/?lat=$latitude&lon=$longitude&rayon_km=$rayonKm").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ReponsePointsEau.serializer(), it).resultats
+        }
+
+    suspend fun envoyerSignalementPei(charge: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(charge).jsonObject }.getOrNull() ?: return Reponse.Refus(400, "Signalement illisible.")
+        return authentifie(HttpMethod.Post, "points-eau/signalements/", objet).sansValeur()
+    }
+
+    /** Joint une photo à un signalement déjà reçu ; la réponse porte l'empreinte calculée par le serveur. */
+    suspend fun envoyerPhotoSignalementPei(signalement: String, octets: ByteArray, commentaire: String): Reponse<String?> =
+        authentifie(HttpMethod.Post, "points-eau/signalements/photo/", formulaire = formData {
+            append("signalement", signalement)
+            append("commentaire", commentaire)
+            append("fichier", octets, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"photo.jpg\"")
+            })
+        }).transformer { (it.jsonObject["sha256"] as? JsonPrimitive)?.content }
+
+    suspend fun mesSignalementsPei(): Reponse<List<fr.assistacrise.mobile.domaine.SuiviSignalementPei>> =
+        liste("points-eau/signalements/", fr.assistacrise.mobile.domaine.SuiviSignalementPei.serializer())
+
     // --- Notifications ------------------------------------------------------------------
 
     /** Le téléphone se présente : c'est ce qui le rend joignable par une campagne. */

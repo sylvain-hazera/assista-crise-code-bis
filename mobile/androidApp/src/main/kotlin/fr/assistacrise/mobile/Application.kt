@@ -160,8 +160,9 @@ class Application : android.app.Application() {
             { java.time.Instant.now().toString() })
     }
     val points by lazy { fr.assistacrise.mobile.donnees.DepotPoints(api, magasin) }
+    val pointsEau by lazy { fr.assistacrise.mobile.donnees.DepotPointsEau(api, magasin, file) { UUID.randomUUID().toString() } }
     val cartes by lazy { CartesHorsLigne(this) }
-    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats, terrain, "Android ${android.os.Build.MODEL}") }
+    val synchro by lazy { Synchronisation(api, file, depot, equipes, dossiers, radio, degats, terrain, "Android ${android.os.Build.MODEL}", pointsEau) }
     val lien by lazy { IndicateurLien() }
     val reseau by lazy { ObservateurReseau(this) }
     val notifications by lazy { DepotNotifications(api, magasin) { UUID.randomUUID().toString() } }
@@ -204,6 +205,7 @@ class Application : android.app.Application() {
         benevole.restaurer()
         terrain.restaurer()
         points.restaurer()
+        pointsEau.restaurer()
         messagerieRadio.restaurer()
         restaure = true
     }

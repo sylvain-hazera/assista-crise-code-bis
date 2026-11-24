@@ -1574,3 +1574,23 @@ et les icônes. Cette place est désormais réservée.
   cité et son auteur tagué : « ↪ @[Léa Martin] « rendez-vous au pont… » c'est noté », citation
   plus courte par radio), Taguer l'auteur (`@Léa`, `@[Léa Martin]`), Copier le texte. La
   personne à qui l'on répond reçoit la notification de mention.
+
+## 26. Version 0.23.0 (24/11/2026) : points d'eau incendie
+
+Demande de Sylvain : la réserve signale les points d'eau, la commune valide, le SDIS reste la référence.
+
+- **Carte** : les points d'eau autour des crises ouvertes (15 km) sont copiés sur le téléphone à la
+  synchronisation, chiffrés comme le reste : la carte les montre hors réseau. Rouge : indisponible ;
+  orange : défaut ; bleu clair : OpenStreetMap (indicatif, non validé) ; bleu : base du SDIS ou
+  point validé par la commune.
+- **Fiche** : toucher un point donne sa nature, son état, débit, volume, la distance, la source
+  (et l'attribution OpenStreetMap), le suivi de mes signalements sur ce point, et trois gestes :
+  Indisponible, Remis en service, Défaut constaté.
+- **Nouveau point d'eau** (bouton « Point d'eau » de la carte) : à ma position, nature (poteau,
+  bouche, aspiration, citerne), débit et volume estimés, remarques, photos. Les points déjà connus
+  à moins de 50 m sont signalés avant l'envoi (calcul sur le téléphone, aussi hors réseau).
+- **File** : `SIGNALEMENT_PEI` puis `PHOTO_SIGNALEMENT_PEI`, comme un constat de dégâts
+  (identifiant tiré sur le téléphone, empreinte de la photo vérifiée). Un serveur qui ne connaît
+  pas encore les points d'eau (404) garde la file : rien n'est perdu.
+- Côté serveur : `core/points_eau.py` (validation par la mairie de la commune du point, export
+  CSV au schéma national `datakode/schema-pei` pour le SDIS, sans jamais une ligne OSM).

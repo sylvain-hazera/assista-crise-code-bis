@@ -456,7 +456,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 app.depot.toutEffacer()
                 app.equipes.toutEffacer()
                 app.terrain.toutEffacer()
-                app.points.toutEffacer()
+                app.points.toutEffacer(); app.pointsEau.toutEffacer()
                 app.citoyen.toutEffacer()
                 app.alertes.toutRetirer()
                 app.veille.toutEffacer()
@@ -485,7 +485,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
             app.terrain.toutEffacer()
-            app.points.toutEffacer()
+            app.points.toutEffacer(); app.pointsEau.toutEffacer()
             app.messagerieRadio.toutEffacer()
             app.citoyen.toutEffacer()
             app.alertes.toutRetirer()
@@ -545,6 +545,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     /** Les points importants des crises, embarqués pour le GPS hors ligne. */
     val pointsCrise = app.points.points
+    val pointsEau = app.pointsEau.points
+    val suiviPointsEau = app.pointsEau.suivi
     val cartesHorsLigne get() = app.cartes
 
     /** « Aller vers » a conduit jusqu'au point : on propose d'envoyer « Arrivé sur les lieux ». */
@@ -703,6 +705,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     app.citoyen.rafraichir()
                     // Les points des crises ouvertes, pour le GPS hors ligne.
                     app.points.rafraichir(crises.value.filter { it.ouverte }.map { it.id })
+                    // Les points d'eau incendie autour des crises ouvertes, pour la carte hors réseau.
+                    app.pointsEau.rafraichir(crises.value)
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
                     if (equipes.value.isNotEmpty()) {
                         if (app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet()) is Reponse.Ok) {
@@ -1087,6 +1091,29 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Injoignable -> "Pas de réseau : le secteur n'a pas pu être embarqué."
             }
             embarquementEnCours = false
+        }
+    }
+
+    /**
+     * Un signalement de point d'eau (24/11/2026) : il part en file avec ses photos, comme un
+     * constat de dégâts. La commune le validera ; le SDIS reste la référence.
+     */
+    fun signalerPointEau(signalement: fr.assistacrise.mobile.domaine.SignalementPei, libelle: String,
+                         photos: List<java.io.File>, position: Releve?, apres: () -> Unit) {
+        photoEnCours = true
+        viewModelScope.launch {
+            app.pointsEau.signaler(signalement, libelle)
+            for (prise in photos) {
+                val prete = Photographe.preparer(prise, position, "", BuildConfig.VERSION_NAME)
+                if (prete == null) message = "Une photo n'a pas pu être lue : elle n'est pas jointe."
+                else app.pointsEau.ajouterPhoto(signalement.id, prete.first, prete.second, "Photo — $libelle")
+            }
+            photoEnCours = false
+            verrouSynchro.withLock { app.synchro.envoyerLaFile(force = true) }
+            message = if (file.value.any { it.genre == ActionEnAttente.GENRE_SIGNALEMENT_PEI && it.cible == signalement.id })
+                "Signalement gardé sur ce téléphone : il partira dès que le réseau reviendra."
+            else "Signalement envoyé : la commune va le valider."
+            apres()
         }
     }
 
