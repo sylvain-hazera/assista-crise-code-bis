@@ -424,6 +424,12 @@ class ClientApi(
             })
         }).transformer { (it.jsonObject["sha256"] as? JsonPrimitive)?.content }
 
+    /** Circuit feu : l'état d'un point d'eau déclaré par le binôme. */
+    suspend fun envoyerEtatPointEau(activation: String, charge: String): Reponse<Unit> {
+        val objet = runCatching { json.parseToJsonElement(charge).jsonObject }.getOrNull() ?: return Reponse.Refus(400, "État illisible.")
+        return authentifie(HttpMethod.Post, "circuit-eau/$activation/etat/", objet).sansValeur()
+    }
+
     suspend fun mesSignalementsPei(): Reponse<List<fr.assistacrise.mobile.domaine.SuiviSignalementPei>> =
         liste("points-eau/signalements/", fr.assistacrise.mobile.domaine.SuiviSignalementPei.serializer())
 

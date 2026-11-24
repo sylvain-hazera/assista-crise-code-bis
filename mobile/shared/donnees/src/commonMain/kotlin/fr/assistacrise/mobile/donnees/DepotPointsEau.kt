@@ -62,6 +62,15 @@ class DepotPointsEau(
         return Reponse.Ok(Unit)
     }
 
+    /** Circuit feu : le binôme déclare l'état de son point (en route, actif, fermé). */
+    suspend fun declarerEtat(activation: String, etat: String, observeLe: String, libelle: String) {
+        val charge = kotlinx.serialization.json.buildJsonObject {
+            put("etat", kotlinx.serialization.json.JsonPrimitive(etat))
+            put("observe_le", kotlinx.serialization.json.JsonPrimitive(observeLe))
+        }.toString()
+        file.ajouter(ActionEnAttente.GENRE_ETAT_POINT_EAU, activation, charge, libelle)
+    }
+
     suspend fun signaler(signalement: SignalementPei, libelle: String) {
         file.ajouter(ActionEnAttente.GENRE_SIGNALEMENT_PEI, signalement.id,
                      json.encodeToString(SignalementPei.serializer(), signalement), libelle)

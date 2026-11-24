@@ -76,6 +76,10 @@ data class ActionEnAttente(
         /** Une photo d'un signalement de point d'eau : `cible` est le signalement, `charge` un
          * `PhotoEnAttente`. Elle part après son signalement (la file garde l'ordre). */
         const val GENRE_PHOTO_SIGNALEMENT_PEI = "PHOTO_SIGNALEMENT_PEI"
+
+        /** Circuit feu (24/11/2026) : l'état d'un point d'eau déclaré par le binôme. `cible` est
+         * l'activation, `charge` `{"etat": "ACTIF", "observe_le": "…"}`. */
+        const val GENRE_ETAT_POINT_EAU = "ETAT_POINT_EAU"
     }
 }
 

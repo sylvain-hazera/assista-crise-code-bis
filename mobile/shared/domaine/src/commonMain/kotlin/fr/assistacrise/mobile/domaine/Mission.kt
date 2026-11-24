@@ -28,6 +28,8 @@ data class Mission(
     @SerialName("equipe_ids") val equipes: List<String> = emptyList(),
     val statut: StatutMission = StatutMission.EN_PREPARATION,
     @SerialName("date_creation") val dateCreation: String? = null,
+    /** Circuit feu (24/11/2026) : la mission « Pompe au point d'eau X » porte son point. */
+    @SerialName("point_eau") val pointEau: PointEauMission? = null,
 )
 
 /**

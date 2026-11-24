@@ -36,7 +36,8 @@ private class BancPointsEau(var serveurAJour: Boolean = true) {
         val entete = headersOf(HttpHeaders.ContentType, "application/json")
         when {
             panne -> respondError(HttpStatusCode.BadGateway)
-            chemin.startsWith("points-eau") && !serveurAJour -> respondError(HttpStatusCode.NotFound)
+            (chemin.startsWith("points-eau") || chemin.startsWith("circuit-eau")) && !serveurAJour -> respondError(HttpStatusCode.NotFound)
+            chemin == "circuit-eau/a1/etat/" -> respond("""{"id":"a1","statut":"ACTIF"}""", HttpStatusCode.OK, entete)
             chemin == "points-eau/" -> respond(POINTS_JSON, HttpStatusCode.OK, entete)
             chemin == "points-eau/signalements/" && demande.method == HttpMethod.Get ->
                 respond("""[{"id":"s1","genre":"INDISPONIBLE","genre_libelle":"Indisponible","statut":"VALIDE","statut_libelle":"Validé","pei":1}]""", HttpStatusCode.OK, entete)
@@ -92,5 +93,16 @@ class PointsEauTest {
         // Le serveur se met à jour : le signalement part.
         banc.serveurAJour = true
         assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+    }
+
+    @Test fun leBinomeDeclareSonPointActifMemeSansServeurAJour() = runTest {
+        val banc = BancPointsEau(serveurAJour = false).connecte()
+        banc.pointsEau.declarerEtat("a1", "ACTIF", "2026-11-24T14:05:00Z", "Point d'eau BI-12 — actif")
+        assertEquals(0, banc.synchro.envoyerLaFile(force = true))
+        assertEquals(listOf(ActionEnAttente.GENRE_ETAT_POINT_EAU), banc.file.actions.value.map { it.genre })
+        banc.serveurAJour = true
+        assertEquals(1, banc.synchro.envoyerLaFile(force = true))
+        val envoi = banc.envoisVers("circuit-eau/a1/etat/").last()
+        assertTrue((envoi.body as io.ktor.http.content.TextContent).text.contains("\"etat\":\"ACTIF\""))
     }
 }

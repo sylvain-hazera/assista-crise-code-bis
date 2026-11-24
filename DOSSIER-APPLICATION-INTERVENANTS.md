@@ -1594,3 +1594,22 @@ Demande de Sylvain : la réserve signale les points d'eau, la commune valide, le
   pas encore les points d'eau (404) garde la file : rien n'est perdu.
 - Côté serveur : `core/points_eau.py` (validation par la mairie de la commune du point, export
   CSV au schéma national `datakode/schema-pei` pour le SDIS, sans jamais une ligne OSM).
+
+## 27. Version 0.24.0 (24/11/2026) : circuit réflexe des points d'eau en feu de forêt
+
+Demande de Sylvain : « type FDF => activation des points d'eau => équipe RCSC => tel binôme une
+pompe là => point d'eau X actif, les pompiers peuvent venir remplir => prévenance cellule =>
+prévenance CODIS ».
+
+- La cellule active les points d'eau depuis le pilotage (onglet Eau, proposé à l'ouverture d'une
+  crise feu) : chaque équipe reçoit une mission « Pompe au point d'eau X » et une notification
+  urgente.
+- Dans la mission, trois gros boutons selon l'état : **En route**, **Pompe en place, point
+  actif**, **Point fermé**, et « Voir sur la carte ». L'état en attente d'envoi est affiché comme
+  tel.
+- File : `ETAT_POINT_EAU` (404 → serveur pas encore à jour, rien de perdu). Sans réseau, « actif »
+  et « fermé » partent aussi par radio sur le canal de crise (« Point d'eau X ACTIF, remplissage
+  possible »), que la cellule entend.
+- La carte montre en vert les points où une pompe est en place.
+- Correction : plantage possible au démarrage (le mode radio lu avant son initialisation quand la
+  restauration ne suspendait pas), constaté sur l'émulateur.

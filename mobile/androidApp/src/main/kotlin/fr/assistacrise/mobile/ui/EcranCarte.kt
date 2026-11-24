@@ -167,6 +167,7 @@ fun EcranCarte(modele: ModeleApplication) {
                 style.addLayer(CircleLayer("pei-points", "pei").withProperties(
                     circleRadius(6f), circleStrokeColor("#ffffff"), circleStrokeWidth(1.5f),
                     circleColor(Expression.switchCase(
+                        Expression.eq(Expression.get("actif"), Expression.literal("oui")), Expression.color(android.graphics.Color.parseColor("#15803d")),
                         Expression.eq(Expression.get("etat"), Expression.literal("INDISPONIBLE")), Expression.color(android.graphics.Color.parseColor("#dc2626")),
                         Expression.eq(Expression.get("etat"), Expression.literal("DEFAUT")), Expression.color(android.graphics.Color.parseColor("#f59e0b")),
                         Expression.eq(Expression.get("source"), Expression.literal("OSM")), Expression.color(android.graphics.Color.parseColor("#60a5fa")),
@@ -249,6 +250,7 @@ fun EcranCarte(modele: ModeleApplication) {
         (style.getSource("pei") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(pointsEau.map { p ->
             Feature.fromGeometry(Point.fromLngLat(p.longitude, p.latitude)).apply {
                 addStringProperty("id", p.id.toString()); addStringProperty("etat", p.etat); addStringProperty("source", p.source)
+                addStringProperty("actif", if (p.actifCrise) "oui" else "non")
             }
         }))
     }

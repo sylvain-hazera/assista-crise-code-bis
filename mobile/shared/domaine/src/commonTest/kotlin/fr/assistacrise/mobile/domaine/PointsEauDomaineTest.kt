@@ -36,4 +36,15 @@ class PointsEauDomaineTest {
         val d = distanceMetres(45.4397, 4.3872, 45.0434, 3.8858)
         assertTrue(d in 55_000.0..62_000.0, "distance $d")
     }
+
+    @Test fun lesGestesDuBinomeSuiventLeTerrainEtLaFilePrime() {
+        assertEquals(listOf(EtatPointEau.EN_ROUTE, EtatPointEau.ACTIF), gestesPossibles("DEMANDE"))
+        assertEquals(listOf(EtatPointEau.FERME), gestesPossibles("ACTIF"))
+        assertTrue(gestesPossibles("ANNULE").isEmpty())
+        val point = PointEauMission(id = "a1", nom = "BI-12", statut = "DEMANDE")
+        assertEquals("DEMANDE" to false, etatPointEauAffiche(point, emptyList()))
+        val enFile = ActionEnAttente(id = "x", genre = ActionEnAttente.GENRE_ETAT_POINT_EAU, cible = "a1",
+                                     charge = """{"etat":"ACTIF","observe_le":"2026-11-24T14:05:00Z"}""", libelle = "", creeLe = 0)
+        assertEquals("ACTIF" to true, etatPointEauAffiche(point, listOf(enFile)))
+    }
 }

@@ -30,9 +30,11 @@ data class PointEau(
     val latitude: Double,
     val longitude: Double,
     val attribution: String? = null,
+    /** Ouvert par le circuit feu : une pompe est en place, remplissage possible. */
+    @SerialName("actif_crise") val actifCrise: Boolean = false,
 ) {
     val indicatif: Boolean get() = source == "OSM"
-    val libelleEtat: String get() = when (etat) {
+    val libelleEtat: String get() = if (actifCrise) "Pompe en place : remplissage possible" else when (etat) {
         "DISPONIBLE" -> "Disponible"
         "INDISPONIBLE" -> "Indisponible"
         "DEFAUT" -> "Défaut signalé"
@@ -116,3 +118,40 @@ fun pointLePlusProche(points: List<PointEau>, latitude: Double, longitude: Doubl
 /** Les points de plusieurs relevés réunis, sans doublon, plafonnés. */
 fun reunirPointsEau(listes: List<List<PointEau>>, plafond: Int = 5000): List<PointEau> =
     listes.flatten().distinctBy { it.id }.take(plafond)
+
+/** Le point d'eau d'une mission du circuit feu : le binôme y met une pompe et le déclare actif. */
+@Serializable
+data class PointEauMission(
+    val id: String,
+    val nom: String = "",
+    val statut: String = "DEMANDE",
+    @SerialName("statut_libelle") val statutLibelle: String = "",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val debit: Double? = null,
+    val volume: Double? = null,
+)
+
+/** Les gestes du binôme, dans l'ordre du terrain. */
+enum class EtatPointEau(val libelle: String, val bouton: String) {
+    EN_ROUTE("Binôme en route", "En route"),
+    ACTIF("Actif : remplissage possible", "Pompe en place, point actif"),
+    FERME("Fermé", "Point fermé"),
+}
+
+/** Ce que le binôme peut déclarer depuis l'état connu (comme le serveur l'accepte). */
+fun gestesPossibles(statut: String): List<EtatPointEau> = when (statut) {
+    "DEMANDE" -> listOf(EtatPointEau.EN_ROUTE, EtatPointEau.ACTIF)
+    "EN_ROUTE" -> listOf(EtatPointEau.ACTIF)
+    "ACTIF" -> listOf(EtatPointEau.FERME)
+    "FERME" -> listOf(EtatPointEau.ACTIF)
+    else -> emptyList()
+}
+
+/** L'état affiché : le dernier geste encore en file prime sur ce que le serveur a dit. */
+fun etatPointEauAffiche(point: PointEauMission, file: List<ActionEnAttente>): Pair<String, Boolean> {
+    val enFile = file.lastOrNull { it.genre == ActionEnAttente.GENRE_ETAT_POINT_EAU && it.cible == point.id && it.etat == EtatAction.EN_ATTENTE }
+        ?: return point.statut to false
+    val etat = Regex("\"etat\"\\s*:\\s*\"([A-Z_]+)\"").find(enFile.charge)?.groupValues?.get(1) ?: return point.statut to false
+    return etat to true
+}

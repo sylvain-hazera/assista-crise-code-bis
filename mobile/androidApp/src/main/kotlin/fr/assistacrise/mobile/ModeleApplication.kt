@@ -208,6 +208,11 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     var message by mutableStateOf<String?>(null); private set
 
     private val verrouSynchro = Mutex()
+    // Avant le bloc init (24/11/2026) : sa coroutine peut lire le mode radio sans suspendre,
+    // pendant la construction, avant les propriétés déclarées plus bas (plantage constaté au
+    // démarrage sur l'émulateur).
+    private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
+    var modeRadioAvance by mutableStateOf(false); private set
 
     init {
         viewModelScope.launch {
@@ -571,8 +576,6 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun piloteDe(protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).piloteCourant
     /** L'équipe dont ce canal (de la radio choisie) est le canal géré par la plateforme. */
     fun equipeDuCanalRadio(index: Int) = app.radio.equipeDuCanal(liaisonChoisie.emplacement, index)
-    private val preferences by lazy { app.getSharedPreferences("radio", android.content.Context.MODE_PRIVATE) }
-    var modeRadioAvance by mutableStateOf(false); private set
 
     fun basculerModeRadioAvance(oui: Boolean) {
         modeRadioAvance = oui
@@ -669,6 +672,30 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         return listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
             .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
             .maxByOrNull { it.time }?.let { it.latitude to it.longitude }
+    }
+
+    /**
+     * Circuit feu (24/11/2026) : le binôme déclare son point d'eau (en route, pompe en place,
+     * fermé). Le geste part par la file ; sans réseau, « actif » part aussi par radio sur le
+     * canal de crise, que la cellule entend.
+     */
+    fun declarerPointEau(mission: Mission, etat: fr.assistacrise.mobile.domaine.EtatPointEau) {
+        val point = mission.pointEau ?: return
+        viewModelScope.launch {
+            app.pointsEau.declarerEtat(point.id, etat.name, java.time.Instant.now().toString(), "Point d'eau ${point.nom} — ${etat.libelle}")
+            synchroniser(force = true, bavard = false)
+            val resteEnFile = file.value.any { it.genre == ActionEnAttente.GENRE_ETAT_POINT_EAU && it.cible == point.id }
+            if (resteEnFile && etat != fr.assistacrise.mobile.domaine.EtatPointEau.EN_ROUTE) {
+                val equipe = equipes.value.firstOrNull { it.id in mission.equipes } ?: equipes.value.firstOrNull()
+                val parRadio = equipe?.let {
+                    runCatching { app.radio.envoyerAEquipe(it, "Point d'eau ${point.nom} ${if (etat.name == "ACTIF") "ACTIF, remplissage possible" else "FERMÉ"}") }.getOrNull()
+                }
+                message = if (parRadio != null) "Pas de réseau : annoncé par radio sur le canal de crise ; l'état partira au retour du réseau."
+                          else "Pas de réseau : l'état partira dès que le réseau reviendra. Prévenez la cellule par radio."
+            } else if (!resteEnFile) {
+                message = "Point d'eau ${point.nom} : ${etat.libelle.lowercase()}. La cellule est prévenue."
+            }
+        }
     }
 
     fun declarerStatut(mission: Mission, statut: StatutMission) {

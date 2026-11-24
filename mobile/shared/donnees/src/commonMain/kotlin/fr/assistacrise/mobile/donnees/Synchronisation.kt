@@ -97,6 +97,13 @@ class Synchronisation(
                     else -> r
                 }
                 ActionEnAttente.GENRE_PHOTO_SIGNALEMENT_PEI -> envoyerPhotoSignalementPei(action)
+                ActionEnAttente.GENRE_ETAT_POINT_EAU -> {
+                    missionsTouchees = true
+                    when (val r = api.envoyerEtatPointEau(action.cible, action.charge)) {
+                        is Reponse.Refus -> if (r.code == 404) Reponse.Injoignable("Serveur pas encore à jour.") else r
+                        else -> r
+                    }
+                }
                 else -> Reponse.Refus(400, "Action inconnue de cette version de l'application.")
             }
         }

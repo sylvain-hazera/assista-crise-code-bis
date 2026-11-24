@@ -142,6 +142,9 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             m, peutPiloter = compte.peutPiloterLesMissions,
             surStatut = { statut -> modele.declarerStatut(m.mission, statut); ouverte = null },
             surFermeture = { ouverte = null },
+            file = file,
+            surPointEau = { etat -> modele.declarerPointEau(m.mission, etat); ouverte = null },
+            surCarte = { ouverte = null; modele.aller(Ecran.CARTE) },
         )
     }
 }
@@ -237,7 +240,9 @@ private fun EtiquetteStatut(statut: StatutMission) {
 }
 
 @Composable
-private fun DetailMission(m: MissionAffichee, peutPiloter: Boolean, surStatut: (StatutMission) -> Unit, surFermeture: () -> Unit) {
+private fun DetailMission(m: MissionAffichee, peutPiloter: Boolean, surStatut: (StatutMission) -> Unit, surFermeture: () -> Unit,
+                          file: List<fr.assistacrise.mobile.domaine.ActionEnAttente> = emptyList(),
+                          surPointEau: (fr.assistacrise.mobile.domaine.EtatPointEau) -> Unit = {}, surCarte: () -> Unit = {}) {
     AlertDialog(
         onDismissRequest = surFermeture,
         title = { Text(m.mission.titre) },
@@ -250,6 +255,22 @@ private fun DetailMission(m: MissionAffichee, peutPiloter: Boolean, surStatut: (
                 if (m.mission.description.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text(m.mission.description, style = MaterialTheme.typography.bodyMedium)
+                }
+                // Circuit feu (24/11/2026) : les gestes du binôme sur son point d'eau, en gros.
+                m.mission.pointEau?.let { point ->
+                    val (statut, enAttente) = fr.assistacrise.mobile.domaine.etatPointEauAffiche(point, file)
+                    Spacer(Modifier.height(14.dp))
+                    Text("Point d'eau : ${fr.assistacrise.mobile.domaine.EtatPointEau.entries.firstOrNull { it.name == statut }?.libelle ?: point.statutLibelle.ifBlank { "à ouvrir" }}",
+                         style = MaterialTheme.typography.titleMedium, color = if (statut == "ACTIF") EnLigne else MaterialTheme.colorScheme.onSurface)
+                    if (enAttente) Text("Pas encore reçu par le serveur : partira au retour du réseau.", style = MaterialTheme.typography.bodySmall, color = Attente)
+                    listOfNotNull(point.debit?.let { "Débit ${it.toInt()} m³/h" }, point.volume?.let { "Volume ${it.toInt()} m³" }).takeIf { it.isNotEmpty() }
+                        ?.let { Text(it.joinToString(" · "), style = MaterialTheme.typography.bodySmall) }
+                    fr.assistacrise.mobile.domaine.gestesPossibles(statut).forEach { geste ->
+                        Button(onClick = { surPointEau(geste) }, modifier = Modifier.fillMaxWidth().height(56.dp).padding(vertical = 3.dp)) {
+                            Text(geste.bouton)
+                        }
+                    }
+                    OutlinedButton(onClick = surCarte, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) { Text("Voir sur la carte") }
                 }
                 if (peutPiloter) {
                     Spacer(Modifier.height(16.dp))
