@@ -403,6 +403,14 @@
         Défibrillateurs
         @if (layerVisibility.defibrillateurs && veilleTronquee.defibrillateurs) { <small class="layer-note">zoomez pour tout voir</small> }
       </label>
+      @if (connecte) {
+        <label class="layer-toggle-item" title="Points d'eau incendie : base du SDIS quand elle est importée, signalements validés par les communes, et sinon OpenStreetMap (indicatif, en bleu clair). Rouge : indisponible.">
+          <input type="checkbox" [(ngModel)]="layerVisibility.pointsEau" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot pei-dot"></span>
+          Points d'eau incendie
+          @if (layerVisibility.pointsEau && veilleTronquee.pointsEau) { <small class="layer-note">zoomez pour tout voir</small> }
+        </label>
+      }
       <label class="layer-toggle-item" title="Séismes des trente derniers jours (BCSF-Rénass). Rouge : magnitude 3 ou plus. Gris : tir de carrière ou explosion.">
         <input type="checkbox" [(ngModel)]="layerVisibility.seismes" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot seismes-dot"></span>

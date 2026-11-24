@@ -1,0 +1,145 @@
+<div class="pei-page">
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">fire_hydrant_alt</span> Points d'eau incendie</h1>
+      <p class="subtitle">
+        La réserve et les intervenants signalent depuis l'application ; la commune valide puis
+        transmet au SDIS, qui reste la référence.
+        @if (couverture?.a_valider_ma_commune) {
+          <strong>{{ couverture?.a_valider_ma_commune }} signalement(s) attendent votre commune.</strong>
+        }
+      </p>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn-secondary" (click)="exporter()">
+        <span class="material-icons">download</span> Export pour le SDIS (schéma national)
+      </button>
+    </div>
+  </header>
+
+  <nav class="onglets" role="tablist">
+    <button type="button" role="tab" [class.actif]="onglet === 'signalements'" (click)="choisir('signalements')">Signalements</button>
+    @if (estAdmin) {
+      <button type="button" role="tab" [class.actif]="onglet === 'import'" (click)="choisir('import')">Import d'une base SDIS</button>
+    }
+    <button type="button" role="tab" [class.actif]="onglet === 'couverture'" (click)="choisir('couverture')">Couverture</button>
+  </nav>
+
+  @if (erreur) {
+    <p class="erreur" role="alert"><span class="material-icons">error</span> {{ erreur }}</p>
+  }
+
+  @if (onglet === 'signalements') {
+    <div class="filtres">
+      @for (f of filtres; track f.valeur) {
+        <button type="button" class="puce" [class.actif]="filtre === f.valeur" (click)="filtre = f.valeur; charger()">{{ f.libelle }}</button>
+      }
+    </div>
+    @if (chargement) {
+      <p class="vide">Chargement…</p>
+    } @else {
+      <div class="liste">
+        @for (s of signalements; track s.id) {
+          <article class="signalement" [attr.data-statut]="s.statut">
+            <div class="ligne-titre">
+              <strong>{{ s.genre_libelle }}</strong>
+              @if (s.genre === 'NOUVEAU' && s.type_pei) { — {{ natures[s.type_pei] || s.type_pei }} }
+              <span class="statut">{{ s.statut_libelle }}</span>
+            </div>
+            <p class="meta">
+              {{ s.observe_le | date:'short' }} · {{ s.auteur || 'Auteur inconnu' }} · commune {{ s.commune_code || '?' }}
+              @if (s.pei_source) { · point {{ s.pei_source }} {{ s.pei_ref }} }
+              · <a [href]="lienCarte(s)" target="_blank" rel="noopener">voir l'emplacement</a>
+              @if (s.photos.length) { · {{ s.photos.length }} photo(s) }
+            </p>
+            @if (s.commentaire) { <p class="commentaire">{{ s.commentaire }}</p> }
+            @if (s.debit_estime || s.volume_estime) {
+              <p class="meta">
+                @if (s.debit_estime) { Débit estimé {{ s.debit_estime }} m³/h }
+                @if (s.volume_estime) { Volume estimé {{ s.volume_estime }} m³ }
+              </p>
+            }
+            @if (s.motif_decision) { <p class="meta">Motif : {{ s.motif_decision }}</p> }
+            @if (s.statut === 'A_VALIDER') {
+              <div class="actions">
+                <input type="text" [(ngModel)]="motifs[s.id]" placeholder="Motif (obligatoire pour rejeter)" aria-label="Motif">
+                <button type="button" class="btn-primary" [disabled]="enCours === s.id" (click)="decider(s, 'valider')">Valider</button>
+                <button type="button" class="btn-secondary" [disabled]="enCours === s.id" (click)="decider(s, 'rejeter')">Rejeter</button>
+              </div>
+            }
+            @if (s.statut === 'VALIDE') {
+              <div class="actions">
+                <input type="text" [(ngModel)]="numeros[s.id]" placeholder="N° attribué par le SDIS (facultatif)" aria-label="Numéro SDIS">
+                <button type="button" class="btn-secondary" [disabled]="enCours === s.id" (click)="transmettre(s)">Transmis au SDIS</button>
+              </div>
+            }
+            @if (s.statut === 'TRANSMIS_SDIS') {
+              <p class="meta">Transmis le {{ s.transmis_le | date:'short' }}@if (s.numero_sdis) { — n° SDIS {{ s.numero_sdis }} }</p>
+            }
+          </article>
+        } @empty {
+          <p class="vide">Aucun signalement dans cette catégorie.</p>
+        }
+      </div>
+    }
+  }
+
+  @if (onglet === 'import' && estAdmin) {
+    <section class="import">
+      <p>
+        Fichier fourni par un SDIS ou un gestionnaire, au schéma national <code>datakode/schema-pei</code>
+        (CSV ou GeoJSON ; coordonnées <code>lon</code>/<code>lat</code> ou <code>x</code>/<code>y</code> en Lambert 93).
+        L'import remplace les points SDIS du département choisi, et seulement eux. Là où une base SDIS
+        est importée, la carte n'affiche plus les points OpenStreetMap.
+      </p>
+      <div class="actions">
+        <input type="text" [(ngModel)]="departementImport" placeholder="Département (ex. 43)" aria-label="Département" maxlength="3">
+        <input type="file" accept=".csv,.geojson,.json" (change)="choisirFichier($event)" aria-label="Fichier">
+        <button type="button" class="btn-primary" [disabled]="enCours === 'import'" (click)="importer()">
+          {{ enCours === 'import' ? 'Import…' : 'Importer' }}
+        </button>
+      </div>
+      @if (rapport) {
+        <p class="rapport">
+          Département {{ rapport.departement }} : {{ rapport.importes }} points importés
+          ({{ rapport.nouveaux }} nouveaux, {{ rapport.supprimes }} retirés), {{ rapport.refuses }} ligne(s) refusée(s).
+        </p>
+        @if (rapport.refus.length) {
+          <div class="tableau-defilant"><table class="data-table">
+            <thead><tr><th>Ligne</th><th>Raison</th></tr></thead>
+            <tbody>
+              @for (r of rapport.refus; track r.ligne) { <tr><td>{{ r.ligne }}</td><td>{{ r.raison }}</td></tr> }
+            </tbody>
+          </table></div>
+        }
+      }
+    </section>
+  }
+
+  @if (onglet === 'couverture') {
+    <section class="couverture">
+      <p>
+        OpenStreetMap est relevé un département toutes les deux heures : la France entière en neuf
+        jours environ ({{ couverture?.releves || 0 }} département(s) relevé(s) à ce jour). Ces points sont
+        indicatifs ({{ couverture?.attribution_osm }}) ; la base du SDIS les remplace dès qu'elle est importée.
+      </p>
+      <div class="tableau-defilant"><table class="data-table">
+        <thead><tr><th>Dép.</th><th>OSM : relevé</th><th>Points OSM</th><th>Base SDIS</th><th>Validés commune</th></tr></thead>
+        <tbody>
+          @for (d of couverture?.departements || []; track d.departement) {
+            <tr>
+              <td>{{ d.departement }}</td>
+              <td>
+                {{ d.osm_releve_le ? (d.osm_releve_le | date:'short') : 'pas encore' }}
+                @if (d.osm_erreur) { <small class="echec" [title]="d.osm_erreur">dernier essai en échec</small> }
+              </td>
+              <td>{{ d.osm_nombre }}</td>
+              <td>{{ d.sdis_importe_le ? (d.sdis_nombre + ' (' + (d.sdis_importe_le | date:'shortDate') + ')') : '—' }}</td>
+              <td>{{ d.terrain_nombre }}</td>
+            </tr>
+          }
+        </tbody>
+      </table></div>
+    </section>
+  }
+</div>

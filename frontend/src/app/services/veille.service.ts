@@ -5,8 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AntennesIndisponibles, ArretesCirculation, Circulation, QualiteAir, VentPrevu, ConfigurationAlerteFeu, ConfigurationAlerteVigilance, FoyersActifs, HauteursEau, NiveauxMer, Defibrillateurs, Radioactivite, Seismes, Volcans, EvenementsRoutiers, MeteoForets, ObservationsMeteo, RafalesPrevues, PluiePrevue, PrecipitationsHiver,
-  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar, PluieRadar, FeuxSuivis, PotentielOrageFeu,
-} from '../shared/models/veille.model';
+  RestrictionsEau, RisqueAvalanche, SanteUrgences, StationsCarburant, VigilanceCrues, VigilanceMeteo, ZonesBrulees, OragesRadar, PluieRadar, FeuxSuivis, PotentielOrageFeu, PointsEau} from '../shared/models/veille.model';
 
 /** Zone à regarder : un rectangle (la carte), un point et un rayon, ou rien — le serveur prend
  * alors la commune de l'institution de l'appelant. */
@@ -235,6 +234,14 @@ export class VeilleService {
 
   defibrillateurs(emprise: EmpriseVeille = {}): Observable<Defibrillateurs> {
     return this.http.get<Defibrillateurs>(`${this.api}/defibrillateurs/`, { params: this.params(emprise) });
+  }
+
+  /** Points d'eau incendie d'une emprise (comptes connectés). `osmPartout` montre aussi l'OSM là
+   * où la base du SDIS est importée. */
+  pointsEau(emprise: EmpriseVeille = {}, osmPartout = false): Observable<PointsEau> {
+    const params = this.params(emprise);
+    if (osmPartout) params['osm'] = 'tous';
+    return this.http.get<PointsEau>(`${this.api}/points-eau/`, { params });
   }
 
   private params(emprise: EmpriseVeille): Record<string, string> {

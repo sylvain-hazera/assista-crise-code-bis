@@ -108,6 +108,8 @@ export class PilotageService {
   /** Les centres de la crise, relus avec le terrain ; la pastille compte ceux qui demandent attention. */
   readonly centres = signal<ListeCentres | null>(null);
   readonly alertesCentres = computed(() => this.centres()?.alertes ?? 0);
+  /** Signalements de points d'eau incendie qui attendent la commune de ce compte (24/11/2026). */
+  readonly peiAValider = signal(0);
 
   constructor(private http: HttpClient) {}
 
@@ -119,6 +121,10 @@ export class PilotageService {
     const crise = this.criseId();
     if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); this.centres.set(null); return; }
     this.rafraichirCentres();
+    this.http.get<{ a_valider_ma_commune: number }>(`${environment.apiUrl}/points-eau/couverture/`).subscribe({
+      next: c => this.peiAValider.set(c.a_valider_ma_commune || 0),
+      error: () => this.peiAValider.set(0),
+    });
     this.http.get<PotCommun>(`${environment.apiUrl}/conversations/a-trier/`, { params: { crise } }).subscribe({
       next: p => this.potCommun.set(p),
       error: () => this.potCommun.set(null),   // ni transmissions ni régulation : pas de tri

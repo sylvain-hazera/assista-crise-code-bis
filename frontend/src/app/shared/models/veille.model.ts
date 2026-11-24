@@ -810,3 +810,30 @@ export interface FeuxSuivis {
   sources_fixes: number;
   resultats: FeuSuivi[];
 }
+
+/** Point d'eau incendie (24/11/2026) : OSM indicatif, base du SDIS, ou signalé et validé par la commune. */
+export interface PointEau {
+  id: number;
+  source: 'OSM' | 'SDIS' | 'TERRAIN';
+  ref: string;
+  type_pei: '' | 'PI' | 'BI' | 'PA' | 'CI';
+  type_libelle: string;
+  source_eau: string;
+  diametre: number | null;
+  debit: number | null;
+  volume: number | null;
+  ref_terrain: string;
+  gestionnaire: string;
+  statut: string;
+  etat: 'DISPONIBLE' | 'INDISPONIBLE' | 'DEFAUT' | 'INCONNU';
+  etat_terrain_le: string | null;
+  date_controle: string | null;
+  releve_le: string;
+  insee: string;
+  latitude: number;
+  longitude: number;
+  attribution: string | null;
+  distance_km: number | null;
+}
+
+export interface PointsEau { emprise_connue: boolean; tronque: boolean; total: number; resultats: PointEau[]; }

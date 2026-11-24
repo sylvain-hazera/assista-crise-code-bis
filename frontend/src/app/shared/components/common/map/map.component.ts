@@ -28,8 +28,7 @@ import {
   LIBELLES_TENDANCE_EAU, ObservationMeteo, PluiePrevue, PluieRadar, PrecipitationsHiver, RafalesPrevues, CelluleOrage,
   FeuxSuivis, PotentielOrageFeu,
   StationCarburant,
-  VentPrevu, sensDeCirculation, technologiesCoupees, variationEau,
-} from '../../../models/veille.model';
+  VentPrevu, sensDeCirculation, technologiesCoupees, variationEau, PointEau } from '../../../models/veille.model';
 import * as dessinOrages from './orages-carte';
 import {
   calquesDuPas, construireFrise, ecartLisible, PasFrise, rangDeLInstant, rangMaintenant,
@@ -111,6 +110,8 @@ interface LayerVisibility {
   vent: boolean;
   /** Défibrillateurs déclarés en service (base nationale Géo'DAE). */
   defibrillateurs: boolean;
+  /** Points d'eau incendie (OSM indicatif, base SDIS, signalements validés) : comptes connectés. */
+  pointsEau: boolean;
   /** Séismes des trente derniers jours (BCSF-Rénass), tirs de carrière compris. */
   seismes: boolean;
   /** Balises de radioactivité ambiante du réseau Téléray (ASNR). */
@@ -122,6 +123,24 @@ const OFFER_TYPE_SOINS = 'Soins médicaux et paramédicaux';
 const POINT_TYPE_SECOURS = 'SECOURS';
 const POINT_TYPE_HEBERGEMENT = 'HEBERGEMENT';
 const POSTE_SECOURS_ICON_ID = 'poste-secours-icon';
+
+/** Fenêtre d'un point d'eau incendie sur la carte (24/11/2026). */
+export function infobullePointEau(p: PointEau, echapper: (t: string) => string): string {
+  const etats: Record<string, string> = {
+    DISPONIBLE: 'Disponible', INDISPONIBLE: 'Indisponible', DEFAUT: 'Défaut signalé', INCONNU: 'État inconnu',
+  };
+  const sources: Record<string, string> = {
+    OSM: 'OpenStreetMap (indicatif, non validé par le SDIS)', SDIS: 'Base du SDIS', TERRAIN: 'Signalé et validé par la commune',
+  };
+  const lignes = [`<strong>${echapper(p.type_libelle)}</strong>${p.ref_terrain ? ' ' + echapper(p.ref_terrain) : ''}`,
+                  echapper(etats[p.etat] || p.etat)];
+  if (p.debit) lignes.push(`Débit : ${p.debit} m³/h`);
+  if (p.volume) lignes.push(`Volume : ${p.volume} m³`);
+  if (p.diametre) lignes.push(`Diamètre : ${p.diametre} mm`);
+  if (p.gestionnaire) lignes.push(`Gestionnaire : ${echapper(p.gestionnaire)}`);
+  lignes.push(`<small>${echapper(sources[p.source] || p.source)}${p.attribution ? ' — ' + echapper(p.attribution) : ''}</small>`);
+  return lignes.join('<br>');
+}
 
 @Component({
   selector: 'app-map',
@@ -148,6 +167,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
+  /** Les points d'eau incendie ne se montrent qu'aux comptes connectés (24/11/2026). */
+  get connecte(): boolean { return this.authService.isLoggedIn(); }
 
   // Panneau des calques replié par défaut (gênant sur mobile une fois déplié).
   layersPanelOpen = false;
@@ -196,6 +217,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     qualiteAir: false,
     vent: false,
     defibrillateurs: false,
+    pointsEau: false,
     seismes: false,
     radioactivite: false,
   };
@@ -320,6 +342,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('antennes-mobiles-layer', this.layerVisibility.antennesMobiles);
     this.applyLayerVisibility('qualite-air-layer', this.layerVisibility.qualiteAir);
     this.applyLayerVisibility('defibrillateurs-layer', this.layerVisibility.defibrillateurs);
+    this.applyLayerVisibility('points-eau-layer', this.layerVisibility.pointsEau);
     this.applyLayerVisibility('seismes-layer', this.layerVisibility.seismes);
     this.applyLayerVisibility('radioactivite-layer', this.layerVisibility.radioactivite);
     this.basculerPrevisions();
@@ -332,7 +355,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Vrai quand le serveur a plafonné la réponse : l'emprise affichée est trop large pour tout
    * montrer, et la légende invite à zoomer plutôt que de laisser croire que c'est tout. */
   veilleTronquee = { routes: false, stations: false, meteo: false, arretes: false, defibrillateurs: false, seismes: false, circulation: false, hauteursEau: false,
-                     antennes: false };
+                     antennes: false, pointsEau: false };
   private veilleSuitLaCarte = false;
 
   /** Charge routes et stations pour l'emprise affichée, si leur calque est coché. Rappelé à
@@ -343,12 +366,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             arretesCirculation, defibrillateurs, seismes, radioactivite, foyersActifs, circulation,
             hauteursEau, niveauxMer, antennesMobiles, qualiteAir, orages, eclairs, blitzortung, pluieRadar,
             feuxSuivis } = this.layerVisibility;
+    const pointsEau = this.layerVisibility.pointsEau && this.authService.isLoggedIn();
     if (pluieRadar) this.chargerPluieRadar();
     this.basculerPotentielOrageFeu();
     if (!evenementsRoutiers && !stationsCarburant && !stationsMeteo && !vigilanceCrues && !zonesBrulees
         && !avalanche && !arretesCirculation && !defibrillateurs && !seismes && !radioactivite
         && !foyersActifs && !circulation && !hauteursEau && !niveauxMer && !antennesMobiles
-        && !qualiteAir && !orages && !eclairs && !blitzortung && !feuxSuivis) return;
+        && !qualiteAir && !orages && !eclairs && !blitzortung && !feuxSuivis && !pointsEau) return;
     if (!this.veilleSuitLaCarte) {
       this.veilleSuitLaCarte = true;
       this.map.on('moveend', () => this.rafraichirVeille());
@@ -590,6 +614,23 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             })),
           // Vert : accès libre. Gris-vert : il faut qu'on vous ouvre.
           }, ['match', ['get', 'etat'], 'ok', '#16a34a', '#84a98c'], this.layerVisibility.defibrillateurs);
+        },
+        error: () => {},
+      });
+    }
+    if (pointsEau) {
+      this.veilleService.pointsEau({ bbox }).subscribe({
+        next: (reponse) => {
+          this.veilleTronquee.pointsEau = reponse.tronque;
+          this.afficherCoucheVeille('points-eau', {
+            type: 'FeatureCollection',
+            features: reponse.resultats.map(p => ({
+              type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+              properties: { etat: p.etat, source: p.source, infobulle: infobullePointEau(p, (t) => this.echapper(t)) },
+            })),
+          // Rouge : indisponible. Orange : défaut. Bleu clair : OSM (indicatif). Bleu : SDIS ou validé.
+          }, ['case', ['==', ['get', 'etat'], 'INDISPONIBLE'], '#dc2626', ['==', ['get', 'etat'], 'DEFAUT'], '#f59e0b',
+              ['==', ['get', 'source'], 'OSM'], '#60a5fa', '#1d4ed8'], this.layerVisibility.pointsEau);
         },
         error: () => {},
       });

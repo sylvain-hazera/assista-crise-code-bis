@@ -178,6 +178,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'warning_amber', label: 'Risques de la commune', route: '/admin/pcs-risques', groupe: 'preparation', sousGroupe: 'prep-connaitre' },
   { icon: 'flood', label: 'Enjeux exposés', route: '/admin/pcs-enjeux-exposes', groupe: 'preparation', sousGroupe: 'prep-connaitre' },
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation', sousGroupe: 'prep-connaitre' },
+  // Points d'eau incendie (24/11/2026) : signalements terrain validés par la commune, base SDIS, OSM.
+  { icon: 'fire_hydrant_alt', label: "Points d'eau incendie", route: '/admin/points-eau', groupe: 'preparation', sousGroupe: 'prep-connaitre' },
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'registre-vulnerables' },
   { icon: 'verified', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'autorite-locale' },
   { icon: 'border_outer', label: 'Zones', route: '/admin/zones', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'autorite-locale' },

@@ -77,6 +77,8 @@ interface Onglet { lien: string; libelle: string; icone: string; avecCrise?: boo
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.aTrier() + ' message(s) radio à trier'">{{ pilotage.aTrier() }}</span>
                 } @else if (o.lien === 'centres' && pilotage.alertesCentres()) {
                   <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.alertesCentres() + ' centre(s) presque plein(s) ou en manque'">{{ pilotage.alertesCentres() }}</span>
+                } @else if (o.lien === 'carte' && pilotage.peiAValider()) {
+                  <span class="pastille-alerte a-trier" [attr.aria-label]="pilotage.peiAValider() + ' signalement(s) de point d’eau à valider'">{{ pilotage.peiAValider() }}</span>
                 }
               </span>
               <span class="libelle">{{ o.libelle }}</span>
