@@ -18,8 +18,9 @@ ici : les couleurs de vigilance de `meteo_france`, les niveaux de `meteo_forets`
 de `qualite_air`, de `restrictions_eau`, les paliers de `rafales` et d'`orages_de_feu`.
 
 **Prévenir** : `notifications_application.prevenir` (site et application) à chaque fois, urgent
-si exceptionnel ; un courriel si la règle le demande ; la radio de la commune seulement si
-l'événement est exceptionnel, que la règle le permet et que le phénomène s'y prête. La nuit
+si exceptionnel ; un courriel si la règle le demande ; la radio seulement si
+l'événement est exceptionnel, que la règle le permet et que le phénomène s'y prête — en message
+DIRECT à la radio de chaque personne prévenue, jamais sur un canal partagé (Fr_EMCOM…). La nuit
 (22 h – 7 h), seul l'exceptionnel réveille, si la règle le demande.
 """
 import datetime
@@ -658,19 +659,44 @@ def _ascii(texte):
     return "".join(c for c in unicodedata.normalize("NFKD", texte) if not unicodedata.combining(c) and ord(c) < 128)
 
 
-def _radio(regle, alerte):
-    from .alerte_population import canaux_radio
-    from .models import DirectionMessageMesh, MessageCanalMeshCore, MessageCanalMeshtastic, StatutMessageMesh
+def _compagnon(modele, institution):
+    """La radio qui émet : celle de la collectivité d'abord (à portée de ses membres), puis la
+    radio principale, puis n'importe laquelle — jamais une radio de navigateur sans relais vivant
+    (même règle que l'envoi des clés de canal, views._compagnon_pour_equipe)."""
+    from .relais_navigateur import emetteurs
+
+    actifs = emetteurs(modele.objects.filter(actif=True))
+    return (actifs.filter(institution=institution).order_by("-principal").first()
+            or actifs.filter(principal=True).first() or actifs.first())
+
+
+def _radio(regle, alerte, personnes):
+    """Message radio DIRECT à la radio personnelle de chaque personne prévenue (décision de
+    Sylvain du 24/11/2026 : « on passe en message direct pour ne pas inonder Fr_EMCOM ») —
+    jamais sur un canal partagé. Rend le nombre de messages déposés."""
+    from .models import (
+        CompagnonMeshCore, CompagnonMeshtastic, DirectionMessageMesh, MessageMeshLog, MessageMeshtasticLog,
+        NoeudMeshUtilisateur, NoeudUtilisateurMeshtastic, StatutMessageMesh,
+    )
 
     texte = _ascii(f"ALERTE {alerte.titre}")[:LONGUEUR_RADIO]
-    servis = 0
-    meshcore, meshtastic = canaux_radio(regle.institution, None, regle.environment)
-    for canaux, modele in ((meshcore, MessageCanalMeshCore), (meshtastic, MessageCanalMeshtastic)):
-        for canal in canaux:
-            modele.objects.create(canal=canal, direction=DirectionMessageMesh.SORTANT, contenu=texte,
-                                  statut=StatutMessageMesh.EN_ATTENTE, environment=canal.environment)
-            servis += 1
-    return servis
+    ids = [p.pk for p in personnes]
+    deposes = 0
+    meshcore = _compagnon(CompagnonMeshCore, regle.institution)
+    if meshcore is not None:
+        for noeud in NoeudMeshUtilisateur.objects.filter(utilisateur_id__in=ids, actif=True):
+            MessageMeshLog.objects.create(compagnon=meshcore, direction=DirectionMessageMesh.SORTANT,
+                                          contact_pubkey_hex=noeud.pubkey_hex, contenu=texte,
+                                          statut=StatutMessageMesh.EN_ATTENTE, environment=regle.environment)
+            deposes += 1
+    meshtastic = _compagnon(CompagnonMeshtastic, regle.institution)
+    if meshtastic is not None:
+        for noeud in NoeudUtilisateurMeshtastic.objects.filter(utilisateur_id__in=ids, actif=True):
+            MessageMeshtasticLog.objects.create(compagnon=meshtastic, canal=None, direction=DirectionMessageMesh.SORTANT,
+                                                contact_node_num=noeud.node_num, contenu=texte,
+                                                statut=StatutMessageMesh.EN_ATTENTE, environment=regle.environment)
+            deposes += 1
+    return deposes
 
 
 def _courriel(regle, alerte, personnes):
@@ -708,7 +734,7 @@ def _prevenir(regle, alerte, maintenant):
     phenomene = PAR_CODE[regle.phenomene]
     if urgent and regle.radio_si_exceptionnel and phenomene.radio:
         try:
-            bilan["radio"] = _radio(regle, alerte)
+            bilan["radio"] = _radio(regle, alerte, personnes)
         except Exception:
             logger.exception("Alerte naturelle : radio non déposée (alerte %s).", alerte.id)
     return bilan

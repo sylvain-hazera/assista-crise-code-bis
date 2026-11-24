@@ -72,22 +72,29 @@ class TestLeMoteur:
         _regle(mairie, seuils={"rayon_km": 20})
         assert _evaluer([_seisme("loin", 5.0, lat=46.5, lon=4.4)]) == []
 
-    def test_le_courriel_selon_la_case_et_la_radio_seulement_si_exceptionnel(self, mairie, agent):
-        canal = CanalMeshCore.objects.create(nom="Commune", institution=mairie, actif=True, cle_partagee_hex="00" * 16)
+    def test_le_courriel_selon_la_case_et_la_radio_directe_seulement_si_exceptionnel(self, mairie, agent):
+        from core.models import CompagnonMeshCore, MessageMeshLog, NoeudMeshUtilisateur
+
+        canal = CanalMeshCore.objects.create(nom="Fr_EMCOM", institution=mairie, actif=True, cle_partagee_hex="00" * 16)
+        radio = CompagnonMeshCore.objects.create(nom="Radio mairie", connexion_type="TCP", institution=mairie, actif=True)
+        NoeudMeshUtilisateur.objects.create(utilisateur=agent, pubkey_hex="ab" * 32)
         _regle(mairie)
         _evaluer([_seisme("modere", 3.9, lat=46.0)])
-        assert len(mail.outbox) == 1 and not MessageCanalMeshCore.objects.filter(canal=canal).exists()
+        assert len(mail.outbox) == 1 and not MessageMeshLog.objects.exists()
 
         (fort,) = _evaluer([_seisme("fort", 5.1)])
         assert fort.niveau == "EXCEPTIONNEL" and fort.bilan["radio"] == 1
-        message = MessageCanalMeshCore.objects.get(canal=canal).contenu
-        assert message.startswith("ALERTE Seisme") and message.isascii()
+        direct = MessageMeshLog.objects.get()
+        assert direct.compagnon == radio and direct.contact_pubkey_hex == "ab" * 32 and direct.direction == "SORTANT"
+        assert direct.contenu.startswith("ALERTE Seisme") and direct.contenu.isascii()
+        # Jamais sur un canal partagé.
+        assert not MessageCanalMeshCore.objects.filter(canal=canal).exists()
         assert NotificationApplication.objects.filter(utilisateur=agent, urgent=True).count() == 1
 
         RegleAlerte.objects.filter(institution=mairie).update(email=False, radio_si_exceptionnel=False)
         mail.outbox.clear()
         _evaluer([_seisme("encore", 5.3)])
-        assert mail.outbox == [] and MessageCanalMeshCore.objects.filter(canal=canal).count() == 1
+        assert mail.outbox == [] and MessageMeshLog.objects.count() == 1
 
     def test_un_evenement_qui_devient_exceptionnel_est_redit(self, mairie, agent):
         _regle(mairie)

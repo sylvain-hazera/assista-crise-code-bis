@@ -86,7 +86,7 @@ describe('Alertes automatiques (24/11/2026)', () => {
     const texte = fixture.nativeElement.textContent as string;
     expect(texte).toContain('Ouvrir une crise');
     expect(texte).toContain('Préparer le déclenchement : demander les disponibilités');
-    expect(texte).toContain('radio sur 1 canal');
+    expect(texte).toContain('1 message(s) radio direct(s)');
 
     fixture.componentInstance.ouvrirUneCrise(alerte);
     http.expectOne(`${api}/a1/crise/`).flush({ type: 'CATASTROPHE_NATURELLE', titre: alerte.titre, description: 'x',

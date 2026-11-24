@@ -4,8 +4,9 @@
       <h1><span class="material-icons">notifications_active</span> Alertes automatiques</h1>
       <p class="subtitle">
         Choisissez, phénomène par phénomène, quand la collectivité est prévenue. L'application et le site
-        préviennent toujours ; le courriel si la case est cochée ; la radio de la commune seulement pour un
-        événement exceptionnel. La nuit (22 h – 7 h), seul l'exceptionnel réveille.
+        préviennent toujours ; le courriel si la case est cochée ; pour un événement exceptionnel seulement,
+        un message radio direct à la radio de chaque personne prévenue (jamais sur un canal partagé comme
+        Fr_EMCOM). La nuit (22 h – 7 h), seul l'exceptionnel réveille.
       </p>
     </div>
     @if (matrice) {
@@ -61,7 +62,7 @@
                 <p class="bilan">
                   {{ a.phenomene_libelle }} · prévenus : {{ a.bilan.personnes ?? 0 }} personne(s)
                   @if (a.bilan.courriels) { · {{ a.bilan.courriels }} courriel(s) }
-                  @if (a.bilan.radio) { · radio sur {{ a.bilan.radio }} canal(aux) }
+                  @if (a.bilan.radio) { · {{ a.bilan.radio }} message(s) radio direct(s) }
                 </p>
                 <div class="gestes">
                   @if (a.crise) {
@@ -97,7 +98,7 @@
               <th scope="col">Exceptionnel à partir de</th>
               <th scope="col">Réglage</th>
               <th scope="col">Courriel</th>
-              <th scope="col">Radio si exceptionnel</th>
+              <th scope="col">Radio directe si exceptionnel</th>
               <th scope="col">Silence la nuit</th>
               <th scope="col">Source</th>
               <th scope="col"><span class="sr-only">Enregistrer</span></th>
