@@ -50,10 +50,15 @@ class PointsEauView(APIView):
             .filter(location__within=emprise)
         total = qs.count()
         resultats = []
+        # Ouverts par le circuit feu (pompe en place) sur une crise en cours : « remplissage possible ».
+        from .models import ActivationPointEau
+        actifs = set(ActivationPointEau.objects.filter(statut="ACTIF", crise__end_date__isnull=True,
+                                                       environment=get_active_environment(request))
+                     .values_list("pei_id", flat=True))
         for point in qs.order_by("source", "ref_source")[:RESULTATS_MAX]:
             distance = (round(_distance_km(centre["latitude"], centre["longitude"], point.location.y, point.location.x), 2)
                         if centre else None)
-            resultats.append(points_eau.en_dict(point, distance))
+            resultats.append({**points_eau.en_dict(point, distance), "actif_crise": point.pk in actifs})
         if centre:
             resultats.sort(key=lambda r: r["distance_km"])
         return Response({"emprise_connue": True, "tronque": total > RESULTATS_MAX, "total": total,

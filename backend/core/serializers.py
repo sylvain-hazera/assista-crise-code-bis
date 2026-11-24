@@ -2262,6 +2262,8 @@ class MissionSerializer(serializers.ModelSerializer):
     dossiers_generiques = serializers.SerializerMethodField()
     # Salon Matrix de la mission : « 1 mission = 1 canal ». None tant qu'il n'existe pas.
     salon_matrix = serializers.SerializerMethodField()
+    # Circuit points d'eau (24/11/2026) : la mission « Pompe au point d'eau X » porte son point.
+    point_eau = serializers.SerializerMethodField()
 
     class Meta:
         model = Mission
@@ -2270,12 +2272,21 @@ class MissionSerializer(serializers.ModelSerializer):
             'equipe_ids', 'equipes_noms', 'statut',
             'date_creation', 'date_cloture',
             'institution', 'institution_nom', 'interet_general',
-            'dossiers_generiques', 'salon_matrix',
+            'dossiers_generiques', 'salon_matrix', 'point_eau',
         ]
         read_only_fields = ['id', 'date_creation']
 
     def get_equipes_noms(self, obj):
         return [e.name for e in obj.equipes.all()]
+
+    def get_point_eau(self, obj):
+        activation = next(iter(obj.activations_point_eau.all()), None)
+        if activation is None:
+            return None
+        return {"id": str(activation.id), "nom": activation.nom, "statut": activation.statut,
+                "statut_libelle": activation.get_statut_display(),
+                "latitude": activation.location.y, "longitude": activation.location.x,
+                "debit": activation.debit, "volume": activation.volume}
 
     def get_institution_nom(self, obj):
         institution = obj.institution

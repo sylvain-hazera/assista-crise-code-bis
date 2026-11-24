@@ -11646,7 +11646,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = (Mission.objects.select_related('crise', 'institution', 'salon_matrix')
-                .prefetch_related('equipes', 'dossiers').all())
+                .prefetch_related('equipes', 'dossiers', 'activations_point_eau').all())
     serializer_class = MissionSerializer
 
     def get_permissions(self):
@@ -13042,6 +13042,10 @@ class AccuserReceptionAlertePCSPublicView(APIView):
         notification.commentaire_contact = (request.data.get('commentaire') or '').strip() or None
         notification.date_confirmation = timezone.now()
         notification.save(update_fields=['statut', 'reponse_contact', 'commentaire_contact', 'date_confirmation'])
+        if notification.motif == "POINT_EAU":
+            # Circuit points d'eau : la tâche « appeler le CODIS » se coche d'elle-même.
+            from . import circuit_eau
+            circuit_eau.accuse_codis(notification)
         return Response(self._serialize(notification))
 
 

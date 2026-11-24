@@ -29,6 +29,9 @@ from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, GeorisquesView, RapportGeorisquesView, ZonagesOfficielsView,
     CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FichesConseilView, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
+from .views_circuit_eau import (  # noqa: E402
+    ActiverCircuitEauView, CarteCodisPublicView, CircuitEauView, EtatActivationPointEauView, LienCodisView,
+)
 from .views_points_eau import (  # noqa: E402
     CouverturePEIView, DeciderSignalementPEIView, ExportPEIView, ImportPEIView, PhotoSignalementPEIView,
     PointsEauProchesView, PointsEauView, SignalementsPEIView, TransmisSignalementPEIView,
@@ -500,6 +503,12 @@ urlpatterns = [
     path('points-eau/signalements/photo/', PhotoSignalementPEIView.as_view(), name='points-eau-signalement-photo'),
     path('points-eau/signalements/<uuid:ident>/decider/', DeciderSignalementPEIView.as_view(), name='points-eau-signalement-decider'),
     path('points-eau/signalements/<uuid:ident>/transmis/', TransmisSignalementPEIView.as_view(), name='points-eau-signalement-transmis'),
+    # Circuit réflexe feu → points d'eau → binômes → cellule → CODIS (24/11/2026), core/circuit_eau.py.
+    path('circuit-eau/', CircuitEauView.as_view(), name='circuit-eau'),
+    path('circuit-eau/activer/', ActiverCircuitEauView.as_view(), name='circuit-eau-activer'),
+    path('circuit-eau/lien-codis/', LienCodisView.as_view(), name='circuit-eau-lien-codis'),
+    path('circuit-eau/<uuid:ident>/etat/', EtatActivationPointEauView.as_view(), name='circuit-eau-etat'),
+    path('public/codis/<str:jeton>/', CarteCodisPublicView.as_view(), name='carte-codis'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

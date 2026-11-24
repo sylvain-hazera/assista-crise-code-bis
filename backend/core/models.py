@@ -2990,6 +2990,68 @@ class ReleveDepartementPEI(models.Model):
     sdis_nombre = models.PositiveIntegerField(default=0)
 
 
+class StatutActivationPointEau(models.TextChoices):
+    DEMANDE = "DEMANDE", "Demandé"
+    EN_ROUTE = "EN_ROUTE", "Binôme en route"
+    ACTIF = "ACTIF", "Actif : remplissage possible"
+    FERME = "FERME", "Fermé"
+    ANNULE = "ANNULE", "Annulé"
+
+
+class ActivationPointEau(EnvironmentScopedModel):
+    """Un point d'eau ouvert pendant une crise feu (circuit réflexe du 24/11/2026) : la cellule
+    l'active et y envoie une équipe ; le binôme y met une pompe et le déclare actif depuis
+    l'application ; la cellule et le CODIS sont prévenus. Voir core/circuit_eau.py."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="activations_point_eau")
+    institution = models.ForeignKey("Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="activations_point_eau")
+    pei = models.ForeignKey("PointEauIncendie", on_delete=models.SET_NULL, null=True, blank=True, related_name="activations")
+    #: Instantané du point : un point OSM peut disparaître au relevé suivant.
+    nom = models.CharField(max_length=120)
+    type_pei = models.CharField(max_length=2, blank=True, default="")
+    debit = models.FloatField(null=True, blank=True)
+    volume = models.FloatField(null=True, blank=True)
+    location = gis_models.PointField(srid=4326)
+    equipe = models.ForeignKey("Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="activations_point_eau")
+    mission = models.ForeignKey("Mission", on_delete=models.SET_NULL, null=True, blank=True, related_name="activations_point_eau")
+    statut = models.CharField(max_length=10, choices=StatutActivationPointEau.choices, default=StatutActivationPointEau.DEMANDE, db_index=True)
+    demande_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    demande_le = models.DateTimeField(auto_now_add=True)
+    en_route_le = models.DateTimeField(null=True, blank=True)
+    actif_le = models.DateTimeField(null=True, blank=True)
+    ferme_le = models.DateTimeField(null=True, blank=True)
+    declare_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    commentaire = EncryptedTextField(blank=True, default="")
+    codis_prevenu_le = models.DateTimeField(null=True, blank=True)
+    #: La tâche « appeler le CODIS » de la cellule, cochée d'elle-même à l'accusé de réception.
+    action_codis = models.ForeignKey("ActionCellule", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["demande_le"]
+        constraints = [models.UniqueConstraint(fields=["crise", "pei"], condition=models.Q(pei__isnull=False),
+                                               name="activation_point_eau_unique")]
+
+    def __str__(self):
+        return f"Point d'eau {self.nom} ({self.statut})"
+
+
+class LienCodis(EnvironmentScopedModel):
+    """Lien sans compte vers la carte des points d'eau actifs d'une crise, remis au CODIS.
+    Le jeton est chiffré et retrouvé par son empreinte ; révocable, renouvelable."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="liens_codis")
+    jeton = EncryptedTextField(max_length=64)
+    jeton_empreinte = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    cree_le = models.DateTimeField(auto_now_add=True)
+    revoque_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-cree_le"]
+
+
 class GenreSignalementPEI(models.TextChoices):
     INDISPONIBLE = "INDISPONIBLE", "Indisponible"
     REMIS_EN_SERVICE = "REMIS_EN_SERVICE", "Remis en service"
@@ -3917,7 +3979,9 @@ class NotificationAlertePCS(EnvironmentScopedModel):
     institution_nom_snapshot = models.CharField(max_length=255, blank=True)
 
     #: Pourquoi cette ligne a été préparée : l'ouverture de la crise, ou celle d'un centre d'accueil.
-    motif = models.CharField(max_length=10, default="CRISE", choices=[("CRISE", "Ouverture de la crise"), ("CENTRE", "Ouverture d'un centre d'accueil")])
+    motif = models.CharField(max_length=10, default="CRISE", choices=[("CRISE", "Ouverture de la crise"), ("CENTRE", "Ouverture d'un centre d'accueil"), ("POINT_EAU", "Point d'eau actif ou fermé")])
+    #: Le point d'eau dont l'ouverture ou la fermeture est annoncée (circuit eau, 24/11/2026).
+    activation = models.ForeignKey("ActivationPointEau", on_delete=models.SET_NULL, null=True, blank=True, related_name="notifications_alerte_pcs")
     point = models.ForeignKey("PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True, related_name="notifications_alerte_pcs")
     point_nom_snapshot = models.CharField(max_length=255, blank=True, default="")
     #: Cochée d'avance dans la liste à confirmer : l'annuaire dit de prévenir cette personne à ce moment-là.
@@ -13478,6 +13542,7 @@ JETONS_CHIFFRES = {
     "InvitationCollectivite": ("jeton",),
     "JetonEnrolementSatellite": ("jeton",),
     "DemandeRapport": ("jeton",),
+    "LienCodis": ("jeton",),
 }
 
 
