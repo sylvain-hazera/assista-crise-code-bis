@@ -2603,6 +2603,10 @@ class Document(EnvironmentScopedModel):
     )
     #: « DEPART » ou « RETOUR » : à quelle fiche d'état du prêt la photo appartient.
     moment_pret = models.CharField(max_length=6, blank=True, default="")
+    signalement_pei = models.ForeignKey(
+        "SignalementPEI", on_delete=models.CASCADE, null=True, blank=True, related_name="documents",
+        help_text="Signalement de point d'eau incendie que cette photo accompagne (24/11/2026).",
+    )
 
     habitation = models.ForeignKey(
         "Habitation",
@@ -2915,6 +2919,130 @@ class Defibrillateur(models.Model):
 
     def __str__(self):
         return f"Défibrillateur {self.reference} {self.adresse}"
+
+
+class SourcePEI(models.TextChoices):
+    OSM = "OSM", "OpenStreetMap (indicatif)"
+    SDIS = "SDIS", "Base du SDIS"
+    TERRAIN = "TERRAIN", "Signalement validé par la commune"
+
+
+class TypePEI(models.TextChoices):
+    """Codes du schéma national `datakode/schema-pei` (champ `type_pei`)."""
+    PI = "PI", "Poteau d'incendie"
+    BI = "BI", "Bouche d'incendie"
+    PA = "PA", "Point d'aspiration"
+    CI = "CI", "Citerne ou réserve"
+
+
+class PointEauIncendie(models.Model):
+    """Un point d'eau incendie sur la carte -- voir core/points_eau.py. Trois sources qui ne se
+    mélangent jamais (licence ODbL d'OpenStreetMap : une base fusionnée devrait être publiée
+    sous ODbL) : OSM (indicatif, relevé département par département), SDIS (fichier importé au
+    schéma national), TERRAIN (signalement validé par la commune). Données ouvertes ou
+    opérationnelles, non personnelles ; seul le nom d'un établissement privé est chiffré.
+    `environment` : vide pour OSM et SDIS (communs), PROD ou DEMO pour un point TERRAIN."""
+
+    source = models.CharField(max_length=8, choices=SourcePEI.choices)
+    ref_source = models.CharField(max_length=64)
+    environment = models.CharField(max_length=4, choices=Environment.choices, null=True, blank=True)
+    departement_code = models.CharField(max_length=3, blank=True, default="", db_index=True)
+    insee = models.CharField(max_length=10, blank=True, default="")
+    type_pei = models.CharField(max_length=2, choices=TypePEI.choices, blank=True, default="")
+    type_rd = models.CharField(max_length=60, blank=True, default="")
+    source_eau = models.CharField(max_length=20, blank=True, default="")
+    diametre = models.PositiveIntegerField(null=True, blank=True)
+    debit = models.FloatField(null=True, blank=True, help_text="m3/h sous 1 bar")
+    volume = models.FloatField(null=True, blank=True, help_text="m3")
+    pression = models.FloatField(null=True, blank=True, help_text="bar")
+    statut = models.CharField(max_length=6, blank=True, default="")
+    nom_etab = EncryptedTextField(blank=True, default="")
+    ref_terrain = models.CharField(max_length=40, blank=True, default="")
+    gestionnaire = models.CharField(max_length=120, blank=True, default="")
+    #: État donné par la source (null : inconnu).
+    disponible = models.BooleanField(null=True, blank=True)
+    date_dispo = models.DateField(null=True, blank=True)
+    date_controle = models.DateField(null=True, blank=True)
+    #: État posé par un signalement validé : un réimport de la source ne l'efface pas.
+    etat_terrain = models.CharField(max_length=20, blank=True, default="")
+    etat_terrain_le = models.DateTimeField(null=True, blank=True)
+    location = gis_models.PointField(srid=4326)
+    releve_le = models.DateTimeField(db_index=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["source", "ref_source"], name="pei_source_ref_unique")]
+        indexes = [models.Index(fields=["source", "departement_code"], name="pei_source_dept_idx")]
+
+    def __str__(self):
+        return f"PEI {self.source} {self.ref_source}"
+
+
+class ReleveDepartementPEI(models.Model):
+    """Rotation du relevé OpenStreetMap : un département par passage, le plus ancien d'abord."""
+
+    departement_code = models.CharField(max_length=3, primary_key=True)
+    releve_le = models.DateTimeField(null=True, blank=True)
+    essaye_le = models.DateTimeField(null=True, blank=True)
+    nombre = models.PositiveIntegerField(default=0)
+    erreur = models.CharField(max_length=255, blank=True, default="")
+    #: Date du dernier import d'un fichier SDIS pour ce département (null : jamais).
+    sdis_importe_le = models.DateTimeField(null=True, blank=True)
+    sdis_nombre = models.PositiveIntegerField(default=0)
+
+
+class GenreSignalementPEI(models.TextChoices):
+    INDISPONIBLE = "INDISPONIBLE", "Indisponible"
+    REMIS_EN_SERVICE = "REMIS_EN_SERVICE", "Remis en service"
+    DEFAUT = "DEFAUT", "Défaut constaté"
+    NOUVEAU = "NOUVEAU", "Nouveau point d'eau"
+
+
+class StatutSignalementPEI(models.TextChoices):
+    A_VALIDER = "A_VALIDER", "À valider par la commune"
+    VALIDE = "VALIDE", "Validé"
+    REJETE = "REJETE", "Rejeté"
+    TRANSMIS_SDIS = "TRANSMIS_SDIS", "Transmis au SDIS"
+
+
+class SignalementPEI(EnvironmentScopedModel):
+    """Un signalement de point d'eau fait sur le terrain (24/11/2026). La réserve signale, la
+    commune valide (le maire porte la DECI), puis transmet au SDIS. Identifiant tiré sur le
+    téléphone : renvoyé deux fois, il ne crée jamais deux signalements."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    genre = models.CharField(max_length=20, choices=GenreSignalementPEI.choices)
+    pei = models.ForeignKey(PointEauIncendie, on_delete=models.SET_NULL, null=True, blank=True,
+                            related_name="signalements")
+    #: Copie de la source et de la référence du point visé : le point OSM peut disparaître au
+    #: relevé suivant sans que le signalement perde sa cible.
+    pei_source = models.CharField(max_length=8, blank=True, default="")
+    pei_ref = models.CharField(max_length=64, blank=True, default="")
+    location = gis_models.PointField(srid=4326)
+    precision_m = models.PositiveIntegerField(null=True, blank=True)
+    type_pei = models.CharField(max_length=2, choices=TypePEI.choices, blank=True, default="")
+    source_eau = models.CharField(max_length=20, blank=True, default="")
+    debit_estime = models.FloatField(null=True, blank=True)
+    volume_estime = models.FloatField(null=True, blank=True)
+    commentaire = EncryptedTextField(blank=True, default="")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="signalements_pei")
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="signalements_pei")
+    commune_code = models.CharField(max_length=10, blank=True, default="", db_index=True)
+    statut = models.CharField(max_length=16, choices=StatutSignalementPEI.choices,
+                              default=StatutSignalementPEI.A_VALIDER, db_index=True)
+    motif_decision = EncryptedTextField(blank=True, default="")
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    traite_le = models.DateTimeField(null=True, blank=True)
+    numero_sdis = models.CharField(max_length=40, blank=True, default="")
+    transmis_le = models.DateTimeField(null=True, blank=True)
+    #: Heure du constat sur le téléphone ; il peut arriver des heures plus tard.
+    observe_le = models.DateTimeField()
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-observe_le"]
+
+    def __str__(self):
+        return f"Signalement PEI {self.genre} {self.id}"
 
 
 class IndicateurSante(models.Model):

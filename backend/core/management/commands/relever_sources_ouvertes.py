@@ -27,6 +27,9 @@ class Command(BaseCommand):
                             help="Ne relever que cette source.")
         parser.add_argument("--forcer", action="store_true",
                             help="Relever même si l'intervalle n'est pas écoulé.")
+        parser.add_argument("--departement", action="append", default=[],
+                            help="Points d'eau OSM : relever ce département maintenant (répétable), "
+                                 "hors de la rotation.")
 
     def handle(self, *args, **options):
         # Un seul relevé à la fois, quelle que soit la façon dont il est lancé (cron, à la
@@ -46,6 +49,15 @@ class Command(BaseCommand):
             verrou.close()
 
     def _relever(self, options):
+        if options["departement"]:
+            from core import points_eau_osm
+            for code in options["departement"]:
+                try:
+                    nombre = points_eau_osm.relever(departement=code.upper())
+                    self.stdout.write(f"Points d'eau OSM : département {code.upper()}, {nombre} points.")
+                except Exception as erreur:   # noqa: BLE001 - on dit l'échec et on passe au suivant
+                    self.stdout.write(f"Points d'eau OSM : département {code.upper()} en échec ({erreur}).")
+            return
         codes = [options["source"]] if options["source"] else [
             code for code in sources_ouvertes.SOURCES if code not in sources_ouvertes.SOURCES_EN_CONTINU]
         resultats, annonces, foyers = {}, [], []

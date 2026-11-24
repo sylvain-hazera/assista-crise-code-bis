@@ -29,6 +29,10 @@ from .views_pcs import (
     AbonnementAlerteView, AlertesPopulationView, CollectivitesAlerteView, DicrimView, EnjeuxExposesView, GeorisquesView, RapportGeorisquesView, ZonagesOfficielsView,
     CoucheCartoView, CouchesCartoView, ImportQuartiersView, RecevoirRapportView, DocumentPCSView, DossierPCSView, ExercicePCSViewSet, FichesConseilView, FonctionPCSViewSet, MoyenAlertePCSViewSet, PieceJointePCSViewSet, RevisionPCSView,
 )
+from .views_points_eau import (  # noqa: E402
+    CouverturePEIView, DeciderSignalementPEIView, ExportPEIView, ImportPEIView, PhotoSignalementPEIView,
+    PointsEauProchesView, PointsEauView, SignalementsPEIView, TransmisSignalementPEIView,
+)
 from .views_veille import (
     AntennesIndisponiblesView, ArretesCirculationView, CirculationView, ConfigurationAlerteFeuViewSet, HauteursEauView, NiveauxMerView, ConfigurationAlerteVigilanceViewSet,
     FoyersActifsView, FeuxSuivisView, ImagePotentielOrageFeuView, PotentielOrageFeuView, EvenementsRoutiersView, ImagePluieView, ImagePrecipitationHiverView, ImageRafalesView, BlitzortungView, FoudreView, OragesView, PluieRadarView, ImagePluieRadarView, PrecipitationsHiverView, QualiteAirView, RafalesPrevuesView,
@@ -486,6 +490,16 @@ urlpatterns = [
     path('seismes/', SeismesView.as_view(), name='seismes'),
     path('volcans/', VolcansView.as_view(), name='volcans'),
     path('defibrillateurs/', DefibrillateursView.as_view(), name='defibrillateurs'),
+    # Points d'eau incendie (24/11/2026), voir core/points_eau.py.
+    path('points-eau/', PointsEauView.as_view(), name='points-eau'),
+    path('points-eau/proches/', PointsEauProchesView.as_view(), name='points-eau-proches'),
+    path('points-eau/couverture/', CouverturePEIView.as_view(), name='points-eau-couverture'),
+    path('points-eau/export/', ExportPEIView.as_view(), name='points-eau-export'),
+    path('points-eau/import/', ImportPEIView.as_view(), name='points-eau-import'),
+    path('points-eau/signalements/', SignalementsPEIView.as_view(), name='points-eau-signalements'),
+    path('points-eau/signalements/photo/', PhotoSignalementPEIView.as_view(), name='points-eau-signalement-photo'),
+    path('points-eau/signalements/<uuid:ident>/decider/', DeciderSignalementPEIView.as_view(), name='points-eau-signalement-decider'),
+    path('points-eau/signalements/<uuid:ident>/transmis/', TransmisSignalementPEIView.as_view(), name='points-eau-signalement-transmis'),
     path('mon-appareil/', MonAppareilView.as_view(), name='mon_appareil'),
     path('mes-notifications/', MesNotificationsView.as_view(), name='mes_notifications'),
     path('mes-notifications/accuser/', AccuserNotificationsView.as_view(),

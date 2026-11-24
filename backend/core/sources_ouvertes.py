@@ -26,7 +26,7 @@ from collections import namedtuple
 from django.utils import timezone
 
 from . import (
-    antennes_mobiles, cartographie_meshcore, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
+    antennes_mobiles, cartographie_meshcore, points_eau_osm, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
     doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie, referentiel_adresses,
     precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
@@ -161,6 +161,10 @@ SOURCES = {
                datetime.timedelta(hours=23), datetime.timedelta(hours=72),
                "Santé publique France (réseaux OSCOUR et SOS Médecins)"),
         # 80 Mo à lire en flot, pour une base qui bouge peu : une fois par jour.
+        # Points d'eau incendie d'OpenStreetMap (24/11/2026) : un département par passage, la
+        # France en neuf jours environ (core/points_eau_osm.py).
+        Source("PEI_OSM", "Points d'eau incendie (OpenStreetMap, par département)", points_eau_osm.relever,
+               datetime.timedelta(minutes=115), datetime.timedelta(days=10), points_eau_osm.ATTRIBUTION),
         Source("DEFIBRILLATEURS", "Défibrillateurs (base nationale Géo'DAE)", defibrillateurs.relever,
                datetime.timedelta(hours=23), datetime.timedelta(hours=96),
                "Géo'DAE - ministère de la Santé"),
