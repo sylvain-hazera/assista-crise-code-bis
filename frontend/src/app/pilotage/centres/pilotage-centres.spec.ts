@@ -64,6 +64,14 @@ describe('Pilotage — centres (23/11/2026)', () => {
     const presents = fixture.nativeElement.querySelector('.headcount');
     expect(formulaire.compareDocumentPosition(presents) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Régime alimentaire');
+    // Sans contact : avertissement visible, rien n'est envoyé (24/11/2026).
+    const modale = fixture.debugElement.query(d => d.name === 'app-point-secretariat-modal').componentInstance;
+    modale.form.patchValue({ prenom_referent: 'Jean', nom_referent: 'Dupond', contact_referent: '' });
+    formulaire.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.erreur-text').textContent).toContain('un contact (email ou téléphone)');
+    expect(fixture.nativeElement.querySelectorAll('input.manquant').length).toBe(1);
+    http.expectNone(r => r.method === 'POST');
     fixture.componentInstance.fermerSecretariat();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-point-secretariat-modal')).toBeNull();

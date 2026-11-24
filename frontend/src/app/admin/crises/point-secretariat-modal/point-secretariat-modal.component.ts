@@ -34,6 +34,10 @@ export class PointSecretariatModalComponent implements OnInit {
   registre: RegistrePresence[] = [];
   loading = true;
   form: FormGroup;
+  // Ce qui empêche l'enregistrement, affiché au-dessus du bouton (24/11/2026 : le clic
+  // refusait sans rien dire quand le contact manquait).
+  erreur: string | null = null;
+  tente = false;
 
   // Âge de chaque enfant déclaré (index = même ordre que les lignes affichées) — jamais de
   // nom, juste l'âge (voir DeclarationSecurite.ages_enfants) ; redimensionné à chaque
@@ -114,18 +118,50 @@ export class PointSecretariatModalComponent implements OnInit {
       nombre_adultes: 1, nombre_enfants: 0, regime_alimentaire_specifique: false,
     });
     this.agesEnfants = [];
+    this.tente = false;
+    this.erreur = null;
+  }
+
+  /** Champs obligatoires restés vides pour une personne évacuée. */
+  get manquants(): string[] {
+    if (!this.isEvacue) return [];
+    const v = this.form.value;
+    const vide = (x: unknown) => !String(x ?? '').trim();
+    return [
+      vide(v.prenom_referent) ? 'le prénom' : '',
+      vide(v.nom_referent) ? 'le nom' : '',
+      vide(v.contact_referent) ? 'un contact (email ou téléphone)' : '',
+    ].filter(Boolean);
+  }
+
+  manque(champ: 'prenom_referent' | 'nom_referent' | 'contact_referent'): boolean {
+    return this.tente && this.isEvacue && !String(this.form.value[champ] ?? '').trim();
+  }
+
+  private echec(err: any): void {
+    const corps = err?.error;
+    let detail = '';
+    if (corps && typeof corps === 'object') {
+      detail = Object.values(corps).flat().filter(x => typeof x === 'string').join(' ');
+    }
+    this.erreur = detail || "L'arrivée n'a pas pu être enregistrée. Vérifiez la connexion et réessayez.";
   }
 
   submit(): void {
+    this.tente = true;
+    this.erreur = null;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.erreur = 'Le nombre de personnes doit être au moins 1.';
       return;
     }
 
     if (this.isEvacue) {
       const v = this.form.value;
-      if (!v.nom_referent || !v.prenom_referent || !v.contact_referent) {
+      const manquants = this.manquants;
+      if (manquants.length) {
         this.form.markAllAsTouched();
+        this.erreur = `À compléter avant d'enregistrer : ${manquants.join(', ')}.`;
         return;
       }
       const payload = {
@@ -141,9 +177,9 @@ export class PointSecretariatModalComponent implements OnInit {
         commentaire: v.commentaire,
         centre_accueil: this.point.id,
       };
-      this.declarationSecuriteService.create(payload).subscribe(() => {
-        this.load();
-        this.resetForm();
+      this.declarationSecuriteService.create(payload).subscribe({
+        next: () => { this.load(); this.resetForm(); },
+        error: err => this.echec(err),
       });
       return;
     }
@@ -155,9 +191,9 @@ export class PointSecretariatModalComponent implements OnInit {
       commentaire: this.form.value.commentaire,
       point: this.point.id,
     };
-    this.registreService.create(payload).subscribe(() => {
-      this.load();
-      this.resetForm();
+    this.registreService.create(payload).subscribe({
+      next: () => { this.load(); this.resetForm(); },
+      error: err => this.echec(err),
     });
   }
 
