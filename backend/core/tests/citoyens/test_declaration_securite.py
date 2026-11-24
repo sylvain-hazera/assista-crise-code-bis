@@ -660,3 +660,44 @@ class TestAdmissionSansContact:
         api_client.force_authenticate(autre)
         url = reverse('declarationsecurite-completer-contact', args=[response.data['id']])
         assert api_client.post(url, {'contact_referent': 'x@example.org'}, format='json').status_code == 403
+
+    def test_telephone_a_l_admission_suffit_et_reste_chiffre(self, authenticated_client):
+        """Le téléphone de la famille (24/11/2026) : à l'admission, il suffit sans email."""
+        from django.db import connection
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, telephone_referent='06 12 34 56 78'), format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.telephone_referent == '06 12 34 56 78'
+        with connection.cursor() as c:
+            c.execute("SELECT telephone_referent FROM core_declarationsecurite WHERE id = %s", [declaration.id])
+            assert '06 12' not in (c.fetchone()[0] or '')
+        lignes = client.get(reverse('registrepresence-list'), {'point': str(point.id)}).data
+        lignes = lignes['results'] if isinstance(lignes, dict) else lignes
+        assert lignes[0]['contact_a_completer'] is False
+        assert lignes[0]['telephone_manquant'] is False and lignes[0]['email_manquant'] is True
+
+    def test_telephone_invalide_refuse(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_referent='a@example.org', telephone_referent='appeler'),
+                               format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'telephone_referent' in response.data
+
+    def test_telephone_ajoute_plus_tard_sans_toucher_l_email(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        point = _make_point(crise=_make_crisis())
+        response = client.post(reverse('declarationsecurite-list'),
+                               self._payload(point, contact_referent='jean@example.org'), format='json')
+        url = reverse('declarationsecurite-completer-contact', args=[response.data['id']])
+        assert client.post(url, {'telephone_referent': '12'}, format='json').status_code == 400
+        reponse = client.post(url, {'telephone_referent': '+33 6 12 34 56 78'}, format='json')
+        assert reponse.status_code == 200
+        assert reponse.data['telephone_manquant'] is False and reponse.data['email_manquant'] is False
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.contact_referent == 'jean@example.org'
+        assert declaration.telephone_referent == '+33 6 12 34 56 78'

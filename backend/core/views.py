@@ -18742,19 +18742,32 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         )
         if not autorise:
             return Response({"detail": "Vous ne pouvez pas modifier cette admission."}, status=status.HTTP_403_FORBIDDEN)
+        from .serializers import telephone_valide
         contact = str(request.data.get("contact_referent") or "").strip()
-        if not contact:
+        try:
+            telephone = telephone_valide(request.data.get("telephone_referent"))
+        except ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        if not contact and not telephone:
             return Response({"contact_referent": "Indiquez un email ou un téléphone."}, status=status.HTTP_400_BAD_REQUEST)
         if len(contact) > 255:
             return Response({"contact_referent": "255 caractères au plus."}, status=status.HTTP_400_BAD_REQUEST)
-        declaration.contact_referent = contact
-        declaration.save(update_fields=["contact_referent"])
+        champs = []
+        if contact:
+            declaration.contact_referent = contact
+            champs.append("contact_referent")
+        if telephone:
+            declaration.telephone_referent = telephone
+            champs.append("telephone_referent")
+        declaration.save(update_fields=champs)
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="DeclarationSecurite",
             objet_id=declaration.id, crise=declaration.crise,
             commentaire=f"Contact complété : {declaration.prenom_referent} {declaration.nom_referent}",
         )
-        return Response({"id": str(declaration.id), "contact_a_completer": False})
+        return Response({"id": str(declaration.id), "contact_a_completer": False,
+                         "email_manquant": not (declaration.contact_referent or "").strip(),
+                         "telephone_manquant": not (declaration.telephone_referent or "").strip()})
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
     def vue_mairie(self, request):

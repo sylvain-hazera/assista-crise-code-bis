@@ -1354,6 +1354,8 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
     # compléter (24/11/2026 : « aucun email communiqué à l'entrée »). Jamais le contact lui-même.
     declaration = serializers.SerializerMethodField()
     contact_a_completer = serializers.SerializerMethodField()
+    email_manquant = serializers.SerializerMethodField()
+    telephone_manquant = serializers.SerializerMethodField()
 
     class Meta:
         model = RegistrePresence
@@ -1373,7 +1375,15 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
 
     def get_contact_a_completer(self, obj):
         d = self._declaration(obj)
+        return bool(d and not (d.contact_referent or "").strip() and not (d.telephone_referent or "").strip())
+
+    def get_email_manquant(self, obj):
+        d = self._declaration(obj)
         return bool(d and not (d.contact_referent or "").strip())
+
+    def get_telephone_manquant(self, obj):
+        d = self._declaration(obj)
+        return bool(d and not (d.telephone_referent or "").strip())
 
     def get_enregistre_par_nom(self, obj):
         if not obj.enregistre_par:
@@ -1413,6 +1423,18 @@ class SuiviMaterielEvenementSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def telephone_valide(valeur):
+    """Un numéro saisi à la main : chiffres, espaces, + . - ( ) ; 6 à 20 chiffres. Rend la
+    saisie sans espaces de bord, ou "" si vide."""
+    texte = str(valeur or '').strip()
+    if not texte:
+        return ''
+    chiffres = sum(c.isdigit() for c in texte)
+    if len(texte) > 40 or not all(c.isdigit() or c in ' +.-()' for c in texte) or not 6 <= chiffres <= 20:
+        raise serializers.ValidationError({'telephone_referent': "Numéro de téléphone invalide."})
+    return texte
+
+
 class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     """"Je suis en sécurité" — auto-déclaration publique ou recensement opérateur (secrétariat
     d'un centre d'accueil). Aucun champ santé/médical : voir DeclarationSecurite.__doc__."""
@@ -1437,7 +1459,8 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_declaration', 'declare_par', 'registre_presence']
         # Optionnelle à la saisie : déduite de centre_accueil.crise pour une saisie au secrétariat.
         extra_kwargs = {'crise': {'required': False},
-                        'contact_referent': {'required': False, 'allow_blank': True}}
+                        'contact_referent': {'required': False, 'allow_blank': True},
+                        'telephone_referent': {'required': False, 'allow_blank': True}}
 
     def get_declare_par_nom(self, obj):
         if not obj.declare_par:
@@ -1474,10 +1497,14 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
         if crise:
             validate_crisis_open(crise)
         sans_contact = attrs.pop('contact_non_communique', False)
-        if self.instance is None or 'contact_referent' in attrs:
-            contact = (attrs.get('contact_referent') or '').strip()
-            attrs['contact_referent'] = contact
-            if not contact:
+        if 'telephone_referent' in attrs:
+            attrs['telephone_referent'] = telephone_valide(attrs.get('telephone_referent'))
+        if self.instance is None or 'contact_referent' in attrs or 'telephone_referent' in attrs:
+            contact = (attrs.get('contact_referent', getattr(self.instance, 'contact_referent', '')) or '').strip()
+            telephone = attrs.get('telephone_referent', getattr(self.instance, 'telephone_referent', '')) or ''
+            if 'contact_referent' in attrs or self.instance is None:
+                attrs['contact_referent'] = contact
+            if not contact and not telephone:
                 request = self.context.get('request')
                 centre = attrs.get('centre_accueil')
                 admis_sans_contact = bool(
@@ -1486,7 +1513,7 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
                 )
                 if not admis_sans_contact:
                     raise serializers.ValidationError({'contact_referent': (
-                        "Indiquez un email ou un téléphone, ou cochez « Aucun email communiqué à l'entrée »."
+                        "Indiquez un email ou un téléphone, ou cochez « Aucun email ni téléphone communiqué à l'entrée »."
                     )})
         return attrs
 

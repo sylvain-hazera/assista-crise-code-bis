@@ -7428,6 +7428,8 @@ class DeclarationSecurite(EnvironmentScopedModel):
         help_text="Email ou téléphone de la personne qui se présente/déclare — elle-même pour "
                    "une personne seule, le référent désigné pour une famille ou un groupe.",
     )
+    # Téléphone de la famille, à l'admission ou plus tard (24/11/2026), à côté de l'email.
+    telephone_referent = EncryptedTextField(max_length=40, blank=True, default="")
 
     nombre_adultes = models.PositiveIntegerField(default=1)
     nombre_enfants = models.PositiveIntegerField(default=0)

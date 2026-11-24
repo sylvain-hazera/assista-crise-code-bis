@@ -61,6 +61,7 @@ export class PointSecretariatModalComponent implements OnInit {
       nom_referent: [''],
       prenom_referent: [''],
       contact_referent: [''],
+      telephone_referent: [''],
       // « Aucun email communiqué à l'entrée » : l'admission passe, le contact se complète
       // ensuite depuis la liste des présents (24/11/2026).
       contact_non_communique: [false],
@@ -118,7 +119,7 @@ export class PointSecretariatModalComponent implements OnInit {
     this.form.reset({
       type_personne: 'EVACUE', nom: '', nombre: 1, commentaire: '',
       type_declarant: 'PERSONNE_SEULE', nom_referent: '', prenom_referent: '', contact_referent: '',
-      contact_non_communique: false,
+      telephone_referent: '', contact_non_communique: false,
       nombre_adultes: 1, nombre_enfants: 0, regime_alimentaire_specifique: false,
     });
     this.agesEnfants = [];
@@ -134,13 +135,16 @@ export class PointSecretariatModalComponent implements OnInit {
     return [
       vide(v.prenom_referent) ? 'le prénom' : '',
       vide(v.nom_referent) ? 'le nom' : '',
-      vide(v.contact_referent) && !v.contact_non_communique
-        ? "un contact (email ou téléphone), ou cocher « Aucun email communiqué à l'entrée »" : '',
+      vide(v.contact_referent) && vide(v.telephone_referent) && !v.contact_non_communique
+        ? "un email ou un téléphone, ou cocher « Aucun email ni téléphone communiqué à l'entrée »" : '',
     ].filter(Boolean);
   }
 
   manque(champ: 'prenom_referent' | 'nom_referent' | 'contact_referent'): boolean {
-    if (champ === 'contact_referent' && this.form.value.contact_non_communique) return false;
+    if (champ === 'contact_referent') {
+      const v = this.form.value;
+      if (v.contact_non_communique || String(v.telephone_referent ?? '').trim()) return false;
+    }
     return this.tente && this.isEvacue && !String(this.form.value[champ] ?? '').trim();
   }
 
@@ -175,7 +179,9 @@ export class PointSecretariatModalComponent implements OnInit {
         nom_referent: v.nom_referent,
         prenom_referent: v.prenom_referent,
         contact_referent: (v.contact_referent || '').trim(),
-        contact_non_communique: !!v.contact_non_communique && !(v.contact_referent || '').trim(),
+        telephone_referent: (v.telephone_referent || '').trim(),
+        contact_non_communique: !!v.contact_non_communique && !(v.contact_referent || '').trim()
+          && !(v.telephone_referent || '').trim(),
         nombre_adultes: v.type_declarant === 'PERSONNE_SEULE' ? 1 : v.nombre_adultes,
         nombre_enfants: v.type_declarant === 'PERSONNE_SEULE' ? 0 : v.nombre_enfants,
         ages_enfants: v.type_declarant === 'PERSONNE_SEULE'
@@ -207,26 +213,33 @@ export class PointSecretariatModalComponent implements OnInit {
   // Complément du contact d'une admission enregistrée sans (une ligne à la fois).
   contactEnCours: string | null = null;
   contactSaisi = '';
+  telephoneSaisi = '';
   erreurContact: string | null = null;
 
   ouvrirContact(entree: RegistrePresence): void {
     this.contactEnCours = entree.id;
     this.contactSaisi = '';
+    this.telephoneSaisi = '';
     this.erreurContact = null;
   }
 
   enregistrerContact(entree: RegistrePresence): void {
     const contact = this.contactSaisi.trim();
-    if (!contact) {
+    const telephone = this.telephoneSaisi.trim();
+    if (!contact && !telephone) {
       this.erreurContact = 'Indiquez un email ou un téléphone.';
       return;
     }
     if (!entree.declaration) return;
-    this.declarationSecuriteService.completerContact(entree.declaration, contact).subscribe({
+    const saisie: { contact_referent?: string; telephone_referent?: string } = {};
+    if (contact) saisie.contact_referent = contact;
+    if (telephone) saisie.telephone_referent = telephone;
+    this.declarationSecuriteService.completerContact(entree.declaration, saisie).subscribe({
       next: () => { this.contactEnCours = null; this.load(); },
       error: err => {
         const corps = err?.error;
-        this.erreurContact = (corps && (corps.contact_referent || corps.detail)) || "Le contact n'a pas pu être enregistré.";
+        this.erreurContact = (corps && (corps.telephone_referent || corps.contact_referent || corps.detail))
+          || "Le contact n'a pas pu être enregistré.";
       },
     });
   }

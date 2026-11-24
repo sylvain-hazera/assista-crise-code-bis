@@ -227,7 +227,7 @@ TYPES_FICHES = {
     'Habitation': ("Habitation", ('adresse',), (), ('adresse',)),
     'Institution': ("Institution", ('nom',), ('nom',), ()),
     'PointOperationnel': ("Point opérationnel", ('nom',), ('nom',), ()),
-    'DeclarationSecurite': ("Déclaration de sécurité", ('nom_referent',), (), ('nom_referent', 'contact_referent')),
+    'DeclarationSecurite': ("Déclaration de sécurité", ('nom_referent',), (), ('nom_referent', 'contact_referent', 'telephone_referent')),
     'InterlocuteurAlertePCS': ("Interlocuteur PCS", ('nom',), (), ('nom', 'email', 'telephone')),
 }
 FICHE_SUPPRIMEE = "fiche supprimée"

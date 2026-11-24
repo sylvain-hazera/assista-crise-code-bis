@@ -12,6 +12,7 @@ export interface DeclarationSecurite {
   nom_referent: string;
   prenom_referent: string;
   contact_referent: string;
+  telephone_referent?: string;
   nombre_adultes: number;
   nombre_enfants: number;
   /** Âges individuels, jamais de nom — aussi long que déclaré (peut différer de

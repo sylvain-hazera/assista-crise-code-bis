@@ -69,8 +69,8 @@ describe('Pilotage — centres (23/11/2026)', () => {
     modale.form.patchValue({ prenom_referent: 'Jean', nom_referent: 'Dupond', contact_referent: '' });
     formulaire.dispatchEvent(new Event('submit'));
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.erreur-text').textContent).toContain('un contact (email ou téléphone)');
-    expect(fixture.nativeElement.querySelectorAll('input.manquant').length).toBe(1);
+    expect(fixture.nativeElement.querySelector('.erreur-text').textContent).toContain('un email ou un téléphone');
+    expect(fixture.nativeElement.querySelectorAll('input.manquant').length).toBe(2);
     http.expectNone(r => r.method === 'POST');
     // La case « aucun email communiqué à l'entrée » débloque l'admission…
     modale.form.patchValue({ contact_non_communique: true });
@@ -79,23 +79,27 @@ describe('Pilotage — centres (23/11/2026)', () => {
     const envoi = http.expectOne(r => r.method === 'POST' && r.url.includes('declarations-securite'));
     expect(envoi.request.body.contact_non_communique).toBeTrue();
     expect(envoi.request.body.contact_referent).toBe('');
+    expect(envoi.request.body.telephone_referent).toBe('');
     envoi.flush({ id: 'd1' });
     http.expectOne(r => r.url.includes('registre-presences')).flush([
       { id: 'r1', point: 'p1', type_personne: 'EVACUE', type_personne_libelle: 'Personne évacuée', nom: 'Jean Dupond',
         nombre: 1, date_arrivee: '2026-11-24T08:00:00Z', date_depart: null, enregistre_par: null,
-        declaration: 'd1', contact_a_completer: true },
+        declaration: 'd1', contact_a_completer: true, email_manquant: true, telephone_manquant: true },
     ]);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('contact à compléter');
     // … et l'email s'ajoute ensuite depuis la liste des présents.
     const ajouter = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find(b => b.textContent?.includes("Ajouter l'email"))!;
+      .find(b => b.textContent?.includes('Compléter le contact'))!;
     ajouter.click();
     fixture.detectChanges();
-    modale.contactSaisi = 'jean@example.org';
+    // Les deux champs manquants sont proposés ; ici, seul le téléphone de la famille est donné.
+    expect(fixture.nativeElement.querySelector('.ligne-contact input[type="email"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.ligne-contact input[type="tel"]')).not.toBeNull();
+    modale.telephoneSaisi = '06 12 34 56 78';
     modale.enregistrerContact(modale.presents[0]);
     const complement = http.expectOne(`${api}/declarations-securite/d1/contact/`);
-    expect(complement.request.body).toEqual({ contact_referent: 'jean@example.org' });
+    expect(complement.request.body).toEqual({ telephone_referent: '06 12 34 56 78' });
     complement.flush({ id: 'd1', contact_a_completer: false });
     http.expectOne(r => r.url.includes('registre-presences')).flush([]);
     fixture.componentInstance.fermerSecretariat();

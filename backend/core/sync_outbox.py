@@ -46,7 +46,7 @@ CHAMPS_PAR_MODELE = {
     "DossierHistorique": ["dossier_id", "auteur_id", "evenement", "commentaire", "date_creation"],
     "DeclarationSecurite": [
         "crise_id", "type_declarant", "situation", "nom_referent", "prenom_referent",
-        "contact_referent", "nombre_adultes", "nombre_enfants", "ages_enfants",
+        "contact_referent", "telephone_referent", "nombre_adultes", "nombre_enfants", "ages_enfants",
         "commune_code", "epci_code", "departement_code", "region_code", "centre_accueil_id",
         "regime_alimentaire_specifique", "commentaire", "declare_par_id",
     ],
