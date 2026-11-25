@@ -54,6 +54,7 @@ fun EcranEquipes(modele: ModeleApplication) {
     val suivi by modele.suivi.collectAsStateWithLifecycle()
     val lien by modele.lien.collectAsStateWithLifecycle()
     val nonLus by modele.nonLusEquipes.collectAsStateWithLifecycle()
+    val defilement = androidx.compose.foundation.lazy.rememberLazyListState()
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -64,7 +65,8 @@ fun EcranEquipes(modele: ModeleApplication) {
             // Sans équipe, la radio du nœud reste seule : la page défile (25/11/2026), sinon les
             // canaux et les contacts sous l'écran étaient inaccessibles.
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                Modifier.fillMaxSize().ascenseur(defilement, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)).padding(horizontal = 16.dp),
+                state = defilement,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
@@ -82,7 +84,8 @@ fun EcranEquipes(modele: ModeleApplication) {
             }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                Modifier.fillMaxSize().ascenseur(defilement, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)).padding(horizontal = 16.dp),
+                state = defilement,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
