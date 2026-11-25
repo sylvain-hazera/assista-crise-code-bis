@@ -60,18 +60,25 @@ fun EcranEquipes(modele: ModeleApplication) {
             Text("Mes équipes", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             PastilleLien(lien)
         }
-        // La radio du nœud : canaux, contacts, messages directs.
         if (equipes.isEmpty()) {
-            Column(Modifier.padding(16.dp)) { PanneauRadio(modele) }
-        }
-        if (equipes.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Aucune équipe pour l'instant", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Quand vous serez affecté à une équipe, sa messagerie apparaîtra ici.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                )
+            // Sans équipe, la radio du nœud reste seule : la page défile (25/11/2026), sinon les
+            // canaux et les contacts sous l'écran étaient inaccessibles.
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(vertical = 12.dp),
+            ) {
+                item { PanneauRadio(modele) }
+                item {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Aucune équipe pour l'instant", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Quand vous serez affecté à une équipe, sa messagerie apparaîtra ici.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
         } else {
             LazyColumn(
