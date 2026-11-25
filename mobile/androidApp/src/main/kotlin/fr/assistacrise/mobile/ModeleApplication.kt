@@ -325,6 +325,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             if (meshcore) plan.meshcore else plan.meshtastic, preparation.table(pilote), meshcore, choixEmplacements, preparation.total(pilote))
     }
 
+    /** La table des canaux de la radio en préparation (noms, pour le choix des emplacements). */
+    fun tableRadio(): List<fr.assistacrise.mobile.domaine.CanalComplet> =
+        protocolePreparation?.let { app.radio.pour(it).piloteCourant }?.let(preparation::table) ?: emptyList()
+
     fun totalEmplacements(): Int = protocolePreparation?.let { app.radio.pour(it).piloteCourant }?.let(preparation::total) ?: 8
 
     fun choisirEmplacement(role: String, index: Int) {

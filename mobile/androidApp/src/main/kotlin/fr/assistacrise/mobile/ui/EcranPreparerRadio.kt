@@ -39,6 +39,10 @@ private val LIBELLES = mapOf("crise" to "Canal de la crise", "equipe" to "Canal 
 fun EcranPreparerRadio(modele: ModeleApplication) {
     val plan = modele.planUrgence
     val total = modele.totalEmplacements()
+    // Le nom de ce qu'il y a dans chaque emplacement (25/11/2026, demande de Sylvain) : on choisit
+    // un canal à remplacer, pas un numéro.
+    val noms = modele.tableRadio().filter { it.actif }.associate { it.index to it.nom }
+    fun libelle(i: Int) = "$i · " + (noms[i]?.ifBlank { null }?.let { "« $it »" } ?: "libre")
     var montrerQr by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -66,11 +70,15 @@ fun EcranPreparerRadio(modele: ModeleApplication) {
                     } else {
                         var ouvert by remember { mutableStateOf(false) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Emplacement ${p.emplacement}", modifier = Modifier.weight(1f))
+                            Text("Emplacement ${p.emplacement?.let(::libelle)}", modifier = Modifier.weight(1f))
                             TextButton(onClick = { ouvert = true }) { Text("Changer") }
                             DropdownMenu(expanded = ouvert, onDismissRequest = { ouvert = false }) {
+                                val prisParAutres = modele.propositions.filter { it !== p }.mapNotNull { it.emplacement ?: it.dejaPresent }.toSet()
                                 (1 until total).forEach { i ->
-                                    DropdownMenuItem(text = { Text("Emplacement $i") }, onClick = { ouvert = false; modele.choisirEmplacement(p.entree.role, i) })
+                                    DropdownMenuItem(
+                                        text = { Text(libelle(i) + if (i in prisParAutres) " (déjà choisi)" else "") },
+                                        enabled = i !in prisParAutres,
+                                        onClick = { ouvert = false; modele.choisirEmplacement(p.entree.role, i) })
                                 }
                             }
                         }
