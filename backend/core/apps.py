@@ -61,6 +61,13 @@ class CoreConfig(AppConfig):
             post_save.connect(referentiel_adresses.crise_enregistree, sender=Crisis,
                               dispatch_uid="referentiel_adresses_crise")
 
+            # Indicatif et canal radio par défaut de chaque équipe (25/11/2026,
+            # core/radio_equipe.py). Au central seulement : les équipes y naissent.
+            from . import radio_equipe
+            from .models import Team
+
+            post_save.connect(radio_equipe.equipe_enregistree, sender=Team, dispatch_uid="radio_equipe_defaut")
+
             # Notifications de l'administration poussées vers les appareils abonnés (poste de
             # pilotage installé sur iPad, DOSSIER-PWA-INTERVENANTS.md).
             from . import notifications_application

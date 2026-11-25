@@ -296,6 +296,13 @@ class ClientApi(
         }).sansValeur()
     }
 
+    /** Les canaux radio de mes équipes, avec leurs clés (25/11/2026) : pour la radio du téléphone.
+     * Gardés en mémoire seulement, jamais écrits sur le téléphone. */
+    suspend fun mesCanauxRadio(): Reponse<List<fr.assistacrise.mobile.domaine.CanauxRadioEquipe>> =
+        authentifie(HttpMethod.Get, "teams/mes-canaux-radio/").transformer {
+            json.decodeFromJsonElement(ListSerializer(fr.assistacrise.mobile.domaine.CanauxRadioEquipe.serializer()), it)
+        }
+
     /** Le plan de canaux de la crise (23/11/2026) : clés publiques seulement. */
     suspend fun planRadio(crise: String): Reponse<fr.assistacrise.mobile.domaine.PlanRadio> =
         authentifie(HttpMethod.Get, "radio/plan/?crise=$crise").transformer {

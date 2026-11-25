@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -262,6 +263,16 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 if (present && pret && compte.value != null) synchroniser(force = true, bavard = false)
             }
         }
+        // Les canaux de mes équipes sur la radio (25/11/2026) : à la connexion d'une radio et
+        // quand mes équipes changent (une de plus, une quittée, un indicatif modifié).
+        viewModelScope.launch {
+            combine(app.radio.etats, app.equipes.equipes) { etats, equipes ->
+                etats.filter { it.phase == LiaisonRadio.Phase.PRETE }.mapNotNull { it.protocole }.toSet() to
+                    equipes.map { "${it.id}:${it.indicatif}:${it.canalMeshCore}:${it.canalMeshtastic}" }.sorted()
+            }.distinctUntilChanged().collect { (pretes, _) ->
+                if (pretes.isNotEmpty()) { delay(3_000); alignerCanauxEquipes(pretes) }
+            }
+        }
         viewModelScope.launch {
             // Tant que quelque chose attend, on retente au rythme du recul de la file. Sinon
             // on relit simplement le serveur de temps en temps : c'est ainsi qu'un engagement
@@ -276,6 +287,30 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 // le tour normal.
                 if (enAttente || app.lien.enDoute || tours % 4 == 0) synchroniser(force = app.lien.enDoute, bavard = false)
             }
+        }
+    }
+
+    // --- Canaux radio de mes équipes (25/11/2026) -----------------------------------------------
+
+    private val canauxEquipes by lazy { CanauxEquipes(app) }
+    var installerCanauxEquipes by mutableStateOf(true); private set
+
+    fun changerInstallationCanauxEquipes(oui: Boolean) {
+        canauxEquipes.automatique = oui
+        installerCanauxEquipes = oui
+        if (oui) viewModelScope.launch { alignerCanauxEquipes(app.radio.pretes().mapNotNull { it.etat.value.protocole }.toSet()) }
+    }
+
+    private suspend fun alignerCanauxEquipes(protocoles: Set<fr.assistacrise.mobile.lien.Protocole>) {
+        installerCanauxEquipes = canauxEquipes.automatique
+        if (!installerCanauxEquipes || compte.value == null || protocoles.isEmpty()) return
+        val canaux = when (val r = app.api.mesCanauxRadio()) {
+            is Reponse.Ok -> r.valeur
+            else -> return   // sans réseau : la radio garde ce qu'elle a, on réessaiera
+        }
+        for (p in protocoles) {
+            val bilan = runCatching { canauxEquipes.aligner(app.radio.pour(p), canaux) }.getOrNull() ?: continue
+            if (!bilan.rien) message = bilan.texte(p)
         }
     }
 

@@ -30,9 +30,10 @@ import { MinimapComponent } from '../../shared/components/common/minimap/minimap
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
 import { MatrixSalonChatComponent } from './matrix-salon-chat/matrix-salon-chat.component';
+import { CanalRadioEquipeComponent } from './canal-radio-equipe/canal-radio-equipe.component';
 import { environment } from '../../../environments/environment';
 
-import { Team, TeamMission, SalonMatrixEquipe, rangEchelon, libelleEncadrementEquipe }  from '../../shared/models/team.model';
+import { CanauxRadioEquipe, Team, TeamMission, SalonMatrixEquipe, rangEchelon, libelleEncadrementEquipe }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
 import { RoleOperationnel, AffectationRoleOperationnel } from '../../shared/models/institution.model';
 import { Crisis }              from '../../shared/models/crisis.model';
@@ -60,7 +61,7 @@ import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent, CanalRadioEquipeComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -271,6 +272,8 @@ export class TeamsComponent implements OnInit {
       description: [''],
       leader:    [null],
       mission:   [''],   // facultative (non bloquante en crise), définie juste après la création
+      // Indicatif radio (25/11/2026) : proposé depuis le nom, modifiable ; vide = le serveur le propose.
+      indicatif: ['', [Validators.pattern(/^@?[A-Za-z0-9]{2,6}$/)]],
     });
     this.editForm = this.fb.group({
       name:        ['', [Validators.required, Validators.minLength(2)]],
@@ -289,6 +292,22 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  /** L'indicatif proposé depuis le nom, comme le serveur le fait (core/routage_canaux.py,
+   * proposer_indicatif) : le premier mot significatif, sans accents, 6 caractères au plus. */
+  static proposerIndicatif(nom: string): string {
+    const vides = new Set(['EQUIPE', 'TEAM', 'LA', 'LE', 'LES', 'DE', 'DU', 'DES']);
+    const mots = (nom ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').split(/\s+/)
+      .map(m => m.replace(/[^A-Za-z0-9]/g, '').toUpperCase()).filter(m => m && !vides.has(m));
+    const base = (mots[0] ?? '').slice(0, 6);
+    return base.length >= 2 ? base : '';
+  }
+
+  /** Le nom change : l'indicatif suit tant qu'on ne l'a pas saisi soi-même. */
+  nomCreationSaisi(): void {
+    const ctrl = this.createForm.get('indicatif');
+    if (ctrl && !ctrl.dirty) ctrl.setValue(TeamsComponent.proposerIndicatif(this.createForm.get('name')?.value ?? ''));
+  }
+
   // ── CREATE ────────────────────────────────────────────────────
   openCreate(): void {
     this.createForm.reset();
@@ -298,10 +317,11 @@ export class TeamsComponent implements OnInit {
 
   submitCreate(): void {
     if (this.createForm.invalid) { this.createForm.markAllAsTouched(); return; }
-    const { name, description, leader, mission } = this.createForm.value;
+    const { name, description, leader, mission, indicatif } = this.createForm.value;
     const missionTitre = (mission ?? '').trim();
     const payload: Partial<Team> = {
       name,
+      indicatif: (indicatif ?? '').replace(/^@/, '').toUpperCase(),
       description: description ?? '',
       color:                this.selectedColor,
       leader:               leader ?? null,
@@ -1130,82 +1150,10 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  // ── Canal MeshCore de l'équipe ────────────────────────────────────────
-  provisionnantCanal = false;
-
-  provisionnerCanal(): void {
-    if (!this.selectedTeam?.id) return;
-    this.provisionnantCanal = true;
-    this.teamService.provisionnerCanalMeshCore(this.selectedTeam.id).subscribe({
-      next: (resultat) => {
-        this.provisionnantCanal = false;
-        this.reloadTeams();
-        if (this.selectedTeam) {
-          this.selectedTeam = {
-            ...this.selectedTeam,
-            canal_meshcore_id: resultat.canal_id, canal_meshcore_nom: resultat.nom,
-          };
-        }
-        this.showSuccess(
-          resultat.compagnon_disponible
-            ? `Canal « ${resultat.nom} » prêt — infos envoyées à ${resultat.destinataires} membre(s) équipé(s) d'un nœud MeshCore.`
-            : `Canal « ${resultat.nom} » créé, mais aucun companion actif pour envoyer les infos aux membres pour l'instant.`,
-        );
-      },
-      error: () => { this.provisionnantCanal = false; this.showError('Erreur lors du provisionnement du canal MeshCore.'); },
-    });
-  }
-
-  regenererCanal(): void {
-    if (!this.selectedTeam?.id) return;
-    if (!confirm("Régénérer la clé du canal ? Les anciens détenteurs de la clé (y compris un membre retiré) ne pourront plus l'utiliser — la nouvelle clé n'est renvoyée qu'aux membres actuels.")) return;
-    this.provisionnantCanal = true;
-    this.teamService.provisionnerCanalMeshCore(this.selectedTeam.id, true).subscribe({
-      next: (resultat) => {
-        this.provisionnantCanal = false;
-        this.showSuccess(`Clé régénérée et renvoyée à ${resultat.destinataires} membre(s).`);
-      },
-      error: () => { this.provisionnantCanal = false; this.showError('Erreur lors de la régénération du canal.'); },
-    });
-  }
-
-  // ── Canal Meshtastic de l'équipe ──────────────────────────────────────
-  provisionnantCanalMeshtastic = false;
-
-  provisionnerCanalMeshtastic(): void {
-    if (!this.selectedTeam?.id) return;
-    this.provisionnantCanalMeshtastic = true;
-    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id).subscribe({
-      next: (resultat) => {
-        this.provisionnantCanalMeshtastic = false;
-        this.reloadTeams();
-        if (this.selectedTeam) {
-          this.selectedTeam = {
-            ...this.selectedTeam,
-            canal_meshtastic_id: resultat.canal_id, canal_meshtastic_nom: resultat.nom,
-          };
-        }
-        this.showSuccess(
-          resultat.compagnon_disponible
-            ? `Canal « ${resultat.nom} » prêt — infos envoyées à ${resultat.destinataires} membre(s) équipé(s) d'un nœud Meshtastic.`
-            : `Canal « ${resultat.nom} » créé, mais aucun companion actif pour envoyer les infos aux membres pour l'instant.`,
-        );
-      },
-      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors du provisionnement du canal Meshtastic.'); },
-    });
-  }
-
-  regenererCanalMeshtastic(): void {
-    if (!this.selectedTeam?.id) return;
-    if (!confirm("Régénérer la clé du canal Meshtastic ? Les anciens détenteurs (y compris un membre retiré) ne pourront plus l'utiliser — la nouvelle clé n'est renvoyée qu'aux membres actuels.")) return;
-    this.provisionnantCanalMeshtastic = true;
-    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id, true).subscribe({
-      next: (resultat) => {
-        this.provisionnantCanalMeshtastic = false;
-        this.showSuccess(`Clé régénérée et renvoyée à ${resultat.destinataires} membre(s).`);
-      },
-      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors de la régénération du canal Meshtastic.'); },
-    });
+  // ── Canal radio de l'équipe (25/11/2026, CanalRadioEquipeComponent) ────────────────
+  canalRadioModifie(r: { canaux_radio: CanauxRadioEquipe; indicatif: string }): void {
+    if (this.selectedTeam) this.selectedTeam = { ...this.selectedTeam, canaux_radio: r.canaux_radio, indicatif: r.indicatif };
+    this.reloadTeams();
   }
 
   // ── Salon Matrix de l'équipe (messagerie Element, positionnement permanent) ───────────

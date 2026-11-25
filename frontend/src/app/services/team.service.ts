@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Team, MatrixMessage, SalonMatrixEquipe } from '../shared/models/team.model';
+import { CanauxPasserelle, CanauxRadioEquipe, ProtocoleRadio, Team, MatrixMessage, SalonMatrixEquipe } from '../shared/models/team.model';
 import { Dossier } from '../shared/models/dossier.model';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
 import { RessourceMobilisee } from '../shared/models/ressource-mobilisee.model';
@@ -147,6 +147,24 @@ export class TeamService {
     return this.http.post<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }>(
       `${this.url}/${id}/provisionner-canal-meshtastic/`, { regenerer },
     );
+  }
+
+  /** Les canaux déjà sur une passerelle de la structure de l'équipe (25/11/2026), qu'elle peut
+   * reprendre comme canal d'équipe. Jamais de clé. */
+  canauxPasserelle(id: string): Observable<CanauxPasserelle> {
+    return this.http.get<CanauxPasserelle>(`${this.url}/${id}/canaux-passerelle/`);
+  }
+
+  /** Personnaliser le canal radio de l'équipe : nom + clé de la structure (ou clé générée), ou
+   * reprise d'un canal de passerelle. */
+  personnaliserCanalRadio(id: string, corps: { protocole: ProtocoleRadio; nom?: string; cle?: string; en_clair?: boolean; reprendre?: string }):
+      Observable<{ canaux_radio: CanauxRadioEquipe; indicatif: string }> {
+    return this.http.post<{ canaux_radio: CanauxRadioEquipe; indicatif: string }>(`${this.url}/${id}/canal-radio/`, corps);
+  }
+
+  /** Revenir au canal par défaut AC-<INDICATIF>, clé neuve. */
+  canalRadioParDefaut(id: string, protocole: ProtocoleRadio): Observable<{ canaux_radio: CanauxRadioEquipe; indicatif: string }> {
+    return this.http.delete<{ canaux_radio: CanauxRadioEquipe; indicatif: string }>(`${this.url}/${id}/canal-radio/`, { params: { protocole } });
   }
 
   /** POST /api/teams/<id>/provisionner-salon-matrix/ — provisionne LES DEUX salons de l'équipe

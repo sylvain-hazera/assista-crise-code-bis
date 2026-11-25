@@ -754,10 +754,10 @@ class TestCanalMeshCoreEquipe:
     def test_canaux_a_provisionner_excludes_already_provisioned_for_this_compagnon(self, api_client, compagnon, institution_a, create_user):
         from core.models import CanalMeshCore, ProvisionCanalMeshCore, Team
         equipe = Team.objects.create(name='Équipe canal provisionnement', institution=institution_a)
-        canal_pret = CanalMeshCore.objects.create(equipe=equipe, nom='Prêt', cle_partagee_hex='aa' * 16)
+        canal_pret = CanalMeshCore.objects.create(equipe=equipe, nom='Prêt', cle_partagee_hex='aa' * 16, sur_passerelle=True)
         ProvisionCanalMeshCore.objects.create(canal=canal_pret, compagnon=compagnon, canal_idx=2)
         autre_equipe = Team.objects.create(name='Équipe canal à faire', institution=institution_a)
-        canal_a_faire = CanalMeshCore.objects.create(equipe=autre_equipe, nom='À faire', cle_partagee_hex='bb' * 16)
+        canal_a_faire = CanalMeshCore.objects.create(equipe=autre_equipe, nom='À faire', cle_partagee_hex='bb' * 16, sur_passerelle=True)
 
         # compte_service_pont : cet endpoint livre la clé de canal en clair, il n'est plus
         # ouvert à tout compte authentifié (core/permissions.py:EstComptePont, 07/11/2026).

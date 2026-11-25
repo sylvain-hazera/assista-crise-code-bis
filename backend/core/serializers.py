@@ -1961,6 +1961,9 @@ class TeamSerializer(serializers.ModelSerializer):
     # appareil.
     canal_meshtastic_id = serializers.CharField(source='canal_meshtastic.id', read_only=True, default=None)
     canal_meshtastic_nom = serializers.CharField(source='canal_meshtastic.nom', read_only=True, default=None)
+    # Canal d'équipe (25/11/2026) : par défaut ou personnalisé, origine de la clé, empreinte ;
+    # jamais la clé (core/radio_equipe.py).
+    canaux_radio = serializers.SerializerMethodField()
     # Canal de la crise ouverte de l'équipe (23/11/2026) : l'application y écrit « @INDICATIF »
     # et le compare à sa radio. None hors crise, ou tant que le canal n'est pas créé.
     canal_crise = serializers.SerializerMethodField()
@@ -2064,6 +2067,10 @@ class TeamSerializer(serializers.ModelSerializer):
         code = obj.institution.commune_code if obj.institution_id else None
         return commune_center_from_code(code) if code else None
 
+    def get_canaux_radio(self, obj):
+        from .radio_equipe import etat
+        return etat(obj)
+
     def get_canal_crise(self, obj):
         if not self.context.get("avec_canal_crise"):
             return None
@@ -2087,6 +2094,19 @@ class TeamSerializer(serializers.ModelSerializer):
         from .routage_canaux import ADRESSES_CELLULE
         if valeur in ADRESSES_CELLULE:
             raise serializers.ValidationError(f"« {valeur} » est réservé à la cellule.")
+        # Unique dans l'environnement (25/11/2026) : l'indicatif est permanent, plus seulement
+        # le temps d'une crise.
+        if valeur:
+            from .models import Team as _Team
+            from .permissions import get_active_environment as _env
+            requete = self.context.get("request")
+            environnement = self.instance.environment if self.instance is not None else (_env(requete) if requete else None)
+            autre = _Team.objects.filter(environment=environnement, indicatif__iexact=valeur)
+            if self.instance is not None:
+                autre = autre.exclude(pk=self.instance.pk)
+            autre = autre.first()
+            if autre is not None:
+                raise serializers.ValidationError(f"« {valeur} » est déjà l'indicatif de l'équipe « {autre.name} ».")
         return valeur
 
     class Meta:
@@ -2132,7 +2152,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'canal_meshcore_nom',
             'canal_meshcore_provisionne',
             'canal_meshtastic_id',
-            'canal_meshtastic_nom', 'canal_crise',
+            'canal_meshtastic_nom', 'canal_crise', 'canaux_radio',
             'salon_matrix_id',
             'salon_matrix_room_id',
             'salons_matrix',

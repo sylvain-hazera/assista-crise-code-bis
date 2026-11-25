@@ -9572,6 +9572,18 @@ class CanalMeshCore(EnvironmentScopedModel):
 
     actif = models.BooleanField(default=True)
 
+    #: Canal d'équipe (25/11/2026, voir core/radio_equipe.py) : `personnalise` = nom choisi par
+    #: l'équipe (sinon il suit l'indicatif) ; `cle_fournie` = clé de la structure (jamais
+    #: régénérée par la plateforme) ; `sur_passerelle` = installé dans un emplacement des radios
+    #: des passerelles. Un canal d'équipe par défaut vit sur les radios des membres seulement :
+    #: les passerelles le lisent en décodage logiciel, sans y consacrer d'emplacement.
+    personnalise = models.BooleanField(default=False)
+    cle_fournie = models.BooleanField(default=False)
+    sur_passerelle = models.BooleanField(default=False)
+    #: Repris d'une passerelle de l'institution : rendu à l'entité (pas supprimé) si l'équipe
+    #: revient au canal par défaut.
+    repris = models.BooleanField(default=False)
+
     date_creation = models.DateTimeField(auto_now_add=True)
 
     @staticmethod
@@ -10241,6 +10253,11 @@ class CanalMeshtastic(EnvironmentScopedModel):
     principal = models.BooleanField(default=False)
 
     actif = models.BooleanField(default=True)
+
+    #: Canal d'équipe (25/11/2026, voir core/radio_equipe.py et CanalMeshCore).
+    personnalise = models.BooleanField(default=False)
+    cle_fournie = models.BooleanField(default=False)
+    repris = models.BooleanField(default=False)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 

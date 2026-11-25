@@ -68,6 +68,13 @@ fun SectionRadio(modele: ModeleApplication) {
             "Deux radios : sans réseau, chaque message d'équipe part sur les deux, pour que les deux réseaux l'entendent.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
         )
+        // Les canaux de mes équipes, installés d'office (25/11/2026).
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Text("Installer les canaux de mes équipes", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(checked = modele.installerCanauxEquipes, onCheckedChange = modele::changerInstallationCanauxEquipes)
+        }
+        Text("Le canal de chaque équipe est ajouté dans un emplacement libre. Un canal que vous avez déjà mis vous-même n'est jamais modifié.",
+             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // « Utilisateur radio avancé » : l'intégralité des menus de la radio (22/11/2026).
         androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
             Text("Utilisateur radio avancé", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))

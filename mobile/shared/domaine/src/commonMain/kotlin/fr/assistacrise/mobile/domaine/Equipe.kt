@@ -18,6 +18,8 @@ data class Equipe(
     @SerialName("canal_meshtastic_nom") val canalMeshtastic: String? = null,
     /** Le canal radio de la crise ouverte de l'équipe et son indicatif (23/11/2026). */
     @SerialName("canal_crise") val canalCrise: CanalCrise? = null,
+    /** L'indicatif permanent de l'équipe (25/11/2026) : « @ALPHA » sur le canal de crise. */
+    val indicatif: String = "",
     @SerialName("leader") val chef: String? = null,
     /** La mission en cours de l'équipe : un dossier qu'on lui confie en fait partie. */
     @SerialName("mission_active") val missionActive: String? = null,

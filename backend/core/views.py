@@ -6419,6 +6419,9 @@ def _assurer_canal_meshcore_et_notifier(request, team, user):
             equipe=team, institution=team.institution,
             nom=f"Équipe {team.name}"[:32],
             cle_partagee_hex=secrets.token_hex(16),
+            # Créé à la main (pas le canal par défaut, core/radio_equipe.py) : installé sur les
+            # passerelles, comme avant le 25/11/2026.
+            sur_passerelle=True, personnalise=True,
             environment=get_active_environment(request),
         )
 
@@ -9856,6 +9859,55 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Le canal de la crise et l'indicatif (23/11/2026) : seulement ici, où l'application les lit.
         return Response(self.get_serializer(equipes, many=True, context={**self.get_serializer_context(), "avec_canal_crise": True}).data)
 
+    @action(detail=False, methods=['get'], url_path='mes-canaux-radio')
+    def mes_canaux_radio(self, request):
+        """Les canaux radio des équipes de l'utilisateur, AVEC leurs clés (25/11/2026) : son
+        application les installe sur sa radio. Membres, chefs et régulateurs seulement ; rien
+        n'est journalisé (core/radio_equipe.py)."""
+        from .radio_equipe import canaux_pour_membre
+        return Response(canaux_pour_membre(request.user, get_active_environment(request)))
+
+    @action(detail=True, methods=['get'], url_path='canaux-passerelle')
+    def canaux_passerelle(self, request, pk=None):
+        """Les canaux déjà installés sur une passerelle de l'institution de l'équipe, qu'elle peut
+        reprendre comme canal d'équipe (25/11/2026). Jamais de clé."""
+        from .radio_equipe import canaux_passerelle
+        team = self.get_object()
+        if not peut_gerer_equipe(request, team):
+            raise PermissionDenied(MESSAGE_REFUS)
+        return Response(canaux_passerelle(team))
+
+    @action(detail=True, methods=['post', 'delete'], url_path='canal-radio')
+    def canal_radio(self, request, pk=None):
+        """Personnaliser le canal radio de l'équipe (25/11/2026, core/radio_equipe.py) :
+        POST {protocole, nom, cle?, en_clair?} (clé de la structure, ou générée si absente) ou
+        {protocole, reprendre: <canal de la passerelle>} ; DELETE ?protocole= : retour au canal
+        par défaut AC-<INDICATIF>. Réservé aux gestionnaires de l'équipe."""
+        from . import radio_equipe as re_
+        team = self.get_object()
+        if not peut_gerer_equipe(request, team):
+            raise PermissionDenied(MESSAGE_REFUS)
+        donnees = request.data if request.method == 'POST' else request.query_params
+        protocole = (donnees.get('protocole') or '').upper()
+        try:
+            re_.modele(protocole)
+            if request.method == 'DELETE':
+                canal, quoi = re_.revenir_au_defaut(team, protocole), "remis par défaut"
+            elif donnees.get('reprendre'):
+                canal, quoi = re_.reprendre(team, protocole, donnees.get('reprendre')), "repris de la passerelle"
+            else:
+                canal = re_.personnaliser(team, protocole, donnees.get('nom'), donnees.get('cle') or None,
+                                          en_clair=bool(donnees.get('en_clair')))
+                quoi = "personnalisé (clé de la structure)" if canal.cle_fournie else "personnalisé (clé générée)"
+        except re_.CanalInvalide as erreur:
+            return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(request=request, action_code="MODIFICATION", objet_type=type(canal).__name__, objet_id=canal.id,
+                  commentaire=f"Canal {protocole.title()} de l'équipe « {team.name} » {quoi} : {canal.nom}")
+        team.refresh_from_db()
+        for champ in ('canal_meshtastic', 'canal_meshcore'):
+            team._state.fields_cache.pop(champ, None)
+        return Response({"canaux_radio": re_.etat(team), "indicatif": team.indicatif})
+
     @action(detail=True, methods=['get'], url_path='institutions-liees')
     def institutions_liees(self, request, pk=None):
         """Institutions "déjà liées" à celle de cette équipe (voir _institutions_liees) : sa
@@ -10982,12 +11034,16 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         regenerer = bool(request.data.get('regenerer'))
         canal = getattr(team, 'canal_meshcore', None)
+        if regenerer and canal is not None and canal.cle_fournie:
+            return Response({"error": "La clé de ce canal vient de votre structure : la plateforme ne la remplace pas. "
+                                      "Saisissez la nouvelle clé dans « Personnaliser »."}, status=status.HTTP_400_BAD_REQUEST)
         canal_nouveau = canal is None
         if canal is None:
             canal = CanalMeshCore.objects.create(
                 equipe=team, institution=team.institution,
                 nom=f"Équipe {team.name}"[:32],
                 cle_partagee_hex=secrets.token_hex(16),
+                sur_passerelle=True, personnalise=True,   # créé à la main, comme avant le 25/11/2026
                 environment=get_active_environment(request),
             )
         elif regenerer:
@@ -11453,6 +11509,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         regenerer = bool(request.data.get('regenerer'))
         canal = getattr(team, 'canal_meshtastic', None)
+        if regenerer and canal is not None and canal.cle_fournie:
+            return Response({"error": "La clé de ce canal vient de votre structure : la plateforme ne la remplace pas. "
+                                      "Saisissez la nouvelle clé dans « Personnaliser »."}, status=status.HTTP_400_BAD_REQUEST)
         canal_nouveau = canal is None
         if canal is None:
             canal = CanalMeshtastic.objects.create(
@@ -21582,7 +21641,10 @@ def _canaux_meshcore_du_compagnon(compagnon):
     """Canaux qu'un pont installe sur SA radio : canaux d'équipe et publics `#nom` -- limités,
     pour une radio d'institution (satellite), à son institution et aux canaux sans institution :
     les slots sont comptés, inutile d'y installer les équipes des autres départements."""
-    canaux = CanalMeshCore.objects.filter(actif=True).filter(Q(equipe__isnull=False) | Q(nom__startswith='#'))
+    # Un canal d'équipe par défaut (25/11/2026, core/radio_equipe.py) vit sur les radios des
+    # membres, pas dans un emplacement de passerelle : seuls ceux marqués `sur_passerelle`.
+    canaux = CanalMeshCore.objects.filter(actif=True).filter(
+        Q(equipe__isnull=False, sur_passerelle=True) | Q(equipe__isnull=True, nom__startswith='#'))
     if compagnon.institution_id:
         canaux = canaux.filter(Q(institution_id=compagnon.institution_id) | Q(institution__isnull=True))
         # Canal de crise (23/11/2026) : seulement les crises de l'institution de la radio.

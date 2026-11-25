@@ -63,6 +63,9 @@ export interface Team {
   canal_meshcore_provisionne?:  boolean;
   canal_meshtastic_id?:         string | null;
   canal_meshtastic_nom?:        string | null;
+  /** Canal radio de l'équipe par protocole (25/11/2026) : jamais la clé, seulement son origine et
+   * une empreinte courte. */
+  canaux_radio?:                CanauxRadioEquipe;
   /** Salon Matrix de l'équipe entière. Reste au singulier et désigne le salon INTERVENANTS :
    * c'est celui que le bouton « messagerie » ouvre, et c'était le seul avant le 11/11/2026. */
   salon_matrix_id?:             string | null;
@@ -146,4 +149,39 @@ export const ECHELONS_COORDINATION = ['NATIONAL', 'ZONE_DEFENSE', 'REGIONAL', 'D
 
 export function libelleEncadrementEquipe(echelon: string | null | undefined): string {
   return echelon && ECHELONS_COORDINATION.includes(echelon) ? 'Bureau de la coordination' : 'Encadrement';
+}
+
+// ── Canal radio de l'équipe (25/11/2026) ────────────────────────────────────────────────
+export type ProtocoleRadio = 'MESHTASTIC' | 'MESHCORE';
+
+export interface EtatCanalRadio {
+  nom: string;
+  personnalise: boolean;
+  /** Clé fournie par la structure : la plateforme ne la régénère jamais. */
+  cle_fournie: boolean;
+  /** Repris d'une passerelle de la structure. */
+  repris: boolean;
+  empreinte: string;
+  actif: boolean;
+  sur_passerelle: boolean;
+}
+
+export interface CanauxRadioEquipe {
+  meshtastic: EtatCanalRadio | null;
+  meshcore: EtatCanalRadio | null;
+}
+
+export interface CanalPasserelle {
+  id: string;
+  protocole: ProtocoleRadio;
+  nom: string;
+  passerelle: string;
+  public: boolean;
+  deja_le_notre: boolean;
+  empreinte: string;
+}
+
+export interface CanauxPasserelle {
+  canaux: CanalPasserelle[];
+  entendus_sans_cle: number;
 }

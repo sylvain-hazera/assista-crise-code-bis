@@ -135,6 +135,10 @@ private fun CarteEquipe(equipe: Equipe, nonLus: ModeleApplication.NonLus, surQui
                 }
             }
             equipe.institutionNom?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // L'indicatif et le canal radio de l'équipe (25/11/2026).
+            val radio = listOfNotNull(equipe.indicatif.takeIf { it.isNotBlank() }?.let { "@$it" },
+                                      (equipe.canalMeshCore ?: equipe.canalMeshtastic)?.let { "canal $it" })
+            if (radio.isNotEmpty()) Text(radio.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             equipe.missionTitre?.let { Text("Mission : $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

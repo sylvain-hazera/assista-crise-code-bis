@@ -36,7 +36,7 @@ def radio_loire(loire):
 @pytest.fixture
 def canal_cai(loire):
     equipe = Team.objects.create(name="CAI", institution=loire)
-    return CanalMeshCore.objects.create(equipe=equipe, institution=loire, nom="Équipe CAI", cle_partagee_hex="ab" * 16)
+    return CanalMeshCore.objects.create(equipe=equipe, institution=loire, nom="Équipe CAI", cle_partagee_hex="ab" * 16, sur_passerelle=True)
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ class TestDeuxRadios:
     def test_radio_d_institution_n_installe_pas_les_equipes_des_autres(self, pont, bureau, radio_loire, canal_cai):
         autre = Institution.objects.create(nom="Mairie de Bordeaux", type=InstitutionType.objects.first())
         equipe = Team.objects.create(name="Les Cuves Pompes", institution=autre)
-        canal_autre = CanalMeshCore.objects.create(equipe=equipe, institution=autre, nom="Équipe Cuves", cle_partagee_hex="cd" * 16)
+        canal_autre = CanalMeshCore.objects.create(equipe=equipe, institution=autre, nom="Équipe Cuves", cle_partagee_hex="cd" * 16, sur_passerelle=True)
         canal_public = CanalMeshCore.objects.create(nom="#gironde", cle_partagee_hex="ef" * 16)
 
         assert _a_provisionner(pont, radio_loire) == {str(canal_cai.id), str(canal_public.id)}

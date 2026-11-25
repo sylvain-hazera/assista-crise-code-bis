@@ -20,6 +20,14 @@ def _pas_de_chargement_automatique_des_adresses(settings):
 
 
 @pytest.fixture(autouse=True)
+def _pas_de_canal_d_equipe_automatique(settings):
+    """Une équipe créée reçoit d'office son indicatif et ses canaux radio (core/radio_equipe.py,
+    25/11/2026). Coupé pour toute la suite : de nombreux tests créent eux-mêmes le canal d'une
+    équipe. Les tests du canal d'équipe le rallument (tests/mesh/test_radio_equipe.py)."""
+    settings.CANAUX_EQUIPE_AUTO = False
+
+
+@pytest.fixture(autouse=True)
 def _inscription_sans_controle_anti_robot(settings):
     """La création de compte passe par un contrôle anti-robot (core/defi_inscription.py) qui
     compte les demandes par adresse : laissé actif, il ferait dépendre chaque test qui crée
