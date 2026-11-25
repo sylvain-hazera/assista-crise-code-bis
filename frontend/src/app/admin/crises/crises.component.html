@@ -122,6 +122,11 @@
             · <span class="material-icons">place</span> {{ selectedCrisis.commune || (selectedCrisis.latitude + ', ' + selectedCrisis.longitude) }}
           </p>
 
+          <!-- Canaux radio de la crise (25/11/2026) : QR code pour un boîtier sans notre appli. -->
+          @if (selectedCrisis.is_open !== false) {
+            <app-qr-canaux-radio [crise]="selectedCrisis.id" libelle="QR code des canaux radio de la crise"></app-qr-canaux-radio>
+          }
+
           @if (selectedCrisis.is_open === false) {
             <p class="crisis-closed-banner">
               <span class="material-icons">lock</span>

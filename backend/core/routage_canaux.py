@@ -186,19 +186,21 @@ def _nom_noeud_meshtastic(node_num):
 # ══ Indicatifs ════════════════════════════════════════════════════════════════
 
 def proposer_indicatif(nom, pris=()):
-    """« Équipe Alpha » → « ALPHA » ; « Bénévoles — Rive-de-Gier » → « RIVEDE »… unique parmi `pris`."""
+    """« Équipe Alpha » → « ALPH » ; « Bénévoles — Rive-de-Gier » → « BENE »… unique parmi `pris`."""
     import unicodedata
 
     sans_accents = unicodedata.normalize("NFKD", nom or "").encode("ascii", "ignore").decode()
     mots = [re.sub(r"[^A-Za-z0-9]", "", m).upper() for m in sans_accents.split()]
     mots = [m for m in mots if m and m not in {"EQUIPE", "TEAM", "LA", "LE", "LES", "DE", "DU", "DES"}]
-    base = (mots[0] if mots else "EQ")[:6]
+    # 4 caractères au plus (25/11/2026, conseil d'Olivier F4GLD) : l'indicatif voyage dans
+    # chaque message, sur ~200 octets utiles. Saisi à la main, il peut aller jusqu'à 6.
+    base = (mots[0] if mots else "EQ")[:4]
     if len(base) < 2:
-        base = (base + "".join(mots[1:2]) + "EQ")[:6]
+        base = (base + "".join(mots[1:2]) + "EQ")[:4]
     if base not in pris:
         return base
     for n in range(2, 100):
-        candidat = base[:6 - len(str(n))] + str(n)
+        candidat = base[:4 - len(str(n))] + str(n)
         if candidat not in pris:
             return candidat
     return base

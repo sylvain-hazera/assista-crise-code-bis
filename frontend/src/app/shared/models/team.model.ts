@@ -185,3 +185,33 @@ export interface CanauxPasserelle {
   canaux: CanalPasserelle[];
   entendus_sans_cle: number;
 }
+
+export interface LienCanaux {
+  meshtastic_lien: string | null;
+  meshtastic: { role: string; nom: string }[];
+  meshcore: { role: string; nom: string; cle_hex: string }[];
+  crise: string | null;
+  qr_svg: string | null;
+}
+
+// ── Nœuds radio dédiés de l'équipe (25/11/2026) ─────────────────────────────────────────
+export interface NoeudEquipe {
+  id: string;
+  protocole: ProtocoleRadio;
+  identifiant: string;
+  nom: string;
+  etat: 'EN_RESERVE' | 'CONFIE' | 'HORS_SERVICE';
+  etat_libelle: string;
+  confie_a: string | null;
+  confie_a_nom: string | null;
+  appareil: string | null;
+  configure_le: string | null;
+  moyen_configuration: string;
+  a_jour: boolean;
+  remarque: string;
+}
+
+export interface NoeudsEquipe {
+  version_plan: string;
+  noeuds: NoeudEquipe[];
+}

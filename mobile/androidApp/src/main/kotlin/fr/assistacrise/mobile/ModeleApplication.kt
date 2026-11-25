@@ -68,7 +68,7 @@ enum class EtapeConnexion { ADRESSE, CODE, MOT_DE_PASSE }
 enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
-    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION,
+    SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION, PREPARER_RADIO,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -263,16 +263,6 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 if (present && pret && compte.value != null) synchroniser(force = true, bavard = false)
             }
         }
-        // Les canaux de mes équipes sur la radio (25/11/2026) : à la connexion d'une radio et
-        // quand mes équipes changent (une de plus, une quittée, un indicatif modifié).
-        viewModelScope.launch {
-            combine(app.radio.etats, app.equipes.equipes) { etats, equipes ->
-                etats.filter { it.phase == LiaisonRadio.Phase.PRETE }.mapNotNull { it.protocole }.toSet() to
-                    equipes.map { "${it.id}:${it.indicatif}:${it.canalMeshCore}:${it.canalMeshtastic}" }.sorted()
-            }.distinctUntilChanged().collect { (pretes, _) ->
-                if (pretes.isNotEmpty()) { delay(3_000); alignerCanauxEquipes(pretes) }
-            }
-        }
         viewModelScope.launch {
             // Tant que quelque chose attend, on retente au rythme du recul de la file. Sinon
             // on relit simplement le serveur de temps en temps : c'est ainsi qu'un engagement
@@ -290,27 +280,98 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
-    // --- Canaux radio de mes équipes (25/11/2026) -----------------------------------------------
+    // --- Préparer la radio : emplacements d'urgence 5-6-7 (25/11/2026) --------------------------
 
-    private val canauxEquipes by lazy { CanauxEquipes(app) }
-    var installerCanauxEquipes by mutableStateOf(true); private set
+    val preparation by lazy { PreparationRadio(app.magasin) }
+    var planUrgence by mutableStateOf<fr.assistacrise.mobile.domaine.PlanUrgenceServeur?>(null); private set
+    var propositions by mutableStateOf<List<fr.assistacrise.mobile.domaine.Proposition>>(emptyList()); private set
+    var protocolePreparation by mutableStateOf<fr.assistacrise.mobile.lien.Protocole?>(null); private set
+    /** Nœud dédié d'équipe : écrit sans sauvegarde, puis enregistré auprès du serveur. */
+    var preparationDedie by mutableStateOf(false); private set
+    var preparationEnCours by mutableStateOf(false); private set
+    private var choixEmplacements = emptyMap<String, Int>()
 
-    fun changerInstallationCanauxEquipes(oui: Boolean) {
-        canauxEquipes.automatique = oui
-        installerCanauxEquipes = oui
-        if (oui) viewModelScope.launch { alignerCanauxEquipes(app.radio.pretes().mapNotNull { it.etat.value.protocole }.toSet()) }
+    /** L'équipe pour laquelle on prépare : celle engagée sur une crise, sinon la première. */
+    fun equipePourLaRadio(): Equipe? = equipes.value.firstOrNull { it.canalCrise != null } ?: equipes.value.firstOrNull()
+
+    fun ouvrirPreparation(protocole: fr.assistacrise.mobile.lien.Protocole, dedie: Boolean = false, equipe: Equipe? = equipePourLaRadio()) {
+        if (equipe == null) { message = "Il faut faire partie d'une équipe pour préparer la radio."; return }
+        protocolePreparation = protocole
+        preparationDedie = dedie
+        choixEmplacements = emptyMap()
+        planUrgence = null
+        propositions = emptyList()
+        aller(Ecran.PREPARER_RADIO)
+        viewModelScope.launch {
+            preparationEnCours = true
+            try {
+                when (val r = app.api.planUrgence(equipe.id)) {
+                    is Reponse.Ok -> planUrgence = r.valeur
+                    is Reponse.Refus -> { message = "Plan refusé : ${r.message}"; return@launch }
+                    is Reponse.Injoignable -> { message = "Il faut le réseau pour lire les canaux d'urgence de l'équipe."; return@launch }
+                }
+                preparation.relire(app.radio.pour(protocole))
+                recalculerPropositions()
+            } finally { preparationEnCours = false }
+        }
     }
 
-    private suspend fun alignerCanauxEquipes(protocoles: Set<fr.assistacrise.mobile.lien.Protocole>) {
-        installerCanauxEquipes = canauxEquipes.automatique
-        if (!installerCanauxEquipes || compte.value == null || protocoles.isEmpty()) return
-        val canaux = when (val r = app.api.mesCanauxRadio()) {
-            is Reponse.Ok -> r.valeur
-            else -> return   // sans réseau : la radio garde ce qu'elle a, on réessaiera
+    private fun recalculerPropositions() {
+        val p = protocolePreparation ?: return
+        val plan = planUrgence ?: return
+        val pilote = app.radio.pour(p).piloteCourant ?: return
+        val meshcore = p == fr.assistacrise.mobile.lien.Protocole.MESHCORE
+        propositions = fr.assistacrise.mobile.domaine.PlanUrgence.proposer(
+            if (meshcore) plan.meshcore else plan.meshtastic, preparation.table(pilote), meshcore, choixEmplacements, preparation.total(pilote))
+    }
+
+    fun totalEmplacements(): Int = protocolePreparation?.let { app.radio.pour(it).piloteCourant }?.let(preparation::total) ?: 8
+
+    fun choisirEmplacement(role: String, index: Int) {
+        choixEmplacements = choixEmplacements + (role to index)
+        recalculerPropositions()
+    }
+
+    fun erreurPreparation(): String? = fr.assistacrise.mobile.domaine.PlanUrgence.erreur(propositions, totalEmplacements())
+
+    fun validerPreparation() {
+        val p = protocolePreparation ?: return
+        val plan = planUrgence ?: return
+        viewModelScope.launch {
+            preparationEnCours = true
+            try {
+                val liaison = app.radio.pour(p)
+                message = preparation.appliquer(liaison, plan, propositions, sauvegarder = !preparationDedie)
+                if (preparationDedie) {
+                    val pilote = liaison.piloteCourant
+                    val id = pilote?.let(preparation::identite)
+                    if (id != null) {
+                        val nom = liaison.etat.value.nom ?: ""
+                        val r = app.api.noeudDedieConfigure(plan.equipe, p.name, id, nom, plan.version)
+                        if (r !is Reponse.Ok) message = (message ?: "") + " Le nœud n'a pas pu être enregistré auprès de l'équipe (réseau ?)."
+                    }
+                }
+                recalculerPropositions()
+            } finally { preparationEnCours = false }
         }
-        for (p in protocoles) {
-            val bilan = runCatching { canauxEquipes.aligner(app.radio.pour(p), canaux) }.getOrNull() ?: continue
-            if (!bilan.rien) message = bilan.texte(p)
+    }
+
+    /** Le lien de canal Meshtastic (QR code) des canaux d'urgence, pour un boîtier sans notre appli. */
+    fun lienCanauxUrgence(): String? = planUrgence?.meshtastic?.takeIf { it.isNotEmpty() }
+        ?.let { l -> fr.assistacrise.mobile.domaine.PlanUrgence.lienMeshtastic(l.map { it.nom to it.cleHex }) }
+
+    /** La dernière sauvegarde de la radio connectée sur ce protocole, s'il y en a une. */
+    suspend fun derniereSauvegarde(protocole: fr.assistacrise.mobile.lien.Protocole): fr.assistacrise.mobile.domaine.SauvegardeRadio? {
+        val pilote = app.radio.pour(protocole).piloteCourant?.takeIf { it.prete } ?: return null
+        val id = preparation.identite(pilote) ?: return null
+        return preparation.sauvegardes(protocole, id).firstOrNull()
+    }
+
+    fun restaurerRadio(protocole: fr.assistacrise.mobile.lien.Protocole, garderEquipe: Boolean) {
+        viewModelScope.launch {
+            preparationEnCours = true
+            try { message = preparation.restaurer(app.radio.pour(protocole), garderEquipe) }
+            finally { preparationEnCours = false }
         }
     }
 

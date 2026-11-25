@@ -1,3 +1,4 @@
+import { QrCanauxRadioComponent } from '../../shared/components/common/qr-canaux-radio/qr-canaux-radio.component';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -46,7 +47,7 @@ import { BoutonRapportComponent } from '../../shared/components/common/bouton-ra
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [BoutonRapportComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
+  imports: [BoutonRapportComponent, TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent, QrCanauxRadioComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })

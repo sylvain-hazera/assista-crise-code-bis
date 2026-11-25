@@ -510,6 +510,34 @@ class TestNomDuNoeud(unittest.TestCase):
             mod.executer(iface, {"type_tache": "DEFINIR_NOM", "parametres": {}})
 
 
+class TestCanalDeNoeudDedie(unittest.TestCase):
+    """Noeuds dedies d'equipe (25/11/2026) : canaux d'urgence 5, 6, 7 ecrits a distance."""
+
+    def test_le_canal_est_ecrit_en_secondaire_et_la_reponse_ne_contient_pas_la_cle(self):
+        iface = FauxInterface(reponses=[reponse_metadata(), "__ACK__"])
+        reponse, configuration = mod.executer(iface, {
+            "type_tache": "DEFINIR_CANAL", "node_num_cible": 0x2000,
+            "parametres": {"index": 6, "nom": "AC-ALPH", "psk_hex": "ab" * 16, "role": "equipe", "canal": "x"},
+        })
+        ecrit = iface.envois[-1]
+        self.assertEqual(ecrit["message"].set_channel.index, 6)
+        self.assertEqual(ecrit["message"].set_channel.settings.name, "AC-ALPH")
+        self.assertEqual(bytes(ecrit["message"].set_channel.settings.psk), b"\xab" * 16)
+        self.assertEqual(ecrit["message"].set_channel.role, 2)        # SECONDARY
+        self.assertTrue(ecrit["pki"])
+        self.assertEqual(ecrit["cle_session"], b"12345678")
+        self.assertNotIn("ab" * 16, str(reponse))
+        self.assertIsNone(configuration)
+
+    def test_jamais_le_canal_principal_ni_un_nom_trop_long(self):
+        iface = FauxInterface()
+        for parametres in ({"index": 0, "nom": "X", "psk_hex": "01"}, {"index": 5, "nom": "TropLongPourMesh", "psk_hex": "01"},
+                           {"index": 5, "nom": "X", "psk_hex": "abcd"}):
+            with self.assertRaises(mod.ErreurAdmin):
+                mod.executer(iface, {"type_tache": "DEFINIR_CANAL", "node_num_cible": 0x2000, "parametres": parametres})
+        self.assertEqual(iface.envois, [])
+
+
 class TestDivers(unittest.TestCase):
 
     def test_une_operation_inconnue_est_refusee(self):

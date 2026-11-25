@@ -303,6 +303,20 @@ class ClientApi(
             json.decodeFromJsonElement(ListSerializer(fr.assistacrise.mobile.domaine.CanauxRadioEquipe.serializer()), it)
         }
 
+    /** Les canaux des emplacements d'urgence 5-6-7 d'une équipe (crise, équipe, commune), avec
+     * leurs clés (25/11/2026). Gardés en mémoire seulement. */
+    suspend fun planUrgence(equipe: String): Reponse<fr.assistacrise.mobile.domaine.PlanUrgenceServeur> =
+        authentifie(HttpMethod.Get, "teams/$equipe/plan-urgence/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.PlanUrgenceServeur.serializer(), it)
+        }
+
+    /** Un nœud dédié de l'équipe vient d'être configuré par Bluetooth (25/11/2026). */
+    suspend fun noeudDedieConfigure(equipe: String, protocole: String, identifiant: String, nom: String, version: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "teams/$equipe/noeuds/", buildJsonObject {
+            put("protocole", protocole); put("identifiant", identifiant); put("nom", nom)
+            put("configure", true); put("version", version); put("moyen", "BLUETOOTH")
+        }).sansValeur()
+
     /** Le plan de canaux de la crise (23/11/2026) : clés publiques seulement. */
     suspend fun planRadio(crise: String): Reponse<fr.assistacrise.mobile.domaine.PlanRadio> =
         authentifie(HttpMethod.Get, "radio/plan/?crise=$crise").transformer {

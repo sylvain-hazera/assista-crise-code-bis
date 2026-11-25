@@ -739,6 +739,9 @@
         <!-- ── CANAL RADIO DE L'ÉQUIPE (25/11/2026) : Meshtastic et MeshCore, par défaut AC-<INDICATIF> ── -->
         <app-canal-radio-equipe [equipe]="selectedTeam" [peutGerer]="!!selectedTeam.peut_administrer"
                                 (modifie)="canalRadioModifie($event)"></app-canal-radio-equipe>
+        @if (selectedTeam.peut_administrer) {
+          <app-noeuds-equipe [equipe]="selectedTeam"></app-noeuds-equipe>
+        }
 
         <!-- ── MESSAGERIE D'ÉQUIPE (Matrix + MeshCore + Meshtastic) ──
              Envoi sur Matrix et sur MeshCore/Meshtastic pour les membres équipés ; les réponses de

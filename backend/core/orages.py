@@ -867,13 +867,45 @@ def cumuler_pluie(grille, maintenant=None, zone=ZONE_PAR_DEFAUT):
                 s[0] += mm
     disponibles = {cle: sum(1 for heure, _ in images if (grille.heure - heure).total_seconds() / 60 < n * 5)
                    for cle, n in FENETRES_CUMUL.items()}
-    with transaction.atomic():
-        CumulPluieCommune.objects.all().delete()
-        CumulPluieCommune.objects.bulk_create([CumulPluieCommune(
-            commune_code=code, mm_1h=round(s[0], 1), mm_3h=round(s[1], 1), mm_24h=round(s[2], 1),
-            heure=grille.heure) for code, s in sommes.items() if s[2] >= 0.5], batch_size=2000)
+    ecrire_cumuls({code: (round(s[0], 1), round(s[1], 1), round(s[2], 1))
+                   for code, s in sommes.items() if s[2] >= 0.5}, grille.heure)
     _ecrire_disponibilite(disponibles, grille.heure, zone)
     return len(sommes)
+
+
+def ecrire_cumuls(nouveaux, heure):
+    """Met la table des cumuls à jour EN DIFFÉRENTIEL (25/11/2026) : seules les communes dont un
+    cumul change sont réécrites, celles qui n'ont plus de pluie retirées, les nouvelles ajoutées.
+
+    Avant, la table entière (~30 000 communes) était effacée puis réécrite à chaque image radar,
+    toutes les 5 minutes : 122 millions d'insertions et autant de suppressions en trois mois, des
+    dizaines de Go de journal de transactions par jour, envoyés au NAS (plein à 98 % le 25/11).
+    `heure` est désormais l'heure du dernier changement de la commune ; la fraîcheur du calcul se
+    lit sur la dernière image (`PluieCommunesImage`)."""
+    from django.db import transaction
+
+    from .models import CumulPluieCommune
+
+    actuels = {code: (m1, m3, m24) for code, m1, m3, m24 in
+               CumulPluieCommune.objects.values_list("commune_code", "mm_1h", "mm_3h", "mm_24h")}
+    a_retirer = [code for code in actuels if code not in nouveaux]
+    a_changer = [CumulPluieCommune(commune_code=code, mm_1h=v[0], mm_3h=v[1], mm_24h=v[2], heure=heure)
+                 for code, v in nouveaux.items() if code in actuels and actuels[code] != v]
+    a_creer = [CumulPluieCommune(commune_code=code, mm_1h=v[0], mm_3h=v[1], mm_24h=v[2], heure=heure)
+               for code, v in nouveaux.items() if code not in actuels]
+    with transaction.atomic():
+        for i in range(0, len(a_retirer), 2000):
+            CumulPluieCommune.objects.filter(commune_code__in=a_retirer[i:i + 2000]).delete()
+        CumulPluieCommune.objects.bulk_update(a_changer, ["mm_1h", "mm_3h", "mm_24h", "heure"], batch_size=2000)
+        CumulPluieCommune.objects.bulk_create(a_creer, batch_size=2000)
+    return {"retirees": len(a_retirer), "changees": len(a_changer), "creees": len(a_creer)}
+
+
+def derniere_image_pluie():
+    """L'heure de la dernière image radar prise en compte dans les cumuls, ou None."""
+    from .models import PluieCommunesImage
+
+    return PluieCommunesImage.objects.order_by("-heure").values_list("heure", flat=True).first()
 
 
 def _ecrire_disponibilite(disponibles, heure, zone=ZONE_PAR_DEFAUT):

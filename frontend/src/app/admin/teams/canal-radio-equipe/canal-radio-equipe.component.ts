@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, OnChanges, Output, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { QrCanauxRadioComponent } from '../../../shared/components/common/qr-canaux-radio/qr-canaux-radio.component';
 
 import { TeamService } from '../../../services/team.service';
 import { CanalPasserelle, CanauxRadioEquipe, EtatCanalRadio, ProtocoleRadio, Team } from '../../../shared/models/team.model';
@@ -19,7 +20,7 @@ type Mode = 'passerelle' | 'notre-cle' | 'cle-generee';
 @Component({
   selector: 'app-canal-radio-equipe',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, QrCanauxRadioComponent],
   template: `
     <div class="detail-section">
       <div class="section-header">
@@ -116,6 +117,11 @@ type Mode = 'passerelle' | 'notre-cle' | 'cle-generee';
           }
         </div>
       }
+      @if (peutGerer && equipe.id) {
+        <div class="canal-qr">
+          <app-qr-canaux-radio [equipe]="equipe.id" libelle="QR code des canaux d'urgence (crise, équipe, commune)"></app-qr-canaux-radio>
+        </div>
+      }
       @if (message) { <p class="canal-message" role="status">{{ message }}</p> }
       @if (erreur) { <p class="canal-erreur" role="alert">{{ erreur }}</p> }
     </div>
@@ -131,6 +137,7 @@ type Mode = 'passerelle' | 'notre-cle' | 'cle-generee';
     .canal-form { display: grid; gap: .5rem; margin-top: .6rem; padding: .75rem; border-radius: 8px; background: var(--ac-surface-2, #f8fafc); }
     .modes { display: flex; flex-wrap: wrap; gap: .4rem 1rem; }
     .champ { display: grid; gap: .2rem; }
+    .canal-qr { margin-top: .6rem; }
     .canal-erreur { color: #b91c1c; }
     .canal-message { color: #15803d; }
   `],

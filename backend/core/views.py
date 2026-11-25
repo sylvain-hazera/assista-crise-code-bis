@@ -243,7 +243,7 @@ from .models import (
     MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
-    TacheAdminMeshtastic, StatutTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    TacheAdminMeshtastic, StatutTacheAdminMeshtastic, TypeTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
     CalibrationRadio, CouvertureRadioSite, StatutCouvertureRadio,
     TENTATIVES_MAX_TACHE_ADMIN, DELAI_RECLAMATION_TACHE_ADMIN_S, ConfigurationNoeudMeshtastic,
     Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
@@ -9866,6 +9866,171 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         n'est journalisé (core/radio_equipe.py)."""
         from .radio_equipe import canaux_pour_membre
         return Response(canaux_pour_membre(request.user, get_active_environment(request)))
+
+    def _equipe_radio(self, request, pk, gestion=False):
+        """L'équipe, si l'utilisateur en est membre, chef ou régulateur (ou la gère) ; sinon 403.
+        Lu hors du filtre de zone de la liste : un intervenant voit toujours ses équipes."""
+        team = Team.objects.filter(pk=pk, environment=get_active_environment(request)).first()
+        if team is None:
+            raise NotFound()
+        membre = team.members.filter(pk=request.user.pk).exists() or request.user.pk in (team.leader_id, team.regulateur_id)
+        if gestion and not peut_gerer_equipe(request, team):
+            raise PermissionDenied(MESSAGE_REFUS)
+        if not gestion and not (membre or peut_gerer_equipe(request, team)):
+            raise PermissionDenied("Réservé aux membres de l'équipe.")
+        return team
+
+    @action(detail=True, methods=['get'], url_path='plan-urgence')
+    def plan_urgence(self, request, pk=None):
+        """Les canaux des emplacements d'urgence 5, 6, 7 de la radio d'un intervenant (25/11/2026) :
+        crise, équipe, commune, AVEC leurs clés. Membres de l'équipe et gestionnaires ; rien n'est
+        journalisé (core/radio_equipe.py)."""
+        from .radio_equipe import plan_urgence
+        team = self._equipe_radio(request, pk)
+        return Response(plan_urgence(team, get_active_environment(request)))
+
+    @action(detail=True, methods=['get'], url_path='lien-canaux')
+    def lien_canaux(self, request, pk=None):
+        """Lien de canal Meshtastic (QR code) des canaux crise, équipe et commune, en mode
+        « ajouter » ; pour MeshCore, noms et clés à saisir. Gestionnaires de l'équipe : le lien
+        contient la clé de l'équipe."""
+        from .radio_equipe import lien_meshtastic, plan_urgence
+        from .second_facteur import qr_svg
+        team = self._equipe_radio(request, pk, gestion=True)
+        plan = plan_urgence(team, get_active_environment(request))
+        lien = lien_meshtastic([(e["nom"], e["cle_hex"]) for e in plan["meshtastic"]]) if plan["meshtastic"] else None
+        return Response({
+            "meshtastic_lien": lien,
+            "meshtastic": [{"role": e["role"], "nom": e["nom"]} for e in plan["meshtastic"]],
+            "meshcore": [{"role": e["role"], "nom": e["nom"], "cle_hex": e["cle_hex"]} for e in plan["meshcore"]],
+            "crise": plan["nom_crise"],
+            "qr_svg": qr_svg(lien) if lien else None,
+        })
+
+    # ── Nœuds dédiés de l'équipe (25/11/2026) ──────────────────────────────────────────
+    def _noeud_en_dict(self, noeud, version_plan):
+        return {
+            "id": str(noeud.id), "protocole": noeud.protocole, "identifiant": noeud.identifiant, "nom": noeud.nom,
+            "etat": noeud.etat, "etat_libelle": noeud.get_etat_display(),
+            "confie_a": str(noeud.confie_a_id) if noeud.confie_a_id else None,
+            "confie_a_nom": noeud.confie_a.get_full_name() if noeud.confie_a_id else None,
+            "appareil": str(noeud.appareil_id) if noeud.appareil_id else None,
+            "configure_le": noeud.configure_le, "moyen_configuration": noeud.moyen_configuration,
+            "a_jour": bool(noeud.version_configuree) and noeud.version_configuree == version_plan,
+            "remarque": noeud.remarque or "",
+        }
+
+    @action(detail=True, methods=['get', 'post'], url_path='noeuds')
+    def noeuds(self, request, pk=None):
+        """Les nœuds radio dédiés de l'équipe : liste, ou ajout / mise à jour (par identifiant).
+        POST {protocole, identifiant, nom?, configure: bool, version?, moyen?} ; l'application
+        l'appelle après avoir configuré un nœud par Bluetooth. Gestionnaires de l'équipe."""
+        from .models import NoeudEquipe
+        from .radio_equipe import plan_urgence
+        team = self._equipe_radio(request, pk, gestion=True)
+        environnement = get_active_environment(request)
+        version_plan = plan_urgence(team, environnement)["version"]
+        if request.method == 'POST':
+            protocole = (request.data.get('protocole') or '').upper()
+            identifiant = (request.data.get('identifiant') or '').strip().lower().lstrip('!')
+            if protocole not in ('MESHTASTIC', 'MESHCORE') or not identifiant:
+                return Response({"error": "Protocole (MESHTASTIC ou MESHCORE) et identifiant du nœud requis."}, status=400)
+            existant = NoeudEquipe.objects.filter(environment=environnement, protocole=protocole, identifiant=identifiant).first()
+            if existant is not None and existant.equipe_id != team.pk:
+                return Response({"error": f"Ce nœud est déjà dédié à l'équipe « {existant.equipe.name} »."}, status=400)
+            noeud = existant or NoeudEquipe(equipe=team, protocole=protocole, identifiant=identifiant, environment=environnement)
+            if request.data.get('nom') is not None:
+                noeud.nom = str(request.data.get('nom'))[:40]
+            if request.data.get('remarque') is not None:
+                noeud.remarque = str(request.data.get('remarque'))
+            if request.data.get('configure'):
+                noeud.configure_le = timezone.now()
+                noeud.version_configuree = str(request.data.get('version') or version_plan)[:12]
+                noeud.moyen_configuration = str(request.data.get('moyen') or 'BLUETOOTH')[:12]
+            noeud.save()
+            audit_log(request=request, action_code="MODIFICATION" if existant else "CREATION", objet_type="NoeudEquipe",
+                      objet_id=noeud.id, commentaire=f"Nœud dédié {noeud} de l'équipe « {team.name} »"
+                      + (" configuré" if request.data.get('configure') else ""))
+        noeuds = team.noeuds_dedies.select_related('confie_a').order_by('nom', 'identifiant')
+        return Response({"version_plan": version_plan, "noeuds": [self._noeud_en_dict(n, version_plan) for n in noeuds]})
+
+    @action(detail=True, methods=['patch', 'delete'], url_path=r'noeuds/(?P<noeud_id>[0-9a-f-]+)')
+    def noeud(self, request, pk=None, noeud_id=None):
+        """Confier / rendre / mettre hors service un nœud dédié (PATCH {etat, confie_a, nom,
+        remarque}), ou le retirer de l'équipe (DELETE)."""
+        from .models import EtatNoeudEquipe, User as _User
+        team = self._equipe_radio(request, pk, gestion=True)
+        noeud = team.noeuds_dedies.filter(pk=noeud_id).first()
+        if noeud is None:
+            raise NotFound()
+        if request.method == 'DELETE':
+            audit_log(request=request, action_code="SUPPRESSION", objet_type="NoeudEquipe", objet_id=noeud.id,
+                      commentaire=f"Nœud dédié {noeud} retiré de l'équipe « {team.name} »")
+            noeud.delete()
+            return Response(status=204)
+        if 'etat' in request.data:
+            if request.data['etat'] not in EtatNoeudEquipe.values:
+                return Response({"error": "État inconnu."}, status=400)
+            noeud.etat = request.data['etat']
+        if 'confie_a' in request.data:
+            cible = request.data.get('confie_a')
+            noeud.confie_a = _User.objects.filter(pk=cible).first() if cible else None
+            noeud.etat = EtatNoeudEquipe.CONFIE if noeud.confie_a_id else EtatNoeudEquipe.EN_RESERVE
+        for champ in ('nom', 'remarque'):
+            if champ in request.data:
+                setattr(noeud, champ, str(request.data.get(champ) or '')[:40 if champ == 'nom' else 2000])
+        noeud.save()
+        audit_log(request=request, action_code="MODIFICATION", objet_type="NoeudEquipe", objet_id=noeud.id,
+                  commentaire=f"Nœud dédié {noeud} : {noeud.get_etat_display()}")
+        from .radio_equipe import plan_urgence
+        return Response(self._noeud_en_dict(noeud, plan_urgence(team, get_active_environment(request))["version"]))
+
+    @action(detail=True, methods=['post'], url_path=r'noeuds/(?P<noeud_id>[0-9a-f-]+)/configurer-a-distance')
+    def configurer_noeud_a_distance(self, request, pk=None, noeud_id=None):
+        """Écrit les canaux d'urgence (5 crise, 6 équipe, 7 commune) sur un nœud Meshtastic dédié,
+        par la passerelle de la structure (clé d'admin, firmware 2.5+). La clé du canal n'entre
+        pas dans la tâche (voir TacheAdminMeshtasticViewSet.prendre)."""
+        from .models import CanalMeshtastic as _Canal, CompagnonMeshtastic as _Compagnon
+        from .radio_equipe import plan_urgence
+        team = self._equipe_radio(request, pk, gestion=True)
+        noeud = team.noeuds_dedies.filter(pk=noeud_id).first()
+        if noeud is None:
+            raise NotFound()
+        if noeud.protocole != 'MESHTASTIC':
+            return Response({"error": "Un nœud MeshCore se configure par Bluetooth, depuis l'application."}, status=400)
+        environnement = get_active_environment(request)
+        if environnement != Environment.PROD:
+            return Response({"error": "Pas d'écriture radio depuis la zone de démonstration : aucun pont ne l'exécuterait."}, status=400)
+        try:
+            node_num = int(noeud.identifiant, 16)
+        except ValueError:
+            return Response({"error": "Identifiant Meshtastic illisible (numéro de nœud en hexadécimal attendu)."}, status=400)
+        # Une passerelle MQTT ne peut pas administrer (voir meshtastic-bridge/admin_meshtastic.py).
+        compagnons = _Compagnon.objects.filter(actif=True).exclude(connexion_type=MeshtasticConnexionType.MQTT)
+        compagnon = (compagnons.filter(institution_id=team.institution_id).order_by('-principal').first()
+                     if team.institution_id else None) or compagnons.filter(principal=True).first()
+        if compagnon is None:
+            return Response({"error": "Aucune passerelle Meshtastic reliée à un appareil réel pour administrer ce nœud."}, status=400)
+        plan = plan_urgence(team, environnement)
+        par_role = {"crise": 5, "equipe": 6, "commune": 7}
+        creees = 0
+        for entree in plan["meshtastic"]:
+            canal = _Canal.objects.filter(nom=entree["nom"], actif=True, environment=environnement).first()
+            if canal is None:
+                continue
+            TacheAdminMeshtastic.objects.create(
+                compagnon=compagnon, node_num_cible=node_num, type_tache=TypeTacheAdminMeshtastic.DEFINIR_CANAL,
+                parametres={"index": par_role[entree["role"]], "canal": str(canal.id), "role": entree["role"]},
+                demande_par=request.user, environment=environnement)
+            creees += 1
+        noeud.configure_le = timezone.now()
+        noeud.version_configuree = plan["version"]
+        noeud.moyen_configuration = 'A_DISTANCE'
+        noeud.save(update_fields=['configure_le', 'version_configuree', 'moyen_configuration'])
+        audit_log(request=request, action_code="MODIFICATION", objet_type="NoeudEquipe", objet_id=noeud.id,
+                  commentaire=f"Configuration à distance de {noeud} par {compagnon.nom} : {creees} canal(aux)")
+        return Response({"taches": creees, "passerelle": compagnon.nom,
+                         "prerequis": "La clé publique de la passerelle doit figurer dans security.admin_key du nœud."})
 
     @action(detail=True, methods=['get'], url_path='canaux-passerelle')
     def canaux_passerelle(self, request, pk=None):
@@ -23636,6 +23801,10 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         return qs.order_by('-date_creation')
 
     def perform_create(self, serializer):
+        # Écrire un canal (25/11/2026) : réservé aux nœuds dédiés d'équipe, où le serveur choisit
+        # lui-même le canal (TeamViewSet.configurer_noeud_a_distance) ; jamais par cette API.
+        if serializer.validated_data.get('type_tache') == TypeTacheAdminMeshtastic.DEFINIR_CANAL:
+            raise ValidationError({"type_tache": "Écriture de canal : passez par les nœuds dédiés de l'équipe."})
         type_tache = serializer.validated_data['type_tache']
         if type_tache in TACHES_ADMIN_ECRITURE:
             # Depuis le 10/11/2026, l'écriture n'est plus réservée aux administrateurs : elle
@@ -23743,7 +23912,17 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             tentatives=F('tentatives') + 1,
         )
         taches = TacheAdminMeshtastic.objects.filter(id__in=ids).select_related('compagnon')
-        return Response(TacheAdminMeshtasticSerializer(taches, many=True).data)
+        donnees = TacheAdminMeshtasticSerializer(taches, many=True).data
+        # Nœuds dédiés d'équipe (25/11/2026) : la clé du canal n'est jamais rangée dans la tâche ;
+        # elle n'est ajoutée qu'ici, dans ce que reçoit le pont (compte de service seulement).
+        for tache in donnees:
+            if tache.get('type_tache') == TypeTacheAdminMeshtastic.DEFINIR_CANAL:
+                parametres = dict(tache.get('parametres') or {})
+                canal = CanalMeshtastic.objects.filter(pk=parametres.get('canal')).first()
+                if canal is not None:
+                    parametres.update(nom=canal.nom, psk_hex=canal.psk_hex or "")
+                tache['parametres'] = parametres
+        return Response(donnees)
 
     @action(detail=True, methods=['post'], url_path='rapporter')
     def rapporter(self, request, pk=None):

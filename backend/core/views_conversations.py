@@ -267,3 +267,34 @@ class PlanRadioView(APIView):
             "avertissement": "Canal de crise lisible par tous : aucune donnée personnelle (nom, adresse, santé).",
         })
 
+
+
+class LienCriseView(APIView):
+    """QR code des canaux de la crise (25/11/2026) : canal de la crise et canal de la commune de
+    l'institution de l'utilisateur, en lien Meshtastic « ajouter » ; noms MeshCore. Ces canaux
+    sont publics (clé par défaut) : rien de secret ici. Comptes engagés sur la crise."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .canaux_locaux import canal_commune, canaux_de_crise
+        from .models import Crisis
+        from .radio_equipe import cle, lien_meshtastic
+        from .second_facteur import qr_svg
+
+        crise = Crisis.objects.filter(pk=request.query_params.get("crise") or None).first()
+        if crise is None:
+            raise ValidationError({"error": "Crise introuvable."})
+        if not conv.dans_la_crise(request.user, crise):
+            raise PermissionDenied("Vous n'êtes pas engagé sur cette crise.")
+        environnement = get_active_environment(request)
+        meshtastic, meshcore = canaux_de_crise(crise, environnement)
+        canaux_mt = [(meshtastic.nom, cle(meshtastic))]
+        institution = getattr(request.user, "institution", None)
+        if institution is not None:
+            commune = canal_commune(institution, environnement)[0]
+            canaux_mt.append((commune.nom, cle(commune)))
+        return Response({
+            "crise": str(crise.id), "meshtastic_lien": lien_meshtastic(canaux_mt), "qr_svg": qr_svg(lien_meshtastic(canaux_mt)),
+            "meshtastic": [nom for nom, _ in canaux_mt], "meshcore": [meshcore.nom],
+            "avertissement": "Canaux lisibles par tous : aucune donnée personnelle (nom, adresse, santé).",
+        })

@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
                 BackHandler(enabled = ecran == Ecran.DEGATS) { modele.aller(Ecran.MISSIONS) }
                 BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
-                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE)) { modele.aller(Ecran.COMPTE) }
+                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE, Ecran.PREPARER_RADIO)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
                     val ouverte = modele.notificationOuverte
@@ -208,6 +208,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.MON_COMPTE -> EcranMonCompte(modele, compte!!)
                             ecran == Ecran.RADIO_AVANCEE -> fr.assistacrise.mobile.ui.EcranRadioAvancee(modele)
                             ecran == Ecran.RADIO_CONVERSATION -> fr.assistacrise.mobile.ui.EcranConversationRadio(modele)
+                            ecran == Ecran.PREPARER_RADIO -> fr.assistacrise.mobile.ui.EcranPreparerRadio(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }

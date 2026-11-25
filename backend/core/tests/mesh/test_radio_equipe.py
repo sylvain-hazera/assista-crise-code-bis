@@ -49,8 +49,8 @@ class TestParDefaut:
         alpha = Team.objects.create(name="Équipe Alpha", institution=adrasec)
         alpha2 = Team.objects.create(name="Alpha", institution=adrasec)
         alpha.refresh_from_db(); alpha2.refresh_from_db()
-        assert alpha.indicatif == "ALPHA" and alpha2.indicatif == "ALPHA2"
-        assert alpha.canal_meshtastic.nom == "AC-ALPHA" and alpha.canal_meshcore.nom == "AC-ALPHA"
+        assert alpha.indicatif == "ALPH" and alpha2.indicatif == "ALP2"
+        assert alpha.canal_meshtastic.nom == "AC-ALPH" and alpha.canal_meshcore.nom == "AC-ALPH"
         assert len(alpha.canal_meshtastic.psk_hex) == 32 and len(alpha.canal_meshcore.cle_partagee_hex) == 32
         assert alpha.canal_meshtastic.psk_hex != alpha2.canal_meshtastic.psk_hex
         assert not alpha.canal_meshcore.sur_passerelle
@@ -67,7 +67,7 @@ class TestParDefaut:
     def test_indicatif_en_double_refuse(self, admin, adrasec):
         Team.objects.create(name="Alpha", institution=adrasec)
         bravo = Team.objects.create(name="Bravo", institution=adrasec)
-        reponse = admin.patch(reverse("team-detail", args=[bravo.id]), {"indicatif": "alpha"}, format="json")
+        reponse = admin.patch(reverse("team-detail", args=[bravo.id]), {"indicatif": "alph"}, format="json")
         assert reponse.status_code == 400 and "Alpha" in str(reponse.data["indicatif"])
 
     def test_changer_l_indicatif_renomme_le_canal_par_defaut_pas_le_personnalise(self, admin, adrasec):
@@ -168,15 +168,15 @@ class TestPersonnaliser:
         reponse = scene["chef"].delete(reverse("team-canal-radio", args=[scene["equipe"].id]) + "?protocole=MESHCORE")
         assert reponse.status_code == 200, reponse.data
         canal = CanalMeshCore.objects.get(equipe=scene["equipe"])
-        assert canal.nom == "AC-RADIO" and not canal.personnalise and canal.cle_partagee_hex != CLE_ADRASEC
+        assert canal.nom == "AC-RADI" and not canal.personnalise and canal.cle_partagee_hex != CLE_ADRASEC
 
     def test_un_membre_ne_personnalise_pas_mais_lit_ses_cles(self, scene):
         assert self._post(scene["membre"], scene["equipe"], protocole="MESHCORE", nom="X1").status_code == 403
         self._post(scene["chef"], scene["equipe"], protocole="MESHCORE", nom="ADRA42", cle=CLE_ADRASEC)
         [entree] = scene["membre"].get(reverse("team-mes-canaux-radio")).data
-        assert entree["indicatif"] == "RADIO" and entree["meshcore"] == {
+        assert entree["indicatif"] == "RADI" and entree["meshcore"] == {
             "nom": "ADRA42", "cle_hex": CLE_ADRASEC, "version": re_.version(CanalMeshCore.objects.get(equipe=scene["equipe"]))}
-        assert entree["meshtastic"]["nom"] == "AC-RADIO" and len(entree["meshtastic"]["psk_hex"]) == 32
+        assert entree["meshtastic"]["nom"] == "AC-RADI" and len(entree["meshtastic"]["psk_hex"]) == 32
 
     def test_la_liste_des_equipes_ne_donne_jamais_la_cle(self, scene):
         self._post(scene["chef"], scene["equipe"], protocole="MESHCORE", nom="ADRA42", cle=CLE_ADRASEC)
@@ -219,13 +219,13 @@ class TestReprendre:
         assert reponse.status_code == 200, reponse.data
         interne = CanalMeshCore.objects.get(pk=scene["interne"].pk)
         assert interne.equipe_id == scene["equipe"].pk and interne.repris and interne.sur_passerelle
-        assert not CanalMeshCore.objects.filter(nom="AC-RELAIS").exists()
+        assert not CanalMeshCore.objects.filter(nom="AC-RELA").exists()
         assert interne.provisions.count() == 1                       # rien à réinstaller sur la passerelle
 
         scene["chef"].delete(url + "?protocole=MESHCORE")
         interne.refresh_from_db()
         assert interne.equipe_id is None and interne.actif           # rendu à l'entité
-        assert CanalMeshCore.objects.get(equipe=scene["equipe"]).nom == "AC-RELAIS"
+        assert CanalMeshCore.objects.get(equipe=scene["equipe"]).nom == "AC-RELA"
 
     def test_reprendre_un_canal_meshtastic(self, scene):
         reponse = scene["chef"].post(reverse("team-canal-radio", args=[scene["equipe"].id]),
@@ -260,7 +260,7 @@ def test_migration_donne_indicatif_et_canaux_aux_equipes_existantes(adrasec):
     migration = importlib.import_module("core.migrations.0390_canal_radio_equipe")
     migration.donner_indicatifs_et_canaux(django_apps, None)
     ancienne = Team.objects.get(pk=ancienne.pk)
-    assert ancienne.indicatif == "POMPIE"
-    assert ancienne.canal_meshtastic.nom == "AC-POMPIE" and ancienne.canal_meshcore.nom == "AC-POMPIE"
+    assert ancienne.indicatif == "POMP"
+    assert ancienne.canal_meshtastic.nom == "AC-POMP" and ancienne.canal_meshcore.nom == "AC-POMP"
     legacy.refresh_from_db()
     assert legacy.nom == "Équipe Vieille" and legacy.sur_passerelle and legacy.personnalise

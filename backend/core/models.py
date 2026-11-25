@@ -10515,6 +10515,9 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
     REDEMARRER = "REDEMARRER", "Redémarrer le nœud"
     # ── 19/11/2026 : le reste de ce que l'administration Meshtastic permet sans risque ──
     LIRE_CANAUX = "LIRE_CANAUX", "Lire les canaux (noms et rôles, jamais les clés)"
+    #: Nœuds dédiés d'équipe (25/11/2026) : `parametres` = {index, canal: <id CanalMeshtastic>},
+    #: JAMAIS la clé ; le serveur l'ajoute seulement dans ce qu'il remet au pont (`prendre`).
+    DEFINIR_CANAL = "DEFINIR_CANAL", "Écrire un canal (nœud dédié d'équipe)"
     LIRE_ETAT_CONNEXION = "LIRE_ETAT_CONNEXION", "Lire l'état des connexions (Wi-Fi, Ethernet, Bluetooth, série)"
     LIRE_MESSAGES_PREDEF = "LIRE_MESSAGES_PREDEF", "Lire les messages prédéfinis"
     DEFINIR_MESSAGES_PREDEF = "DEFINIR_MESSAGES_PREDEF", "Définir les messages prédéfinis"
@@ -10534,6 +10537,7 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
 # `checkPassKey`), les lectures en sont dispensées (`messageIsRequest`). Le pont doit donc
 # obtenir la clé par une lecture juste avant d'écrire -- voir meshtastic-bridge/admin_meshtastic.py.
 TACHES_ADMIN_ECRITURE = frozenset({
+    TypeTacheAdminMeshtastic.DEFINIR_CANAL,
     TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE,
     TypeTacheAdminMeshtastic.DEFINIR_MQTT_JSON,
     TypeTacheAdminMeshtastic.DEFINIR_REGLAGES,
@@ -10679,6 +10683,44 @@ class TacheAdminMeshtastic(EnvironmentScopedModel):
         cible = f"{self.node_num_cible:08x}" if self.node_num_cible else "passerelle"
         return f"{self.get_type_tache_display()} -> {cible} ({self.statut})"
 
+
+
+
+class EtatNoeudEquipe(models.TextChoices):
+    EN_RESERVE = "EN_RESERVE", "En réserve"
+    CONFIE = "CONFIE", "Confié à un intervenant"
+    HORS_SERVICE = "HORS_SERVICE", "Hors service"
+
+
+class NoeudEquipe(EnvironmentScopedModel):
+    """Nœud radio dédié d'une équipe (25/11/2026, vision d'Olivier F4GLD) : un boîtier qui ne sert
+    qu'à cette équipe, configuré (canaux d'urgence 5-6-7 : crise, équipe, commune) avant d'être
+    confié à un intervenant, par Bluetooth depuis l'application ou à distance par la passerelle
+    (clé d'admin, Meshtastic 2.5+). L'identifiant radio est public par nature (il passe en clair
+    sur l'air)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    equipe = models.ForeignKey("Team", on_delete=models.CASCADE, related_name="noeuds_dedies")
+    protocole = models.CharField(max_length=10, choices=[("MESHTASTIC", "Meshtastic"), ("MESHCORE", "MeshCore")])
+    #: Meshtastic : numéro de nœud en hexadécimal (« a1b2c3d4 ») ; MeshCore : clé publique (hex).
+    identifiant = models.CharField(max_length=64)
+    nom = models.CharField(max_length=40, blank=True, default="")
+    appareil = models.ForeignKey("AppareilStock", on_delete=models.SET_NULL, null=True, blank=True, related_name="noeuds_equipe")
+    etat = models.CharField(max_length=12, choices=EtatNoeudEquipe.choices, default=EtatNoeudEquipe.EN_RESERVE)
+    confie_a = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True, related_name="noeuds_equipe_confies")
+    configure_le = models.DateTimeField(null=True, blank=True)
+    #: Version du plan d'urgence écrite sur le nœud : comparée au plan actuel (« à jour »).
+    version_configuree = models.CharField(max_length=12, blank=True, default="")
+    moyen_configuration = models.CharField(max_length=12, blank=True, default="")   # BLUETOOTH / A_DISTANCE
+    remarque = EncryptedTextField(blank=True, null=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["environment", "protocole", "identifiant"],
+                                               name="noeud_equipe_unique")]
+
+    def __str__(self):
+        return f"{self.nom or self.identifiant} ({self.protocole})"
 
 class ConfigurationNoeudMeshtastic(EnvironmentScopedModel):
     """Dernière configuration relevée sur un nœud par une tâche d'administration.

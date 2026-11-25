@@ -31,6 +31,7 @@ import { TagSearchInputComponent } from '../../shared/components/common/tag-sear
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
 import { MatrixSalonChatComponent } from './matrix-salon-chat/matrix-salon-chat.component';
 import { CanalRadioEquipeComponent } from './canal-radio-equipe/canal-radio-equipe.component';
+import { NoeudsEquipeComponent } from './noeuds-equipe/noeuds-equipe.component';
 import { environment } from '../../../environments/environment';
 
 import { CanauxRadioEquipe, Team, TeamMission, SalonMatrixEquipe, rangEchelon, libelleEncadrementEquipe }  from '../../shared/models/team.model';
@@ -61,7 +62,7 @@ import { TelephonePipe } from '../../shared/pipes/telephone.pipe';
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent, CanalRadioEquipeComponent],
+  imports: [TelephonePipe, CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, MatrixSalonChatComponent, CanalRadioEquipeComponent, NoeudsEquipeComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -293,12 +294,12 @@ export class TeamsComponent implements OnInit {
   }
 
   /** L'indicatif proposé depuis le nom, comme le serveur le fait (core/routage_canaux.py,
-   * proposer_indicatif) : le premier mot significatif, sans accents, 6 caractères au plus. */
+   * proposer_indicatif) : le premier mot significatif, sans accents, 4 caractères au plus. */
   static proposerIndicatif(nom: string): string {
     const vides = new Set(['EQUIPE', 'TEAM', 'LA', 'LE', 'LES', 'DE', 'DU', 'DES']);
     const mots = (nom ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').split(/\s+/)
       .map(m => m.replace(/[^A-Za-z0-9]/g, '').toUpperCase()).filter(m => m && !vides.has(m));
-    const base = (mots[0] ?? '').slice(0, 6);
+    const base = (mots[0] ?? '').slice(0, 4);
     return base.length >= 2 ? base : '';
   }
 

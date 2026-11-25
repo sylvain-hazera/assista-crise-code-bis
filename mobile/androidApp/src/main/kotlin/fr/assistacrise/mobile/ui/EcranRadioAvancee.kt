@@ -713,7 +713,7 @@ private fun SaisieTexte(titre: String, libelle: String, surAnnuler: () -> Unit, 
 }
 
 @Composable
-private fun CodeQr(contenu: String) {
+internal fun CodeQr(contenu: String) {
     val image = remember(contenu) {
         val matrice = QRCodeWriter().encode(contenu, BarcodeFormat.QR_CODE, 512, 512)
         Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565).also { b ->

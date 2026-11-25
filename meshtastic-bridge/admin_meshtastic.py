@@ -56,7 +56,7 @@ PUISSANCE_MAX_DBM = 36
 LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL",
             "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT", "LIRE_REGLAGES",
             "LIRE_CANAUX", "LIRE_ETAT_CONNEXION", "LIRE_MESSAGES_PREDEF", "TRACEROUTE"}
-ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON", "DEFINIR_REGLAGES",
+ECRITURES = {"DEFINIR_CANAL", "DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON", "DEFINIR_REGLAGES",
              "DEFINIR_NOM", "DEFINIR_MESSAGES_PREDEF", "POSITION_FIXE", "RETIRER_POSITION_FIXE",
              "REGLER_HEURE", "FAVORI", "RETIRER_FAVORI", "IGNORER", "NE_PLUS_IGNORER",
              "OUBLIER_NOEUD", "VIDER_BASE_NOEUDS"}
@@ -503,7 +503,43 @@ def traceroute(iface, node_num):
     }
 
 
+def _definir_canal(iface, node_num, local, parametres):
+    """Écrit un canal secondaire (nœuds dédiés d'équipe, 25/11/2026) : canaux d'urgence 5, 6, 7.
+
+    La clé arrive de Django seulement dans la tâche remise au pont (jamais rangée en base) ; elle
+    ne figure pas dans la réponse, qui est journalisée."""
+    from meshtastic.protobuf import channel_pb2
+    try:
+        index = int(parametres.get("index"))
+    except (TypeError, ValueError):
+        raise ErreurAdmin("Emplacement de canal manquant.")
+    if not 1 <= index <= 7:
+        raise ErreurAdmin("Emplacement de canal : 1 à 7 (le 0 est le canal principal, on n'y touche pas).")
+    nom = str(parametres.get("nom") or "")
+    if not nom or len(nom.encode("utf-8")) > 11:
+        raise ErreurAdmin("Nom de canal : 1 à 11 octets.")
+    try:
+        psk = bytes.fromhex(str(parametres.get("psk_hex") or ""))
+    except ValueError:
+        raise ErreurAdmin("Clé du canal illisible.")
+    if len(psk) not in (0, 1, 16, 32):
+        raise ErreurAdmin("Clé du canal : 1, 16 ou 32 octets.")
+
+    def construire():
+        message = admin_pb2.AdminMessage()
+        message.set_channel.index = index
+        message.set_channel.role = channel_pb2.Channel.Role.SECONDARY
+        message.set_channel.settings.name = nom
+        message.set_channel.settings.psk = psk
+        return message
+
+    _ecrire(iface, node_num, local, construire)
+    return {"index": index, "nom": nom, "role": parametres.get("role") or "", "cle_octets": len(psk)}, None
+
+
 def _executer_du_19(iface, node_num, local, type_tache, parametres):
+    if type_tache == "DEFINIR_CANAL":
+        return _definir_canal(iface, node_num, local, parametres)
     if type_tache == "TRACEROUTE":
         return traceroute(iface, node_num), None
     if type_tache == "LIRE_CANAUX":

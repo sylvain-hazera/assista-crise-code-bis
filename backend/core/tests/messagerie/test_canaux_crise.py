@@ -98,8 +98,8 @@ class TestRangement:
     def test_lire_adresse_et_indicatifs(self):
         assert lire_adresse("@alpha, on arrive") == ("ALPHA", "on arrive")
         assert lire_adresse("on arrive") == (None, "on arrive")
-        assert proposer_indicatif("Équipe Alpha") == "ALPHA"
-        assert proposer_indicatif("Alpha", {"ALPHA"}) == "ALPHA2"
+        assert proposer_indicatif("Équipe Alpha") == "ALPH"
+        assert proposer_indicatif("Alpha", {"ALPH"}) == "ALP2"
 
 
 @pytest.mark.django_db
@@ -118,8 +118,8 @@ class TestEnvoi:
         _client(scene["regul"]).post(reverse("team-messagerie-unifiee", args=[scene["bravo"].id]),
                                      {"texte": "point à 18h"}, format="json")
         scene["bravo"].refresh_from_db()
-        assert scene["bravo"].indicatif == "BRAVO"
-        assert MessageCanalMeshtastic.objects.get(canal=scene["mt"]).contenu == "@BRAVO point à 18h"
+        assert scene["bravo"].indicatif == "BRAV"
+        assert MessageCanalMeshtastic.objects.get(canal=scene["mt"]).contenu == "@BRAV point à 18h"
 
     def test_le_message_est_chiffre_en_base(self, scene):
         from django.db import connection

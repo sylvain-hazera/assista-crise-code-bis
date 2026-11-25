@@ -99,8 +99,8 @@ describe('Canal radio de l’équipe (25/11/2026)', () => {
   });
 
   it('l’indicatif proposé à la création suit la règle du serveur', () => {
-    expect(TeamsComponent.proposerIndicatif('Équipe Alpha')).toBe('ALPHA');
-    expect(TeamsComponent.proposerIndicatif('Bénévoles — Rive-de-Gier')).toBe('BENEVO');
+    expect(TeamsComponent.proposerIndicatif('Équipe Alpha')).toBe('ALPH');
+    expect(TeamsComponent.proposerIndicatif('Bénévoles — Rive-de-Gier')).toBe('BENE');
     expect(TeamsComponent.proposerIndicatif('X')).toBe('');
   });
 });

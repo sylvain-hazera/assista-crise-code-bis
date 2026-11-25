@@ -490,6 +490,7 @@ urlpatterns = [
     path('conversations/a-trier/<uuid:ident>/ranger/', views_conversations.RangerMessageView.as_view(), name='conversation-ranger'),
     path('radio/entendus/', views_conversations.RadioEntendusView.as_view(), name='radio-entendus'),
     path('radio/plan/', views_conversations.PlanRadioView.as_view(), name='radio-plan'),
+    path('radio/lien-crise/', views_conversations.LienCriseView.as_view(), name='radio-lien-crise'),
     path('pilotage/centres/', CentresPilotageView.as_view(), name='pilotage-centres'),
     path('pilotage/centres/<uuid:ident>/', CentrePilotageView.as_view(), name='pilotage-centre'),
     path('pilotage/centres/<uuid:ident>/etat/', EtatCentreView.as_view(), name='pilotage-centre-etat'),

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { CanauxPasserelle, CanauxRadioEquipe, ProtocoleRadio, Team, MatrixMessage, SalonMatrixEquipe } from '../shared/models/team.model';
+import { CanauxPasserelle, CanauxRadioEquipe, LienCanaux, NoeudEquipe, NoeudsEquipe, ProtocoleRadio, Team, MatrixMessage, SalonMatrixEquipe } from '../shared/models/team.model';
 import { Dossier } from '../shared/models/dossier.model';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
 import { RessourceMobilisee } from '../shared/models/ressource-mobilisee.model';
@@ -160,6 +160,33 @@ export class TeamService {
   personnaliserCanalRadio(id: string, corps: { protocole: ProtocoleRadio; nom?: string; cle?: string; en_clair?: boolean; reprendre?: string }):
       Observable<{ canaux_radio: CanauxRadioEquipe; indicatif: string }> {
     return this.http.post<{ canaux_radio: CanauxRadioEquipe; indicatif: string }>(`${this.url}/${id}/canal-radio/`, corps);
+  }
+
+  /** QR code (lien de canal Meshtastic, mode « ajouter ») des canaux d'urgence crise, équipe,
+   * commune : gestionnaires de l'équipe (il contient la clé de l'équipe). */
+  lienCanaux(id: string): Observable<LienCanaux> {
+    return this.http.get<LienCanaux>(`${this.url}/${id}/lien-canaux/`);
+  }
+
+  /** Nœuds radio dédiés de l'équipe (25/11/2026). */
+  noeuds(id: string): Observable<NoeudsEquipe> {
+    return this.http.get<NoeudsEquipe>(`${this.url}/${id}/noeuds/`);
+  }
+
+  ajouterNoeud(id: string, corps: { protocole: string; identifiant: string; nom?: string }): Observable<NoeudsEquipe> {
+    return this.http.post<NoeudsEquipe>(`${this.url}/${id}/noeuds/`, corps);
+  }
+
+  modifierNoeud(id: string, noeudId: string, corps: Partial<{ etat: string; confie_a: string | null; nom: string; remarque: string }>): Observable<NoeudEquipe> {
+    return this.http.patch<NoeudEquipe>(`${this.url}/${id}/noeuds/${noeudId}/`, corps);
+  }
+
+  retirerNoeud(id: string, noeudId: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/noeuds/${noeudId}/`);
+  }
+
+  configurerNoeudADistance(id: string, noeudId: string): Observable<{ taches: number; passerelle: string; prerequis: string }> {
+    return this.http.post<{ taches: number; passerelle: string; prerequis: string }>(`${this.url}/${id}/noeuds/${noeudId}/configurer-a-distance/`, {});
   }
 
   /** Revenir au canal par défaut AC-<INDICATIF>, clé neuve. */

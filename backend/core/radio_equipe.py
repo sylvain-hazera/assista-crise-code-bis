@@ -461,3 +461,80 @@ def canaux_pour_membre(utilisateur, environnement):
             "meshcore": {"nom": mc.nom, "cle_hex": mc.cle_partagee_hex or "", "version": version(mc)} if mc else None,
         })
     return sortie
+
+
+# ══ Plan d'urgence : emplacements 5, 6, 7 (25/11/2026) ════════════════════════
+#
+# Vision d'Olivier F4GLD et de Sylvain : sur la radio d'un intervenant, les emplacements 5, 6 et
+# 7 servent en cas d'urgence — 5 = canal de la crise, 6 = canal de l'équipe, 7 = canal de la
+# commune. L'application les propose (modifiables), sauvegarde ce qu'elle remplace et le
+# restaure en fin de crise ; un canal déjà présent ailleurs sur la radio est utilisé tel quel.
+
+ROLES_URGENCE = ("crise", "equipe", "commune")
+
+
+def _canal_commune_meshcore(institution):
+    from .models import CanalMeshCore
+
+    return CanalMeshCore.objects.filter(institution=institution, crise__isnull=True, equipe__isnull=True,
+                                        actif=True, nom__startswith="#").order_by("date_creation").first()
+
+
+def plan_urgence(equipe, environnement):
+    """Par protocole, les canaux à mettre en 5, 6, 7, avec leurs clés (hex)."""
+    from .canaux_locaux import canal_commune, canaux_de_crise
+    from .salons_de_crise import crise_du_contexte
+
+    crise = crise_du_contexte(equipe)
+    mt_crise = mc_crise = None
+    if crise is not None:
+        mt_crise, mc_crise = canaux_de_crise(crise, environnement)
+    mt_commune = mc_commune = None
+    if equipe.institution_id:
+        mt_commune = canal_commune(equipe.institution, environnement)[0]
+        mc_commune = _canal_commune_meshcore(equipe.institution)
+    mt_equipe, mc_equipe = canal_de(equipe, MESHTASTIC), canal_de(equipe, MESHCORE)
+
+    def entree(role, canal):
+        if canal is None or not canal.actif:
+            return None
+        return {"role": role, "nom": canal.nom, "cle_hex": cle(canal), "version": version(canal)}
+
+    meshtastic = [e for e in (entree("crise", mt_crise), entree("equipe", mt_equipe), entree("commune", mt_commune)) if e]
+    meshcore = [e for e in (entree("crise", mc_crise), entree("equipe", mc_equipe), entree("commune", mc_commune)) if e]
+    empreinte_plan = hashlib.sha256(repr((meshtastic, meshcore)).encode()).hexdigest()[:12]
+    return {
+        "equipe": str(equipe.pk), "nom_equipe": equipe.name, "indicatif": equipe.indicatif,
+        "crise": str(crise.pk) if crise else None, "nom_crise": crise.name if crise else None,
+        "version": empreinte_plan, "meshtastic": meshtastic, "meshcore": meshcore,
+    }
+
+
+# ══ Lien de canal Meshtastic (QR code) ════════════════════════════════════════
+
+def _varint_octets(valeur):
+    sortie = bytearray()
+    while valeur >= 0x80:
+        sortie.append((valeur & 0x7F) | 0x80)
+        valeur >>= 7
+    sortie.append(valeur)
+    return bytes(sortie)
+
+
+def _champ_octets(numero, donnees):
+    return _varint_octets((numero << 3) | 2) + _varint_octets(len(donnees)) + donnees
+
+
+def lien_meshtastic(canaux, ajouter=True):
+    """[(nom, clé hex)] → lien « https://meshtastic.org/e/#… » (ChannelSet), lisible par
+    l'application Meshtastic officielle. `ajouter` : mode « ajouter », qui n'efface pas les
+    canaux de la radio de l'intervenant."""
+    corps = b""
+    for nom, cle_hex in canaux:
+        reglages = b""
+        if cle_hex:
+            reglages += _champ_octets(2, bytes.fromhex(cle_hex))
+        reglages += _champ_octets(3, nom.encode("utf-8"))
+        corps += _champ_octets(1, reglages)
+    fragment = base64.urlsafe_b64encode(corps).decode().rstrip("=")
+    return "https://meshtastic.org/e/" + ("?add=true" if ajouter else "") + "#" + fragment

@@ -68,13 +68,10 @@ fun SectionRadio(modele: ModeleApplication) {
             "Deux radios : sans réseau, chaque message d'équipe part sur les deux, pour que les deux réseaux l'entendent.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
         )
-        // Les canaux de mes équipes, installés d'office (25/11/2026).
-        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            Text("Installer les canaux de mes équipes", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            androidx.compose.material3.Switch(checked = modele.installerCanauxEquipes, onCheckedChange = modele::changerInstallationCanauxEquipes)
+        // Emplacements d'urgence 5-6-7 (25/11/2026) : préparer la radio, la remettre comme avant.
+        etats.filter { it.phase == LiaisonRadio.Phase.PRETE }.mapNotNull { it.protocole }.forEach { p ->
+            PreparerEtRestaurer(modele, p)
         }
-        Text("Le canal de chaque équipe est ajouté dans un emplacement libre. Un canal que vous avez déjà mis vous-même n'est jamais modifié.",
-             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // « Utilisateur radio avancé » : l'intégralité des menus de la radio (22/11/2026).
         androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
             Text("Utilisateur radio avancé", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -246,4 +243,50 @@ private fun BlocRadio(modele: ModeleApplication, protocole: Protocole, etat: Lia
             Text("${protocole.libelle} : $it", style = MaterialTheme.typography.bodySmall, color = Refus, modifier = Modifier.padding(bottom = 4.dp))
         }
     }
+}
+
+/** Préparer la radio pour l'urgence, ou la remettre comme avant (25/11/2026). */
+@androidx.compose.runtime.Composable
+private fun PreparerEtRestaurer(modele: fr.assistacrise.mobile.ModeleApplication, protocole: Protocole) {
+    var sauvegarde by androidx.compose.runtime.remember(protocole) { androidx.compose.runtime.mutableStateOf<fr.assistacrise.mobile.domaine.SauvegardeRadio?>(null) }
+    var garderEquipe by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+    var confirmer by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(protocole, modele.preparationEnCours) { sauvegarde = modele.derniereSauvegarde(protocole) }
+    Column(Modifier.padding(top = 8.dp)) {
+        Button(onClick = { modele.ouvrirPreparation(protocole) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Préparer la radio ${protocole.libelle} pour l'urgence")
+        }
+        Text("Canaux de la crise, de l'équipe et de la commune en 5, 6 et 7 (modifiables) ; ce qu'ils remplacent est sauvegardé.",
+             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val s = sauvegarde
+        if (s != null) {
+            val crisePassee = s.crise != null && modele.equipes.value.none { it.canalCrise?.crise == s.crise }
+            if (crisePassee) Text("La crise est close : vous pouvez remettre la radio comme avant.", color = Attente,
+                                  style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+            OutlinedButton(onClick = { confirmer = true }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text("Remettre la radio comme avant")
+            }
+        }
+        OutlinedButton(onClick = { modele.ouvrirPreparation(protocole, dedie = true) }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Text("Préparer un nœud dédié de l'équipe")
+        }
+    }
+    val s = sauvegarde
+    if (confirmer && s != null) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmer = false },
+        title = { Text("Remettre la radio comme avant ?") },
+        text = {
+            Column {
+                Text("Sauvegarde du ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(s.date))}. Emplacements remis : " +
+                     s.ecrits.filter { !(garderEquipe && s.roles[it.index] == "equipe") }.joinToString { "${it.index} (${it.nom})" } + ".")
+                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = garderEquipe, onCheckedChange = { garderEquipe = it })
+                    Text("Garder le canal de l'équipe (il sert hors crise)")
+                }
+                Text("Un emplacement modifié à la main depuis est laissé tel quel.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false; modele.restaurerRadio(protocole, garderEquipe) }) { Text("Remettre") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false }) { Text("Annuler") } },
+    )
 }

@@ -367,9 +367,15 @@ def _precipitations_hiver(perimetre, regle, maintenant, contexte):
 def _pluie(perimetre, regle, maintenant, contexte):
     from .models import CumulPluieCommune
 
+    from .orages import derniere_image_pluie
+
+    # Cumuls périmés (radar muet depuis 40 min) : pas d'alerte. La table n'est réécrite que pour
+    # les communes qui changent (orages.ecrire_cumuls) : la fraîcheur se lit sur la dernière image.
+    derniere = derniere_image_pluie()
+    if derniere is None or derniere < maintenant - datetime.timedelta(minutes=40):
+        return []
     noms = {c[0]: c for c in perimetre.communes}
-    pire = (CumulPluieCommune.objects.filter(commune_code__in=list(noms), heure__gte=maintenant - datetime.timedelta(minutes=40))
-            .order_by("-mm_1h").first())
+    pire = CumulPluieCommune.objects.filter(commune_code__in=list(noms)).order_by("-mm_1h").first()
     if pire is None or not pire.mm_1h:
         return []
     commune = noms[pire.commune_code]
