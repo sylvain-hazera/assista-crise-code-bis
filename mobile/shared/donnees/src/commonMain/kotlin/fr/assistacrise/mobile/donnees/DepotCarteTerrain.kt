@@ -26,14 +26,37 @@ class DepotCarteTerrain(
     val marqueurs: StateFlow<List<MarqueurCentral>> = _marqueurs
     private val _manifestations = MutableStateFlow<List<ManifestationAsso>>(emptyList())
     val manifestations: StateFlow<List<ManifestationAsso>> = _manifestations
+    /** Le périmètre de la carte : la crise en cours, sinon celles de ma commune (27/11/2026). */
+    private val _perimetre = MutableStateFlow(fr.assistacrise.mobile.domaine.PerimetreCarte())
+    val perimetre: StateFlow<fr.assistacrise.mobile.domaine.PerimetreCarte> = _perimetre
+
+    /** Les lieux de la zone en cours : contours ou centres des crises du périmètre, lieux (sinon
+     * postes placés) des manifestations du jour. La carte hors ligne les couvre, + 15 km. */
+    fun lieuxDeLaZone(): List<Pair<Double, Double>> =
+        _perimetre.value.crises.flatMap { it.points() } + _manifestations.value.flatMap { m ->
+            if (m.latitude != null && m.longitude != null) listOf(m.latitude!! to m.longitude!!)
+            else m.postes.mapNotNull { p -> if (p.latitude != null && p.longitude != null) p.latitude!! to p.longitude!! else null }
+        }
+
+    /** Une clé stable de la zone en cours (crises et manifestations) : une région déjà
+     * embarquée pour la même zone n'est pas retéléchargée. Vide : pas de zone. */
+    fun cleDeLaZone(): String = (_perimetre.value.crises.map { "c" + it.id.take(8) } + _manifestations.value.map { "m" + it.id.take(8) })
+        .sorted().joinToString("-")
 
     suspend fun restaurer() {
         _marqueurs.value = magasin.lire(FICHIER_MARQUEURS)?.let { runCatching { json.decodeFromString(FORME_MARQUEURS, it) }.getOrNull() } ?: emptyList()
         _manifestations.value = magasin.lire(FICHIER_MANIFS)?.let { runCatching { json.decodeFromString(FORME_MANIFS, it) }.getOrNull() } ?: emptyList()
+        _perimetre.value = magasin.lire(FICHIER_PERIMETRE)?.let { runCatching { json.decodeFromString(fr.assistacrise.mobile.domaine.PerimetreCarte.serializer(), it) }.getOrNull() }
+            ?: fr.assistacrise.mobile.domaine.PerimetreCarte()
     }
 
     /** Relit les marqueurs, et le détail des manifestations du jour. Hors réseau, la copie reste. */
     suspend fun rafraichir(): Reponse<Unit> {
+        when (val r = api.perimetreCarte()) {
+            is Reponse.Ok -> { _perimetre.value = r.valeur; magasin.ecrire(FICHIER_PERIMETRE, json.encodeToString(fr.assistacrise.mobile.domaine.PerimetreCarte.serializer(), r.valeur)) }
+            is Reponse.Injoignable -> return r
+            is Reponse.Refus -> Unit
+        }
         when (val r = api.marqueursTerrain()) {
             is Reponse.Ok -> { _marqueurs.value = r.valeur; magasin.ecrire(FICHIER_MARQUEURS, json.encodeToString(FORME_MARQUEURS, r.valeur)) }
             is Reponse.Injoignable -> return r
@@ -90,14 +113,15 @@ class DepotCarteTerrain(
     }
 
     suspend fun toutEffacer() {
-        _marqueurs.value = emptyList(); _manifestations.value = emptyList()
-        magasin.effacer(FICHIER_MARQUEURS); magasin.effacer(FICHIER_MANIFS)
+        _marqueurs.value = emptyList(); _manifestations.value = emptyList(); _perimetre.value = fr.assistacrise.mobile.domaine.PerimetreCarte()
+        magasin.effacer(FICHIER_MARQUEURS); magasin.effacer(FICHIER_MANIFS); magasin.effacer(FICHIER_PERIMETRE)
     }
 
     private companion object {
         const val HEURE = 3_600_000L
         const val FICHIER_MARQUEURS = "marqueurs-terrain"
         const val FICHIER_MANIFS = "manifestations-du-jour"
+        const val FICHIER_PERIMETRE = "perimetre-carte"
         val FORME_MARQUEURS = ListSerializer(MarqueurCentral.serializer())
         val FORME_MANIFS = ListSerializer(ManifestationAsso.serializer())
     }

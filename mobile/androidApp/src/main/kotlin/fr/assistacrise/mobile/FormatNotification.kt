@@ -16,7 +16,7 @@ object FormatNotification {
         val qui = auteur.ifBlank { null }
         // Marqueur radio (format MeshCore SAR, 26/11/2026) : « 📍 🔥 Feu · note », pas le texte brut.
         fr.assistacrise.mobile.domaine.MarqueursRadio.lire(texte)?.let { m ->
-            val l = "📍 ${m.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(m.emoji)}" + (m.note?.let { " · $it" } ?: "") + " (sur la carte)"
+            val l = "📍 ${m.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelleDe(m)}" + (fr.assistacrise.mobile.domaine.MarqueursRadio.noteLibre(m)?.let { " · $it" } ?: "") + " (sur la carte)"
             return if (qui != null) "$qui : $l" else l
         }
         return when {

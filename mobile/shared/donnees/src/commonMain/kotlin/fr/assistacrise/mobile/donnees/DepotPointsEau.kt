@@ -44,10 +44,16 @@ class DepotPointsEau(
      * Relit les points autour de chaque crise ouverte (dans un rayon de [rayonKm]). Hors réseau,
      * ou si le serveur ne connaît pas encore les points d'eau, la copie précédente reste.
      */
-    suspend fun rafraichir(crises: List<Crise>, rayonKm: Int = RAYON_KM): Reponse<Unit> {
+    suspend fun rafraichir(crises: List<Crise>, rayonKm: Int = RAYON_KM): Reponse<Unit> =
+        rafraichirAutour(crises.filter { it.ouverte && it.latitude != null && it.longitude != null }.distinctBy { it.id }
+            .map { Triple(it.latitude!!, it.longitude!!, rayonKm) })
+
+    /** Les points d'eau autour de ces centres (latitude, longitude, rayon en km) : crises du
+     * périmètre, manifestations du jour, ma dernière position (27/11/2026). */
+    suspend fun rafraichirAutour(centres: List<Triple<Double, Double, Int>>): Reponse<Unit> {
         val listes = mutableListOf<List<PointEau>>()
-        for (crise in crises.filter { it.ouverte && it.latitude != null && it.longitude != null }.distinctBy { it.id }) {
-            when (val r = api.pointsEau(crise.latitude!!, crise.longitude!!, rayonKm)) {
+        for ((lat, lon, rayon) in centres.distinct()) {
+            when (val r = api.pointsEau(lat, lon, rayon)) {
                 is Reponse.Ok -> listes += r.valeur
                 is Reponse.Refus -> return r
                 is Reponse.Injoignable -> return r

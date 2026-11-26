@@ -40,6 +40,23 @@ class TestFormat:
         assert mt.lire("S:🔥:0:95,2") is None
         assert mt.lire("bonjour") is None
 
+    def test_cinq_etats_de_route_et_anciens_marqueurs(self):
+        assert mt.genre_de("⛔", "2 sens · arbre")[0] == "ROUTE_COUPEE_2S"
+        assert mt.genre_de("⛔", "1 sens")[0] == "ROUTE_COUPEE_1S"
+        assert mt.genre_de("🚧", "1 file, 1 sens · alternat")[0] == "ROUTE_FILE_1S"
+        assert mt.genre_de("🚧", "1 file, 2 sens")[0] == "ROUTE_FILE_2S"
+        assert mt.genre_de("✅", "")[0] == "ROUTE_LIBEREE"
+        # Sans précision (avant le 27/11/2026) : lus, sens non précisé.
+        assert mt.genre_de("⛔", "arbre") == ("ROUTE_COUPEE", "Route coupée, sens non précisé")
+        assert mt.genre_de("🚧", "")[0] == "ROUTE_UNE_VOIE"
+        assert mt.note_de_route("ROUTE_FILE_2S", "alternat") == "1 file, 2 sens · alternat"
+        assert mt.note_libre("1 sens · arbre en travers") == "arbre en travers"
+        assert mt.note_libre("1 sensation bizarre") == "1 sensation bizarre"
+
+    def test_secours_a_personne_remplace_personne_trouvee_et_blesse(self):
+        assert mt.genre_de("🆘") == ("SECOURS", "Secours à personne")
+        assert mt.genre_de("🧑")[0] == mt.genre_de("🚑")[0] == "SECOURS"
+
     def test_ecrire(self):
         assert mt.ecrire("🚧", 44.84, -0.58, "une voie\nalternat") == "S:🚧:0:44.84000,-0.58000:une voie alternat"
 
@@ -102,10 +119,10 @@ class TestEntreeRadio:
         assert MarqueurTerrain.objects.count() == 0
 
     def test_le_regulateur_est_prevenu(self, scene):
-        _entrant(scene, "MESHCORE", "Léa: S:⛔:0:44.85000,-0.57000:arbre en travers")
+        _entrant(scene, "MESHCORE", "Léa: S:⛔:0:44.85000,-0.57000:2 sens · arbre en travers")
         notes = Notification.objects.filter(utilisateur__in=[scene["regulateur"], scene["chef"]])
         assert notes.count() == 2
-        assert all("Route coupée totalement" in n.titre for n in notes)
+        assert all("Route coupée dans les 2 sens" in n.titre for n in notes)
 
     def test_canal_d_equipe_rattache_a_la_crise_de_la_mission(self, scene):
         canal = CanalMeshCore.objects.create(nom="AC-ALPHA", equipe=scene["alpha"])
@@ -134,10 +151,23 @@ class TestRoutes:
         sortants = [m.contenu for m in MessageCanalMeshCore.objects.filter(direction=DirectionMessageMesh.SORTANT)]
         assert any(c.startswith("S:✅:0:44.85000,-0.57000") for c in sortants)
 
+    def test_le_sens_change_et_la_note_libre_reste(self, scene):
+        _entrant(scene, "MESHCORE", "Léa: S:⛔:0:44.85000,-0.57000:1 sens · arbre en travers")
+        marqueur = MarqueurTerrain.objects.get()
+        assert marqueur.genre == "ROUTE_COUPEE_1S"
+        r = _client(scene["max"]).patch(reverse("marqueur_terrain", args=[marqueur.id]), {"etat_route": "ROUTE_COUPEE_2S"}, format="json")
+        assert r.status_code == 200, r.data
+        # Même émoji, autre sens : pas pris pour un doublon, l'ancien est remplacé.
+        assert (r.data["genre"], r.data["note"]) == ("ROUTE_COUPEE_2S", "2 sens · arbre en travers")
+        marqueur.refresh_from_db()
+        assert not marqueur.actif
+        r = _client(scene["max"]).patch(reverse("marqueur_terrain", args=[r.data["id"]]), {"etat_route": "ROUTE_FILE_2S"}, format="json")
+        assert (r.data["emoji"], r.data["libelle"]) == ("🚧", "1 file fermée dans les 2 sens")
+
     def test_le_terrain_peut_aussi_changer_l_etat(self, scene):
         _entrant(scene, "MESHCORE", "Léa: S:⛔:0:44.85000,-0.57000")
         marqueur = MarqueurTerrain.objects.get()
-        r = _client(scene["max"]).patch(reverse("marqueur_terrain", args=[marqueur.id]), {"etat_route": "ROUTE_UNE_VOIE"}, format="json")
+        r = _client(scene["max"]).patch(reverse("marqueur_terrain", args=[marqueur.id]), {"etat_route": "ROUTE_FILE_1S"}, format="json")
         assert r.status_code == 200, r.data
 
     def test_un_feu_n_a_pas_d_etat_de_route(self, scene):
@@ -174,6 +204,15 @@ class TestApi:
         assert r.status_code == 201, r.data
         assert MessageCanalMeshCore.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
         assert MessageCanalMeshtastic.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 1
+
+    def test_deja_emis_sur_les_deux_canaux_de_crise(self, scene):
+        # L'application a coché les deux canaux de crise (MeshCore et Meshtastic) : « true ».
+        r = _client(scene["lea"]).post(reverse("marqueurs_terrain"), {
+            "crise": str(scene["crise"].id), "emoji": "🆘", "latitude": 44.85, "longitude": -0.57,
+            "source": "APPLICATION", "deja_par_radio": "true"}, format="json")
+        assert r.status_code == 201, r.data
+        assert MessageCanalMeshCore.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
+        assert MessageCanalMeshtastic.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
 
     def test_hors_de_la_crise_refuse_et_invisible(self, scene):
         r = _client(scene["intrus"]).post(reverse("marqueurs_terrain"), {

@@ -67,6 +67,18 @@ class CartesHorsLigne(private val contexte: Context) {
         })
     }
 
+    /** (identifiant, nom) des régions embarquées, sans attendre leur état (27/11/2026). */
+    suspend fun nomsDesRegions(): List<Pair<Long, String>> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        kotlinx.coroutines.suspendCancellableCoroutine { suite ->
+            gestionnaire.listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {
+                override fun onList(offlineRegions: Array<OfflineRegion>?) {
+                    if (suite.isActive) suite.resumeWith(Result.success(offlineRegions.orEmpty().map { it.id to String(it.metadata) }))
+                }
+                override fun onError(error: String) { if (suite.isActive) suite.resumeWith(Result.success(emptyList())) }
+            })
+        }
+    }
+
     fun telecharger(nom: String, bornes: LatLngBounds, zoomMax: Int) {
         val definition = OfflineTilePyramidRegionDefinition(STYLE, bornes, ZOOM_MIN.toDouble(), zoomMax.toDouble(),
             contexte.resources.displayMetrics.density)
@@ -111,5 +123,17 @@ class CartesHorsLigne(private val contexte: Context) {
         const val STYLE = "asset://style-ign.json"
         const val ZOOM_MIN = 6
         const val LIMITE_TUILES = 150_000L
+
+        /** La région de la zone en cours (27/11/2026) : « Zone en cours · <clé> · <date> ». La clé
+         * dit quelle crise ou manifestation elle couvre ; la date sert au ménage (7 jours). */
+        const val PREFIXE_ZONE = "Zone en cours"
+        fun nomDeZone(cle: String, date: java.time.LocalDate) = "$PREFIXE_ZONE · $cle · $date"
+        fun cleDeZone(nom: String): String? = nom.split(" · ").takeIf { it.size == 3 && it[0] == PREFIXE_ZONE }?.get(1)
+        fun dateDeZone(nom: String): java.time.LocalDate? =
+            nom.split(" · ").takeIf { it.size == 3 && it[0] == PREFIXE_ZONE }?.let { runCatching { java.time.LocalDate.parse(it[2]) }.getOrNull() }
+        /** Ce qu'on affiche d'une région : « Zone en cours (+15 km), du 27/11 » pour la zone. */
+        fun libelle(nom: String): String = dateDeZone(nom)?.let {
+            "Zone en cours (+15 km), du ${it.dayOfMonth.toString().padStart(2, '0')}/${it.monthValue.toString().padStart(2, '0')}"
+        } ?: nom
     }
 }

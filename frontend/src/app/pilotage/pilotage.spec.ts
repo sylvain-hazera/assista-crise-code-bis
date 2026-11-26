@@ -7,7 +7,7 @@ import { environment } from '../../environments/environment';
 import { AuthService } from '../auth/services/auth.service';
 import { Dossier } from '../shared/models/dossier.model';
 import { User } from '../shared/models/user.model';
-import { PilotageService } from './pilotage.service';
+import { ETATS_ROUTE, GENRES_MARQUEURS, PilotageService, noteDeMarqueur } from './pilotage.service';
 import { pilotageGuard } from './pilotage.guard';
 import { PILOTAGE_ROUTES } from './pilotage.routes';
 import { PilotageLayoutComponent } from './pilotage-layout.component';
@@ -200,10 +200,10 @@ describe('Poste de pilotage', () => {
     expect(pilotage.marqueursATraiter()).toBe(1);
     expect(pilotage.alertesTerrain()).toBe(1);
 
-    const etat = pilotage.etatRoute('k1', 'ROUTE_UNE_VOIE');
+    const etat = pilotage.etatRoute('k1', 'ROUTE_FILE_1S');
     const patch = http.expectOne(`${api}/marqueurs-terrain/k1/`);
     expect(patch.request.method).toBe('PATCH');
-    expect(patch.request.body).toEqual({ etat_route: 'ROUTE_UNE_VOIE' });
+    expect(patch.request.body).toEqual({ etat_route: 'ROUTE_FILE_1S' });
     patch.flush({ ...route, id: 'k2', emoji: '🚧', genre: 'ROUTE_UNE_VOIE' });
     await etat;
     http.expectOne(r => r.url === `${api}/marqueurs-terrain/`).flush([{ ...route, id: 'k2', emoji: '🚧', genre: 'ROUTE_UNE_VOIE' }]);
@@ -215,6 +215,15 @@ describe('Poste de pilotage', () => {
     await decision;
     http.expectOne(r => r.url === `${api}/marqueurs-terrain/`).flush([{ ...route, id: 'k2', decision: 'PRIS_EN_COMPTE' }]);
     expect(pilotage.marqueursATraiter()).toBe(0);
+  });
+
+  it('une route se pose avec son sens en tête de note (27/11/2026)', () => {
+    expect(noteDeMarqueur('1 sens', ' arbre ')).toBe('1 sens · arbre');
+    expect(noteDeMarqueur('1 file, 2 sens', '')).toBe('1 file, 2 sens');
+    expect(noteDeMarqueur(undefined, 'fumée')).toBe('fumée');
+    expect(GENRES_MARQUEURS.map(g => g.emoji)).toContain('🆘');
+    expect(GENRES_MARQUEURS.some(g => g.libelle === 'Personne trouvée' || g.emoji === '🚑')).toBeFalse();
+    expect(ETATS_ROUTE.length).toBe(5);
   });
 
   it('poser un marqueur depuis le site l\'envoie pour la crise suivie (26/11/2026)', async () => {

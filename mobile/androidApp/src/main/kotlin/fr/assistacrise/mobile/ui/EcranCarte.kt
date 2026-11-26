@@ -111,7 +111,12 @@ fun EcranCarte(modele: ModeleApplication) {
     val situes = dossiers.filter { it.situe && !it.clos }
     /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
     var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
-    val points by modele.pointsCrise.collectAsStateWithLifecycle()
+    val tousLesPoints by modele.pointsCrise.collectAsStateWithLifecycle()
+    // Seulement la crise en cours, sinon celles de ma commune (27/11/2026) : plus les centres
+    // d'accueil de toutes les crises ouvertes, à des centaines de kilomètres.
+    val perimetre by modele.perimetreCarte.collectAsStateWithLifecycle()
+    val idsPerimetre = perimetre.crises.map { it.id }.toSet()
+    val points = tousLesPoints.filter { it.crise in idsPerimetre }
     // Points d'eau incendie (24/11/2026) : gardés sur le téléphone pour la carte hors réseau.
     val pointsEau by modele.pointsEau.collectAsStateWithLifecycle()
     val suiviPointsEau by modele.suiviPointsEau.collectAsStateWithLifecycle()
@@ -330,7 +335,7 @@ fun EcranCarte(modele: ModeleApplication) {
                 addStringProperty("id", d.id); addStringProperty("urgent", if (d.priorite == "URGENTE") "oui" else "non")
             }
         }))
-        (style.getSource("zones") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(crises.mapNotNull { c ->
+        (style.getSource("zones") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(crises.filter { it.id in idsPerimetre }.mapNotNull { c ->
             // Un périmètre illisible ne doit pas empêcher la carte de s'afficher.
             c.zone?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.let { z -> runCatching { Feature.fromJson("""{"type":"Feature","properties":{},"geometry":$z}""") }.getOrNull() }
         }))
@@ -353,14 +358,27 @@ fun EcranCarte(modele: ModeleApplication) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Deux lignes (27/11/2026) : le titre et le lien, puis les gestes, qui reviennent à la ligne
+        // sur un petit écran — sur une seule, « Carte » s'écrasait lettre par lettre.
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Carte", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            PastilleLien(lien)
+        }
+        FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
             TextButton(onClick = { signalementPei = fr.assistacrise.mobile.domaine.GenreSignalementPei.NOUVEAU to null }) { Text("Point d'eau") }
-            TextButton(onClick = { horsLigne = true }) { Text("Hors ligne") }
+            TextButton(onClick = { horsLigne = true }) { Text("Télécharger pour le hors-ligne") }
             if (marqueursRadio.isNotEmpty() || positionsRadio.isNotEmpty()) {
                 TextButton(onClick = { partagerGpx(contexte, marqueursRadio, positionsRadio, moi) }) { Text("GPX") }
             }
-            PastilleLien(lien)
+        }
+        // La carte de la zone en cours, proposée en données mobiles (en Wi-Fi, elle se télécharge seule).
+        modele.propositionZone?.let { (_, octets) ->
+            Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Carte de la zone en cours pour le hors-ligne : environ ${fr.assistacrise.mobile.domaine.CartesEmbarquees.tailleLisible(octets)} (données mobiles).",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { modele.telechargerZone() }) { Text("Télécharger") }
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(factory = { vue }, modifier = Modifier.fillMaxSize())
@@ -409,10 +427,12 @@ fun EcranCarte(modele: ModeleApplication) {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
         )
         // Les noms sont dans la liste, pas sur la carte : toucher une ligne y conduit.
-        if (membres.isNotEmpty() || situes.isNotEmpty() || points.isNotEmpty()) {
-            // « Autour de moi » : les points de la crise, du plus proche au plus loin.
-            val autour = moi?.let { r -> Navigation.autourDe(r.latitude, r.longitude, points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") }) }
-                ?: points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") to null }
+        if (membres.isNotEmpty() || situes.isNotEmpty() || points.isNotEmpty() || pointsManif.isNotEmpty()) {
+            // « Autour de moi » : les points de la crise en cours et ceux de la manifestation du
+            // jour, du plus proche au plus loin.
+            val destinations = points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") } +
+                pointsManif.map { Destination(it.nom, it.latitude, it.longitude, "${it.genre} · ${it.manifestation}") }
+            val autour = moi?.let { r -> Navigation.autourDe(r.latitude, r.longitude, destinations) } ?: destinations.map { it to null }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
                 items(autour, key = { "p-${it.first.nom}-${it.first.latitude}" }) { (d, distance) ->
                     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -474,30 +494,30 @@ fun EcranCarte(modele: ModeleApplication) {
     marqueurIci?.let { lieu ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { marqueurIci = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), surEnvoi = { cle, m -> modele.envoyerMarqueur(cle, m); marqueurIci = null },
+            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), surEnvoi = { cles, m -> modele.envoyerMarqueur(cles, m); marqueurIci = null },
                             surAbandon = { marqueurIci = null }, modifier = Modifier.padding(16.dp))
         }
     }
     marqueurTouche?.let { r ->
         val mq = r.marqueur
         androidx.compose.material3.AlertDialog(onDismissRequest = { marqueurTouche = null },
-            title = { Text("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji)}") },
+            title = { Text("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelleDe(mq)}") },
             text = {
                 Column {
-                    mq.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    fr.assistacrise.mobile.domaine.MarqueursRadio.noteLibre(mq)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     Text("De ${r.auteur}, ${ilYA(r.horodatage)} · ${r.source}", style = MaterialTheme.typography.bodySmall)
                     Text("${"%.5f".format(java.util.Locale.ROOT, mq.latitude)}, ${"%.5f".format(java.util.Locale.ROOT, mq.longitude)}", style = MaterialTheme.typography.bodySmall)
                     // Une route : son état se change d'ici, par la radio et la plateforme (27/11/2026).
                     if (fr.assistacrise.mobile.domaine.MarqueursRadio.estRoute(mq.emoji)) {
                         Text("Changer l'état de la route", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                         fr.assistacrise.mobile.domaine.MarqueursRadio.ETATS_ROUTE.forEach { e ->
-                            OutlinedButton(enabled = e.emoji != mq.emoji, onClick = { modele.changerEtatRoute(r, e); marqueurTouche = null },
+                            OutlinedButton(enabled = e != fr.assistacrise.mobile.domaine.MarqueursRadio.etatDe(mq), onClick = { modele.changerEtatRoute(r, e); marqueurTouche = null },
                                 modifier = Modifier.fillMaxWidth()) { Text("${e.emoji} ${e.libelle}") }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { destination = Destination(fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji), mq.latitude, mq.longitude, "Marqueur"); marqueurTouche = null }) { Text("Aller") } },
+            confirmButton = { TextButton(onClick = { destination = Destination(fr.assistacrise.mobile.domaine.MarqueursRadio.libelleDe(mq), mq.latitude, mq.longitude, "Marqueur"); marqueurTouche = null }) { Text("Aller") } },
             dismissButton = { if (r.cleConversation.isNotBlank()) TextButton(onClick = { modele.ouvrirConversationRadio(r.cleConversation); marqueurTouche = null }) { Text("Conversation") } },
         )
     }
@@ -524,7 +544,7 @@ private fun partagerGpx(contexte: android.content.Context, marqueurs: List<Model
     fun iso(ms: Long) = java.time.Instant.ofEpochMilli(ms).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
     val points = marqueurs.map { r ->
         val mq = r.marqueur
-        fr.assistacrise.mobile.domaine.Gpx.Point("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji)}", mq.latitude, mq.longitude,
+        fr.assistacrise.mobile.domaine.Gpx.Point("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelleDe(mq)}", mq.latitude, mq.longitude,
             listOfNotNull(mq.note, "de ${r.auteur}").joinToString(" · "), iso(r.horodatage), "Flag")
     } + noeuds.map { n ->
         fr.assistacrise.mobile.domaine.Gpx.Point(n.nom, n.latitude, n.longitude, "${n.genre} ${n.protocole.libelle}", n.vuS?.let { iso(it * 1000) }, "Radio Beacon")
@@ -544,11 +564,12 @@ private fun partagerGpx(contexte: android.content.Context, marqueurs: List<Model
 /** Un marqueur d'incident envoyé par la radio, à l'endroit touché : genre, note, conversation. */
 @Composable
 private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String>>,
-                            surEnvoi: (String?, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) -> Unit,
+                            surEnvoi: (List<String>, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) -> Unit,
                             surAbandon: () -> Unit, modifier: Modifier = Modifier) {
-    var emoji by remember { mutableStateOf(fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.first().emoji) }
+    var genre by remember { mutableStateOf(fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.first()) }
     var note by remember { mutableStateOf("") }
-    var cle by remember { mutableStateOf(destinations.firstOrNull()?.first) }
+    // Plusieurs canaux à la fois (27/11/2026), MeshCore et Meshtastic : le canal de l'équipe coché d'office.
+    var cles by remember { mutableStateOf(listOfNotNull(destinations.firstOrNull()?.first).toSet()) }
     Surface(shape = MaterialTheme.shapes.large, shadowElevation = 6.dp, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -557,26 +578,32 @@ private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.forEach { g ->
-                    FilterChip(selected = emoji == g.emoji, onClick = { emoji = g.emoji }, label = { Text("${g.emoji} ${g.libelle}") })
+                    FilterChip(selected = genre == g, onClick = { genre = g }, label = { Text("${g.emoji} ${g.libelle}") })
                 }
             }
             androidx.compose.material3.OutlinedTextField(note, { note = it.take(80) }, label = { Text("Précision (facultatif)") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
             Text(if (destinations.isEmpty()) "Aucune radio prête : le marqueur part par le réseau, vers la plateforme qui le relaie par la radio."
-                 else "Sur quelle conversation radio ? (avec du réseau, il part aussi vers la plateforme)",
+                 else "Sur quels canaux radio ? Cochez-en autant qu'il faut, MeshCore et Meshtastic (avec du réseau, il part aussi vers la plateforme).",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp))
             destinations.forEach { (k, libelle) ->
-                Row(Modifier.fillMaxWidth().clickable { cle = k }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.RadioButton(selected = cle == k, onClick = { cle = k })
+                val coche = k in cles
+                fun basculer() { cles = if (coche) cles - k else cles + k }
+                Row(Modifier.fillMaxWidth().clickable { basculer() }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = coche, onCheckedChange = { basculer() })
                     Text(libelle, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            Text("Tous ceux qui ont ce canal le verront : n'y mettez aucun nom de personne.", style = MaterialTheme.typography.labelSmall,
+            Text("Tous ceux qui ont ces canaux le verront : n'y mettez aucun nom de personne.", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             Button(onClick = {
-                surEnvoi(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur(emoji, lieu.latitude, lieu.longitude, note.trim().ifEmpty { null }))
-            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Envoyer") }
+                // Une route : son sens ouvre la note (« 1 sens · arbre en travers »).
+                surEnvoi(destinations.map { it.first }.filter { it in cles }, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur(genre.emoji, lieu.latitude, lieu.longitude,
+                    fr.assistacrise.mobile.domaine.MarqueursRadio.noteDeRoute(genre.precision, note)))
+            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text(when (cles.size) { 0 -> "Envoyer (par le réseau seulement)"; 1 -> "Envoyer"; else -> "Envoyer sur ${cles.size} canaux" })
+            }
         }
     }
 }

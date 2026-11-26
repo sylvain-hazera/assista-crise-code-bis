@@ -794,6 +794,61 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         return crise to manifestation
     }
 
+    /** Les crises du périmètre de la carte (27/11/2026). */
+    val perimetreCarte = app.carteTerrain.perimetre
+
+    /** Où chercher les points d'eau : chaque crise du périmètre et chaque manifestation du jour
+     * (15 km), et ma dernière position (5 km). */
+    private fun centresDesPointsEau(): List<Triple<Double, Double, Int>> {
+        val zone = app.carteTerrain.perimetre.value.crises.mapNotNull { c -> if (c.latitude != null && c.longitude != null) Triple(c.latitude!!, c.longitude!!, 15) else null } +
+            app.carteTerrain.manifestations.value.mapNotNull { m ->
+                (if (m.latitude != null && m.longitude != null) m.latitude!! to m.longitude!!
+                 else m.postes.firstOrNull { it.latitude != null && it.longitude != null }?.let { it.latitude!! to it.longitude!! })
+                    ?.let { Triple(it.first, it.second, 15) }
+            }
+        return zone + listOfNotNull(dernierePosition()?.let { Triple(it.first, it.second, 5) })
+    }
+
+    /** La carte hors ligne de la zone en cours proposée en données mobiles : (emprise, octets). */
+    var propositionZone by mutableStateOf<Pair<fr.assistacrise.mobile.domaine.CartesEmbarquees.Emprise, Long>?>(null); private set
+
+    /**
+     * La carte de la zone en cours (+15 km), embarquée d'office (27/11/2026, décision de Sylvain) :
+     * en Wi-Fi elle se télécharge seule ; en données mobiles, un bandeau la propose. Une région
+     * déjà embarquée pour la même zone n'est pas retéléchargée ; celles d'une autre zone, vieilles
+     * de plus de 7 jours, sont supprimées pour libérer la place.
+     */
+    private suspend fun verifierZoneHorsLigne() {
+        val cle = app.carteTerrain.cleDeLaZone()
+        val emprise = fr.assistacrise.mobile.domaine.CartesEmbarquees.emprise(app.carteTerrain.lieuxDeLaZone())
+        val regions = runCatching { app.cartes.nomsDesRegions() }.getOrDefault(emptyList())
+        val limite = java.time.LocalDate.now().minusDays(7)
+        regions.forEach { (id, nom) ->
+            val date = CartesHorsLigne.dateDeZone(nom)
+            // MapLibre veut le fil principal pour ses régions.
+            if (date != null && CartesHorsLigne.cleDeZone(nom) != cle && date.isBefore(limite))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { app.cartes.supprimer(id) }
+        }
+        if (cle.isEmpty() || emprise == null || regions.any { CartesHorsLigne.cleDeZone(it.second) == cle }) { propositionZone = null; return }
+        if (app.cartes.encours.value?.let { !it.termine && it.erreur == null } == true) return
+        if (app.cartes.surWifi()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { telechargerZone(emprise) }
+        else propositionZone = emprise to fr.assistacrise.mobile.domaine.CartesEmbarquees.estimationZone(emprise).second
+    }
+
+    /** Télécharge la carte de la zone en cours (bandeau, ou d'office en Wi-Fi). */
+    fun telechargerZone(emprise: fr.assistacrise.mobile.domaine.CartesEmbarquees.Emprise? = propositionZone?.first) {
+        val e = emprise ?: return
+        val cle = app.carteTerrain.cleDeLaZone().ifEmpty { return }
+        propositionZone = null
+        app.cartes.telecharger(CartesHorsLigne.nomDeZone(cle, java.time.LocalDate.now()),
+            org.maplibre.android.geometry.LatLngBounds.from(e.nord, e.est, e.sud, e.ouest),
+            fr.assistacrise.mobile.domaine.CartesEmbarquees.ZOOM_MAX_ZONE)
+    }
+
+    /** L'emprise de la zone en cours, pour la boîte « Télécharger pour le hors-ligne ». */
+    fun empriseDeLaZone() = fr.assistacrise.mobile.domaine.CartesEmbarquees.emprise(app.carteTerrain.lieuxDeLaZone())
+        ?.takeIf { app.carteTerrain.cleDeLaZone().isNotEmpty() }
+
     /** Peut-on poser un marqueur ? Par une radio prête, ou par le réseau quand on sait où le rattacher. */
     fun marqueurPossible(): Boolean = destinationsMarqueur().isNotEmpty() || rattachement(null).let { it.first != null || it.second != null }
 
@@ -813,16 +868,24 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      * régulation et le relaie sur les canaux de la crise ; hors réseau, la radio suffit, et une
      * passerelle qui l'entend le portera au central.
      */
-    fun envoyerMarqueur(cle: String?, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) {
+    fun envoyerMarqueur(cles: List<String>, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) {
         viewModelScope.launch {
-            val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m))
-            val (crise, manifestation) = rattachement(cle)
-            val deja = if (parRadio) cle?.let(::protocoleSiCanalDeCrise) else null
+            // Le même texte sur chaque canal coché, MeshCore comme Meshtastic (27/11/2026).
+            val texte = fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m)
+            val partis = cles.filter { app.messagerieRadio.envoyer(it, texte) }
+            val parRadio = partis.isNotEmpty()
+            val (crise, manifestation) = rattachement(partis.firstNotNullOfOrNull { k -> k.takeIf { criseDeLaConversation(it) != null } } ?: cles.firstOrNull())
+            // Déjà émis sur le canal de crise d'un protocole : le serveur ne l'y réémet pas ; des
+            // deux : il ne réémet rien (« true »).
+            val protocoles = partis.mapNotNull(::protocoleSiCanalDeCrise).toSet()
+            val deja = when { protocoles.size >= 2 -> "true"; protocoles.size == 1 -> protocoles.first(); else -> null }
             val central = if (crise != null || manifestation != null) app.api.poserMarqueur(m, crise, manifestation, deja) else null
             if (central is Reponse.Ok) app.carteTerrain.garder(central.valeur)
+            val canaux = if (partis.size > 1) "sur ${partis.size} canaux radio" else "par la radio"
+            val manques = (cles.size - partis.size).takeIf { it > 0 }?.let { " ($it canal${if (it > 1) "aux" else ""} n'a pas pris le message)" } ?: ""
             message = when {
-                parRadio && central is Reponse.Ok -> "Marqueur envoyé par la radio et à la plateforme."
-                parRadio -> "Marqueur envoyé par la radio."
+                parRadio && central is Reponse.Ok -> "Marqueur envoyé $canaux et à la plateforme.$manques"
+                parRadio -> "Marqueur envoyé $canaux.$manques"
                 central is Reponse.Ok -> "Marqueur envoyé à la plateforme."
                 central is Reponse.Refus -> "Marqueur refusé : ${central.message}"
                 else -> "Le marqueur n'est pas parti : ni radio prête, ni réseau."
@@ -837,7 +900,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      */
     fun changerEtatRoute(r: MarqueurRadio, etat: fr.assistacrise.mobile.domaine.MarqueursRadio.EtatRoute) {
         viewModelScope.launch {
-            val nouveau = r.marqueur.copy(emoji = etat.emoji)
+            // Le sens change, la note libre reste (« 1 sens · arbre » → « 1 file, 2 sens · arbre »).
+            val nouveau = r.marqueur.copy(emoji = etat.emoji,
+                note = fr.assistacrise.mobile.domaine.MarqueursRadio.noteDeRoute(etat.precision, fr.assistacrise.mobile.domaine.MarqueursRadio.noteLibre(r.marqueur)))
             val cle = r.cleConversation.takeIf { it.isNotBlank() && MessagerieRadio.lireCle(it)?.let { (p, _) -> piloteDe(p)?.prete } == true }
                 ?: destinationsMarqueur().firstOrNull()?.first
             val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(nouveau))
@@ -995,10 +1060,12 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                     app.carteTerrain.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
                     app.citoyen.rafraichir()
-                    // Les points des crises ouvertes, pour le GPS hors ligne.
-                    app.points.rafraichir(crises.value.filter { it.ouverte }.map { it.id })
-                    // Les points d'eau incendie autour des crises ouvertes, pour la carte hors réseau.
-                    app.pointsEau.rafraichir(crises.value)
+                    // Les points du périmètre seulement (27/11/2026) : la crise en cours, sinon celles
+                    // de ma commune — plus ceux de toutes les crises ouvertes, à 359 km.
+                    app.points.rafraichir(app.carteTerrain.perimetre.value.crises.map { it.id })
+                    // Les points d'eau autour de la zone (15 km) et de ma position (5 km).
+                    app.pointsEau.rafraichirAutour(centresDesPointsEau())
+                    verifierZoneHorsLigne()
                     // Les dossiers de mes équipes : ils s'affichent sous les missions, et sur la carte.
                     if (equipes.value.isNotEmpty()) {
                         if (app.benevole.chargerLesDossiers(equipes.value.map { it.id }.toSet()) is Reponse.Ok) {

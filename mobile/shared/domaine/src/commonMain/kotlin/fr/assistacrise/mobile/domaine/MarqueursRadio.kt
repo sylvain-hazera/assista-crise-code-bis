@@ -17,27 +17,74 @@ import kotlin.math.roundToLong
  * Le marqueur peut suivre un ou deux préfixes « Nom: » (27/11/2026) : la radio MeshCore ajoute le
  * nom de l'émetteur, et le relais Meshtastic ↔ MeshCore du canal de crise y ajoute l'auteur.
  *
- * Routes (27/11/2026) : trois émojis, trois états d'un même marqueur — ⛔ coupée totalement,
- * 🚧 une voie libérée, ✅ axe libéré. Un état plus récent, à moins de 30 m, remplace l'ancien.
- * Même règle au serveur (backend/core/marqueurs_terrain.py).
+ * Routes (27/11/2026, décision de Sylvain) : cinq états d'un même marqueur. L'émoji porte la
+ * famille et la précision de sens ouvre la note, le texte reste du SAR pur :
+ * « S:⛔:0:44.85000,-0.57000:1 sens · arbre en travers ».
+ * ⛔ coupée (2 sens / 1 sens), 🚧 1 file fermée (1 sens / 2 sens), ✅ axe libéré. Un état plus
+ * récent, à moins de 30 m, remplace l'ancien. Mêmes règles au serveur (core/marqueurs_terrain.py).
+ *
+ * « Secours à personne » (🆘) remplace « personne trouvée » et « blessé » ; 🧑, 👤 et 🚑 reçus
+ * d'autres applications sont lus ainsi.
  */
 object MarqueursRadio {
-    data class Genre(val emoji: String, val libelle: String)
+    /** Un genre qu'on pose ; `precision` : le sens, pour une route. */
+    data class Genre(val emoji: String, val libelle: String, val precision: String = "")
 
-    /** Les quatre de MeshCore SAR d'abord (ils y ont une icône), puis ceux d'une crise chez nous. */
-    val GENRES = listOf(
-        Genre("🧑", "Personne trouvée"), Genre("🔥", "Feu"), Genre("🏕️", "Zone de regroupement"), Genre("📦", "Objet"),
-        Genre("🌊", "Inondation"), Genre("⛔", "Route coupée totalement"), Genre("🚑", "Blessé"), Genre("⚠️", "Danger"),
-    )
-
-    /** Les trois états d'une route : (code serveur, émoji, libellé). */
-    data class EtatRoute(val code: String, val emoji: String, val libelle: String)
+    /** Les cinq états d'une route : code serveur, émoji, précision de sens, libellé. */
+    data class EtatRoute(val code: String, val emoji: String, val precision: String, val libelle: String)
     val ETATS_ROUTE = listOf(
-        EtatRoute("ROUTE_COUPEE", "⛔", "Coupée totalement"),
-        EtatRoute("ROUTE_UNE_VOIE", "🚧", "Une voie libérée"),
-        EtatRoute("ROUTE_LIBEREE", "✅", "Axe libéré"),
+        EtatRoute("ROUTE_COUPEE_2S", "⛔", "2 sens", "Coupée dans les 2 sens"),
+        EtatRoute("ROUTE_COUPEE_1S", "⛔", "1 sens", "Coupée dans 1 sens"),
+        EtatRoute("ROUTE_FILE_1S", "🚧", "1 file, 1 sens", "1 file fermée dans 1 sens"),
+        EtatRoute("ROUTE_FILE_2S", "🚧", "1 file, 2 sens", "1 file fermée dans les 2 sens"),
+        EtatRoute("ROUTE_LIBEREE", "✅", "", "Axe libéré"),
     )
-    fun estRoute(emoji: String) = ETATS_ROUTE.any { it.emoji == emoji }
+    fun estRoute(emoji: String) = emoji == "⛔" || emoji == "🚧" || emoji == "✅"
+
+    /** Ceux qu'on propose : secours, feu, inondation, une route dans l'un de ses états, puis les autres. */
+    val GENRES = listOf(Genre("🆘", "Secours à personne"), Genre("🔥", "Feu"), Genre("🌊", "Inondation")) +
+        ETATS_ROUTE.filter { it.precision.isNotEmpty() }.map { Genre(it.emoji, "Route : " + it.libelle.lowercase(), it.precision) } +
+        listOf(Genre("⚠️", "Danger"), Genre("🏕️", "Zone de regroupement"), Genre("📦", "Objet"))
+
+    private val PRECISIONS = ETATS_ROUTE.map { it.precision }.filter { it.isNotEmpty() }.sortedByDescending { it.length }
+
+    /** (précision de sens en tête de la note, reste de la note). */
+    fun precisionEtNote(note: String?): Pair<String, String> {
+        val t = note?.trim().orEmpty()
+        val bas = t.lowercase()
+        for (p in PRECISIONS) {
+            if (bas == p) return p to ""
+            if (bas.startsWith(p) && bas[p.length] in " ·-:") return p to t.substring(p.length).trim(' ', '·', '-', ':')
+        }
+        return "" to t
+    }
+
+    /** La note d'un état de route : sa précision, puis la note libre. */
+    fun noteDeRoute(precision: String, libre: String?): String? {
+        val l = libre?.trim().orEmpty()
+        return when {
+            precision.isNotEmpty() && l.isNotEmpty() -> "$precision · $l"
+            precision.isNotEmpty() -> precision
+            else -> l.ifEmpty { null }
+        }
+    }
+
+    /** L'état d'une route, s'il est précisé (les marqueurs d'avant le 27/11/2026 ne le sont pas). */
+    fun etatDe(m: Marqueur): EtatRoute? {
+        if (!estRoute(m.emoji)) return null
+        val p = precisionEtNote(m.note).first
+        return ETATS_ROUTE.firstOrNull { it.emoji == m.emoji && it.precision == p }
+    }
+
+    /** Le libellé complet d'un marqueur : « Route coupée dans 1 sens », « Secours à personne »… */
+    fun libelleDe(m: Marqueur): String = when {
+        estRoute(m.emoji) -> etatDe(m)?.let { if (it.code == "ROUTE_LIBEREE") "Route : axe libéré" else "Route " + it.libelle.replaceFirstChar { c -> c.lowercase() } }
+            ?: if (m.emoji == "⛔") "Route coupée, sens non précisé" else "1 file fermée, sens non précisé"
+        else -> libelle(m.emoji)
+    }
+
+    /** La note sans la précision de sens. */
+    fun noteLibre(m: Marqueur): String? = precisionEtNote(m.note).second.ifEmpty { null }
 
     /** Rayon où un nouvel état de route remplace l'ancien ; rayon d'un même marqueur réentendu. */
     const val RAYON_ROUTE_M = 30.0
@@ -65,10 +112,10 @@ object MarqueursRadio {
         return gardes
     }
 
-    fun libelle(emoji: String): String = GENRES.firstOrNull { it.emoji == emoji }?.libelle
+    fun libelle(emoji: String): String = GENRES.firstOrNull { it.emoji == emoji && it.precision.isEmpty() }?.libelle
         ?: when (emoji) {
-            "👤" -> "Personne trouvée"; "⛺" -> "Zone de regroupement"
-            "🚧" -> "Route : une voie libérée"; "✅" -> "Route : axe libéré"; else -> "Marqueur"
+            "🧑", "👤", "🚑" -> "Secours à personne"; "⛺" -> "Zone de regroupement"
+            "⛔" -> "Route coupée"; "🚧" -> "1 file fermée"; "✅" -> "Route : axe libéré"; else -> "Marqueur"
         }
 
     data class Marqueur(val emoji: String, val latitude: Double, val longitude: Double, val note: String? = null, val couleur: Int = 0)

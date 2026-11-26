@@ -48,16 +48,18 @@ fun DialogueHorsLigne(
     var confirmation by remember { mutableStateOf<Triple<String, LatLngBounds, Int>?>(null) }
     LaunchedEffect(Unit) { cartes.relire() }
 
+    // La zone en cours (+15 km) d'abord (27/11/2026) : la crise ou la manifestation en cours, au
+    // niveau des rues ; « toute la zone de la crise », sur toutes les crises ouvertes, a disparu.
     val choix = buildList {
-        zoneDesCrises(crises)?.let { add(Triple("Toute la zone de la crise", it, 14)) }
-        bornesDe(dossiers.mapNotNull { d -> d.latitude?.let { LatLng(it, d.longitude!!) } } +
-            points.map { LatLng(it.latitude!!, it.longitude!!) }, margeDeg = 0.01)?.let { add(Triple("Mes dossiers et les points de la crise", it, 16)) }
+        modele.empriseDeLaZone()?.let { e ->
+            add(Triple("La zone en cours (+15 km)", LatLngBounds.from(e.nord, e.est, e.sud, e.ouest), CartesEmbarquees.ZOOM_MAX_ZONE))
+        }
         carte?.projection?.visibleRegion?.latLngBounds?.let { add(Triple("Ce que montre la carte", it, 17)) }
     }
 
     AlertDialog(
         onDismissRequest = surFermeture,
-        title = { Text("Cartes hors ligne") },
+        title = { Text("Télécharger pour le hors-ligne") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Embarquez le fond de carte IGN pour l'utiliser sans réseau, avec votre position, les dossiers et les points de la crise.",
@@ -82,7 +84,7 @@ fun DialogueHorsLigne(
                     Text("Déjà embarquées", style = MaterialTheme.typography.titleSmall)
                     regions.forEach { r ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${r.nom} — ${CartesEmbarquees.tailleLisible(r.octets)}${if (r.terminee) "" else " (incomplète)"}",
+                            Text("${fr.assistacrise.mobile.CartesHorsLigne.libelle(r.nom)} — ${CartesEmbarquees.tailleLisible(r.octets)}${if (r.terminee) "" else " (incomplète)"}",
                                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             TextButton(onClick = { cartes.supprimer(r.id) }) { Text("Supprimer") }
                         }
@@ -103,29 +105,13 @@ fun DialogueHorsLigne(
                 Text("Environ ${CartesEmbarquees.tailleLisible(octets)}." +
                     if (wifi) " Vous êtes en Wi-Fi." else " Vous n'êtes pas en Wi-Fi : le téléchargement passera par vos données mobiles.")
             },
-            confirmButton = { TextButton(onClick = { cartes.telecharger(nom, bornes, zoom); confirmation = null }) { Text("Télécharger") } },
+            confirmButton = { TextButton(onClick = {
+                // La zone en cours garde son nom de zone : elle ne sera pas retéléchargée d'office.
+                if (zoom == CartesEmbarquees.ZOOM_MAX_ZONE && nom.startsWith("La zone en cours")) modele.telechargerZone(modele.empriseDeLaZone())
+                else cartes.telecharger(nom, bornes, zoom)
+                confirmation = null
+            }) { Text("Télécharger") } },
             dismissButton = { TextButton(onClick = { confirmation = null }) { Text("Annuler") } },
         )
     }
-}
-
-private fun bornesDe(points: List<LatLng>, margeDeg: Double): LatLngBounds? {
-    if (points.isEmpty()) return null
-    val sud = points.minOf { it.latitude } - margeDeg; val nord = points.maxOf { it.latitude } + margeDeg
-    val ouest = points.minOf { it.longitude } - margeDeg; val est = points.maxOf { it.longitude } + margeDeg
-    return LatLngBounds.from(nord, est, sud, ouest)
-}
-
-/** L'emprise des crises ouvertes : leur périmètre s'il est dessiné, sinon 20 km autour de leur centre. */
-private fun zoneDesCrises(crises: List<Crise>): LatLngBounds? {
-    val pts = mutableListOf<LatLng>()
-    crises.filter { it.ouverte }.forEach { c ->
-        val zone = c.zone?.toString()
-        val coords = zone?.let { Regex("""\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*]""").findAll(it).map { m -> LatLng(m.groupValues[2].toDouble(), m.groupValues[1].toDouble()) }.toList() }
-        if (!coords.isNullOrEmpty()) pts += coords
-        else if (c.latitude != null && c.longitude != null) {
-            pts += LatLng(c.latitude!! - 0.18, c.longitude!! - 0.25); pts += LatLng(c.latitude!! + 0.18, c.longitude!! + 0.25)
-        }
-    }
-    return bornesDe(pts, margeDeg = 0.0)
 }

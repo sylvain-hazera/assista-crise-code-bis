@@ -103,19 +103,29 @@ export interface MarqueurTerrain {
   texte_radio: string;
 }
 
-/** Les genres qu'on pose depuis le site ; les trois routes sont trois états d'un même marqueur. */
-export const GENRES_MARQUEURS: { emoji: string; libelle: string }[] = [
-  { emoji: '🔥', libelle: 'Feu' }, { emoji: '🧑', libelle: 'Personne trouvée' }, { emoji: '🏕️', libelle: 'Zone de regroupement' },
-  { emoji: '📦', libelle: 'Objet' }, { emoji: '🌊', libelle: 'Inondation' }, { emoji: '⛔', libelle: 'Route coupée totalement' },
-  { emoji: '🚧', libelle: 'Route : une voie libérée' }, { emoji: '✅', libelle: 'Route : axe libéré' },
-  { emoji: '🚑', libelle: 'Blessé' }, { emoji: '⚠️', libelle: 'Danger' },
+/** Les cinq états d'une route (27/11/2026) : l'émoji porte la famille, la précision de sens ouvre
+ * la note (« S:⛔:0:…:1 sens · arbre »), comme au serveur (core/marqueurs_terrain.ETATS_ROUTE). */
+export const ETATS_ROUTE: { code: string; emoji: string; precision: string; libelle: string }[] = [
+  { code: 'ROUTE_COUPEE_2S', emoji: '⛔', precision: '2 sens', libelle: 'Coupée dans les 2 sens' },
+  { code: 'ROUTE_COUPEE_1S', emoji: '⛔', precision: '1 sens', libelle: 'Coupée dans 1 sens' },
+  { code: 'ROUTE_FILE_1S', emoji: '🚧', precision: '1 file, 1 sens', libelle: '1 file fermée dans 1 sens' },
+  { code: 'ROUTE_FILE_2S', emoji: '🚧', precision: '1 file, 2 sens', libelle: '1 file fermée dans les 2 sens' },
+  { code: 'ROUTE_LIBEREE', emoji: '✅', precision: '', libelle: 'Axe libéré' },
 ];
 
-export const ETATS_ROUTE: { code: string; emoji: string; libelle: string }[] = [
-  { code: 'ROUTE_COUPEE', emoji: '⛔', libelle: 'Coupée totalement' },
-  { code: 'ROUTE_UNE_VOIE', emoji: '🚧', libelle: 'Une voie libérée' },
-  { code: 'ROUTE_LIBEREE', emoji: '✅', libelle: 'Axe libéré' },
+/** Les genres qu'on pose depuis le site. « Secours à personne » remplace « personne trouvée » et
+ * « blessé » (27/11/2026) ; une route se pose directement dans l'un de ses cinq états. */
+export const GENRES_MARQUEURS: { emoji: string; libelle: string; precision?: string }[] = [
+  { emoji: '🆘', libelle: 'Secours à personne' }, { emoji: '🔥', libelle: 'Feu' }, { emoji: '🌊', libelle: 'Inondation' },
+  ...ETATS_ROUTE.filter(e => e.code !== 'ROUTE_LIBEREE').map(e => ({ emoji: e.emoji, libelle: 'Route : ' + e.libelle.toLowerCase(), precision: e.precision })),
+  { emoji: '⚠️', libelle: 'Danger' }, { emoji: '🏕️', libelle: 'Zone de regroupement' }, { emoji: '📦', libelle: 'Objet' },
 ];
+
+/** La note d'un marqueur : la précision de sens (route), puis la note libre. */
+export function noteDeMarqueur(precision: string | undefined, note: string): string {
+  const libre = note.trim();
+  return precision ? (libre ? `${precision} · ${libre}` : precision) : libre;
+}
 
 /** Le terrain en direct d'une crise : alertes à prendre en compte, statuts, derniers messages. */
 export interface VueTerrain {

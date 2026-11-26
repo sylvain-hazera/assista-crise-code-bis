@@ -23,6 +23,9 @@ data class ManifestationAsso(
     val places: Int = 0,
     val occupes: Int = 0,
     @SerialName("je_suis_inscrit") val inscrit: Boolean = false,
+    /** Le lieu de la manifestation, s'il est connu (27/11/2026) : la carte hors ligne le couvre. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val consignes: String = "",
     val postes: List<PosteManifestation> = emptyList(),
     /** Ce que chaque commune traversée a ouvert à l'association (26/11/2026). */

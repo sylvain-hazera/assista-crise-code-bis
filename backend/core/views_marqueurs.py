@@ -101,11 +101,13 @@ class MarqueurTerrainView(APIView):
         if "etat_route" in d:
             if m.genre not in mt.ROUTES:
                 raise ValidationError({"detail": "Seule une route change d'état."})
-            emoji = mt.EMOJI_ROUTE.get(d["etat_route"])
-            if emoji is None:
+            etat = mt.ETATS_ROUTE.get(d["etat_route"])
+            if etat is None:
                 raise ValidationError({"detail": "État de route inconnu."})
+            # La précision de sens change, la note libre reste (ou celle donnée).
+            libre = str(d["note"]) if "note" in d else mt.note_libre(m.note)
             nouveau, _cree = mt.enregistrer(
-                env, emoji, m.location.y, m.location.x, str(d.get("note", m.note) or "")[:500], crise=m.crise,
+                env, etat[0], m.location.y, m.location.x, mt.note_de_route(d["etat_route"], libre)[:500], crise=m.crise,
                 manifestation=m.manifestation, auteur=request.user,
                 source=MarqueurTerrain.Source.APPLICATION if d.get("source") == "APPLICATION" else MarqueurTerrain.Source.SITE,
                 diffuser_radio=_diffusion(d)[0], sauf_protocole=_diffusion(d)[1])

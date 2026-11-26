@@ -28,21 +28,34 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-#: émoji → (code, libellé). Les quatre de SAR, puis ceux d'une crise chez nous.
+#: émoji → (code, libellé), hors routes. « Secours à personne » (27/11/2026) remplace « personne
+#: trouvée » et « blessé » : 🧑, 👤 et 🚑 reçus d'autres applications sont lus ainsi.
 GENRES = {
-    "🧑": ("PERSONNE", "Personne trouvée"), "👤": ("PERSONNE", "Personne trouvée"),
+    "🆘": ("SECOURS", "Secours à personne"), "🧑": ("SECOURS", "Secours à personne"),
+    "👤": ("SECOURS", "Secours à personne"), "🚑": ("SECOURS", "Secours à personne"),
     "🔥": ("FEU", "Feu"),
     "🏕️": ("REGROUPEMENT", "Zone de regroupement"), "⛺": ("REGROUPEMENT", "Zone de regroupement"),
     "📦": ("OBJET", "Objet"),
     "🌊": ("INONDATION", "Inondation"),
-    "⛔": ("ROUTE_COUPEE", "Route coupée totalement"),
-    "🚧": ("ROUTE_UNE_VOIE", "Route : une voie libérée"),
-    "✅": ("ROUTE_LIBEREE", "Route : axe libéré"),
-    "🚑": ("BLESSE", "Blessé"),
     "⚠️": ("DANGER", "Danger"),
 }
-ROUTES = {"ROUTE_COUPEE", "ROUTE_UNE_VOIE", "ROUTE_LIBEREE"}
-EMOJI_ROUTE = {"ROUTE_COUPEE": "⛔", "ROUTE_UNE_VOIE": "🚧", "ROUTE_LIBEREE": "✅"}
+
+#: Les cinq états d'une route (décision de Sylvain du 27/11/2026) : code → (émoji, précision
+#: qui ouvre la note, libellé). L'émoji porte la famille, la précision le sens : le texte reste
+#: du SAR pur (« S:⛔:0:44.85000,-0.57000:1 sens · arbre en travers »).
+ETATS_ROUTE = {
+    "ROUTE_COUPEE_2S": ("⛔", "2 sens", "Route coupée dans les 2 sens"),
+    "ROUTE_COUPEE_1S": ("⛔", "1 sens", "Route coupée dans 1 sens"),
+    "ROUTE_FILE_1S": ("🚧", "1 file, 1 sens", "1 file fermée dans 1 sens"),
+    "ROUTE_FILE_2S": ("🚧", "1 file, 2 sens", "1 file fermée dans les 2 sens"),
+    "ROUTE_LIBEREE": ("✅", "", "Route : axe libéré"),
+}
+#: Marqueurs d'avant le 27/11/2026, sans précision de sens.
+ROUTES_SANS_SENS = {"⛔": ("ROUTE_COUPEE", "Route coupée, sens non précisé"),
+                    "🚧": ("ROUTE_UNE_VOIE", "1 file fermée, sens non précisé")}
+ROUTES = set(ETATS_ROUTE) | {code for code, _l in ROUTES_SANS_SENS.values()}
+EMOJIS_ROUTE = {"⛔", "🚧", "✅"}
+_SEPARATEUR = " · "
 #: Rayon où un nouvel état de route remplace l'ancien.
 RAYON_ROUTE_M = 30
 #: Un même marqueur réentendu (deux passerelles, relais entre protocoles) dans ce délai, à ce
@@ -55,8 +68,41 @@ _ANCIEN = re.compile(r"^S:([^:]+):(-?\d+\.?\d*),(-?\d+\.?\d*):?(.*)$")
 _PREFIXE = re.compile(r"^[^:\n]{1,40}: ")
 
 
-def genre_de(emoji):
+def _precision(note):
+    """(précision de sens reconnue en tête de la note, reste de la note)."""
+    t = (note or "").strip()
+    bas = t.lower()
+    # Les plus longues d'abord : « 1 file, 1 sens » avant « 1 sens ».
+    for precision in sorted({p for _e, p, _l in ETATS_ROUTE.values() if p}, key=len, reverse=True):
+        if bas == precision:
+            return precision, ""
+        if bas.startswith(precision) and bas[len(precision)] in " ·-:":
+            return precision, t[len(precision):].lstrip(" ·-:").strip()
+    return "", t
+
+
+def genre_de(emoji, note=""):
+    """(code, libellé) d'un marqueur, d'après son émoji et, pour une route, la précision de sens
+    qui ouvre sa note."""
+    if emoji in EMOJIS_ROUTE:
+        precision, _reste = _precision(note)
+        for code, (e, p, libelle_route) in ETATS_ROUTE.items():
+            if e == emoji and p == precision:
+                return code, libelle_route
+        return ROUTES_SANS_SENS.get(emoji, ("ROUTE_LIBEREE", ETATS_ROUTE["ROUTE_LIBEREE"][2]))
     return GENRES.get(emoji, ("AUTRE", "Marqueur"))
+
+
+def note_libre(note):
+    """La note sans la précision de sens d'une route."""
+    return _precision(note)[1]
+
+
+def note_de_route(code, note_libre_=""):
+    """La note d'un état de route : sa précision, puis la note libre."""
+    precision = ETATS_ROUTE[code][1]
+    libre = (note_libre_ or "").strip()
+    return f"{precision}{_SEPARATEUR}{libre}" if precision and libre else (precision or libre)
 
 
 def lire(texte):
@@ -90,7 +136,7 @@ def lire(texte):
     if not emoji or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         return None
     note = "\n".join(x for x in [g[3 + decalage].strip()] + [l.strip() for l in lignes[1:]] if x)
-    return {"emoji": emoji, "genre": genre_de(emoji)[0], "latitude": lat, "longitude": lon, "note": note,
+    return {"emoji": emoji, "genre": genre_de(emoji, note)[0], "latitude": lat, "longitude": lon, "note": note,
             "couleur": int(g[1]) if nouveau else 0}
 
 
@@ -102,7 +148,7 @@ def ecrire(emoji, latitude, longitude, note=""):
 
 
 def libelle(marqueur):
-    return genre_de(marqueur.emoji)[1]
+    return genre_de(marqueur.emoji, marqueur.note)[1]
 
 
 def nom_auteur(marqueur):
@@ -119,9 +165,9 @@ def enregistrer(environment, emoji, latitude, longitude, note="", *, crise=None,
     from .models import MarqueurTerrain
 
     point = Point(float(longitude), float(latitude), srid=4326)
-    genre = genre_de(emoji)[0]
+    genre = genre_de(emoji, note)[0]
     portee = MarqueurTerrain.objects.filter(environment=environment, crise=crise, manifestation=manifestation)
-    doublon = portee.filter(emoji=emoji, cree_le__gte=timezone.now() - datetime.timedelta(minutes=DOUBLON_MINUTES),
+    doublon = portee.filter(genre=genre, cree_le__gte=timezone.now() - datetime.timedelta(minutes=DOUBLON_MINUTES),
                             location__distance_lte=(point, D(m=DOUBLON_RAYON_M))).first()
     if doublon is not None:
         return doublon, False

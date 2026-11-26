@@ -169,6 +169,7 @@ from .views_terrain import MessageTerrainViewSet
 from . import views_conversations  # noqa: E402
 from . import views_manifestations  # noqa: E402
 from . import views_marqueurs  # noqa: E402
+from . import views_carte_terrain  # noqa: E402
 from . import views_adhesion  # noqa: E402
 from .views_cellule import (  # noqa: E402
     ActionCelluleViewSet, ChronologieViewSet, DecisionCelluleViewSet, PointSituationViewSet, ReleveCelluleViewSet, RetexViewSet,
@@ -630,6 +631,7 @@ urlpatterns = [
     path('releves-equipe/', RelevesEquipeView.as_view(), name='releves_equipe'),
     path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
     # Manifestations d'association et bénévolat (26/11/2026, core/manifestations.py, core/benevolat.py).
+    path('carte-terrain/perimetre/', views_carte_terrain.PerimetreCarteView.as_view(), name='carte_terrain_perimetre'),
     path('marqueurs-terrain/', views_marqueurs.MarqueursTerrainView.as_view(), name='marqueurs_terrain'),
     path('marqueurs-terrain/<uuid:pk>/', views_marqueurs.MarqueurTerrainView.as_view(), name='marqueur_terrain'),
     path('manifestations/', views_manifestations.ManifestationsView.as_view(), name='manifestations'),

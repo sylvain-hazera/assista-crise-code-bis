@@ -80,6 +80,8 @@ def _en_dict(m, utilisateur, detail=False) -> dict:
         "je_suis_inscrit": any(i.utilisateur_id == utilisateur.id and i.statut in mf.ACTIVES for p in postes for i in p.inscriptions.all()),
         "organise": bureau,
         "communes": list(m.communes or ([m.commune_code] if m.commune_code else [])),
+        # Le lieu (27/11/2026) : la carte hors ligne de l'application couvre la manifestation + 15 km.
+        "latitude": m.location.y if m.location else None, "longitude": m.location.x if m.location else None,
     }
     if detail:
         from . import partage_manifestation as pm

@@ -88,6 +88,32 @@ object CartesEmbarquees {
         return total
     }
 
+    /** La carte hors ligne de la zone en cours (27/11/2026, décision de Sylvain) : la crise ou la
+     * manifestation en cours plus 15 km, jusqu'au niveau 15 (les rues et leurs noms, environ 5 m
+     * par pixel ; le niveau 16 quadruplerait la taille). La future navigation GPS reprendra cette
+     * emprise pour le réseau routier. */
+    const val MARGE_ZONE_KM = 15.0
+    const val ZOOM_MIN_ZONE = 6
+    const val ZOOM_MAX_ZONE = 15
+
+    data class Emprise(val sud: Double, val ouest: Double, val nord: Double, val est: Double)
+
+    /** L'emprise qui couvre ces points (centres, contours de zone, postes) élargie de `margeKm`. */
+    fun emprise(points: List<Pair<Double, Double>>, margeKm: Double = MARGE_ZONE_KM): Emprise? {
+        if (points.isEmpty()) return null
+        val sud = points.minOf { it.first }; val nord = points.maxOf { it.first }
+        val ouest = points.minOf { it.second }; val est = points.maxOf { it.second }
+        val dLat = margeKm / 111.32
+        val latMoy = (sud + nord) / 2
+        val dLon = margeKm / (111.32 * cos(latMoy * PI / 180).coerceAtLeast(0.01))
+        return Emprise((sud - dLat).coerceAtLeast(-85.0), (ouest - dLon).coerceAtLeast(-180.0),
+                       (nord + dLat).coerceAtMost(85.0), (est + dLon).coerceAtMost(180.0))
+    }
+
+    /** (tuiles, octets) de la zone, aux niveaux de la zone en cours. */
+    fun estimationZone(e: Emprise): Pair<Long, Long> =
+        tuiles(e.sud, e.ouest, e.nord, e.est, ZOOM_MIN_ZONE, ZOOM_MAX_ZONE).let { it to it * OCTETS_PAR_TUILE }
+
     fun tailleLisible(octets: Long): String = when {
         octets < 1_000_000 -> "${octets / 1000} Ko"
         octets < 1_000_000_000 -> "${octets / 1_000_000} Mo"

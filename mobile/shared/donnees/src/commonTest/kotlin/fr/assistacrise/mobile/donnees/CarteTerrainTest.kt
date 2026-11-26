@@ -34,6 +34,9 @@ class CarteTerrainTest {
                 "route":true,"latitude":44.85,"longitude":-0.57,"auteur_nom":"Léa","cree_le":"2026-11-27T10:00:00Z"}]""", HttpStatusCode.OK, entete)
             chemin == "marqueurs-terrain/" -> respond("""{"id":"k2","emoji":"🔥","latitude":44.86,"longitude":-0.57}""", HttpStatusCode.Created, entete)
             chemin == "marqueurs-terrain/k1/" -> respond("""{"id":"k3","emoji":"🚧","route":true,"latitude":44.85,"longitude":-0.57}""", HttpStatusCode.OK, entete)
+            chemin == "carte-terrain/perimetre/" -> respond("""{"raison":"engagement","crises":[{"id":"c1234567-x","nom":"Crue",
+                "latitude":44.84,"longitude":-0.58,"zone":{"type":"Polygon","coordinates":[[[-0.6,44.8],[-0.5,44.8],[-0.5,44.9],[-0.6,44.8]]]}}]}""",
+                HttpStatusCode.OK, entete)
             chemin == "manifestations/" -> respond("""{"manifestations":[
                 {"id":"m1","titre":"Course","debut":"${iso(9)}","fin":"${iso(13)}","je_suis_inscrit":true},
                 {"id":"m2","titre":"Autre jour","debut":"${iso(60)}","fin":"${iso(64)}","je_suis_inscrit":true},
@@ -60,6 +63,20 @@ class CarteTerrainTest {
         autre.restaurer()
         assertEquals(listOf("k1"), autre.marqueurs.value.map { it.id })
         assertEquals(listOf("m1"), autre.manifestations.value.map { it.id })
+    }
+
+    @Test fun perimetreEtZoneDuHorsLigne() = runTest {
+        session.ouvrir("A", "R", Compte(id = "u1"))
+        depot.rafraichir()
+        assertEquals("engagement", depot.perimetre.value.raison)
+        val lieux = depot.lieuxDeLaZone()
+        // Les sommets du contour de la crise (pas son centre), puis les postes placés de la manifestation.
+        assertTrue((44.8 to -0.6) in lieux && (44.9 to -0.5) in lieux && (44.91 to -0.51) in lieux)
+        assertTrue((44.84 to -0.58) !in lieux)
+        assertEquals("cc1234567-mm1", depot.cleDeLaZone())
+        val autre = DepotCarteTerrain(api, magasin, { it.removePrefix("J").toIntOrNull()?.let(::h) }, { maintenant })
+        autre.restaurer()
+        assertEquals("cc1234567-mm1", autre.cleDeLaZone())
     }
 
     @Test fun presenceDuPointageALaFinDuCreneau() = runTest {

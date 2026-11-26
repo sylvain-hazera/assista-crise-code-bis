@@ -322,6 +322,12 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ManifestationAsso.serializer(), it)
         }
 
+    /** Le périmètre de ma carte : crise en cours, sinon crises de ma commune (27/11/2026). */
+    suspend fun perimetreCarte(): Reponse<fr.assistacrise.mobile.domaine.PerimetreCarte> =
+        authentifie(HttpMethod.Get, "carte-terrain/perimetre/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.PerimetreCarte.serializer(), it)
+        }
+
     /** Les marqueurs terrain actifs que je vois, toutes crises et manifestations (27/11/2026). */
     suspend fun marqueursTerrain(): Reponse<List<fr.assistacrise.mobile.domaine.MarqueurCentral>> =
         liste("marqueurs-terrain/", fr.assistacrise.mobile.domaine.MarqueurCentral.serializer())

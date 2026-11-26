@@ -3,6 +3,29 @@ package fr.assistacrise.mobile.domaine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** Le périmètre de la carte (27/11/2026, `carte-terrain/perimetre/`) : la crise en cours de mes
+ * équipes (« engagement »), sinon les crises de ma commune (« commune »), sinon rien. */
+@Serializable
+data class PerimetreCarte(val raison: String = "aucune", val crises: List<CrisePerimetre> = emptyList())
+
+@Serializable
+data class CrisePerimetre(
+    val id: String,
+    val nom: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    /** Le contour dessiné de la crise (GeoJSON), s'il existe. */
+    val zone: kotlinx.serialization.json.JsonElement? = null,
+) {
+    /** Les sommets du contour (latitude, longitude), sinon le centre. */
+    fun points(): List<Pair<Double, Double>> {
+        val z = zone?.toString()
+        val sommets = z?.let { Regex("""\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*]""").findAll(it)
+            .map { m -> m.groupValues[2].toDouble() to m.groupValues[1].toDouble() }.toList() }.orEmpty()
+        return sommets.ifEmpty { listOfNotNull(if (latitude != null && longitude != null) latitude to longitude else null) }
+    }
+}
+
 /** Un marqueur terrain tel que le serveur le garde (27/11/2026, `marqueurs-terrain/`) : arrivé par
  * une passerelle radio, l'application ou le site, sur une crise ou une manifestation. */
 @Serializable

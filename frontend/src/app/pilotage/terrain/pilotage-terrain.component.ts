@@ -4,7 +4,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import {
-  ETATS_ROUTE, GENRES_MARQUEURS, MarqueurTerrain, MessageATrier, MessageTerrainPilotage, PilotageService,
+  ETATS_ROUTE, GENRES_MARQUEURS, MarqueurTerrain, MessageATrier, MessageTerrainPilotage, PilotageService, noteDeMarqueur,
 } from '../pilotage.service';
 import { MiniCarteMarqueursComponent } from './mini-carte-marqueurs.component';
 
@@ -59,9 +59,9 @@ import { MiniCarteMarqueursComponent } from './mini-carte-marqueurs.component';
             @else {
               <p class="aide">Endroit : {{ endroit.latitude.toFixed(5) }}, {{ endroit.longitude.toFixed(5) }}</p>
               <div class="genres" role="radiogroup" aria-label="Genre du marqueur">
-                @for (g of genres; track g.emoji) {
-                  <button type="button" role="radio" [attr.aria-checked]="emoji === g.emoji" [class.choisi]="emoji === g.emoji"
-                          (click)="emoji = g.emoji">{{ g.emoji }} {{ g.libelle }}</button>
+                @for (g of genres; track g.libelle) {
+                  <button type="button" role="radio" [attr.aria-checked]="genre === g" [class.choisi]="genre === g"
+                          (click)="genre = g">{{ g.emoji }} {{ g.libelle }}</button>
                 }
               </div>
               <label class="note">Précision (facultatif, aucun nom de personne : la radio est publique)
@@ -211,7 +211,7 @@ export class PilotageTerrainComponent {
   readonly etatsRoute = ETATS_ROUTE;
   modePose = false;
   endroit: { latitude: number; longitude: number } | null = null;
-  emoji = GENRES_MARQUEURS[0].emoji;
+  genre = GENRES_MARQUEURS[0];
   note = '';
   selection: string | null = null;
 
@@ -229,7 +229,8 @@ export class PilotageTerrainComponent {
     if (!this.endroit) return;
     this.enCours = 'pose';
     try {
-      await this.pilotage.poserMarqueur(this.emoji, this.endroit.latitude, this.endroit.longitude, this.note.trim());
+      await this.pilotage.poserMarqueur(this.genre.emoji, this.endroit.latitude, this.endroit.longitude,
+                                        noteDeMarqueur(this.genre.precision, this.note));
       this.basculerPose();
     } finally { this.enCours = null; }
   }

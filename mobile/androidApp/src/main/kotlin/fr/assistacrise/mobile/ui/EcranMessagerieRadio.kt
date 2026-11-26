@@ -189,7 +189,8 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                         // Un marqueur (format MeshCore SAR) se lit en clair ; il est aussi sur la carte.
                         val marqueur = fr.assistacrise.mobile.domaine.MarqueursRadio.lire(m.texte)
                         if (marqueur != null) {
-                            Text("📍 ${marqueur.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(marqueur.emoji)}" + (marqueur.note?.let { " · $it" } ?: ""),
+                            Text("📍 ${marqueur.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelleDe(marqueur)}" +
+                                (fr.assistacrise.mobile.domaine.MarqueursRadio.noteLibre(marqueur)?.let { " · $it" } ?: ""),
                                 style = MaterialTheme.typography.bodyMedium)
                             Text("Marqueur sur la carte · ${"%.5f".format(java.util.Locale.ROOT, marqueur.latitude)}, ${"%.5f".format(java.util.Locale.ROOT, marqueur.longitude)}",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -3,6 +3,7 @@ package fr.assistacrise.mobile.domaine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MarqueursRadioTest {
     @Test fun ecrireEtRelire() {
@@ -48,6 +49,33 @@ class MarqueursRadioTest {
         assertEquals(listOf("🚧", "🔥", "⛔"), carte.map { it.emoji })
         assertEquals(44.9, carte.last().latitude)
         assertEquals(true, MarqueursRadio.estRoute("✅"))
+    }
+
+    @Test fun cinqEtatsDeRouteAvecLeurSens() {
+        val m = { e: String, note: String? -> MarqueursRadio.Marqueur(e, 44.85, -0.57, note) }
+        assertEquals("ROUTE_COUPEE_1S", MarqueursRadio.etatDe(m("⛔", "1 sens · arbre en travers"))!!.code)
+        assertEquals("ROUTE_COUPEE_2S", MarqueursRadio.etatDe(m("⛔", "2 sens"))!!.code)
+        assertEquals("ROUTE_FILE_1S", MarqueursRadio.etatDe(m("🚧", "1 file, 1 sens"))!!.code)
+        assertEquals("ROUTE_FILE_2S", MarqueursRadio.etatDe(m("🚧", "1 file, 2 sens · alternat"))!!.code)
+        assertEquals("ROUTE_LIBEREE", MarqueursRadio.etatDe(m("✅", null))!!.code)
+        assertEquals("Route coupée dans 1 sens", MarqueursRadio.libelleDe(m("⛔", "1 sens")))
+        assertEquals("Route 1 file fermée dans les 2 sens", MarqueursRadio.libelleDe(m("🚧", "1 file, 2 sens")))
+        // Avant le 27/11/2026 : pas de sens.
+        assertNull(MarqueursRadio.etatDe(m("⛔", "arbre")))
+        assertEquals("Route coupée, sens non précisé", MarqueursRadio.libelleDe(m("⛔", "arbre")))
+        assertEquals("arbre en travers", MarqueursRadio.noteLibre(m("⛔", "1 sens · arbre en travers")))
+        assertEquals("1 file, 2 sens · alternat", MarqueursRadio.noteDeRoute("1 file, 2 sens", "alternat"))
+        assertEquals("1 sensation", MarqueursRadio.precisionEtNote("1 sensation").second)
+        // Le texte radio garde le sens, et se relit tel quel.
+        val texte = MarqueursRadio.ecrire(m("⛔", MarqueursRadio.noteDeRoute("1 sens", "arbre")))
+        assertEquals("S:⛔:0:44.85000,-0.57000:1 sens · arbre", texte)
+        assertEquals("ROUTE_COUPEE_1S", MarqueursRadio.etatDe(MarqueursRadio.lire(texte)!!)!!.code)
+    }
+
+    @Test fun secoursAPersonne() {
+        assertEquals("🆘", MarqueursRadio.GENRES.first().emoji)
+        assertTrue(MarqueursRadio.GENRES.none { it.emoji == "🧑" || it.emoji == "🚑" })
+        assertEquals("Secours à personne", MarqueursRadio.libelle("🧑"))
     }
 
     @Test fun decimalesSansLaLangue() {
