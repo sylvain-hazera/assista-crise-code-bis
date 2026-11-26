@@ -18,5 +18,7 @@ export const TERRAIN_ROUTES: Routes = [
   { path: 'dossiers', loadComponent: () => import('./dossiers/terrain-dossiers.component').then(m => m.TerrainDossiersComponent) },
   { path: 'qr', loadComponent: () => import('./qr/terrain-qr.component').then(m => m.TerrainQrComponent) },
   { path: 'degats', canActivate: [degatsGuard], loadComponent: () => import('./degats/terrain-degats.component').then(m => m.TerrainDegatsComponent) },
+  // Manifestations d'association (26/11/2026) : la page du site, faite pour le téléphone aussi.
+  { path: 'manifestations', loadComponent: () => import('../pages/manifestations/manifestations.component').then(m => m.ManifestationsComponent) },
   { path: 'moi', loadComponent: () => import('./moi/terrain-moi.component').then(m => m.TerrainMoiComponent) },
 ];

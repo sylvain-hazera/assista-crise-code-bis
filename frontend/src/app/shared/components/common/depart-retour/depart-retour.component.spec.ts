@@ -76,4 +76,14 @@ describe('DepartRetourComponent', () => {
     fixture.detectChanges();
     expect(texte()).toContain('Vous êtes déjà parti.');
   });
+
+  it('part pour la manifestation du jour où il est inscrit (26/11/2026)', () => {
+    ouvrir({ en_cours: null, crises: [], equipes: [{ id: 'e1', nom: 'Services techniques' }],
+             manifestations: [{ id: 'm1', nom: 'Course des 10 km', debut: '2026-11-26T08:00:00Z', fin: '2026-11-26T12:00:00Z' }] });
+    expect(texte()).toContain('la manifestation');
+    fixture.componentInstance.geste('partir');
+    const requete = http.expectOne(r => r.method === 'POST');
+    expect(requete.request.body).toEqual({ geste: 'partir', manifestation: 'm1', depart_de: 'DOMICILE' });
+    requete.flush({ en_cours: null, crises: [], equipes: [] });
+  });
 });

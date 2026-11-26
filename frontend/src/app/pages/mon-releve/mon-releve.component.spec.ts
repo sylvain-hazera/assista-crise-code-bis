@@ -40,7 +40,7 @@ describe('MonReleveComponent', () => {
 
   it('prépare une sortie oubliée avec la seule crise et la seule équipe', () => {
     composant.ajouter();
-    expect(composant.brouillon).toEqual(jasmine.objectContaining({ crise: 'c1', equipe: 'e1', depart_de: 'DOMICILE' }));
+    expect(composant.brouillon).toEqual(jasmine.objectContaining({ activite: 'c:c1', equipe: 'e1', depart_de: 'DOMICILE' }));
   });
 
   it('refuse d\'enregistrer une ligne sans départ ou sans retour', () => {
@@ -105,5 +105,31 @@ describe('MonReleveComponent', () => {
     expect(composant.activite.map(a => a.quoi)).toEqual(['Planning : créneau matin']);
     composant.filtreActivite = 'equipe';
     expect(composant.activite.length).toBe(1);
+  });
+
+  it('déclare une manifestation avec ses kilomètres, sans équipe (26/11/2026)', () => {
+    composant.releve = { ...composant.releve!, manifestations: [{ id: 'm1', nom: 'Course', debut: '2026-11-15T08:00:00Z' }] };
+    composant.ajouter();
+    composant.brouillon!.activite = 'm:m1';
+    composant.brouillon!.kilometres = '42,5';
+    composant.brouillon!.vehicule = 'VOITURE';
+    composant.brouillon!.parti_le = composant.enLocal('2026-11-15T08:00:00Z');
+    composant.brouillon!.rentre_le = composant.enLocal('2026-11-15T12:00:00Z');
+    composant.enregistrer();
+    const requete = http.expectOne(r => r.method === 'POST');
+    expect(requete.request.body).toEqual(jasmine.objectContaining({ crise: null, manifestation: 'm1', equipe: null, kilometres: '42,5', vehicule: 'VOITURE' }));
+    requete.flush({});
+  });
+
+  it('renonce au remboursement avec l\'adresse du reçu', () => {
+    const f = { institution: 'a1', nom: 'Asso', annee: 2026, recus_fiscaux: true, kilometres: 120, montant: '48.00', abandon: null };
+    composant.renonciation = f;
+    composant.renoncer();
+    expect(composant.erreur).toContain('adresse');
+    composant.adresse = '3 allée des Pins';
+    composant.renoncer();
+    const requete = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/mon-releve/abandon/'));
+    expect(requete.request.body).toEqual({ institution: 'a1', annee: 2026, adresse: '3 allée des Pins' });
+    requete.flush({});
   });
 });

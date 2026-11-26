@@ -188,3 +188,27 @@ export const radioGuard: CanActivateFn = (route, state) => {
     catchError(() => of(router.parseUrl('/admin/radio'))),
   );
 };
+
+/** « Manifestations » (26/11/2026) : champ serveur `acces_manifestations` — membre actif ou bureau
+ * d'une association. Un bénévole est un compte ordinaire : la page vit hors de /admin. */
+export const manifestationsGuard: CanActivateFn = () => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  if (!authService.getToken()) return router.parseUrl('/accueil');
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_manifestations ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
+/** « Bénévolat » (valorisation, abandons de frais, reçus) : champ serveur `acces_benevolat` — bureau
+ * d'une association. */
+export const benevolatGuard: CanActivateFn = () => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  if (!authService.getToken()) return router.parseUrl('/accueil');
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_benevolat ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};

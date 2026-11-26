@@ -74,17 +74,31 @@ def _lieu(valeur, defaut):
     return valeur if valeur in LieuDeDepart.values else defaut
 
 
-def partir(utilisateur, environment, crise, equipe=None, depart_de=None) -> EngagementPersonnel:
+def partir(utilisateur, environment, crise=None, equipe=None, depart_de=None, manifestation=None) -> EngagementPersonnel:
     """« Je pars ». Rejouable : déjà parti sur cette crise, on rend l'engagement en cours.
 
     `depart_de` : domicile ou hébergement. Sans précision, quelqu'un qui a un logement sur
-    cette crise part de son logement."""
+    cette crise part de son logement.
+
+    Depuis le 26/11/2026, on part aussi sur une **manifestation** de son association où l'on
+    est inscrit (core/manifestations.py) : une crise OU une manifestation, jamais les deux."""
+    if (crise is None) == (manifestation is None):
+        raise ErreurEngagement("Indiquez la crise ou la manifestation.")
     ouvert = en_cours(utilisateur, environment)
     if ouvert is not None:
-        if ouvert.crise_id == crise.id:
+        if (crise is not None and ouvert.crise_id == crise.id) or (manifestation is not None and ouvert.manifestation_id == manifestation.id):
             return ouvert
         raise ErreurEngagement(
-            f"Vous êtes déjà parti sur « {ouvert.crise.name} » : déclarez d'abord votre retour.")
+            f"Vous êtes déjà parti sur « {ouvert.objet_nom} » : déclarez d'abord votre retour.")
+    if manifestation is not None:
+        from . import manifestations as mf
+        if not mf.du_jour_pour(utilisateur, environment).filter(id=manifestation.id).exists():
+            raise ErreurEngagement("Vous n'êtes pas inscrit sur un poste de cette manifestation aujourd'hui.")
+        return EngagementPersonnel.objects.create(
+            utilisateur=utilisateur, environment=environment, manifestation=manifestation,
+            institution=manifestation.institution, parti_le=timezone.now(),
+            depart_de=_lieu(depart_de, LieuDeDepart.DOMICILE),
+        )
     if crise.end_date is not None:
         raise ErreurEngagement("Cette crise est close.")
     if not crises_ouvertes_pour(utilisateur, environment).filter(id=crise.id).exists():
@@ -109,7 +123,7 @@ def rentrer(utilisateur, environment, retour_a=None):
         raise ErreurEngagement("Vous n'êtes pas déclaré parti.")
     ouvert.rentre_le = timezone.now()
     ouvert.retour_a = _lieu(retour_a, ouvert.depart_de)
-    if ouvert.retour_a == LieuDeDepart.HEBERGEMENT and not ouvert.hebergement:
+    if ouvert.retour_a == LieuDeDepart.HEBERGEMENT and not ouvert.hebergement and ouvert.crise_id:
         ouvert.hebergement = hebergement_de(utilisateur, ouvert.crise)
     ouvert.save(update_fields=["rentre_le", "retour_a", "hebergement"])
     return ouvert
@@ -125,6 +139,30 @@ def crises_declarables(utilisateur, environment):
         return Crisis.objects.none()
     crises = ImplicationInstitution.objects.filter(institution_id__in=institutions).values_list("crise_id", flat=True)
     return Crisis.objects.filter(id__in=crises, environment=environment).order_by("-start_date")
+
+
+def manifestations_declarables(utilisateur, environment):
+    """Les manifestations (commencées) de ses associations, sur lesquelles la personne peut
+    compléter son relevé — même sans s'y être inscrite : on vient parfois en renfort."""
+    from . import manifestations as mf
+    from .models import Manifestation, StatutManifestation
+    return (Manifestation.objects.filter(
+        environment=environment, institution_id__in=mf.associations_de(utilisateur), debut__lte=timezone.now())
+        .exclude(statut__in=(StatutManifestation.BROUILLON, StatutManifestation.ANNULEE)).order_by("-debut"))
+
+
+def lire_kilometres(valeur) -> str:
+    """« 42 », « 42,5 » → « 42.5 » ; vide = pas de déplacement. Refuse l'absurde."""
+    texte = str(valeur if valeur is not None else "").strip().replace(",", ".")
+    if texte == "":
+        return ""
+    try:
+        km = float(texte)
+    except ValueError:
+        raise ErreurEngagement("Kilomètres : un nombre est attendu.")
+    if km < 0 or km > 3000:
+        raise ErreurEngagement("Kilomètres : entre 0 et 3000 pour un aller-retour.")
+    return f"{km:g}"
 
 
 def _verifier(utilisateur, environment, parti_le, rentre_le, sauf=None):
@@ -148,12 +186,27 @@ def _verifier(utilisateur, environment, parti_le, rentre_le, sauf=None):
                 f"(départ du {timezone.localtime(autre.parti_le).strftime('%d/%m à %H:%M')}).")
 
 
-def completer(utilisateur, environment, *, crise, parti_le, rentre_le, equipe=None,
-              depart_de=None, retour_a=None) -> EngagementPersonnel:
+def completer(utilisateur, environment, *, crise=None, parti_le, rentre_le, equipe=None,
+              depart_de=None, retour_a=None, manifestation=None, kilometres=None, vehicule=None) -> EngagementPersonnel:
     """Ajoute à la main une sortie oubliée. Elle doit être complète (un départ ET un retour) :
     un départ en cours se déclare par le bouton, pas après coup."""
+    from .models import VehiculeBenevole
     if rentre_le is None:
         raise ErreurEngagement("Une ligne ajoutée à la main porte un départ et un retour.")
+    if (crise is None) == (manifestation is None):
+        raise ErreurEngagement("Indiquez la crise ou la manifestation.")
+    if manifestation is not None:
+        if not manifestations_declarables(utilisateur, environment).filter(id=manifestation.id).exists():
+            raise ErreurEngagement("Cette manifestation n'est pas celle d'une de vos associations.")
+        _verifier(utilisateur, environment, parti_le, rentre_le)
+        return EngagementPersonnel.objects.create(
+            utilisateur=utilisateur, environment=environment, manifestation=manifestation,
+            institution=manifestation.institution, parti_le=parti_le, rentre_le=rentre_le,
+            depart_de=_lieu(depart_de, LieuDeDepart.DOMICILE), retour_a=_lieu(retour_a, _lieu(depart_de, LieuDeDepart.DOMICILE)),
+            kilometres=lire_kilometres(kilometres),
+            vehicule=vehicule if vehicule in VehiculeBenevole.values else VehiculeBenevole.AUCUN,
+            saisie_manuelle=True, modifie_le=timezone.now(),
+        )
     if not crises_declarables(utilisateur, environment).filter(id=crise.id).exists():
         raise ErreurEngagement("Ni votre institution ni vos équipes n'ont été engagées sur cette crise.")
     if equipe is not None and not equipes_de(utilisateur).filter(id=equipe.id).exists():
@@ -166,24 +219,36 @@ def completer(utilisateur, environment, *, crise, parti_le, rentre_le, equipe=No
         utilisateur=utilisateur, environment=environment, crise=crise, equipe=equipe, institution=institution,
         parti_le=parti_le, rentre_le=rentre_le, depart_de=depart_de, retour_a=retour_a,
         hebergement=hebergement_de(utilisateur, crise) if LieuDeDepart.HEBERGEMENT in (depart_de, retour_a) else "",
+        kilometres=lire_kilometres(kilometres),
+        vehicule=vehicule if vehicule in VehiculeBenevole.values else VehiculeBenevole.AUCUN,
         saisie_manuelle=True, modifie_le=timezone.now(),
     )
 
 
-def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retour_a=None) -> EngagementPersonnel:
+def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retour_a=None,
+             kilometres=None, vehicule=None) -> EngagementPersonnel:
     """Corrige une de SES lignes — typiquement le retour oublié. La ligne est marquée
     « complétée à la main » : le relevé ne fait pas passer une correction pour une déclaration
     faite sur le moment. Une ligne validée par l'encadrement ne se corrige plus."""
     if engagement.valide_le is not None:
         raise ErreurEngagement(
             "Cette ligne a été validée par votre encadrement : demandez-lui de lever sa validation.")
+    from .models import VehiculeBenevole
     parti = parti_le or engagement.parti_le
     rentre = rentre_le if rentre_le is not None else engagement.rentre_le
+    heures_changees = parti != engagement.parti_le or rentre != engagement.rentre_le
     _verifier(engagement.utilisateur, engagement.environment, parti, rentre, sauf=engagement)
     engagement.parti_le, engagement.rentre_le = parti, rentre
     engagement.depart_de = _lieu(depart_de, engagement.depart_de)
     engagement.retour_a = _lieu(retour_a, engagement.retour_a or engagement.depart_de) if rentre is not None else ""
-    engagement.saisie_manuelle = True
+    # Kilomètres et véhicule (26/11/2026) : ajouter ses kilomètres ne fait pas passer les heures
+    # pour « complétées à la main ».
+    if kilometres is not None:
+        engagement.kilometres = lire_kilometres(kilometres)
+    if vehicule in VehiculeBenevole.values:
+        engagement.vehicule = vehicule
+    if heures_changees or depart_de is not None or retour_a is not None:
+        engagement.saisie_manuelle = True
     engagement.modifie_le = timezone.now()
     # La remarque a été entendue : la ligne retourne à la relecture.
     engagement.remarque_chef = ""

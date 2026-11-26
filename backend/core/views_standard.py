@@ -119,12 +119,14 @@ class EngagementPersonnelView(APIView):
 
     def _etat(self, request):
         from . import engagements_personnels as ep
+        from . import manifestations as mf
 
         environment = get_active_environment(request)
         ouvert = ep.en_cours(request.user, environment)
         return {
             "en_cours": None if ouvert is None else {
-                "crise": str(ouvert.crise_id), "crise_nom": ouvert.crise.name,
+                "crise": str(ouvert.crise_id) if ouvert.crise_id else None, "crise_nom": ouvert.objet_nom,
+                "manifestation": str(ouvert.manifestation_id) if ouvert.manifestation_id else None,
                 "equipe_nom": ouvert.equipe.name if ouvert.equipe_id else None,
                 "parti_le": ouvert.parti_le, "depart_de": ouvert.depart_de,
                 "hebergement": ouvert.hebergement,
@@ -134,6 +136,9 @@ class EngagementPersonnelView(APIView):
             "crises": [{"id": str(c.id), "nom": c.name, "hebergement": ep.hebergement_de(request.user, c)}
                        for c in ep.crises_ouvertes_pour(request.user, environment)],
             "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
+            # Les manifestations du jour où je suis inscrit (26/11/2026) : on part aussi pour elles.
+            "manifestations": [{"id": str(m.id), "nom": m.titre, "debut": m.debut, "fin": m.fin}
+                               for m in mf.du_jour_pour(request.user, environment)],
         }
 
     def get(self, request):
@@ -146,7 +151,13 @@ class EngagementPersonnelView(APIView):
         environment = get_active_environment(request)
         geste = request.data.get("geste")
         try:
-            if geste == "partir":
+            if geste == "partir" and request.data.get("manifestation"):
+                from .models import Manifestation
+                manifestation = Manifestation.objects.filter(id=request.data.get("manifestation"), environment=environment).first()
+                if manifestation is None:
+                    raise ValidationError({"detail": "Manifestation introuvable."})
+                ep.partir(request.user, environment, manifestation=manifestation, depart_de=request.data.get("depart_de"))
+            elif geste == "partir":
                 crise = Crisis.objects.filter(id=request.data.get("crise"), environment=environment).first() \
                     if request.data.get("crise") else None
                 if crise is None:
@@ -165,7 +176,11 @@ class EngagementPersonnelView(APIView):
 def _ligne_de_releve(engagement) -> dict:
     duree = engagement.duree
     return {
-        "id": str(engagement.id), "crise": str(engagement.crise_id), "crise_nom": engagement.crise.name,
+        "id": str(engagement.id), "crise": str(engagement.crise_id) if engagement.crise_id else None,
+        # `crise_nom` garde son nom pour les écrans existants : c'est le nom de l'activité.
+        "crise_nom": engagement.objet_nom,
+        "manifestation": str(engagement.manifestation_id) if engagement.manifestation_id else None,
+        "kilometres": engagement.kilometres, "vehicule": engagement.vehicule, "source": engagement.source,
         "equipe": str(engagement.equipe_id) if engagement.equipe_id else None,
         "equipe_nom": engagement.equipe.name if engagement.equipe_id else "",
         "parti_le": engagement.parti_le, "rentre_le": engagement.rentre_le,
@@ -213,14 +228,37 @@ class MonReleveView(APIView):
             raise ValidationError({"detail": "Période invalide (un an au plus)."})
         debut = timezone.make_aware(datetime.datetime.combine(du, datetime.time.min))
         fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
-        lignes = (EngagementPersonnel.objects.filter(
+        objets = list(EngagementPersonnel.objects.filter(
             utilisateur=request.user, environment=environment, parti_le__gte=debut, parti_le__lte=fin)
-            .select_related("crise", "equipe").order_by("-parti_le"))
-        lignes = [_ligne_de_releve(l) for l in lignes]
+            .select_related("crise", "equipe", "manifestation").order_by("-parti_le"))
+        lignes = [_ligne_de_releve(l) for l in objets]
+        from . import benevolat, manifestations as mf
+        from .models import AbandonFrais, Institution, VehiculeBenevole
+        # Frais de l'année et renonciation possible, par association (26/11/2026).
+        annee = au.year
+        frais = []
+        for institution in Institution.objects.filter(id__in=mf.associations_de(request.user)).order_by("nom"):
+            r = benevolat.reglages(institution, annee, environment)
+            dispo = benevolat.frais_abandonnables(institution, environment, annee, request.user)
+            abandon = AbandonFrais.objects.filter(institution=institution, utilisateur=request.user, annee=annee,
+                                                  environment=environment).first()
+            frais.append({
+                "institution": str(institution.id), "nom": institution.nom, "annee": annee,
+                "recus_fiscaux": r.recus_fiscaux, "kilometres": dispo["kilometres"], "montant": dispo["montant"],
+                "abandon": None if abandon is None else {
+                    "id": str(abandon.id), "statut": abandon.statut, "statut_libelle": abandon.get_statut_display(),
+                    "numero_recu": abandon.numero_recu, "motif_refus": abandon.motif_refus,
+                    "montant": (abandon.detail or {}).get("montant")},
+            })
         return Response({
             "du": du, "au": au,
             "lignes": lignes,
             "total_heures": round(sum(l["heures"] or 0 for l in lignes), 2),
+            "total_kilometres": round(sum(o.kilometres_nombre() for o in objets), 1),
+            "manifestations": [{"id": str(m.id), "nom": m.titre, "debut": m.debut}
+                               for m in ep.manifestations_declarables(request.user, environment)[:100]],
+            "vehicules": [{"code": c, "libelle": l} for c, l in VehiculeBenevole.choices],
+            "frais": frais,
             "activite": ep.activite(request.user, environment, debut, fin),
             "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_declarables(request.user, environment)],
             "equipes": [{"id": str(e.id), "nom": e.name} for e in ep.equipes_de(request.user).order_by("name")],
@@ -234,18 +272,22 @@ class MonReleveView(APIView):
         from . import engagements_personnels as ep
         from .models import Team
 
+        from .models import Manifestation
         environment = get_active_environment(request)
         crise = Crisis.objects.filter(id=request.data.get("crise"), environment=environment).first() \
             if request.data.get("crise") else None
-        if crise is None:
-            raise ValidationError({"detail": "Indiquez la crise."})
+        manifestation = Manifestation.objects.filter(id=request.data.get("manifestation"), environment=environment).first() \
+            if request.data.get("manifestation") else None
+        if crise is None and manifestation is None:
+            raise ValidationError({"detail": "Indiquez la crise ou la manifestation."})
         equipe = Team.objects.filter(id=request.data.get("equipe")).first() if request.data.get("equipe") else None
         try:
             ligne = ep.completer(
-                request.user, environment, crise=crise, equipe=equipe,
+                request.user, environment, crise=crise, equipe=equipe, manifestation=manifestation,
                 parti_le=_instant(request.data.get("parti_le"), "Départ"),
                 rentre_le=_instant(request.data.get("rentre_le"), "Retour"),
                 depart_de=request.data.get("depart_de"), retour_a=request.data.get("retour_a"),
+                kilometres=request.data.get("kilometres"), vehicule=request.data.get("vehicule"),
             )
         except ep.ErreurEngagement as erreur:
             raise ValidationError({"detail": str(erreur)})
@@ -264,7 +306,7 @@ class MonReleveLigneView(APIView):
 
         from .models import EngagementPersonnel
         return get_object_or_404(
-            EngagementPersonnel.objects.select_related("crise", "equipe"),
+            EngagementPersonnel.objects.select_related("crise", "equipe", "manifestation"),
             id=ligne_id, utilisateur=request.user, environment=get_active_environment(request))
 
     def patch(self, request, ligne_id):
@@ -278,6 +320,7 @@ class MonReleveLigneView(APIView):
                 parti_le=_instant(donnees["parti_le"], "Départ") if donnees.get("parti_le") else None,
                 rentre_le=_instant(donnees["rentre_le"], "Retour") if donnees.get("rentre_le") else None,
                 depart_de=donnees.get("depart_de"), retour_a=donnees.get("retour_a"),
+                kilometres=donnees.get("kilometres"), vehicule=donnees.get("vehicule"),
             )
         except ep.ErreurEngagement as erreur:
             raise ValidationError({"detail": str(erreur)})
@@ -360,7 +403,7 @@ class RelevesEquipeView(APIView):
 
         environment = get_active_environment(request)
         ligne = get_object_or_404(
-            EngagementPersonnel.objects.select_related("crise", "equipe"),
+            EngagementPersonnel.objects.select_related("crise", "equipe", "manifestation"),
             id=request.data.get("ligne"), environment=environment)
         try:
             agent_de = _collectivite_de_l_agent(request)

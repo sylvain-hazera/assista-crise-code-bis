@@ -5,7 +5,7 @@ import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
 import { authGuard } from '../core/guards/auth.guard';
-import { adminGuard, institutionalEffectiveGuard } from '../core/guards/admin.guard';
+import { adminGuard, benevolatGuard, institutionalEffectiveGuard, manifestationsGuard } from '../core/guards/admin.guard';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
 import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
 import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
@@ -171,6 +171,19 @@ export const PUBLIC_ROUTES: Routes = [
         canActivate: [authGuard],
         loadComponent: () => import('../pages/mon-releve/mon-releve.component')
           .then(m => m.MonReleveComponent)
+      },
+      {
+        // Manifestations d'association (26/11/2026) : un bénévole est un compte ordinaire.
+        path: 'manifestations',
+        canActivate: [authGuard, manifestationsGuard],
+        loadComponent: () => import('../pages/manifestations/manifestations.component')
+          .then(m => m.ManifestationsComponent)
+      },
+      {
+        path: 'benevolat',
+        canActivate: [authGuard, benevolatGuard],
+        loadComponent: () => import('../pages/benevolat/benevolat.component')
+          .then(m => m.BenevolatComponent)
       },
       {
         path: 'mes-interventions',

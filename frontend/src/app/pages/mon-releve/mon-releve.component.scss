@@ -44,3 +44,14 @@
   &:hover:not(:disabled) { background: #1d4ed8; } }
 .btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
   &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }
+
+.km { width: 5rem; }
+.frais {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  border-radius: 8px;
+  h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  label { display: block; margin: 0.5rem 0; }
+  input[type='text'] { width: 100%; max-width: 28rem; }
+}

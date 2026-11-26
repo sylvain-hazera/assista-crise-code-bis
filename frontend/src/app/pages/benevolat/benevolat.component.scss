@@ -1,0 +1,55 @@
+.page { max-width: 90rem; margin: 0 auto; padding: 1rem 16px 3rem;
+  h1 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.05rem; margin: 1.2rem 0 .5rem; }
+  .espace-haut { margin-top: 1.8rem; }
+  .chapeau, .note { color: var(--ac-text-muted, #6b7280); }
+  .chapeau { max-width: 55rem; margin: 0 0 1rem; }
+  .note { font-size: .85rem; margin: .3rem 0; }
+  .message { padding: .6rem .8rem; border-left: 4px solid #1d4ed8; background: var(--ac-blue-bg, #eff6ff); margin: .5rem 0; }
+  .message.erreur { border-left-color: #b91c1c; background: var(--ac-red-bg, #fef2f2); }
+  .barre { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: end; margin: .6rem 0 1rem;
+    label { display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+    .espace { flex: 1; } }
+  .chiffres { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--ac-border, #e5e7eb);
+    border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; overflow: hidden; margin: 0 0 1rem;
+    div { display: flex; flex-direction: column; gap: .15rem; padding: .8rem 1rem; background: var(--ac-surface, #fff); }
+    .valeur { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .libelle { font-size: .85rem; color: var(--ac-text-muted, #6b7280); } }
+  @media (max-width: 700px) { .chiffres { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .colonnes { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+  @media (max-width: 1000px) { .colonnes { grid-template-columns: 1fr; } }
+  .tableur { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { padding: .4rem .5rem; border: 1px solid var(--ac-border, #e5e7eb); text-align: left; }
+  th { background: var(--ac-surface-2, #f9fafb); font-weight: 600; white-space: nowrap; }
+  td.nombre, th.nombre { text-align: right; font-variant-numeric: tabular-nums; }
+  .mois { display: flex; align-items: end; gap: .4rem; height: 9rem; padding: .5rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+    .colonne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: end; height: 100%; gap: .2rem; min-width: 0; }
+    .barre-mois { width: 70%; max-width: 2.5rem; min-height: 2px; background: #2563eb; border-radius: 3px 3px 0 0; }
+    .nombre-mois { font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--ac-text-muted, #6b7280); }
+    .nom-mois { font-size: .72rem; text-transform: uppercase; } }
+  .formulaire { display: grid; gap: .6rem 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 .8rem;
+    label { display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+    .large { grid-column: 1 / -1; }
+    .case { flex-direction: row; align-items: center; gap: .5rem; } }
+  input, select { font: inherit; padding: .35rem .45rem; border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px;
+    background: var(--ac-surface, #fff); color: inherit; }
+  .abandons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem;
+    li { display: flex; flex-wrap: wrap; gap: .4rem .75rem; align-items: center; padding: .5rem .6rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; }
+    .refus { display: flex; gap: .4rem; flex-basis: 100%; input { flex: 1; } } }
+  .pastille { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; color: #fff; background: #6b7280; }
+  .pastille.ok { background: #15803d; }
+  .pastille.attente { background: #b45309; }
+  .lien { font: inherit; background: none; border: 0; padding: 0; color: #1d4ed8; cursor: pointer; text-decoration: underline; }
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .5rem 1rem; border-radius: 6px; cursor: pointer; font: inherit; font-size: .9rem;
+  .material-icons { font-size: 1.1rem; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+.btn-primary { border: 1px solid #2563eb; background: #2563eb; color: #fff;
+  &:hover:not(:disabled) { background: #1d4ed8; } }
+.btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
+  &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }

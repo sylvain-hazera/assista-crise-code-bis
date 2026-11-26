@@ -376,6 +376,8 @@ class UserSerializer(serializers.ModelSerializer):
     acces_membres_association = serializers.SerializerMethodField()
     acces_revue_droits = serializers.SerializerMethodField()
     acces_campagnes = serializers.SerializerMethodField()
+    acces_manifestations = serializers.SerializerMethodField()
+    acces_benevolat = serializers.SerializerMethodField()
     second_facteur = serializers.SerializerMethodField()
     est_benevole_association = serializers.SerializerMethodField()
     acces_radio = serializers.SerializerMethodField()
@@ -532,6 +534,18 @@ class UserSerializer(serializers.ModelSerializer):
         institutions, equipes = perimetre_de_pilotage(obj)
         return bool(institutions or equipes)
 
+    def get_acces_manifestations(self, obj):
+        """« Mes manifestations » (26/11/2026) : membre actif ou bureau d'une association
+        (core/manifestations.py). L'administrateur aussi, pour dépanner."""
+        from . import manifestations as mf
+        return obj.type == UserRole.ADMINISTRATOR or bool(mf.associations_de(obj))
+
+    def get_acces_benevolat(self, obj):
+        """« Manifestations » à organiser et « Bénévolat » (valorisation, reçus) : le bureau
+        d'une association, et l'administrateur."""
+        from . import manifestations as mf
+        return obj.type == UserRole.ADMINISTRATOR or bool(mf.associations_organisees_par(obj))
+
     def get_est_benevole_association(self, obj):
         """Ce compte est-il membre d'une association agréée de sécurité civile ?
 
@@ -615,7 +629,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_revue_droits', 'acces_campagnes', 'second_facteur',
+                  'acces_registre_vulnerables', 'acces_membres_association', 'acces_revue_droits', 'acces_campagnes', 'acces_manifestations', 'acces_benevolat', 'second_facteur',
                   'est_benevole_association',
                   'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {

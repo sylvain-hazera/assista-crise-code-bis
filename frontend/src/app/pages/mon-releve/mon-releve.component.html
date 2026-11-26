@@ -16,7 +16,8 @@
     <label>au <input type="date" [(ngModel)]="au" (change)="rechargerPeriode()"></label>
     @if (onglet === 'moi' && releve; as r) {
       <strong>{{ r.total_heures | number:'1.0-2' }} h sur la période</strong>
-      @if (!brouillon && r.crises.length) {
+      @if (r.total_kilometres) { <span>{{ r.total_kilometres | number:'1.0-1' }} km</span> }
+      @if (!brouillon && peutAjouter) {
         <button type="button" class="btn-primary" (click)="ajouter()"><span class="material-icons">add</span> Ajouter une sortie oubliée</button>
       }
     }
@@ -40,7 +41,7 @@
           <span class="note">— {{ fiche.total_heures | number:'1.0-2' }} h déclarées, {{ fiche.heures_validees | number:'1.0-2' }} h validées</span></h2>
         <div class="tableur">
           <table>
-            <thead><tr><th>Crise</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th></th></tr></thead>
+            <thead><tr><th>Activité</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th class="nombre">Km</th><th></th></tr></thead>
             <tbody>
               @for (l of fiche.lignes; track l.id) {
                 <tr [class.dehors]="!l.rentre_le">
@@ -48,6 +49,7 @@
                   <td>{{ l.parti_le | date:'dd/MM/yyyy HH:mm' }}</td><td>{{ libelleLieu(l.depart_de) }}</td>
                   <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td><td>{{ libelleLieu(l.retour_a) }}</td>
                   <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
+                  <td class="nombre">{{ l.kilometres || '—' }}</td>
                   <td>
                     @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main par la personne, après coup">à la main</span> }
                     @if (l.validee) {
@@ -63,7 +65,7 @@
                 </tr>
                 @if (aRenvoyer?.id === l.id) {
                   <tr class="edition">
-                    <td colspan="8">
+                    <td colspan="9">
                       <label>Ce qui est à revoir
                         <input type="text" maxlength="500" [(ngModel)]="remarque" placeholder="Tu es rentrée à 17 h, pas 18 h"></label>
                       <button type="button" class="btn-primary" (click)="relire(l, 'renvoyer')">Renvoyer à {{ fiche.personne }}</button>
@@ -81,9 +83,10 @@
     }
   }
 
-  @if (onglet === 'moi' && releve && !releve.crises.length && !releve.lignes.length) {
-    <p class="message">Cette page n'a rien à vous proposer pour le moment : on ne déclare des heures que sur une crise où
-      votre institution, ou l'une de vos équipes, est engagée. Si vous devriez y avoir accès, voyez votre encadrement.</p>
+  @if (onglet === 'moi' && releve && !peutAjouter && !releve.lignes.length) {
+    <p class="message">Cette page n'a rien à vous proposer pour le moment : on déclare des heures sur une crise où
+      votre institution, ou l'une de vos équipes, est engagée, ou sur une manifestation de votre association. Si vous
+      devriez y avoir accès, voyez votre encadrement.</p>
   }
 
   @if (onglet === 'moi' && releve; as r) {
@@ -93,7 +96,7 @@
         <div class="tableur">
           <table>
             <thead>
-              <tr><th>Crise</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th></th></tr>
+              <tr><th>Activité</th><th>Équipe</th><th>Départ</th><th>De</th><th>Retour</th><th>À</th><th class="nombre">Heures</th><th class="nombre">Km</th><th></th></tr>
             </thead>
             <tbody>
               @if (brouillon && !brouillon.id) {
@@ -111,7 +114,9 @@
                     <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td>
                     <td>{{ libelleLieu(l.retour_a) }}</td>
                     <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
+                    <td class="nombre">{{ l.kilometres || '—' }}@if (libelleVehicule(l.vehicule)) { <br><span class="note">{{ libelleVehicule(l.vehicule) }}</span> }</td>
                     <td>
+                      @if (l.source === 'PLANNING') { <span class="pastille" title="Créée par le bureau au pointage de la manifestation : ajoutez vos kilomètres">pointée</span> }
                       @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main, après coup">à la main</span> }
                       @if (l.validee) {
                         <span class="pastille validee" title="Validée par votre encadrement : elle ne se modifie plus">validée</span>
@@ -124,13 +129,40 @@
                   </tr>
                 }
               } @empty {
-                @if (!brouillon) { <tr><td colspan="8" class="note">Aucune sortie déclarée sur cette période.</td></tr> }
+                @if (!brouillon) { <tr><td colspan="9" class="note">Aucune sortie déclarée sur cette période.</td></tr> }
               }
             </tbody>
           </table>
         </div>
         <p class="note">Une ligne par sortie, du départ au retour, 24 heures au plus. Les lignes ne peuvent pas se
-          recouvrir. Une ligne déclarée sur le moment se corrige mais ne se supprime pas.</p>
+          recouvrir. Une ligne déclarée sur le moment se corrige mais ne se supprime pas. Les kilomètres sont ceux de
+          l'aller-retour, avec votre véhicule.</p>
+
+        @for (f of r.frais ?? []; track f.institution) {
+          @if (f.kilometres || f.abandon) {
+            <div class="frais">
+              <h3>Mes frais {{ f.annee }} — {{ f.nom }}</h3>
+              <p>{{ f.kilometres | number:'1.0-1' }} km validés@if (f.montant !== '0.00') {, soit {{ f.montant }} € au tarif de l'association}.</p>
+              @if (f.abandon; as a) {
+                <p><span class="pastille" [class.validee]="a.statut === 'RECU_EMIS'">{{ a.statut_libelle }}</span>
+                  @if (a.motif_refus) { <span class="note">{{ a.motif_refus }}</span> }
+                  @if (a.statut === 'RECU_EMIS') { <button type="button" class="lien" (click)="telechargerRecu(f)">Télécharger le reçu n° {{ a.numero_recu }}</button> }</p>
+              }
+              @if (f.recus_fiscaux && f.montant !== '0.00' && (!f.abandon || f.abandon.statut === 'REFUSE' || f.abandon.statut === 'DEMANDE')) {
+                @if (renonciation?.institution === f.institution) {
+                  <label>Votre adresse (elle figure sur le reçu fiscal)
+                    <input type="text" maxlength="300" [(ngModel)]="adresse" placeholder="3 allée des Pins, 33270 Floirac"></label>
+                  <button type="button" class="btn-primary" (click)="renoncer()">Je renonce au remboursement de ces frais</button>
+                  <button type="button" class="lien" (click)="renonciation = null">Annuler</button>
+                  <p class="note">Renoncer au remboursement de frais engagés pour l'association est un don : elle vous délivre
+                    un reçu fiscal qui ouvre droit à une réduction d'impôt (en général 66 % du montant, selon votre situation).</p>
+                } @else {
+                  <button type="button" class="lien" (click)="renonciation = f; adresse = ''">Renoncer au remboursement (reçu fiscal)</button>
+                }
+              }
+            </div>
+          }
+        }
       </section>
 
       <section>
@@ -162,12 +194,21 @@
     <ng-template #edition let-b="b">
       <tr class="edition">
         <td>
-          <select [(ngModel)]="b.crise" [disabled]="!!b.id">
-            @for (c of r.crises; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+          <select [(ngModel)]="b.activite" [disabled]="!!b.id" aria-label="Crise ou manifestation">
+            @if (r.crises.length) {
+              <optgroup label="Crises">
+                @for (c of r.crises; track c.id) { <option [value]="'c:' + c.id">{{ c.nom }}</option> }
+              </optgroup>
+            }
+            @if (r.manifestations?.length) {
+              <optgroup label="Manifestations">
+                @for (m of r.manifestations; track m.id) { <option [value]="'m:' + m.id">{{ m.nom }} ({{ m.debut | date:'dd/MM' }})</option> }
+              </optgroup>
+            }
           </select>
         </td>
         <td>
-          <select [(ngModel)]="b.equipe" [disabled]="!!b.id">
+          <select [(ngModel)]="b.equipe" [disabled]="!!b.id || b.activite.startsWith('m:')">
             <option value="">—</option>
             @for (q of r.equipes; track q.id) { <option [value]="q.id">{{ q.nom }}</option> }
           </select>
@@ -185,6 +226,12 @@
           </select>
         </td>
         <td class="nombre">—</td>
+        <td class="nombre">
+          <input type="text" inputmode="decimal" class="km" [(ngModel)]="b.kilometres" aria-label="Kilomètres aller-retour" placeholder="km">
+          <select [(ngModel)]="b.vehicule" aria-label="Véhicule">
+            @for (v of r.vehicules ?? []; track v.code) { <option [value]="v.code">{{ v.libelle }}</option> }
+          </select>
+        </td>
         <td>
           <button type="button" class="btn-primary" [disabled]="envoi" (click)="enregistrer()">Enregistrer</button>
           <button type="button" class="lien" (click)="brouillon = null">Annuler</button>

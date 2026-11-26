@@ -167,6 +167,7 @@ from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitution
 from .views_envoi import ConnecteurSMTPViewSet
 from .views_terrain import MessageTerrainViewSet
 from . import views_conversations  # noqa: E402
+from . import views_manifestations  # noqa: E402
 from .views_cellule import (  # noqa: E402
     ActionCelluleViewSet, ChronologieViewSet, DecisionCelluleViewSet, PointSituationViewSet, ReleveCelluleViewSet, RetexViewSet,
 )
@@ -626,6 +627,22 @@ urlpatterns = [
     path('mon-releve/', MonReleveView.as_view(), name='mon_releve'),
     path('releves-equipe/', RelevesEquipeView.as_view(), name='releves_equipe'),
     path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
+    # Manifestations d'association et bénévolat (26/11/2026, core/manifestations.py, core/benevolat.py).
+    path('manifestations/', views_manifestations.ManifestationsView.as_view(), name='manifestations'),
+    path('manifestations/mon-calendrier.ics', views_manifestations.MonCalendrierView.as_view(), name='manifestations_ical'),
+    path('manifestations/<uuid:pk>/', views_manifestations.ManifestationView.as_view(), name='manifestation'),
+    path('manifestations/<uuid:pk>/geste/', views_manifestations.ManifestationGesteView.as_view(), name='manifestation_geste'),
+    path('manifestations/<uuid:pk>/postes/', views_manifestations.PostesView.as_view(), name='manifestation_postes'),
+    path('manifestations/<uuid:pk>/documents/', views_manifestations.DocumentsManifestationView.as_view(), name='manifestation_documents'),
+    path('manifestations/<uuid:pk>/documents/<uuid:doc>/', views_manifestations.DocumentsManifestationView.as_view(), name='manifestation_document'),
+    path('manifestations/postes/<uuid:pid>/', views_manifestations.PosteView.as_view(), name='manifestation_poste'),
+    path('manifestations/inscriptions/<uuid:iid>/pointer/', views_manifestations.PointageView.as_view(), name='manifestation_pointer'),
+    path('benevolat/', views_manifestations.BenevolatView.as_view(), name='benevolat'),
+    path('benevolat/reglages/', views_manifestations.ReglagesBenevolatView.as_view(), name='benevolat_reglages'),
+    path('benevolat/export/', views_manifestations.ExportBenevolatView.as_view(), name='benevolat_export'),
+    path('benevolat/abandons/<uuid:aid>/', views_manifestations.AbandonGesteView.as_view(), name='benevolat_abandon'),
+    path('benevolat/abandons/<uuid:aid>/recu/', views_manifestations.RecuFiscalView.as_view(), name='benevolat_recu'),
+    path('mon-releve/abandon/', views_manifestations.MonAbandonView.as_view(), name='mon_abandon'),
     path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
     path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),
     path('stocks/etat/', EtatStockView.as_view(), name='stocks_etat'),

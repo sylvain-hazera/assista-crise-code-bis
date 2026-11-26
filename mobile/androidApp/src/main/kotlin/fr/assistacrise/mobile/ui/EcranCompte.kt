@@ -71,6 +71,8 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
                 Entree("Mes disponibilités", "Les créneaux où l'on peut compter sur vous") { modele.ouvrirDisponibilites() }
                 HorizontalDivider()
                 Entree("Ma fiche de bénévole", "Adresse, situation, engagement", surClic = modele::ouvrirFiche)
+                HorizontalDivider()
+                Entree("Manifestations", "Les manifestations de mon association : je m'inscris sur un poste", surClic = modele::ouvrirManifestations)
                 if (intervenant) {
                     HorizontalDivider()
                     Entree("Mes interventions", "Les dossiers confiés à mes équipes", surClic = modele::ouvrirInterventions)

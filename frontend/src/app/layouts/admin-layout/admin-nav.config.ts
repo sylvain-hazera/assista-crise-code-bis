@@ -16,12 +16,15 @@ export type GroupeNavId = 'permanent' | 'mon-activite' | 'crise' | 'post-critiqu
  * - `membres-association` : champ serveur `acces_membres_association` ;
  * - `revue-droits` : champ serveur `acces_revue_droits` (bureau, contact principal, responsable) ;
  * - `campagnes` : champ serveur `acces_campagnes` (qui peut mener une campagne) ;
+ * - `manifestations` : champ serveur `acces_manifestations` (membre ou bureau d'une association) ;
+ * - `benevolat` : champ serveur `acces_benevolat` (bureau d'une association) ;
  * - `radio` : champ serveur `acces_radio` (nœud personnel, passerelle de l'institution, ou
  *   droit accordé — voir backend/core/acces_radio.py). L'entrée « Accueil radio » reste en
  *   `tous` : c'est elle qui explique ce qu'il faut et permet de le demander. */
 export type VisibiliteNav =
   'institutionnel' | 'tous' | 'sysadmin' | 'admin-plateforme' | 'validation-comptes' | 'autorite-locale'
-  | 'registre-vulnerables' | 'membres-association' | 'revue-droits' | 'campagnes' | 'radio';
+  | 'registre-vulnerables' | 'membres-association' | 'revue-droits' | 'campagnes' | 'radio'
+  | 'manifestations' | 'benevolat';
 
 /** Second niveau de replis, à l'intérieur d'un cadre. N'existe que là où un même cadre
  * contient deux familles d'écrans qui ne se mélangent jamais : MeshCore et Meshtastic sont
@@ -112,6 +115,9 @@ export const NAV_ITEMS: NavItem[] = [
   // « Je pars », « je rentre » (backend/core/engagements_personnels.py). Un bénévole
   // d'association est un compte ordinaire.
   { icon: 'schedule', label: "Mon relevé d'heures", route: '/mon-releve', groupe: 'mon-activite', visibilite: 'tous' },
+  // Manifestations de mes associations : je m'inscris sur un poste (core/manifestations.py, 26/11/2026).
+  // Le bureau y organise aussi : créer, publier, pointer.
+  { icon: 'event', label: 'Manifestations', route: '/manifestations', groupe: 'mon-activite', visibilite: 'manifestations' },
   // Visible même sans équipe : la page explique ce qu'il faut pour qu'elle se remplisse.
   { icon: 'bed', label: 'Hébergement', route: '/hebergement', groupe: 'mon-activite', visibilite: 'tous' },
 
@@ -209,6 +215,8 @@ export const NAV_ITEMS: NavItem[] = [
 
   // ── Mon association ──────────────────────────────────────────────────
   { icon: 'badge', label: 'Membres', route: '/admin/membres-association', groupe: 'association', visibilite: 'membres-association' },
+  // Heures et kilomètres validés, valorisation, abandons de frais et reçus fiscaux (core/benevolat.py).
+  { icon: 'savings', label: 'Bénévolat', route: '/benevolat', groupe: 'association', visibilite: 'benevolat' },
 
   // ── Communications / Radio ───────────────────────────────────────────
   // « Accueil radio » est en `tous` : une institution sans radio doit pouvoir apprendre ce

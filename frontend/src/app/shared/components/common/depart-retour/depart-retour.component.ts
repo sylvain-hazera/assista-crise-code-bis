@@ -14,6 +14,8 @@ export interface MonEngagement {
    * sur site — elle part alors de là, et y rentre. */
   crises: { id: string; nom: string; hebergement?: string }[];
   equipes: { id: string; nom: string }[];
+  /** Les manifestations du jour où je suis inscrit (26/11/2026) : on part aussi pour elles. */
+  manifestations?: { id: string; nom: string; debut: string; fin: string }[];
 }
 
 /**
@@ -29,7 +31,7 @@ export interface MonEngagement {
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    @if (etat && (etat.en_cours || etat.crises.length)) {
+    @if (etat && (etat.en_cours || etat.crises.length || manifestations.length)) {
       <section class="depart-retour" [class.parti]="etat.en_cours">
         @if (etat.en_cours; as e) {
           <p>
@@ -44,14 +46,16 @@ export interface MonEngagement {
             </select></label>
           <button type="button" class="btn-primary" [disabled]="envoi" (click)="geste('rentrer')">Je rentre</button>
         } @else {
-          <p><span class="material-icons">schedule</span> Déclarez votre départ : c'est ce qui compte le temps que vous passez sur la crise.</p>
-          @if (etat.crises.length > 1) {
-            <label>Crise
-              <select [(ngModel)]="crise">
-                @for (c of etat.crises; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+          <p><span class="material-icons">schedule</span> Déclarez votre départ : c'est ce qui compte le temps que vous passez sur
+            {{ etat.crises.length ? 'la crise' : 'la manifestation' }}.</p>
+          @if (etat.crises.length + manifestations.length > 1) {
+            <label>Pour
+              <select [(ngModel)]="cible" (ngModelChange)="choisir($event)">
+                @for (c of etat.crises; track c.id) { <option [value]="'c:' + c.id">{{ c.nom }}</option> }
+                @for (m of manifestations; track m.id) { <option [value]="'m:' + m.id">{{ m.nom }} ({{ m.debut | date:'HH:mm' }})</option> }
               </select></label>
           }
-          @if (etat.equipes.length > 1) {
+          @if (etat.equipes.length > 1 && !cible.startsWith('m:')) {
             <label>Avec
               <select [(ngModel)]="equipe">
                 <option value="">— sans équipe —</option>
@@ -88,6 +92,8 @@ export class DepartRetourComponent implements OnInit {
   /** D'où l'on part, puis où l'on rentre : domicile, ou hébergement si l'on est logé sur site. */
   lieu = 'DOMICILE';
   crise = '';
+  /** « c:<crise> » ou « m:<manifestation> » : ce pour quoi on part. */
+  cible = '';
   equipe = '';
   envoi = false;
   erreur = '';
@@ -104,10 +110,19 @@ export class DepartRetourComponent implements OnInit {
   private recevoir(etat: MonEngagement): void {
     this.etat = etat;
     if (!etat.crises.some(c => c.id === this.crise)) this.crise = etat.crises[0]?.id ?? '';
+    const cibles = [...etat.crises.map(c => `c:${c.id}`), ...(etat.manifestations ?? []).map(m => `m:${m.id}`)];
+    if (!cibles.includes(this.cible)) this.cible = cibles[0] ?? '';
     // Une seule équipe : on part avec elle sans le demander.
     if (etat.equipes.length === 1) this.equipe = etat.equipes[0].id;
     // Logé sur site, on part de son logement ; parti, on rentre par défaut d'où l'on vient.
     this.lieu = etat.en_cours ? (etat.en_cours.depart_de || 'DOMICILE') : (this.hebergement ? 'HEBERGEMENT' : 'DOMICILE');
+  }
+
+  get manifestations(): NonNullable<MonEngagement['manifestations']> { return this.etat?.manifestations ?? []; }
+
+  choisir(cible: string): void {
+    this.cible = cible;
+    if (cible.startsWith('c:')) this.crise = cible.slice(2);
   }
 
   get hebergement(): string {
@@ -117,9 +132,9 @@ export class DepartRetourComponent implements OnInit {
   geste(geste: 'partir' | 'rentrer'): void {
     this.envoi = true;
     this.erreur = '';
-    const corps = geste === 'partir'
-      ? { geste, crise: this.crise, equipe: this.equipe || null, depart_de: this.lieu }
-      : { geste, retour_a: this.lieu };
+    const corps = geste !== 'partir' ? { geste, retour_a: this.lieu }
+      : this.cible.startsWith('m:') ? { geste, manifestation: this.cible.slice(2), depart_de: this.lieu }
+      : { geste, crise: this.crise, equipe: this.equipe || null, depart_de: this.lieu };
     this.http.post<MonEngagement>(this.url, corps).subscribe({
       next: (etat) => { this.envoi = false; this.recevoir(etat); },
       error: (err) => { this.envoi = false; this.erreur = err?.error?.detail || "La déclaration n'a pas pu être enregistrée."; },

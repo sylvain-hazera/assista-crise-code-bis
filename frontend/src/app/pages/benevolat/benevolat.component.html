@@ -1,0 +1,138 @@
+<div class="page">
+  <header>
+    <h1><span class="material-icons">savings</span> Bénévolat</h1>
+    <p class="chapeau">Les heures et kilomètres validés de vos bénévoles, leur valorisation pour les comptes annuels et les
+      dossiers de subvention, et les renonciations au remboursement de frais avec leur reçu fiscal.</p>
+  </header>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  <div class="barre">
+    @if (associations.length > 1) {
+      <label>Association
+        <select [(ngModel)]="institution" (change)="charger()">
+          @for (a of associations; track a.id) { <option [value]="a.id">{{ a.nom }}</option> }
+        </select></label>
+    }
+    <label>Année
+      <select [(ngModel)]="annee" (change)="charger()">
+        @for (a of annees; track a) { <option [ngValue]="a">{{ a }}</option> }
+      </select></label>
+    <span class="espace"></span>
+    <button type="button" class="btn-secondary" (click)="exporter('xlsx')"><span class="material-icons">table_view</span> Export tableur</button>
+    <button type="button" class="btn-secondary" (click)="exporter('csv')"><span class="material-icons">download</span> Export CSV</button>
+  </div>
+
+  @if (donnees; as d) {
+    @if (d.lignes_a_valider > 0) {
+      <p class="message">{{ d.lignes_a_valider }} ligne(s) de relevé attendent encore une validation : elles ne comptent
+        pas ici tant qu'elles ne sont pas validées (<a routerLink="/mon-releve">relevés à valider</a>).</p>
+    }
+
+    <section class="chiffres" aria-label="Totaux de l'année">
+      <div><span class="valeur">{{ d.heures | number:'1.0-1' }} h</span><span class="libelle">de bénévolat validées</span></div>
+      <div><span class="valeur">{{ d.valorisation_heures !== null ? (d.valorisation_heures | number:'1.2-2') + ' €' : '—' }}</span>
+        <span class="libelle">valorisation{{ d.reglages.taux_horaire ? ' à ' + d.reglages.taux_horaire + ' €/h' : ' (taux à renseigner)' }}</span></div>
+      <div><span class="valeur">{{ d.kilometres | number:'1.0-0' }} km</span><span class="libelle">parcourus</span></div>
+      <div><span class="valeur">{{ d.frais | number:'1.2-2' }} €</span><span class="libelle">de frais kilométriques</span></div>
+    </section>
+
+    <div class="colonnes">
+      <section>
+        <h2>Par bénévole</h2>
+        <div class="tableur">
+          <table>
+            <thead><tr><th>Bénévole</th><th class="nombre">Heures</th><th class="nombre">Valorisation</th><th class="nombre">Km</th><th class="nombre">Frais</th></tr></thead>
+            <tbody>
+              @for (b of d.benevoles; track b.utilisateur) {
+                <tr><td>{{ b.nom }}</td><td class="nombre">{{ b.heures | number:'1.0-2' }}</td>
+                  <td class="nombre">{{ b.valorisation !== null ? (b.valorisation | number:'1.2-2') + ' €' : '—' }}</td>
+                  <td class="nombre">{{ b.kilometres | number:'1.0-1' }}</td><td class="nombre">{{ b.frais | number:'1.2-2' }} €</td></tr>
+              } @empty { <tr><td colspan="5" class="note">Aucune heure validée sur {{ d.annee }}.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Par activité</h2>
+        <div class="tableur">
+          <table>
+            <thead><tr><th>Date</th><th>Activité</th><th class="nombre">Bénévoles</th><th class="nombre">Heures</th></tr></thead>
+            <tbody>
+              @for (a of d.activites; track $index) {
+                <tr><td>{{ a.date | date:'dd/MM/yyyy' }}</td><td>{{ a.nom }} <span class="note">({{ a.genre }})</span></td>
+                  <td class="nombre">{{ a.benevoles }}</td><td class="nombre">{{ a.heures | number:'1.0-2' }}</td></tr>
+              } @empty { <tr><td colspan="4" class="note">Rien sur cette année.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        @if (d.mois.length) {
+          <h2>Heures par mois</h2>
+          <div class="mois" role="img" [attr.aria-label]="'Heures validées par mois en ' + d.annee">
+            @for (m of d.mois; track m.mois) {
+              <div class="colonne">
+                <span class="nombre-mois">{{ m.heures | number:'1.0-0' }}</span>
+                <span class="barre-mois" [style.height.%]="part(m.heures)"></span>
+                <span class="nom-mois">{{ m.mois + '-01' | date:'MMM' }}</span>
+              </div>
+            }
+          </div>
+        }
+      </section>
+
+      <section>
+        <h2>Réglages {{ annee }}</h2>
+        @if (reglages; as r) {
+          <div class="formulaire">
+            <label>Valorisation d'une heure (€)
+              <input type="text" inputmode="decimal" [(ngModel)]="r.taux_horaire" placeholder="12,02"></label>
+            <label>Tarif kilométrique voiture (€/km)
+              <input type="text" inputmode="decimal" [(ngModel)]="r.tarif_km_voiture" placeholder="selon le barème retenu"></label>
+            <label>Tarif kilométrique moto, scooter (€/km)
+              <input type="text" inputmode="decimal" [(ngModel)]="r.tarif_km_deux_roues"></label>
+            <p class="note large">Repères : le SMIC horaire brut au 1er janvier 2026 est de 12,02 € ; il n'existe plus de barème
+              kilométrique propre aux bénévoles, on applique le barème fiscal des frais de véhicule (selon la puissance et le
+              kilométrage annuel, publié sur impots.gouv.fr). Ces taux sont ceux que votre association retient.</p>
+            <label class="case large"><input type="checkbox" [(ngModel)]="r.recus_fiscaux">
+              L'association peut délivrer des reçus fiscaux (organisme d'intérêt général, art. 200 du CGI)</label>
+            @if (r.recus_fiscaux) {
+              <label class="large">Mention sur le reçu (objet, reconnaissance)
+                <input type="text" maxlength="300" [(ngModel)]="r.fondement_recus" placeholder="Association loi 1901 d'intérêt général…"></label>
+              <label>Signataire <input type="text" maxlength="150" [(ngModel)]="r.signataire_nom" placeholder="Prénom Nom"></label>
+              <label>Qualité <input type="text" maxlength="100" [(ngModel)]="r.signataire_qualite" placeholder="Président"></label>
+            }
+          </div>
+          <button type="button" class="btn-primary" (click)="enregistrerReglages()">Enregistrer les réglages</button>
+        }
+
+        <h2 class="espace-haut">Renonciations au remboursement de frais</h2>
+        <p class="note">Un bénévole qui renonce au remboursement de ses frais fait un don à l'association : elle lui délivre un
+          reçu fiscal (réduction d'impôt de {{ d.taux_reduction_informatif }} % en général, selon sa situation). Le montant est
+          figé à l'acceptation.</p>
+        <ul class="abandons">
+          @for (a of d.abandons; track a.id) {
+            <li>
+              <span><strong>{{ a.nom }}</strong> — {{ a.montant }} € ({{ a.kilometres | number:'1.0-0' }} km, {{ a.deplacements }} déplacement(s))</span>
+              <span class="pastille" [class.ok]="a.statut === 'RECU_EMIS'" [class.attente]="a.statut === 'DEMANDE'">{{ a.statut_libelle }}</span>
+              @if (a.statut === 'DEMANDE') {
+                <button type="button" class="btn-primary" (click)="traiter(a, 'accepter')">Accepter et émettre le reçu</button>
+                <button type="button" class="lien" (click)="aRefuser = a; motif = ''">Refuser</button>
+              }
+              @if (a.statut === 'RECU_EMIS') { <button type="button" class="lien" (click)="telechargerRecu(a)">Reçu n° {{ a.numero_recu }}</button> }
+              @if (a.motif_refus) { <span class="note">{{ a.motif_refus }}</span> }
+              @if (aRefuser?.id === a.id) {
+                <span class="refus">
+                  <input type="text" maxlength="300" [(ngModel)]="motif" placeholder="Pourquoi">
+                  <button type="button" class="btn-secondary" (click)="traiter(a, 'refuser')">Refuser</button>
+                </span>
+              }
+            </li>
+          } @empty { <li class="note">Aucune demande sur {{ d.annee }}.</li> }
+        </ul>
+      </section>
+    </div>
+  } @else if (!associations.length && !erreur) {
+    <p class="note">Vous n'êtes au bureau d'aucune association.</p>
+  }
+</div>

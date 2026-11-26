@@ -69,6 +69,7 @@ enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
     SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION, PREPARER_RADIO,
+    MANIFESTATIONS,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -975,6 +976,53 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Ok -> { message = "Fiche enregistrée."; EtatFormulaire() }
                 is Reponse.Refus -> EtatFormulaire(erreur = r.message, champs = r.champs)
                 is Reponse.Injoignable -> EtatFormulaire(erreur = "Pas de réseau : votre fiche n'est pas enregistrée.")
+            }
+        }
+    }
+
+    // --- Manifestations d'association (26/11/2026) ----------------------------------------
+    var manifestations by mutableStateOf<List<fr.assistacrise.mobile.domaine.ManifestationAsso>>(emptyList()); private set
+    /** La manifestation dépliée, avec ses postes. */
+    var manifestationOuverte by mutableStateOf<fr.assistacrise.mobile.domaine.ManifestationAsso?>(null); private set
+
+    fun ouvrirManifestations() {
+        ecran = Ecran.MANIFESTATIONS
+        manifestationOuverte = null
+        chargerEcran {
+            when (val r = app.api.manifestations()) {
+                is Reponse.Ok -> { manifestations = r.valeur; Reponse.Ok(Unit) }
+                is Reponse.Refus -> r
+                is Reponse.Injoignable -> r
+            }
+        }
+    }
+
+    fun deplierManifestation(id: String?) {
+        if (id == null || manifestationOuverte?.id == id) { manifestationOuverte = null; return }
+        viewModelScope.launch {
+            when (val r = app.api.manifestation(id)) {
+                is Reponse.Ok -> manifestationOuverte = r.valeur
+                is Reponse.Refus -> message = r.message
+                is Reponse.Injoignable -> message = "Pas de réseau : réessayez plus tard."
+            }
+        }
+    }
+
+    fun inscriptionPoste(poste: fr.assistacrise.mobile.domaine.PosteManifestation, inscrire: Boolean) {
+        viewModelScope.launch {
+            when (val r = app.api.inscriptionPoste(poste.id, inscrire)) {
+                is Reponse.Ok -> {
+                    manifestationOuverte = r.valeur
+                    val p = r.valeur.postes.firstOrNull { it.id == poste.id }
+                    message = when {
+                        !inscrire -> "Désistement enregistré."
+                        p?.monStatut == "LISTE_ATTENTE" -> "Poste complet : vous êtes sur la liste d'attente${p.monRangAttente?.let { " (n° $it)" } ?: ""}."
+                        else -> "Inscription enregistrée."
+                    }
+                    (app.api.manifestations() as? Reponse.Ok)?.let { manifestations = it.valeur }
+                }
+                is Reponse.Refus -> message = r.message
+                is Reponse.Injoignable -> message = "Pas de réseau : l'inscription n'est pas partie."
             }
         }
     }

@@ -1,0 +1,191 @@
+<div class="page">
+  <header>
+    <h1><span class="material-icons">event</span> Manifestations</h1>
+    <p class="chapeau">Les manifestations, dispositifs de signalisation radio, exercices et formations de vos associations.
+      Inscrivez-vous sur un poste : s'il est complet, vous passez en liste d'attente et vous êtes prévenu si une place se libère.</p>
+  </header>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  <div class="barre">
+    <nav class="onglets" aria-label="Période">
+      <button type="button" [class.actif]="vue === 'a-venir'" (click)="vue = 'a-venir'">À venir</button>
+      <button type="button" [class.actif]="vue === 'passees'" (click)="vue = 'passees'">Passées</button>
+    </nav>
+    <button type="button" class="btn-secondary" (click)="telechargerCalendrier()">
+      <span class="material-icons">calendar_month</span> Mes inscriptions dans mon agenda (.ics)</button>
+    @if (organise) {
+      <button type="button" class="btn-primary" (click)="creer()"><span class="material-icons">add</span> Nouvelle manifestation</button>
+    }
+  </div>
+
+  <div class="colonnes">
+    <section class="liste" aria-label="Liste des manifestations">
+      @for (m of affichees; track m.id) {
+        <button type="button" class="carte" [class.active]="choisie?.id === m.id" (click)="ouvrir(m.id)">
+          <span class="date">
+            <strong>{{ m.debut | date:'dd' }}</strong>
+            <span>{{ m.debut | date:'MMM' }}</span>
+          </span>
+          <span class="corps">
+            <span class="titre">{{ m.titre }}</span>
+            <span class="note">{{ m.type_libelle }} · {{ m.debut | date:'HH:mm' }}–{{ m.fin | date:'HH:mm' }}@if (m.lieu) { · {{ m.lieu }} }</span>
+            <span class="note">{{ m.institution_nom }}</span>
+          </span>
+          <span class="etat">
+            @if (m.statut !== 'PUBLIEE') { <span class="pastille" [class.annulee]="m.statut === 'ANNULEE'">{{ m.statut_libelle }}</span> }
+            @if (m.je_suis_inscrit) { <span class="pastille inscrit">inscrit</span> }
+            <span class="remplissage" [class.complet]="m.occupes >= m.places">{{ m.occupes }}/{{ m.places }}</span>
+          </span>
+        </button>
+      } @empty {
+        <p class="note">{{ vue === 'a-venir' ? 'Aucune manifestation prévue pour le moment.' : 'Aucune manifestation passée.' }}</p>
+      }
+    </section>
+
+    <section class="detail">
+      @if (brouillon; as b) {
+        <h2>{{ b.id ? 'Modifier la manifestation' : 'Nouvelle manifestation' }}</h2>
+        <div class="formulaire">
+          @if (!b.id && (liste?.associations_organisees?.length ?? 0) > 1) {
+            <label>Association
+              <select [(ngModel)]="b.institution">
+                @for (a of liste?.associations_organisees ?? []; track a.id) { <option [value]="a.id">{{ a.nom }}</option> }
+              </select></label>
+          }
+          <label>Type
+            <select [(ngModel)]="b.type">
+              @for (t of liste?.types ?? []; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+            </select></label>
+          <label class="large">Titre <input type="text" maxlength="200" [(ngModel)]="b.titre" placeholder="Course des 10 km de Floirac"></label>
+          <label>Début <input type="datetime-local" [(ngModel)]="b.debut"></label>
+          <label>Fin <input type="datetime-local" [(ngModel)]="b.fin"></label>
+          <label class="large">Lieu <input type="text" maxlength="300" [(ngModel)]="b.lieu" placeholder="Parc du Castel, départ avenue Pasteur"></label>
+          <label class="large">Pour qui <input type="text" maxlength="300" [(ngModel)]="b.organisateur" placeholder="Mairie, comité des fêtes…"></label>
+          <label class="large">Consignes et feuille de route
+            <textarea rows="5" [(ngModel)]="b.consignes" placeholder="Rendez-vous 7 h 30 au local. Gilet, radio chargée, canal 19."></textarea></label>
+        </div>
+        @if (!b.id) {
+          <h3>Postes</h3>
+          <p class="note">Un poste sans horaire prend ceux de la manifestation.</p>
+          @for (p of b.postes; track $index) {
+            <div class="poste-saisie">
+              <label>Intitulé <input type="text" maxlength="200" [(ngModel)]="p.intitule" placeholder="Carrefour D936, signaleur radio"></label>
+              <label>Début <input type="datetime-local" [(ngModel)]="p.debut"></label>
+              <label>Fin <input type="datetime-local" [(ngModel)]="p.fin"></label>
+              <label>Places <input type="number" min="1" max="500" [(ngModel)]="p.places"></label>
+            </div>
+          }
+          <button type="button" class="lien" (click)="ajouterLignePoste()">+ un autre poste</button>
+        }
+        <div class="actions">
+          <button type="button" class="btn-primary" [disabled]="envoi" (click)="enregistrer()">Enregistrer</button>
+          <button type="button" class="lien" (click)="brouillon = null">Annuler</button>
+        </div>
+      } @else if (choisie; as m) {
+        <h2>{{ m.titre }}</h2>
+        <p class="note">{{ m.type_libelle }} · {{ m.institution_nom }}@if (m.statut !== 'PUBLIEE') { · <strong>{{ m.statut_libelle }}</strong> }</p>
+        <dl>
+          <dt>Quand</dt><dd>{{ m.debut | date:'EEEE d MMMM y, HH:mm' }} – {{ m.fin | date:'HH:mm' }}</dd>
+          @if (m.lieu) { <dt>Où</dt><dd>{{ m.lieu }}</dd> }
+          @if (m.organisateur) { <dt>Pour qui</dt><dd>{{ m.organisateur }}</dd> }
+        </dl>
+        @if (m.consignes) { <h3>Consignes</h3><p class="consignes">{{ m.consignes }}</p> }
+        @if (m.documents?.length) {
+          <h3>Pièces jointes</h3>
+          <ul class="documents">
+            @for (d of m.documents; track d.id) { <li><button type="button" class="lien" (click)="telechargerDocument(d)">{{ d.nom }}</button></li> }
+          </ul>
+        }
+
+        <h3>Postes</h3>
+        <div class="tableur">
+          <table>
+            <thead><tr><th>Poste</th><th>Horaires</th><th class="nombre">Places</th><th></th></tr></thead>
+            <tbody>
+              @for (p of m.postes ?? []; track p.id) {
+                <tr>
+                  <td>{{ p.intitule }}@if (p.remarque) { <br><span class="note">{{ p.remarque }}</span> }</td>
+                  <td>{{ p.debut | date:'dd/MM HH:mm' }} – {{ p.fin | date:'HH:mm' }}</td>
+                  <td class="nombre">{{ p.occupes }}/{{ p.places }}@if (p.attente) { <br><span class="note">+{{ p.attente }} en attente</span> }</td>
+                  <td>
+                    @if (p.mon_statut === 'INSCRIT' || p.mon_statut === 'LISTE_ATTENTE') {
+                      <span class="pastille inscrit">{{ libelleStatut(p.mon_statut) }}@if (p.mon_rang_attente) { n° {{ p.mon_rang_attente }} }</span>
+                      @if (!commence(p.debut)) { <button type="button" class="lien" [disabled]="envoi" (click)="inscrire(p, 'desister')">Me désister</button> }
+                    } @else if (p.mon_statut === 'PRESENT' || p.mon_statut === 'ABSENT') {
+                      <span class="pastille">{{ libelleStatut(p.mon_statut) }}</span>
+                    } @else if (m.statut === 'PUBLIEE' && !commence(p.fin)) {
+                      <button type="button" class="btn-primary" [disabled]="envoi" (click)="inscrire(p, 'inscrire')">
+                        {{ p.occupes >= p.places ? 'Liste d\'attente' : 'M\'inscrire' }}</button>
+                    }
+                  </td>
+                </tr>
+                @if (m.organise && p.inscrits?.length) {
+                  <tr class="inscrits">
+                    <td colspan="4">
+                      <ul>
+                        @for (i of p.inscrits; track i.id) {
+                          <li>
+                            <span>{{ i.nom }}</span>
+                            <span class="pastille" [class.inscrit]="i.statut === 'INSCRIT'" [class.present]="i.statut === 'PRESENT'">{{ libelleStatut(i.statut) }}</span>
+                            @if (commence(p.debut) && i.statut !== 'LISTE_ATTENTE') {
+                              <button type="button" class="lien" (click)="pointer(i, true)" [disabled]="i.statut === 'PRESENT'">Présent</button>
+                              <button type="button" class="lien" (click)="pointer(i, false)" [disabled]="i.statut === 'ABSENT'">Absent</button>
+                            }
+                          </li>
+                        }
+                      </ul>
+                    </td>
+                  </tr>
+                }
+                @if (m.organise && !(p.inscrits?.length)) {
+                  <tr class="inscrits"><td colspan="4"><button type="button" class="lien" (click)="retirerPoste(p)">Retirer ce poste</button></td></tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (m.organise) {
+          <section class="bureau" aria-label="Organisation">
+            <h3>Organisation (bureau)</h3>
+            @if (nouveauPoste; as np) {
+              <div class="poste-saisie">
+                <label>Intitulé <input type="text" maxlength="200" [(ngModel)]="np.intitule"></label>
+                <label>Début <input type="datetime-local" [(ngModel)]="np.debut"></label>
+                <label>Fin <input type="datetime-local" [(ngModel)]="np.fin"></label>
+                <label>Places <input type="number" min="1" max="500" [(ngModel)]="np.places"></label>
+              </div>
+              <button type="button" class="btn-primary" (click)="ajouterPoste()">Ajouter le poste</button>
+              <button type="button" class="lien" (click)="nouveauPoste = null">Annuler</button>
+            } @else if (m.statut === 'BROUILLON' || m.statut === 'PUBLIEE') {
+              <div class="actions">
+                <button type="button" class="btn-secondary" (click)="modifier()">Modifier</button>
+                <button type="button" class="btn-secondary" (click)="ouvrirNouveauPoste()">Ajouter un poste</button>
+                <label class="btn-secondary fichier">Joindre une image (plan)
+                  <input type="file" accept="image/png,image/jpeg,image/webp" (change)="joindre($event)"></label>
+                @if (m.statut === 'BROUILLON') {
+                  <button type="button" class="btn-primary" [disabled]="envoi" (click)="geste('publier')">Publier et prévenir les membres</button>
+                  <button type="button" class="lien" (click)="supprimerBrouillon()">Supprimer le brouillon</button>
+                } @else {
+                  @if (commence(m.debut)) { <button type="button" class="btn-secondary" (click)="geste('terminer')">Clore</button> }
+                  <button type="button" class="lien danger" (click)="annulation = !annulation">Annuler la manifestation</button>
+                }
+              </div>
+              @if (annulation) {
+                <label class="large">Motif, envoyé aux inscrits (facultatif)
+                  <input type="text" maxlength="300" [(ngModel)]="motifAnnulation" placeholder="Course reportée pour cause d'alerte orange"></label>
+                <button type="button" class="btn-primary" (click)="geste('annuler')">Confirmer l'annulation</button>
+              }
+            }
+            <p class="note">Le pointage d'un présent crée sa ligne dans son relevé d'heures, aux horaires du poste : il peut la
+              corriger et y ajouter ses kilomètres, et vous la validez comme les autres.</p>
+          </section>
+        }
+      } @else {
+        <p class="note vide">Choisissez une manifestation dans la liste.</p>
+      }
+    </section>
+  </div>
+</div>

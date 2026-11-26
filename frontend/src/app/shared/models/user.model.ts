@@ -40,6 +40,10 @@ export interface User {
   // Peut mener une campagne de disponibilite : bureau d'une association, agent ou elu d'une
   // collectivite, encadrant d'une equipe. Calcule cote serveur.
   acces_campagnes?: boolean;
+  /** « Manifestations » (26/11/2026) : membre actif ou bureau d'une association. Calculé côté serveur. */
+  acces_manifestations?: boolean;
+  /** Organiser les manifestations et « Bénévolat » (valorisation, reçus) : bureau d'une association. */
+  acces_benevolat?: boolean;
   /** Protection par code de sécurité. Complet pour soi ; `{ actif }` seulement quand un
    * administrateur regarde le compte d'un autre ; absent sinon. */
   second_facteur?: EtatSecondFacteur | { actif: boolean } | null;

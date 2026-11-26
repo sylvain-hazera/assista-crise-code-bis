@@ -8,8 +8,16 @@ import { DepartRetourComponent } from '../../shared/components/common/depart-ret
 
 export interface LigneReleve {
   id: string;
-  crise: string;
+  crise: string | null;
+  /** Le nom de l'activité : la crise, ou la manifestation (nom gardé pour les écrans existants). */
   crise_nom: string;
+  /** Manifestation d'association (26/11/2026), à la place d'une crise. */
+  manifestation?: string | null;
+  /** Kilomètres aller-retour, en texte (« 42.5 »), vide sans déplacement. */
+  kilometres?: string;
+  vehicule?: string;
+  /** DECLARE ou PLANNING (née du pointage d'une manifestation par le bureau). */
+  source?: string;
   equipe: string | null;
   equipe_nom: string;
   parti_le: string;
@@ -46,12 +54,30 @@ export interface Releve {
   lieux: { code: string; libelle: string }[];
   /** La personne encadre au moins une équipe : elle relit et valide les relevés des siens. */
   encadre: boolean;
+  total_kilometres?: number;
+  manifestations?: { id: string; nom: string; debut: string }[];
+  vehicules?: { code: string; libelle: string }[];
+  /** Frais de l'année, par association, et renonciation au remboursement (reçu fiscal). */
+  frais?: FraisAssociation[];
+}
+
+export interface FraisAssociation {
+  institution: string;
+  nom: string;
+  annee: number;
+  recus_fiscaux: boolean;
+  kilometres: number;
+  montant: string;
+  abandon: { id: string; statut: string; statut_libelle: string; numero_recu: string; motif_refus: string; montant: string | null } | null;
 }
 
 /** Une ligne en cours de saisie : les champs d'un tableur, en texte local (`AAAA-MM-JJTHH:MM`). */
 interface Brouillon {
   id?: string;
-  crise: string;
+  /** « c:<id> » (crise) ou « m:<id> » (manifestation). */
+  activite: string;
+  kilometres: string;
+  vehicule: string;
   equipe: string;
   parti_le: string;
   rentre_le: string;
@@ -92,6 +118,9 @@ export class MonReleveComponent implements OnInit {
   /** La ligne qu'on renvoie à son auteur, et ce qu'on lui demande de revoir. */
   aRenvoyer: LigneReleve | null = null;
   remarque = '';
+  /** Renonciation au remboursement en cours de saisie : l'association, et l'adresse du reçu. */
+  renonciation: FraisAssociation | null = null;
+  adresse = '';
 
   private readonly url = `${environment.apiUrl}/mon-releve/`;
 
@@ -167,18 +196,20 @@ export class MonReleveComponent implements OnInit {
     const releve = this.releve;
     if (!releve) return;
     this.erreur = '';
+    const premiere = releve.crises[0] ? `c:${releve.crises[0].id}` : (releve.manifestations?.[0] ? `m:${releve.manifestations[0].id}` : '');
     this.brouillon = {
-      crise: releve.crises[0]?.id ?? '', equipe: releve.equipes.length === 1 ? releve.equipes[0].id : '',
-      parti_le: '', rentre_le: '', depart_de: 'DOMICILE', retour_a: 'DOMICILE',
+      activite: premiere, equipe: releve.equipes.length === 1 ? releve.equipes[0].id : '',
+      parti_le: '', rentre_le: '', depart_de: 'DOMICILE', retour_a: 'DOMICILE', kilometres: '', vehicule: 'AUCUN',
     };
   }
 
   modifier(ligne: LigneReleve): void {
     this.erreur = '';
     this.brouillon = {
-      id: ligne.id, crise: ligne.crise, equipe: ligne.equipe ?? '',
+      id: ligne.id, activite: ligne.manifestation ? `m:${ligne.manifestation}` : `c:${ligne.crise}`, equipe: ligne.equipe ?? '',
       parti_le: this.enLocal(ligne.parti_le), rentre_le: this.enLocal(ligne.rentre_le),
       depart_de: ligne.depart_de, retour_a: ligne.retour_a || ligne.depart_de,
+      kilometres: ligne.kilometres ?? '', vehicule: ligne.vehicule || 'AUCUN',
     };
   }
 
@@ -196,8 +227,11 @@ export class MonReleveComponent implements OnInit {
     if (!b.parti_le || !b.rentre_le) { this.erreur = 'Indiquez le départ et le retour.'; return; }
     this.envoi = true;
     this.erreur = '';
+    const [genre, id] = b.activite.split(':');
     const corps = {
-      crise: b.crise, equipe: b.equipe || null, depart_de: b.depart_de, retour_a: b.retour_a,
+      crise: genre === 'c' ? id : null, manifestation: genre === 'm' ? id : null,
+      equipe: genre === 'c' ? (b.equipe || null) : null, depart_de: b.depart_de, retour_a: b.retour_a,
+      kilometres: b.kilometres, vehicule: b.vehicule,
       // Le navigateur convertit l'heure du poste en instant universel : le serveur n'a pas à
       // deviner le fuseau de la personne.
       parti_le: new Date(b.parti_le).toISOString(), rentre_le: new Date(b.rentre_le).toISOString(),
@@ -206,6 +240,40 @@ export class MonReleveComponent implements OnInit {
     envoi.subscribe({
       next: () => { this.envoi = false; this.brouillon = null; this.message = 'Relevé mis à jour.'; this.charger(); },
       error: (err) => { this.envoi = false; this.erreur = err?.error?.detail || "La ligne n'a pas pu être enregistrée."; },
+    });
+  }
+
+  get peutAjouter(): boolean {
+    return !!this.releve && (this.releve.crises.length > 0 || (this.releve.manifestations?.length ?? 0) > 0);
+  }
+
+  libelleVehicule(code?: string): string {
+    return code && code !== 'AUCUN' ? (this.releve?.vehicules?.find(v => v.code === code)?.libelle ?? '') : '';
+  }
+
+  /** Je renonce au remboursement de mes frais validés de l'année : c'est un don, avec reçu fiscal. */
+  renoncer(): void {
+    const f = this.renonciation;
+    if (!f) return;
+    if (!this.adresse.trim()) { this.erreur = 'Indiquez votre adresse : elle figure sur le reçu fiscal.'; return; }
+    this.erreur = '';
+    this.http.post(`${environment.apiUrl}/mon-releve/abandon/`, { institution: f.institution, annee: f.annee, adresse: this.adresse.trim() }).subscribe({
+      next: () => { this.renonciation = null; this.adresse = ''; this.message = 'Demande envoyée au bureau de votre association.'; this.charger(); },
+      error: (err) => this.erreur = err?.error?.detail || "La demande n'a pas pu être envoyée.",
+    });
+  }
+
+  telechargerRecu(f: FraisAssociation): void {
+    if (!f.abandon) return;
+    this.http.get(`${environment.apiUrl}/benevolat/abandons/${f.abandon.id}/recu/`, { responseType: 'blob' }).subscribe({
+      next: (pdf) => {
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(pdf);
+        lien.download = `recu-${f.abandon?.numero_recu}.pdf`;
+        lien.click();
+        URL.revokeObjectURL(lien.href);
+      },
+      error: () => this.erreur = "Le reçu n'a pas pu être téléchargé.",
     });
   }
 

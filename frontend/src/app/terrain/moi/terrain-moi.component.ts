@@ -17,6 +17,7 @@ import { DegatsService } from '../degats/degats.service';
     <nav class="liste">
       <a routerLink="/ma-fiche-benevole"><span class="material-icons" aria-hidden="true">badge</span>Ma fiche bénévole et mes disponibilités</a>
       <a routerLink="/mon-releve"><span class="material-icons" aria-hidden="true">schedule</span>Mon relevé d'heures</a>
+      <a routerLink="/terrain/manifestations"><span class="material-icons" aria-hidden="true">event</span>Manifestations de mon association</a>
       <a routerLink="/settings"><span class="material-icons" aria-hidden="true">settings</span>Mes réglages</a>
       <a routerLink="/securite-du-compte"><span class="material-icons" aria-hidden="true">lock</span>Sécurité du compte</a>
     </nav>

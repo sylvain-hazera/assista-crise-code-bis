@@ -226,6 +226,10 @@ export class AdminSidebarComponent {
         return !!this.authService.getCurrentUser()?.acces_revue_droits;
       case 'campagnes':
         return !!this.authService.getCurrentUser()?.acces_campagnes;
+      case 'manifestations':
+        return !!this.authService.getCurrentUser()?.acces_manifestations;
+      case 'benevolat':
+        return !!this.authService.getCurrentUser()?.acces_benevolat;
       case 'radio':
         // Champ serveur : il dépend du matériel enregistré et des droits accordés, aucun des
         // deux n'étant connu du navigateur (backend/core/acces_radio.py).

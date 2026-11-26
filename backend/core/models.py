@@ -2607,6 +2607,10 @@ class Document(EnvironmentScopedModel):
         "SignalementPEI", on_delete=models.CASCADE, null=True, blank=True, related_name="documents",
         help_text="Signalement de point d'eau incendie que cette photo accompagne (24/11/2026).",
     )
+    manifestation = models.ForeignKey(
+        "Manifestation", on_delete=models.CASCADE, null=True, blank=True, related_name="documents",
+        help_text="Manifestation d'association : feuille de route, plan, arrêté (26/11/2026).",
+    )
 
     habitation = models.ForeignKey(
         "Habitation",
@@ -4776,6 +4780,18 @@ class LieuDeDepart(models.TextChoices):
     HEBERGEMENT = "HEBERGEMENT", "Point d'hébergement (en déplacement sur site)"
 
 
+class VehiculeBenevole(models.TextChoices):
+    """Le véhicule d'un déplacement : c'est lui qui fixe le tarif kilométrique de l'association."""
+    VOITURE = "VOITURE", "Voiture"
+    DEUX_ROUES = "DEUX_ROUES", "Moto, scooter"
+    AUCUN = "AUCUN", "Sans véhicule personnel"
+
+
+class SourceEngagement(models.TextChoices):
+    DECLARE = "DECLARE", "Déclaré par la personne"
+    PLANNING = "PLANNING", "Pointé par le bureau (manifestation)"
+
+
 class EngagementPersonnel(EnvironmentScopedModel):
     """« Je pars », « je rentre » pour le personnel municipal et les membres d'association
     (17/11/2026) : le temps qu'une personne a réellement passé sur une crise, d'après ce
@@ -4788,7 +4804,11 @@ class EngagementPersonnel(EnvironmentScopedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="engagements_personnels")
-    crise = models.ForeignKey(Crisis, on_delete=models.CASCADE, related_name="engagements_personnels")
+    # Une crise OU une manifestation d'association (26/11/2026, FCBA 33 : « suivi des heures et
+    # des kilomètres » hors crise). Exactement l'un des deux : contrainte en bas.
+    crise = models.ForeignKey(Crisis, on_delete=models.CASCADE, null=True, blank=True, related_name="engagements_personnels")
+    manifestation = models.ForeignKey(
+        "Manifestation", on_delete=models.CASCADE, null=True, blank=True, related_name="engagements_personnels")
     equipe = models.ForeignKey(
         "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels")
     institution = models.ForeignKey(
@@ -4809,6 +4829,12 @@ class EngagementPersonnel(EnvironmentScopedModel):
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements_personnels_valides")
     valide_le = models.DateTimeField(null=True, blank=True)
     remarque_chef = EncryptedTextField(blank=True, default="")
+    # Kilomètres aller-retour déclarés par la personne (26/11/2026). Chiffré comme toute saisie :
+    # nombre en texte, totalisé en Python (core/benevolat.py), jamais par SQL.
+    kilometres = EncryptedTextField(blank=True, default="")
+    vehicule = models.CharField(max_length=12, choices=VehiculeBenevole.choices, default=VehiculeBenevole.AUCUN)
+    #: DECLARE : « je pars / je rentre » ou saisi à la main ; PLANNING : né du pointage d'une manifestation.
+    source = models.CharField(max_length=10, choices=SourceEngagement.choices, default=SourceEngagement.DECLARE)
 
     class Meta:
         ordering = ["-parti_le"]
@@ -4816,7 +4842,24 @@ class EngagementPersonnel(EnvironmentScopedModel):
             models.UniqueConstraint(
                 fields=["utilisateur", "environment"], condition=models.Q(rentre_le__isnull=True),
                 name="uq_engagement_personnel_un_seul_ouvert"),
+            models.CheckConstraint(
+                condition=(models.Q(crise__isnull=False, manifestation__isnull=True)
+                           | models.Q(crise__isnull=True, manifestation__isnull=False)),
+                name="ck_engagement_personnel_crise_ou_manifestation"),
         ]
+
+    @property
+    def objet_nom(self) -> str:
+        """Le nom de ce sur quoi la personne est partie : la crise, ou la manifestation."""
+        if self.crise_id:
+            return self.crise.name
+        return self.manifestation.titre if self.manifestation_id else ""
+
+    def kilometres_nombre(self) -> float:
+        try:
+            return max(0.0, float(str(self.kilometres or "0").replace(",", ".")))
+        except ValueError:
+            return 0.0
 
     @property
     def duree(self):
@@ -13657,6 +13700,165 @@ class LectureConversation(models.Model):
 
     class Meta:
         unique_together = ("conversation", "utilisateur")
+
+
+# ════════════════════════════════════════════════════════
+# Manifestations d'association et bénévolat (26/11/2026)
+# ════════════════════════════════════════════════════════
+# Demande de Sylvain après l'annonce de FCBA 33 (Floirac Citizen Band Amitié) : plannings des
+# manifestations, des dispositifs de signalisation radio et des exercices, inscription sur les
+# créneaux, suivi des heures et des kilomètres, valorisation du bénévolat. Le relevé d'heures
+# existant (`EngagementPersonnel`) est étendu, pas doublé. Voir core/manifestations.py et
+# core/benevolat.py.
+
+
+class TypeManifestation(models.TextChoices):
+    MANIFESTATION = "MANIFESTATION", "Manifestation"
+    SIGNALISATION_RADIO = "SIGNALISATION_RADIO", "Dispositif de signalisation radio"
+    EXERCICE = "EXERCICE", "Exercice"
+    FORMATION = "FORMATION", "Formation"
+    REUNION = "REUNION", "Réunion"
+    AUTRE = "AUTRE", "Autre"
+
+
+class StatutManifestation(models.TextChoices):
+    BROUILLON = "BROUILLON", "Brouillon"
+    PUBLIEE = "PUBLIEE", "Publiée"
+    ANNULEE = "ANNULEE", "Annulée"
+    TERMINEE = "TERMINEE", "Terminée"
+
+
+class Manifestation(EnvironmentScopedModel):
+    """Une activité d'association hors crise : une course à baliser, un dispositif radio, un
+    exercice, une formation. Le bureau la crée et la publie ; les membres s'inscrivent sur ses
+    postes. Un brouillon n'est visible que du bureau."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="manifestations")
+    type = models.CharField(max_length=20, choices=TypeManifestation.choices, default=TypeManifestation.MANIFESTATION)
+    titre = EncryptedTextField(max_length=200)
+    lieu = EncryptedTextField(max_length=300, blank=True, default="")
+    #: Pour qui : « Mairie de Floirac, course des 10 km ».
+    organisateur = EncryptedTextField(max_length=300, blank=True, default="")
+    #: Feuille de route, consignes opérationnelles.
+    consignes = EncryptedTextField(blank=True, default="")
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    commune_code = models.CharField(max_length=10, blank=True, default="")
+    debut = models.DateTimeField()
+    fin = models.DateTimeField()
+    statut = models.CharField(max_length=10, choices=StatutManifestation.choices, default=StatutManifestation.BROUILLON)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="manifestations_creees")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["debut"]
+        indexes = [models.Index(fields=["institution", "debut"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_type_display()} du {self.debut:%d/%m/%Y}"
+
+
+class PosteManifestation(EnvironmentScopedModel):
+    """Un créneau à tenir : « Carrefour D936, signaleur radio, 8 h – 12 h, 2 places »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    manifestation = models.ForeignKey(Manifestation, on_delete=models.CASCADE, related_name="postes")
+    intitule = EncryptedTextField(max_length=200)
+    debut = models.DateTimeField()
+    fin = models.DateTimeField()
+    places = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(500)])
+    remarque = EncryptedTextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["debut"]
+
+
+class StatutInscriptionPoste(models.TextChoices):
+    INSCRIT = "INSCRIT", "Inscrit"
+    LISTE_ATTENTE = "LISTE_ATTENTE", "Liste d'attente"
+    DESISTE = "DESISTE", "Désisté"
+    PRESENT = "PRESENT", "Présent"
+    ABSENT = "ABSENT", "Absent"
+
+
+class InscriptionPoste(EnvironmentScopedModel):
+    """Un bénévole sur un poste. Une seule ligne par personne et par poste : se désister puis se
+    réinscrire réutilise la ligne (et la remet en fin de liste d'attente si le poste est plein)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    poste = models.ForeignKey(PosteManifestation, on_delete=models.CASCADE, related_name="inscriptions")
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="inscriptions_postes")
+    statut = models.CharField(max_length=14, choices=StatutInscriptionPoste.choices, default=StatutInscriptionPoste.INSCRIT)
+    #: Rang dans la file : l'heure de la (ré)inscription.
+    inscrit_le = models.DateTimeField(default=timezone.now)
+    pointe_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    pointe_le = models.DateTimeField(null=True, blank=True)
+    #: La ligne de relevé d'heures que le pointage « présent » a créée.
+    engagement = models.OneToOneField(
+        EngagementPersonnel, on_delete=models.SET_NULL, null=True, blank=True, related_name="inscription_poste")
+
+    class Meta:
+        ordering = ["inscrit_le"]
+        constraints = [models.UniqueConstraint(fields=["poste", "utilisateur"], name="uq_inscription_poste")]
+
+
+class ReglagesBenevolat(EnvironmentScopedModel):
+    """Ce que l'association retient pour une année : taux de valorisation, tarifs kilométriques,
+    reçus fiscaux. **Aucun barème n'est codé en dur** : il n'existe plus de barème propre aux
+    bénévoles depuis 2022, et le barème fiscal dépend du véhicule et du kilométrage annuel ;
+    c'est au trésorier de reporter ce qu'il applique."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="reglages_benevolat")
+    annee = models.PositiveSmallIntegerField()
+    taux_horaire = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True,
+                                       help_text="Valorisation d'une heure de bénévolat (€).")
+    tarif_km_voiture = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    tarif_km_deux_roues = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    #: L'association est habilitée à délivrer des reçus fiscaux (intérêt général, art. 200 du CGI).
+    recus_fiscaux = models.BooleanField(default=False)
+    fondement_recus = EncryptedTextField(max_length=300, blank=True, default="")
+    signataire_nom = EncryptedTextField(max_length=150, blank=True, default="")
+    signataire_qualite = EncryptedTextField(max_length=100, blank=True, default="")
+    #: Numéro du dernier reçu émis cette année (« 2027-0001 » pour le premier).
+    dernier_recu = models.PositiveIntegerField(default=0)
+    modifie_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["institution", "annee", "environment"], name="uq_reglages_benevolat")]
+
+
+class StatutAbandonFrais(models.TextChoices):
+    DEMANDE = "DEMANDE", "Demandé par le bénévole"
+    ACCEPTE = "ACCEPTE", "Accepté par le bureau"
+    RECU_EMIS = "RECU_EMIS", "Reçu fiscal émis"
+    REFUSE = "REFUSE", "Refusé"
+
+
+class AbandonFrais(EnvironmentScopedModel):
+    """Un bénévole renonce, pour une année, au remboursement de ses frais kilométriques validés :
+    c'est un don à l'association, qui lui délivre un reçu fiscal. Le montant et les lignes sont
+    figés à l'acceptation : une ligne corrigée ensuite ne change pas un reçu déjà émis."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey("Institution", on_delete=models.CASCADE, related_name="abandons_frais")
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="abandons_frais")
+    annee = models.PositiveSmallIntegerField()
+    statut = models.CharField(max_length=10, choices=StatutAbandonFrais.choices, default=StatutAbandonFrais.DEMANDE)
+    #: Figés à l'acceptation : {"lignes": [id…], "kilometres": …, "montant": "123.45"}.
+    detail = EncryptedJSONField(default=dict, blank=True)
+    numero_recu = models.CharField(max_length=20, blank=True, default="")
+    date_recu = models.DateField(null=True, blank=True)
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    motif_refus = EncryptedTextField(max_length=300, blank=True, default="")
+    date_demande = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_demande"]
+        constraints = [models.UniqueConstraint(fields=["institution", "utilisateur", "annee", "environment"],
+                                               name="uq_abandon_frais_annee")]
 
 
 JETONS_CHIFFRES = {

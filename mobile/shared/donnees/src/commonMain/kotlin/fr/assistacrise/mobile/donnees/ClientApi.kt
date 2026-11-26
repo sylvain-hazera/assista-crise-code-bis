@@ -310,6 +310,24 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.PlanUrgenceServeur.serializer(), it)
         }
 
+    /** Les manifestations de mes associations (26/11/2026). */
+    suspend fun manifestations(): Reponse<List<fr.assistacrise.mobile.domaine.ManifestationAsso>> =
+        authentifie(HttpMethod.Get, "manifestations/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ListeManifestations.serializer(), it).manifestations
+        }
+
+    /** Le détail d'une manifestation, avec ses postes et mon statut sur chacun. */
+    suspend fun manifestation(id: String): Reponse<fr.assistacrise.mobile.domaine.ManifestationAsso> =
+        authentifie(HttpMethod.Get, "manifestations/$id/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ManifestationAsso.serializer(), it)
+        }
+
+    /** S'inscrire sur un poste (ou en liste d'attente s'il est complet), ou s'en désister. */
+    suspend fun inscriptionPoste(poste: String, inscrire: Boolean): Reponse<fr.assistacrise.mobile.domaine.ManifestationAsso> =
+        authentifie(HttpMethod.Post, "manifestations/postes/$poste/", buildJsonObject {
+            put("geste", if (inscrire) "inscrire" else "desister")
+        }).transformer { json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ManifestationAsso.serializer(), it) }
+
     /** Un nœud dédié de l'équipe vient d'être configuré par Bluetooth (25/11/2026). */
     suspend fun noeudDedieConfigure(equipe: String, protocole: String, identifiant: String, nom: String, version: String): Reponse<Unit> =
         authentifie(HttpMethod.Post, "teams/$equipe/noeuds/", buildJsonObject {
