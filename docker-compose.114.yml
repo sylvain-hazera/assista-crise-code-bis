@@ -167,7 +167,10 @@ services:
     image: assista-crise-backend:prod
     container_name: ac_celery_worker
     entrypoint: ["celery"]
-    command: ["-A", "config", "worker", "--loglevel=INFO", "--concurrency=2"]
+    # Recyclage (26/11/2026) : un processus qui a traité 200 tâches, ou dépassé 350 Mo, est
+    # remplacé ; la mémoire ne dérive plus au fil des semaines.
+    command: ["-A", "config", "worker", "--loglevel=INFO", "--concurrency=2",
+              "--max-tasks-per-child=200", "--max-memory-per-child=350000"]
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
     # Les notifications poussées partent d'ici (core/tasks.pousser_notification_task).
@@ -190,7 +193,8 @@ services:
     container_name: ac_celery_worker_lourd
     entrypoint: ["celery"]
     command: ["-A", "config", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "lourd",
-              "-n", "lourd@%h", "--prefetch-multiplier=1"]
+              "-n", "lourd@%h", "--prefetch-multiplier=1", "--max-tasks-per-child=50",
+              "--max-memory-per-child=600000"]
     cpu_shares: 256
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
@@ -280,6 +284,9 @@ services:
 
   # ------------------------------------------------------------------ Matrix / Element
   synapse:
+    # Matrix arrêté le 24/11/2026 : ne démarre plus avec le reste (docker compose --profile matrix
+    # up -d le relance, volumes intacts).
+    profiles: ["matrix"]
     <<: *service
     image: matrixdotorg/synapse:latest
     container_name: ac_synapse
@@ -292,6 +299,9 @@ services:
     depends_on: [synapse-db]
 
   synapse-db:
+    # Matrix arrêté le 24/11/2026 : ne démarre plus avec le reste (docker compose --profile matrix
+    # up -d le relance, volumes intacts).
+    profiles: ["matrix"]
     <<: *service
     image: postgres:15
     container_name: ac_synapse_db
@@ -302,6 +312,9 @@ services:
     networks: [matrix-db]
 
   mas:
+    # Matrix arrêté le 24/11/2026 : ne démarre plus avec le reste (docker compose --profile matrix
+    # up -d le relance, volumes intacts).
+    profiles: ["matrix"]
     <<: *service
     image: ghcr.io/element-hq/matrix-authentication-service:latest
     container_name: ac_mas
@@ -313,6 +326,9 @@ services:
     depends_on: [synapse-db]
 
   element-web:
+    # Matrix arrêté le 24/11/2026 : ne démarre plus avec le reste (docker compose --profile matrix
+    # up -d le relance, volumes intacts).
+    profiles: ["matrix"]
     <<: *service
     image: vectorim/element-web:latest
     container_name: ac_element_web
@@ -322,6 +338,9 @@ services:
     networks: [back]
 
   matrix-bridge:
+    # Matrix arrêté le 24/11/2026 : ne démarre plus avec le reste (docker compose --profile matrix
+    # up -d le relance, volumes intacts).
+    profiles: ["matrix"]
     <<: *service
     image: assista-crise-matrix-bridge:prod
     build: ./matrix-bridge

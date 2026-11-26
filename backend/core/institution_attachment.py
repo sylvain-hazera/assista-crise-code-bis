@@ -315,7 +315,8 @@ def grant_institution_and_demo_access(user, institution, request=None):
                 request=request, action_code="MODIFICATION", objet_type="Team", objet_id=team.id,
                 commentaire=f"{user.email} ajouté à l'équipe « {team.name} » (rattachement institution)",
             )
-            _envoyer_email_acces_messagerie_equipe(user, team, request)
+            # Plus de courriel « installez Element X » : Matrix est arrêté depuis le 24/11/2026, la
+            # messagerie d'équipe est dans l'application et sur le site.
 
     # SECTION DÉPARTEMENTALE (13/11/2026). Posée ici parce que cette fonction est le passage
     # obligé de TOUS les chemins de rattachement : la poser dans l'un d'eux reproduirait le

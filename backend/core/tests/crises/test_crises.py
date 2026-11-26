@@ -293,12 +293,11 @@ class TestImplicationThemesEtResponsable:
         implication = ImplicationInstitution.objects.get(id=response.data["id"])
         assert implication.responsable == invited
 
-        # Deux emails pour le nouvel invité : l'invitation/activation de son compte
-        # régulateur, et l'accès à la messagerie d'équipe envoyé la première fois qu'un membre
-        # rejoint l'équipe de son institution (voir grant_institution_and_demo_access/
-        # _envoyer_email_acces_messagerie_equipe, ajouté le 2026-10-08).
+        # Un seul email pour le nouvel invité : l'invitation/activation de son compte régulateur.
+        # Le courriel « accès à la messagerie d'équipe » (Element X) n'existe plus depuis l'arrêt
+        # de Matrix (24/11/2026).
         pour_l_invite = [e for e in mail.outbox if invited.email in e.to]
-        assert len(pour_l_invite) == 2
+        assert len(pour_l_invite) == 1
         # Plus, depuis le 12/11/2026, la notification aux régulateurs de la collectivité :
         # une déclaration ACTEUR les prévient même lorsqu'elle est acquise d'emblée, sans quoi
         # personne n'apprenait qu'une institution venait d'engager ses moyens.

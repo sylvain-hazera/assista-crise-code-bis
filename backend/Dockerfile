@@ -66,4 +66,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 # conteneurs de tests où le dossier n'existe pas) : .114 lance le conteneur par docker run, sans
 # le tmpfs de docker-compose.yml. Vidé à chaque démarrage (valeurs d'anciens PID).
 # --no-control-socket : gunicorn 26 tente sinon de créer ~/.gunicorn, inexistant pour appuser.
-CMD ["sh", "-c", "export PROMETHEUS_MULTIPROC_DIR=\"${PROMETHEUS_MULTIPROC_DIR:-/tmp/prometheus-multiproc}\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && find \"$PROMETHEUS_MULTIPROC_DIR\" -mindepth 1 -delete && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60 --no-control-socket"]
+# --preload (26/11/2026) : Django chargé une fois puis partagé par les processus (copie à
+# l'écriture) au lieu d'une copie par processus ; --max-requests : chaque processus est remplacé
+# après environ 1000 requêtes, la mémoire ne dérive plus.
+CMD ["sh", "-c", "export PROMETHEUS_MULTIPROC_DIR=\"${PROMETHEUS_MULTIPROC_DIR:-/tmp/prometheus-multiproc}\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && find \"$PROMETHEUS_MULTIPROC_DIR\" -mindepth 1 -delete && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60 --preload --max-requests 1000 --max-requests-jitter 100 --no-control-socket"]
