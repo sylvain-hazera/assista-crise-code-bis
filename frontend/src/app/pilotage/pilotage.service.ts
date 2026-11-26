@@ -79,6 +79,44 @@ export interface PotCommun {
   messages: MessageATrier[]; equipes: { id: string; nom: string; indicatif: string | null }[];
 }
 
+/** Un marqueur terrain (26/11/2026, backend/core/marqueurs_terrain.py) : feu, route coupée…
+ * arrivé par la radio (format MeshCore SAR), l'application ou le site. */
+export interface MarqueurTerrain {
+  id: string;
+  crise: string | null;
+  manifestation: string | null;
+  emoji: string;
+  genre: string;
+  libelle: string;
+  route: boolean;
+  latitude: number;
+  longitude: number;
+  note: string;
+  auteur_nom: string;
+  source: string;
+  source_libelle: string;
+  canal_nom: string;
+  cree_le: string;
+  actif: boolean;
+  decision: 'A_TRAITER' | 'PRIS_EN_COMPTE' | 'CLOS';
+  decision_libelle: string;
+  texte_radio: string;
+}
+
+/** Les genres qu'on pose depuis le site ; les trois routes sont trois états d'un même marqueur. */
+export const GENRES_MARQUEURS: { emoji: string; libelle: string }[] = [
+  { emoji: '🔥', libelle: 'Feu' }, { emoji: '🧑', libelle: 'Personne trouvée' }, { emoji: '🏕️', libelle: 'Zone de regroupement' },
+  { emoji: '📦', libelle: 'Objet' }, { emoji: '🌊', libelle: 'Inondation' }, { emoji: '⛔', libelle: 'Route coupée totalement' },
+  { emoji: '🚧', libelle: 'Route : une voie libérée' }, { emoji: '✅', libelle: 'Route : axe libéré' },
+  { emoji: '🚑', libelle: 'Blessé' }, { emoji: '⚠️', libelle: 'Danger' },
+];
+
+export const ETATS_ROUTE: { code: string; emoji: string; libelle: string }[] = [
+  { code: 'ROUTE_COUPEE', emoji: '⛔', libelle: 'Coupée totalement' },
+  { code: 'ROUTE_UNE_VOIE', emoji: '🚧', libelle: 'Une voie libérée' },
+  { code: 'ROUTE_LIBEREE', emoji: '✅', libelle: 'Axe libéré' },
+];
+
 /** Le terrain en direct d'une crise : alertes à prendre en compte, statuts, derniers messages. */
 export interface VueTerrain {
   alertes: MessageTerrainPilotage[];
@@ -124,7 +162,11 @@ export class PilotageService {
 
   /** Le terrain en direct de la crise suivie, relu toutes les 30 s (23/11/2026). */
   readonly terrain = signal<VueTerrain | null>(null);
-  readonly alertesTerrain = computed(() => this.terrain()?.alertes.length ?? 0);
+  /** Les marqueurs terrain de la crise suivie, relus avec le terrain (26/11/2026). */
+  readonly marqueurs = signal<MarqueurTerrain[]>([]);
+  readonly marqueursATraiter = computed(() => this.marqueurs().filter(m => m.decision === 'A_TRAITER').length);
+  /** La pastille du terrain compte les alertes et les marqueurs que la régulation n'a pas encore traités. */
+  readonly alertesTerrain = computed(() => (this.terrain()?.alertes.length ?? 0) + this.marqueursATraiter());
   /** Le prochain point de situation dû (cadence fixée par la cellule), relu avec le terrain. */
   readonly pointDu = signal<{ du: boolean; prochain: string | null } | null>(null);
   /** Le pot commun des messages radio sans destinataire ; null si ce compte ne trie pas. */
@@ -147,8 +189,12 @@ export class PilotageService {
 
   rafraichirTerrain(): void {
     const crise = this.criseId();
-    if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); this.centres.set(null); return; }
+    if (!crise) { this.terrain.set(null); this.pointDu.set(null); this.potCommun.set(null); this.centres.set(null); this.marqueurs.set([]); return; }
     this.rafraichirCentres();
+    this.http.get<MarqueurTerrain[]>(`${environment.apiUrl}/marqueurs-terrain/`, { params: { crise } }).subscribe({
+      next: m => this.marqueurs.set(m),
+      error: () => { /* réseau ou droits : on garde les derniers */ },
+    });
     this.rafraichirCircuitEau(false);
     this.http.get<{ a_valider_ma_commune: number }>(`${environment.apiUrl}/points-eau/couverture/`).subscribe({
       next: c => this.peiAValider.set(c.a_valider_ma_commune || 0),
@@ -166,6 +212,25 @@ export class PilotageService {
       next: v => this.terrain.set(v),
       error: () => { /* réseau ou droits : on garde la dernière vue */ },
     });
+  }
+
+  /** La régulation décide : pris en compte, ou clos (le marqueur quitte la carte). */
+  deciderMarqueur(id: string, decision: 'PRIS_EN_COMPTE' | 'CLOS'): Promise<MarqueurTerrain> {
+    return firstValueFrom(this.http.patch<MarqueurTerrain>(`${environment.apiUrl}/marqueurs-terrain/${id}/`, { decision }))
+      .then(m => { this.rafraichirTerrain(); return m; });
+  }
+
+  /** Nouvel état d'une route : il remplace l'ancien et repart par la radio. */
+  etatRoute(id: string, etat: string): Promise<MarqueurTerrain> {
+    return firstValueFrom(this.http.patch<MarqueurTerrain>(`${environment.apiUrl}/marqueurs-terrain/${id}/`, { etat_route: etat }))
+      .then(m => { this.rafraichirTerrain(); return m; });
+  }
+
+  /** Pose un marqueur sur la crise suivie ; il repart par la radio sur les canaux de la crise. */
+  poserMarqueur(emoji: string, latitude: number, longitude: number, note: string): Promise<MarqueurTerrain> {
+    return firstValueFrom(this.http.post<MarqueurTerrain>(`${environment.apiUrl}/marqueurs-terrain/`,
+      { crise: this.criseId(), emoji, latitude, longitude, note, source: 'SITE' }))
+      .then(m => { this.rafraichirTerrain(); return m; });
   }
 
   prendreEnCompte(id: string): Promise<MessageTerrainPilotage> {

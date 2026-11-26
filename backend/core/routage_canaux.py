@@ -163,6 +163,9 @@ def ranger_message_canal(message, protocole, terrain=None, recu_par=None):
     modele = MessageCanalMeshtastic if protocole == "MESHTASTIC" else MessageCanalMeshCore
     if _echo_de_nos_messages(modele, message.contenu):
         return []
+    # Marqueur terrain (format MeshCore SAR, 26/11/2026) : sur la carte de la crise, régulation prévenue.
+    from .marqueurs_terrain import depuis_radio as marqueur_depuis_radio
+    marqueur_depuis_radio(message, protocole)
     auteur_libre = None
     auteur = message.expediteur
     if terrain is not None and getattr(terrain, "auteur_id", None):

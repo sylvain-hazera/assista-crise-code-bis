@@ -75,6 +75,12 @@ interface Brouillon {
   demandes: string[];
 }
 
+/** Un marqueur terrain de la manifestation (backend/core/marqueurs_terrain.py, en_dict). */
+interface MarqueurManifestation {
+  id: string; emoji: string; libelle: string; note: string; auteur_nom: string; latitude: number; longitude: number;
+  source_libelle: string; cree_le: string;
+}
+
 /**
  * Manifestations d'association (26/11/2026, après l'annonce de FCBA 33) : le calendrier des
  * manifestations, des dispositifs de signalisation radio et des exercices, et l'inscription sur
@@ -115,6 +121,8 @@ export class ManifestationsComponent implements OnInit {
   annulation = false;
 
   private readonly url = `${environment.apiUrl}/manifestations/`;
+  /** Les marqueurs terrain de la manifestation ouverte (26/11/2026). */
+  marqueurs: MarqueurManifestation[] = [];
 
   readonly demandesPossibles = DEMANDES_POSSIBLES;
   rechercheCommune = '';
@@ -180,9 +188,15 @@ export class ManifestationsComponent implements OnInit {
 
   ouvrir(id: string): void {
     this.erreur = '';
+    this.marqueurs = [];
     this.http.get<Manifestation>(`${this.url}${id}/`).subscribe({
       next: (m) => { this.choisie = m; this.brouillon = null; this.nouveauPoste = null; this.annulation = false; },
       error: (err) => this.erreur = err?.error?.detail || 'Manifestation introuvable.',
+    });
+    // Les marqueurs posés par le terrain (radio ou application, 26/11/2026) : sur la carte des points.
+    this.http.get<MarqueurManifestation[]>(`${environment.apiUrl}/marqueurs-terrain/`, { params: { manifestation: id } }).subscribe({
+      next: (liste) => this.marqueurs = liste,
+      error: () => this.marqueurs = [],
     });
   }
 
@@ -314,16 +328,18 @@ export class ManifestationsComponent implements OnInit {
     return { type_point: p.type_point || null, ...(p.latitude !== null ? { latitude: p.latitude, longitude: p.longitude } : {}) };
   }
 
-  /** La carte de la fiche : le PC (ou le premier point placé) au centre, les autres autour. */
+  /** La carte de la fiche : le PC (ou le premier point placé) au centre, les autres autour, et
+   * les marqueurs posés par le terrain. */
   carte(m: Manifestation): { latitude: number; longitude: number; points: { latitude: number; longitude: number; label: string }[] } | null {
     const places = (m.postes ?? []).filter(p => p.latitude != null && p.longitude != null);
-    if (!places.length) return null;
+    const reperes = this.marqueurs.map(r => ({ latitude: r.latitude, longitude: r.longitude,
+      label: `${r.emoji} ${r.libelle}${r.note ? ' — ' + r.note : ''} (${r.auteur_nom})` }));
+    if (!places.length && !reperes.length) return null;
     const centre = places.find(p => p.type_point === 'PC_MANIFESTATION') ?? places[0];
-    return {
-      latitude: centre.latitude!, longitude: centre.longitude!,
-      points: places.filter(p => p !== centre).map(p => ({ latitude: p.latitude!, longitude: p.longitude!,
-        label: `${p.intitule}${p.type_point_libelle ? ' (' + p.type_point_libelle + ')' : ''}` })),
-    };
+    const points = places.filter(p => p !== centre).map(p => ({ latitude: p.latitude!, longitude: p.longitude!,
+      label: `${p.intitule}${p.type_point_libelle ? ' (' + p.type_point_libelle + ')' : ''}` }));
+    if (!centre) return { latitude: reperes[0].latitude, longitude: reperes[0].longitude, points: reperes.slice(1) };
+    return { latitude: centre.latitude!, longitude: centre.longitude!, points: [...points, ...reperes] };
   }
 
   enregistrerPosition(): void {

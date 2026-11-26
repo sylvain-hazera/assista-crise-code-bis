@@ -6456,6 +6456,56 @@ class MessageTerrain(EnvironmentScopedModel):
         constraints = [models.UniqueConstraint(fields=["auteur", "identifiant_client"], name="uq_message_terrain_client")]
 
 
+class MarqueurTerrain(EnvironmentScopedModel):
+    """Un marqueur d'incident posé sur la carte par le terrain (26/11/2026) : feu, personne
+    trouvée, route coupée… Il arrive par la radio (format MeshCore SAR, `S:<émoji>:…`, sur
+    Meshtastic comme sur MeshCore), par l'application ou par le site (core/marqueurs_terrain.py).
+    Affiché tout de suite sur la carte de la crise ou de la manifestation ; le régulateur est
+    prévenu et décide du traitement.
+
+    Une route a trois états (coupée totalement, une voie libérée, axe libéré) : un nouvel état
+    remplace le marqueur de route voisin (`remplace`), qui reste comme historique."""
+
+    class Source(models.TextChoices):
+        MESHTASTIC = "MESHTASTIC", "Radio Meshtastic"
+        MESHCORE = "MESHCORE", "Radio MeshCore"
+        APPLICATION = "APPLICATION", "Application"
+        SITE = "SITE", "Site"
+
+    class Decision(models.TextChoices):
+        A_TRAITER = "A_TRAITER", "À traiter"
+        PRIS_EN_COMPTE = "PRIS_EN_COMPTE", "Pris en compte"
+        CLOS = "CLOS", "Clos"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="marqueurs_terrain")
+    manifestation = models.ForeignKey("Manifestation", on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name="marqueurs_terrain")
+    emoji = models.CharField(max_length=16)
+    #: Code dérivé de l'émoji (core/marqueurs_terrain.GENRES) : FEU, ROUTE_COUPEE…
+    genre = models.CharField(max_length=20)
+    #: Le lieu de l'incident (pas la position d'une personne), comme un point de crise.
+    location = gis_models.PointField(srid=4326)
+    note = EncryptedTextField(blank=True, default="")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="marqueurs_terrain")
+    #: Le nom radio de l'émetteur quand il n'est pas un compte connu.
+    auteur_libre = EncryptedTextField(blank=True, default="")
+    source = models.CharField(max_length=12, choices=Source.choices)
+    canal_nom = models.CharField(max_length=100, blank=True, default="")
+    cree_le = models.DateTimeField(default=timezone.now)
+    remplace = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="remplace_par")
+    actif = models.BooleanField(default=True)
+    decision = models.CharField(max_length=16, choices=Decision.choices, default=Decision.A_TRAITER)
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    traite_le = models.DateTimeField(null=True, blank=True)
+    #: Modifié des deux côtés pendant une coupure (satellite / central) : voir core/sync_outbox.py.
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-cree_le"]
+        indexes = [models.Index(fields=["crise", "actif"]), models.Index(fields=["manifestation", "actif"])]
+
+
 class ConnecteurSMTP(EnvironmentScopedModel):
     """Une messagerie SMTP propre à une institution (22/11/2026) : « Messagerie du CD33 »,
     serveur de l'association… pour envoyer depuis SON adresse, à côté de Brevo
@@ -11965,6 +12015,9 @@ class ModeleSynchronisable(models.TextChoices):
     HABITATION_COMMENTAIRE = "HabitationCommentaire", "Commentaire d'un bien"
     CONSTAT_TERRAIN = "ConstatTerrain", "Constat de terrain"
     TYPE_BIEN = "TypeBien", "Type de bien"
+    # Les marqueurs terrain (26/11/2026, core/marqueurs_terrain.py) : reçus par la radio d'un
+    # satellite coupé, ils remontent au retour du réseau ; l'état d'une route change des deux côtés.
+    MARQUEUR_TERRAIN = "MarqueurTerrain", "Marqueur terrain"
 
 
 class ActionSynchronisation(models.TextChoices):

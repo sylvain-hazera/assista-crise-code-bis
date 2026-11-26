@@ -1,7 +1,12 @@
 import { Component, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 
-import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilotage.service';
+import { FormsModule } from '@angular/forms';
+
+import {
+  ETATS_ROUTE, GENRES_MARQUEURS, MarqueurTerrain, MessageATrier, MessageTerrainPilotage, PilotageService,
+} from '../pilotage.service';
+import { MiniCarteMarqueursComponent } from './mini-carte-marqueurs.component';
 
 /**
  * Le terrain en direct (23/11/2026) : en tête, les alertes Danger et Demande de premiers secours
@@ -12,7 +17,7 @@ import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilot
 @Component({
   selector: 'app-pilotage-terrain',
   standalone: true,
-  imports: [DatePipe],
+  imports: [DatePipe, FormsModule, MiniCarteMarqueursComponent],
   template: `
     <h1>Terrain</h1>
     @if (!pilotage.criseId()) {
@@ -37,6 +42,59 @@ import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilot
       } @else {
         <p class="calme"><span class="material-icons" aria-hidden="true">check_circle</span> Aucune alerte en attente.</p>
       }
+
+      <section class="bloc marqueurs" aria-label="Marqueurs terrain">
+        <div class="entete-marqueurs">
+          <h2>Marqueurs terrain ({{ pilotage.marqueurs().length }}@if (pilotage.marqueursATraiter()) {, dont {{ pilotage.marqueursATraiter() }} à traiter})</h2>
+          <button type="button" class="secondaire" [attr.aria-pressed]="modePose" (click)="basculerPose()">
+            {{ modePose ? 'Annuler' : 'Poser un marqueur' }}</button>
+        </div>
+        <p class="aide">Feu, personne trouvée, route coupée… posés par le terrain, par radio (Meshtastic, MeshCore, format SAR) ou par l'application.
+          Ce que vous posez ou changez ici repart par la radio sur les canaux de la crise.</p>
+        <app-mini-carte-marqueurs [marqueurs]="pilotage.marqueurs()" [modePose]="modePose"
+                                  (choisi)="selection = $event" (endroit)="endroit = $event" />
+        @if (modePose) {
+          <div class="pose">
+            @if (!endroit) { <p class="aide">Touchez la carte à l'endroit du marqueur.</p> }
+            @else {
+              <p class="aide">Endroit : {{ endroit.latitude.toFixed(5) }}, {{ endroit.longitude.toFixed(5) }}</p>
+              <div class="genres" role="radiogroup" aria-label="Genre du marqueur">
+                @for (g of genres; track g.emoji) {
+                  <button type="button" role="radio" [attr.aria-checked]="emoji === g.emoji" [class.choisi]="emoji === g.emoji"
+                          (click)="emoji = g.emoji">{{ g.emoji }} {{ g.libelle }}</button>
+                }
+              </div>
+              <label class="note">Précision (facultatif, aucun nom de personne : la radio est publique)
+                <input type="text" maxlength="80" [(ngModel)]="note" name="note-marqueur" />
+              </label>
+              <button type="button" [disabled]="enCours === 'pose'" (click)="poser()">Poser et envoyer par la radio</button>
+            }
+          </div>
+        }
+        @if (!pilotage.marqueurs().length) { <p class="vide">Aucun marqueur sur cette crise.</p> }
+        <ul class="liste-marqueurs">
+          @for (m of marqueursTries(); track m.id) {
+            <li [class.a-traiter]="m.decision === 'A_TRAITER'" [class.selection]="selection === m.id">
+              <div class="texte-marqueur">
+                <strong>{{ m.emoji }} {{ m.libelle }}</strong>@if (m.note) { — {{ m.note }} }
+                <span class="quand">{{ m.cree_le | date:'dd/MM HH:mm' }} · {{ m.auteur_nom }} · {{ m.source_libelle }}@if (m.canal_nom) { ({{ m.canal_nom }}) } · {{ m.decision_libelle }}</span>
+              </div>
+              <div class="actions-trier">
+                @if (m.route) {
+                  <select [attr.aria-label]="'État de la route : ' + m.libelle" [ngModel]="m.genre" (ngModelChange)="changerRoute(m, $event)"
+                          [disabled]="enCours === m.id" [name]="'route-' + m.id">
+                    @for (e of etatsRoute; track e.code) { <option [value]="e.code">{{ e.emoji }} {{ e.libelle }}</option> }
+                  </select>
+                }
+                @if (m.decision === 'A_TRAITER') {
+                  <button type="button" [disabled]="enCours === m.id" (click)="decider(m, 'PRIS_EN_COMPTE')">Pris en compte</button>
+                }
+                <button type="button" class="secondaire" [disabled]="enCours === m.id" (click)="decider(m, 'CLOS')">Clore</button>
+              </div>
+            </li>
+          }
+        </ul>
+      </section>
 
       @if (pilotage.potCommun(); as pot) {
         <section class="bloc trier" aria-label="Messages radio à trier">
@@ -125,6 +183,22 @@ import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilot
     .texte-trier { display: flex; flex-direction: column; min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
     .actions-trier { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .actions-trier select { min-height: 40px; max-width: 100%; }
+    .entete-marqueurs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center;
+      button { border-radius: 8px; padding: 8px 12px; min-height: 40px; font: inherit; font-weight: 600; cursor: pointer;
+        background: transparent; color: inherit; border: 1px solid var(--ac-border, #d1d5db); } }
+    .pose { display: flex; flex-direction: column; gap: 8px; margin: 10px 0;
+      > button { align-self: flex-start; border: none; border-radius: 8px; padding: 8px 12px; min-height: 40px; font: inherit;
+        font-weight: 600; cursor: pointer; background: var(--brand-primary, #2563eb); color: #fff; &:disabled { opacity: .5; } } }
+    .genres { display: flex; flex-wrap: wrap; gap: 6px;
+      button { border: 1px solid var(--ac-border, #d1d5db); border-radius: 999px; padding: 6px 10px; min-height: 36px;
+        background: transparent; color: inherit; font: inherit; cursor: pointer;
+        &.choisi { border-color: var(--brand-primary, #2563eb); background: color-mix(in srgb, var(--brand-primary, #2563eb) 12%, transparent); font-weight: 600; } } }
+    .note { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; input { min-height: 40px; font: inherit; } }
+    .liste-marqueurs { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .liste-marqueurs li { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; padding: 8px;
+      border-radius: 8px; border: 1px solid var(--ac-border, #f3f4f6);
+      &.a-traiter { border-left: 4px solid #b91c1c; } &.selection { outline: 2px solid var(--brand-primary, #2563eb); } }
+    .texte-marqueur { display: flex; flex-direction: column; min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
     .actions-trier button { border: none; border-radius: 8px; padding: 8px 12px; min-height: 40px; font: inherit; font-weight: 600;
       cursor: pointer; background: var(--brand-primary, #2563eb); color: #fff; &:disabled { opacity: .5; }
       &.secondaire { background: transparent; color: inherit; border: 1px solid var(--ac-border, #d1d5db); } }
@@ -133,6 +207,43 @@ import { MessageATrier, MessageTerrainPilotage, PilotageService } from '../pilot
 export class PilotageTerrainComponent {
   readonly pilotage = inject(PilotageService);
   enCours: string | null = null;
+  readonly genres = GENRES_MARQUEURS;
+  readonly etatsRoute = ETATS_ROUTE;
+  modePose = false;
+  endroit: { latitude: number; longitude: number } | null = null;
+  emoji = GENRES_MARQUEURS[0].emoji;
+  note = '';
+  selection: string | null = null;
+
+  /** À traiter d'abord, puis du plus récent au plus ancien. */
+  readonly marqueursTries = computed(() => [...this.pilotage.marqueurs()].sort((a, b) =>
+    (a.decision === 'A_TRAITER' ? 0 : 1) - (b.decision === 'A_TRAITER' ? 0 : 1) || b.cree_le.localeCompare(a.cree_le)));
+
+  basculerPose(): void {
+    this.modePose = !this.modePose;
+    this.endroit = null;
+    this.note = '';
+  }
+
+  async poser(): Promise<void> {
+    if (!this.endroit) return;
+    this.enCours = 'pose';
+    try {
+      await this.pilotage.poserMarqueur(this.emoji, this.endroit.latitude, this.endroit.longitude, this.note.trim());
+      this.basculerPose();
+    } finally { this.enCours = null; }
+  }
+
+  async decider(m: MarqueurTerrain, decision: 'PRIS_EN_COMPTE' | 'CLOS'): Promise<void> {
+    this.enCours = m.id;
+    try { await this.pilotage.deciderMarqueur(m.id, decision); } finally { this.enCours = null; }
+  }
+
+  async changerRoute(m: MarqueurTerrain, etat: string): Promise<void> {
+    if (etat === m.genre) return;
+    this.enCours = m.id;
+    try { await this.pilotage.etatRoute(m.id, etat); } finally { this.enCours = null; }
+  }
 
   /** Les intervenants rangés par équipe. */
   readonly groupes = computed(() => {

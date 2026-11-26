@@ -54,7 +54,7 @@ class ServiceTerrain : Service(), LocationListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_ARRETER_SUIVI) {
             portee.launch {
-                app.suivi.arreterALaMain(app.equipes.equipes.value)
+                app.suivi.arreterALaMain(app.equipes.equipes.value + app.engagementsDeManifestation())
                 mettreAJour()
             }
             return START_STICKY

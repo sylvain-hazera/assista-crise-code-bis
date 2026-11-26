@@ -98,6 +98,12 @@ CHAMPS_PAR_MODELE = {
     "ConstatTerrain": ["crise_id", "habitation_id", "auteur_id", "constate_le", "statut_evaluation",
                        "nature_degats", "nouveau_bien"],
     "TypeBien": ["nom", "cle", "a_une_adresse", "ordre", "actif"],
+    # Marqueurs terrain (26/11/2026, core/marqueurs_terrain.py) : MUTABLE, la décision du
+    # régulateur et l'état actif changent des deux côtés.
+    "MarqueurTerrain": [
+        "crise_id", "manifestation_id", "emoji", "genre", "location", "note", "auteur_id", "auteur_libre",
+        "source", "canal_nom", "cree_le", "remplace_id", "actif", "decision", "traite_par_id", "traite_le",
+    ],
 }
 
 # APPEND_ONLY ne suit que les CRÉATIONS (voir enregistrer_evenement) : un message observé sur la
@@ -118,7 +124,7 @@ APPEND_ONLY = {
     "DepotStock", "ArticleStock", "MouvementStock",
     "HabitationHistorique", "HabitationCommentaire", "ConstatTerrain", "TypeBien",
 }
-MUTABLE = {"Dossier", "Mission", "Habitation"}
+MUTABLE = {"Dossier", "Mission", "Habitation", "MarqueurTerrain"}
 MODELES_SYNCHRONISABLES = APPEND_ONLY | MUTABLE
 
 # Champs auteur possibles, par ordre de préférence — best-effort : tous les modèles

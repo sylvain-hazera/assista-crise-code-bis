@@ -14585,14 +14585,34 @@ class PositionsEquipesView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        # Élargi le 26/11/2026 (décision de Sylvain : « tous les intervenants de la même crise
+        # ou de la même manifestation se voient ») : en plus de mes équipes, les membres des
+        # équipes engagées sur les missions en cours de mes crises, et les bénévoles pointés
+        # présents sur une manifestation du jour où je suis inscrit.
+        from . import manifestations as mf
+        from .models import InscriptionPoste, Mission, StatutInscriptionPoste
+
+        env = get_active_environment(self.request)
+        moi = self.request.user
+        maintenant = timezone.now()
         qs = DernierePositionUtilisateur.objects.filter(
-            environment=get_active_environment(self.request),
-            utilisateur__teams__isnull=False,
-            horodatage__gte=timezone.now() - self.POSITION_TTL,
-        ).distinct().select_related('utilisateur')
+            environment=env, horodatage__gte=maintenant - self.POSITION_TTL,
+        ).select_related('utilisateur')
+        du_jour = dict(poste__manifestation__environment=env,
+                       poste__manifestation__debut__lte=maintenant + datetime.timedelta(hours=12),
+                       poste__manifestation__fin__gte=maintenant - datetime.timedelta(hours=6))
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
-            return qs
-        return qs.filter(utilisateur__teams__members=self.request.user)
+            presents = InscriptionPoste.objects.filter(statut=StatutInscriptionPoste.PRESENT, **du_jour).values('utilisateur_id')
+            return qs.filter(Q(utilisateur__teams__isnull=False) | Q(utilisateur_id__in=presents)).distinct()
+        en_cours = Mission.objects.filter(statut=Mission.Statut.EN_COURS, crise__isnull=False)
+        mes_crises = en_cours.filter(Q(equipes__members=moi) | Q(equipes__leader=moi) | Q(equipes__regulateur=moi)).values('crise_id')
+        equipes_de_mes_crises = en_cours.filter(crise_id__in=mes_crises).values('equipes')
+        mes_manifestations = InscriptionPoste.objects.filter(utilisateur=moi, statut__in=mf.ACTIVES, **du_jour).values('poste__manifestation_id')
+        presents = InscriptionPoste.objects.filter(
+            poste__manifestation_id__in=mes_manifestations, statut=StatutInscriptionPoste.PRESENT).values('utilisateur_id')
+        return qs.filter(
+            Q(utilisateur__teams__members=moi) | Q(utilisateur__teams__in=equipes_de_mes_crises) | Q(utilisateur_id__in=presents)
+        ).distinct()
 
 
 def _contribue_au_dossier(user, dossier) -> bool:
@@ -24393,7 +24413,11 @@ def _appliquer_evenement_synchronisation(satellite, evenement, request):
             # MUTABLE (Dossier, Mission) : conflit possible, voir la docstring du module sync_outbox.
             objet_existant = ModeleClasse.objects.filter(pk=objet_id).first()
             if objet_existant is None:
-                ModeleClasse.objects.create(id=objet_id, environment=satellite.environment, **payload)
+                cree = ModeleClasse.objects.create(id=objet_id, environment=satellite.environment, **payload)
+                if nom_modele == "MarqueurTerrain":
+                    # Reçu par la radio d'un satellite : la régulation du central est prévenue à son tour.
+                    from .marqueurs_terrain import prevenir_regulation
+                    transaction.on_commit(lambda: prevenir_regulation(cree))
                 audit_log(
                     request=request, action_code="CREATION", objet_type=nom_modele, objet_id=objet_id,
                     commentaire=f"Créé par synchronisation du satellite {satellite.nom} (auteur local : {auteur_local}).",

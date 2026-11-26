@@ -24,6 +24,7 @@ class CoreConfig(AppConfig):
             MessageMeshLog, MessageMeshtasticLog, Mission,
             DepotStock, ArticleStock, MouvementStock,
             ConstatTerrain, Habitation, HabitationCommentaire, HabitationHistorique, TypeBien,
+            MarqueurTerrain,
         )
 
         # L'ordre de cette liste n'a aucune importance : les événements sont rejoués chez le
@@ -35,9 +36,10 @@ class CoreConfig(AppConfig):
             MessageMeshtasticLog, MessageCanalMeshtastic, AlerteMeshSOS,
             DepotStock, ArticleStock, MouvementStock,
             TypeBien, Habitation, HabitationHistorique, HabitationCommentaire, ConstatTerrain,
+            MarqueurTerrain,
         ):
             post_save.connect(sync_outbox.enregistrer_evenement, sender=modele, dispatch_uid=f"sync_outbox_{modele.__name__}")
-        for modele in (Dossier, Mission, Habitation):
+        for modele in (Dossier, Mission, Habitation, MarqueurTerrain):
             pre_save.connect(sync_outbox.capturer_version_avant_ecriture, sender=modele, dispatch_uid=f"sync_outbox_pre_{modele.__name__}")
 
         # Salons Matrix d'office (16/11/2026) : une mission reçoit son salon dès qu'une équipe

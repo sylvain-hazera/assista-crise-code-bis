@@ -175,6 +175,29 @@ class Application : android.app.Application() {
     }
     val alertes by lazy { Alertes(this) }
     val chef by lazy { ChefDeMission(this) }
+    /** La carte du terrain hors réseau (27/11/2026) : marqueurs du central, manifestations du jour. */
+    val carteTerrain by lazy {
+        fr.assistacrise.mobile.donnees.DepotCarteTerrain(api, magasin, { fr.assistacrise.mobile.ui.instantDe(it) }, { System.currentTimeMillis() })
+    }
+
+    /**
+     * Mes présences en manifestation, vues comme des engagements (27/11/2026, décision de Sylvain :
+     * la position est partagée du pointage « présent » à la fin du créneau). Le suivi les traite
+     * comme l'engagement d'une équipe : même consentement, même avertissement, arrêt à la fin.
+     */
+    fun engagementsDeManifestation(): List<fr.assistacrise.mobile.domaine.Equipe> =
+        carteTerrain.presencesEnCours().map { (m, p, _) ->
+            fr.assistacrise.mobile.domaine.Equipe(id = "manif:${p.id}", nom = "Manifestation « ${m.titre} »", engagementDebut = p.debut)
+        }
+
+    /** Les engagements que le suivi considère : mes équipes, plus mes présences en manifestation.
+     * `connues` à null (pas de réseau) : on ne sait rien des équipes, sauf qu'un créneau de
+     * manifestation terminé arrête le suivi sans attendre le réseau. */
+    fun engagementsPourLeSuivi(connues: List<fr.assistacrise.mobile.domaine.Equipe>?): List<fr.assistacrise.mobile.domaine.Equipe>? = when {
+        connues != null -> connues + engagementsDeManifestation()
+        carteTerrain.presenceTermineeRecemment() && equipes.equipes.value.none { it.engagee } -> engagementsDeManifestation()
+        else -> null
+    }
     val messagerieRadio by lazy { MessagerieRadio(this) }
 
     /** L'application est-elle à l'écran, et quel fil y est ouvert ? Ce qu'on lit déjà ne sonne pas. */
@@ -206,6 +229,7 @@ class Application : android.app.Application() {
         terrain.restaurer()
         points.restaurer()
         pointsEau.restaurer()
+        carteTerrain.restaurer()
         messagerieRadio.restaurer()
         restaure = true
     }

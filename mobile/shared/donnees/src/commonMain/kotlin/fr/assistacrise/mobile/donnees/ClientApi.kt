@@ -322,6 +322,29 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ManifestationAsso.serializer(), it)
         }
 
+    /** Les marqueurs terrain actifs que je vois, toutes crises et manifestations (27/11/2026). */
+    suspend fun marqueursTerrain(): Reponse<List<fr.assistacrise.mobile.domaine.MarqueurCentral>> =
+        liste("marqueurs-terrain/", fr.assistacrise.mobile.domaine.MarqueurCentral.serializer())
+
+    /** Pose un marqueur sur une crise ou une manifestation. `dejaParRadio` : le protocole sur le
+     * canal de crise duquel le téléphone l'a déjà émis (le serveur sert l'autre réseau). */
+    suspend fun poserMarqueur(m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur, crise: String?, manifestation: String?,
+                              dejaParRadio: String?): Reponse<fr.assistacrise.mobile.domaine.MarqueurCentral> =
+        authentifie(HttpMethod.Post, "marqueurs-terrain/", buildJsonObject {
+            put("emoji", m.emoji); put("latitude", m.latitude); put("longitude", m.longitude); put("note", m.note ?: "")
+            if (crise != null) put("crise", crise)
+            if (manifestation != null) put("manifestation", manifestation)
+            put("source", "APPLICATION")
+            if (dejaParRadio != null) put("deja_par_radio", dejaParRadio)
+        }).transformer { json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.MarqueurCentral.serializer(), it) }
+
+    /** Nouvel état d'une route (« ROUTE_COUPEE », « ROUTE_UNE_VOIE », « ROUTE_LIBEREE »). */
+    suspend fun etatRoute(id: String, etat: String, dejaParRadio: String?): Reponse<fr.assistacrise.mobile.domaine.MarqueurCentral> =
+        authentifie(HttpMethod.Patch, "marqueurs-terrain/$id/", buildJsonObject {
+            put("etat_route", etat); put("source", "APPLICATION")
+            if (dejaParRadio != null) put("deja_par_radio", dejaParRadio)
+        }).transformer { json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.MarqueurCentral.serializer(), it) }
+
     /** S'inscrire sur un poste (ou en liste d'attente s'il est complet), ou s'en désister. */
     suspend fun inscriptionPoste(poste: String, inscrire: Boolean): Reponse<fr.assistacrise.mobile.domaine.ManifestationAsso> =
         authentifie(HttpMethod.Post, "manifestations/postes/$poste/", buildJsonObject {

@@ -187,6 +187,47 @@ describe('Poste de pilotage', () => {
     expect(pilotage.aTrier()).toBe(0);
   });
 
+  it('les marqueurs terrain : comptés dans la pastille, route changée et décision de la régulation (26/11/2026)', async () => {
+    const pilotage = TestBed.inject(PilotageService);
+    pilotage.choisir('c1');
+    pilotage.rafraichirTerrain();
+    const route = { id: 'k1', crise: 'c1', manifestation: null, emoji: '⛔', genre: 'ROUTE_COUPEE', libelle: 'Route coupée totalement',
+                    route: true, latitude: 44.85, longitude: -0.57, note: 'arbre', auteur_nom: 'Léa', source: 'MESHCORE',
+                    source_libelle: 'Radio MeshCore', canal_nom: '#crise', cree_le: '2026-11-26T20:00:00Z', actif: true,
+                    decision: 'A_TRAITER', decision_libelle: 'À traiter', texte_radio: 'S:⛔:0:44.85000,-0.57000:arbre' };
+    http.expectOne(r => r.url === `${api}/marqueurs-terrain/` && r.params.get('crise') === 'c1').flush([route]);
+    http.expectOne(r => r.url === `${api}/messages-terrain/crise/`).flush({ alertes: [], statuts: [], derniers: [] });
+    expect(pilotage.marqueursATraiter()).toBe(1);
+    expect(pilotage.alertesTerrain()).toBe(1);
+
+    const etat = pilotage.etatRoute('k1', 'ROUTE_UNE_VOIE');
+    const patch = http.expectOne(`${api}/marqueurs-terrain/k1/`);
+    expect(patch.request.method).toBe('PATCH');
+    expect(patch.request.body).toEqual({ etat_route: 'ROUTE_UNE_VOIE' });
+    patch.flush({ ...route, id: 'k2', emoji: '🚧', genre: 'ROUTE_UNE_VOIE' });
+    await etat;
+    http.expectOne(r => r.url === `${api}/marqueurs-terrain/`).flush([{ ...route, id: 'k2', emoji: '🚧', genre: 'ROUTE_UNE_VOIE' }]);
+
+    const decision = pilotage.deciderMarqueur('k2', 'PRIS_EN_COMPTE');
+    const req = http.expectOne(`${api}/marqueurs-terrain/k2/`);
+    expect(req.request.body).toEqual({ decision: 'PRIS_EN_COMPTE' });
+    req.flush({ ...route, id: 'k2', decision: 'PRIS_EN_COMPTE' });
+    await decision;
+    http.expectOne(r => r.url === `${api}/marqueurs-terrain/`).flush([{ ...route, id: 'k2', decision: 'PRIS_EN_COMPTE' }]);
+    expect(pilotage.marqueursATraiter()).toBe(0);
+  });
+
+  it('poser un marqueur depuis le site l\'envoie pour la crise suivie (26/11/2026)', async () => {
+    const pilotage = TestBed.inject(PilotageService);
+    pilotage.choisir('c1');
+    const pose = pilotage.poserMarqueur('🔥', 44.85, -0.57, 'fumée');
+    const req = http.expectOne(`${api}/marqueurs-terrain/`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ crise: 'c1', emoji: '🔥', latitude: 44.85, longitude: -0.57, note: 'fumée', source: 'SITE' });
+    req.flush({ id: 'n1' });
+    await pose;
+  });
+
   it('les alertes : la fiche s\'ouvre et l\'alerte passe lue', async () => {
     const fixture = TestBed.createComponent(PilotageAlertesComponent);
     fixture.detectChanges();

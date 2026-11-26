@@ -24,7 +24,9 @@ class ChefDeMission(private val app: Application) {
     }
 
     /** `connues` : mes équipes telles que le serveur vient de les donner, ou `null` s'il n'a pas répondu. */
-    suspend fun piloter(connues: List<Equipe>?): Evenement = verrou.withLock {
+    suspend fun piloter(equipesConnues: List<Equipe>?): Evenement = verrou.withLock {
+        // Présences en manifestation comprises (27/11/2026).
+        val connues = app.engagementsPourLeSuivi(equipesConnues)
         when (app.suivi.arreterSiBesoin(connues)) {
             MotifArret.FIN_D_ENGAGEMENT -> { ServiceTerrain.actualiser(app); app.alertes.geolocCoupee(); return@withLock Evenement.FIN_D_ENGAGEMENT }
             MotifArret.PLAFOND -> { ServiceTerrain.actualiser(app); app.alertes.geolocCoupee(plafond = true); return@withLock Evenement.PLAFOND }

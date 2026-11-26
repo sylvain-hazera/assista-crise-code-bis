@@ -562,7 +562,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 app.depot.toutEffacer()
                 app.equipes.toutEffacer()
                 app.terrain.toutEffacer()
-                app.points.toutEffacer(); app.pointsEau.toutEffacer()
+                app.points.toutEffacer(); app.pointsEau.toutEffacer(); app.carteTerrain.toutEffacer()
                 app.citoyen.toutEffacer()
                 app.alertes.toutRetirer()
                 app.veille.toutEffacer()
@@ -591,7 +591,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             app.equipes.toutEffacer()
             app.suivi.toutEffacer()
             app.terrain.toutEffacer()
-            app.points.toutEffacer(); app.pointsEau.toutEffacer()
+            app.points.toutEffacer(); app.pointsEau.toutEffacer(); app.carteTerrain.toutEffacer()
             app.messagerieRadio.toutEffacer()
             app.citoyen.toutEffacer()
             app.alertes.toutRetirer()
@@ -726,20 +726,76 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         pMc + pMt
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Un marqueur d'incident passé par la radio (format MeshCore SAR), reçu ou envoyé. */
+    /** Un marqueur d'incident (format MeshCore SAR) : entendu par ma radio, envoyé, ou connu du
+     * central (`idCentral`, 27/11/2026). `cleConversation` vide : il ne vient pas de ma radio. */
     data class MarqueurRadio(val marqueur: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur, val auteur: String,
-                             val horodatage: Long, val cleConversation: String)
+                             val horodatage: Long, val cleConversation: String, val idCentral: String? = null,
+                             val source: String = "par la radio")
 
-    /** Les marqueurs des dernières 24 heures, tirés des conversations radio ; un même marqueur
-     * entendu deux fois (deux canaux, deux relais) ne compte qu'une fois. */
-    val marqueursRadio: StateFlow<List<MarqueurRadio>> = app.messagerieRadio.conversations.map { convs ->
+    /** Les marqueurs pour la carte : ceux de ma radio (24 heures) et ceux du central, sans doublon,
+     * chaque route à son dernier état (MarqueursRadio.pourLaCarte). */
+    val marqueursRadio: StateFlow<List<MarqueurRadio>> = combine(app.messagerieRadio.conversations, app.carteTerrain.marqueurs) { convs, centraux ->
         val depuis = System.currentTimeMillis() - 24 * 3600_000L
-        convs.flatMap { (cle, messages) ->
+        val entendus = convs.flatMap { (cle, messages) ->
             messages.filter { it.horodatage >= depuis }.mapNotNull { m ->
                 fr.assistacrise.mobile.domaine.MarqueursRadio.lire(m.texte)?.let { MarqueurRadio(it, if (m.moi) "Moi" else m.auteur.ifBlank { "?" }, m.horodatage, cle) }
             }
-        }.sortedByDescending { it.horodatage }.distinctBy { Triple(it.marqueur.emoji, it.marqueur.latitude, it.marqueur.longitude) }
+        }
+        val duCentral = centraux.map { c ->
+            MarqueurRadio(c.marqueur, c.auteur.ifBlank { "?" }, fr.assistacrise.mobile.ui.instantDe(c.creeLe) ?: 0L, "", c.id,
+                          c.source.ifBlank { "plateforme" }.lowercase().let { "par $it" })
+        }
+        // À égalité, le marqueur du central passe devant : il porte l'identifiant qui permet de changer une route.
+        fr.assistacrise.mobile.domaine.MarqueursRadio.pourLaCarte(
+            (entendus + duCentral).sortedWith(compareByDescending<MarqueurRadio> { it.horodatage / 60_000 }.thenBy { if (it.idCentral != null) 0 else 1 })
+        ) { it.marqueur }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Les points clés des manifestations du jour où je suis inscrit : postes placés (PC,
+     * signalisation, transit…), pour la carte (27/11/2026). */
+    data class PointManifestation(val nom: String, val genre: String, val latitude: Double, val longitude: Double, val pc: Boolean, val manifestation: String)
+
+    val pointsManifestation: StateFlow<List<PointManifestation>> = app.carteTerrain.manifestations.map { manifs ->
+        manifs.flatMap { m ->
+            m.postes.filter { it.latitude != null && it.longitude != null }.map { p ->
+                PointManifestation(p.intitule, p.typePointLibelle.ifBlank { "Poste" }, p.latitude!!, p.longitude!!,
+                                   p.typePointLibelle.startsWith("PC"), m.titre)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** La crise d'une conversation radio : canal d'une de mes équipes, ou canal de crise de l'une d'elles. */
+    private fun criseDeLaConversation(cle: String): String? {
+        val (pr, reste) = MessagerieRadio.lireCle(cle) ?: return null
+        val index = reste.removePrefix("c:").toIntOrNull() ?: return null
+        app.radio.equipeDuCanal(pr, index)?.canalCrise?.crise?.let { return it }
+        return equipeDuCanalDeCrise(pr, index)?.canalCrise?.crise
+    }
+
+    private fun equipeDuCanalDeCrise(pr: fr.assistacrise.mobile.lien.Protocole, index: Int) = piloteDe(pr)?.let { p ->
+        equipes.value.firstOrNull { e -> e.canalCrise?.let { cc -> p.canalNomme(cc.nomPour(pr == fr.assistacrise.mobile.lien.Protocole.MESHCORE))?.index == index } == true }
+    }
+
+    /** Le protocole, si la conversation est le canal de crise : le serveur ne l'y réémet pas. */
+    private fun protocoleSiCanalDeCrise(cle: String): String? {
+        val (pr, reste) = MessagerieRadio.lireCle(cle) ?: return null
+        val index = reste.removePrefix("c:").toIntOrNull() ?: return null
+        return if (equipeDuCanalDeCrise(pr, index) != null) pr.name else null
+    }
+
+    /** Où rattacher un marqueur au serveur : la crise de la conversation, celle de mon équipe
+     * engagée, sinon la manifestation où je suis présent. */
+    private fun rattachement(cle: String?): Pair<String?, String?> {
+        val crise = cle?.let(::criseDeLaConversation)
+            ?: equipes.value.firstOrNull { it.engagee && it.canalCrise != null }?.canalCrise?.crise
+            ?: equipes.value.firstNotNullOfOrNull { it.canalCrise?.crise }
+        val manifestation = if (crise == null) app.carteTerrain.presencesEnCours().firstOrNull()?.first?.id
+                            ?: app.carteTerrain.manifestations.value.firstOrNull()?.id else null
+        return crise to manifestation
+    }
+
+    /** Peut-on poser un marqueur ? Par une radio prête, ou par le réseau quand on sait où le rattacher. */
+    fun marqueurPossible(): Boolean = destinationsMarqueur().isNotEmpty() || rattachement(null).let { it.first != null || it.second != null }
 
     /** Les conversations radio où l'on peut envoyer un marqueur : (clé, libellé), le canal de
      * l'équipe d'abord. */
@@ -751,9 +807,54 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }.sortedByDescending { it.third }.map { it.first to it.second }
 
-    /** Envoie un marqueur par la radio, comme un message de la conversation. */
-    fun envoyerMarqueur(cle: String, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) =
-        ecrireALaRadio(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m))
+    /**
+     * Envoie un marqueur : par la radio sur la conversation choisie (s'il y en a une), et par le
+     * réseau au central quand on sait où le rattacher (27/11/2026). Le central prévient la
+     * régulation et le relaie sur les canaux de la crise ; hors réseau, la radio suffit, et une
+     * passerelle qui l'entend le portera au central.
+     */
+    fun envoyerMarqueur(cle: String?, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) {
+        viewModelScope.launch {
+            val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m))
+            val (crise, manifestation) = rattachement(cle)
+            val deja = if (parRadio) cle?.let(::protocoleSiCanalDeCrise) else null
+            val central = if (crise != null || manifestation != null) app.api.poserMarqueur(m, crise, manifestation, deja) else null
+            if (central is Reponse.Ok) app.carteTerrain.garder(central.valeur)
+            message = when {
+                parRadio && central is Reponse.Ok -> "Marqueur envoyé par la radio et à la plateforme."
+                parRadio -> "Marqueur envoyé par la radio."
+                central is Reponse.Ok -> "Marqueur envoyé à la plateforme."
+                central is Reponse.Refus -> "Marqueur refusé : ${central.message}"
+                else -> "Le marqueur n'est pas parti : ni radio prête, ni réseau."
+            }
+        }
+    }
+
+    /**
+     * Change l'état d'une route (coupée totalement, une voie libérée, axe libéré) : le nouvel état
+     * part par la radio (la conversation d'où vient le marqueur, sinon la première disponible) et,
+     * avec le réseau, au central qui le relaie et met à jour toutes les cartes.
+     */
+    fun changerEtatRoute(r: MarqueurRadio, etat: fr.assistacrise.mobile.domaine.MarqueursRadio.EtatRoute) {
+        viewModelScope.launch {
+            val nouveau = r.marqueur.copy(emoji = etat.emoji)
+            val cle = r.cleConversation.takeIf { it.isNotBlank() && MessagerieRadio.lireCle(it)?.let { (p, _) -> piloteDe(p)?.prete } == true }
+                ?: destinationsMarqueur().firstOrNull()?.first
+            val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(nouveau))
+            val deja = if (parRadio) cle?.let(::protocoleSiCanalDeCrise) else null
+            val central = if (r.idCentral != null) app.api.etatRoute(r.idCentral, etat.code, deja)
+                          else rattachement(cle).let { (c, mf) -> if (c != null || mf != null) app.api.poserMarqueur(nouveau, c, mf, deja) else null }
+            if (central is Reponse.Ok) app.carteTerrain.garder(central.valeur)
+            message = when {
+                parRadio || central is Reponse.Ok -> "Route : ${etat.libelle.lowercase()}" + when {
+                    parRadio && central is Reponse.Ok -> " (radio et plateforme)."
+                    parRadio -> " (par la radio)."
+                    else -> " (plateforme)."
+                }
+                else -> "L'état de la route n'est pas parti : ni radio prête, ni réseau."
+            }
+        }
+    }
 
     // Le fil ouvert à l'écran, pour les notifications des messages radio (23/11/2026). Placé ICI,
     // après la déclaration de `conversationRadio` : viewModelScope démarre la coroutine sur-le-champ
@@ -889,6 +990,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Ok -> {
                     app.api.moi()
                     val e = app.equipes.rafraichir()
+                    // Marqueurs du central et manifestations du jour (27/11/2026) : avant le suivi,
+                    // qui regarde aussi les présences en manifestation.
+                    app.carteTerrain.rafraichir()
                     piloterLeSuivi(if (e is Reponse.Ok) equipes.value else null)
                     app.citoyen.rafraichir()
                     // Les points des crises ouvertes, pour le GPS hors ligne.
@@ -1671,13 +1775,13 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             app.suivi.consentir(oui)
             if (oui) { app.suivi.reprendre(); piloterLeSuivi(equipes.value) }
-            else { app.suivi.arreterALaMain(equipes.value); ServiceTerrain.actualiser(app) }
+            else { app.suivi.arreterALaMain(equipes.value + app.engagementsDeManifestation()); ServiceTerrain.actualiser(app) }
         }
     }
 
     fun arreterLeSuivi() {
         viewModelScope.launch {
-            app.suivi.arreterALaMain(equipes.value)
+            app.suivi.arreterALaMain(equipes.value + app.engagementsDeManifestation())
             ServiceTerrain.actualiser(app)
         }
     }
@@ -1693,7 +1797,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             ChefDeMission.Evenement.FIN_D_ENGAGEMENT -> "Fin d'engagement : le suivi de position est arrêté."
             ChefDeMission.Evenement.PLAFOND -> "Le suivi de position s'est arrêté après douze heures."
             ChefDeMission.Evenement.DEMARRE, ChefDeMission.Evenement.SERVICE_REFUSE ->
-                "Votre équipe est engagée : votre position est partagée."
+                if (equipes.value.any { it.engagee }) "Votre équipe est engagée : votre position est partagée."
+                else "Vous êtes pointé présent sur la manifestation : votre position est partagée jusqu'à la fin du créneau."
             else -> message
         }
         // Application à l'écran : Android autorise ici le démarrage refusé en arrière-plan.
