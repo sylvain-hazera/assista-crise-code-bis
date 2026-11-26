@@ -3,6 +3,7 @@ package fr.assistacrise.mobile.ui
 import android.graphics.Bitmap
 import android.util.Base64
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -297,10 +298,19 @@ private fun ContactsMeshtastic(modele: ModeleApplication, pilote: PiloteMeshtast
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("${if (n.favori) "★ " else ""}${n.nomLong.ifBlank { n.identifiant }} (${n.nomCourt.ifBlank { "?" }})", style = MaterialTheme.typography.bodyLarge)
-                Text(listOfNotNull(n.identifiant, n.snr?.let { "SNR ${"%.1f".format(it)} dB" }, n.sauts?.let { "$it saut(s)" },
+                Text(listOfNotNull(n.identifiant, n.snr?.let { "SNR ${"%.1f".format(it)} dB" },
+                    n.sauts?.let { if (it == 0) "direct" else "$it saut(s)" }, if (n.parInternet) "via Internet" else null,
+                    n.batterie?.let { if (it > 100) "secteur" else "batterie $it %" },
                     n.dernierContact?.let { "vu ${ilYA(it * 1000)}" }, n.latitude?.let { "position connue" }).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                Row {
-                    TextButton(onClick = { message = n.numero }) { Text("Message") }
+                // Route tracée (26/11/2026) : relais à l'aller et au retour, signal à chaque saut.
+                avance.trajets[n.numero]?.let { t ->
+                    Text("Route : " + libelleTrajet(avance, n.numero, t), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    // La conversation garde l'historique et montre l'accusé de réception.
+                    TextButton(onClick = { modele.ouvrirConversationRadio(fr.assistacrise.mobile.MessagerieRadio.cle(fr.assistacrise.mobile.lien.Protocole.MESHTASTIC, "d:${n.identifiant}")) }) { Text("Message") }
+                    TextButton(onClick = { modele.envoyerALaRadio(listOf(pilote.traceroute(n.numero)), "Traceroute vers ${n.nomCourt.ifBlank { n.identifiant }} (la réponse peut prendre une minute)", relire = false) }) { Text("Route") }
                     TextButton(onClick = { modele.envoyerALaRadio(listOfNotNull(pilote.admin(AdminMeshtastic.favori(n.numero, !n.favori))), if (n.favori) "Retrait des favoris" else "Ajout aux favoris") }) {
                         Text(if (n.favori) "Retirer des favoris" else "Favori")
                     }
@@ -721,4 +731,17 @@ internal fun CodeQr(contenu: String) {
         }.asImageBitmap()
     }
     Image(image, contentDescription = "QR code des canaux", modifier = Modifier.size(220.dp))
+}
+
+/** « Moi → RELA (5,5 dB) → Léa (−3 dB) · retour : Léa → Moi (2 dB) ». */
+private fun libelleTrajet(avance: PiloteRadio.Avance, cible: Long, t: fr.assistacrise.mobile.lien.meshtastic.Meshtastic.Evenement.Trajet): String {
+    fun nom(n: Long) = if (n == avance.monNoeud) "Moi" else avance.noeuds[n]?.let { it.nomCourt.ifBlank { it.nomLong } }?.ifBlank { null } ?: "!" + n.toString(16).padStart(8, '0')
+    fun snr(x: Float?) = x?.let { " (${"%.1f".format(it).removeSuffix(",0")} dB)" } ?: ""
+    fun chemin(depart: Long, relais: List<Long>, arrivee: Long, snrs: List<Float?>): String =
+        (listOf(nom(depart)) + (relais + arrivee).mapIndexed { i, n -> nom(n) + snr(snrs.getOrNull(i)) }).joinToString(" → ")
+    val moi = avance.monNoeud ?: 0L
+    val aller = chemin(moi, t.aller, cible, t.snrAller)
+    val sauts = t.aller.size
+    val retour = if (t.snrRetour.isNotEmpty() || t.retour.isNotEmpty()) " · retour : " + chemin(cible, t.retour, moi, t.snrRetour) else ""
+    return "${if (sauts == 0) "direct" else "$sauts relais"} · $aller$retour"
 }

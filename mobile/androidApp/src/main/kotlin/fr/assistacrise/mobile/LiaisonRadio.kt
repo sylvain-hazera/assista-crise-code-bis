@@ -179,7 +179,7 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
         }
         fermer(null, garderVoulue = true)
         pilote = when (radio.protocole) {
-            Protocole.MESHCORE -> PiloteMeshCore()
+            Protocole.MESHCORE -> PiloteMeshCore { System.currentTimeMillis() }
             Protocole.MESHTASTIC -> PiloteMeshtastic { Random.nextLong(1, 0xffffffffL) }
         }
         operations = Channel(Channel.UNLIMITED)
@@ -323,7 +323,7 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
         if (adresse == null) { _etat.value = Etat(erreur = "Adresse de radio refusée : ${radio.adresse}."); return }
         fermer(null, garderVoulue = true)
         val p = when (radio.protocole) {
-            Protocole.MESHCORE -> PiloteMeshCore()
+            Protocole.MESHCORE -> PiloteMeshCore { System.currentTimeMillis() }
             Protocole.MESHTASTIC -> PiloteMeshtastic { Random.nextLong(1, 0xffffffffL) }
         }
         pilote = p
@@ -454,6 +454,7 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
         }
         // Tous les canaux du nœud et les messages directs, pour la messagerie radio (22/11/2026).
         app.messagerieRadio.recevoir(reaction.messages, reaction.directs, p)
+        app.messagerieRadio.accuser(reaction.accuses)
         reaction.aEcrire.forEach { ecrire(it) }
     }
 

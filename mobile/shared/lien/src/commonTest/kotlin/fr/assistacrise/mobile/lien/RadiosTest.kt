@@ -70,7 +70,8 @@ class MeshtasticTest {
     @Test fun unMessageDirectRecuYComprisAvecUnRssiNegatif() {
         val e = Meshtastic.lire(("123d0dfecaad0b15cdab34122215080112114172726976c3a97320737572207a6f6e6535efbeadde3d60c5" +
             "166945000050c04803609fffffffffffffffff01").depuisHex())
-        assertEquals(Meshtastic.Evenement.Texte(0x0badcafe, 0x1234abcd, 0, "Arrivés sur zone", 0xdeadbeefL), e)
+        // rx_snr -3,25 dB, rx_rssi -97 (int32 négatif sur dix octets), hop_limit 3 sans hop_start : sauts inconnus.
+        assertEquals(Meshtastic.Evenement.Texte(0x0badcafe, 0x1234abcd, 0, "Arrivés sur zone", 0xdeadbeefL, snr = -3.25f, rssi = -97), e)
     }
 
     @Test fun unMessageDeCanalAdresseATous() {
@@ -137,7 +138,8 @@ class PilotesTest {
         assertEquals("1f03", pilote.recevoir(ficheCanal(2, "#alpha")).aEcrire.single().enHex())
         // La radio n'a pas d'emplacement 3 : fin de lecture, on vide les messages en attente.
         // Puis les contacts, pour la messagerie radio (22/11/2026).
-        assertEquals(listOf("0a", "04"), pilote.recevoir(byteArrayOf(1)).aEcrire.map { it.enHex() })
+        // Et la batterie (26/11/2026).
+        assertEquals(listOf("0a", "04", "14"), pilote.recevoir(byteArrayOf(1)).aEcrire.map { it.enHex() })
         assertEquals(true, pilote.prete)
         assertEquals(listOf(CanalRadio(0, "Public"), CanalRadio(2, "#alpha")), pilote.canaux)
         assertEquals(2, pilote.canalNomme("Alpha")?.index)
@@ -151,7 +153,8 @@ class PilotesTest {
         // Reçu en version 3 : type, SNR, 2 réservés, canal, chemin, type de texte, heure, texte.
         val trame = ("11" + "0a0000" + "02" + "ff" + "00" + "60c51669").depuisHex() + "Alex: Bien reçu".encodeToByteArray()
         val reaction = pilote.recevoir(trame)
-        assertEquals(listOf(MessageRadio(2, "Alex: Bien reçu")), reaction.messages)
+        // Chemin 0xff : arrivé par une route directe ; SNR 0x0a / 4 = 2,5 dB (26/11/2026).
+        assertEquals(listOf(MessageRadio(2, "Alex: Bien reçu", reception = Reception(sauts = null, snr = 2.5f, routeDirecte = true))), reaction.messages)
         assertEquals("0a", reaction.aEcrire.single().enHex())                                      // et on continue de vider
         assertEquals("0a", pilote.recevoir(byteArrayOf(0x83.toByte())).aEcrire.single().enHex())
     }
@@ -180,7 +183,9 @@ class PilotesTest {
         // À la réception, le même paquet porte en plus l'expéditeur ; le vecteur de référence le montre.
         val recu = pilote.recevoir("12280dfecaad0b15ffffffff1801221508011211526f75746520636f7570c3a965204432303505000000".depuisHex())
         // L'expéditeur (from = 0x0badcafe) est remonté : la messagerie affiche qui a écrit (23/11/2026).
-        assertEquals(listOf(MessageRadio(1, "Route coupée D20", "!0badcafe")), recu.messages)
+        assertEquals("!0badcafe", recu.messages.single().de)
+        assertEquals("Route coupée D20", recu.messages.single().texte)
+        assertNull(recu.messages.single().reception?.sauts)                  // firmware sans hop_start
         // Ce que le pilote envoie se relit comme ce qu'il entend : même canal, même texte.
         val relu = pilote.recevoir(envoi.copyOf().also { it[0] = 0x12 })
         assertEquals(listOf("Route coupée D20"), relu.messages.map { it.texte })

@@ -110,7 +110,7 @@ class MessagesDirectsTest {
         val donnees = fr.assistacrise.mobile.lien.meshtastic.Ecrivain().varint(1, 1).brut(2, "salut".encodeToByteArray())
         val paquet = fr.assistacrise.mobile.lien.meshtastic.Ecrivain().fixe32(1, 0xabcdefL).fixe32(2, 0x1234).message(4, donnees).fixe32(6, 99)
         val r = p.recevoir(fr.assistacrise.mobile.lien.meshtastic.Ecrivain().message(2, paquet).fin())
-        assertEquals(listOf(MessageDirect("!00abcdef", "salut")), r.directs)
+        assertEquals(listOf(MessageDirect("!00abcdef", "salut", Reception(), id = 99)), r.directs)
         assertTrue(r.messages.isEmpty())
     }
 
@@ -118,6 +118,6 @@ class MessagesDirectsTest {
         val p = PiloteMeshCore()
         val trame = byteArrayOf(7) + "a1b2c3d4e5f6".depuisHex() + byteArrayOf(0, 0) + byteArrayOf(0x10, 0, 0, 0) + "coucou".encodeToByteArray()
         val r = p.recevoir(trame)
-        assertEquals(listOf(MessageDirect("a1b2c3d4e5f6", "coucou")), r.directs)
+        assertEquals(listOf(MessageDirect("a1b2c3d4e5f6", "coucou", Reception(sauts = 0))), r.directs)   // chemin 0 : sans relais
     }
 }

@@ -15,12 +15,24 @@ object Mentions {
         }
     }
 
-    /** Le tag d'une personne : `@Léa`, ou `@[Léa Martin]` si le nom a plusieurs mots (forme
-     * MeshCore, lue telle quelle par les autres applications). */
+    /** Le tag d'une personne, toujours `@[Nom]` (26/11/2026) : c'est la forme qu'insèrent et
+     * reconnaissent l'application MeshCore, meshcore-open et MeshCore SAR (surlignage, notification
+     * « on vous mentionne »). `@Léa` sans crochets n'y était pas reconnu. Sur la radio, `Nom` est
+     * le nom radio de la personne (nom annoncé MeshCore, nom long Meshtastic). */
     fun etiquette(nom: String): String {
-        val propre = nom.trim().removePrefix("@").removePrefix("[").removeSuffix("]").trim()
-        return if (propre.any { it.isWhitespace() }) "@[$propre]" else "@$propre"
+        val propre = nom.trim().removePrefix("@").removePrefix("[").removeSuffix("]").trim().replace("]", "")
+        return "@[$propre]"
     }
+
+    /** Une réponse sur la radio, à la manière des applications MeshCore : `@[Nom] texte`, en tête
+     * du message et sans citation (une trame est petite, et c'est cette forme que les autres
+     * applications affichent comme une réponse). */
+    fun reponseRadio(auteur: String, texte: String): String =
+        auteur.takeIf { it.isNotBlank() }?.let { etiquette(it) + " " + texte.trim() } ?: texte.trim()
+
+    /** `@[Nom] texte` en tête d'un message reçu : (nom mentionné, reste du texte), sinon null. */
+    fun lireReponse(texte: String): Pair<String, String>? =
+        Regex("""^@\[([^\]]+)\]\s+(.+)$""", RegexOption.DOT_MATCHES_ALL).find(texte)?.let { it.groupValues[1] to it.groupValues[2] }
 
     /** Une réponse précise à un message : on tague son auteur et on cite le début du message,
      * court (une trame radio est petite) : « ↪ @Léa « rdv au pont… » c'est noté ». */

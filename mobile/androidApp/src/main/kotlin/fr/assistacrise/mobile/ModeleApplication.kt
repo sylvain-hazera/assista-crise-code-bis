@@ -674,6 +674,8 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val radioAvance get() = liaisonChoisie.avance
     val piloteRadio get() = liaisonChoisie.piloteCourant
     fun piloteDe(protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).piloteCourant
+    /** Ce que la radio de ce protocole a dit d'elle-même (batterie comprise). */
+    fun avanceDe(protocole: fr.assistacrise.mobile.lien.Protocole) = app.radio.pour(protocole).avance
     /** L'équipe dont ce canal (de la radio choisie) est le canal géré par la plateforme. */
     fun equipeDuCanalRadio(index: Int) = app.radio.equipeDuCanal(liaisonChoisie.emplacement, index)
 
@@ -732,9 +734,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun canalRadioNotifie(cle: String) = app.messagerieRadio.notifie(cle)
     fun notifierCanalRadio(cle: String, oui: Boolean) = app.messagerieRadio.notifier(cle, oui)
 
-    fun ecrireALaRadio(cle: String, texte: String) {
+    fun ecrireALaRadio(cle: String, texte: String, repondA: Long = 0) {
         viewModelScope.launch {
-            val ok = app.messagerieRadio.envoyer(cle, texte)
+            val ok = app.messagerieRadio.envoyer(cle, texte, repondA)
             if (!ok) message = "La radio n'a pas pris le message (radio déconnectée, ou contact inconnu)."
         }
     }

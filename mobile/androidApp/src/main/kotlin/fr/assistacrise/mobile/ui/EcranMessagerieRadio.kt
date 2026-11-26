@@ -178,21 +178,49 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                     Column(Modifier.widthIn(max = 300.dp).background(
                         if (m.moi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(10.dp)) {
                         if (!m.moi && m.auteur.isNotBlank()) Text(m.auteur, style = MaterialTheme.typography.labelMedium)
+                        // Réponse native (Meshtastic reply_id) : le message visé, en bref.
+                        m.repondA.takeIf { it != 0L }?.let { id -> messages.lastOrNull { it.idRadio == id } }?.let { v ->
+                            Text("↪ ${if (v.moi) "Moi" else v.auteur} : ${v.texte.take(40)}${if (v.texte.length > 40) "…" else ""}",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Text(m.texte, style = MaterialTheme.typography.bodyMedium)
-                        Text(heure.format(Date(m.horodatage)) + if (m.moi && !m.envoye) " · non parti" else "",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (m.reactions.isNotEmpty()) {
+                            Text(m.reactions.entries.joinToString("  ") { (e, qui) -> if (qui.size > 1) "$e ${qui.size}" else e },
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
+                        // Reçu : sauts et signal (comme les applications officielles) ; envoyé : ce qu'il est devenu.
+                        val etat = if (m.moi) when {
+                            !m.envoye -> "non parti"
+                            m.statut == fr.assistacrise.mobile.domaine.StatutEnvoiRadio.RECU ->
+                                fr.assistacrise.mobile.domaine.StatutEnvoiRadio.RECU.libelle + (m.delaiMs?.let { " en ${"%.1f".format(it / 1000.0)} s" } ?: "")
+                            m.statut == fr.assistacrise.mobile.domaine.StatutEnvoiRadio.PARTI && m.idRadio != 0L -> "envoyé, accusé attendu"
+                            else -> m.statut?.libelle ?: ""
+                        } else m.reception()
+                        Text(listOf(heure.format(Date(m.horodatage)), etat).filter { it.isNotBlank() }.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (m.statut == fr.assistacrise.mobile.domaine.StatutEnvoiRadio.ECHEC) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                   }
                 }
             }
         }
         repondreA?.let { r -> BandeauReponse(if (r.moi) "" else r.auteur, r.texte) { repondreA = null } }
+        // Taille d'un message radio (26/11/2026) : au-delà, il part en plusieurs morceaux.
+        val aEnvoyer = repondreA?.let { r -> fr.assistacrise.mobile.domaine.Mentions.reponseRadio(if (r.moi) "" else r.auteur, texte) } ?: texte.trim()
+        val limite = if (protocole == fr.assistacrise.mobile.lien.Protocole.MESHCORE) (if (canal) 133 - ((pilote?.identite?.length ?: 10) + 2) else 150) else 200
+        val octets = aEnvoyer.encodeToByteArray().size
+        if (texte.isNotBlank()) {
+            Text("$octets / $limite octets" + if (octets > limite) " · partira en ${(octets + limite - 1) / limite} messages" else "",
+                Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall,
+                color = if (octets > limite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(texte, { texte = it }, label = { Text("Message") }, modifier = Modifier.weight(1f), maxLines = 4)
             IconButton(enabled = texte.isNotBlank(), onClick = {
-                val r = repondreA
-                // Une trame radio est petite : la citation est courte (20 caractères).
-                modele.ecrireALaRadio(cle, if (r != null) fr.assistacrise.mobile.domaine.Mentions.reponse(if (r.moi) "" else r.auteur, r.texte, texte, 20) else texte.trim())
+                // Réponse à la manière des applications MeshCore : « @[Nom] texte » ; en Meshtastic,
+                // la réponse native (reply_id) part en plus.
+                modele.ecrireALaRadio(cle, aEnvoyer, repondreA?.idRadio ?: 0)
                 texte = ""; repondreA = null
             }) {
                 Icon(Icons.AutoMirrored.Filled.Send, "Envoyer")

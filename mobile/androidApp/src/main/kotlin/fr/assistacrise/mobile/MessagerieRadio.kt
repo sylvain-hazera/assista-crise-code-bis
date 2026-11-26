@@ -1,13 +1,15 @@
 package fr.assistacrise.mobile
 
+import fr.assistacrise.mobile.lien.Accuse
 import fr.assistacrise.mobile.lien.MessageDirect
 import fr.assistacrise.mobile.lien.MessageRadio
 import fr.assistacrise.mobile.lien.PiloteMeshCore
 import fr.assistacrise.mobile.lien.PiloteMeshtastic
 import fr.assistacrise.mobile.lien.PiloteRadio
 import fr.assistacrise.mobile.lien.Protocole
-import fr.assistacrise.mobile.lien.meshcore.MeshCore
-import fr.assistacrise.mobile.lien.meshtastic.Meshtastic
+import fr.assistacrise.mobile.lien.Reception
+import fr.assistacrise.mobile.lien.StatutAccuse
+import fr.assistacrise.mobile.domaine.StatutEnvoiRadio
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,8 +63,10 @@ class MessagerieRadio(private val app: Application) {
             val auteur = m.de?.let { nomDuContact(cle(pr, "d:$it")) } ?: coupe?.let { m.texte.substring(0, it) } ?: ""
             val texte = coupe?.let { m.texte.substring(it + 2) } ?: m.texte
             val k = cle(pr, "c:${m.canal}")
+            // Une réaction émoji (Meshtastic) se pose sur le message visé, sans faire de bruit.
+            if (m.reaction && m.repondA != 0L && reagir(k, m.repondA, texte, auteur)) continue
             val mention = app.alertes.estUneMention(texte)
-            ajouter(k, Message(false, auteur, texte, maintenant), mention = mention)
+            ajouter(k, recu(auteur, texte, maintenant, m.reception, m.id, m.repondA), mention = mention)
             // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres sonnent
             // aussi, sauf ceux qu'on a fait taire (cloche) — 23/11/2026 : « un message reçu
             // n'émet pas de notification, il en faut ».
@@ -82,32 +86,74 @@ class MessagerieRadio(private val app: Application) {
         for (d in directs) {
             val k = cle(pr, "d:${d.de}")
             val nom = nomDuContact(k)
-            ajouter(k, Message(false, nom, d.texte, maintenant), mention = app.alertes.estUneMention(d.texte))
+            if (d.reaction && d.repondA != 0L && reagir(k, d.repondA, d.texte, nom)) continue
+            ajouter(k, recu(nom, d.texte, maintenant, d.reception, d.id, d.repondA), mention = app.alertes.estUneMention(d.texte))
             alerter(k, "$nom · message direct ${pr.libelle}", FormatNotification.ligneRadio("", d.texte))
             FormatNotification.urgenceTerrain(app, nom, d.texte, CIBLE + k)
         }
     }
 
-    /** Envoie sur la conversation désignée par sa clé (canal ou direct, sur la radio de son protocole). */
-    suspend fun envoyer(cle: String, texte: String): Boolean {
+    /** Envoie sur la conversation désignée par sa clé (canal ou direct, sur la radio de son protocole).
+     * `repondA` : le message auquel on répond (réponse native Meshtastic, en plus du `@[Nom]`). */
+    suspend fun envoyer(cle: String, texte: String, repondA: Long = 0): Boolean {
         val (protocole, reste) = lireCle(cle) ?: return false
         val liaison = app.radio.pour(protocole)
         val p = liaison.piloteCourant?.takeIf { it.prete } ?: return false
         val propre = app.radio.texteSelonLaZone(texte)
         val maintenant = System.currentTimeMillis()
+        var id = 0L
+        val direct = reste.startsWith("d:")
         val trames = when {
-            reste.startsWith("c:") -> reste.removePrefix("c:").toIntOrNull()?.let { p.envoyerSurCanal(it, propre, maintenant / 1000) }
+            reste.startsWith("c:") -> reste.removePrefix("c:").toIntOrNull()?.let { index ->
+                if (p is PiloteMeshtastic) p.envoyerSurCanal(index, propre, repondA) else p.envoyerSurCanal(index, propre, maintenant / 1000)
+            }
             p is PiloteMeshtastic -> reste.removePrefix("d:").removePrefix("!").toLongOrNull(16)?.let { num ->
-                Meshtastic.decouper(propre).map { Meshtastic.texte(num, it, (1L..0xffffffffL).random()) }
+                p.envoyerDirect(num, propre, repondA).let { (i, t) -> id = i; t }
             }
             p is PiloteMeshCore -> p.avance.contacts.keys.firstOrNull { it.startsWith(reste.removePrefix("d:"), ignoreCase = true) }?.let { pub ->
-                listOf(MeshCore.envoyerMessage(pub, propre, maintenant / 1000))
+                id = (1L..Long.MAX_VALUE).random()
+                listOf(p.envoyerDirect(pub, propre, maintenant / 1000, id))
             }
             else -> null
         } ?: return false
         val ok = liaison.envoyerAdmin(trames)
-        ajouter(cle, Message(true, "Moi", texte, maintenant, ok), compter = false)
+        // Un message direct attend son accusé ; sur un canal, personne n'accuse réception.
+        val statut = if (!ok) StatutEnvoiRadio.ECHEC else StatutEnvoiRadio.PARTI
+        ajouter(cle, Message(true, "Moi", texte, maintenant, ok, idRadio = if (direct) id else 0, repondA = repondA, statut = statut), compter = false)
         return ok
+    }
+
+    /** Ce que la radio dit des messages envoyés : relayé, reçu (avec l'aller-retour) ou non remis. */
+    fun accuser(accuses: List<Accuse>) {
+        if (accuses.isEmpty()) return
+        var change = false
+        val maj = _conversations.value.mapValues { (_, liste) ->
+            liste.map { m ->
+                val a = accuses.firstOrNull { it.id == m.idRadio && m.moi && m.idRadio != 0L } ?: return@map m
+                val statut = when (a.statut) { StatutAccuse.RECU -> StatutEnvoiRadio.RECU; StatutAccuse.RELAYE -> StatutEnvoiRadio.RELAYE; StatutAccuse.ECHEC -> StatutEnvoiRadio.ECHEC }
+                // Un accusé de relais arrivé après la réception ne la défait pas.
+                if (m.statut == StatutEnvoiRadio.RECU && statut != StatutEnvoiRadio.RECU) return@map m
+                change = true
+                m.copy(statut = statut, delaiMs = a.delaiMs ?: m.delaiMs)
+            }
+        }
+        if (change) { _conversations.value = maj; sauver() }
+    }
+
+    private fun recu(auteur: String, texte: String, quand: Long, r: Reception?, id: Long, repondA: Long) = Message(
+        false, auteur, texte, quand, sauts = r?.sauts, snr = r?.snr, rssi = r?.rssi,
+        routeDirecte = r?.routeDirecte == true, parInternet = r?.parInternet == true, idRadio = id, repondA = repondA,
+    )
+
+    /** Pose une réaction sur le message `id` de la conversation ; faux si le message n'y est plus. */
+    private fun reagir(cle: String, id: Long, emoji: String, auteur: String): Boolean {
+        val liste = _conversations.value[cle] ?: return false
+        val i = liste.indexOfLast { it.idRadio == id }.takeIf { it >= 0 } ?: return false
+        val m = liste[i]
+        val qui = (m.reactions[emoji] ?: emptyList()).let { if (auteur in it) it else it + auteur }
+        _conversations.value = _conversations.value + (cle to liste.toMutableList().also { it[i] = m.copy(reactions = m.reactions + (emoji to qui)) })
+        sauver()
+        return true
     }
 
     /** Une notification par conversation, mise à jour à chaque message (Alertes.conversation). */

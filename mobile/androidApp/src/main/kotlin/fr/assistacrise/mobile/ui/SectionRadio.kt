@@ -186,8 +186,13 @@ private fun DialogueRadioReseau(modele: ModeleApplication, fermer: () -> Unit) {
 private fun BlocRadio(modele: ModeleApplication, protocole: Protocole, etat: LiaisonRadio.Etat, equipes: List<fr.assistacrise.mobile.domaine.Equipe>) {
     when (etat.phase) {
         LiaisonRadio.Phase.PRETE -> Column(Modifier.padding(bottom = 8.dp)) {
+            val avance by modele.avanceDe(protocole).collectAsStateWithLifecycle()
             Text("${etat.nom ?: "Radio"} · ${protocole.libelle}${if (etat.reseau) " · par le réseau" else ""}",
                  style = MaterialTheme.typography.bodyLarge)
+            // Batterie de la radio (26/11/2026) : MeshCore en millivolts, Meshtastic en %.
+            libelleBatterie(avance.batterieMv, avance.batteriePourcent)?.let { b ->
+                Text(b, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(
                 "Sans réseau, vos messages d'équipe partent par cette radio, sur le canal de l'équipe.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -289,4 +294,16 @@ private fun PreparerEtRestaurer(modele: fr.assistacrise.mobile.ModeleApplication
         confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false; modele.restaurerRadio(protocole, garderEquipe) }) { Text("Remettre") } },
         dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmer = false }) { Text("Annuler") } },
     )
+}
+
+/** « Batterie 3,92 V (~75 %) » ou « Batterie 80 % » ; « sur secteur » à 101 % (convention Meshtastic). */
+internal fun libelleBatterie(mv: Int?, pourcent: Int?): String? = when {
+    pourcent != null && pourcent > 100 -> "Radio sur secteur"
+    pourcent != null && pourcent > 0 -> "Batterie de la radio : $pourcent %"
+    mv != null && mv > 0 -> {
+        // Lithium-ion : 3,0 V vide, 4,2 V pleine (estimation linéaire, comme les applications MeshCore).
+        val p = ((mv - 3000) * 100 / 1200).coerceIn(0, 100)
+        "Batterie de la radio : ${"%.2f".format(mv / 1000.0)} V (≈ $p %)"
+    }
+    else -> null
 }

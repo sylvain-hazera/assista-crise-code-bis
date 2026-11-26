@@ -47,6 +47,12 @@ data class NoeudMeshtastic(
     val favori: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    /** Batterie en % (101 = alimenté sur secteur), d'après les métriques de l'appareil. */
+    val batterie: Int? = null,
+    /** Taux d'occupation du canal radio vu par ce nœud, en %. */
+    val occupationCanal: Float? = null,
+    /** Entendu par Internet (MQTT) plutôt que par la radio. */
+    val parInternet: Boolean = false,
 ) {
     val identifiant: String get() = "!" + numero.toString(16).padStart(8, '0')
 }
@@ -225,10 +231,14 @@ object AdminMeshtastic {
         val pos = n.champ(3)?.octets?.let(::lireChamps) ?: emptyList()
         val lat = pos.champ(1)?.nombre?.toInt()?.takeIf { it != 0 }?.let { it / 1e7 }
         val lon = pos.champ(2)?.nombre?.toInt()?.takeIf { it != 0 }?.let { it / 1e7 }
+        val metriques = n.champ(6)?.octets?.let(::lireChamps) ?: emptyList()
         return NoeudMeshtastic(
             numero = numero, nomLong = u.champ(2)?.octets?.decodeToString() ?: "", nomCourt = u.champ(3)?.octets?.decodeToString() ?: "",
             snr = n.champ(4)?.nombre?.let { Float.fromBits(it.toInt()) }, dernierContact = n.champ(5)?.nombre,
             sauts = n.champ(9)?.nombre?.toInt(), favori = (n.champ(10)?.nombre ?: 0) != 0L, latitude = lat, longitude = lon,
+            batterie = metriques.champ(1)?.nombre?.toInt(),
+            occupationCanal = metriques.champ(3)?.nombre?.let { Float.fromBits(it.toInt()) },
+            parInternet = (n.champ(8)?.nombre ?: 0) != 0L,
         )
     }
 

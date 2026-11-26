@@ -11,12 +11,44 @@ import fr.assistacrise.mobile.lien.meshtastic.NoeudMeshtastic
 /** Un canal configuré sur la radio de l'intervenant. */
 data class CanalRadio(val index: Int, val nom: String)
 
+/**
+ * Comment un message est arrivé (26/11/2026, « voir le nombre de sauts n'est pas implanté ») :
+ * nombre de sauts (relais traversés), signal du dernier saut, passage par Internet. Ce que les
+ * applications officielles affichent sous chaque message.
+ * - MeshCore : `path_len` des trames V3 (6 bits bas = sauts ; 0xFF = arrivé par route directe) et SNR ;
+ * - Meshtastic : `hop_start - hop_limit`, `rx_snr`, `rx_rssi`, `via_mqtt`.
+ */
+data class Reception(
+    val sauts: Int? = null,
+    val snr: Float? = null,
+    val rssi: Int? = null,
+    /** MeshCore : arrivé par une route directe connue (le nombre de sauts n'est pas transmis). */
+    val routeDirecte: Boolean = false,
+    /** Meshtastic : passé par un serveur MQTT (Internet) en chemin. */
+    val parInternet: Boolean = false,
+)
+
 /** Un message entendu par la radio sur un canal. */
-/** `de` : l'émetteur quand le protocole le dit (Meshtastic : « !1a2b3c4d ») ; MeshCore l'écrit dans le texte (« Nom: … »). */
-data class MessageRadio(val canal: Int, val texte: String, val de: String? = null)
+/** `de` : l'émetteur quand le protocole le dit (Meshtastic : « !1a2b3c4d ») ; MeshCore l'écrit dans le texte (« Nom: … »).
+ * `id` : identifiant Meshtastic du paquet (0 en MeshCore) ; `repondA` : le message auquel il répond (Meshtastic `reply_id`) ;
+ * `reaction` : vrai si le texte est un émoji posé sur `repondA` (Meshtastic `emoji`). */
+data class MessageRadio(
+    val canal: Int, val texte: String, val de: String? = null, val reception: Reception? = null,
+    val id: Long = 0, val repondA: Long = 0, val reaction: Boolean = false,
+)
 
 /** Un message direct reçu (22/11/2026). `de` : « !1a2b3c4d » (Meshtastic) ou le préfixe de clé (MeshCore). */
-data class MessageDirect(val de: String, val texte: String)
+data class MessageDirect(
+    val de: String, val texte: String, val reception: Reception? = null,
+    val id: Long = 0, val repondA: Long = 0, val reaction: Boolean = false,
+)
+
+/** Ce que devient un message envoyé (26/11/2026). */
+enum class StatutAccuse { RELAYE, RECU, ECHEC }
+
+/** Un accusé pour un message envoyé : `id` est celui donné à l'envoi (paquet Meshtastic, ou
+ * identifiant local d'un message direct MeshCore). `delaiMs` : aller-retour, quand la radio le dit. */
+data class Accuse(val id: Long, val statut: StatutAccuse, val delaiMs: Long? = null, val raison: String? = null)
 
 enum class Protocole(val libelle: String) { MESHCORE("MeshCore"), MESHTASTIC("Meshtastic") }
 
@@ -63,6 +95,7 @@ abstract class PiloteRadio(val protocole: Protocole) {
         val aEcrire: List<ByteArray> = emptyList(),
         val messages: List<MessageRadio> = emptyList(),
         val directs: List<MessageDirect> = emptyList(),
+        val accuses: List<Accuse> = emptyList(),
     )
 
     /**
@@ -83,6 +116,12 @@ abstract class PiloteRadio(val protocole: Protocole) {
         val canauxMeshCore: Map<Int, AdminMeshCore.CanalComplet> = emptyMap(),
         val contacts: Map<String, AdminMeshCore.Contact> = emptyMap(),
         val carte: ByteArray? = null,
+        /** Batterie de la radio connectée, en millivolts (MeshCore : demandée ; Meshtastic : fiche de mon nœud). */
+        val batterieMv: Int? = null,
+        /** Meshtastic : niveau de batterie de mon nœud, en % (101 = sur secteur). */
+        val batteriePourcent: Int? = null,
+        /** Meshtastic : dernières routes tracées, par nœud (26/11/2026). */
+        val trajets: Map<Long, Meshtastic.Evenement.Trajet> = emptyMap(),
         /** Dernière réponse à une commande (« OK », « refusée par la radio »). */
         val derniereReponse: String? = null,
     )
@@ -92,7 +131,19 @@ abstract class PiloteRadio(val protocole: Protocole) {
     protected fun noter(maj: (Avance) -> Avance) { avance = maj(avance).let { it.copy(version = it.version + 1) } }
 }
 
-class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
+class PiloteMeshCore(private val horloge: () -> Long = { 0L }) : PiloteRadio(Protocole.MESHCORE) {
+    /** Messages directs envoyés, dans l'ordre, en attente de leur `MSG_SENT` : (id local, heure). */
+    private val directsEnAttente = ArrayDeque<Pair<Long, Long>>()
+    /** Code d'accusé attendu → id local du message direct. */
+    private val accusesAttendus = LinkedHashMap<Long, Long>()
+
+    /** Un message direct : la trame, et l'id local qu'on retrouvera dans l'accusé de réception. */
+    fun envoyerDirect(pubkeyHex: String, texte: String, secondesUnix: Long, idLocal: Long): ByteArray =
+        MeshCore.envoyerMessage(pubkeyHex, texte, secondesUnix).also { directsEnAttente.addLast(idLocal to horloge()) }
+
+    /** Tension de la batterie de la radio (réponse : `batterieMv`). */
+    fun demanderBatterie() = MeshCore.commandeSimple(MeshCore.Cmd.GET_BATT_AND_STORAGE)
+
     override fun ouverture(secondesUnix: Long): List<ByteArray> = listOf(
         MeshCore.appStart(),
         MeshCore.reglerHeure(secondesUnix),
@@ -128,29 +179,49 @@ class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
                 else finDeLecture()
             }
             // La radio refuse l'emplacement suivant : elle en a moins que prévu.
-            MeshCore.Rep.ERROR -> if (!prete) finDeLecture() else { noter { it.copy(derniereReponse = "Refusée par la radio") }; Reaction() }
+            MeshCore.Rep.ERROR -> if (!prete) finDeLecture() else {
+                noter { it.copy(derniereReponse = "Refusée par la radio") }
+                // Un refus juste après un message direct le concerne (contact inconnu, file pleine).
+                val envoi = directsEnAttente.firstOrNull()?.takeIf { horloge() - it.second < 5_000 }
+                if (envoi != null) { directsEnAttente.removeFirst(); Reaction(accuses = listOf(Accuse(envoi.first, StatutAccuse.ECHEC, raison = "refusé par la radio"))) }
+                else Reaction()
+            }
             MeshCore.Rep.MESSAGES_WAITING -> Reaction(listOf(suivant()))
             MeshCore.Rep.CHANNEL_MSG_RECV, MeshCore.Rep.CHANNEL_MSG_RECV_V3 -> {
                 val m = MeshCore.lireMessageCanal(trame)
-                Reaction(listOf(suivant()), listOfNotNull(m?.let { MessageRadio(it.canal, it.texte) }))
+                Reaction(listOf(suivant()), listOfNotNull(m?.let { MessageRadio(it.canal, it.texte, reception = it.reception) }))
             }
             // Un message direct : il entre dans la messagerie radio, et on continue de vider.
             MeshCore.Rep.CONTACT_MSG_RECV, MeshCore.Rep.CONTACT_MSG_RECV_V3 -> {
                 val m = MeshCore.lireMessageRecu(trame)
-                Reaction(listOf(suivant()), directs = listOfNotNull(m?.let { MessageDirect(it.prefixeExpediteurHex, it.texte) }))
+                Reaction(listOf(suivant()), directs = listOfNotNull(m?.let { MessageDirect(it.prefixeExpediteurHex, it.texte, it.reception) }))
             }
+            // Message direct parti : la radio donne le code d'accusé attendu (26/11/2026).
+            MeshCore.Rep.MSG_SENT -> {
+                val envoi = directsEnAttente.removeFirstOrNull() ?: return Reaction()
+                MeshCore.lireEnvoi(trame)?.let { e -> if (e.codeAccuse != 0L) accusesAttendus[e.codeAccuse] = envoi.first }
+                if (accusesAttendus.size > 64) accusesAttendus.remove(accusesAttendus.keys.first())
+                Reaction()
+            }
+            // Le destinataire a accusé réception, avec l'aller-retour.
+            MeshCore.Rep.SEND_CONFIRMED -> {
+                val (code, delai) = MeshCore.lireConfirmation(trame) ?: return Reaction()
+                val id = accusesAttendus.remove(code) ?: return Reaction()
+                Reaction(accuses = listOf(Accuse(id, StatutAccuse.RECU, delai)))
+            }
+            MeshCore.Rep.BATTERIE -> { MeshCore.lireBatterie(trame)?.let { mv -> noter { it.copy(batterieMv = mv) } }; Reaction() }
             else -> Reaction()
         }
     }
 
     /** Les canaux sont connus : on vide ce que la radio a reçu pendant qu'on n'écoutait pas. */
-    private fun finDeLecture(): Reaction { prete = true; return Reaction(listOf(suivant(), AdminMeshCore.demanderContacts())) }
+    private fun finDeLecture(): Reaction { prete = true; return Reaction(listOf(suivant(), AdminMeshCore.demanderContacts(), demanderBatterie())) }
 
     private fun suivant() = MeshCore.commandeSimple(MeshCore.Cmd.SYNC_NEXT_MESSAGE)
 
     /** Relit tout ce que l'écran avancé affiche : identité et réglages, canaux, contacts. */
     fun relireTout(): List<ByteArray> =
-        listOf(MeshCore.appStart(), AdminMeshCore.demanderContacts()) + (0 until MeshCore.EMPLACEMENTS).map { MeshCore.demanderCanal(it) }
+        listOf(MeshCore.appStart(), AdminMeshCore.demanderContacts(), demanderBatterie()) + (0 until MeshCore.EMPLACEMENTS).map { MeshCore.demanderCanal(it) }
 
     override fun envoyerSurCanal(index: Int, texte: String, secondesUnix: Long): List<ByteArray> =
         // 7 octets d'en-tête ; on garde de la marge pour le nom que la radio ajoute.
@@ -159,6 +230,29 @@ class PiloteMeshCore : PiloteRadio(Protocole.MESHCORE) {
 
 class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protocole.MESHTASTIC) {
     private var nonce = Meshtastic.PREMIER_NONCE_BATTEMENT
+    /** Paquets de messages directs envoyés avec accusé : id → destinataire (26/11/2026). */
+    private val directsEnvoyes = LinkedHashMap<Long, Long>()
+
+    /** Un message direct avec accusé ; `repondA` : id du message auquel on répond (réponse
+     * native, affichée comme telle par l'application Meshtastic). Rend (id, trames). */
+    fun envoyerDirect(destinataire: Long, texte: String, repondA: Long = 0): Pair<Long, List<ByteArray>> {
+        val morceaux = Meshtastic.decouper(texte)
+        val ids = morceaux.map { identifiant() }
+        ids.forEach { directsEnvoyes[it] = destinataire }
+        while (directsEnvoyes.size > 64) directsEnvoyes.remove(directsEnvoyes.keys.first())
+        // L'accusé suivi est celui du dernier morceau : le message est reçu quand tout l'est.
+        return ids.last() to morceaux.mapIndexed { i, m -> Meshtastic.texte(destinataire, m, ids[i], repondA = if (i == 0) repondA else 0) }
+    }
+
+    /** Trace la route vers un nœud (réponse : `avance.trajets[noeud]`). */
+    fun traceroute(noeud: Long): ByteArray = Meshtastic.traceroute(noeud, identifiant())
+
+    /** Sur un canal, en réponse à un message (`repondA`) ou en réaction émoji (`reaction`). */
+    fun envoyerSurCanal(index: Int, texte: String, repondA: Long, reaction: Boolean = false): List<ByteArray> =
+        Meshtastic.decouper(texte).mapIndexed { i, m ->
+            Meshtastic.texte(Meshtastic.DIFFUSION, m, identifiant(), canal = index, accuse = false,
+                             repondA = if (i == 0) repondA else 0, emoji = reaction && i == 0)
+        }
 
     override fun ouverture(secondesUnix: Long): List<ByteArray> = listOf(Meshtastic.veutConfig(Meshtastic.NONCE_CONFIG))
 
@@ -166,7 +260,11 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
         when (val lu = AdminMeshtastic.lire(trame)) {
             is AdminMeshtastic.Lu.Config -> noter { it.copy(reglages = it.reglages + ((lu.conteneur to lu.numero) to lu.contenu)) }
             is AdminMeshtastic.Lu.Canal -> noter { it.copy(canauxMeshtastic = it.canauxMeshtastic + (lu.canal.index to lu.canal)) }
-            is AdminMeshtastic.Lu.Noeud -> noter { it.copy(noeuds = it.noeuds + (lu.noeud.numero to lu.noeud)) }
+            is AdminMeshtastic.Lu.Noeud -> noter {
+                val moi = lu.noeud.numero == it.monNoeud
+                it.copy(noeuds = it.noeuds + (lu.noeud.numero to lu.noeud),
+                        batteriePourcent = if (moi) lu.noeud.batterie ?: it.batteriePourcent else it.batteriePourcent)
+            }
             is AdminMeshtastic.Lu.Proprietaire -> noter { it.copy(proprietaire = lu.nomLong to lu.nomCourt) }
             null -> Unit
         }
@@ -188,11 +286,29 @@ class PiloteMeshtastic(private val identifiant: () -> Long) : PiloteRadio(Protoc
                 Meshtastic.NONCE_NOEUDS -> { prete = true; Reaction() }
                 else -> Reaction()
             }
-            is Meshtastic.Evenement.Texte ->
-                if (evenement.vers == Meshtastic.DIFFUSION) Reaction(messages = listOf(MessageRadio(evenement.canal, evenement.texte, "!" + evenement.de.toString(16).padStart(8, '0'))))
+            is Meshtastic.Evenement.Texte -> {
+                val e = evenement
+                val de = "!" + e.de.toString(16).padStart(8, '0')
+                val r = Reception(sauts = e.sauts, snr = e.snr, rssi = e.rssi, parInternet = e.parInternet)
+                if (e.vers == Meshtastic.DIFFUSION) Reaction(messages = listOf(MessageRadio(e.canal, e.texte, de, r, e.id, e.repondA, e.emoji)))
                 // Adressé à mon nœud : un message direct.
-                else if (evenement.vers == avance.monNoeud) Reaction(directs = listOf(MessageDirect("!" + evenement.de.toString(16).padStart(8, '0'), evenement.texte)))
+                else if (e.vers == avance.monNoeud) Reaction(directs = listOf(MessageDirect(de, e.texte, r, e.id, e.repondA, e.emoji)))
                 else Reaction()
+            }
+            is Meshtastic.Evenement.Trajet -> { noter { it.copy(trajets = it.trajets + (evenement.de to evenement)) }; Reaction() }
+            // Accusé d'un paquet envoyé avec accusé (message direct) : du destinataire = reçu ;
+            // d'un autre nœud sans erreur = relayé dans le réseau ; avec erreur = échec.
+            is Meshtastic.Evenement.Accuse -> {
+                val e = evenement
+                val destinataire = directsEnvoyes[e.requete] ?: return Reaction()
+                val statut = when {
+                    e.erreur != 0 -> StatutAccuse.ECHEC
+                    e.de == destinataire -> StatutAccuse.RECU
+                    else -> StatutAccuse.RELAYE
+                }
+                if (statut != StatutAccuse.RELAYE) directsEnvoyes.remove(e.requete)
+                Reaction(accuses = listOf(Accuse(e.requete, statut, raison = Meshtastic.raisonErreur(e.erreur))))
+            }
             else -> Reaction()
         }
     }

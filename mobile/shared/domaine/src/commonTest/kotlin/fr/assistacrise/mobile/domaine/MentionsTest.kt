@@ -22,10 +22,19 @@ class MentionsTest {
     }
 
     @Test fun taguerEtRepondre() {
-        kotlin.test.assertEquals("@Léa", Mentions.etiquette("Léa"))
+        kotlin.test.assertEquals("@[Léa]", Mentions.etiquette("Léa"))   // forme MeshCore, même pour un seul mot
+        kotlin.test.assertEquals("@[Léa]", Mentions.etiquette("@Léa"))
         kotlin.test.assertEquals("@[Léa Martin]", Mentions.etiquette("Léa Martin"))
         val r = Mentions.reponse("Léa Martin", "rendez-vous au pont de la D88 dans dix minutes", "c'est noté")
         kotlin.test.assertEquals("↪ @[Léa Martin] « rendez-vous au pont de la D88… » c'est noté", r)
         assertTrue(Mentions.mentionne(r, moi))   // la personne à qui l'on répond est notifiée
+    }
+
+    @Test fun reponseALaManiereDeMeshCore() {
+        val r = Mentions.reponseRadio("Léa Martin", "  c'est noté ")
+        kotlin.test.assertEquals("@[Léa Martin] c'est noté", r)
+        kotlin.test.assertEquals("Léa Martin" to "c'est noté", Mentions.lireReponse(r))
+        kotlin.test.assertEquals(null, Mentions.lireReponse("pas de réponse ici"))
+        assertTrue(Mentions.mentionne(r, moi))
     }
 }
