@@ -65,7 +65,8 @@ def mairie(db, type_mairie):
 
 @pytest.fixture
 def association(db, type_aasc):
-    return Institution.objects.create(nom="Association Nationale Test", type=type_aasc)
+    # Nationale : elle propose son aide partout (étendue d'intervention, 26/11/2026).
+    return Institution.objects.create(nom="Association Nationale Test", type=type_aasc, echelon_intervention="NATIONAL")
 
 
 def _membre(create_user, institution, nom, role=UserRole.ORGANIZED_RESCUE):

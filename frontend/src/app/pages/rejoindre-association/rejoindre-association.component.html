@@ -1,0 +1,78 @@
+<div class="page">
+  <h1>Faire rejoindre mon association</h1>
+  <p class="chapeau">Votre association existe déjà — association agréée de sécurité civile, radio-club, signaleurs,
+    secouristes — et veut rejoindre le réseau : manifestations et inscriptions des bénévoles, heures et kilomètres,
+    alertes, radio. Une fois votre demande validée, vous en êtes le bureau et vous invitez vos membres.</p>
+
+  @if (!connecte) {
+    <section class="encart">
+      <p>Pour faire la demande, connectez-vous d'abord avec votre compte personnel, ou créez-en un : c'est ce compte qui
+        deviendra le bureau de l'association.</p>
+      <a class="btn-primary" routerLink="/register">Créer mon compte</a>
+      <a class="btn-secondary" routerLink="/login" [queryParams]="{ returnUrl: '/rejoindre-association' }">Me connecter</a>
+    </section>
+  } @else if (charge && demande && !peutDeposer) {
+    <section class="encart">
+      <h2>{{ demande.nom }}</h2>
+      <p><span class="pastille" [class.ok]="demande.statut === 'ACCEPTEE'">{{ demande.statut_libelle }}</span>
+        demande du {{ demande.date_demande | date:'dd/MM/yyyy' }}</p>
+      <p>{{ demande.commune_nom }} · intervient jusqu'à : {{ demande.echelon_libelle }}@if (demande.territoire) { ({{ demande.territoire }}) }</p>
+      @if (demande.statut === 'EN_ATTENTE') {
+        <p class="note">L'administrateur vérifie qu'il ne s'agit pas d'un doublon puis valide. Vous serez prévenu.</p>
+      } @else {
+        <p>Votre association est dans le réseau. <a routerLink="/admin/membres-association">Inviter mes membres</a> ·
+          <a routerLink="/manifestations">Publier une manifestation</a></p>
+      }
+    </section>
+  } @else if (charge) {
+    @if (demande?.statut === 'REFUSEE') {
+      <p class="message erreur">Votre demande précédente a été refusée : {{ demande?.motif_refus }}</p>
+    }
+    <form class="formulaire" (ngSubmit)="envoyer()">
+      <label>Nom de l'association
+        <input type="text" name="nom" maxlength="200" [(ngModel)]="nom" placeholder="Floirac Citizen Band Amitié" required></label>
+      <label>Ce qu'elle fait, en une phrase
+        <input type="text" name="activite" maxlength="300" [(ngModel)]="activite" placeholder="Signaleurs radio sur les courses cyclistes" required></label>
+
+      <label class="commune">Commune du siège
+        <input type="text" name="commune" autocomplete="off" [ngModel]="rechercheCommune" (ngModelChange)="chercher($event)"
+               placeholder="Nom ou code postal" required>
+        @if (communes.length) {
+          <ul class="suggestions" role="listbox">
+            @for (c of communes; track c.code) {
+              <li><button type="button" (click)="choisirCommune(c)">{{ c.name }} <span class="note">{{ c.codePostal }}</span></button></li>
+            }
+          </ul>
+        }
+      </label>
+
+      <fieldset>
+        <legend>Jusqu'où elle peut intervenir</legend>
+        <p class="note">Par défaut, l'association s'en tient à elle-même. Cette étendue dit jusqu'où elle peut être sollicitée,
+          ou proposer elle-même son intervention à une commune. Vous pourrez la changer à tout moment.</p>
+        @for (e of echelons; track e.code) {
+          <label class="echelon">
+            <input type="radio" name="echelon" [value]="e.code" [(ngModel)]="echelon">
+            <span><strong>{{ e.libelle }}</strong>@if (e.territoire && e.code !== 'NATIONAL') { : {{ e.territoire }} }</span>
+          </label>
+        }
+      </fieldset>
+
+      <label class="case"><input type="checkbox" name="agree" [(ngModel)]="agree"> L'association est agréée de sécurité civile</label>
+      @if (agree) {
+        <label>Agrément (types et numéro de l'arrêté)
+          <input type="text" name="agrement" maxlength="300" [(ngModel)]="agrement" placeholder="Types A et B, arrêté du …"></label>
+      }
+
+      <label>Votre fonction dans l'association
+        <input type="text" name="fonction" maxlength="100" [(ngModel)]="fonction" placeholder="Président"></label>
+      <label>Téléphone (facultatif)
+        <input type="tel" name="telephone" maxlength="30" [(ngModel)]="telephone"></label>
+
+      @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+      <button type="submit" class="btn-primary" [disabled]="envoi">Envoyer la demande</button>
+      <p class="note">Si votre association est déjà dans le réseau, demandez plutôt à la rejoindre comme membre : son bureau
+        acceptera votre candidature.</p>
+    </form>
+  }
+</div>

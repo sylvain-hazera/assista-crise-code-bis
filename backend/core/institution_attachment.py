@@ -446,7 +446,9 @@ CODE_TYPE_AASC = "aasc"
 #: réserve communale (« une RCSC est une association fille d'une mairie, elle doit pouvoir
 #: gérer ses membres comme les Casques jaunes gèrent les leurs », voir core/rcsc.py).
 #: `trouver_aasc` et l'inscription « aasc » restent, eux, propres aux AASC.
-TYPES_ASSOCIATIFS = (CODE_TYPE_AASC, "rcsc")
+#: Depuis le 26/11/2026, aussi les associations non agréées qui rejoignent le réseau (FCBA 33,
+#: signaleurs radio) : elles gèrent leurs membres, leurs manifestations et leur bénévolat de même.
+TYPES_ASSOCIATIFS = (CODE_TYPE_AASC, "rcsc", "association")
 
 
 def est_type_associatif(code) -> bool:

@@ -106,6 +106,21 @@
           <button type="button" class="btn-primary" (click)="enregistrerReglages()">Enregistrer les réglages</button>
         }
 
+        @if (etendue?.concernee) {
+          <h2 class="espace-haut">Jusqu'où l'association intervient</h2>
+          <p class="note">Les communes et autorités de cette étendue peuvent vous solliciter, et vous pouvez leur proposer
+            votre intervention. Par défaut, l'association s'en tient à sa commune.</p>
+          <div class="echelons" role="radiogroup" aria-label="Étendue d'intervention">
+            @for (e of etendue?.echelons ?? []; track e.code) {
+              <label class="echelon">
+                <input type="radio" name="echelon" [value]="e.code" [checked]="etendue?.echelon === e.code"
+                       [disabled]="!etendue?.modifiable" (change)="changerEtendue(e.code)">
+                <span><strong>{{ e.libelle }}</strong>@if (e.territoire && e.code !== 'NATIONAL') { : {{ e.territoire }} }</span>
+              </label>
+            }
+          </div>
+        }
+
         <h2 class="espace-haut">Renonciations au remboursement de frais</h2>
         <p class="note">Un bénévole qui renonce au remboursement de ses frais fait un don à l'association : elle lui délivre un
           reçu fiscal (réduction d'impôt de {{ d.taux_reduction_informatif }} % en général, selon sa situation). Le montant est

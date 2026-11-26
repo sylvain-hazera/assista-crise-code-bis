@@ -140,6 +140,8 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'correspondances', loadComponent: () => import('./besoins-competences/besoins-competences.component').then(m => m.BesoinsCompetencesComponent), canActivate: [sysAdminGuard] },
   { path: 'utilisateurs', loadComponent: () => import('./users/users.component').then(m => m.UsersComponent), canActivate: [sysAdminGuard] },
   { path: 'validations-comptes', loadComponent: () => import('./account-validations/account-validations.component').then(m => m.AccountValidationsComponent), canActivate: [accountValidationGuard] },
+  // Associations existantes qui demandent à rejoindre le réseau (26/11/2026).
+  { path: 'adhesions-associations', loadComponent: () => import('./adhesions-associations/adhesions-associations.component').then(m => m.AdhesionsAssociationsComponent), canActivate: [adminPlateformeGuard] },
   { path: 'monitoring', loadComponent: () => import('./monitoring/monitoring.component').then(m => m.MonitoringComponent), canActivate: [adminPlateformeGuard] },
   // Comptes du broker MQTT et supervision technique : le serveur exige le rôle PROD réel ADMIN
   // (plus strict que sysAdminGuard, qui accepte les quatre rôles institutionnels). Le menu et

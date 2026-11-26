@@ -180,6 +180,13 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.ManifestationsComponent)
       },
       {
+        // Une association existante demande à rejoindre le réseau (26/11/2026). Publique : la page
+        // explique qu'il faut un compte, puis porte le formulaire.
+        path: 'rejoindre-association',
+        loadComponent: () => import('../pages/rejoindre-association/rejoindre-association.component')
+          .then(m => m.RejoindreAssociationComponent)
+      },
+      {
         path: 'benevolat',
         canActivate: [authGuard, benevolatGuard],
         loadComponent: () => import('../pages/benevolat/benevolat.component')

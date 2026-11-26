@@ -3180,6 +3180,13 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 "vous êtes rattaché."
             )
 
+        # Étendue d'intervention d'une association (26/11/2026, core/adhesion_association.py) :
+        # elle ne propose son aide qu'aux communes de son étendue.
+        from . import adhesion_association
+        if not adhesion_association.crise_dans_etendue(institution, crise):
+            return Response({"error": adhesion_association.message_hors_etendue(institution)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
         existante = ImplicationInstitution.objects.filter(
             crise=crise, institution=institution, actif=True,
             type_implication=TypeImplication.ACTEUR,
@@ -15380,6 +15387,15 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 "Seul un responsable ou un régulateur de l'institution émettrice peut créer "
                 "une demande de mobilisation."
             )
+        # Une association n'est sollicitée que dans son étendue d'intervention (26/11/2026) : la
+        # commune de l'émettrice, ou l'une de celles de la crise, doit y être.
+        cible = serializer.validated_data.get('cible_institution')
+        if cible is not None:
+            from . import adhesion_association
+            if adhesion_association.soumise_a_l_etendue(cible) and not (
+                    adhesion_association.commune_dans_etendue(cible, getattr(institution, 'commune_code', None))
+                    or adhesion_association.crise_dans_etendue(cible, serializer.validated_data.get('crise'))):
+                raise ValidationError({"cible": adhesion_association.message_hors_etendue(cible)})
         demande = serializer.save(
             emetteur=self.request.user,
             jeton_verification=secrets.token_urlsafe(32),

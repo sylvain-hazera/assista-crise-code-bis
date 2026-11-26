@@ -168,6 +168,7 @@ from .views_envoi import ConnecteurSMTPViewSet
 from .views_terrain import MessageTerrainViewSet
 from . import views_conversations  # noqa: E402
 from . import views_manifestations  # noqa: E402
+from . import views_adhesion  # noqa: E402
 from .views_cellule import (  # noqa: E402
     ActionCelluleViewSet, ChronologieViewSet, DecisionCelluleViewSet, PointSituationViewSet, ReleveCelluleViewSet, RetexViewSet,
 )
@@ -643,6 +644,11 @@ urlpatterns = [
     path('benevolat/abandons/<uuid:aid>/', views_manifestations.AbandonGesteView.as_view(), name='benevolat_abandon'),
     path('benevolat/abandons/<uuid:aid>/recu/', views_manifestations.RecuFiscalView.as_view(), name='benevolat_recu'),
     path('mon-releve/abandon/', views_manifestations.MonAbandonView.as_view(), name='mon_abandon'),
+    # Une association existante rejoint le réseau ; son étendue d'intervention (26/11/2026).
+    path('associations/etendue/', views_adhesion.EtendueView.as_view(), name='association_etendue'),
+    path('associations/demandes/', views_adhesion.DemandesAdhesionView.as_view(), name='adhesion_demandes'),
+    path('associations/demandes/<uuid:pk>/', views_adhesion.DemandeAdhesionGesteView.as_view(), name='adhesion_demande'),
+    path('associations/<uuid:pk>/echelon/', views_adhesion.EchelonAssociationView.as_view(), name='association_echelon'),
     path('dons/catalogue/', CatalogueDonsView.as_view(), name='dons_catalogue'),
     path('dons/avis/', AvisDonsPublicsView.as_view(), name='dons_avis'),
     path('stocks/etat/', EtatStockView.as_view(), name='stocks_etat'),

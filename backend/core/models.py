@@ -1430,6 +1430,17 @@ class InstitutionType(models.Model):
         return self.libelle
 
 
+class EchelonIntervention(models.TextChoices):
+    """Étendue d'intervention d'une association, du plus proche au plus large, comptée depuis la
+    commune de son siège (décision de Sylvain du 26/11/2026)."""
+    COMMUNE = "COMMUNE", "Commune du siège"
+    EPCI = "EPCI", "Intercommunalité"
+    DEPARTEMENT = "DEPARTEMENT", "Département"
+    REGION = "REGION", "Région"
+    ZONE = "ZONE", "Zone de défense"
+    NATIONAL = "NATIONAL", "National (outre-mer compris)"
+
+
 class Institution(EnvironmentScopedModel):
 
     id = models.UUIDField(
@@ -1550,6 +1561,12 @@ class Institution(EnvironmentScopedModel):
     # est : »).
     secteur_niveau_effectif = models.CharField(max_length=20, null=True, blank=True)
     secteur_nom = models.CharField(max_length=255, null=True, blank=True)
+
+    #: Jusqu'où une association peut être sollicitée, ou proposer elle-même son intervention
+    #: (26/11/2026) : un échelon compté depuis la commune du siège. Par défaut, elle-même (sa
+    #: commune). Changé librement par son bureau. Voir core/adhesion_association.py.
+    echelon_intervention = models.CharField(
+        max_length=12, choices=EchelonIntervention.choices, default=EchelonIntervention.COMMUNE)
 
     def save(self, *args, **kwargs):
         if self.commune_code:
@@ -13859,6 +13876,39 @@ class AbandonFrais(EnvironmentScopedModel):
         ordering = ["-date_demande"]
         constraints = [models.UniqueConstraint(fields=["institution", "utilisateur", "annee", "environment"],
                                                name="uq_abandon_frais_annee")]
+
+
+class StatutAdhesionAssociation(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente"
+    ACCEPTEE = "ACCEPTEE", "Acceptée"
+    REFUSEE = "REFUSEE", "Refusée"
+
+
+class DemandeAdhesionAssociation(EnvironmentScopedModel):
+    """Une association qui existe déjà demande à rejoindre le réseau (26/11/2026) : son nom, ce
+    qu'elle fait, la commune de son siège et jusqu'où elle intervient. L'administrateur vérifie
+    qu'il ne s'agit pas d'un doublon et valide ; le demandeur devient alors son bureau. Vaut pour
+    une AASC comme pour une association non agréée (FCBA 33 : signaleurs radio)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    demandeur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="demandes_adhesion_association")
+    nom = EncryptedTextField(max_length=200)
+    activite = EncryptedTextField(max_length=300)
+    commune_code = models.CharField(max_length=10)
+    echelon = models.CharField(max_length=12, choices=EchelonIntervention.choices, default=EchelonIntervention.COMMUNE)
+    #: L'agrément de sécurité civile, s'il y en a un, tel que déclaré (types, numéro).
+    agrement = EncryptedTextField(max_length=300, blank=True, default="")
+    fonction = EncryptedTextField(max_length=100, blank=True, default="")
+    telephone = EncryptedTextField(max_length=30, blank=True, default="")
+    statut = models.CharField(max_length=10, choices=StatutAdhesionAssociation.choices, default=StatutAdhesionAssociation.EN_ATTENTE)
+    motif_refus = EncryptedTextField(max_length=300, blank=True, default="")
+    institution = models.ForeignKey(Institution, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    traite_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    traite_le = models.DateTimeField(null=True, blank=True)
+    date_demande = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_demande"]
 
 
 JETONS_CHIFFRES = {

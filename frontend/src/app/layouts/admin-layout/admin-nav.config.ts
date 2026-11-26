@@ -266,6 +266,8 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'sync_problem', label: 'Conflits de synchronisation', route: '/admin/conflits-synchronisation', groupe: 'administration', visibilite: 'sysadmin' },
   { icon: 'link', label: 'Correspondances', route: '/admin/correspondances', groupe: 'administration', visibilite: 'sysadmin' },
   // Tableaux Grafana ; le jeton n'est délivré qu'aux administrateurs (core/grafana.py).
+  // Associations existantes qui demandent à rejoindre le réseau : vérifier les doublons, valider (core/adhesion_association.py).
+  { icon: 'group_add', label: "Adhésions d'associations", route: '/admin/adhesions-associations', groupe: 'administration', visibilite: 'admin-plateforme' },
   { icon: 'monitor_heart', label: 'Supervision technique', route: '/admin/monitoring', groupe: 'administration', visibilite: 'admin-plateforme' },
   // Un compte par passerelle radio du site (CompteMqtt).
   { icon: 'vpn_key', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'admin-plateforme' },

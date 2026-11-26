@@ -37,6 +37,8 @@
   .abandons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem;
     li { display: flex; flex-wrap: wrap; gap: .4rem .75rem; align-items: center; padding: .5rem .6rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; }
     .refus { display: flex; gap: .4rem; flex-basis: 100%; input { flex: 1; } } }
+  .echelons { display: flex; flex-direction: column; gap: .25rem; margin: .3rem 0 .5rem;
+    .echelon { display: flex; align-items: center; gap: .5rem; } }
   .pastille { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; color: #fff; background: #6b7280; }
   .pastille.ok { background: #15803d; }
   .pastille.attente { background: #b45309; }
