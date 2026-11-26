@@ -26,6 +26,13 @@ class DepotCarteTerrain(
     val marqueurs: StateFlow<List<MarqueurCentral>> = _marqueurs
     private val _manifestations = MutableStateFlow<List<ManifestationAsso>>(emptyList())
     val manifestations: StateFlow<List<ManifestationAsso>> = _manifestations
+    /** Mes manifestations à venir (26/11/2026) : celles où je suis inscrit, du jour à J+30, avec
+     * leur détail (postes, mon statut), lisibles sans réseau. Celles du jour en sont tirées. */
+    private val _aVenir = MutableStateFlow<List<ManifestationAsso>>(emptyList())
+    val aVenir: StateFlow<List<ManifestationAsso>> = _aVenir
+    /** La liste des manifestations telle que le serveur l'a rendue la dernière fois. */
+    private val _liste = MutableStateFlow<List<ManifestationAsso>>(emptyList())
+    val liste: StateFlow<List<ManifestationAsso>> = _liste
     /** Le périmètre de la carte : la crise en cours, sinon celles de ma commune (27/11/2026). */
     private val _perimetre = MutableStateFlow(fr.assistacrise.mobile.domaine.PerimetreCarte())
     val perimetre: StateFlow<fr.assistacrise.mobile.domaine.PerimetreCarte> = _perimetre
@@ -48,6 +55,8 @@ class DepotCarteTerrain(
         _manifestations.value = magasin.lire(FICHIER_MANIFS)?.let { runCatching { json.decodeFromString(FORME_MANIFS, it) }.getOrNull() } ?: emptyList()
         _perimetre.value = magasin.lire(FICHIER_PERIMETRE)?.let { runCatching { json.decodeFromString(fr.assistacrise.mobile.domaine.PerimetreCarte.serializer(), it) }.getOrNull() }
             ?: fr.assistacrise.mobile.domaine.PerimetreCarte()
+        _aVenir.value = magasin.lire(FICHIER_A_VENIR)?.let { runCatching { json.decodeFromString(FORME_MANIFS, it) }.getOrNull() } ?: emptyList()
+        _liste.value = magasin.lire(FICHIER_LISTE)?.let { runCatching { json.decodeFromString(FORME_MANIFS, it) }.getOrNull() } ?: emptyList()
     }
 
     /** Relit les marqueurs, et le détail des manifestations du jour. Hors réseau, la copie reste. */
@@ -64,7 +73,11 @@ class DepotCarteTerrain(
         }
         when (val r = api.manifestations()) {
             is Reponse.Ok -> {
-                val details = r.valeur.filter { it.inscrit && duJour(it) }.mapNotNull { (api.manifestation(it.id) as? Reponse.Ok)?.valeur }
+                gardeLaListe(r.valeur)
+                val aVenir = r.valeur.filter { it.inscrit && aVenir(it) }.mapNotNull { (api.manifestation(it.id) as? Reponse.Ok)?.valeur }
+                _aVenir.value = aVenir
+                magasin.ecrire(FICHIER_A_VENIR, json.encodeToString(FORME_MANIFS, aVenir))
+                val details = aVenir.filter { duJour(it) }
                 _manifestations.value = details
                 magasin.ecrire(FICHIER_MANIFS, json.encodeToString(FORME_MANIFS, details))
             }
@@ -78,6 +91,23 @@ class DepotCarteTerrain(
     suspend fun garder(m: MarqueurCentral) {
         _marqueurs.value = listOf(m) + _marqueurs.value.filter { it.id != m.id }
         magasin.ecrire(FICHIER_MARQUEURS, json.encodeToString(FORME_MARQUEURS, _marqueurs.value))
+    }
+
+    /** Garde la liste rendue par le serveur, pour l'écran des manifestations hors réseau. */
+    suspend fun gardeLaListe(liste: List<ManifestationAsso>) {
+        _liste.value = liste
+        magasin.ecrire(FICHIER_LISTE, json.encodeToString(FORME_MANIFS, liste))
+    }
+
+    /** Le détail gardé d'une manifestation (une de mes manifestations à venir), sans réseau. */
+    fun detailGarde(id: String): ManifestationAsso? = _aVenir.value.firstOrNull { it.id == id }
+
+    /** Pas encore finie (6 heures de marge) et commençant dans les 30 jours. */
+    fun aVenir(m: ManifestationAsso): Boolean {
+        val debut = instant(m.debut) ?: return false
+        val fin = instant(m.fin) ?: return false
+        val t = maintenant()
+        return fin >= t - 6 * HEURE && debut <= t + JOURS_A_VENIR * 24 * HEURE
     }
 
     /** Une manifestation d'aujourd'hui (la veille au soir et le lendemain matin compris). */
@@ -114,7 +144,8 @@ class DepotCarteTerrain(
 
     suspend fun toutEffacer() {
         _marqueurs.value = emptyList(); _manifestations.value = emptyList(); _perimetre.value = fr.assistacrise.mobile.domaine.PerimetreCarte()
-        magasin.effacer(FICHIER_MARQUEURS); magasin.effacer(FICHIER_MANIFS); magasin.effacer(FICHIER_PERIMETRE)
+        _aVenir.value = emptyList(); _liste.value = emptyList()
+        listOf(FICHIER_MARQUEURS, FICHIER_MANIFS, FICHIER_PERIMETRE, FICHIER_A_VENIR, FICHIER_LISTE).forEach { magasin.effacer(it) }
     }
 
     private companion object {
@@ -122,6 +153,9 @@ class DepotCarteTerrain(
         const val FICHIER_MARQUEURS = "marqueurs-terrain"
         const val FICHIER_MANIFS = "manifestations-du-jour"
         const val FICHIER_PERIMETRE = "perimetre-carte"
+        const val FICHIER_A_VENIR = "manifestations-a-venir"
+        const val FICHIER_LISTE = "manifestations-liste"
+        const val JOURS_A_VENIR = 30L
         val FORME_MARQUEURS = ListSerializer(MarqueurCentral.serializer())
         val FORME_MANIFS = ListSerializer(ManifestationAsso.serializer())
     }

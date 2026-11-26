@@ -38,7 +38,20 @@ GENRES = {
     "📦": ("OBJET", "Objet"),
     "🌊": ("INONDATION", "Inondation"),
     "⚠️": ("DANGER", "Danger"),
+    # Information (26/11/2026) : un signalement du public « Information utile » ou « Autre ».
+    "ℹ️": ("INFO", "Information"), "ℹ": ("INFO", "Information"),
 }
+
+#: Signalement du public → (émoji, précision de la note), par libellé de type (26/11/2026).
+#: Une route signalée n'a pas de sens précisé : le terrain le précise ensuite (5 états).
+MARQUEUR_DU_SIGNALEMENT = {
+    "route barrée": ("⛔", ""),
+    "arbre sur la chaussée": ("⛔", "Arbre sur la chaussée"),
+    "danger imminent": ("⚠️", ""),
+}
+SIGNALEMENT_PAR_DEFAUT = ("ℹ️", "")
+#: Longueur d'une note de signalement : la radio n'a pas de place pour plus.
+NOTE_SIGNALEMENT_MAX = 80
 
 #: Les cinq états d'une route (décision de Sylvain du 27/11/2026) : code → (émoji, précision
 #: qui ouvre la note, libellé). L'émoji porte la famille, la précision le sens : le texte reste
@@ -147,6 +160,29 @@ def ecrire(emoji, latitude, longitude, note=""):
     return f"{base}:{note}" if note else base
 
 
+#: La radio n'a besoin que de l'essentiel (Sylvain, 27/11/2026 : « ne sois pas aussi précis en
+#: mesh qu'en data ») : émoji, position, sens d'une route, quelques mots. Le détail reste en IP.
+NOTE_RADIO_MAX = 30
+
+
+def note_radio(marqueur):
+    """La note qui part par radio : la précision de sens d'une route, puis quelques mots. Pour un
+    signalement, son type seul (« Route barrée »), jamais le titre saisi."""
+    precision, libre = _precision(marqueur.note)
+    if marqueur.source == "SIGNALEMENT":
+        morceaux = [x.strip() for x in libre.split(_SEPARATEUR.strip())]
+        libre = morceaux[1] if len(morceaux) > 1 else ""
+    libre = libre.replace("\n", " ").strip()
+    if len(libre) > NOTE_RADIO_MAX:
+        libre = libre[:NOTE_RADIO_MAX - 1].rstrip() + "…"
+    return f"{precision}{_SEPARATEUR}{libre}" if precision and libre else (precision or libre)
+
+
+def texte_radio(marqueur):
+    """Le texte d'un marqueur tel que le central l'émet par radio."""
+    return ecrire(marqueur.emoji, marqueur.location.y, marqueur.location.x, note_radio(marqueur))
+
+
 def libelle(marqueur):
     return genre_de(marqueur.emoji, marqueur.note)[1]
 
@@ -159,7 +195,8 @@ def nom_auteur(marqueur):
 
 
 def enregistrer(environment, emoji, latitude, longitude, note="", *, crise=None, manifestation=None, auteur=None,
-                auteur_libre="", source, canal_nom="", diffuser_radio=False, sauf_protocole=None, prevenir=True):
+                auteur_libre="", source, canal_nom="", diffuser_radio=False, sauf_protocole=None, prevenir=True,
+                signalement_id=None):
     """Enregistre un marqueur. Rend (marqueur, créé). Un doublon récent rend l'existant, sans
     rien refaire. Un état de route remplace le marqueur de route voisin."""
     from .models import MarqueurTerrain
@@ -178,7 +215,7 @@ def enregistrer(environment, emoji, latitude, longitude, note="", *, crise=None,
     m = MarqueurTerrain.objects.create(
         environment=environment, crise=crise, manifestation=manifestation, emoji=emoji, genre=genre, location=point,
         note=(note or "")[:500], auteur=auteur, auteur_libre=(auteur_libre or "")[:100], source=source,
-        canal_nom=(canal_nom or "")[:100], remplace=ancien,
+        canal_nom=(canal_nom or "")[:100], remplace=ancien, signalement_id=signalement_id,
     )
     if ancien is not None:
         ancien.actif = False
@@ -225,16 +262,34 @@ def depuis_radio(message, protocole):
                 from .routage_canaux import _nom_noeud_meshtastic
                 auteur_libre = _nom_noeud_meshtastic(message.contact_node_num) or ""
         canal = message.canal
+        crise = crise_du_canal(canal) if canal else None
+        # Entendu ailleurs que sur le canal de crise (équipe, commune) : le central le rediffuse
+        # sur le canal de crise des deux protocoles (26/11/2026). Sur le canal de crise, le relais
+        # vers l'autre protocole est déjà fait par routage_canaux.
+        hors_canal_de_crise = crise is not None and not (getattr(canal, "crise_id", None) and not getattr(canal, "equipe_id", None))
         m, _cree = enregistrer(
             message.environment, lu["emoji"], lu["latitude"], lu["longitude"], lu["note"],
-            crise=crise_du_canal(canal) if canal else None, auteur=auteur, auteur_libre=auteur_libre,
+            crise=crise, auteur=auteur, auteur_libre=auteur_libre,
             source=MarqueurTerrain.Source.MESHTASTIC if protocole == "MESHTASTIC" else MarqueurTerrain.Source.MESHCORE,
-            canal_nom=getattr(canal, "nom", "") or "",
+            canal_nom=getattr(canal, "nom", "") or "", diffuser_radio=hors_canal_de_crise,
         )
         return m
     except Exception:
         logger.exception("Marqueur radio non enregistré (message %s).", getattr(message, "id", None))
         return None
+
+
+def _canaux_de_diffusion(marqueur, modele_canal):
+    """Le canal où émettre : celui de la crise ; pour une manifestation, celui de l'institution
+    organisatrice (26/11/2026), sans équipe ni crise."""
+    if marqueur.crise_id:
+        return modele_canal.objects.filter(crise_id=marqueur.crise_id, equipe__isnull=True, actif=True).first()
+    if marqueur.manifestation_id:
+        institution_id = marqueur.manifestation.institution_id
+        if institution_id:
+            return modele_canal.objects.filter(institution_id=institution_id, crise__isnull=True, equipe__isnull=True,
+                                               actif=True).first()
+    return None
 
 
 def diffuser(marqueur, sauf_protocole=None):
@@ -247,21 +302,108 @@ def diffuser(marqueur, sauf_protocole=None):
         StatutMessageMesh,
     )
 
-    if not marqueur.crise_id:
+    if not marqueur.crise_id and not marqueur.manifestation_id:
         return 0
-    texte = ecrire(marqueur.emoji, marqueur.location.y, marqueur.location.x, marqueur.note)
+    texte = texte_radio(marqueur)
     n = 0
     for protocole, modele_canal, modele_message in (("MESHTASTIC", CanalMeshtastic, MessageCanalMeshtastic),
                                                     ("MESHCORE", CanalMeshCore, MessageCanalMeshCore)):
         if protocole == sauf_protocole:
             continue
-        canal = modele_canal.objects.filter(crise_id=marqueur.crise_id, equipe__isnull=True, actif=True).first()
+        canal = _canaux_de_diffusion(marqueur, modele_canal)
         if canal is None:
             continue
         modele_message.objects.create(canal=canal, direction=DirectionMessageMesh.SORTANT, expediteur=marqueur.auteur,
                                       contenu=texte, statut=StatutMessageMesh.EN_ATTENTE, environment=canal.environment)
         n += 1
     return n
+
+
+def crise_du_signalement(info):
+    """La crise d'un signalement : la sienne, sinon la crise ouverte la plus récente de même
+    environnement dont la zone contient sa commune."""
+    from .models import Crisis
+
+    if info.crisis_id:
+        return info.crisis if info.crisis.end_date is None else None
+    if not info.commune_code:
+        return None
+    return (Crisis.objects.filter(environment=info.environment, end_date__isnull=True,
+                                  zone_communes__contains=[info.commune_code])
+            .order_by("-start_date").first())
+
+
+def note_du_signalement(info):
+    """« Signalement · <type> · <titre> » : ni nom, ni téléphone (décision de Sylvain du
+    26/11/2026). La précision d'une route (aucune ici) resterait en tête."""
+    type_ = (str(info.information_type) if info.information_type_id else "").strip()
+    _emoji, precision = MARQUEUR_DU_SIGNALEMENT.get(type_.lower(), SIGNALEMENT_PAR_DEFAUT)
+    titre = (info.title or "").replace("\n", " ").strip()
+    morceaux = ["Signalement"] + [x for x in (precision or type_, titre) if x]
+    # Pas deux fois la même chose (« Arbre sur la chaussée · Arbre sur la chaussée »).
+    vus, uniques = set(), []
+    for x in morceaux:
+        if x.lower() not in vus:
+            vus.add(x.lower())
+            uniques.append(x)
+    note = _SEPARATEUR.join(uniques)
+    return note if len(note) <= NOTE_SIGNALEMENT_MAX else note[:NOTE_SIGNALEMENT_MAX - 1].rstrip() + "…"
+
+
+def signalement_en_marqueur(info):
+    """Un signalement du public devient un marqueur de sa crise (26/11/2026) : affiché sur les
+    cartes (site, application) et émis par radio sur le canal de crise dès le dépôt. Sans crise,
+    rien. Rend le marqueur ou None ; ne lève jamais."""
+    try:
+        from .models import MarqueurTerrain
+
+        if not info.actif or info.location is None:
+            return None
+        deja = MarqueurTerrain.objects.filter(signalement_id=info.id).first()
+        if deja is not None:
+            return deja
+        crise = crise_du_signalement(info)
+        if crise is None:
+            return None
+        type_ = (str(info.information_type) if info.information_type_id else "").strip().lower()
+        emoji, _precision = MARQUEUR_DU_SIGNALEMENT.get(type_, SIGNALEMENT_PAR_DEFAUT)
+        m, cree = enregistrer(
+            info.environment, emoji, info.location.y, info.location.x, note_du_signalement(info), crise=crise,
+            auteur_libre="Signalement du public", source=MarqueurTerrain.Source.SIGNALEMENT,
+            diffuser_radio=True, prevenir=False, signalement_id=info.id,
+        )
+        if cree and m.genre != "INFO":
+            prevenir_regulation(m)
+        return m
+    except Exception:
+        logger.exception("Signalement %s non posé sur la carte.", getattr(info, "id", None))
+        return None
+
+
+def signalement_retire(info):
+    """Le signalement désactivé : son marqueur aussi (sans rien émettre)."""
+    try:
+        from .models import MarqueurTerrain
+
+        for m in MarqueurTerrain.objects.filter(signalement_id=info.id, actif=True):
+            m.actif = False
+            m.save(update_fields=["actif", "modifie_le"])
+    except Exception:
+        logger.exception("Marqueur du signalement %s non retiré.", getattr(info, "id", None))
+
+
+def signalement_enregistre(sender, instance, created, raw=False, **kwargs):
+    """post_save d'un signalement : posé sur la carte à la création, retiré à la désactivation.
+    Après la validation de la transaction, pour lire le type et la crise enregistrés."""
+    if raw:
+        return
+    from django.db import transaction
+
+    if instance.actif:
+        if created:
+            transaction.on_commit(lambda: signalement_en_marqueur(instance))
+    else:
+        transaction.on_commit(lambda: signalement_retire(instance))
 
 
 def _destinataires(marqueur):
@@ -367,8 +509,8 @@ def en_dict(m):
         "emoji": m.emoji, "genre": m.genre, "libelle": libelle(m), "route": m.genre in ROUTES,
         "latitude": m.location.y, "longitude": m.location.x, "note": m.note,
         "auteur_nom": nom_auteur(m), "source": m.source, "source_libelle": m.get_source_display(),
-        "canal_nom": m.canal_nom, "cree_le": m.cree_le, "actif": m.actif,
+        "canal_nom": m.canal_nom, "signalement": str(m.signalement_id) if m.signalement_id else None, "cree_le": m.cree_le, "actif": m.actif,
         "decision": m.decision, "decision_libelle": m.get_decision_display(),
         "traite_le": m.traite_le, "remplace": str(m.remplace_id) if m.remplace_id else None,
-        "texte_radio": ecrire(m.emoji, m.location.y, m.location.x, m.note),
+        "texte_radio": texte_radio(m),
     }

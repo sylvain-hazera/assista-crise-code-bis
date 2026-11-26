@@ -119,6 +119,8 @@ export const GENRES_MARQUEURS: { emoji: string; libelle: string; precision?: str
   { emoji: '🆘', libelle: 'Secours à personne' }, { emoji: '🔥', libelle: 'Feu' }, { emoji: '🌊', libelle: 'Inondation' },
   ...ETATS_ROUTE.filter(e => e.code !== 'ROUTE_LIBEREE').map(e => ({ emoji: e.emoji, libelle: 'Route : ' + e.libelle.toLowerCase(), precision: e.precision })),
   { emoji: '⚠️', libelle: 'Danger' }, { emoji: '🏕️', libelle: 'Zone de regroupement' }, { emoji: '📦', libelle: 'Objet' },
+  // Information (26/11/2026) : aussi ce que devient un signalement « Information utile » du public.
+  { emoji: 'ℹ️', libelle: 'Information' },
 ];
 
 /** La note d'un marqueur : la précision de sens (route), puis la note libre. */

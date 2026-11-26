@@ -40,11 +40,19 @@ fun EcranInterventions(modele: ModeleApplication) {
     val dossiers by modele.dossiers.collectAsStateWithLifecycle()
     val equipes by modele.equipes.collectAsStateWithLifecycle()
     val compte by modele.compte.collectAsStateWithLifecycle()
+    // Annoncées par radio (📋, 26/11/2026), en attendant le vrai dossier par le réseau.
+    val parRadio by modele.interventionsRadio.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         EnTeteRetour("Mes interventions", modele) { modele.aller(Ecran.COMPTE) }
+        // Sans réseau, avec une radio sur le canal de l'équipe : le central redit tout par radio.
+        if (modele.horsLigne && modele.majRadioPossible()) {
+            OutlinedButton(onClick = { modele.demanderMajParRadio() }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth()) {
+                Text("Demander la mise à jour par radio")
+            }
+        }
         when {
-            modele.chargement && dossiers.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            dossiers.isEmpty() -> Text(
+            modele.chargement && dossiers.isEmpty() && parRadio.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            dossiers.isEmpty() && parRadio.isEmpty() -> Text(
                 when {
                     modele.horsLigne -> "Pas de réseau : les dossiers n'ont pas encore été chargés sur ce téléphone."
                     equipes.isEmpty() -> "Vous n'êtes membre d'aucune équipe pour l'instant."
@@ -56,11 +64,31 @@ fun EcranInterventions(modele: ModeleApplication) {
                 if (modele.horsLigne) item {
                     Text("Pas de réseau : voici les dossiers tels qu'ils étaient à la dernière lecture.", style = MaterialTheme.typography.bodySmall, color = Attente, modifier = Modifier.padding(4.dp))
                 }
+                items(parRadio, key = { "radio:" + it.annonce.numero }) { i -> CarteInterventionRadio(i) }
                 items(dossiers, key = { it.id }) { d ->
                     val jeDirige = equipes.firstOrNull { it.id == d.equipe }?.estDirigeePar(compte?.id) == true
                     CarteDossier(d, jeDirige, { modele.ouvrirDossier(d.id) }) { modele.definirStatutDossier(d, it) }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CarteInterventionRadio(i: ModeleApplication.InterventionRadio) {
+    val contexte = LocalContext.current
+    val a = i.annonce
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text("📋 Dossier ${a.numero}", style = MaterialTheme.typography.titleMedium)
+            Text(listOf(a.nature, a.commune).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Nature non précisée" },
+                style = MaterialTheme.typography.bodyMedium)
+            Text("Reçu par radio, à compléter : le détail arrivera avec le réseau.", style = MaterialTheme.typography.bodySmall, color = Attente)
+            if (a.latitude != null && a.longitude != null) {
+                TextButton(onClick = {
+                    runCatching { contexte.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:${a.latitude},${a.longitude}?q=${a.latitude},${a.longitude}"))) }
+                }) { Text("Itinéraire") }
             }
         }
     }

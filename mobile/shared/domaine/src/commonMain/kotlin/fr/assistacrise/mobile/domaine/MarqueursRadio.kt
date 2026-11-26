@@ -44,7 +44,9 @@ object MarqueursRadio {
     /** Ceux qu'on propose : secours, feu, inondation, une route dans l'un de ses états, puis les autres. */
     val GENRES = listOf(Genre("🆘", "Secours à personne"), Genre("🔥", "Feu"), Genre("🌊", "Inondation")) +
         ETATS_ROUTE.filter { it.precision.isNotEmpty() }.map { Genre(it.emoji, "Route : " + it.libelle.lowercase(), it.precision) } +
-        listOf(Genre("⚠️", "Danger"), Genre("🏕️", "Zone de regroupement"), Genre("📦", "Objet"))
+        listOf(Genre("⚠️", "Danger"), Genre("🏕️", "Zone de regroupement"), Genre("📦", "Objet"),
+               // Information (26/11/2026) : aussi un signalement « Information utile » du public.
+               Genre("ℹ️", "Information"))
 
     private val PRECISIONS = ETATS_ROUTE.map { it.precision }.filter { it.isNotEmpty() }.sortedByDescending { it.length }
 
@@ -114,7 +116,7 @@ object MarqueursRadio {
 
     fun libelle(emoji: String): String = GENRES.firstOrNull { it.emoji == emoji && it.precision.isEmpty() }?.libelle
         ?: when (emoji) {
-            "🧑", "👤", "🚑" -> "Secours à personne"; "⛺" -> "Zone de regroupement"
+            "🧑", "👤", "🚑" -> "Secours à personne"; "⛺" -> "Zone de regroupement"; "ℹ" -> "Information"
             "⛔" -> "Route coupée"; "🚧" -> "1 file fermée"; "✅" -> "Route : axe libéré"; else -> "Marqueur"
         }
 
@@ -150,6 +152,17 @@ object MarqueursRadio {
         val base = "S:${m.emoji}:${m.couleur.coerceIn(0, 9)}:${cinqDecimales(m.latitude)},${cinqDecimales(m.longitude)}"
         val note = m.note?.replace('\n', ' ')?.trim().orEmpty()
         return if (note.isEmpty()) base else "$base:$note"
+    }
+
+    /** Quelques mots seulement par radio (Sylvain, 27/11/2026 : « ne sois pas aussi précis en mesh
+     * qu'en data ») ; la note entière part au central par le réseau. Même règle au serveur. */
+    const val NOTE_RADIO_MAX = 30
+
+    /** Le texte radio : émoji, position, sens d'une route, et au plus NOTE_RADIO_MAX caractères de note. */
+    fun ecrirePourLaRadio(m: Marqueur): String {
+        val (precision, libre) = precisionEtNote(m.note?.replace('\n', ' '))
+        val court = if (libre.length > NOTE_RADIO_MAX) libre.take(NOTE_RADIO_MAX - 1).trimEnd() + "…" else libre
+        return ecrire(m.copy(note = noteDeRoute(precision, court)))
     }
 
     /** « 44.84000 », sans dépendre de la langue du téléphone (virgule décimale en français). */

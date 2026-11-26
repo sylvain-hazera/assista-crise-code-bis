@@ -166,6 +166,10 @@ def ranger_message_canal(message, protocole, terrain=None, recu_par=None):
     # Marqueur terrain (format MeshCore SAR, 26/11/2026) : sur la carte de la crise, régulation prévenue.
     from .marqueurs_terrain import depuis_radio as marqueur_depuis_radio
     marqueur_depuis_radio(message, protocole)
+    # « @PC MAJ » (26/11/2026) : le central répond par radio (dossiers de l'équipe, marqueurs de
+    # la crise). Le message reste rangé dans la conversation de la cellule comme tout « @PC ».
+    from .annonces_radio import repondre_maj
+    repondre_maj(message, protocole)
     auteur_libre = None
     auteur = message.expediteur
     if terrain is not None and getattr(terrain, "auteur_id", None):

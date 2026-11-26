@@ -222,6 +222,7 @@ describe('Poste de pilotage', () => {
     expect(noteDeMarqueur('1 file, 2 sens', '')).toBe('1 file, 2 sens');
     expect(noteDeMarqueur(undefined, 'fumée')).toBe('fumée');
     expect(GENRES_MARQUEURS.map(g => g.emoji)).toContain('🆘');
+    expect(GENRES_MARQUEURS.map(g => g.emoji)).toContain('ℹ️');
     expect(GENRES_MARQUEURS.some(g => g.libelle === 'Personne trouvée' || g.emoji === '🚑')).toBeFalse();
     expect(ETATS_ROUTE.length).toBe(5);
   });

@@ -109,6 +109,9 @@ fun EcranCarte(modele: ModeleApplication) {
     val dossiers by modele.dossiers.collectAsStateWithLifecycle()
     val crises by modele.crises.collectAsStateWithLifecycle()
     val situes = dossiers.filter { it.situe && !it.clos }
+    // Interventions annoncées par radio (📋, 26/11/2026) : sur la carte en violet, jusqu'au vrai dossier.
+    val parRadio by modele.interventionsRadio.collectAsStateWithLifecycle()
+    val parRadioSituees = parRadio.filter { it.annonce.situee }
     /** Le point maintenu du doigt : c'est là que se créera la demande, le signalement ou l'offre. */
     var lieuTouche by remember { mutableStateOf<LatLng?>(null) }
     val tousLesPoints by modele.pointsCrise.collectAsStateWithLifecycle()
@@ -193,7 +196,10 @@ fun EcranCarte(modele: ModeleApplication) {
                 // qu'une personne ; l'urgent est rouge. La liste sous la carte les nomme.
                 style.addLayer(CircleLayer("dossiers-points", "dossiers").withProperties(
                     circleRadius(11f), circleStrokeColor("#1a1d29"), circleStrokeWidth(2.5f),
-                    circleColor(Expression.match(Expression.get("urgent"), Expression.literal("oui"), Expression.color(android.graphics.Color.parseColor("#dc2626")), Expression.color(android.graphics.Color.parseColor("#f59e0b"))))))
+                    circleColor(Expression.match(Expression.get("urgent"),
+                        Expression.literal("oui"), Expression.color(android.graphics.Color.parseColor("#dc2626")),
+                        Expression.literal("radio"), Expression.color(android.graphics.Color.parseColor("#7c3aed")),
+                        Expression.color(android.graphics.Color.parseColor("#f59e0b"))))))
                 // Les points de la crise (accueil, PC, rassemblement) : verts, carrés de bord.
                 style.addLayer(CircleLayer("points-crise", "points").withProperties(
                     circleRadius(9f), circleColor("#15803d"), circleStrokeColor("#ffffff"), circleStrokeWidth(2.5f)))
@@ -236,6 +242,9 @@ fun EcranCarte(modele: ModeleApplication) {
                 val noeud = m.queryRenderedFeatures(ecran, "radio-noeuds-points").firstOrNull()?.getStringProperty("cle")
                 val pointManif = m.queryRenderedFeatures(ecran, "manif-points-cercles").firstOrNull()?.getNumberProperty("rang")?.toInt()
                 when {
+                    touche != null && touche.startsWith("radio:") -> {
+                        modele.interventionsRadio.value.firstOrNull { "radio:" + it.annonce.numero == touche }?.let(modele::decrireInterventionRadio); true
+                    }
                     touche != null -> { modele.ouvrirDossier(touche); true }
                     marqueur != null -> { marqueurTouche = modele.marqueursRadio.value.getOrNull(marqueur); true }
                     pointManif != null -> {
@@ -324,7 +333,7 @@ fun EcranCarte(modele: ModeleApplication) {
         }))
     }
 
-    LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche, points) {
+    LaunchedEffect(carte, membres, moi, situes, parRadioSituees, crises, lieuTouche, points) {
         val m = carte ?: return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
         (style.getSource("points") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(points.map { p ->
@@ -333,6 +342,10 @@ fun EcranCarte(modele: ModeleApplication) {
         (style.getSource("dossiers") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(situes.map { d ->
             Feature.fromGeometry(Point.fromLngLat(d.longitude!!, d.latitude!!)).apply {
                 addStringProperty("id", d.id); addStringProperty("urgent", if (d.priorite == "URGENTE") "oui" else "non")
+            }
+        } + parRadioSituees.map { i ->
+            Feature.fromGeometry(Point.fromLngLat(i.annonce.longitude!!, i.annonce.latitude!!)).apply {
+                addStringProperty("id", "radio:" + i.annonce.numero); addStringProperty("urgent", "radio")
             }
         }))
         (style.getSource("zones") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(crises.filter { it.id in idsPerimetre }.mapNotNull { c ->

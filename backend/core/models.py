@@ -6471,6 +6471,7 @@ class MarqueurTerrain(EnvironmentScopedModel):
         MESHCORE = "MESHCORE", "Radio MeshCore"
         APPLICATION = "APPLICATION", "Application"
         SITE = "SITE", "Site"
+        SIGNALEMENT = "SIGNALEMENT", "Signalement du public"
 
     class Decision(models.TextChoices):
         A_TRAITER = "A_TRAITER", "À traiter"
@@ -6492,6 +6493,10 @@ class MarqueurTerrain(EnvironmentScopedModel):
     auteur_libre = EncryptedTextField(blank=True, default="")
     source = models.CharField(max_length=12, choices=Source.choices)
     canal_nom = models.CharField(max_length=100, blank=True, default="")
+    #: Le signalement du public d'où vient ce marqueur (source SIGNALEMENT, 26/11/2026). Un
+    #: simple identifiant, sans clé étrangère : le marqueur se synchronise du satellite vers le
+    #: central, le signalement pas forcément.
+    signalement_id = models.UUIDField(null=True, blank=True, db_index=True)
     cree_le = models.DateTimeField(default=timezone.now)
     remplace = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="remplace_par")
     actif = models.BooleanField(default=True)

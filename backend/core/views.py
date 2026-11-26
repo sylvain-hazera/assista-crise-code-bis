@@ -4652,6 +4652,10 @@ def populate_dossier_participants_and_notify(
             dossier=dossier, evenement=f"Équipe affectée : {equipe.name}",
             environment=dossier.environment,
         )
+        # Annoncé par radio sur le canal de l'équipe (26/11/2026) : numéro, nature, commune,
+        # position — rien sur l'habitant. Voir core/annonces_radio.py.
+        from .annonces_radio import annoncer_apres_validation
+        annoncer_apres_validation(dossier, equipe)
         for membre in equipe.members.all():
             DossierParticipant.objects.get_or_create(
                 dossier=dossier, utilisateur=membre, role=DossierParticipant.Role.EQUIPE,

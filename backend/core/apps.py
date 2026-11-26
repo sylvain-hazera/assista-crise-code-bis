@@ -42,6 +42,11 @@ class CoreConfig(AppConfig):
         for modele in (Dossier, Mission, Habitation, MarqueurTerrain):
             pre_save.connect(sync_outbox.capturer_version_avant_ecriture, sender=modele, dispatch_uid=f"sync_outbox_pre_{modele.__name__}")
 
+        # Signalement du public → marqueur de sa crise, sur les cartes et par radio (26/11/2026).
+        from .models import Information
+        from .marqueurs_terrain import signalement_enregistre
+        post_save.connect(signalement_enregistre, sender=Information, dispatch_uid="marqueur_du_signalement")
+
         # Salons Matrix d'office (16/11/2026) : une mission reçoit son salon dès qu'une équipe
         # lui est affectée, une institution les siens à son premier rattachement (les équipes
         # ont déjà les leurs à la création, voir matrix.provisionner_salons_equipe). Voir

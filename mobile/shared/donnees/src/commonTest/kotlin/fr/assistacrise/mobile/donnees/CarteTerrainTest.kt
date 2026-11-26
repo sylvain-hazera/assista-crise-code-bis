@@ -47,6 +47,8 @@ class CarteTerrainTest {
                            "type_point_libelle":"PC de manifestation","latitude":44.9,"longitude":-0.5},
                           {"id":"p2","intitule":"Carrefour","debut":"${iso(9)}","fin":"${iso(13)}","mon_statut":null,
                            "type_point_libelle":"Point de signalisation","latitude":44.91,"longitude":-0.51}]}""", HttpStatusCode.OK, entete)
+            chemin == "manifestations/m2/" -> respond("""{"id":"m2","titre":"Autre jour","debut":"${iso(60)}","fin":"${iso(64)}","je_suis_inscrit":true,
+                "postes":[{"id":"p3","intitule":"Départ","debut":"${iso(60)}","fin":"${iso(64)}","mon_statut":"INSCRIT"}]}""", HttpStatusCode.OK, entete)
             else -> respond("{}", HttpStatusCode.OK, entete)
         }
     }), "https://exemple.test/api", session)
@@ -63,6 +65,19 @@ class CarteTerrainTest {
         autre.restaurer()
         assertEquals(listOf("k1"), autre.marqueurs.value.map { it.id })
         assertEquals(listOf("m1"), autre.manifestations.value.map { it.id })
+    }
+
+    @Test fun manifestationsAVenirGardeesPourLeHorsReseau() = runTest {
+        session.ouvrir("A", "R", Compte(id = "u1"))
+        depot.rafraichir()
+        // Inscrit, du jour à J+30 ; celle du jour reste seule dans les manifestations du jour.
+        assertEquals(listOf("m1", "m2"), depot.aVenir.value.map { it.id })
+        assertEquals(listOf("m1"), depot.manifestations.value.map { it.id })
+        assertEquals(3, depot.liste.value.size)
+        val autre = DepotCarteTerrain(api, magasin, { it.removePrefix("J").toIntOrNull()?.let(::h) }, { maintenant })
+        autre.restaurer()
+        assertEquals("Départ", autre.detailGarde("m2")?.postes?.single()?.intitule)
+        assertEquals(3, autre.liste.value.size)
     }
 
     @Test fun perimetreEtZoneDuHorsLigne() = runTest {

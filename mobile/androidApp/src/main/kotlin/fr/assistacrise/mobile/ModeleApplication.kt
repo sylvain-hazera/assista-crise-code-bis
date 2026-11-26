@@ -751,6 +751,46 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         ) { it.marqueur }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Une intervention annoncée par radio (📋, 26/11/2026) : numéro, nature, commune, position,
+     * en attendant le vrai dossier par le réseau. */
+    data class InterventionRadio(val annonce: fr.assistacrise.mobile.domaine.AnnoncesRadio.Annonce, val horodatage: Long)
+
+    /** Les annonces entendues sur les canaux depuis 7 jours, la plus récente par numéro, sans celles
+     * dont le dossier est déjà sur le téléphone. Les conversations radio sont gardées chiffrées :
+     * elles survivent au redémarrage. */
+    val interventionsRadio: StateFlow<List<InterventionRadio>> = combine(app.messagerieRadio.conversations, app.benevole.dossiers) { convs, dossiers ->
+        val depuis = System.currentTimeMillis() - 7 * 24 * 3600_000L
+        val entendues = convs.filterKeys { it.contains("|c:") }.values.flatten()
+            .filter { it.horodatage >= depuis && !it.moi }
+            .mapNotNull { m -> fr.assistacrise.mobile.domaine.AnnoncesRadio.lire(m.texte)?.let { it to m.horodatage } }
+        fr.assistacrise.mobile.domaine.AnnoncesRadio.aGarder(entendues, dossiers.map { it.numero }.toSet())
+            .map { (a, quand) -> InterventionRadio(a, quand) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Les canaux de mes équipes sur les radios prêtes : un par protocole suffit. */
+    private fun canauxDEquipe(): List<String> = listOf(fr.assistacrise.mobile.lien.Protocole.MESHCORE, fr.assistacrise.mobile.lien.Protocole.MESHTASTIC).mapNotNull { pr ->
+        val p = app.radio.pour(pr).piloteCourant?.takeIf { it.prete } ?: return@mapNotNull null
+        p.canaux.firstOrNull { app.radio.equipeDuCanal(pr, it.index) != null }?.let { MessagerieRadio.cle(pr, "c:${it.index}") }
+    }
+
+    fun majRadioPossible(): Boolean = canauxDEquipe().isNotEmpty()
+
+    /** « @PC MAJ » sur le canal de mon équipe : le central répond par radio (mes dossiers ouverts,
+     * les marqueurs de la crise), au plus une fois toutes les 10 minutes. */
+    fun demanderMajParRadio() {
+        viewModelScope.launch {
+            val partis = canauxDEquipe().filter { app.messagerieRadio.envoyer(it, fr.assistacrise.mobile.domaine.AnnoncesRadio.DEMANDE_MAJ) }
+            message = if (partis.isNotEmpty()) "Demande envoyée par radio : la réponse arrive sur le canal de l'équipe (quelques minutes)."
+                      else "Aucune radio prête sur le canal de votre équipe."
+        }
+    }
+
+    fun decrireInterventionRadio(i: InterventionRadio) {
+        val a = i.annonce
+        message = "📋 ${a.numero} · " + listOf(a.nature, a.commune).filter { it.isNotBlank() }.joinToString(" · ") +
+            " — reçu par radio, le détail arrivera avec le réseau."
+    }
+
     /** Les points clés des manifestations du jour où je suis inscrit : postes placés (PC,
      * signalisation, transit…), pour la carte (27/11/2026). */
     data class PointManifestation(val nom: String, val genre: String, val latitude: Double, val longitude: Double, val pc: Boolean, val manifestation: String)
@@ -871,14 +911,19 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun envoyerMarqueur(cles: List<String>, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) {
         viewModelScope.launch {
             // Le même texte sur chaque canal coché, MeshCore comme Meshtastic (27/11/2026).
-            val texte = fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m)
+            val texte = fr.assistacrise.mobile.domaine.MarqueursRadio.ecrirePourLaRadio(m)
             val partis = cles.filter { app.messagerieRadio.envoyer(it, texte) }
             val parRadio = partis.isNotEmpty()
             val (crise, manifestation) = rattachement(partis.firstNotNullOfOrNull { k -> k.takeIf { criseDeLaConversation(it) != null } } ?: cles.firstOrNull())
             // Déjà émis sur le canal de crise d'un protocole : le serveur ne l'y réémet pas ; des
             // deux : il ne réémet rien (« true »).
             val protocoles = partis.mapNotNull(::protocoleSiCanalDeCrise).toSet()
-            val deja = when { protocoles.size >= 2 -> "true"; protocoles.size == 1 -> protocoles.first(); else -> null }
+            // Manifestation (26/11/2026) : le central l'émet sur le canal de l'association ; déjà parti
+            // par ma radio sur les canaux que j'ai cochés, il ne le réémet pas.
+            val deja = when {
+                protocoles.size >= 2 -> "true"; protocoles.size == 1 -> protocoles.first()
+                crise == null && parRadio -> "true"; else -> null
+            }
             val central = if (crise != null || manifestation != null) app.api.poserMarqueur(m, crise, manifestation, deja) else null
             if (central is Reponse.Ok) app.carteTerrain.garder(central.valeur)
             val canaux = if (partis.size > 1) "sur ${partis.size} canaux radio" else "par la radio"
@@ -905,7 +950,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 note = fr.assistacrise.mobile.domaine.MarqueursRadio.noteDeRoute(etat.precision, fr.assistacrise.mobile.domaine.MarqueursRadio.noteLibre(r.marqueur)))
             val cle = r.cleConversation.takeIf { it.isNotBlank() && MessagerieRadio.lireCle(it)?.let { (p, _) -> piloteDe(p)?.prete } == true }
                 ?: destinationsMarqueur().firstOrNull()?.first
-            val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(nouveau))
+            val parRadio = cle != null && app.messagerieRadio.envoyer(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrirePourLaRadio(nouveau))
             val deja = if (parRadio) cle?.let(::protocoleSiCanalDeCrise) else null
             val central = if (r.idCentral != null) app.api.etatRoute(r.idCentral, etat.code, deja)
                           else rattachement(cle).let { (c, mf) -> if (c != null || mf != null) app.api.poserMarqueur(nouveau, c, mf, deja) else null }
@@ -1219,9 +1264,13 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         manifestationOuverte = null
         chargerEcran {
             when (val r = app.api.manifestations()) {
-                is Reponse.Ok -> { manifestations = r.valeur; Reponse.Ok(Unit) }
+                is Reponse.Ok -> { manifestations = r.valeur; app.carteTerrain.gardeLaListe(r.valeur); Reponse.Ok(Unit) }
                 is Reponse.Refus -> r
-                is Reponse.Injoignable -> r
+                is Reponse.Injoignable -> {
+                    // Sans réseau (26/11/2026) : la dernière liste lue, sinon mes manifestations à venir.
+                    manifestations = app.carteTerrain.liste.value.ifEmpty { app.carteTerrain.aVenir.value }
+                    r
+                }
             }
         }
     }
@@ -1232,7 +1281,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             when (val r = app.api.manifestation(id)) {
                 is Reponse.Ok -> manifestationOuverte = r.valeur
                 is Reponse.Refus -> message = r.message
-                is Reponse.Injoignable -> message = "Pas de réseau : réessayez plus tard."
+                is Reponse.Injoignable -> app.carteTerrain.detailGarde(id)?.let {
+                    manifestationOuverte = it
+                    message = "Pas de réseau : détail tel qu'il était à la dernière lecture."
+                } ?: run { message = "Pas de réseau : réessayez plus tard." }
             }
         }
     }
