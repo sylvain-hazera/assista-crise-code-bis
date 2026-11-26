@@ -263,6 +263,9 @@ services:
     <<: *service
     image: postgis/postgis:15-3.3
     container_name: ac_db
+    # 64 Mo par défaut : trop peu pour un VACUUM avec workers parallèles (« could not resize
+    # shared memory segment ... No space left on device », 25/11/2026).
+    shm_size: 256mb
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/db.env", format: raw }
     volumes:
@@ -270,7 +273,7 @@ services:
       - /home/sylvain/wal-archive:/wal_archive    # archivage WAL (backup-wal-ship.sh)
     networks: [db]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h localhost -d assista-db"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -U svc_dbmaint -d assista-db"]   # sans -U : « role root » toutes les 5 s
       interval: 5s
       timeout: 5s
       retries: 12
