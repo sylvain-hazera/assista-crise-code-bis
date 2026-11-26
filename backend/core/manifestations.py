@@ -99,6 +99,10 @@ def publier(manifestation, par):
         raise ErreurManifestation("Ajoutez au moins un poste avant de publier : il faut où s'inscrire.")
     manifestation.statut = StatutManifestation.PUBLIEE
     manifestation.save(update_fields=["statut", "date_maj"])
+    # Les communes traversées sont invitées, avec les demandes de l'association (26/11/2026).
+    from . import partage_manifestation
+    # Sans demande enregistrée à la création : les quatre demandes par défaut.
+    partage_manifestation.preparer(manifestation, demandes=[] if manifestation.partages.exists() else None)
     _prevenir(_membres(manifestation), f"Nouvelle manifestation : {manifestation.titre}",
               f"{manifestation.get_type_display()} {_quand(manifestation)}. Inscrivez-vous sur un poste.", manifestation)
     return manifestation
@@ -112,6 +116,8 @@ def annuler(manifestation, par, motif=""):
     etait_publiee = manifestation.statut == StatutManifestation.PUBLIEE
     manifestation.statut = StatutManifestation.ANNULEE
     manifestation.save(update_fields=["statut", "date_maj"])
+    from . import partage_manifestation
+    partage_manifestation.tout_retirer(manifestation)
     if etait_publiee:
         _prevenir(_inscrits(manifestation), f"Annulée : {manifestation.titre}",
                   f"La manifestation prévue {_quand(manifestation)} est annulée." + (f" {motif.strip()}" if motif.strip() else ""),

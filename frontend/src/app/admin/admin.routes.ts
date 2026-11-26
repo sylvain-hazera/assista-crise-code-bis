@@ -45,6 +45,8 @@ export const ADMIN_ROUTES: Routes = [
 
   // ── Préparation ──
   { path: 'equipes', loadComponent: () => import('./teams/teams.component').then(m => m.TeamsComponent), canActivate: [institutionalEffectiveGuard] },
+  // Manifestations d'associations sur la commune, et ce qu'elle partage avec elles (26/11/2026).
+  { path: 'manifestations-commune', loadComponent: () => import('./manifestations-commune/manifestations-commune.component').then(m => m.ManifestationsCommuneComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'plans', loadComponent: () => import('./plans/plans.component').then(m => m.PlansComponent), canActivate: [institutionalEffectiveGuard] },

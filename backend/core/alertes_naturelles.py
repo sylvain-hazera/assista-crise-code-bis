@@ -729,6 +729,14 @@ def _prevenir(regle, alerte, maintenant):
     from .notifications_application import prevenir
 
     personnes = destinataires(regle)
+    # Les associations qui ont obtenu « alertes de la commune » pour une manifestation en cours
+    # (26/11/2026, core/partage_manifestation.py) : bureau et inscrits.
+    try:
+        from .partage_manifestation import personnes_alertees
+        deja = {p.pk for p in personnes}
+        personnes = personnes + [p for p in personnes_alertees(regle.institution, maintenant) if p.pk not in deja]
+    except Exception:
+        logger.exception("Alerte naturelle : associations des manifestations non ajoutées (alerte %s).", alerte.id)
     urgent = alerte.niveau == EXCEPTIONNEL
     for personne in personnes:
         prevenir(personne, alerte.titre, alerte.detail, urgent=urgent,

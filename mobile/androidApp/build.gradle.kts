@@ -13,8 +13,8 @@ android {
         targetSdk = 35
         // Chaque APK publié prend un numéro de plus : c'est lui que l'application compare à
         // /mobile/version.json pour proposer la mise à jour (scripts/publier-mobile.sh).
-        versionCode = 43
-        versionName = "0.28.0"
+        versionCode = 44
+        versionName = "0.29.0"
     }
 
     buildFeatures {

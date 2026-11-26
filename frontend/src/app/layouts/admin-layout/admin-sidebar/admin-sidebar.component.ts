@@ -18,6 +18,9 @@ interface CompteursMenu {
   messages_a_relire: number | null;
   demandes_mobilisation: number | null;
   crise_ouverte: boolean;
+  /** Le compte est celui d'une association (AASC ou non) : hors crise, ses écrans de crise sont
+   * masqués (26/11/2026). */
+  association?: boolean;
 }
 
 /** Fréquence de rafraîchissement des compteurs, onglet visible seulement. */
@@ -25,6 +28,10 @@ const RAFRAICHISSEMENT_COMPTEURS_MS = 120_000;
 
 const CLE_STOCKAGE_GROUPES = 'admin-sidebar-groupes-ouverts';
 const CLE_STOCKAGE_SOUS_GROUPES = 'admin-sidebar-sous-groupes-ouverts';
+/** « Afficher les écrans de crise » choisi par une association hors crise. */
+const CLE_STOCKAGE_ECRANS_CRISE = 'admin-sidebar-ecrans-crise';
+/** Les cadres masqués pour une association hors crise. */
+const GROUPES_DE_CRISE: GroupeNavId[] = ['crise', 'post-critique'];
 
 /** Menu latéral de l'administration. Placement et affichage mobile : admin-layout.
  * Entrées et droits d'affichage : admin-nav.config.ts. */
@@ -60,8 +67,12 @@ export class AdminSidebarComponent {
    * « Crise en cours » et « Après la crise » (revue du menu, 19/11/2026). */
   get groupesNav(): GroupeNav[] {
     if (this.criseOuverte) return GROUPES_NAV;
-    const preparer = GROUPES_NAV.filter(g => g.id === 'preparation');
-    const reste = GROUPES_NAV.filter(g => g.id !== 'preparation');
+    // Une association hors crise ne voit pas les écrans de crise, sauf si elle les demande
+    // (26/11/2026) ; ils reviennent d'eux-mêmes dès qu'elle est engagée sur une crise ouverte.
+    const groupes = this.ecransCriseMasques ? GROUPES_NAV.filter(g => !GROUPES_DE_CRISE.includes(g.id)) : GROUPES_NAV;
+    const preparer = groupes.filter(g => g.id === 'preparation');
+    const reste = groupes.filter(g => g.id !== 'preparation');
+    if (!reste.some(g => g.id === 'crise')) return [...reste, ...preparer];
     const avant = reste.findIndex(g => g.id === 'crise');
     return [...reste.slice(0, avant), ...preparer, ...reste.slice(avant)];
   }
@@ -113,7 +124,24 @@ export class AdminSidebarComponent {
     }
   }
 
+  /** Compte d'association (renvoyé par le serveur). */
+  association = false;
+  /** L'association a demandé à voir les écrans de crise hors crise. */
+  afficherEcransCrise = this.lireAffichageCrise();
+
+  get ecransCriseMasques(): boolean { return this.association && !this.criseOuverte && !this.afficherEcransCrise; }
+
+  private lireAffichageCrise(): boolean {
+    try { return localStorage.getItem(CLE_STOCKAGE_ECRANS_CRISE) === '1'; } catch { return false; }
+  }
+
+  basculerEcransCrise(): void {
+    this.afficherEcransCrise = !this.afficherEcransCrise;
+    try { localStorage.setItem(CLE_STOCKAGE_ECRANS_CRISE, this.afficherEcransCrise ? '1' : '0'); } catch { /* préférence en mémoire seulement */ }
+  }
+
   appliquerSituation(reponse: CompteursMenu): void {
+    this.association = !!reponse.association;
     this.compteurs = {
       signalements: reponse.signalements ?? 0,
       messages_a_relire: reponse.messages_a_relire ?? 0,
@@ -122,7 +150,8 @@ export class AdminSidebarComponent {
     this.criseOuverte = !!reponse.crise_ouverte;
     if (!this.preferenceEnregistree) {
       // Rien de choisi par l'utilisateur : on ouvre ce dont la situation a besoin.
-      this.groupesOuverts = { 'mon-activite': true, crise: this.criseOuverte, preparation: !this.criseOuverte };
+      this.groupesOuverts = { 'mon-activite': true, crise: this.criseOuverte, preparation: !this.criseOuverte,
+                              ...(this.association ? { association: true } : {}) };
       this.ouvrirLeCadreDe(this.urlCourante);
     }
   }

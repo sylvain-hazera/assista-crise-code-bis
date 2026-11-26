@@ -13761,6 +13761,9 @@ class Manifestation(EnvironmentScopedModel):
     consignes = EncryptedTextField(blank=True, default="")
     location = gis_models.PointField(srid=4326, null=True, blank=True)
     commune_code = models.CharField(max_length=10, blank=True, default="")
+    #: Les communes traversées (codes INSEE) : une course peut en traverser plusieurs. Chacune est
+    #: invitée et reçoit les demandes de l'association (core/partage_manifestation.py).
+    communes = models.JSONField(default=list, blank=True)
     debut = models.DateTimeField()
     fin = models.DateTimeField()
     statut = models.CharField(max_length=10, choices=StatutManifestation.choices, default=StatutManifestation.BROUILLON)
@@ -13818,6 +13821,80 @@ class InscriptionPoste(EnvironmentScopedModel):
     class Meta:
         ordering = ["inscrit_le"]
         constraints = [models.UniqueConstraint(fields=["poste", "utilisateur"], name="uq_inscription_poste")]
+
+
+class InvitationCommune(models.TextChoices):
+    PREVENUE = "PREVENUE", "Prévenue sur la plateforme"
+    INVITEE = "INVITEE", "Invitée par courriel à rejoindre la plateforme"
+    INJOIGNABLE = "INJOIGNABLE", "Injoignable (ni compte, ni adresse)"
+
+
+class PartageManifestation(EnvironmentScopedModel):
+    """Ce que la commune partage avec l'association pour UNE manifestation sur son territoire
+    (26/11/2026). Une ligne par commune traversée ; le tableau des demandes et des offres est dans
+    `LignePartage`. Ce que la mairie remplit (référent, consignes, arrêté) est chiffré."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    manifestation = models.ForeignKey(Manifestation, on_delete=models.CASCADE, related_name="partages")
+    commune_code = models.CharField(max_length=10)
+    mairie = models.ForeignKey("Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="partages_manifestations")
+    #: Vide tant que la manifestation n'est pas publiée : la commune n'est invitée qu'à la publication.
+    invitation = models.CharField(max_length=12, choices=InvitationCommune.choices, blank=True, default="")
+    referent_nom = EncryptedTextField(max_length=150, blank=True, default="")
+    referent_telephone = EncryptedTextField(max_length=30, blank=True, default="")
+    consignes = EncryptedTextField(blank=True, default="")
+    arrete = models.FileField(storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+                              null=True, blank=True)
+    arrete_nom = EncryptedTextField(max_length=200, blank=True, default="")
+    arrete_type = models.CharField(max_length=60, blank=True, default="")
+    #: Crises déjà signalées à l'association pour cette commune (une seule fois chacune).
+    crises_signalees = models.JSONField(default=list, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["manifestation", "commune_code"], name="uq_partage_manifestation_commune")]
+
+
+class ElementPartage(models.TextChoices):
+    # Ce que l'association peut demander (enjeu faible, hors crise).
+    CONTACT_JOUR_J = "CONTACT_JOUR_J", "Contact mairie le jour J"
+    ALERTES_COMMUNE = "ALERTES_COMMUNE", "Alertes de la commune"
+    CRISE_COMMUNE = "CRISE_COMMUNE", "Crise sur la commune"
+    CONSIGNES_ARRETE = "CONSIGNES_ARRETE", "Consignes et arrêté de la mairie"
+    # Ce que seule la mairie peut ouvrir, au cas par cas.
+    INTERVENTION_CRISE = "INTERVENTION_CRISE", "Intervenir sur une crise ouverte"
+    PCS_LECTURE = "PCS_LECTURE", "Plan communal de sauvegarde en lecture"
+    REGISTRE_VULNERABLES = "REGISTRE_VULNERABLES", "Registre des personnes vulnérables"
+
+
+class OriginePartage(models.TextChoices):
+    DEMANDE_ASSOCIATION = "DEMANDE_ASSOCIATION", "Demandé par l'association"
+    OFFERT_MAIRIE = "OFFERT_MAIRIE", "Proposé par la mairie"
+
+
+class StatutLignePartage(models.TextChoices):
+    DEMANDE = "DEMANDE", "En attente de la mairie"
+    ACCEPTE = "ACCEPTE", "Accepté"
+    REFUSE = "REFUSE", "Refusé"
+    RETIRE = "RETIRE", "Retiré"
+
+
+class LignePartage(EnvironmentScopedModel):
+    """Une ligne du tableau « ce que l'association demande, ce que la commune accepte »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    partage = models.ForeignKey(PartageManifestation, on_delete=models.CASCADE, related_name="lignes")
+    element = models.CharField(max_length=24, choices=ElementPartage.choices)
+    origine = models.CharField(max_length=20, choices=OriginePartage.choices)
+    statut = models.CharField(max_length=10, choices=StatutLignePartage.choices, default=StatutLignePartage.DEMANDE)
+    #: INTERVENTION_CRISE : la crise sur laquelle la mairie fait intervenir l'association.
+    crise = models.ForeignKey("Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decide_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decide_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["partage", "element"], name="uq_ligne_partage_element")]
 
 
 class ReglagesBenevolat(EnvironmentScopedModel):

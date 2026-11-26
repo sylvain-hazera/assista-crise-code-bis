@@ -63,6 +63,33 @@
           <label>Fin <input type="datetime-local" [(ngModel)]="b.fin"></label>
           <label class="large">Lieu <input type="text" maxlength="300" [(ngModel)]="b.lieu" placeholder="Parc du Castel, départ avenue Pasteur"></label>
           <label class="large">Pour qui <input type="text" maxlength="300" [(ngModel)]="b.organisateur" placeholder="Mairie, comité des fêtes…"></label>
+          <div class="large communes">
+            <span class="titre-champ">Communes traversées</span>
+            <p class="note">Chacune est invitée à la publication, avec vos demandes ; la mairie décide ligne par ligne.</p>
+            <div class="puces">
+              @for (c of b.communes; track c.code) {
+                <span class="puce">{{ c.nom }} <button type="button" (click)="retirerCommune(c.code)" [attr.aria-label]="'Retirer ' + c.nom">×</button></span>
+              }
+            </div>
+            <div class="recherche-commune">
+              <input type="text" [ngModel]="rechercheCommune" (ngModelChange)="chercherCommune($event)" placeholder="Ajouter une commune (nom ou code postal)" aria-label="Ajouter une commune">
+              @if (suggestionsCommunes.length) {
+                <ul class="suggestions">
+                  @for (c of suggestionsCommunes; track c.code) {
+                    <li><button type="button" (click)="ajouterCommune(c)">{{ c.name }} <span class="note">{{ c.codePostal }}</span></button></li>
+                  }
+                </ul>
+              }
+            </div>
+          </div>
+          <fieldset class="large demandes">
+            <legend>Ce que vous demandez à chaque commune</legend>
+            @for (d of demandesPossibles; track d.code) {
+              <label class="case"><input type="checkbox" [checked]="b.demandes.includes(d.code)" (change)="basculerDemande(d.code)"> {{ d.libelle }}</label>
+            }
+            <p class="note">Le plan communal de sauvegarde, le registre des personnes vulnérables ou l'intervention sur une crise
+              ne se demandent pas : seule la mairie peut vous les ouvrir.</p>
+          </fieldset>
           <label class="large">Consignes et feuille de route
             <textarea rows="5" [(ngModel)]="b.consignes" placeholder="Rendez-vous 7 h 30 au local. Gilet, radio chargée, canal 19."></textarea></label>
         </div>
@@ -97,6 +124,37 @@
           <ul class="documents">
             @for (d of m.documents; track d.id) { <li><button type="button" class="lien" (click)="telechargerDocument(d)">{{ d.nom }}</button></li> }
           </ul>
+        }
+
+        @if (m.partages?.length) {
+          <h3>Avec les communes</h3>
+          @for (p of m.partages; track p.id) {
+            <section class="partage">
+              <h4>{{ p.mairie || ('Commune ' + p.commune_code) }}@if (p.invitation_libelle) { <span class="note"> · {{ p.invitation_libelle }}</span> }</h4>
+              @if (p.ouvert.contact; as c) { <p><strong>Contact le jour J :</strong> {{ c.nom }} — <a [href]="'tel:' + c.telephone">{{ c.telephone }}</a></p> }
+              @if (p.ouvert.consignes) { <p class="consignes"><strong>Consignes de la mairie :</strong> {{ p.ouvert.consignes }}</p> }
+              @if (p.ouvert.arrete) { <p><button type="button" class="lien" (click)="telechargerPartage(p, 'arrete')">Arrêté de la mairie : {{ p.ouvert.arrete }}</button></p> }
+              @for (c of p.ouvert.crises ?? []; track c.id) { <p class="alerte">Crise ouverte sur la commune : <strong>{{ c.nom }}</strong></p> }
+              @if (p.ouvert.pcs && m.organise) { <p><button type="button" class="lien" (click)="telechargerPartage(p, 'pcs')">Télécharger le plan communal de sauvegarde</button></p> }
+              @if (m.organise && p.lignes?.length) {
+                <div class="tableur">
+                  <table>
+                    <thead><tr><th>Élément</th><th>Origine</th><th>Réponse de la mairie</th></tr></thead>
+                    <tbody>
+                      @for (l of p.lignes; track l.element) {
+                        <tr>
+                          <td>{{ l.libelle }}</td>
+                          <td>{{ l.origine === 'OFFERT_MAIRIE' ? 'proposé par la mairie' : 'demandé' }}</td>
+                          <td><span class="pastille" [class.inscrit]="l.statut === 'ACCEPTE'" [class.annulee]="l.statut === 'REFUSE'">{{ l.statut_libelle }}</span>
+                            @if (l.statut === 'ACCEPTE' && !l.en_vigueur) { <span class="note"> (de la veille au lendemain)</span> }</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
+          }
         }
 
         <h3>Postes</h3>

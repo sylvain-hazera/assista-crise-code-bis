@@ -204,6 +204,8 @@
 
 .sidebar-footer {
   padding: 1rem 0;
+
+  .ecrans-crise { width: 100%; background: none; border: 0; font: inherit; font-size: .85rem; text-align: left; }
   border-top: 1px solid var(--ac-border, #e0e0e0);
 
   .nav-item {

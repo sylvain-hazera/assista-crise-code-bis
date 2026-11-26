@@ -25,7 +25,31 @@ data class ManifestationAsso(
     @SerialName("je_suis_inscrit") val inscrit: Boolean = false,
     val consignes: String = "",
     val postes: List<PosteManifestation> = emptyList(),
+    /** Ce que chaque commune traversée a ouvert à l'association (26/11/2026). */
+    val partages: List<PartageCommune> = emptyList(),
 )
+
+@Serializable
+data class PartageCommune(
+    val id: String,
+    @SerialName("commune_code") val commune: String = "",
+    val mairie: String? = null,
+    val ouvert: OuvertParLaCommune = OuvertParLaCommune(),
+)
+
+/** Seulement ce que la mairie a accepté, et seulement pendant la manifestation. */
+@Serializable
+data class OuvertParLaCommune(
+    val contact: ContactMairie? = null,
+    val consignes: String? = null,
+    val crises: List<CriseOuverte> = emptyList(),
+)
+
+@Serializable
+data class ContactMairie(val nom: String = "", val telephone: String = "")
+
+@Serializable
+data class CriseOuverte(val id: String, val nom: String)
 
 @Serializable
 data class PosteManifestation(

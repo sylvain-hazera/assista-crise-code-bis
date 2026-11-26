@@ -1,0 +1,97 @@
+<div class="page">
+  <h1><span class="material-icons">festival</span> Manifestations sur ma commune</h1>
+  <p class="chapeau">Les associations qui organisent une manifestation sur votre commune vous demandent quelques éléments.
+    Vous décidez ligne par ligne ; rien ne vaut au-delà du lendemain de la manifestation. Vous pouvez aussi leur ouvrir,
+    au cas par cas, ce qu'elles ne peuvent pas demander, si vous voulez vous appuyer sur elles.</p>
+
+  @if (erreur) { <p class="message erreur" role="alert">{{ erreur }}</p> }
+  @if (message) { <p class="message" role="status">{{ message }}</p> }
+
+  @for (p of partages; track p.id) {
+    <article class="manif">
+      <header>
+        <div>
+          <h2>{{ p.manifestation.titre }}</h2>
+          <p class="note">{{ p.manifestation.association }} · {{ p.manifestation.type_libelle }} ·
+            {{ p.manifestation.debut | date:'EEEE d MMMM y, HH:mm' }} – {{ p.manifestation.fin | date:'HH:mm' }}
+            @if (p.manifestation.lieu) { · {{ p.manifestation.lieu }} }</p>
+        </div>
+        <span class="pastille" [class.annulee]="p.manifestation.statut === 'ANNULEE'">{{ p.manifestation.statut_libelle }}</span>
+      </header>
+
+      <h3>Ce que l'association demande</h3>
+      <div class="tableur">
+        <table>
+          <thead><tr><th>Élément</th><th>Ce que cela ouvre</th><th>Votre réponse</th></tr></thead>
+          <tbody>
+            @for (l of demandees(p); track l.element) {
+              <tr>
+                <td>{{ l.libelle }}</td>
+                <td class="explication">{{ l.explication }}</td>
+                <td class="actions">
+                  @if (!l.statut) { <span class="note">non demandé</span> }
+                  @else {
+                    <span class="pastille" [class.ok]="l.statut === 'ACCEPTE'" [class.annulee]="l.statut === 'REFUSE'">{{ l.statut_libelle }}</span>
+                    @if (p.manifestation.statut !== 'ANNULEE' && l.statut !== 'RETIRE') {
+                      @if (l.statut !== 'ACCEPTE') { <button type="button" class="btn-primary" (click)="geste(p, l, 'accepter')">Accepter</button> }
+                      @if (l.statut !== 'REFUSE') { <button type="button" class="lien" (click)="geste(p, l, 'refuser')">Refuser</button> }
+                    }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Ce que vous pouvez ouvrir de vous-même</h3>
+      <div class="tableur">
+        <table>
+          <thead><tr><th>Élément</th><th>Ce que cela ouvre</th><th>Votre décision</th></tr></thead>
+          <tbody>
+            @for (l of reservees(p); track l.element) {
+              <tr>
+                <td>{{ l.libelle }}</td>
+                <td class="explication">{{ l.explication }}</td>
+                <td class="actions">
+                  @if (l.statut === 'ACCEPTE') {
+                    <span class="pastille ok">Ouvert</span>
+                    <button type="button" class="lien" (click)="geste(p, l, 'retirer')">Retirer</button>
+                  } @else if (p.manifestation.statut !== 'ANNULEE') {
+                    @if (l.element === 'INTERVENTION_CRISE') {
+                      @if (p.crises_ouvertes.length) {
+                        @if (p.crises_ouvertes.length > 1) {
+                          <select [(ngModel)]="criseChoisie[p.id]" aria-label="Crise">
+                            @for (c of p.crises_ouvertes; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+                          </select>
+                        }
+                        <button type="button" class="btn-secondary" (click)="geste(p, l, 'offrir')">Faire intervenir@if (p.crises_ouvertes.length === 1) { sur « {{ p.crises_ouvertes[0].nom }} » }</button>
+                      } @else { <span class="note">aucune crise ouverte sur la commune</span> }
+                    } @else {
+                      <button type="button" class="btn-secondary" (click)="geste(p, l, 'offrir')">Ouvrir</button>
+                    }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Vos informations pour l'association</h3>
+      <div class="formulaire">
+        <label>Référent joignable le jour J <input type="text" maxlength="150" [(ngModel)]="p.referent_nom" placeholder="Élu ou agent d'astreinte"></label>
+        <label>Téléphone <input type="tel" maxlength="30" [(ngModel)]="p.referent_telephone"></label>
+        <label class="large">Consignes <textarea rows="3" [(ngModel)]="p.consignes" placeholder="Stationnement interdit rue Pasteur de 7 h à 13 h…"></textarea></label>
+        <div class="large ligne">
+          <button type="button" class="btn-primary" (click)="enregistrer(p)">Enregistrer</button>
+          <label class="btn-secondary fichier">{{ p.arrete ? 'Remplacer l\'arrêté (' + p.arrete + ')' : 'Joindre l\'arrêté (PDF ou photo)' }}
+            <input type="file" accept="application/pdf,image/png,image/jpeg" (change)="joindreArrete(p, $event)"></label>
+        </div>
+        <p class="note large">Ces informations ne sont visibles de l'association que si vous avez accepté la ligne correspondante.</p>
+      </div>
+    </article>
+  } @empty {
+    @if (charge) { <p class="note">Aucune manifestation annoncée sur votre commune.</p> }
+  }
+</div>

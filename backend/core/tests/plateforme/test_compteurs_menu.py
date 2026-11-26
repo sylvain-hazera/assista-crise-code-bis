@@ -31,8 +31,9 @@ def _client(compte):
 def test_hors_crise_le_menu_le_sait(maire):
     reponse = _client(maire).get(URL)
     assert reponse.status_code == 200
-    assert set(reponse.data) == {"signalements", "messages_a_relire", "demandes_mobilisation", "crise_ouverte"}
+    assert set(reponse.data) == {"signalements", "messages_a_relire", "demandes_mobilisation", "crise_ouverte", "association"}
     assert reponse.data["crise_ouverte"] is False
+    assert reponse.data["association"] is False          # un maire n'est pas une association (26/11/2026)
     # Des nombres, pas None : aucun contrôle de droits n'a refusé en silence.
     for cle in ("signalements", "messages_a_relire", "demandes_mobilisation"):
         assert isinstance(reponse.data[cle], int), cle

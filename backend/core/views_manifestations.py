@@ -71,8 +71,15 @@ def _en_dict(m, utilisateur, detail=False) -> dict:
         "occupes": sum(1 for p in postes for i in p.inscriptions.all() if i.statut in mf.ACTIVES),
         "je_suis_inscrit": any(i.utilisateur_id == utilisateur.id and i.statut in mf.ACTIVES for p in postes for i in p.inscriptions.all()),
         "organise": bureau,
+        "communes": list(m.communes or ([m.commune_code] if m.commune_code else [])),
     }
     if detail:
+        from . import partage_manifestation as pm
+        # Ce que chaque commune partage : le tableau pour le bureau, ce qui est ouvert pour tous.
+        d["partages"] = [dict(pm.tableau(p) if bureau else {"id": str(p.id), "commune_code": p.commune_code,
+                                                             "mairie": p.mairie.nom if p.mairie else None},
+                              ouvert=pm.ce_qui_est_ouvert(p))
+                         for p in m.partages.select_related("mairie").prefetch_related("lignes")]
         d["consignes"] = m.consignes
         d["postes"] = [_poste_en_dict(p, utilisateur, bureau) for p in postes]
         d["documents"] = [{"id": str(doc.id), "nom": (doc.metadata_publiques or {}).get("nom") or doc.fichier.name.rsplit("/", 1)[-1]}
@@ -103,6 +110,11 @@ def _champs(m, donnees):
             setattr(m, champ, _texte(donnees[champ], maxi))
     if "commune_code" in donnees:
         m.commune_code = _texte(donnees["commune_code"], 10)
+    if "communes" in donnees:
+        # Les communes traversées (26/11/2026) : chacune est invitée à la publication.
+        m.communes = [_texte(c, 10) for c in (donnees.get("communes") or []) if str(c or "").strip()][:30]
+        if m.communes and not m.commune_code:
+            m.commune_code = m.communes[0]
     if "debut" in donnees:
         m.debut = _instant(donnees["debut"], "Début")
     if "fin" in donnees:
@@ -163,6 +175,9 @@ class ManifestationsView(APIView):
         m.save()
         for p in request.data.get("postes") or []:
             _poste(m, p)
+        from . import partage_manifestation as pm
+        demandes = request.data.get("demandes")
+        pm.preparer(m, demandes=demandes if isinstance(demandes, list) else None, request=request)
         audit_log(request=request, action_code="CREATION", objet_type="Manifestation", objet_id=m.id,
                   commentaire=f"Manifestation créée pour {institution.nom}")
         return Response(_en_dict(m, request.user, detail=True), status=status.HTTP_201_CREATED)
@@ -182,6 +197,14 @@ class ManifestationView(APIView):
         avant = (m.debut, m.fin, m.lieu)
         _champs(m, request.data)
         m.save()
+        if "communes" in request.data or "demandes" in request.data:
+            from . import partage_manifestation as pm
+            from .models import LignePartage, OriginePartage
+            demandes = request.data.get("demandes")
+            if not isinstance(demandes, list):
+                demandes = list(LignePartage.objects.filter(partage__manifestation=m, origine=OriginePartage.DEMANDE_ASSOCIATION)
+                                .values_list("element", flat=True).distinct())
+            pm.preparer(m, demandes=demandes, request=request)
         if (m.debut, m.fin, m.lieu) != avant:
             mf.horaires_changes(m)
         return Response(_en_dict(m, request.user, detail=True))
@@ -498,3 +521,160 @@ class DocumentsManifestationView(APIView):
         document = get_object_or_404(m.documents, id=doc)
         return FileResponse(document.fichier.open("rb"), as_attachment=True,
                             filename=(document.metadata_publiques or {}).get("nom") or "document")
+
+
+
+# --- Partage commune-association (26/11/2026, core/partage_manifestation.py) ---------------------
+
+def _partage(pid):
+    from .models import PartageManifestation
+    return get_object_or_404(PartageManifestation.objects.select_related("manifestation__institution", "mairie"), id=pid)
+
+
+class PcsPartageView(APIView):
+    """GET : le plan communal de sauvegarde de la commune, pour le bureau de l'association, si la
+    mairie l'a ouvert et pendant la manifestation. Régénéré à chaque fois, tracé."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pid):
+        from . import document_pcs
+        from . import partage_manifestation as pm
+        from .models import ElementPartage
+        partage = _partage(pid)
+        _exiger_bureau(request, partage.manifestation.institution_id)
+        if partage.mairie is None or not pm.accorde(partage, ElementPartage.PCS_LECTURE):
+            raise PermissionDenied("La mairie n'a pas ouvert son plan, ou la manifestation est passée.")
+        nom = lambda u: (f"{u.first_name} {u.last_name}".strip() or u.email) if u else ""
+        contenu = document_pcs.rassembler(partage.mairie, partage.environment, nom)
+        pdf = document_pcs.generer_pdf(contenu, edite_par=f"{nom(request.user)} ({partage.manifestation.institution.nom})")
+        audit_log(request=request, action_code="EXPORT", objet_type="PartageManifestation", objet_id=partage.id,
+                  commentaire=f"PCS de {partage.mairie.nom} téléchargé par l'association (manifestation)")
+        reponse = HttpResponse(pdf, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="plan-communal-de-sauvegarde-{partage.commune_code}.pdf"'
+        reponse["Cache-Control"] = "private, no-store"
+        return reponse
+
+
+class ArretePartageView(APIView):
+    """GET : l'arrêté joint par la mairie (inscrits et bureau si ouvert ; la mairie toujours).
+    POST (multipart « fichier ») : la mairie le joint (PDF ou image)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pid):
+        from django.http import FileResponse
+
+        from . import partage_manifestation as pm
+        from .models import ElementPartage
+        partage = _partage(pid)
+        mairie = pm._peut_decider(partage, request.user)
+        if not mairie:
+            _manifestation(request, partage.manifestation_id)
+            if not pm.accorde(partage, ElementPartage.CONSIGNES_ARRETE):
+                raise PermissionDenied("La mairie n'a pas partagé son arrêté, ou la manifestation est passée.")
+        if not partage.arrete:
+            raise ValidationError({"detail": "Aucun arrêté joint."})
+        reponse = FileResponse(partage.arrete.open("rb"), content_type=partage.arrete_type or "application/octet-stream",
+                               as_attachment=True, filename=partage.arrete_nom or "arrete")
+        reponse["Cache-Control"] = "private, no-store"
+        return reponse
+
+    def post(self, request, pid):
+        from django.core.exceptions import ValidationError as ErreurDeValidation
+
+        from . import partage_manifestation as pm
+        from .validators import validate_identity_document_file
+        partage = _partage(pid)
+        if not pm._peut_decider(partage, request.user):
+            raise PermissionDenied("Seule la mairie joint son arrêté.")
+        fichier = request.FILES.get("fichier")
+        if fichier is None:
+            raise ValidationError({"detail": "Joignez l'arrêté (PDF, ou photo JPEG/PNG)."})
+        try:
+            validate_identity_document_file(fichier)
+        except ErreurDeValidation as erreur:
+            raise ValidationError({"detail": " ".join(erreur.messages)})
+        fichier.seek(0)
+        nom = (getattr(fichier, "name", "") or "arrete")[:200]
+        if partage.arrete:
+            try:
+                partage.arrete.delete(save=False)
+            except Exception:  # noqa: BLE001
+                pass
+        partage.arrete, partage.arrete_nom = fichier, nom
+        partage.arrete_type = "application/pdf" if nom.lower().endswith(".pdf") else (getattr(fichier, "content_type", "") or "")[:60]
+        partage.save(update_fields=["arrete", "arrete_nom", "arrete_type", "modifie_le"])
+        return Response(_partage_pour_mairie(partage), status=status.HTTP_201_CREATED)
+
+
+def _partage_pour_mairie(partage) -> dict:
+    from . import partage_manifestation as pm
+    from .models import Crisis
+    m = partage.manifestation
+    d = pm.tableau(partage, pour_mairie=True)
+    d.update({
+        "manifestation": {"id": str(m.id), "titre": m.titre, "type_libelle": m.get_type_display(), "lieu": m.lieu,
+                          "organisateur": m.organisateur, "debut": m.debut, "fin": m.fin, "statut": m.statut,
+                          "statut_libelle": m.get_statut_display(), "association": m.institution.nom},
+        "referent_nom": partage.referent_nom, "referent_telephone": partage.referent_telephone,
+        "consignes": partage.consignes, "arrete": partage.arrete_nom if partage.arrete else "",
+        "en_vigueur": pm.en_vigueur(m),
+        "crises_ouvertes": [{"id": str(c.id), "nom": c.name} for c in Crisis.objects.filter(end_date__isnull=True, environment=partage.environment)
+                            if partage.commune_code in (c.zone_communes or [])],
+    })
+    return d
+
+
+class ManifestationsCommuneView(APIView):
+    """GET : les manifestations sur les communes dont je suis membre de la mairie, avec leur tableau."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import ContactInstitution, PartageManifestation, UserRole
+        environment = get_active_environment(request)
+        qs = PartageManifestation.objects.filter(environment=environment).exclude(invitation="") \
+            .select_related("manifestation__institution", "mairie").prefetch_related("lignes")
+        if getattr(request.user, "type", None) != UserRole.ADMINISTRATOR:
+            mairies = ContactInstitution.objects.filter(utilisateur=request.user, actif=True).values_list("institution_id", flat=True)
+            qs = qs.filter(mairie_id__in=list(mairies))
+        partages = sorted(qs[:300], key=lambda p: p.manifestation.debut, reverse=True)
+        return Response({"partages": [_partage_pour_mairie(p) for p in partages]})
+
+
+class PartageCommuneView(APIView):
+    """POST {geste: accepter | refuser | retirer | offrir, element, crise?} ; PATCH {referent_nom,
+    referent_telephone, consignes} — la mairie."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pid):
+        from . import partage_manifestation as pm
+        from .models import Crisis, LignePartage
+        partage = _partage(pid)
+        geste, element = request.data.get("geste"), request.data.get("element")
+        try:
+            if geste == "offrir":
+                crise = Crisis.objects.filter(id=request.data.get("crise")).first() if request.data.get("crise") else None
+                pm.offrir(partage, request.user, element, crise)
+            else:
+                ligne = LignePartage.objects.filter(partage=partage, element=element).first()
+                if ligne is None:
+                    raise ValidationError({"detail": "Cette ligne n'existe pas pour cette manifestation."})
+                pm.decider(ligne, request.user, geste)
+        except pm.ErreurPartage as erreur:
+            if "Seule la mairie" in str(erreur):
+                raise PermissionDenied(str(erreur))
+            raise ValidationError({"detail": str(erreur)})
+        audit_log(request=request, action_code="MODIFICATION", objet_type="PartageManifestation", objet_id=partage.id,
+                  commentaire=f"Partage avec l'association : {geste} {element}")
+        partage.refresh_from_db()
+        return Response(_partage_pour_mairie(partage))
+
+    def patch(self, request, pid):
+        from . import partage_manifestation as pm
+        partage = _partage(pid)
+        if not pm._peut_decider(partage, request.user):
+            raise PermissionDenied("Seule la mairie renseigne ces informations.")
+        for champ, maxi in (("referent_nom", 150), ("referent_telephone", 30), ("consignes", 20000)):
+            if champ in request.data:
+                setattr(partage, champ, _texte(request.data[champ], maxi))
+        partage.save()
+        return Response(_partage_pour_mairie(partage))

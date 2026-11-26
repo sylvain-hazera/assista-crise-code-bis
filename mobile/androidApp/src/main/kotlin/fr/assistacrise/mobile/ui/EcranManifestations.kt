@@ -106,6 +106,24 @@ private fun CarteManifestation(m: ManifestationAsso, detail: ManifestationAsso?,
                     Text("Consignes", style = MaterialTheme.typography.labelLarge)
                     Text(detail.consignes, style = MaterialTheme.typography.bodyMedium)
                 }
+                // Ce que les communes ont ouvert (26/11/2026) : contact du jour J, consignes, crise.
+                detail.partages.forEach { pc ->
+                    val o = pc.ouvert
+                    o.crises.forEach { c ->
+                        Text("Crise ouverte sur la commune : ${c.nom}", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                    o.contact?.let { c ->
+                        val contexte = androidx.compose.ui.platform.LocalContext.current
+                        Text("Contact ${pc.mairie ?: "mairie"} : ${c.nom} — ${c.telephone}",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable {
+                                runCatching { contexte.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL,
+                                    android.net.Uri.parse("tel:${c.telephone}"))) }
+                            })
+                    }
+                    o.consignes?.takeIf { it.isNotBlank() }?.let { Text("Consignes de la mairie : $it", style = MaterialTheme.typography.bodySmall) }
+                }
                 Spacer(Modifier.padding(top = 6.dp))
                 detail.postes.forEach { p ->
                     HorizontalDivider(Modifier.padding(vertical = 6.dp))

@@ -189,6 +189,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Points d'eau incendie (24/11/2026) : signalements terrain validés par la commune, base SDIS, OSM.
   { icon: 'fire_hydrant_alt', label: "Points d'eau incendie", route: '/admin/points-eau', groupe: 'preparation', sousGroupe: 'prep-connaitre' },
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'registre-vulnerables' },
+  // Ce que les associations organisent sur la commune, et ce qu'elle leur partage (core/partage_manifestation.py).
+  { icon: 'festival', label: 'Manifestations sur ma commune', route: '/admin/manifestations-commune', groupe: 'preparation', sousGroupe: 'prep-organiser', visibilite: 'autorite-locale' },
   { icon: 'verified', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'autorite-locale' },
   { icon: 'border_outer', label: 'Zones', route: '/admin/zones', groupe: 'preparation', sousGroupe: 'prep-connaitre', visibilite: 'autorite-locale' },
   { icon: 'layers', label: 'Couches cartographiques', route: '/admin/couches-carto', groupe: 'preparation', sousGroupe: 'prep-connaitre' },

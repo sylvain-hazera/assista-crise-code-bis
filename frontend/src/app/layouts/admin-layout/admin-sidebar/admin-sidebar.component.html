@@ -112,6 +112,14 @@
 </nav>
 
 <div class="sidebar-footer">
+  @if (association && !criseOuverte) {
+    <!-- Association hors crise (26/11/2026) : les écrans de crise sont masqués par défaut. -->
+    <button type="button" class="nav-item ecrans-crise" (click)="basculerEcransCrise()"
+            [title]="afficherEcransCrise ? 'Masquer les écrans de crise' : 'Afficher les écrans de crise'">
+      <span class="material-icons">{{ afficherEcransCrise ? 'visibility_off' : 'visibility' }}</span>
+      <span class="nav-label">{{ afficherEcransCrise ? 'Masquer les écrans de crise' : 'Afficher les écrans de crise' }}</span>
+    </button>
+  }
   <a
     routerLink="/settings"
     routerLinkActive="active"

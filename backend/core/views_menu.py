@@ -57,4 +57,13 @@ class CompteursMenuView(APIView):
             "demandes_mobilisation": _compter(DemandeMobilisationViewSet, request,
                                               statut=StatutDemandeMobilisation.ACTIVE),
             "crise_ouverte": bool(implications),
+            # Une association (AASC ou non) : hors crise, ses écrans de crise sont masqués du menu
+            # (26/11/2026). La réserve communale reste côté mairie.
+            "association": _est_association(request.user),
         })
+
+
+def _est_association(user) -> bool:
+    institution = getattr(user, "institution", None)
+    code = (getattr(getattr(institution, "type", None), "code", "") or "").lower()
+    return code in ("aasc", "association")

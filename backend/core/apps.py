@@ -76,6 +76,11 @@ class CoreConfig(AppConfig):
             post_save.connect(notifications_application.notification_site_creee, sender=Notification,
                               dispatch_uid="poussee_notification_site")
 
+            # Crise sur la commune d'une manifestation (26/11/2026, core/partage_manifestation.py).
+            from . import partage_manifestation
+            post_save.connect(partage_manifestation.crise_enregistree, sender=Crisis,
+                              dispatch_uid="partage_manifestation_crise")
+
             from . import salons_matrix
             from .models import ContactInstitution
 

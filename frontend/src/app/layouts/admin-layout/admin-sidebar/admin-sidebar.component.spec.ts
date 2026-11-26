@@ -233,6 +233,24 @@ describe('AdminSidebarComponent', () => {
       expect(component.estGroupeOuvert('crise')).toBeTrue();
     });
 
+    it('une association hors crise ne voit pas les écrans de crise, sauf à les demander (26/11/2026)', () => {
+      try { localStorage.removeItem('admin-sidebar-ecrans-crise'); } catch { /* sans stockage */ }
+      component.afficherEcransCrise = false;
+      component.appliquerSituation({ ...situation(false), association: true });
+      let ids = component.groupesNav.map(g => g.id);
+      expect(ids).not.toContain('crise');
+      expect(ids).not.toContain('post-critique');
+      expect(ids).toContain('preparation');
+      component.basculerEcransCrise();
+      expect(component.groupesNav.map(g => g.id)).toContain('crise');
+      component.basculerEcransCrise();
+      // Engagée sur une crise ouverte : tout revient, sans rien demander.
+      component.appliquerSituation({ ...situation(true), association: true });
+      ids = component.groupesNav.map(g => g.id);
+      expect(ids).toContain('crise');
+      expect(ids).toContain('post-critique');
+    });
+
     it('un choix de l\'utilisateur n\'est plus défait par la situation', () => {
       component.toggleGroupe('administration');
       component.appliquerSituation(situation(false));

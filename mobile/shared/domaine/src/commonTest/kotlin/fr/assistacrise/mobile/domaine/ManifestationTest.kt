@@ -20,4 +20,13 @@ class ManifestationTest {
         assertEquals("Liste d'attente, n° 1", p.etat())
         assertEquals("Complet (2/2), 1 en attente", p.copy(monStatut = null).etat())
     }
+
+    @Test fun litCeQueLaCommuneAOuvert() {
+        val m = json.decodeFromString(ManifestationAsso.serializer(), """
+            {"id":"m1","titre":"Course","debut":"2027-03-01T08:00:00Z","fin":"2027-03-01T12:00:00Z",
+             "partages":[{"id":"p1","commune_code":"33167","mairie":"Mairie de Floirac",
+               "ouvert":{"contact":{"nom":"Astreinte","telephone":"0556000000"},"consignes":"Parking interdit","crises":[],"pcs":false}}]}""")
+        assertEquals("0556000000", m.partages.single().ouvert.contact?.telephone)
+        assertEquals("Parking interdit", m.partages.single().ouvert.consignes)
+    }
 }

@@ -4,7 +4,10 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 
+import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
+
 import { environment } from '../../../environments/environment';
+import { Commune, LocationService } from '../../services/location.service';
 
 export interface InscritPoste {
   id: string; utilisateur: string; nom: string; statut: string; inscrit_le: string; pointe_le: string | null;
@@ -17,11 +20,32 @@ export interface Poste {
   inscrits?: InscritPoste[];
 }
 
+/** Une ligne du tableau « ce que l'association demande, ce que la commune accepte » (26/11/2026). */
+export interface LignePartage {
+  element: string; libelle: string; explication: string; reserve_mairie: boolean; origine: string | null;
+  statut: string | null; statut_libelle: string; en_vigueur: boolean;
+}
+
+export interface PartageCommune {
+  id: string; commune_code: string; mairie: string | null; invitation?: string; invitation_libelle?: string;
+  lignes?: LignePartage[];
+  ouvert: { contact?: { nom: string; telephone: string }; consignes?: string; arrete?: string;
+            crises?: { id: string; nom: string }[]; pcs?: boolean };
+}
+
+export const DEMANDES_POSSIBLES = [
+  { code: 'CONTACT_JOUR_J', libelle: 'Contact mairie le jour J' },
+  { code: 'ALERTES_COMMUNE', libelle: 'Alertes de la commune (météo, crue, orage)' },
+  { code: 'CRISE_COMMUNE', libelle: 'Être prévenue si une crise s\'ouvre sur la commune' },
+  { code: 'CONSIGNES_ARRETE', libelle: 'Consignes et arrêté de la mairie' },
+];
+
 export interface Manifestation {
   id: string; institution: string; institution_nom: string; type: string; type_libelle: string; titre: string;
   lieu: string; organisateur: string; debut: string; fin: string; statut: string; statut_libelle: string;
   places: number; occupes: number; je_suis_inscrit: boolean; organise: boolean;
   consignes?: string; postes?: Poste[]; documents?: { id: string; nom: string }[];
+  communes?: string[]; partages?: PartageCommune[];
 }
 
 interface ListeManifestations {
@@ -35,6 +59,9 @@ interface Brouillon {
   id?: string; institution: string; type: string; titre: string; lieu: string; organisateur: string; consignes: string;
   debut: string; fin: string;
   postes: { intitule: string; debut: string; fin: string; places: number }[];
+  /** Les communes traversées, invitées à la publication (26/11/2026). */
+  communes: { code: string; nom: string }[];
+  demandes: string[];
 }
 
 /**
@@ -69,7 +96,41 @@ export class ManifestationsComponent implements OnInit {
 
   private readonly url = `${environment.apiUrl}/manifestations/`;
 
-  constructor(private http: HttpClient, private route: ActivatedRoute) {}
+  readonly demandesPossibles = DEMANDES_POSSIBLES;
+  rechercheCommune = '';
+  suggestionsCommunes: Commune[] = [];
+  private readonly frappeCommune = new Subject<string>();
+
+  constructor(private http: HttpClient, private route: ActivatedRoute, private lieux: LocationService) {
+    this.frappeCommune.pipe(debounceTime(250), distinctUntilChanged(), switchMap(q => this.lieux.searchCommunesByName(q)))
+      .subscribe(c => this.suggestionsCommunes = c.slice(0, 6));
+  }
+
+  chercherCommune(texte: string): void { this.rechercheCommune = texte; this.frappeCommune.next(texte); }
+
+  ajouterCommune(c: Commune): void {
+    const b = this.brouillon;
+    if (b && !b.communes.some(x => x.code === c.code)) b.communes.push({ code: c.code, nom: c.name });
+    this.rechercheCommune = '';
+    this.suggestionsCommunes = [];
+  }
+
+  retirerCommune(code: string): void {
+    if (this.brouillon) this.brouillon.communes = this.brouillon.communes.filter(c => c.code !== code);
+  }
+
+  basculerDemande(code: string): void {
+    const b = this.brouillon;
+    if (!b) return;
+    b.demandes = b.demandes.includes(code) ? b.demandes.filter(d => d !== code) : [...b.demandes, code];
+  }
+
+  telechargerPartage(p: PartageCommune, quoi: 'pcs' | 'arrete'): void {
+    this.http.get(`${this.url}partages/${p.id}/${quoi}/`, { responseType: 'blob' }).subscribe({
+      next: (f) => this.enregistrerFichier(f, quoi === 'pcs' ? `plan-communal-de-sauvegarde-${p.commune_code}.pdf` : (p.ouvert.arrete || 'arrete')),
+      error: () => this.erreur = 'Le document n\'a pas pu être téléchargé.',
+    });
+  }
 
   ngOnInit(): void {
     this.charger();
@@ -180,6 +241,7 @@ export class ManifestationsComponent implements OnInit {
     this.brouillon = {
       institution: asso.id, type: 'MANIFESTATION', titre: '', lieu: '', organisateur: '', consignes: '',
       debut: '', fin: '', postes: [{ intitule: '', debut: '', fin: '', places: 1 }],
+      communes: [], demandes: DEMANDES_POSSIBLES.map(d => d.code),
     };
   }
 
@@ -189,6 +251,9 @@ export class ManifestationsComponent implements OnInit {
     this.brouillon = {
       id: m.id, institution: m.institution, type: m.type, titre: m.titre, lieu: m.lieu, organisateur: m.organisateur,
       consignes: m.consignes ?? '', debut: this.enLocal(m.debut), fin: this.enLocal(m.fin), postes: [],
+      communes: (m.communes ?? []).map(code => ({ code, nom: m.partages?.find(p => p.commune_code === code)?.mairie ?? code })),
+      demandes: DEMANDES_POSSIBLES.map(d => d.code).filter(code =>
+        (m.partages ?? []).some(p => p.lignes?.some(l => l.element === code && l.origine === 'DEMANDE_ASSOCIATION'))),
     };
   }
 
@@ -203,6 +268,7 @@ export class ManifestationsComponent implements OnInit {
     const corps: Record<string, unknown> = {
       institution: b.institution, type: b.type, titre: b.titre, lieu: b.lieu, organisateur: b.organisateur,
       consignes: b.consignes, debut: this.iso(b.debut), fin: this.iso(b.fin),
+      communes: b.communes.map(c => c.code), demandes: b.demandes,
     };
     if (!b.id) {
       // Un poste sans horaire prend ceux de la manifestation.

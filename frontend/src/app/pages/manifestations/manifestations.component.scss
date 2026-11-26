@@ -57,6 +57,22 @@
     label { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; } }
   @media (max-width: 700px) { .poste-saisie { grid-template-columns: 1fr 1fr; } }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; margin: .8rem 0; }
+  .titre-champ { font-size: .9rem; }
+  .communes .puces { display: flex; flex-wrap: wrap; gap: .35rem; margin: .3rem 0; }
+  .puce { display: inline-flex; align-items: center; gap: .25rem; padding: .1rem .5rem; border-radius: 999px;
+    background: var(--ac-blue-bg, #eff6ff); font-size: .85rem;
+    button { border: 0; background: none; cursor: pointer; font: inherit; color: inherit; padding: 0 .1rem; } }
+  .recherche-commune { position: relative; input { width: 100%; } }
+  .suggestions { list-style: none; margin: 0; padding: .25rem 0; position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+    border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px; background: var(--ac-surface, #fff);
+    button { display: block; width: 100%; text-align: left; font: inherit; padding: .3rem .6rem; border: 0; background: none; color: inherit; cursor: pointer;
+      &:hover { background: var(--ac-blue-bg, #eff6ff); } } }
+  .demandes { border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px; padding: .5rem .8rem;
+    legend { font-weight: 600; font-size: .9rem; }
+    .case { display: flex; flex-direction: row; align-items: center; gap: .4rem; } }
+  .partage { margin: .6rem 0; padding: .6rem .8rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+    h4 { margin: 0 0 .3rem; font-size: .95rem; } p { margin: .25rem 0; } }
+  .alerte { padding: .35rem .6rem; border-left: 4px solid #b91c1c; background: var(--ac-red-bg, #fef2f2); }
   .bureau { margin-top: 1.2rem; padding-top: .6rem; border-top: 1px dashed var(--ac-border, #e5e7eb);
     label.large { display: flex; flex-direction: column; gap: .2rem; margin: .5rem 0; } }
   .fichier { position: relative; overflow: hidden;
