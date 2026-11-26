@@ -91,7 +91,7 @@ class AdminMeshCoreTest {
         val contact = byteArrayOf(3) + pub + byteArrayOf(2, 0, 2) + ByteArray(64) + "Relais Haillan".encodeToByteArray().copyOf(32) +
             byteArrayOf(0x10, 0, 0, 0) + byteArrayOf(0x40, 0x34, 0xac.toByte(), 0x02) + byteArrayOf(0x60, 0x26, 0xf7.toByte(), 0xff.toByte())
         val c = assertNotNull(AdminMeshCore.lireContact(contact))
-        assertEquals("Relais Haillan", c.nom); assertEquals("Répéteur", c.genre); assertEquals("2 saut(s)", c.chemin)
+        assertEquals("Relais Haillan", c.nom); assertEquals("Répéteur", c.genre); assertEquals("2 saut(s)", c.libelleChemin)
         assertEquals(44.84, c.latitude, 1e-6); assertEquals(-0.58, c.longitude, 1e-6)
 
         val moi = byteArrayOf(5, 1, 22, 30) + pub + byteArrayOf(0x40, 0x34, 0xac.toByte(), 0x02, 0x60, 0x26, 0xf7.toByte(), 0xff.toByte()) +
@@ -118,6 +118,6 @@ class MessagesDirectsTest {
         val p = PiloteMeshCore()
         val trame = byteArrayOf(7) + "a1b2c3d4e5f6".depuisHex() + byteArrayOf(0, 0) + byteArrayOf(0x10, 0, 0, 0) + "coucou".encodeToByteArray()
         val r = p.recevoir(trame)
-        assertEquals(listOf(MessageDirect("a1b2c3d4e5f6", "coucou", Reception(sauts = 0))), r.directs)   // chemin 0 : sans relais
+        assertEquals(listOf(MessageDirect("a1b2c3d4e5f6", "coucou", Reception(sauts = 0), horodatageS = 16)), r.directs)   // chemin 0 : sans relais
     }
 }

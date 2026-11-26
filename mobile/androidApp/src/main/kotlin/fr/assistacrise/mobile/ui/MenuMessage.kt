@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import fr.assistacrise.mobile.domaine.Mentions
 
 /**
@@ -38,12 +40,23 @@ import fr.assistacrise.mobile.domaine.Mentions
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AvecMenuMessage(auteur: String, texte: String, moi: Boolean, surRepondre: () -> Unit, surTaguer: () -> Unit,
-                    contenu: @Composable () -> Unit) {
+                    surReagir: ((String) -> Unit)? = null, contenu: @Composable () -> Unit) {
     var ouvert by remember { mutableStateOf(false) }
     val presse = LocalClipboardManager.current
     Box(Modifier.combinedClickable(onClick = {}, onLongClick = { ouvert = true }, onLongClickLabel = "Répondre, taguer ou copier")) {
         contenu()
         DropdownMenu(expanded = ouvert, onDismissRequest = { ouvert = false }) {
+            // Réagir d'un émoji (26/11/2026, messagerie radio) : la rangée des plus courants.
+            if (surReagir != null) {
+                Row(Modifier.padding(horizontal = 8.dp)) {
+                    fr.assistacrise.mobile.domaine.ReactionsRadio.RAPIDES.forEach { e ->
+                        androidx.compose.material3.TextButton(onClick = { ouvert = false; surReagir(e) },
+                            modifier = Modifier.semantics { contentDescription = "Réagir $e" }) {
+                            Text(e, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
             DropdownMenuItem(text = { Text("Répondre") }, onClick = { ouvert = false; surRepondre() })
             if (!moi && auteur.isNotBlank()) {
                 DropdownMenuItem(text = { Text("Taguer ${Mentions.etiquette(auteur)}") }, onClick = { ouvert = false; surTaguer() })

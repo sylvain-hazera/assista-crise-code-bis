@@ -9,6 +9,7 @@ import fr.assistacrise.mobile.lien.PiloteRadio
 import fr.assistacrise.mobile.lien.Protocole
 import fr.assistacrise.mobile.lien.Reception
 import fr.assistacrise.mobile.lien.StatutAccuse
+import fr.assistacrise.mobile.domaine.ReactionsRadio
 import fr.assistacrise.mobile.domaine.StatutEnvoiRadio
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,8 +66,11 @@ class MessagerieRadio(private val app: Application) {
             val k = cle(pr, "c:${m.canal}")
             // Une réaction émoji (Meshtastic) se pose sur le message visé, sans faire de bruit.
             if (m.reaction && m.repondA != 0L && reagir(k, m.repondA, texte, auteur)) continue
+            // MeshCore (26/11/2026) : la réaction est un texte qui désigne le message par une empreinte.
+            val rMc = if (pr == fr.assistacrise.mobile.lien.Protocole.MESHCORE) ReactionsRadio.lire(texte) else null
+            if (rMc != null && (reagirMeshCore(k, rMc, auteur, canal = true, pilote) || rMc.format == ReactionsRadio.Format.OPEN)) continue
             val mention = app.alertes.estUneMention(texte)
-            ajouter(k, recu(auteur, texte, maintenant, m.reception, m.id, m.repondA), mention = mention)
+            ajouter(k, recu(auteur, texte, maintenant, m.reception, m.id, m.repondA, m.horodatageS, nomRadio = auteur.ifBlank { null }), mention = mention)
             // Un canal d'équipe sonne déjà par la messagerie de l'équipe ; les autres sonnent
             // aussi, sauf ceux qu'on a fait taire (cloche) — 23/11/2026 : « un message reçu
             // n'émet pas de notification, il en faut ».
@@ -87,7 +91,9 @@ class MessagerieRadio(private val app: Application) {
             val k = cle(pr, "d:${d.de}")
             val nom = nomDuContact(k)
             if (d.reaction && d.repondA != 0L && reagir(k, d.repondA, d.texte, nom)) continue
-            ajouter(k, recu(nom, d.texte, maintenant, d.reception, d.id, d.repondA), mention = app.alertes.estUneMention(d.texte))
+            val rMc = if (pr == fr.assistacrise.mobile.lien.Protocole.MESHCORE) ReactionsRadio.lire(d.texte) else null
+            if (rMc != null && (reagirMeshCore(k, rMc, nom, canal = false, pilote) || rMc.format == ReactionsRadio.Format.OPEN)) continue
+            ajouter(k, recu(nom, d.texte, maintenant, d.reception, d.id, d.repondA, d.horodatageS), mention = app.alertes.estUneMention(d.texte))
             alerter(k, "$nom · message direct ${pr.libelle}", FormatNotification.ligneRadio("", d.texte))
             FormatNotification.urgenceTerrain(app, nom, d.texte, CIBLE + k)
         }
@@ -103,6 +109,7 @@ class MessagerieRadio(private val app: Application) {
         val maintenant = System.currentTimeMillis()
         var id = 0L
         val direct = reste.startsWith("d:")
+        val secondes = maintenant / 1000
         val trames = when {
             reste.startsWith("c:") -> reste.removePrefix("c:").toIntOrNull()?.let { index ->
                 if (p is PiloteMeshtastic) p.envoyerSurCanal(index, propre, repondA) else p.envoyerSurCanal(index, propre, maintenant / 1000)
@@ -119,7 +126,55 @@ class MessagerieRadio(private val app: Application) {
         val ok = liaison.envoyerAdmin(trames)
         // Un message direct attend son accusé ; sur un canal, personne n'accuse réception.
         val statut = if (!ok) StatutEnvoiRadio.ECHEC else StatutEnvoiRadio.PARTI
-        ajouter(cle, Message(true, "Moi", texte, maintenant, ok, idRadio = if (direct) id else 0, repondA = repondA, statut = statut), compter = false)
+        // MeshCore : ce qu'il faut pour qu'une réaction à ce message nous revienne (heure
+        // d'émission, mon nom radio sur un canal, texte tel qu'il est parti).
+        val emis = when {
+            p !is PiloteMeshCore -> null
+            direct -> propre
+            else -> p.morceaux(propre).firstOrNull()
+        }
+        ajouter(cle, Message(true, "Moi", texte, maintenant, ok, idRadio = if (direct) id else 0, repondA = repondA, statut = statut,
+            horodatageRadio = if (p is PiloteMeshCore) secondes else 0, nomRadio = if (p is PiloteMeshCore && !direct) p.identite else null,
+            texteEmis = emis?.takeIf { it != texte }), compter = false)
+        return ok
+    }
+
+    /** Peut-on réagir à ce message ? Meshtastic : il faut son identifiant de paquet ; MeshCore :
+     * son heure d'émission (les messages gardés avant le 26/11/2026 ne l'ont pas). */
+    fun reactionPossible(cle: String, m: Message): Boolean = when (lireCle(cle)?.first) {
+        Protocole.MESHTASTIC -> m.idRadio != 0L
+        Protocole.MESHCORE -> m.horodatageRadio != 0L && (!cle.contains("|c:") || !(if (m.moi) app.radio.pour(Protocole.MESHCORE).piloteCourant?.identite else m.nomRadio).isNullOrBlank())
+        null -> false
+    }
+
+    /** Réagit à un message par un émoji (26/11/2026) : réaction native en Meshtastic, texte au
+     * format MeshCoreOne en MeshCore. Posée tout de suite sous le message, sans nouveau message. */
+    suspend fun reagirA(cle: String, m: Message, emoji: String): Boolean {
+        val (protocole, reste) = lireCle(cle) ?: return false
+        if (!reactionPossible(cle, m)) return false
+        val liaison = app.radio.pour(protocole)
+        val p = liaison.piloteCourant?.takeIf { it.prete } ?: return false
+        val canal = reste.startsWith("c:")
+        val trames = when (p) {
+            is PiloteMeshtastic ->
+                if (canal) reste.removePrefix("c:").toIntOrNull()?.let { p.envoyerSurCanal(it, emoji, m.idRadio, reaction = true) }
+                else reste.removePrefix("d:").removePrefix("!").toLongOrNull(16)?.let { p.envoyerDirect(it, emoji, m.idRadio, reaction = true).second }
+            is PiloteMeshCore -> {
+                val texte = ReactionsRadio.ecrire(emoji, m.texteRadio, m.horodatageRadio,
+                    if (canal) (if (m.moi) p.identite else m.nomRadio) else null)
+                val secondes = System.currentTimeMillis() / 1000
+                if (canal) reste.removePrefix("c:").toIntOrNull()?.let { p.envoyerSurCanal(it, texte, secondes) }
+                else p.avance.contacts.keys.firstOrNull { it.startsWith(reste.removePrefix("d:"), ignoreCase = true) }
+                    ?.let { listOf(p.envoyerDirect(it, texte, secondes, (1L..Long.MAX_VALUE).random())) }
+            }
+            else -> null
+        } ?: return false
+        val ok = liaison.envoyerAdmin(trames)
+        if (ok) {
+            val liste = _conversations.value[cle] ?: return true
+            val i = liste.indexOfLast { it === m || it == m }
+            if (i >= 0) poser(cle, liste, i, emoji, "Moi")
+        }
         return ok
     }
 
@@ -140,20 +195,40 @@ class MessagerieRadio(private val app: Application) {
         if (change) { _conversations.value = maj; sauver() }
     }
 
-    private fun recu(auteur: String, texte: String, quand: Long, r: Reception?, id: Long, repondA: Long) = Message(
+    private fun recu(auteur: String, texte: String, quand: Long, r: Reception?, id: Long, repondA: Long,
+                     horodatageS: Long = 0, nomRadio: String? = null) = Message(
         false, auteur, texte, quand, sauts = r?.sauts, snr = r?.snr, rssi = r?.rssi,
         routeDirecte = r?.routeDirecte == true, parInternet = r?.parInternet == true, idRadio = id, repondA = repondA,
+        horodatageRadio = horodatageS, nomRadio = nomRadio,
     )
 
     /** Pose une réaction sur le message `id` de la conversation ; faux si le message n'y est plus. */
     private fun reagir(cle: String, id: Long, emoji: String, auteur: String): Boolean {
         val liste = _conversations.value[cle] ?: return false
         val i = liste.indexOfLast { it.idRadio == id }.takeIf { it >= 0 } ?: return false
+        poser(cle, liste, i, emoji, auteur)
+        return true
+    }
+
+    /** MeshCore : retrouve le message que désigne l'empreinte (texte, heure d'émission et, sur un
+     * canal, nom radio de l'auteur) et y pose la réaction ; faux s'il n'est pas (ou plus) là. */
+    private fun reagirMeshCore(cle: String, r: ReactionsRadio.Lue, auteur: String, canal: Boolean, pilote: PiloteRadio): Boolean {
+        val liste = _conversations.value[cle] ?: return false
+        val i = liste.indexOfLast { m ->
+            m.horodatageRadio != 0L && ReactionsRadio.vise(r, m.texteRadio, m.horodatageRadio,
+                if (canal) (if (m.moi) m.nomRadio ?: pilote.identite else m.nomRadio) else null)
+        }.takeIf { it >= 0 } ?: return false
+        poser(cle, liste, i, r.emoji, auteur.ifBlank { "?" })
+        return true
+    }
+
+    /** Ajoute l'auteur sous l'émoji du message `i` (une seule fois : une réaction relayée par
+     * plusieurs répéteurs ne compte qu'une fois). */
+    private fun poser(cle: String, liste: List<Message>, i: Int, emoji: String, auteur: String) {
         val m = liste[i]
         val qui = (m.reactions[emoji] ?: emptyList()).let { if (auteur in it) it else it + auteur }
         _conversations.value = _conversations.value + (cle to liste.toMutableList().also { it[i] = m.copy(reactions = m.reactions + (emoji to qui)) })
         sauver()
-        return true
     }
 
     /** Une notification par conversation, mise à jour à chaque message (Alertes.conversation). */

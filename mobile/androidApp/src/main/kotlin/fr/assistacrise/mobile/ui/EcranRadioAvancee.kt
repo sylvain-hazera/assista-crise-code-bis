@@ -129,7 +129,7 @@ fun EcranRadioAvancee(modele: ModeleApplication) {
                 }
                 Protocole.MESHCORE -> when (onglet) {
                     0 -> CanauxMeshCore(modele, avance)
-                    1 -> ContactsMeshCore(modele, avance)
+                    1 -> ContactsMeshCore(modele, pilote as fr.assistacrise.mobile.lien.PiloteMeshCore, avance)
                     2 -> ReglagesMeshCore(modele, avance)
                     else -> OutilsMeshCore(modele)
                 }
@@ -554,8 +554,15 @@ private fun CanauxMeshCore(modele: ModeleApplication, avance: PiloteRadio.Avance
 }
 
 @Composable
-private fun ContactsMeshCore(modele: ModeleApplication, avance: PiloteRadio.Avance) {
+private fun ContactsMeshCore(modele: ModeleApplication, pilote: fr.assistacrise.mobile.lien.PiloteMeshCore, avance: PiloteRadio.Avance) {
     var message by remember { mutableStateOf<String?>(null) }
+    var gerer by remember { mutableStateOf<String?>(null) }
+    // L'heure, rafraîchie tant qu'une trace attend sa réponse : passé le délai, « pas de réponse ».
+    var maintenant by remember { mutableStateOf(System.currentTimeMillis()) }
+    val enAttente = avance.tracesMeshCore.values.any { it.etat == PiloteRadio.EtatTrace.DEMANDEE || it.etat == PiloteRadio.EtatTrace.PARTIE }
+    androidx.compose.runtime.LaunchedEffect(enAttente) {
+        while (enAttente) { maintenant = System.currentTimeMillis(); kotlinx.coroutines.delay(2_000) }
+    }
     var supprimer by remember { mutableStateOf<String?>(null) }
     var importer by remember { mutableStateOf(false) }
     val presse = LocalClipboardManager.current
@@ -572,14 +579,28 @@ private fun ContactsMeshCore(modele: ModeleApplication, avance: PiloteRadio.Avan
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text(c.nom.ifBlank { c.pubkeyHex.take(12) }, style = MaterialTheme.typography.bodyLarge)
-                Text("${c.genre} · ${c.chemin} · ${c.pubkeyHex.take(12)}…${if (c.latitude != 0.0) " · position connue" else ""}", style = MaterialTheme.typography.bodySmall)
-                Row {
+                Text("${c.genre} · ${c.libelleChemin} · ${c.pubkeyHex.take(12)}…${if (c.latitude != 0.0) " · position connue" else ""}", style = MaterialTheme.typography.bodySmall)
+                // Trace du chemin (26/11/2026), comme le « Ping » / « Trace » de meshcore-open.
+                avance.tracesMeshCore[c.pubkeyHex]?.let { t ->
+                    Text("Route : " + libelleTraceMeshCore(avance, t, maintenant), style = MaterialTheme.typography.bodySmall,
+                        color = if (t.etat == PiloteRadio.EtatTrace.ECHEC) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                }
+                val tracable = AdminMeshCore.cheminDeTrace(c, avance.contacts.values, c.type == 2 || c.type == 3) != null
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    if (c.type == 2 || c.type == 3) TextButton(onClick = { gerer = if (gerer == c.pubkeyHex) null else c.pubkeyHex }) {
+                        Text(if (gerer == c.pubkeyHex) "Fermer" else "Gérer")
+                    }
+                    if (tracable) TextButton(onClick = {
+                        val trame = pilote.tracer(c.pubkeyHex)
+                        if (trame != null) modele.envoyerALaRadio(listOf(trame), "Trace du chemin vers ${c.nom.ifBlank { c.pubkeyHex.take(8) }}", relire = false)
+                    }) { Text("Route") }
                     if (c.type == 1) TextButton(onClick = { message = c.pubkeyHex }) { Text("Message") }
                     TextButton(onClick = { modele.envoyerALaRadio(listOf(AdminMeshCore.reinitialiserChemin(c.pubkeyHex)), "Chemin réinitialisé", relire = false) }) { Text("Chemin") }
                     TextButton(onClick = { modele.envoyerALaRadio(listOf(AdminMeshCore.partagerContact(c.pubkeyHex)), "Contact partagé sur le réseau", relire = false) }) { Text("Partager") }
                     TextButton(onClick = { modele.envoyerALaRadio(listOf(AdminMeshCore.exporterContact(c.pubkeyHex)), "Export de la carte", relire = false) }) { Text("Exporter") }
                     TextButton(onClick = { supprimer = c.pubkeyHex }) { Text("Supprimer") }
                 }
+                if (gerer == c.pubkeyHex) GestionRepeteur(modele, pilote, c, avance.repeteurs[c.pubkeyHex])
             }
         }
     }
@@ -731,6 +752,118 @@ internal fun CodeQr(contenu: String) {
         }.asImageBitmap()
     }
     Image(image, contentDescription = "QR code des canaux", modifier = Modifier.size(220.dp))
+}
+
+/**
+ * Gérer un répéteur ou un salon MeshCore à distance (26/11/2026), comme meshcore-open : connexion
+ * (mot de passe d'administration, ou vide pour un invité), statut, ligne de commande. Le mot de
+ * passe n'est gardé nulle part : il part dans la trame et la radio le chiffre.
+ */
+@Composable
+private fun GestionRepeteur(modele: ModeleApplication, pilote: fr.assistacrise.mobile.lien.PiloteMeshCore,
+                            c: AdminMeshCore.Contact, s: PiloteRadio.SessionRepeteur?) {
+    var motDePasse by remember(c.pubkeyHex) { mutableStateOf("") }
+    var commande by remember(c.pubkeyHex) { mutableStateOf("") }
+    val nom = c.nom.ifBlank { c.pubkeyHex.take(8) }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        HorizontalDivider()
+        val etat = when (s?.etat) {
+            null, PiloteRadio.EtatSession.FERMEE -> "Non connecté."
+            PiloteRadio.EtatSession.CONNEXION -> "Connexion en cours…"
+            PiloteRadio.EtatSession.CONNECTEE -> "Connecté" + when (s.role) {
+                3 -> " en administrateur."; 2 -> " en lecture-écriture."; 1 -> " en lecture seule."; 0 -> " en invité."
+                else -> if (s.admin) " en administrateur." else "."
+            }
+            PiloteRadio.EtatSession.REFUSEE -> "Connexion refusée : ${s.raison ?: "?"}."
+        }
+        Text(etat, style = MaterialTheme.typography.bodyMedium)
+        if (s?.etat != PiloteRadio.EtatSession.CONNECTEE) {
+            OutlinedTextField(motDePasse, { motDePasse = it }, label = { Text("Mot de passe (vide : invité)") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth())
+            OutlinedButton(enabled = s?.etat != PiloteRadio.EtatSession.CONNEXION, onClick = {
+                modele.envoyerALaRadio(listOf(pilote.seConnecter(c.pubkeyHex, motDePasse)), "Connexion à $nom", relire = false)
+                motDePasse = ""
+            }) { Text("Se connecter") }
+        } else {
+            OutlinedButton(onClick = { modele.envoyerALaRadio(listOf(pilote.seDeconnecter(c.pubkeyHex)), "Déconnexion de $nom", relire = false) }) { Text("Se déconnecter") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(enabled = s?.statutDemandeMs == null, onClick = {
+                modele.envoyerALaRadio(listOf(pilote.demanderStatutRepeteur(c.pubkeyHex)), "Statut de $nom", relire = false)
+            }) { Text(if (s?.statutDemandeMs != null) "Statut demandé…" else "Statut") }
+        }
+        s?.statut?.let { st -> Text(libelleStatutRepeteur(st), style = MaterialTheme.typography.bodySmall) }
+        if (s?.etat == PiloteRadio.EtatSession.CONNECTEE) {
+            Text("Ligne de commande", style = MaterialTheme.typography.titleSmall)
+            s.console.takeLast(20).forEach { l ->
+                Text((if (l.moi) "> " else "") + l.texte, style = MaterialTheme.typography.bodySmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = if (l.moi) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            }
+            // Des commandes qui ne changent rien, d'un geste ; les autres se tapent.
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                listOf("ver" to "Version", "clock" to "Heure", "neighbors" to "Voisins", "get name" to "Nom", "get repeat" to "Relaie ?").forEach { (cmd, libelle) ->
+                    TextButton(onClick = { modele.envoyerALaRadio(listOf(pilote.commandeRepeteur(c.pubkeyHex, cmd, System.currentTimeMillis() / 1000)), "Commande « $cmd »", relire = false) }) { Text(libelle) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(commande, { commande = it }, label = { Text("Commande") }, singleLine = true, modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                TextButton(enabled = commande.isNotBlank(), onClick = {
+                    modele.envoyerALaRadio(listOf(pilote.commandeRepeteur(c.pubkeyHex, commande.trim(), System.currentTimeMillis() / 1000)), "Commande « ${commande.trim()} »", relire = false)
+                    commande = ""
+                }) { Text("Envoyer") }
+            }
+            Text("Une commande qui modifie le répéteur (set …, reboot) s'applique tout de suite, pour tout le réseau.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** « Batterie 4,10 V · en marche depuis 1 j 2 h · bruit −118 dBm · dernier signal −95 dBm, SNR 5,5 dB · … ». */
+private fun libelleStatutRepeteur(st: AdminMeshCore.StatutRepeteur): String {
+    fun duree(s: Long) = when {
+        s >= 86_400 -> "${s / 86_400} j ${(s % 86_400) / 3600} h"
+        s >= 3600 -> "${s / 3600} h ${(s % 3600) / 60} min"
+        else -> "${s / 60} min"
+    }
+    val v = "%.2f".format(java.util.Locale.FRANCE, st.batterieMv / 1000.0)
+    return listOf(
+        "Batterie $v V", "en marche depuis ${duree(st.enMarcheS)}",
+        "bruit ${st.bruitDbm} dBm".replace('-', '−'),
+        "dernier signal ${st.dernierRssi} dBm, SNR ${"%.1f".format(java.util.Locale.FRANCE, st.dernierSnr)} dB".replace('-', '−'),
+        "reçus ${st.paquetsRecus} (inondation ${st.recusInondation}, directs ${st.recusDirect})",
+        "émis ${st.paquetsEmis} (inondation ${st.emisInondation}, directs ${st.emisDirect})",
+        "temps d'émission ${duree(st.tempsEmissionS)}", "file d'attente ${st.fileEmission}",
+        "doublons ${st.doublonsInondation + st.doublonsDirect}",
+    ).joinToString(" · ")
+}
+
+/** MeshCore : « 1 relais · Moi → Relais Haillan (5,5 dB) → Pic (−3 dB) → Relais Haillan (2 dB) → Moi (7,5 dB) ».
+ * Chaque valeur est le signal auquel ce nœud a reçu la trace ; les empreintes sont nommées
+ * d'après les contacts connus (de préférence un répéteur). */
+private fun libelleTraceMeshCore(avance: PiloteRadio.Avance, t: PiloteRadio.TraceMeshCore, maintenant: Long): String {
+    fun snr(x: Float?) = x?.let { " (${"%.1f".format(it).removeSuffix(",0")} dB)".replace('-', '−') } ?: ""
+    fun nom(h: String) = avance.contacts.values.filter { it.pubkeyHex.startsWith(h, ignoreCase = true) }
+        .sortedByDescending { it.type == 2 }.firstOrNull()?.nom?.ifBlank { null } ?: h.uppercase()
+    val jusqua = if (t.jusquALaCible) "" else " (jusqu'à son dernier relais : un compagnon ne relaie pas)"
+    return when (t.etat) {
+        PiloteRadio.EtatTrace.DEMANDEE -> "demande envoyée à la radio…"
+        PiloteRadio.EtatTrace.PARTIE -> {
+            val limite = t.demandeeMs + (t.delaiEstimeMs ?: 10_000) + 5_000
+            if (maintenant > limite) "pas de réponse : un relais ne l'a pas renvoyée, ou le chemin a changé (« Chemin » le réinitialise)"
+            else "trace partie, réponse attendue$jusqua"
+        }
+        PiloteRadio.EtatTrace.ECHEC -> t.raison ?: "échec"
+        PiloteRadio.EtatTrace.REVENUE -> {
+            val r = t.resultat ?: return "revenue"
+            val relais = if (t.jusquALaCible) (r.sauts.size - 1) / 2 else (r.sauts.size + 1) / 2
+            val etapes = listOf("Moi") + r.sauts.map { (h, s) -> nom(h) + snr(s) } + ("Moi" + snr(r.snrFinal))
+            "${if (relais == 0) "direct" else "$relais relais"} · ${etapes.joinToString(" → ")}$jusqua"
+        }
+    }
 }
 
 /** « Moi → RELA (5,5 dB) → Léa (−3 dB) · retour : Léa → Moi (2 dB) ». */

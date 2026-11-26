@@ -154,7 +154,7 @@ class PilotesTest {
         val trame = ("11" + "0a0000" + "02" + "ff" + "00" + "60c51669").depuisHex() + "Alex: Bien reçu".encodeToByteArray()
         val reaction = pilote.recevoir(trame)
         // Chemin 0xff : arrivé par une route directe ; SNR 0x0a / 4 = 2,5 dB (26/11/2026).
-        assertEquals(listOf(MessageRadio(2, "Alex: Bien reçu", reception = Reception(sauts = null, snr = 2.5f, routeDirecte = true))), reaction.messages)
+        assertEquals(listOf(MessageRadio(2, "Alex: Bien reçu", reception = Reception(sauts = null, snr = 2.5f, routeDirecte = true), horodatageS = 1763100000)), reaction.messages)
         assertEquals("0a", reaction.aEcrire.single().enHex())                                      // et on continue de vider
         assertEquals("0a", pilote.recevoir(byteArrayOf(0x83.toByte())).aEcrire.single().enHex())
     }

@@ -60,7 +60,9 @@ object MeshCore {
 
     data class Identite(val pubkeyHex: String, val nom: String)
     data class MessageRecu(val prefixeExpediteurHex: String, val texte: String, val horodatageS: Long,
-                           val reception: fr.assistacrise.mobile.lien.Reception? = null)
+                           val reception: fr.assistacrise.mobile.lien.Reception? = null,
+                           /** 0 : texte ; 1 : réponse de la ligne de commande d'un répéteur ; 2 : signé. */
+                           val typeTexte: Int = 0)
 
     /** `path_len` reçu (26/11/2026) : 0xFF = arrivé par une route directe ; sinon les 6 bits bas
      * sont le nombre de sauts (les 2 hauts, la taille des empreintes de chemin). */
@@ -105,14 +107,16 @@ object MeshCore {
         it.poserU32(1, secondesUnix)
     }
 
-    /** Message direct. La radio chiffre ; l'application lui passe le texte en clair. */
-    fun envoyerMessage(pubkeyHex: String, texte: String, secondesUnix: Long): ByteArray {
+    /** Message direct. La radio chiffre ; l'application lui passe le texte en clair.
+     * `typeTexte` 1 : commande pour la ligne de commande d'un répéteur où l'on est connecté. */
+    fun envoyerMessage(pubkeyHex: String, texte: String, secondesUnix: Long, typeTexte: Int = 0): ByteArray {
         val destination = pubkeyHex.depuisHex()
         require(destination.size >= 6) { "Clé publique du destinataire trop courte : 6 octets au minimum." }
         val corps = texte.encodeToByteArray()
         return ByteArray(13 + corps.size).also {
             it[0] = Cmd.SEND_TXT_MSG.toByte()
-            // [1] type de texte : simple ; [2] première et unique tentative.
+            // [1] type de texte ; [2] première et unique tentative.
+            it[1] = typeTexte.toByte()
             it.poserU32(3, secondesUnix)
             destination.copyInto(it, 7, 0, 6)
             corps.copyInto(it, 13)
@@ -141,7 +145,7 @@ object MeshCore {
         val horodatage = charge.u32(i); i += 4
         if (typeTexte == 2) i += 4                           // signature
         if (i > charge.size) return null
-        return MessageRecu(prefixe, charge.copyOfRange(i, charge.size).decodeToString(), horodatage, reception(chemin, snr))
+        return MessageRecu(prefixe, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage, reception(chemin, snr), typeTexte)
     }
 
     /** Nombre d'emplacements de canal d'une radio companion. */

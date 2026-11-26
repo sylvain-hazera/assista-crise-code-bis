@@ -31,7 +31,17 @@ data class MessageConversationRadio(
     val delaiMs: Long? = null,
     /** Réactions posées sur ce message : émoji → auteurs. */
     val reactions: Map<String, List<String>> = emptyMap(),
+    /** MeshCore : heure d'émission (secondes) que porte la trame ; avec le texte et le nom radio
+     * de l'auteur, elle désigne le message dans une réaction (ReactionsRadio). */
+    val horodatageRadio: Long = 0,
+    /** Nom radio de l'auteur sur un canal (le mien pour un message envoyé). */
+    val nomRadio: String? = null,
+    /** Message envoyé : le texte tel qu'il est parti (premier morceau), s'il diffère de `texte`. */
+    val texteEmis: String? = null,
 ) {
+    /** Le texte qui a circulé sur la radio. */
+    val texteRadio: String get() = texteEmis ?: texte
+
     /** « 2 sauts · SNR 5,5 dB · −92 dBm » : ce que les applications officielles affichent. */
     fun reception(): String = listOfNotNull(
         when {

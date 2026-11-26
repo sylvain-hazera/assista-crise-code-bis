@@ -63,6 +63,43 @@ private fun sha256UnBloc(bloc: ByteArray, longueur: Int, w: IntArray, sortie: In
     sortie[4] = e + 0x510e527f; sortie[5] = f + -0x64fa9774; sortie[6] = g + 0x1f83d9ab; sortie[7] = h + 0x5be0cd19
 }
 
+/** SHA-256 de n'importe quelle suite d'octets (plusieurs blocs) : les réactions radio MeshCore
+ * (26/11/2026) en hachent jusqu'à environ 150. */
+fun sha256(octets: ByteArray): ByteArray {
+    val bits = octets.size.toLong() * 8
+    val total = ((octets.size + 9 + 63) / 64) * 64
+    val msg = ByteArray(total)
+    octets.copyInto(msg)
+    msg[octets.size] = 0x80.toByte()
+    for (i in 0 until 8) msg[total - 1 - i] = (bits ushr (8 * i)).toByte()
+    val hs = intArrayOf(0x6a09e667, -0x4498517b, 0x3c6ef372, -0x5ab00ac6, 0x510e527f, -0x64fa9774, 0x1f83d9ab, 0x5be0cd19)
+    val w = IntArray(64)
+    for (debut in 0 until total step 64) {
+        for (i in 0 until 16) {
+            val j = debut + i * 4
+            w[i] = ((msg[j].toInt() and 0xff) shl 24) or ((msg[j + 1].toInt() and 0xff) shl 16) or
+                ((msg[j + 2].toInt() and 0xff) shl 8) or (msg[j + 3].toInt() and 0xff)
+        }
+        for (i in 16 until 64) {
+            val a = w[i - 15]; val b = w[i - 2]
+            w[i] = w[i - 16] + (a.rotateRight(7) xor a.rotateRight(18) xor (a ushr 3)) + w[i - 7] +
+                (b.rotateRight(17) xor b.rotateRight(19) xor (b ushr 10))
+        }
+        var a = hs[0]; var b = hs[1]; var c = hs[2]; var d = hs[3]
+        var e = hs[4]; var f = hs[5]; var g = hs[6]; var h = hs[7]
+        for (i in 0 until 64) {
+            val t1 = h + (e.rotateRight(6) xor e.rotateRight(11) xor e.rotateRight(25)) +
+                ((e and f) xor (e.inv() and g)) + K[i] + w[i]
+            val t2 = (a.rotateRight(2) xor a.rotateRight(13) xor a.rotateRight(22)) +
+                ((a and b) xor (a and c) xor (b and c))
+            h = g; g = f; f = e; e = d + t1
+            d = c; c = b; b = a; a = t1 + t2
+        }
+        hs[0] += a; hs[1] += b; hs[2] += c; hs[3] += d; hs[4] += e; hs[5] += f; hs[6] += g; hs[7] += h
+    }
+    return ByteArray(32) { i -> (hs[i / 4] ushr (24 - 8 * (i % 4))).toByte() }
+}
+
 /** SHA-256 en hexadécimal d'un texte court (55 octets au plus). */
 fun sha256Hex(texte: String): String {
     val octets = texte.encodeToByteArray()

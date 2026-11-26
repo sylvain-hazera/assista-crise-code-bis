@@ -742,6 +742,15 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    fun reactionRadioPossible(cle: String, m: fr.assistacrise.mobile.domaine.MessageConversationRadio) = app.messagerieRadio.reactionPossible(cle, m)
+
+    /** Réagit d'un émoji à un message radio (26/11/2026). */
+    fun reagirALaRadio(cle: String, m: fr.assistacrise.mobile.domaine.MessageConversationRadio, emoji: String) {
+        viewModelScope.launch {
+            if (!app.messagerieRadio.reagirA(cle, m, emoji)) message = "La radio n'a pas pris la réaction (radio déconnectée, ou contact inconnu)."
+        }
+    }
+
     fun relireLaRadio() { viewModelScope.launch { if (!liaisonChoisie.relireAvance()) message = "La radio n'est pas prête." } }
 
     /** Le journal des messages de terrain envoyés de ce téléphone. */

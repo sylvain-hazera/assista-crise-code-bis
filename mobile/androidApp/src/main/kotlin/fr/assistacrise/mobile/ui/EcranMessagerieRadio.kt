@@ -39,6 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.LiaisonRadio
@@ -85,7 +87,7 @@ fun PanneauRadio(modele: ModeleApplication) {
         is PiloteMeshtastic -> avance.noeuds.values.filter { it.numero != avance.monNoeud }.sortedByDescending { it.dernierContact ?: 0 }
             .map { Entree(k("d:${it.identifiant}"), it.nomLong.ifBlank { it.identifiant }, listOfNotNull(it.nomCourt.takeIf { s -> s.isNotBlank() }, it.identifiant, it.sauts?.let { s -> "$s saut(s)" }).joinToString(" · ")) }
         is PiloteMeshCore -> avance.contacts.values.sortedByDescending { it.derniereAnnonce }
-            .map { Entree(k("d:${it.pubkeyHex.take(12)}"), it.nom.ifBlank { it.pubkeyHex.take(12) }, "${it.genre} · ${it.chemin}") }
+            .map { Entree(k("d:${it.pubkeyHex.take(12)}"), it.nom.ifBlank { it.pubkeyHex.take(12) }, "${it.genre} · ${it.libelleChemin}") }
         else -> emptyList()
     }
     // Les conversations directes avec quelqu'un qui n'est plus dans la liste restent ouvrables.
@@ -174,7 +176,8 @@ fun EcranConversationRadio(modele: ModeleApplication) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = defilement, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(messages) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.moi) Alignment.CenterEnd else Alignment.CenterStart) {
-                  AvecMenuMessage(m.auteur, m.texte, m.moi, { repondreA = m }, { texte = taguer(texte, m.auteur) }) {
+                  AvecMenuMessage(m.auteur, m.texte, m.moi, { repondreA = m }, { texte = taguer(texte, m.auteur) },
+                      surReagir = if (modele.reactionRadioPossible(cle, m)) { e -> modele.reagirALaRadio(cle, m, e) } else null) {
                     Column(Modifier.widthIn(max = 300.dp).background(
                         if (m.moi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(10.dp)) {
                         if (!m.moi && m.auteur.isNotBlank()) Text(m.auteur, style = MaterialTheme.typography.labelMedium)
@@ -186,7 +189,8 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                         Text(m.texte, style = MaterialTheme.typography.bodyMedium)
                         if (m.reactions.isNotEmpty()) {
                             Text(m.reactions.entries.joinToString("  ") { (e, qui) -> if (qui.size > 1) "$e ${qui.size}" else e },
-                                style = MaterialTheme.typography.bodyMedium)
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.semantics { contentDescription = m.reactions.entries.joinToString(" ; ") { (e, qui) -> "$e : ${qui.joinToString(", ")}" } })
                         }
                         // Reçu : sauts et signal (comme les applications officielles) ; envoyé : ce qu'il est devenu.
                         val etat = if (m.moi) when {

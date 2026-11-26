@@ -92,6 +92,9 @@
             android:exported="false"
             android:foregroundServiceType="location|connectedDevice" />
         <receiver
+            android:name=".ReponseNotification"
+            android:exported="false" />
+        <receiver
             android:name=".DemarrageTelephone"
             android:exported="false">
             <intent-filter>

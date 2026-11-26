@@ -163,7 +163,22 @@ class Alertes(private val contexte: Context) {
         }
         val style = NotificationCompat.InboxStyle().also { s -> synchronized(lignes) { lignes.forEach { s.addLine(it) } } }
         if (total > 1) style.setSummaryText("$total messages")
-        val notification = NotificationCompat.Builder(contexte, if (radio) CANAL_RADIO else CANAL)
+        val constructeur = NotificationCompat.Builder(contexte, if (radio) CANAL_RADIO else CANAL)
+        // Conversation radio : « Répondre » sans ouvrir l'application (26/11/2026).
+        if (cible.startsWith(MessagerieRadio.CIBLE)) {
+            val cle = cible.removePrefix(MessagerieRadio.CIBLE)
+            val envoi = Intent(contexte, ReponseNotification::class.java).apply {
+                action = ReponseNotification.ACTION
+                putExtra(ReponseNotification.EXTRA_CLE, cle)
+            }
+            // MUTABLE : Android y écrit le texte saisi.
+            val pi = PendingIntent.getBroadcast(contexte, id.hashCode(), envoi, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+            val saisie = androidx.core.app.RemoteInput.Builder(ReponseNotification.CHAMP).setLabel("Réponse par la radio").build()
+            constructeur.addAction(NotificationCompat.Action.Builder(R.drawable.ic_alerte, "Répondre", pi)
+                .addRemoteInput(saisie).setAllowGeneratedReplies(false)
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY).build())
+        }
+        val notification = constructeur
             .setSmallIcon(R.drawable.ic_alerte)
             .setContentTitle(if (total > 1) "$titre ($total)" else titre)
             .setContentText(ligne.take(160))
