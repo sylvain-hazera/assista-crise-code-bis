@@ -626,34 +626,14 @@
           }
 
           @if (detailTab === 'matrix') {
-            @if (!selectedInstitution.salons_matrix?.PERMANENTS && !selectedInstitution.salons_matrix?.BENEVOLES) {
-              <p class="hint">Aucun salon Matrix — le personnel permanent et les bénévoles mobilisés n'ont pas de messagerie générale d'institution.</p>
-              <button class="btn-secondary sm" [disabled]="provisionnantSalonsMatrix" (click)="provisionnerSalonsMatrix()">
-                <span class="material-icons">add</span> Activer les salons Matrix
-              </button>
-            } @else {
-              @if (selectedInstitution.salons_matrix?.PERMANENTS?.room_id) {
-                <app-matrix-salon-chat
-                  [cle]="selectedInstitution.id! + ':PERMANENTS'"
-                  titre="Salon — Permanents"
-                  [chargerMessages]="chargerMessagesSalonInstitution('PERMANENTS')"
-                  [envoyerMessage]="envoyerMessageSalonInstitution('PERMANENTS')"
-                ></app-matrix-salon-chat>
-              } @else {
-                <p class="hint">Salon « Permanents » en attente de création par le pont…</p>
-              }
-
-              @if (selectedInstitution.salons_matrix?.BENEVOLES?.room_id) {
-                <app-matrix-salon-chat
-                  [cle]="selectedInstitution.id! + ':BENEVOLES'"
-                  titre="Salon — Bénévoles mobilisés"
-                  [chargerMessages]="chargerMessagesSalonInstitution('BENEVOLES')"
-                  [envoyerMessage]="envoyerMessageSalonInstitution('BENEVOLES')"
-                ></app-matrix-salon-chat>
-              } @else {
-                <p class="hint">Salon « Bénévoles mobilisés » en attente de création par le pont…</p>
-              }
-            }
+            <!-- Matrix est arrêté depuis le 26/11/2026 : les salons d'institution (permanents,
+                 bénévoles) ne sont plus servis. Les échanges passent par la messagerie interne. -->
+            <p class="hint">
+              La messagerie Matrix de l'institution (salons « Permanents » et « Bénévoles mobilisés ») est arrêtée.
+              Les échanges passent désormais par la messagerie de chaque équipe, sur la page Équipes et dans
+              l'application, relayée par la radio de l'équipe ; en crise, par la cellule de crise.
+            </p>
+            <a class="btn-secondary sm" routerLink="/admin/equipes">Ouvrir la page Équipes</a>
           }
 
           @if (detailTab === 'alertes') {

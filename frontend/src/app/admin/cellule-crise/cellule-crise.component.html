@@ -22,10 +22,9 @@
         <button type="button" class="barre-entete" (click)="messagesOuvert = !messagesOuvert">
           <span class="material-icons">forum</span>
           Messages de la cellule
-          @if (!cellule.salon_pret) { <span class="hint-petit">(salon en préparation…)</span> }
           <span class="material-icons chevron">{{ messagesOuvert ? 'expand_less' : 'expand_more' }}</span>
         </button>
-        @if (messagesOuvert && cellule.salon_pret) {
+        @if (messagesOuvert && cellule.equipe_id) {
           <app-matrix-salon-chat
             [cle]="'cellule-' + cellule.equipe_id"
             titre="Cellule de crise"

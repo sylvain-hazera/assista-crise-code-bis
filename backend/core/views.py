@@ -793,6 +793,23 @@ from .serializers import (
     PieceIdentiteReserveSerializer,
 )
 
+
+def _sans_matrix(vue):
+    """Matrix est arrêté depuis le 26/11/2026 (messagerie interne à la place). Les anciens
+    points d'entrée du chat Matrix intégré ne doivent plus lever une erreur 500 (et son courriel)
+    quand Synapse ne répond pas : ils disent que la messagerie Matrix est arrêtée (503)."""
+    import functools
+
+    @functools.wraps(vue)
+    def enveloppe(self, request, *args, **kwargs):
+        try:
+            return vue(self, request, *args, **kwargs)
+        except requests.exceptions.RequestException:
+            logger.info("Chat Matrix demandé alors que Matrix est arrêté (%s).", vue.__name__)
+            return Response({"error": "La messagerie Matrix est arrêtée : utilisez la messagerie de l'équipe dans l'application.",
+                             "matrix_arrete": True}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return enveloppe
+
 class TagLikeViewSetMixin:
     """Pour les modèles qui fonctionnent comme des hashtags réutilisables (Competence.nom,
     InformationType.type) : recherche par mots-clés indépendante de l'ordre (`?q=transport
@@ -11279,6 +11296,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'], url_path='provisionner-salon-matrix')
+    @_sans_matrix
     def provisionner_salon_matrix(self, request, pk=None):
         """Active le salon Matrix privé de cette équipe (voir SalonMatrixEquipe) -- ne crée que
         la ligne côté Django, `room_id` reste vide tant que le pont matrix-bridge ne l'a pas
@@ -11453,6 +11471,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['get', 'post'], url_path='salon-matrix-messages')
+    @_sans_matrix
     def salon_matrix_messages(self, request, pk=None):
         """Chat intégré à la vue équipe (pas de fenêtre séparée / lien Element, demande
         explicite de Sylvain le 24/09). Contrairement à une première version qui tentait de
@@ -11624,6 +11643,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return bool(team.leader_id) and team.leader_id == user.id
 
     @action(detail=True, methods=['post'], url_path='salon-matrix-reagir')
+    @_sans_matrix
     def salon_matrix_reagir(self, request, pk=None):
         """Accusé de réception "Vu" sur un message du salon -- réservé aux cadres (voir
         _est_cadre), pose une réaction Matrix (voir envoyer_reaction_salon). Symétrique à
@@ -16689,6 +16709,7 @@ class InstitutionViewSet(
             config, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='provisionner-salons-matrix')
+    @_sans_matrix
     def provisionner_salons_matrix(self, request, pk=None):
         """Active les deux salons Matrix généraux de l'institution (voir SalonMatrixInstitution)
         -- permanents et bénévoles mobilisés. Idempotent, même logique que
@@ -16721,6 +16742,7 @@ class InstitutionViewSet(
         detail=True, methods=['get', 'post'],
         url_path=r'salon-matrix-messages/(?P<type_salon>PERMANENTS|BENEVOLES|ANNONCES)',
     )
+    @_sans_matrix
     def salon_matrix_messages(self, request, pk=None, type_salon=None):
         """Chat intégré des salons généraux d'institution -- même relais côté bot que
         TeamViewSet.salon_matrix_messages (voir cette docstring pour le pourquoi). Accès au

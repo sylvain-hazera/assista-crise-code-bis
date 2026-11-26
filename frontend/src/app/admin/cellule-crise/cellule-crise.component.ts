@@ -198,9 +198,10 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   private chargerUrgences(): void {
     this.messagesUrgents = [];
     // Filtrées AVANT l'indexation : resultats[i] doit correspondre à equipesDeLaCrise[i].
-    const equipesDeLaCrise = this.equipes.map(e => e.team).filter(t => !!t.salon_matrix_room_id);
+    // Messagerie interne de chaque équipe (Matrix arrêté le 26/11/2026).
+    const equipesDeLaCrise = this.equipes.map(e => e.team).filter(t => !!t.id);
     const appels = equipesDeLaCrise
-      .map(t => this.teamService.getSalonMatrixMessages(t.id!, this.criseId).pipe(
+      .map(t => this.teamService.getMessagerieUnifiee(t.id!, this.criseId).pipe(
         catchError(() => of({ messages: [] as MatrixMessage[] })),
       ));
     if (appels.length === 0) return;
