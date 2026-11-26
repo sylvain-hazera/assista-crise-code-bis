@@ -186,7 +186,14 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                             Text("↪ ${if (v.moi) "Moi" else v.auteur} : ${v.texte.take(40)}${if (v.texte.length > 40) "…" else ""}",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(m.texte, style = MaterialTheme.typography.bodyMedium)
+                        // Un marqueur (format MeshCore SAR) se lit en clair ; il est aussi sur la carte.
+                        val marqueur = fr.assistacrise.mobile.domaine.MarqueursRadio.lire(m.texte)
+                        if (marqueur != null) {
+                            Text("📍 ${marqueur.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(marqueur.emoji)}" + (marqueur.note?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text("Marqueur sur la carte · ${"%.5f".format(java.util.Locale.ROOT, marqueur.latitude)}, ${"%.5f".format(java.util.Locale.ROOT, marqueur.longitude)}",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else Text(m.texte, style = MaterialTheme.typography.bodyMedium)
                         if (m.reactions.isNotEmpty()) {
                             Text(m.reactions.entries.joinToString("  ") { (e, qui) -> if (qui.size > 1) "$e ${qui.size}" else e },
                                 style = MaterialTheme.typography.bodyMedium,

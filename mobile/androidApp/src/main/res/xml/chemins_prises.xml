@@ -3,4 +3,6 @@
      secondes, le temps d'etre reduite, datee, situee et chiffree, puis elle est effacee. -->
 <paths>
     <cache-path name="prises" path="prises/" />
+    <!-- Export GPX de la carte (26/11/2026) : ecrit, partage, remplace au suivant. -->
+    <cache-path name="partages" path="partages/" />
 </paths>

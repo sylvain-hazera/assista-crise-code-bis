@@ -83,6 +83,7 @@ import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -117,6 +118,12 @@ fun EcranCarte(modele: ModeleApplication) {
     var pointEauTouche by remember { mutableStateOf<fr.assistacrise.mobile.domaine.PointEau?>(null) }
     var signalementPei by remember { mutableStateOf<Pair<fr.assistacrise.mobile.domaine.GenreSignalementPei, fr.assistacrise.mobile.domaine.PointEau?>?>(null) }
     var destination by remember { mutableStateOf<Destination?>(null) }
+    // La radio sur la carte (26/11/2026) : nœuds qui ont donné leur position, marqueurs d'incident.
+    val positionsRadio by modele.positionsRadio.collectAsStateWithLifecycle()
+    val marqueursRadio by modele.marqueursRadio.collectAsStateWithLifecycle()
+    var noeudTouche by remember { mutableStateOf<ModeleApplication.PositionRadio?>(null) }
+    var marqueurTouche by remember { mutableStateOf<ModeleApplication.MarqueurRadio?>(null) }
+    var marqueurIci by remember { mutableStateOf<LatLng?>(null) }
     var horsLigne by remember { mutableStateOf(false) }
     var capGps by remember { mutableStateOf<Float?>(null) }
 
@@ -159,6 +166,8 @@ fun EcranCarte(modele: ModeleApplication) {
                 style.addSource(GeoJsonSource("lieu"))
                 style.addSource(GeoJsonSource("membres"))
                 style.addSource(GeoJsonSource("moi"))
+                style.addSource(GeoJsonSource("radio-noeuds"))
+                style.addSource(GeoJsonSource("radio-marqueurs"))
                 // Dessous d'abord : les périmètres de crise, puis les dossiers, puis les personnes.
                 style.addLayer(FillLayer("zones-fond", "zones").withProperties(fillColor("#b91c1c"), fillOpacity(0.10f)))
                 style.addLayer(LineLayer("zones-bord", "zones").withProperties(lineColor("#b91c1c"), lineWidth(2f)))
@@ -180,6 +189,20 @@ fun EcranCarte(modele: ModeleApplication) {
                 // Les points de la crise (accueil, PC, rassemblement) : verts, carrés de bord.
                 style.addLayer(CircleLayer("points-crise", "points").withProperties(
                     circleRadius(9f), circleColor("#15803d"), circleStrokeColor("#ffffff"), circleStrokeWidth(2.5f)))
+                // Nœuds radio : petits, violets, estompés quand la position date de plus d'une heure.
+                style.addLayer(CircleLayer("radio-noeuds-points", "radio-noeuds").withProperties(
+                    circleRadius(6f), circleColor("#7c3aed"), circleStrokeColor("#ffffff"), circleStrokeWidth(1.5f),
+                    circleOpacity(Expression.match(Expression.get("recent"), Expression.literal("oui"), Expression.literal(1f), Expression.literal(0.45f)))))
+                // Marqueurs d'incident reçus par la radio : gros, cerclés de noir, couleur selon le genre.
+                style.addLayer(CircleLayer("radio-marqueurs-points", "radio-marqueurs").withProperties(
+                    circleRadius(10f), circleStrokeColor("#111827"), circleStrokeWidth(2.5f),
+                    circleColor(Expression.match(Expression.get("emoji"),
+                        Expression.literal("🔥"), Expression.color(android.graphics.Color.parseColor("#dc2626")),
+                        Expression.literal("🧑"), Expression.color(android.graphics.Color.parseColor("#16a34a")),
+                        Expression.literal("🚑"), Expression.color(android.graphics.Color.parseColor("#16a34a")),
+                        Expression.literal("🌊"), Expression.color(android.graphics.Color.parseColor("#0284c7")),
+                        Expression.literal("🏕️"), Expression.color(android.graphics.Color.parseColor("#a16207")),
+                        Expression.color(android.graphics.Color.parseColor("#f59e0b"))))))
                 style.addLayer(CircleLayer("lieu-point", "lieu").withProperties(
                     circleRadius(10f), circleColor("#ffffff"), circleStrokeColor("#3c4d81"), circleStrokeWidth(4f)))
                 style.addLayer(CircleLayer("membres-points", "membres").withProperties(
@@ -194,8 +217,12 @@ fun EcranCarte(modele: ModeleApplication) {
                 val touche = m.queryRenderedFeatures(ecran, "dossiers-points").firstOrNull()?.getStringProperty("id")
                 val pointCrise = m.queryRenderedFeatures(ecran, "points-crise").firstOrNull()?.getStringProperty("id")
                 val pei = m.queryRenderedFeatures(ecran, "pei-points").firstOrNull()?.getStringProperty("id")?.toLongOrNull()
+                val marqueur = m.queryRenderedFeatures(ecran, "radio-marqueurs-points").firstOrNull()?.getNumberProperty("rang")?.toInt()
+                val noeud = m.queryRenderedFeatures(ecran, "radio-noeuds-points").firstOrNull()?.getStringProperty("cle")
                 when {
                     touche != null -> { modele.ouvrirDossier(touche); true }
+                    marqueur != null -> { marqueurTouche = modele.marqueursRadio.value.getOrNull(marqueur); true }
+                    noeud != null -> { noeudTouche = modele.positionsRadio.value.firstOrNull { it.cleConversation == noeud }; true }
                     pointCrise != null -> {
                         points.firstOrNull { it.id == pointCrise }?.let { p -> destination = Destination(p.nom, p.latitude!!, p.longitude!!, "point") }
                         true
@@ -255,6 +282,21 @@ fun EcranCarte(modele: ModeleApplication) {
         }))
     }
 
+    LaunchedEffect(carte, positionsRadio, marqueursRadio) {
+        val style = carte?.style ?: return@LaunchedEffect
+        val recent = System.currentTimeMillis() / 1000 - 3600
+        (style.getSource("radio-noeuds") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(positionsRadio.map { p ->
+            Feature.fromGeometry(Point.fromLngLat(p.longitude, p.latitude)).apply {
+                addStringProperty("cle", p.cleConversation); addStringProperty("recent", if ((p.vuS ?: 0) >= recent) "oui" else "non")
+            }
+        }))
+        (style.getSource("radio-marqueurs") as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(marqueursRadio.mapIndexed { i, r ->
+            Feature.fromGeometry(Point.fromLngLat(r.marqueur.longitude, r.marqueur.latitude)).apply {
+                addNumberProperty("rang", i); addStringProperty("emoji", r.marqueur.emoji)
+            }
+        }))
+    }
+
     LaunchedEffect(carte, membres, moi, situes, crises, lieuTouche, points) {
         val m = carte ?: return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
@@ -293,6 +335,9 @@ fun EcranCarte(modele: ModeleApplication) {
             Text("Carte", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             TextButton(onClick = { signalementPei = fr.assistacrise.mobile.domaine.GenreSignalementPei.NOUVEAU to null }) { Text("Point d'eau") }
             TextButton(onClick = { horsLigne = true }) { Text("Hors ligne") }
+            if (marqueursRadio.isNotEmpty() || positionsRadio.isNotEmpty()) {
+                TextButton(onClick = { partagerGpx(contexte, marqueursRadio, positionsRadio, moi) }) { Text("GPX") }
+            }
             PastilleLien(lien)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -313,12 +358,20 @@ fun EcranCarte(modele: ModeleApplication) {
                 // plusieurs crises, elle débordait de la carte et écrasait les trois boutons.
                 androidx.compose.ui.window.Dialog(onDismissRequest = { lieuTouche = null },
                     properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-                    CreerIci(
-                        crises.filter { it.accepteLesDepots },
-                        surChoix = { genre, crise -> lieuTouche = null; modele.ouvrirDepot(genre, crise, Releve(lieu.latitude, lieu.longitude, System.currentTimeMillis(), 0f)) },
-                        surAbandon = { lieuTouche = null },
-                        modifier = Modifier.padding(16.dp),
-                    )
+                    Column {
+                        CreerIci(
+                            crises.filter { it.accepteLesDepots },
+                            surChoix = { genre, crise -> lieuTouche = null; modele.ouvrirDepot(genre, crise, Releve(lieu.latitude, lieu.longitude, System.currentTimeMillis(), 0f)) },
+                            surAbandon = { lieuTouche = null },
+                            modifier = Modifier.padding(16.dp),
+                        )
+                        // Sans réseau, la radio porte un marqueur jusqu'aux équipes (format MeshCore SAR).
+                        if (modele.destinationsMarqueur().isNotEmpty()) {
+                            Button(onClick = { marqueurIci = lieu; lieuTouche = null }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                                Text("Envoyer un marqueur par la radio")
+                            }
+                        }
+                    }
                 }
             }
             Text(
@@ -327,7 +380,8 @@ fun EcranCarte(modele: ModeleApplication) {
             )
         }
         Text(
-            "Maintenez le doigt sur la carte pour y créer une demande, un signalement ou une offre d'aide.",
+            "Maintenez le doigt sur la carte pour y créer une demande, un signalement, une offre d'aide ou un marqueur radio." +
+                if (positionsRadio.isNotEmpty() || marqueursRadio.isNotEmpty()) " En violet : nœuds radio ; cerclés de noir : marqueurs reçus par la radio." else "",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
         )
@@ -394,10 +448,102 @@ fun EcranCarte(modele: ModeleApplication) {
                              surFin = { signalementPei = null }, modifier = Modifier.padding(16.dp))
         }
     }
+    marqueurIci?.let { lieu ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { marqueurIci = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), surEnvoi = { cle, m -> modele.envoyerMarqueur(cle, m); marqueurIci = null },
+                            surAbandon = { marqueurIci = null }, modifier = Modifier.padding(16.dp))
+        }
+    }
+    marqueurTouche?.let { r ->
+        val mq = r.marqueur
+        androidx.compose.material3.AlertDialog(onDismissRequest = { marqueurTouche = null },
+            title = { Text("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji)}") },
+            text = {
+                Column {
+                    mq.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    Text("De ${r.auteur}, ${ilYA(r.horodatage)} · par la radio", style = MaterialTheme.typography.bodySmall)
+                    Text("${"%.5f".format(java.util.Locale.ROOT, mq.latitude)}, ${"%.5f".format(java.util.Locale.ROOT, mq.longitude)}", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { destination = Destination(fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji), mq.latitude, mq.longitude, "Marqueur"); marqueurTouche = null }) { Text("Aller") } },
+            dismissButton = { TextButton(onClick = { modele.ouvrirConversationRadio(r.cleConversation); marqueurTouche = null }) { Text("Conversation") } },
+        )
+    }
+    noeudTouche?.let { n ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { noeudTouche = null },
+            title = { Text(n.nom) },
+            text = { Text("${n.genre} ${n.protocole.libelle} · position ${n.vuS?.let { ilYA(it * 1000) } ?: "d'âge inconnu"}", style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = { destination = Destination(n.nom, n.latitude, n.longitude, "Radio"); noeudTouche = null }) { Text("Aller") } },
+            dismissButton = { TextButton(onClick = { modele.ouvrirConversationRadio(n.cleConversation); noeudTouche = null }) { Text("Message") } },
+        )
+    }
     destination?.let { d ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { destination = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
             AllerVers(d, moi, capGps, surArrivee = { modele.arriveSurLesLieux(d.dossier) }, surFermeture = { destination = null })
+        }
+    }
+}
+
+/** Exporte en GPX ce que la carte montre de la radio (marqueurs, nœuds) et ma position, puis
+ * propose de le partager (courriel, OsmAnd, messagerie…). Le fichier est remplacé au suivant. */
+private fun partagerGpx(contexte: android.content.Context, marqueurs: List<ModeleApplication.MarqueurRadio>,
+                        noeuds: List<ModeleApplication.PositionRadio>, moi: Releve?) {
+    fun iso(ms: Long) = java.time.Instant.ofEpochMilli(ms).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
+    val points = marqueurs.map { r ->
+        val mq = r.marqueur
+        fr.assistacrise.mobile.domaine.Gpx.Point("${mq.emoji} ${fr.assistacrise.mobile.domaine.MarqueursRadio.libelle(mq.emoji)}", mq.latitude, mq.longitude,
+            listOfNotNull(mq.note, "de ${r.auteur}").joinToString(" · "), iso(r.horodatage), "Flag")
+    } + noeuds.map { n ->
+        fr.assistacrise.mobile.domaine.Gpx.Point(n.nom, n.latitude, n.longitude, "${n.genre} ${n.protocole.libelle}", n.vuS?.let { iso(it * 1000) }, "Radio Beacon")
+    } + listOfNotNull(moi?.let { fr.assistacrise.mobile.domaine.Gpx.Point("Ma position", it.latitude, it.longitude, null, iso(it.instant)) })
+    val dossier = java.io.File(contexte.cacheDir, "partages").apply { mkdirs() }
+    val fichier = java.io.File(dossier, "carte-radio.gpx")
+    fichier.writeText(fr.assistacrise.mobile.domaine.Gpx.ecrire(points, "Carte radio " + iso(System.currentTimeMillis())))
+    val uri = androidx.core.content.FileProvider.getUriForFile(contexte, "${contexte.packageName}.prises", fichier)
+    val envoi = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "application/gpx+xml"
+        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    contexte.startActivity(android.content.Intent.createChooser(envoi, "Partager la carte (GPX)"))
+}
+
+/** Un marqueur d'incident envoyé par la radio, à l'endroit touché : genre, note, conversation. */
+@Composable
+private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String>>,
+                            surEnvoi: (String, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) -> Unit,
+                            surAbandon: () -> Unit, modifier: Modifier = Modifier) {
+    var emoji by remember { mutableStateOf(fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.first().emoji) }
+    var note by remember { mutableStateOf("") }
+    var cle by remember { mutableStateOf(destinations.firstOrNull()?.first) }
+    Surface(shape = MaterialTheme.shapes.large, shadowElevation = 6.dp, modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Marqueur par la radio", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = surAbandon) { Text("Annuler") }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.forEach { g ->
+                    FilterChip(selected = emoji == g.emoji, onClick = { emoji = g.emoji }, label = { Text("${g.emoji} ${g.libelle}") })
+                }
+            }
+            androidx.compose.material3.OutlinedTextField(note, { note = it.take(80) }, label = { Text("Précision (facultatif)") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            Text("Sur quelle conversation radio ?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp))
+            destinations.forEach { (k, libelle) ->
+                Row(Modifier.fillMaxWidth().clickable { cle = k }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.RadioButton(selected = cle == k, onClick = { cle = k })
+                    Text(libelle, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Text("Tous ceux qui ont ce canal le verront : n'y mettez aucun nom de personne.", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Button(enabled = cle != null, onClick = {
+                cle?.let { surEnvoi(it, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur(emoji, lieu.latitude, lieu.longitude, note.trim().ifEmpty { null })) }
+            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Envoyer") }
         }
     }
 }

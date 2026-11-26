@@ -706,6 +706,55 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     val nonLusRadio = app.messagerieRadio.nonLus
     var conversationRadio by mutableStateOf<String?>(null); private set
 
+    /** Un nœud radio qui a donné sa position (26/11/2026) : contact MeshCore (annonce) ou nœud
+     * Meshtastic. `vuS` : dernière nouvelle, en secondes Unix. */
+    data class PositionRadio(val cleConversation: String, val nom: String, val genre: String, val latitude: Double, val longitude: Double,
+                             val vuS: Long?, val protocole: fr.assistacrise.mobile.lien.Protocole)
+
+    /** Positions des nœuds entendus par les radios connectées, pour la carte. */
+    val positionsRadio: StateFlow<List<PositionRadio>> = combine(app.radio.meshcore.avance, app.radio.meshtastic.avance) { mc, mt ->
+        val pMc = mc.contacts.values.filter { it.latitude != 0.0 || it.longitude != 0.0 }.map {
+            PositionRadio(MessagerieRadio.cle(fr.assistacrise.mobile.lien.Protocole.MESHCORE, "d:${it.pubkeyHex.take(12)}"),
+                it.nom.ifBlank { it.pubkeyHex.take(8) }, it.genre, it.latitude, it.longitude, it.derniereAnnonce.takeIf { s -> s > 0 },
+                fr.assistacrise.mobile.lien.Protocole.MESHCORE)
+        }
+        val pMt = mt.noeuds.values.filter { it.numero != mt.monNoeud && it.latitude != null && it.longitude != null && !(it.latitude == 0.0 && it.longitude == 0.0) }.map {
+            PositionRadio(MessagerieRadio.cle(fr.assistacrise.mobile.lien.Protocole.MESHTASTIC, "d:${it.identifiant}"),
+                it.nomLong.ifBlank { it.nomCourt.ifBlank { it.identifiant } }, "Nœud", it.latitude!!, it.longitude!!, it.dernierContact,
+                fr.assistacrise.mobile.lien.Protocole.MESHTASTIC)
+        }
+        pMc + pMt
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Un marqueur d'incident passé par la radio (format MeshCore SAR), reçu ou envoyé. */
+    data class MarqueurRadio(val marqueur: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur, val auteur: String,
+                             val horodatage: Long, val cleConversation: String)
+
+    /** Les marqueurs des dernières 24 heures, tirés des conversations radio ; un même marqueur
+     * entendu deux fois (deux canaux, deux relais) ne compte qu'une fois. */
+    val marqueursRadio: StateFlow<List<MarqueurRadio>> = app.messagerieRadio.conversations.map { convs ->
+        val depuis = System.currentTimeMillis() - 24 * 3600_000L
+        convs.flatMap { (cle, messages) ->
+            messages.filter { it.horodatage >= depuis }.mapNotNull { m ->
+                fr.assistacrise.mobile.domaine.MarqueursRadio.lire(m.texte)?.let { MarqueurRadio(it, if (m.moi) "Moi" else m.auteur.ifBlank { "?" }, m.horodatage, cle) }
+            }
+        }.sortedByDescending { it.horodatage }.distinctBy { Triple(it.marqueur.emoji, it.marqueur.latitude, it.marqueur.longitude) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Les conversations radio où l'on peut envoyer un marqueur : (clé, libellé), le canal de
+     * l'équipe d'abord. */
+    fun destinationsMarqueur(): List<Pair<String, String>> = listOf(fr.assistacrise.mobile.lien.Protocole.MESHCORE, fr.assistacrise.mobile.lien.Protocole.MESHTASTIC).flatMap { pr ->
+        val p = app.radio.pour(pr).piloteCourant?.takeIf { it.prete } ?: return@flatMap emptyList()
+        p.canaux.map { c ->
+            val equipe = app.radio.equipeDuCanal(pr, c.index)
+            Triple(MessagerieRadio.cle(pr, "c:${c.index}"), "« ${c.nom} » · ${pr.libelle}" + (equipe?.let { " · équipe ${it.nom}" } ?: ""), equipe != null)
+        }
+    }.sortedByDescending { it.third }.map { it.first to it.second }
+
+    /** Envoie un marqueur par la radio, comme un message de la conversation. */
+    fun envoyerMarqueur(cle: String, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) =
+        ecrireALaRadio(cle, fr.assistacrise.mobile.domaine.MarqueursRadio.ecrire(m))
+
     // Le fil ouvert à l'écran, pour les notifications des messages radio (23/11/2026). Placé ICI,
     // après la déclaration de `conversationRadio` : viewModelScope démarre la coroutine sur-le-champ
     // (Main.immediate), et lire une propriété pas encore initialisée faisait planter l'application
