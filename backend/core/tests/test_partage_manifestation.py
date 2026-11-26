@@ -135,3 +135,22 @@ def test_menu_signale_un_compte_d_association(scene, create_user):
     u.institution = scene["asso"]
     u.save()
     assert _client(u).get(reverse("compteurs-menu")).data["association"] is True
+
+
+@pytest.mark.django_db
+def test_le_bureau_place_un_point_et_la_mairie_le_voit(scene):
+    m = _publier(scene)
+    poste = m["postes"][0]
+    assert poste["latitude"] is None
+    # Placer seulement : l'intitulé et les horaires ne bougent pas.
+    r = scene["bureau"].patch(reverse("manifestation_poste", args=[poste["id"]]),
+                              {"latitude": 44.83, "longitude": -0.52, "type_point": "SIGNALISATION"}, format="json")
+    assert r.status_code == 200, r.data
+    apres = r.data["postes"][0]
+    assert apres["intitule"] == "Carrefour" and apres["type_point"] == "SIGNALISATION"
+    # Un simple inscrit ne déplace rien.
+    assert scene["lea"].patch(reverse("manifestation_poste", args=[poste["id"]]), {"latitude": 1, "longitude": 1},
+                              format="json").status_code == 403
+    points = scene["agent"].get(reverse("manifestations_commune")).data["partages"][0]["points"]
+    assert points == [{"intitule": "Carrefour", "type_point_libelle": "Point de signalisation", "type_point": "SIGNALISATION",
+                       "latitude": pytest.approx(44.83), "longitude": pytest.approx(-0.52)}]

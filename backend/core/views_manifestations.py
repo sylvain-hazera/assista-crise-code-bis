@@ -26,6 +26,10 @@ from .models import (
 from .permissions import get_active_environment
 
 
+#: Les types de points qu'un poste de manifestation peut prendre (26/11/2026).
+TYPES_POINTS_POSTE = ["PC_MANIFESTATION", "SIGNALISATION", "TRANSIT", "SECOURS", "REGROUPEMENT_MOYENS", "AUTRE"]
+
+
 def _instant(valeur, champ):
     instant = parse_datetime(str(valeur or ""))
     if instant is None:
@@ -49,6 +53,10 @@ def _poste_en_dict(poste, utilisateur, bureau: bool) -> dict:
     d = {
         "id": str(poste.id), "intitule": poste.intitule, "debut": poste.debut, "fin": poste.fin,
         "places": poste.places, "occupes": occupes, "attente": len(attente), "remarque": poste.remarque,
+        "type_point": poste.type_point.code if poste.type_point_id else None,
+        "type_point_libelle": poste.type_point.libelle if poste.type_point_id else "",
+        "latitude": poste.location.y if poste.location else None,
+        "longitude": poste.location.x if poste.location else None,
         "mon_statut": moi.statut if moi else None,
         "mon_rang_attente": (attente.index(moi) + 1) if moi in attente else None,
     }
@@ -139,6 +147,21 @@ def _poste(m, donnees, poste=None):
             poste.places = max(1, min(500, int(donnees["places"])))
         except (TypeError, ValueError):
             raise ValidationError({"detail": "Nombre de places : un entier est attendu."})
+    if "type_point" in donnees:
+        from .models import PointType
+        code = str(donnees.get("type_point") or "")
+        poste.type_point = PointType.objects.filter(code=code, actif=True).first() if code else None
+        if code and poste.type_point is None:
+            raise ValidationError({"detail": "Type de point inconnu."})
+    if "latitude" in donnees or "longitude" in donnees:
+        from django.contrib.gis.geos import Point
+        try:
+            lat, lon = donnees.get("latitude"), donnees.get("longitude")
+            poste.location = Point(float(lon), float(lat), srid=4326) if lat not in (None, "") and lon not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Position invalide."})
+        if poste.location is not None and not (-90 <= poste.location.y <= 90 and -180 <= poste.location.x <= 180):
+            raise ValidationError({"detail": "Position invalide."})
     if not poste.intitule:
         raise ValidationError({"detail": "Donnez un intitulé au poste (« Carrefour D936, signaleur »)."})
     if poste.fin <= poste.debut:
@@ -160,8 +183,12 @@ class ManifestationsView(APIView):
                       debut__lte=timezone.make_aware(datetime.datetime.combine(au, datetime.time.max)))
               .select_related("institution").prefetch_related("postes__inscriptions").order_by("debut"))
         organisees = Institution.objects.filter(id__in=mf.associations_organisees_par(request.user)).order_by("nom")
+        from .models import PointType
         return Response({
             "manifestations": [_en_dict(m, request.user) for m in qs[:500]],
+            # Les types de points proposés pour un poste (catalogue des points de crise).
+            "types_points": [{"code": t.code, "libelle": t.libelle} for t in PointType.objects.filter(
+                actif=True, code__in=TYPES_POINTS_POSTE).order_by("libelle")],
             "associations_organisees": [{"id": str(i.id), "nom": i.nom} for i in organisees],
             "types": [{"code": c, "libelle": l} for c, l in TypeManifestation.choices],
         })
@@ -620,6 +647,11 @@ def _partage_pour_mairie(partage) -> dict:
         "en_vigueur": pm.en_vigueur(m),
         "crises_ouvertes": [{"id": str(c.id), "nom": c.name} for c in Crisis.objects.filter(end_date__isnull=True, environment=partage.environment)
                             if partage.commune_code in (c.zone_communes or [])],
+        # Les points de la manifestation (PC, signaleurs), pour la carte de la mairie.
+        "points": [{"intitule": p.intitule, "type_point_libelle": p.type_point.libelle if p.type_point_id else "",
+                    "type_point": p.type_point.code if p.type_point_id else None,
+                    "latitude": p.location.y, "longitude": p.location.x}
+                   for p in m.postes.select_related("type_point").all() if p.location],
     })
     return d
 

@@ -63,6 +63,10 @@ data class PosteManifestation(
     val remarque: String = "",
     @SerialName("mon_statut") val monStatut: String? = null,
     @SerialName("mon_rang_attente") val monRangAttente: Int? = null,
+    /** Type de point (PC de manifestation, point de signalisation…) et position, si le bureau l'a placé. */
+    @SerialName("type_point_libelle") val typePointLibelle: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 ) {
     val complet: Boolean get() = occupes >= places
     /** Inscrit ou en liste d'attente : on peut se désister. */

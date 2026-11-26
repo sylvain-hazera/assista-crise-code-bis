@@ -58,7 +58,20 @@ describe('ManifestationsComponent', () => {
     composant.enregistrer();
     const requete = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/manifestations/'));
     expect(requete.request.body.institution).toBe('a1');
-    expect(requete.request.body.postes).toEqual([{ intitule: 'Poste radio', places: 1 }]);
+    // Le formulaire propose d'emblée le PC et un point de signalisation ; une ligne sans intitulé n'est pas envoyée.
+    expect(requete.request.body.postes).toEqual([{ intitule: 'Poste radio', places: 1, type_point: 'PC_MANIFESTATION' }]);
     requete.flush(M);
+  });
+  it('centre la carte sur le PC et met les autres points autour', () => {
+    const base = { debut: '', fin: '', places: 1, occupes: 0, attente: 0 };
+    const m = { postes: [
+      { ...base, id: 'p1', intitule: 'Carrefour', type_point: 'SIGNALISATION', type_point_libelle: 'Point de signalisation', latitude: 44.84, longitude: -0.51 },
+      { ...base, id: 'p2', intitule: 'PC', type_point: 'PC_MANIFESTATION', type_point_libelle: 'PC de manifestation', latitude: 44.83, longitude: -0.52 },
+      { ...base, id: 'p3', intitule: 'Non placé', latitude: null, longitude: null },
+    ] } as unknown as Manifestation;
+    const c = composant.carte(m)!;
+    expect(c.latitude).toBe(44.83);
+    expect(c.points).toEqual([{ latitude: 44.84, longitude: -0.51, label: 'Carrefour (Point de signalisation)' }]);
+    expect(composant.carte({ postes: [] } as unknown as Manifestation)).toBeNull();
   });
 });

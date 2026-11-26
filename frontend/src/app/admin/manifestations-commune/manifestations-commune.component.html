@@ -13,12 +13,17 @@
         <div>
           <h2>{{ p.manifestation.titre }}</h2>
           <p class="note">{{ p.manifestation.association }} · {{ p.manifestation.type_libelle }} ·
-            {{ p.manifestation.debut | date:'EEEE d MMMM y, HH:mm' }} – {{ p.manifestation.fin | date:'HH:mm' }}
+            {{ jourLong(p.manifestation.debut) }} – {{ p.manifestation.fin | date:'HH:mm' }}
             @if (p.manifestation.lieu) { · {{ p.manifestation.lieu }} }</p>
         </div>
         <span class="pastille" [class.annulee]="p.manifestation.statut === 'ANNULEE'">{{ p.manifestation.statut_libelle }}</span>
       </header>
 
+      @if (carte(p); as c) {
+        <h3>Les points de la manifestation</h3>
+        <div class="carte-points"><app-minimap [latitude]="c.latitude" [longitude]="c.longitude" [pointsInteret]="c.points"></app-minimap></div>
+        <p class="note">{{ (p.points ?? []).length }} point(s) placé(s) par l'association ; le marqueur rouge est le PC.</p>
+      }
       <h3>Ce que l'association demande</h3>
       <div class="tableur">
         <table>

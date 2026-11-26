@@ -26,7 +26,7 @@
         <button type="button" class="carte" [class.active]="choisie?.id === m.id" (click)="ouvrir(m.id)">
           <span class="date">
             <strong>{{ m.debut | date:'dd' }}</strong>
-            <span>{{ m.debut | date:'MMM' }}</span>
+            <span>{{ moisCourt(m.debut) }}</span>
           </span>
           <span class="corps">
             <span class="titre">{{ m.titre }}</span>
@@ -98,11 +98,22 @@
           <p class="note">Un poste sans horaire prend ceux de la manifestation.</p>
           @for (p of b.postes; track $index) {
             <div class="poste-saisie">
+              <label>Type de point <select [(ngModel)]="p.type_point">
+                @for (t of liste?.types_points ?? []; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+                <option value="">Sans type</option>
+              </select></label>
               <label>Intitulé <input type="text" maxlength="200" [(ngModel)]="p.intitule" placeholder="Carrefour D936, signaleur radio"></label>
               <label>Début <input type="datetime-local" [(ngModel)]="p.debut"></label>
               <label>Fin <input type="datetime-local" [(ngModel)]="p.fin"></label>
               <label>Places <input type="number" min="1" max="500" [(ngModel)]="p.places"></label>
+              <div class="position">
+                @if (p.latitude !== null) { <span class="note">Placé sur la carte</span> } @else { <span class="note">Pas encore placé</span> }
+                <button type="button" class="lien" (click)="placerLigne(p)">{{ placement === p ? 'Fermer la carte' : (p.latitude !== null ? 'Déplacer' : 'Placer sur la carte') }}</button>
+              </div>
             </div>
+            @if (placement === p) {
+              <div class="carte-saisie"><app-point-picker [latitude]="p.latitude" [longitude]="p.longitude" [centreDepart]="centreCarte" (positionChange)="positionChoisie(p, $event)"></app-point-picker></div>
+            }
           }
           <button type="button" class="lien" (click)="ajouterLignePoste()">+ un autre poste</button>
         }
@@ -114,7 +125,7 @@
         <h2>{{ m.titre }}</h2>
         <p class="note">{{ m.type_libelle }} · {{ m.institution_nom }}@if (m.statut !== 'PUBLIEE') { · <strong>{{ m.statut_libelle }}</strong> }</p>
         <dl>
-          <dt>Quand</dt><dd>{{ m.debut | date:'EEEE d MMMM y, HH:mm' }} – {{ m.fin | date:'HH:mm' }}</dd>
+          <dt>Quand</dt><dd>{{ jourLong(m.debut) }} – {{ m.fin | date:'HH:mm' }}</dd>
           @if (m.lieu) { <dt>Où</dt><dd>{{ m.lieu }}</dd> }
           @if (m.organisateur) { <dt>Pour qui</dt><dd>{{ m.organisateur }}</dd> }
         </dl>
@@ -158,13 +169,30 @@
         }
 
         <h3>Postes</h3>
+        @if (carte(m); as c) {
+          <div class="carte-points" aria-label="Carte des points de la manifestation">
+            <app-minimap [latitude]="c.latitude" [longitude]="c.longitude" [pointsInteret]="c.points"></app-minimap>
+          </div>
+          <p class="note">Le marqueur rouge est le PC (ou le premier point placé) ; les autres points sont autour.</p>
+        }
+        @if (placerPoste; as pp) {
+          <div class="placement">
+            <p><strong>{{ pp.intitule }}</strong> : touchez la carte pour placer le point.</p>
+            <div class="carte-saisie"><app-point-picker [latitude]="pp.latitude ?? null" [longitude]="pp.longitude ?? null" [centreDepart]="centreCarte" (positionChange)="positionPlacee = $event"></app-point-picker></div>
+            <button type="button" class="btn-primary" [disabled]="!positionPlacee" (click)="enregistrerPosition()">Enregistrer la position</button>
+            <button type="button" class="lien" (click)="placerPoste = null; positionPlacee = null">Annuler</button>
+          </div>
+        }
         <div class="tableur">
           <table>
             <thead><tr><th>Poste</th><th>Horaires</th><th class="nombre">Places</th><th></th></tr></thead>
             <tbody>
               @for (p of m.postes ?? []; track p.id) {
                 <tr>
-                  <td>{{ p.intitule }}@if (p.remarque) { <br><span class="note">{{ p.remarque }}</span> }</td>
+                  <td>{{ p.intitule }}@if (p.type_point_libelle) { <br><span class="type-point">{{ p.type_point_libelle }}</span> }
+                    @if (p.remarque) { <br><span class="note">{{ p.remarque }}</span> }
+                    @if (p.latitude != null) { <br><a class="lien" target="_blank" rel="noopener" [href]="'https://www.openstreetmap.org/directions?to=' + p.latitude + '%2C' + p.longitude">Itinéraire</a> }
+                    @if (m.organise) { <br><button type="button" class="lien" (click)="placerExistant(p)">{{ p.latitude != null ? 'Déplacer sur la carte' : 'Placer sur la carte' }}</button> }</td>
                   <td>{{ p.debut | date:'dd/MM HH:mm' }} – {{ p.fin | date:'HH:mm' }}</td>
                   <td class="nombre">{{ p.occupes }}/{{ p.places }}@if (p.attente) { <br><span class="note">+{{ p.attente }} en attente</span> }</td>
                   <td>
@@ -210,11 +238,17 @@
             <h3>Organisation (bureau)</h3>
             @if (nouveauPoste; as np) {
               <div class="poste-saisie">
+                <label>Type de point <select [(ngModel)]="np.type_point">
+                @for (t of liste?.types_points ?? []; track t.code) { <option [value]="t.code">{{ t.libelle }}</option> }
+                <option value="">Sans type</option>
+              </select></label>
                 <label>Intitulé <input type="text" maxlength="200" [(ngModel)]="np.intitule"></label>
                 <label>Début <input type="datetime-local" [(ngModel)]="np.debut"></label>
                 <label>Fin <input type="datetime-local" [(ngModel)]="np.fin"></label>
                 <label>Places <input type="number" min="1" max="500" [(ngModel)]="np.places"></label>
               </div>
+              <div class="carte-saisie"><app-point-picker [latitude]="np.latitude" [longitude]="np.longitude" [centreDepart]="centreCarte" (positionChange)="positionChoisie(np, $event)"></app-point-picker></div>
+              <p class="note">Touchez la carte pour placer le point (facultatif).</p>
               <button type="button" class="btn-primary" (click)="ajouterPoste()">Ajouter le poste</button>
               <button type="button" class="lien" (click)="nouveauPoste = null">Annuler</button>
             } @else if (m.statut === 'BROUILLON' || m.statut === 'PUBLIEE') {

@@ -13789,6 +13789,12 @@ class PosteManifestation(EnvironmentScopedModel):
     fin = models.DateTimeField()
     places = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(500)])
     remarque = EncryptedTextField(blank=True, default="")
+    #: Le type de point, pris dans le catalogue des points de crise (26/11/2026) : PC de
+    #: manifestation, point de signalisation, point de transit, poste de secours… Les postes ne
+    #: deviennent pas des points de crise : ils n'entrent ni dans les listes des crises ni dans le PCS.
+    type_point = models.ForeignKey("PointType", on_delete=models.SET_NULL, null=True, blank=True, related_name="postes_manifestation")
+    #: Où le signaleur s'installe (ou le PC).
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
 
     class Meta:
         ordering = ["debut"]

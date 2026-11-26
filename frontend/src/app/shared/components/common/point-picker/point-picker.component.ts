@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { carteIndisponible } from '../minimap/minimap.component';
 import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 
@@ -23,6 +24,9 @@ export class PointPickerComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() latitude: number | null = null;
   @Input() longitude: number | null = null;
   @Input() zoom = 14;
+  /** Où ouvrir la carte quand aucune position n'est encore choisie (la commune, par exemple) ;
+   * ne pose aucun repère. */
+  @Input() centreDepart: { latitude: number; longitude: number } | null = null;
 
   @Output() positionChange = new EventEmitter<{ latitude: number; longitude: number }>();
 
@@ -30,14 +34,27 @@ export class PointPickerComponent implements AfterViewInit, OnChanges, OnDestroy
   private marker: maplibregl.Marker | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['centreDepart'] && this.map && this.centreDepart && this.latitude == null) {
+      this.map.setCenter([this.centreDepart.longitude, this.centreDepart.latitude]);
+    }
     if ((changes['latitude'] || changes['longitude']) && this.map && this.latitude != null && this.longitude != null) {
       this.setMarkerPosition(this.longitude, this.latitude, !changes['latitude']?.firstChange);
     }
   }
 
   ngAfterViewInit(): void {
+    try {
+      this.creerCarte();
+    } catch {
+      this.map = null;
+      carteIndisponible(this.mapContainer.nativeElement);
+    }
+  }
+
+  private creerCarte(): void {
     const center: [number, number] = this.longitude != null && this.latitude != null
       ? [this.longitude, this.latitude]
+      : this.centreDepart ? [this.centreDepart.longitude, this.centreDepart.latitude]
       : [2.2137, 46.2276]; // France, par défaut si aucune position de départ
 
     this.map = new maplibregl.Map({

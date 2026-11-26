@@ -53,9 +53,15 @@
   @media (max-width: 600px) { .formulaire { grid-template-columns: 1fr; } }
   input, select, textarea { font: inherit; padding: .35rem .45rem; border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px;
     background: var(--ac-surface, #fff); color: inherit; }
-  .poste-saisie { display: grid; gap: .5rem; grid-template-columns: 2fr 1fr 1fr 5rem; align-items: end; margin: .4rem 0;
-    label { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; } }
-  @media (max-width: 700px) { .poste-saisie { grid-template-columns: 1fr 1fr; } }
+  // Type, intitulé, places ; puis début et fin ; puis la position (ordre du gabarit, rangées par « dense »).
+  .poste-saisie { display: grid; gap: .5rem; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row dense;
+    align-items: end; margin: .6rem 0; padding-top: .6rem; border-top: 1px solid var(--ac-border, #e5e7eb);
+    label { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; min-width: 0; }
+    input, select { min-width: 0; width: 100%; box-sizing: border-box; }
+    > label:nth-child(2), > label:nth-child(3), > label:nth-child(4) { grid-column: span 2; }
+    > .position { grid-column: 1 / -1; } }
+  @media (max-width: 700px) { .poste-saisie { grid-template-columns: 1fr 1fr;
+    > label:nth-child(3), > label:nth-child(4) { grid-column: span 1; } } }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; margin: .8rem 0; }
   .titre-champ { font-size: .9rem; }
   .communes .puces { display: flex; flex-wrap: wrap; gap: .35rem; margin: .3rem 0; }
@@ -89,3 +95,9 @@
   &:hover:not(:disabled) { background: #1d4ed8; } }
 .btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
   &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }
+
+.carte-points { border-radius: 8px; overflow: hidden; border: 1px solid var(--ac-border, #e5e7eb); margin: 0 0 .3rem; }
+.carte-saisie { border-radius: 8px; overflow: hidden; border: 1px solid var(--ac-border, #e5e7eb); margin: .4rem 0; }
+.position { display: flex; gap: .6rem; align-items: center; }
+.type-point { display: inline-block; font-size: .78rem; padding: .02rem .45rem; border-radius: 999px; background: var(--ac-blue-bg, #eff6ff); color: var(--ac-blue-text, #1d4ed8); }
+.placement { padding: .6rem .8rem; border: 1px dashed var(--ac-border-strong, #d1d5db); border-radius: 8px; margin: .4rem 0 .8rem; }

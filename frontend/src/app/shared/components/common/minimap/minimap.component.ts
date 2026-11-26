@@ -12,6 +12,17 @@ export interface MinimapPointInteret {
 
 const ZONE_SOURCE_ID = 'minimap-zone';
 
+/** Remplace une carte impossible à dessiner par une phrase (pas de liaison Angular : appelé
+ * pendant ngAfterViewInit). */
+export function carteIndisponible(conteneur: HTMLElement): void {
+  conteneur.textContent = 'Carte indisponible sur cet appareil.';
+  conteneur.style.display = 'flex';
+  conteneur.style.alignItems = 'center';
+  conteneur.style.justifyContent = 'center';
+  conteneur.style.color = 'var(--ac-text-muted, #6b7280)';
+  conteneur.style.fontSize = '.9rem';
+}
+
 /** Carte de localisation en lecture seule : un point, une flèche d'azimut facultative, et des
  * points d'intérêt facultatifs (la carte les englobe alors). */
 @Component({
@@ -40,7 +51,15 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private resizeObserver: ResizeObserver | null = null;
 
   ngAfterViewInit(): void {
-    this.initMap();
+    // Sans WebGL (vieux téléphone, navigateur bridé), MapLibre lève une erreur : on l'attrape pour
+    // que le reste de la page s'affiche, avec une phrase à la place de la carte.
+    try {
+      this.initMap();
+    } catch {
+      this.map = null;
+      carteIndisponible(this.mapContainer.nativeElement);
+      return;
+    }
     this.observeContainerResize();
   }
 

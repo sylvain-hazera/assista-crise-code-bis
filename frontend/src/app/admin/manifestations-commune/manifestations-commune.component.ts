@@ -4,6 +4,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { environment } from '../../../environments/environment';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 
 export interface LigneCommune {
   element: string; libelle: string; explication: string; reserve_mairie: boolean; origine: string | null;
@@ -16,6 +17,8 @@ export interface PartageMairie {
                    fin: string; statut: string; statut_libelle: string; association: string };
   referent_nom: string; referent_telephone: string; consignes: string; arrete: string; en_vigueur: boolean;
   crises_ouvertes: { id: string; nom: string }[];
+  /** Les points placés de la manifestation (PC, signaleurs). */
+  points?: { intitule: string; type_point: string | null; type_point_libelle: string; latitude: number; longitude: number }[];
 }
 
 /**
@@ -28,7 +31,7 @@ export interface PartageMairie {
 @Component({
   selector: 'app-manifestations-commune',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MinimapComponent],
   templateUrl: './manifestations-commune.component.html',
   styleUrl: './manifestations-commune.component.scss',
 })
@@ -95,4 +98,22 @@ export class ManifestationsCommuneComponent implements OnInit {
 
   demandees(p: PartageMairie): LigneCommune[] { return p.lignes.filter(l => !l.reserve_mairie); }
   reservees(p: PartageMairie): LigneCommune[] { return p.lignes.filter(l => l.reserve_mairie); }
+
+  /** Dates en français, quelle que soit la langue d'Angular (26/11/2026 : « Thursday » s'affichait). */
+  jourLong(iso: string): string {
+    return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  }
+  moisCourt(iso: string): string {
+    return new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(new Date(iso)).replace('.', '');
+  }
+
+  /** La carte des points : le PC au centre (marqueur rouge), les autres autour. */
+  carte(p: PartageMairie): { latitude: number; longitude: number; points: { latitude: number; longitude: number; label: string }[] } | null {
+    const pts = p.points ?? [];
+    if (!pts.length) return null;
+    const centre = pts.find(x => x.type_point === 'PC_MANIFESTATION') ?? pts[0];
+    return { latitude: centre.latitude, longitude: centre.longitude,
+      points: pts.filter(x => x !== centre).map(x => ({ latitude: x.latitude, longitude: x.longitude,
+        label: `${x.intitule}${x.type_point_libelle ? ' (' + x.type_point_libelle + ')' : ''}` })) };
+  }
 }

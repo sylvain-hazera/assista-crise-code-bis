@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -125,13 +126,25 @@ private fun CarteManifestation(m: ManifestationAsso, detail: ManifestationAsso?,
                     o.consignes?.takeIf { it.isNotBlank() }?.let { Text("Consignes de la mairie : $it", style = MaterialTheme.typography.bodySmall) }
                 }
                 Spacer(Modifier.padding(top = 6.dp))
+                val contextePostes = androidx.compose.ui.platform.LocalContext.current
                 detail.postes.forEach { p ->
                     HorizontalDivider(Modifier.padding(vertical = 6.dp))
                     Text(p.intitule, style = MaterialTheme.typography.bodyLarge)
+                    if (p.typePointLibelle.isNotBlank()) Text(p.typePointLibelle, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
                     Text("${heure(p.debut)} – ${heure(p.fin)} · ${p.etat()}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (p.remarque.isNotBlank()) Text(p.remarque, style = MaterialTheme.typography.bodySmall)
                     Row {
+                        val lat = p.latitude
+                        val lon = p.longitude
+                        if (lat != null && lon != null) {
+                            // `geo:` laisse le téléphone choisir son application de cartes.
+                            TextButton(onClick = {
+                                runCatching { contextePostes.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("geo:$lat,$lon?q=$lat,$lon(${android.net.Uri.encode(p.intitule)})"))) }
+                            }) { Text("Itinéraire") }
+                        }
                         when {
                             p.engage && !passe(p.debut) -> OutlinedButton(onClick = { modele.inscriptionPoste(p, false) }) { Text("Me désister") }
                             p.monStatut == null || p.monStatut == "DESISTE" -> if (detail.statut == "PUBLIEE" && !passe(p.fin)) {

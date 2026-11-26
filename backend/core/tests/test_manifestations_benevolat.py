@@ -207,3 +207,25 @@ def test_plan_joint_a_une_manifestation(asso, settings, tmp_path):
     assert asso["lea"].get(reverse("manifestation_document", args=[m["id"], doc["id"]])).status_code == 200
     texte = SimpleUploadedFile("x.txt", b"pas une image", content_type="text/plain")
     assert asso["bureau"].post(reverse("manifestation_documents", args=[m["id"]]), {"fichier": texte}, format="multipart").status_code == 400
+
+
+@pytest.mark.django_db
+def test_postes_types_de_points_et_positions(asso):
+    debut = timezone.now() + datetime.timedelta(days=3)
+    r = asso["bureau"].post(reverse("manifestations"), {
+        "institution": str(asso["fcba"].id), "titre": "Course", "debut": debut.isoformat(),
+        "fin": (debut + datetime.timedelta(hours=4)).isoformat(),
+        "postes": [{"intitule": "PC course", "type_point": "PC_MANIFESTATION", "latitude": 44.83, "longitude": -0.52},
+                   {"intitule": "Carrefour D936", "type_point": "SIGNALISATION", "latitude": 44.84, "longitude": -0.51, "places": 2}],
+    }, format="json")
+    assert r.status_code == 201, r.data
+    pc, signal = r.data["postes"]
+    assert pc["type_point"] == "PC_MANIFESTATION" and pc["type_point_libelle"] == "PC de manifestation"
+    assert signal["latitude"] == pytest.approx(44.84) and signal["longitude"] == pytest.approx(-0.51)
+    codes = [t["code"] for t in asso["bureau"].get(reverse("manifestations")).data["types_points"]]
+    assert "SIGNALISATION" in codes and "TRANSIT" in codes and "HEBERGEMENT" not in codes
+    # Un poste de manifestation n'est pas un point de crise.
+    from core.models import PointOperationnel
+    assert not PointOperationnel.objects.exists()
+    bad = asso["bureau"].post(reverse("manifestation_postes", args=[r.data["id"]]), {"intitule": "X", "type_point": "INCONNU"}, format="json")
+    assert bad.status_code == 400

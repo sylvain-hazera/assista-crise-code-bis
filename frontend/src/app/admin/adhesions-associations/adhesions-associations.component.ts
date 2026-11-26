@@ -44,7 +44,7 @@ export interface DemandeAdhesionAdmin {
             <dt>Siège</dt><dd>{{ d.commune_nom }}</dd>
             <dt>Intervient jusqu'à</dt><dd>{{ d.echelon_libelle }}@if (d.territoire && d.echelon_libelle !== d.territoire) { ({{ d.territoire }}) }</dd>
             <dt>Agrément</dt><dd>{{ d.agrement || 'non agréée' }}</dd>
-            <dt>Demandeur</dt><dd>{{ d.demandeur }}@if (d.fonction) { , {{ d.fonction }} } — {{ d.demandeur_email }}@if (d.telephone) { · {{ d.telephone }} }</dd>
+            <dt>Demandeur</dt><dd>{{ d.demandeur }}{{ d.fonction ? ', ' + d.fonction : '' }} — {{ d.demandeur_email }}@if (d.telephone) { · {{ d.telephone }} }</dd>
           </dl>
           @if (d.doublons.length) {
             <p class="alerte">Nom proche d'une association déjà inscrite :

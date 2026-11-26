@@ -8,6 +8,8 @@ import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { Commune, LocationService } from '../../services/location.service';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
+import { PointPickerComponent } from '../../shared/components/common/point-picker/point-picker.component';
 
 export interface InscritPoste {
   id: string; utilisateur: string; nom: string; statut: string; inscrit_le: string; pointe_le: string | null;
@@ -15,6 +17,8 @@ export interface InscritPoste {
 
 export interface Poste {
   id: string; intitule: string; debut: string; fin: string; places: number; occupes: number; attente: number;
+  /** Type de point du catalogue (PC de manifestation, point de signalisation, transit…) et position. */
+  type_point?: string | null; type_point_libelle?: string; latitude?: number | null; longitude?: number | null;
   remarque: string; mon_statut: string | null; mon_rang_attente: number | null;
   /** Pour le bureau seulement. */
   inscrits?: InscritPoste[];
@@ -48,8 +52,15 @@ export interface Manifestation {
   communes?: string[]; partages?: PartageCommune[];
 }
 
+/** Un poste en cours de saisie : type de point et position facultatifs. */
+export interface SaisiePoste {
+  intitule: string; debut: string; fin: string; places: number;
+  type_point: string; latitude: number | null; longitude: number | null;
+}
+
 interface ListeManifestations {
   manifestations: Manifestation[];
+  types_points?: { code: string; libelle: string }[];
   associations_organisees: { id: string; nom: string }[];
   types: { code: string; libelle: string }[];
 }
@@ -58,7 +69,7 @@ interface ListeManifestations {
 interface Brouillon {
   id?: string; institution: string; type: string; titre: string; lieu: string; organisateur: string; consignes: string;
   debut: string; fin: string;
-  postes: { intitule: string; debut: string; fin: string; places: number }[];
+  postes: SaisiePoste[];
   /** Les communes traversées, invitées à la publication (26/11/2026). */
   communes: { code: string; nom: string }[];
   demandes: string[];
@@ -77,7 +88,7 @@ interface Brouillon {
 @Component({
   selector: 'app-manifestations',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PointPickerComponent, MinimapComponent],
   templateUrl: './manifestations.component.html',
   styleUrl: './manifestations.component.scss',
 })
@@ -90,7 +101,16 @@ export class ManifestationsComponent implements OnInit {
   message = '';
   envoi = false;
   /** Nouveau poste en cours de saisie sur la manifestation ouverte (bureau). */
-  nouveauPoste: { intitule: string; debut: string; fin: string; places: number } | null = null;
+  nouveauPoste: SaisiePoste | null = null;
+  /** Le poste en saisie dont on choisit la position sur la carte. */
+  placement: SaisiePoste | null = null;
+  /** Un poste existant qu'on place (ou déplace) sur la carte : sa nouvelle position. */
+  placerPoste: Poste | null = null;
+  positionPlacee: { latitude: number; longitude: number } | null = null;
+  /** Où ouvrir la carte d'un point pas encore placé : un point déjà placé, sinon le centre de la
+   * première commune de la manifestation. */
+  centreCarte: { latitude: number; longitude: number } | null = null;
+  private centreDeLaCommune = '';
   motifAnnulation = '';
   annulation = false;
 
@@ -240,7 +260,7 @@ export class ManifestationsComponent implements OnInit {
     this.erreur = '';
     this.brouillon = {
       institution: asso.id, type: 'MANIFESTATION', titre: '', lieu: '', organisateur: '', consignes: '',
-      debut: '', fin: '', postes: [{ intitule: '', debut: '', fin: '', places: 1 }],
+      debut: '', fin: '', postes: [this.ligneVide('PC_MANIFESTATION', 'PC de la manifestation'), this.ligneVide('SIGNALISATION')],
       communes: [], demandes: DEMANDES_POSSIBLES.map(d => d.code),
     };
   }
@@ -257,7 +277,63 @@ export class ManifestationsComponent implements OnInit {
     };
   }
 
-  ajouterLignePoste(): void { this.brouillon?.postes.push({ intitule: '', debut: '', fin: '', places: 1 }); }
+  ligneVide(type = 'SIGNALISATION', intitule = ''): SaisiePoste {
+    return { intitule, debut: '', fin: '', places: 1, type_point: type, latitude: null, longitude: null };
+  }
+
+  ajouterLignePoste(): void { this.brouillon?.postes.push(this.ligneVide()); }
+
+  /** Prépare le centre de la carte avant d'ouvrir un sélecteur de position. */
+  preparerCentre(placees: { latitude?: number | null; longitude?: number | null }[], communes: string[]): void {
+    const deja = placees.find(p => p.latitude != null && p.longitude != null);
+    if (deja) { this.centreCarte = { latitude: deja.latitude!, longitude: deja.longitude! }; return; }
+    const code = communes[0];
+    if (!code || code === this.centreDeLaCommune) return;
+    this.centreDeLaCommune = code;
+    this.lieux.getCommuneCentre(code).subscribe({ next: (c) => this.centreCarte = c, error: () => {} });
+  }
+
+  placerLigne(p: SaisiePoste): void {
+    this.placement = this.placement === p ? null : p;
+    if (this.placement && this.brouillon) this.preparerCentre(this.brouillon.postes, this.brouillon.communes.map(c => c.code));
+  }
+
+  placerExistant(p: Poste): void {
+    this.placerPoste = p;
+    this.positionPlacee = null;
+    if (this.choisie) this.preparerCentre(this.choisie.postes ?? [], this.choisie.communes ?? []);
+  }
+
+  /** Position choisie sur la carte pour le poste en saisie. */
+  positionChoisie(p: SaisiePoste, pos: { latitude: number; longitude: number }): void {
+    p.latitude = pos.latitude;
+    p.longitude = pos.longitude;
+  }
+
+  private champsPoint(p: SaisiePoste): Record<string, unknown> {
+    return { type_point: p.type_point || null, ...(p.latitude !== null ? { latitude: p.latitude, longitude: p.longitude } : {}) };
+  }
+
+  /** La carte de la fiche : le PC (ou le premier point placé) au centre, les autres autour. */
+  carte(m: Manifestation): { latitude: number; longitude: number; points: { latitude: number; longitude: number; label: string }[] } | null {
+    const places = (m.postes ?? []).filter(p => p.latitude != null && p.longitude != null);
+    if (!places.length) return null;
+    const centre = places.find(p => p.type_point === 'PC_MANIFESTATION') ?? places[0];
+    return {
+      latitude: centre.latitude!, longitude: centre.longitude!,
+      points: places.filter(p => p !== centre).map(p => ({ latitude: p.latitude!, longitude: p.longitude!,
+        label: `${p.intitule}${p.type_point_libelle ? ' (' + p.type_point_libelle + ')' : ''}` })),
+    };
+  }
+
+  enregistrerPosition(): void {
+    const p = this.placerPoste, pos = this.positionPlacee;
+    if (!p || !pos) return;
+    this.http.patch<Manifestation>(`${this.url}postes/${p.id}/`, { latitude: pos.latitude, longitude: pos.longitude }).subscribe({
+      next: (r) => { this.placerPoste = null; this.positionPlacee = null; this.recevoir(r, 'Position enregistrée.'); },
+      error: (err) => this.echec(err, 'La position n\'a pas pu être enregistrée.'),
+    });
+  }
 
   enregistrer(): void {
     const b = this.brouillon;
@@ -273,7 +349,7 @@ export class ManifestationsComponent implements OnInit {
     if (!b.id) {
       // Un poste sans horaire prend ceux de la manifestation.
       corps['postes'] = b.postes.filter(p => p.intitule.trim()).map(p => ({
-        intitule: p.intitule, places: p.places,
+        intitule: p.intitule, places: p.places, ...this.champsPoint(p),
         ...(p.debut ? { debut: this.iso(p.debut) } : {}), ...(p.fin ? { fin: this.iso(p.fin) } : {}),
       }));
     }
@@ -309,7 +385,10 @@ export class ManifestationsComponent implements OnInit {
     });
   }
 
-  ouvrirNouveauPoste(): void { this.nouveauPoste = { intitule: '', debut: this.enLocal(this.choisie?.debut), fin: this.enLocal(this.choisie?.fin), places: 1 }; }
+  ouvrirNouveauPoste(): void {
+    this.nouveauPoste = { ...this.ligneVide(), debut: this.enLocal(this.choisie?.debut), fin: this.enLocal(this.choisie?.fin) };
+    if (this.choisie) this.preparerCentre(this.choisie.postes ?? [], this.choisie.communes ?? []);
+  }
 
   ajouterPoste(): void {
     const m = this.choisie, p = this.nouveauPoste;
@@ -317,7 +396,7 @@ export class ManifestationsComponent implements OnInit {
     if (!p.intitule.trim()) { this.erreur = 'Donnez un intitulé au poste.'; return; }
     this.erreur = '';
     this.http.post<Manifestation>(`${this.url}${m.id}/postes/`, {
-      intitule: p.intitule, places: p.places, debut: this.iso(p.debut), fin: this.iso(p.fin),
+      intitule: p.intitule, places: p.places, debut: this.iso(p.debut), fin: this.iso(p.fin), ...this.champsPoint(p),
     }).subscribe({
       next: (r) => { this.nouveauPoste = null; this.recevoir(r, 'Poste ajouté.'); },
       error: (err) => this.echec(err, 'Le poste n\'a pas pu être ajouté.'),
@@ -350,5 +429,13 @@ export class ManifestationsComponent implements OnInit {
       next: (r) => this.recevoir(r, 'Image jointe.'),
       error: (err) => this.echec(err, 'L\'image n\'a pas pu être jointe.'),
     });
+  }
+
+  /** Dates en français, quelle que soit la langue d'Angular (26/11/2026 : « Thursday » s'affichait). */
+  jourLong(iso: string): string {
+    return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  }
+  moisCourt(iso: string): string {
+    return new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(new Date(iso)).replace('.', '');
   }
 }
