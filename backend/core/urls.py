@@ -632,6 +632,7 @@ urlpatterns = [
     path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
     # Manifestations d'association et bénévolat (26/11/2026, core/manifestations.py, core/benevolat.py).
     path('carte-terrain/perimetre/', views_carte_terrain.PerimetreCarteView.as_view(), name='carte_terrain_perimetre'),
+    path('carte-terrain/veille/', views_carte_terrain.VeilleTerrainView.as_view(), name='carte_terrain_veille'),
     path('marqueurs-terrain/', views_marqueurs.MarqueursTerrainView.as_view(), name='marqueurs_terrain'),
     path('marqueurs-terrain/<uuid:pk>/', views_marqueurs.MarqueurTerrainView.as_view(), name='marqueur_terrain'),
     path('manifestations/', views_manifestations.ManifestationsView.as_view(), name='manifestations'),

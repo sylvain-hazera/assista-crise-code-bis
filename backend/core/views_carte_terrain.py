@@ -58,3 +58,13 @@ class PerimetreCarteView(APIView):
     def get(self, request):
         crises, raison = crises_du_perimetre(request.user, get_active_environment(request))
         return Response({"raison": raison, "crises": [_en_dict(c) for c in crises]})
+
+
+class VeilleTerrainView(APIView):
+    """GET carte-terrain/veille/ : la mini veille du territoire de l'application (27/11/2026),
+    pour chaque crise du périmètre et chaque manifestation du jour (voir core/veille_terrain.py)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from . import veille_terrain
+        return Response(veille_terrain.construire(request.user, get_active_environment(request)))

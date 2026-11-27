@@ -328,6 +328,12 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.PerimetreCarte.serializer(), it)
         }
 
+    /** La mini veille du territoire de la crise ou de la manifestation en cours (27/11/2026). */
+    suspend fun veilleTerrain(): Reponse<fr.assistacrise.mobile.domaine.VeilleTerrain> =
+        authentifie(HttpMethod.Get, "carte-terrain/veille/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.VeilleTerrain.serializer(), it)
+        }
+
     /** Les marqueurs terrain actifs que je vois, toutes crises et manifestations (27/11/2026). */
     suspend fun marqueursTerrain(): Reponse<List<fr.assistacrise.mobile.domaine.MarqueurCentral>> =
         liste("marqueurs-terrain/", fr.assistacrise.mobile.domaine.MarqueurCentral.serializer())

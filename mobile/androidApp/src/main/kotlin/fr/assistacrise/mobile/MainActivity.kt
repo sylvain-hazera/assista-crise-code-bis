@@ -149,6 +149,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 // Le triangle du téléphone fait comme la flèche de l'écran (27/11/2026).
                 BackHandler(enabled = ecran == Ecran.RADIO_AVANCEE) { modele.aller(Ecran.COMPTE) }
+                BackHandler(enabled = ecran == Ecran.VEILLE) { modele.fermerVeille() }
                 BackHandler(enabled = ecran == Ecran.RADIO_CONVERSATION) { modele.fermerConversationRadio() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
                     val ouverte = modele.notificationOuverte
@@ -213,6 +214,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.RADIO_CONVERSATION -> fr.assistacrise.mobile.ui.EcranConversationRadio(modele)
                             ecran == Ecran.PREPARER_RADIO -> fr.assistacrise.mobile.ui.EcranPreparerRadio(modele)
                             ecran == Ecran.MANIFESTATIONS -> fr.assistacrise.mobile.ui.EcranManifestations(modele)
+                            ecran == Ecran.VEILLE -> fr.assistacrise.mobile.ui.EcranVeille(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
                     }
@@ -226,5 +228,5 @@ class MainActivity : ComponentActivity() {
 private val ECRANS_SANS_BARRE = setOf(
     Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
     Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE, Ecran.RADIO_AVANCEE, Ecran.RADIO_CONVERSATION,
-    Ecran.MANIFESTATIONS,
+    Ecran.MANIFESTATIONS, Ecran.VEILLE,
 )

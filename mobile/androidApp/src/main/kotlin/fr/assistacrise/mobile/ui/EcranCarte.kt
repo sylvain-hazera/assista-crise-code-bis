@@ -501,6 +501,7 @@ fun EcranCarte(modele: ModeleApplication) {
                     }
                 }
             }
+            TextButton(onClick = { modele.ouvrirVeille() }) { Text("Veille") }
             TextButton(onClick = { horsLigne = true }) { Text("Télécharger pour le hors-ligne") }
             if (marqueursRadio.isNotEmpty() || positionsRadio.isNotEmpty()) {
                 TextButton(onClick = { partagerGpx(contexte, marqueursRadio, positionsRadio, moi) }) { Text("GPX") }

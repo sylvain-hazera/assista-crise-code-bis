@@ -69,7 +69,7 @@ enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
     SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION, PREPARER_RADIO,
-    MANIFESTATIONS,
+    MANIFESTATIONS, VEILLE,
 }
 
 class ModeleApplication(private val app: Application) : ViewModel() {
@@ -988,6 +988,35 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         if (ecran != Ecran.RADIO_CONVERSATION)
             origineConversationRadio = ecran.takeIf { it in setOf(Ecran.RADIO_AVANCEE, Ecran.CARTE) } ?: Ecran.EQUIPES
         aller(Ecran.RADIO_CONVERSATION)
+    }
+
+    // --- Mini veille du territoire (27/11/2026) -------------------------------------------
+    var veille by mutableStateOf<fr.assistacrise.mobile.domaine.VeilleTerrain?>(null); private set
+    var veilleLueLe by mutableStateOf<Long?>(null); private set
+    var veilleErreur by mutableStateOf<String?>(null); private set
+    var veilleEnCours by mutableStateOf(false); private set
+    private var origineVeille = Ecran.MISSIONS
+
+    fun ouvrirVeille() {
+        origineVeille = ecran.takeIf { it in setOf(Ecran.CARTE, Ecran.MISSIONS) } ?: Ecran.MISSIONS
+        aller(Ecran.VEILLE)
+        lireVeille()
+    }
+
+    fun fermerVeille() = aller(origineVeille)
+
+    /** Relit la veille ; hors réseau, la dernière lue reste, avec son heure. */
+    fun lireVeille() {
+        if (veilleEnCours) return
+        veilleEnCours = true
+        viewModelScope.launch {
+            when (val r = app.api.veilleTerrain()) {
+                is Reponse.Ok -> { veille = r.valeur; veilleLueLe = System.currentTimeMillis(); veilleErreur = null }
+                is Reponse.Refus -> veilleErreur = r.message
+                is Reponse.Injoignable -> veilleErreur = "Pas de réseau : veille non actualisée."
+            }
+            veilleEnCours = false
+        }
     }
 
     /** Couches météo de la carte : rien n'est lu si aucune n'est cochée. */

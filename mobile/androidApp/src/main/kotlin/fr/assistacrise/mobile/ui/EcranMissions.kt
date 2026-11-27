@@ -82,6 +82,16 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
             }
         }
 
+        // Mini veille du territoire (27/11/2026) : une ligne, relue toutes les cinq minutes.
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            while (true) { modele.lireVeille(); kotlinx.coroutines.delay(300_000) }
+        }
+        modele.veille?.let { v ->
+            Text(v.resume() + "  ›", style = MaterialTheme.typography.bodyMedium,
+                color = if (v.alertes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().clickable { modele.ouvrirVeille() }.padding(horizontal = 20.dp, vertical = 6.dp))
+        }
+
         // Les deux gestes du contrôle, à portée de pouce : montrer mon attestation, lire celle d'un autre.
         val mobilisations by modele.mobilisations.collectAsStateWithLifecycle()
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
