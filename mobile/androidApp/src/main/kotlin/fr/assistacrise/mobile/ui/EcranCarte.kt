@@ -135,6 +135,7 @@ fun EcranCarte(modele: ModeleApplication) {
     // Points clés des manifestations du jour (27/11/2026) : PC, signalisation, transit…
     val pointsManif by modele.pointsManifestation.collectAsStateWithLifecycle()
     var horsLigne by remember { mutableStateOf(false) }
+    var listeRepliee by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var capGps by remember { mutableStateOf<Float?>(null) }
 
     var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
@@ -432,61 +433,76 @@ fun EcranCarte(modele: ModeleApplication) {
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)).padding(horizontal = 4.dp),
             )
         }
-        Text(
-            "Maintenez le doigt sur la carte pour y créer une demande, un signalement, une offre d'aide ou un marqueur radio." +
-                if (positionsRadio.isNotEmpty() || marqueursRadio.isNotEmpty() || pointsManif.isNotEmpty())
-                    " En violet : nœuds radio ; cerclés de noir : marqueurs du terrain ; verts : points clés (PC de manifestation en rouge)." else "",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-        )
-        // Les noms sont dans la liste, pas sur la carte : toucher une ligne y conduit.
-        if (membres.isNotEmpty() || situes.isNotEmpty() || points.isNotEmpty() || pointsManif.isNotEmpty()) {
-            // « Autour de moi » : les points de la crise en cours et ceux de la manifestation du
-            // jour, du plus proche au plus loin.
-            val destinations = points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") } +
-                pointsManif.map { Destination(it.nom, it.latitude, it.longitude, "${it.genre} · ${it.manifestation}") }
-            val autour = moi?.let { r -> Navigation.autourDe(r.latitude, r.longitude, destinations) } ?: destinations.map { it to null }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
-                items(autour, key = { "p-${it.first.nom}-${it.first.latitude}" }) { (d, distance) ->
-                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(14.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF15803D)))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(d.nom.ifBlank { "Point" }, style = MaterialTheme.typography.bodyLarge)
-                            Text(listOfNotNull(d.genre, distance?.let { Navigation.distanceLisible(it) }).joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        TextButton(onClick = { destination = d }) { Text("Aller vers") }
-                    }
-                    HorizontalDivider()
-                }
-                items(situes, key = { "d-${it.id}" }) { d ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.latitude!!, d.longitude!!), 16.0)) }
-                            .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(14.dp).clip(CircleShape).background(if (d.priorite == "URGENTE") Refus else Attente))
-                        Spacer(Modifier.width(12.dp))
-                        LigneDossier(d, Modifier.weight(1f))
-                        TextButton(onClick = { destination = Destination(d.titre, d.latitude!!, d.longitude!!, "Dossier", d.id) }) { Text("Aller") }
-                        TextButton(onClick = { modele.ouvrirDossier(d.id) }) { Text("Ouvrir") }
-                    }
-                    HorizontalDivider()
-                }
-                items(membres, key = { it.utilisateur }) { membre ->
-                    LigneMembre(membre) {
-                        carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(membre.latitude!!, membre.longitude!!), 15.0))
-                    }
-                    HorizontalDivider()
-                }
-            }
-        } else {
+        // La liste se replie vers le bas (27/11/2026) : la carte prend alors toute la hauteur.
+        val nbLignes = points.size + pointsManif.size + situes.size + membres.size
+        Row(
+            Modifier.fillMaxWidth().clickable { listeRepliee = !listeRepliee }
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(if (nbLignes > 0) "Points, dossiers et équipes ($nbLignes)" else "Aide de la carte",
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(if (listeRepliee) "Afficher ▴" else "Masquer ▾", style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary)
+        }
+        if (!listeRepliee) {
             Text(
-                "Aucun dossier situé, et aucun membre de vos équipes n'a partagé sa position ces trois dernières heures.",
+                "Maintenez le doigt sur la carte pour y créer une demande, un signalement, une offre d'aide ou un marqueur radio." +
+                    if (positionsRadio.isNotEmpty() || marqueursRadio.isNotEmpty() || pointsManif.isNotEmpty())
+                        " En violet : nœuds radio ; cerclés de noir : marqueurs du terrain ; verts : points clés (PC de manifestation en rouge)." else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
             )
+            // Les noms sont dans la liste, pas sur la carte : toucher une ligne y conduit.
+            if (membres.isNotEmpty() || situes.isNotEmpty() || points.isNotEmpty() || pointsManif.isNotEmpty()) {
+                // « Autour de moi » : les points de la crise en cours et ceux de la manifestation du
+                // jour, du plus proche au plus loin.
+                val destinations = points.map { Destination(it.nom, it.latitude!!, it.longitude!!, it.type ?: "Point") } +
+                    pointsManif.map { Destination(it.nom, it.latitude, it.longitude, "${it.genre} · ${it.manifestation}") }
+                val autour = moi?.let { r -> Navigation.autourDe(r.latitude, r.longitude, destinations) } ?: destinations.map { it to null }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                    items(autour, key = { "p-${it.first.nom}-${it.first.latitude}" }) { (d, distance) ->
+                        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(14.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF15803D)))
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(d.nom.ifBlank { "Point" }, style = MaterialTheme.typography.bodyLarge)
+                                Text(listOfNotNull(d.genre, distance?.let { Navigation.distanceLisible(it) }).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { destination = d }) { Text("Aller vers") }
+                        }
+                        HorizontalDivider()
+                    }
+                    items(situes, key = { "d-${it.id}" }) { d ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.latitude!!, d.longitude!!), 16.0)) }
+                                .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(14.dp).clip(CircleShape).background(if (d.priorite == "URGENTE") Refus else Attente))
+                            Spacer(Modifier.width(12.dp))
+                            LigneDossier(d, Modifier.weight(1f))
+                            TextButton(onClick = { destination = Destination(d.titre, d.latitude!!, d.longitude!!, "Dossier", d.id) }) { Text("Aller") }
+                            TextButton(onClick = { modele.ouvrirDossier(d.id) }) { Text("Ouvrir") }
+                        }
+                        HorizontalDivider()
+                    }
+                    items(membres, key = { it.utilisateur }) { membre ->
+                        LigneMembre(membre) {
+                            carte?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(membre.latitude!!, membre.longitude!!), 15.0))
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            } else {
+                Text(
+                    "Aucun dossier situé, et aucun membre de vos équipes n'a partagé sa position ces trois dernières heures.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                )
+            }
         }
     }
     if (horsLigne) DialogueHorsLigne(modele, carte, crises, situes, points) { horsLigne = false }
