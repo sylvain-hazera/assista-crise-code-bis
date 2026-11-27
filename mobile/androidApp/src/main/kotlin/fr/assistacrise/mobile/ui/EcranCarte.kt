@@ -99,6 +99,20 @@ internal const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","ti
 
 internal val FRANCE = LatLng(46.6, 2.4)
 
+/** Une couche que l'on peut masquer : ses calques MapLibre, et sa couleur pour la légende. */
+internal class CoucheCarte(val cle: String, val libelle: String, val couleur: Long, val calques: List<String>)
+
+/** Ma position et le point touché restent toujours visibles. */
+internal val COUCHES = listOf(
+    CoucheCarte("dossiers", "Dossiers et interventions", 0xFFF59E0B, listOf("dossiers-points")),
+    CoucheCarte("marqueurs", "Marqueurs du terrain", 0xFF111827, listOf("radio-marqueurs-points")),
+    CoucheCarte("points", "Points clés (crise, manifestation)", 0xFF15803D, listOf("points-crise", "manif-points-cercles")),
+    CoucheCarte("membres", "Membres des équipes", 0xFF3C4D81, listOf("membres-points")),
+    CoucheCarte("noeuds", "Nœuds radio", 0xFF7C3AED, listOf("radio-noeuds-points")),
+    CoucheCarte("pei", "Points d'eau incendie", 0xFF1D4ED8, listOf("pei-points")),
+    CoucheCarte("zones", "Périmètres de crise", 0xFFB91C1C, listOf("zones-fond", "zones-bord")),
+)
+
 @SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceTerrain.autorise
 @Composable
 fun EcranCarte(modele: ModeleApplication) {
@@ -136,6 +150,10 @@ fun EcranCarte(modele: ModeleApplication) {
     val pointsManif by modele.pointsManifestation.collectAsStateWithLifecycle()
     var horsLigne by remember { mutableStateOf(false) }
     var listeRepliee by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // Couches affichées (27/11/2026) : le choix est gardé d'une ouverture à l'autre.
+    val reglages = remember { contexte.getSharedPreferences("carte", android.content.Context.MODE_PRIVATE) }
+    var couchesMasquees by remember { mutableStateOf(reglages.getStringSet("couches-masquees", emptySet())!!.toSet()) }
+    var menuCouches by remember { mutableStateOf(false) }
     var capGps by remember { mutableStateOf<Float?>(null) }
 
     var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
@@ -299,6 +317,14 @@ fun EcranCarte(modele: ModeleApplication) {
     }
 
     LaunchedEffect(Unit) { modele.chargerLesPositions() }
+    // Une couche masquée ne se dessine plus, et ne répond plus au toucher.
+    LaunchedEffect(carte, couchesMasquees) {
+        val style = carte?.style ?: return@LaunchedEffect
+        for (couche in COUCHES) {
+            val etat = if (couche.cle in couchesMasquees) org.maplibre.android.style.layers.Property.NONE else org.maplibre.android.style.layers.Property.VISIBLE
+            couche.calques.forEach { id -> style.getLayer(id)?.setProperties(org.maplibre.android.style.layers.PropertyFactory.visibility(etat)) }
+        }
+    }
 
     // Les points suivent les données ; la carte ne se recadre qu'une fois, pour ne pas
     // arracher la vue des mains de quelqu'un qui est en train de la déplacer.
@@ -380,6 +406,32 @@ fun EcranCarte(modele: ModeleApplication) {
         }
         FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
             TextButton(onClick = { signalementPei = fr.assistacrise.mobile.domaine.GenreSignalementPei.NOUVEAU to null }) { Text("Point d'eau") }
+            Box {
+                TextButton(onClick = { menuCouches = true }) {
+                    Text(if (couchesMasquees.isEmpty()) "Couches ▾" else "Couches (${COUCHES.size - couchesMasquees.size}/${COUCHES.size}) ▾")
+                }
+                androidx.compose.material3.DropdownMenu(expanded = menuCouches, onDismissRequest = { menuCouches = false }) {
+                    COUCHES.forEach { couche ->
+                        val visible = couche.cle !in couchesMasquees
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(couche.libelle) },
+                            leadingIcon = { androidx.compose.material3.Checkbox(checked = visible, onCheckedChange = null) },
+                            trailingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(couche.couleur))) },
+                            onClick = {
+                                couchesMasquees = if (visible) couchesMasquees + couche.cle else couchesMasquees - couche.cle
+                                reglages.edit().putStringSet("couches-masquees", couchesMasquees).apply()
+                            },
+                        )
+                    }
+                    if (couchesMasquees.isNotEmpty()) {
+                        HorizontalDivider()
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Tout afficher") }, onClick = {
+                            couchesMasquees = emptySet()
+                            reglages.edit().putStringSet("couches-masquees", emptySet()).apply()
+                        })
+                    }
+                }
+            }
             TextButton(onClick = { horsLigne = true }) { Text("Télécharger pour le hors-ligne") }
             if (marqueursRadio.isNotEmpty() || positionsRadio.isNotEmpty()) {
                 TextButton(onClick = { partagerGpx(contexte, marqueursRadio, positionsRadio, moi) }) { Text("GPX") }
