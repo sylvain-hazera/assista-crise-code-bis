@@ -72,7 +72,11 @@ def normaliser(attrs, axe, instance=None):
     if not admis:
         attrs["beneficiaire"] = None
     elif donne:
-        if donne not in admis:
+        # Une demande ancienne garde son « pour qui » d'alors (une demande de soins d'août 2026
+        # était pour une personne) : on ne refuse que ce qui change ou ce qui est nouveau.
+        inchange = (instance is not None and donne == getattr(instance, "beneficiaire", None)
+                    and attrs.get(champ_type, type_obj) == getattr(instance, champ_type, None))
+        if donne not in admis and not inchange:
             libelles = ", ".join(COURT[b] for b in admis)
             erreurs["beneficiaire"] = f"Pour ce besoin, choisissez parmi : {libelles}."
     else:

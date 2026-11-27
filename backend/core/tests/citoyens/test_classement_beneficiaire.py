@@ -317,3 +317,34 @@ class TestRequalifier:
                                          statut=Dossier.Statut.EN_ATTENTE_AFFECTATION)
         r = client.post(reverse("dossier-requalifier", args=[dossier.id]), {"beneficiaire": "ANIMAUX"}, format="json")
         assert r.status_code == 400 and "beneficiaire" in r.data
+
+
+@pytest.mark.django_db
+class TestSoinsAnciens:
+    """Les demandes de soins d'août 2026 étaient pour des personnes (correctif 0401)."""
+
+    def test_la_0401_les_remet_pour_des_personnes(self, crise):
+        import datetime
+        import importlib
+
+        from django.apps import apps
+
+        soins = RequestType.objects.filter(code="SOIN").first() or RequestType.objects.create(type="Soins test 0401", code="SOIN")
+        ancienne = _demande(soins, crise, beneficiaire="ANIMAUX")
+        Request.objects.filter(pk=ancienne.pk).update(created_at=datetime.datetime(2026, 8, 25, tzinfo=datetime.timezone.utc))
+        recente = _demande(soins, crise, beneficiaire="ANIMAUX", categorie_animaux="EQUIDES")
+
+        importlib.import_module("core.migrations.0401_soins_anciens_pour_des_personnes").corriger(apps, None)
+
+        ancienne.refresh_from_db()
+        recente.refresh_from_db()
+        assert ancienne.beneficiaire == "PERSONNES"
+        assert (recente.beneficiaire, recente.categorie_animaux) == ("ANIMAUX", "EQUIDES")
+
+    def test_une_demande_ancienne_reste_modifiable(self, crise):
+        soins = RequestType(type="Soins modif", code="SOIN")
+        ancienne = Request(request_type=soins, beneficiaire="PERSONNES")
+        assert classement.normaliser({"description": "précision"}, "demande", ancienne) == {}
+        assert classement.normaliser({"beneficiaire": "PERSONNES"}, "demande", ancienne) == {}
+        # Mais on ne crée pas, ni ne bascule, une demande de soins pour une personne.
+        assert "beneficiaire" in classement.normaliser({"request_type": soins, "beneficiaire": "PERSONNES"}, "demande")
