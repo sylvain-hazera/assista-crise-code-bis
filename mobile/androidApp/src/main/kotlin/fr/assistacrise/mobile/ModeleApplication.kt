@@ -990,6 +990,10 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         aller(Ecran.RADIO_CONVERSATION)
     }
 
+    /** Couches météo de la carte : rien n'est lu si aucune n'est cochée. */
+    suspend fun lireMeteo(couches: Set<fr.assistacrise.mobile.donnees.DepotMeteo.Couche>, emprise: fr.assistacrise.mobile.donnees.DepotMeteo.Emprise) =
+        app.meteo.lire(couches, emprise)
+
     fun fermerConversationRadio() {
         aller(origineConversationRadio)
     }

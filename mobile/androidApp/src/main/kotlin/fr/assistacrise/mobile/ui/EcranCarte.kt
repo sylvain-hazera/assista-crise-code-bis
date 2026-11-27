@@ -85,6 +85,7 @@ import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.sources.GeoJsonSource
+import fr.assistacrise.mobile.donnees.DepotMeteo
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
@@ -100,7 +101,9 @@ internal const val STYLE = """{"version":8,"sources":{"ign":{"type":"raster","ti
 internal val FRANCE = LatLng(46.6, 2.4)
 
 /** Une couche que l'on peut masquer : ses calques MapLibre, et sa couleur pour la légende. */
-internal class CoucheCarte(val cle: String, val libelle: String, val couleur: Long, val calques: List<String>)
+internal class CoucheCarte(val cle: String, val libelle: String, val couleur: Long, val calques: List<String>,
+                           /** Couche météo : masquée tant qu'on ne la coche pas, lue seulement avec Internet. */
+                           val meteo: DepotMeteo.Couche? = null)
 
 /** Ma position et le point touché restent toujours visibles. */
 internal val COUCHES = listOf(
@@ -111,6 +114,11 @@ internal val COUCHES = listOf(
     CoucheCarte("noeuds", "Nœuds radio", 0xFF7C3AED, listOf("radio-noeuds-points")),
     CoucheCarte("pei", "Points d'eau incendie", 0xFF1D4ED8, listOf("pei-points")),
     CoucheCarte("zones", "Périmètres de crise", 0xFFB91C1C, listOf("zones-fond", "zones-bord")),
+    // Météo (27/11/2026), avec Internet : les données publiques de notre serveur.
+    CoucheCarte("meteo-pluie", "Pluie (radar)", 0xFF2563EB, listOf("meteo-pluie"), DepotMeteo.Couche.PLUIE),
+    CoucheCarte("meteo-rafales", "Rafales prévues", 0xFF0891B2, listOf("meteo-rafales"), DepotMeteo.Couche.RAFALES),
+    CoucheCarte("meteo-orages", "Orages (et couloir estimé)", 0xFFDC2626, listOf("meteo-orages-fond", "meteo-orages-bord", "meteo-couloirs"), DepotMeteo.Couche.ORAGES),
+    CoucheCarte("meteo-eclairs", "Éclairs (dernière heure)", 0xFFEAB308, listOf("meteo-eclairs"), DepotMeteo.Couche.ECLAIRS),
 )
 
 @SuppressLint("MissingPermission")   // chaque lecture est précédée de ServiceTerrain.autorise
@@ -154,6 +162,10 @@ fun EcranCarte(modele: ModeleApplication) {
     val reglages = remember { contexte.getSharedPreferences("carte", android.content.Context.MODE_PRIVATE) }
     var couchesMasquees by remember { mutableStateOf(reglages.getStringSet("couches-masquees", emptySet())!!.toSet()) }
     var menuCouches by remember { mutableStateOf(false) }
+    // Couches météo cochées (aucune par défaut) ; ce qu'on en a lu ; où regarde la carte.
+    var couchesMeteo by remember { mutableStateOf(reglages.getStringSet("couches-meteo", emptySet())!!.toSet()) }
+    var meteo by remember { mutableStateOf<DepotMeteo.Resultat?>(null) }
+    var emprise by remember { mutableStateOf<DepotMeteo.Emprise?>(null) }
     var capGps by remember { mutableStateOf<Float?>(null) }
 
     var autorise by remember { mutableStateOf(ServiceTerrain.autorise(contexte)) }
@@ -198,6 +210,25 @@ fun EcranCarte(modele: ModeleApplication) {
                 style.addSource(GeoJsonSource("radio-noeuds"))
                 style.addSource(GeoJsonSource("radio-marqueurs"))
                 style.addSource(GeoJsonSource("manif-points"))
+                style.addSource(GeoJsonSource("meteo-orages"))
+                style.addSource(GeoJsonSource("meteo-eclairs"))
+                // La météo tout en dessous : les images du radar et des rafales viendront sous elle
+                // (ajoutées à la première lecture), puis les orages et les éclairs.
+                style.addLayer(FillLayer("meteo-orages-fond", "meteo-orages").withFilter(Expression.eq(Expression.get("nature"), "cellule")).withProperties(
+                    fillColor(Expression.step(Expression.get("mmh"), Expression.color(android.graphics.Color.parseColor("#facc15")),
+                        Expression.stop(10, Expression.color(android.graphics.Color.parseColor("#f97316"))),
+                        Expression.stop(30, Expression.color(android.graphics.Color.parseColor("#dc2626"))),
+                        Expression.stop(50, Expression.color(android.graphics.Color.parseColor("#a21caf"))))),
+                    fillOpacity(0.35f), org.maplibre.android.style.layers.PropertyFactory.visibility(org.maplibre.android.style.layers.Property.NONE)))
+                style.addLayer(LineLayer("meteo-orages-bord", "meteo-orages").withFilter(Expression.eq(Expression.get("nature"), "cellule")).withProperties(
+                    lineColor("#7f1d1d"), lineWidth(1.5f), org.maplibre.android.style.layers.PropertyFactory.visibility(org.maplibre.android.style.layers.Property.NONE)))
+                style.addLayer(LineLayer("meteo-couloirs", "meteo-orages").withFilter(Expression.eq(Expression.get("nature"), "couloir")).withProperties(
+                    lineColor("#7f1d1d"), lineWidth(1.5f), org.maplibre.android.style.layers.PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
+                    org.maplibre.android.style.layers.PropertyFactory.visibility(org.maplibre.android.style.layers.Property.NONE)))
+                style.addLayer(CircleLayer("meteo-eclairs", "meteo-eclairs").withProperties(
+                    circleRadius(4f), circleColor("#facc15"), circleStrokeColor("#713f12"), circleStrokeWidth(1f),
+                    circleOpacity(Expression.interpolate(Expression.linear(), Expression.get("age_min"), Expression.stop(0, 1f), Expression.stop(60, 0.3f))),
+                    org.maplibre.android.style.layers.PropertyFactory.visibility(org.maplibre.android.style.layers.Property.NONE)))
                 // Dessous d'abord : les périmètres de crise, puis les dossiers, puis les personnes.
                 style.addLayer(FillLayer("zones-fond", "zones").withProperties(fillColor("#b91c1c"), fillOpacity(0.10f)))
                 style.addLayer(LineLayer("zones-bord", "zones").withProperties(lineColor("#b91c1c"), lineWidth(2f)))
@@ -280,6 +311,12 @@ fun EcranCarte(modele: ModeleApplication) {
                 }
             }
             m.addOnMapLongClickListener { point -> lieuTouche = point; true }
+            // Où regarde la carte, arrondi : un petit déplacement ne relit pas la météo.
+            m.addOnCameraIdleListener {
+                val b = m.projection.visibleRegion.latLngBounds
+                fun a(x: Double) = kotlin.math.round(x * 10) / 10
+                emprise = DepotMeteo.Emprise.de(a(b.longitudeWest) - 0.1, a(b.latitudeSouth) - 0.1, a(b.longitudeEast) + 0.1, a(b.latitudeNorth) + 0.1)
+            }
         }
         onDispose {
             cycle.removeObserver(observateur)
@@ -321,8 +358,24 @@ fun EcranCarte(modele: ModeleApplication) {
     LaunchedEffect(carte, couchesMasquees) {
         val style = carte?.style ?: return@LaunchedEffect
         for (couche in COUCHES) {
-            val etat = if (couche.cle in couchesMasquees) org.maplibre.android.style.layers.Property.NONE else org.maplibre.android.style.layers.Property.VISIBLE
+            val masquee = if (couche.meteo != null) couche.cle !in couchesMeteo else couche.cle in couchesMasquees
+            val etat = if (masquee) org.maplibre.android.style.layers.Property.NONE else org.maplibre.android.style.layers.Property.VISIBLE
             couche.calques.forEach { id -> style.getLayer(id)?.setProperties(org.maplibre.android.style.layers.PropertyFactory.visibility(etat)) }
+        }
+    }
+
+    // Météo (27/11/2026) : relue toutes les deux minutes tant qu'une couche est cochée, et quand
+    // la carte se déplace. Sans Internet, les couches se vident plutôt que de montrer du périmé.
+    LaunchedEffect(carte, couchesMeteo, emprise) {
+        val m = carte ?: return@LaunchedEffect
+        val voulues = COUCHES.filter { it.cle in couchesMeteo }.mapNotNull { it.meteo }.toSet()
+        if (voulues.isEmpty()) { meteo = null; poserMeteo(m, DepotMeteo.Resultat()); return@LaunchedEffect }
+        val zone = emprise ?: return@LaunchedEffect
+        while (true) {
+            val r = modele.lireMeteo(voulues, zone)
+            meteo = r
+            poserMeteo(m, r)
+            kotlinx.coroutines.delay(120_000)
         }
     }
 
@@ -408,10 +461,11 @@ fun EcranCarte(modele: ModeleApplication) {
             TextButton(onClick = { signalementPei = fr.assistacrise.mobile.domaine.GenreSignalementPei.NOUVEAU to null }) { Text("Point d'eau") }
             Box {
                 TextButton(onClick = { menuCouches = true }) {
-                    Text(if (couchesMasquees.isEmpty()) "Couches ▾" else "Couches (${COUCHES.size - couchesMasquees.size}/${COUCHES.size}) ▾")
+                    val dessus = COUCHES.filter { it.meteo == null }
+                    Text(if (couchesMasquees.isEmpty()) "Couches ▾" else "Couches (${dessus.size - couchesMasquees.size}/${dessus.size}) ▾")
                 }
                 androidx.compose.material3.DropdownMenu(expanded = menuCouches, onDismissRequest = { menuCouches = false }) {
-                    COUCHES.forEach { couche ->
+                    COUCHES.filter { it.meteo == null }.forEach { couche ->
                         val visible = couche.cle !in couchesMasquees
                         androidx.compose.material3.DropdownMenuItem(
                             text = { Text(couche.libelle) },
@@ -430,6 +484,21 @@ fun EcranCarte(modele: ModeleApplication) {
                             reglages.edit().putStringSet("couches-masquees", emptySet()).apply()
                         })
                     }
+                    HorizontalDivider()
+                    Text("Météo (avec Internet)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    COUCHES.filter { it.meteo != null }.forEach { couche ->
+                        val cochee = couche.cle in couchesMeteo
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(couche.libelle) },
+                            leadingIcon = { androidx.compose.material3.Checkbox(checked = cochee, onCheckedChange = null) },
+                            trailingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(couche.couleur))) },
+                            onClick = {
+                                couchesMeteo = if (cochee) couchesMeteo - couche.cle else couchesMeteo + couche.cle
+                                reglages.edit().putStringSet("couches-meteo", couchesMeteo).apply()
+                            },
+                        )
+                    }
                 }
             }
             TextButton(onClick = { horsLigne = true }) { Text("Télécharger pour le hors-ligne") }
@@ -445,6 +514,11 @@ fun EcranCarte(modele: ModeleApplication) {
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 TextButton(onClick = { modele.telechargerZone() }) { Text("Télécharger") }
             }
+        }
+        if (couchesMeteo.isNotEmpty()) meteo?.let { r ->
+            Text(resumeMeteo(r), style = MaterialTheme.typography.labelSmall,
+                color = if (r.injoignable || r.manques.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp))
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(factory = { vue }, modifier = Modifier.fillMaxSize())
@@ -736,4 +810,56 @@ private fun LigneMembre(membre: PositionMembre, surClic: () -> Unit) {
             Text(ilYA(it), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** Pose sur la carte ce que la météo a donné ; une couche non lue est vidée. */
+private fun poserMeteo(m: MapLibreMap, r: DepotMeteo.Resultat) {
+    val style = m.style ?: return
+    val vide = FeatureCollection.fromFeatures(emptyList())
+    (style.getSource("meteo-orages") as? GeoJsonSource)?.let { s -> r.orages?.let { s.setGeoJson(it) } ?: s.setGeoJson(vide) }
+    (style.getSource("meteo-eclairs") as? GeoJsonSource)?.let { s -> r.eclairs?.let { s.setGeoJson(it) } ?: s.setGeoJson(vide) }
+    poserImage(style, "meteo-pluie", r.pluie, 0.7f)
+    poserImage(style, "meteo-rafales", r.rafales, 0.6f)
+}
+
+/** Une image géoréférencée (radar, rafales), sous la météo vectorielle et tout le reste. La couche
+ * est créée à la première image ; sans image, elle est masquée. */
+private fun poserImage(style: Style, id: String, image: DepotMeteo.ImageMeteo?, opacite: Float) {
+    val couche = style.getLayer(id)
+    if (image == null) {
+        (style.getSource(id) as? org.maplibre.android.style.sources.ImageSource)?.let { style.removeLayer(id); style.removeSource(it) }
+        return
+    }
+    val bitmap = android.graphics.BitmapFactory.decodeByteArray(image.octets, 0, image.octets.size) ?: return
+    val (hg, hd, bd, bg) = image.coins.map { (lon, lat) -> LatLng(lat, lon) }
+    val quad = org.maplibre.android.geometry.LatLngQuad(hg, hd, bd, bg)
+    val source = style.getSource(id) as? org.maplibre.android.style.sources.ImageSource
+    if (source == null) {
+        style.addSource(org.maplibre.android.style.sources.ImageSource(id, quad, bitmap))
+        // Les rafales sous la pluie, les deux sous les orages.
+        val dessous = if (id == "meteo-rafales" && style.getLayer("meteo-pluie") != null) "meteo-pluie" else "meteo-orages-fond"
+        style.addLayerBelow(org.maplibre.android.style.layers.RasterLayer(id, id).withProperties(
+            org.maplibre.android.style.layers.PropertyFactory.rasterOpacity(opacite)), dessous)
+    } else {
+        source.setCoordinates(quad)
+        source.setImage(bitmap)
+        if (couche == null) style.addLayerBelow(org.maplibre.android.style.layers.RasterLayer(id, id), "meteo-orages-fond")
+    }
+}
+
+/** « Pluie 22:35 · rafales 22:45 · 2 orages · 37 éclairs — Météo-France, EUMETSAT ». */
+private fun resumeMeteo(r: DepotMeteo.Resultat): String {
+    if (r.injoignable) return "Météo indisponible : pas d'Internet (les couches météo restent vides)."
+    fun h(iso: String) = runCatching {
+        java.time.OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalTime().toString().take(5)
+    }.getOrDefault("?")
+    val parties = listOfNotNull(
+        r.pluie?.let { "pluie observée à ${h(it.heure)}" },
+        r.rafales?.let { "rafales prévues pour ${h(it.heure)}" },
+        r.orages?.let { if (r.nombreCellules == 0) "aucun orage dans la vue" else "${r.nombreCellules} orage" + if (r.nombreCellules > 1) "s" else "" },
+        r.eclairs?.let { "${r.nombreEclairs} éclair" + (if (r.nombreEclairs > 1) "s" else "") + " en une heure" },
+    )
+    val manque = if (r.manques.isEmpty()) "" else " · non lu : " + r.manques.joinToString(", ")
+    val sources = if (r.sources.isEmpty()) "" else " — " + r.sources.joinToString(", ")
+    return "Météo : " + parties.joinToString(" · ").ifEmpty { "rien à afficher" } + manque + sources
 }

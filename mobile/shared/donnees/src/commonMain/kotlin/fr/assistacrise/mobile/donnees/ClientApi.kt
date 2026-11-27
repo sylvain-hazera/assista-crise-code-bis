@@ -468,6 +468,23 @@ class ClientApi(
             })
         }).transformer { (it.jsonObject["empreinte"] as? JsonPrimitive)?.content }
 
+    // --- Météo pour la carte (27/11/2026) -----------------------------------------------
+    // Données publiques du serveur (radar, rafales, orages, foudre) : sans jeton, et sans rien
+    // dire de la joignabilité, pour qu'une couche météo ne fasse jamais basculer de serveur.
+
+    suspend fun meteo(chemin: String): Reponse<JsonElement> =
+        appeler(HttpMethod.Get, chemin, null, jeton = null, signaler = false)
+
+    suspend fun imageMeteo(chemin: String): Reponse<ByteArray> = try {
+        val reponse = http.request("$urlApi/$chemin")
+        val code = reponse.status.value
+        if (code in 200..299) Reponse.Ok(reponse.readRawBytes()) else Reponse.Refus(code, "Image météo indisponible (erreur $code).")
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Reponse.Injoignable("Le serveur est injoignable. Vérifiez votre connexion.")
+    }
+
     // --- Points d'eau incendie (24/11/2026) --------------------------------------------
 
     /** Les points d'eau autour d'un lieu (comptes connectés seulement). */
@@ -728,6 +745,7 @@ class ClientApi(
 
     private suspend fun appeler(
         methode: HttpMethod, chemin: String, corps: JsonObject?, jeton: String?, formulaire: List<PartData>? = null,
+        signaler: Boolean = true,
     ): Reponse<JsonElement> {
         val reponse: HttpResponse
         val texte: String
@@ -745,11 +763,11 @@ class ClientApi(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            surJoignabilite?.invoke(false)
+            if (signaler) surJoignabilite?.invoke(false)
             return Reponse.Injoignable("Le serveur est injoignable. Vérifiez votre connexion.")
         }
         val code = reponse.status.value
-        surJoignabilite?.invoke(code < 500)
+        if (signaler) surJoignabilite?.invoke(code < 500)
         val element = runCatching { json.parseToJsonElement(texte) }.getOrNull()
         return when {
             code in 200..299 -> Reponse.Ok(element ?: JsonObject(emptyMap()))

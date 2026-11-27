@@ -63,6 +63,11 @@ class Application : android.app.Application() {
             client.surJoignabilite = { repondu -> if (bascule.noter(repondu)) lancerLaRecherche() }
         }
     }
+    /** Couches météo de la carte (27/11/2026), lues sur notre serveur quand Internet répond. */
+    val meteo by lazy {
+        fr.assistacrise.mobile.donnees.DepotMeteo(api,
+            { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }, System::currentTimeMillis)
+    }
     val bascule: fr.assistacrise.mobile.donnees.BasculeServeur by lazy {
         fr.assistacrise.mobile.donnees.BasculeServeur(serveur, session, { api.sonde(it) }, { DecouverteSatellite(this).decouvrir() })
     }
