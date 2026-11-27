@@ -1036,6 +1036,17 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    /**
+     * Un besoin relevé sur place (27/11/2026) : famille, pour qui, animaux, quelques mots. Part
+     * comme tout message de terrain (données, sinon radio de l'équipe), position comprise ; le
+     * poste de commandement en fait une demande.
+     */
+    fun releverBesoin(dossier: fr.assistacrise.mobile.domaine.Dossier, code: String, beneficiaire: String?, categorie: String?, note: String) {
+        val position = dernierePosition()
+        val texte = fr.assistacrise.mobile.domaine.Classement.besoin(code, beneficiaire, categorie, position?.first, position?.second, note)
+        envoyerMessageTerrain(TypeMessageTerrain.BESOIN, dossier, texte)
+    }
+
     @android.annotation.SuppressLint("MissingPermission")   // vérifiée juste avant
     private fun dernierePosition(): Pair<Double, Double>? {
         app.suivi.etat.value.dernierEnvoi?.let { return it.latitude to it.longitude }

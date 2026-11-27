@@ -1031,6 +1031,11 @@ class RequestSerializer(SaisieStandardMixin, PositionValideeMixin, SansIndexAveu
 
     def validate(self, attrs):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
+        # Classement « quoi + pour qui » (27/11/2026) : pour qui et catégorie d'animaux.
+        from .classement import normaliser
+        erreurs = normaliser(attrs, "demande", self.instance)
+        if erreurs:
+            raise serializers.ValidationError(erreurs)
         return attrs
 
     def update(self, instance, validated_data):
@@ -1195,6 +1200,11 @@ class OfferSerializer(SaisieStandardMixin, PositionValideeMixin, SansIndexAveugl
 
     def validate(self, attrs):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
+        # Classement « quoi + pour qui » (27/11/2026) : pour qui et catégorie d'animaux.
+        from .classement import normaliser
+        erreurs = normaliser(attrs, "offre", self.instance)
+        if erreurs:
+            raise serializers.ValidationError(erreurs)
         return attrs
 
     def update(self, instance, validated_data):
@@ -2380,6 +2390,12 @@ class DossierSerializer(serializers.ModelSerializer):
         source='competence.nom',
         read_only=True
     )
+
+    # Classement « quoi + pour qui » de la demande (27/11/2026) : lu et requalifié au pilotage.
+    demande_type = serializers.UUIDField(source='demande.request_type_id', read_only=True, default=None)
+    demande_type_nom = serializers.CharField(source='demande.request_type.type', read_only=True, default=None)
+    demande_beneficiaire = serializers.CharField(source='demande.beneficiaire', read_only=True, default=None)
+    demande_categorie_animaux = serializers.CharField(source='demande.categorie_animaux', read_only=True, default=None)
 
     # Nature du Besoin capturé à la création (COMPETENCE/MATERIEL/MIXTE) -- classe le dossier
     # ressource/matériel sur la page Cellule de crise, voir Dossier.besoin.

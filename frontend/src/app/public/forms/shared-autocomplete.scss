@@ -38,3 +38,43 @@
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+// Classement « quoi + pour qui » (27/11/2026) : « Pour qui ? » et « Quels animaux ? » en puces,
+// partagées par les formulaires de demande et d'offre.
+.choix-pour-qui {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+
+  .puce {
+    border: 1px solid var(--ac-border-strong, #bbb);
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #333);
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+
+    &.active {
+      background: var(--ac-blue-bg, #e7f0ff);
+      border-color: var(--ac-blue-border, #3b6fd8);
+      color: var(--ac-blue-text, #1e3a8a);
+      font-weight: 600;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--ac-blue-border, #3b6fd8);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.form-label.petit {
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+}
+
+.form-input.nombre {
+  max-width: 8rem;
+}

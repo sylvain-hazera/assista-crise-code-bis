@@ -1,6 +1,12 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package fr.assistacrise.mobile.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.assistacrise.mobile.ModeleApplication
+import fr.assistacrise.mobile.domaine.Classement
 import fr.assistacrise.mobile.domaine.EtiquetteTerrain
 import fr.assistacrise.mobile.domaine.Dossier
 import fr.assistacrise.mobile.domaine.TypeMessageTerrain
@@ -46,6 +53,7 @@ import java.util.Locale
 @Composable
 fun PanneauTerrain(modele: ModeleApplication, dossier: Dossier) {
     var saisie by rememberSaveable { mutableStateOf<String?>(null) }
+    var besoinOuvert by rememberSaveable { mutableStateOf(false) }
     val journal by modele.journalTerrain.collectAsStateWithLifecycle()
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -54,7 +62,8 @@ fun PanneauTerrain(modele: ModeleApplication, dossier: Dossier) {
             Text("Sur le terrain", style = MaterialTheme.typography.titleMedium)
             Text("Signalez où vous en êtes sur ce dossier, au poste de commandement.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
-            TypeMessageTerrain.entries.chunked(2).forEach { ligne ->
+            // Le besoin relevé a sa propre fenêtre (famille, pour qui, animaux), plus bas.
+            TypeMessageTerrain.entries.filter { it != TypeMessageTerrain.BESOIN }.chunked(2).forEach { ligne ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     ligne.forEach { type ->
                         val geste = {
@@ -72,11 +81,21 @@ fun PanneauTerrain(modele: ModeleApplication, dossier: Dossier) {
                     }
                 }
             }
+            OutlinedButton(onClick = { besoinOuvert = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 3.dp)) {
+                Text("Signaler un besoin (évacuer, nourrir, abriter…)", textAlign = TextAlign.Center)
+            }
             journal.take(3).forEach { e ->
                 Text("${heure(e.emisLe)} · ${e.libelle} — ${etat(e)}", style = MaterialTheme.typography.bodySmall,
                     color = if (e.etat == DepotTerrain.REFUSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
+    }
+
+    if (besoinOuvert) {
+        DialogueBesoin(
+            surEnvoi = { code, b, c, note -> modele.releverBesoin(dossier, code, b, c, note); besoinOuvert = false },
+            surAbandon = { besoinOuvert = false },
+        )
     }
 
     saisie?.let { nom ->
@@ -111,6 +130,62 @@ fun PanneauTerrain(modele: ModeleApplication, dossier: Dossier) {
             dismissButton = { TextButton(onClick = { saisie = null }) { Text("Annuler") } },
         )
     }
+}
+
+/**
+ * Un besoin relevé sur place (27/11/2026) : la famille, pour qui, quels animaux, quelques mots.
+ * Rien sur l'habitant : la radio n'emporte que l'essentiel, le PC en fait une demande.
+ */
+@Composable
+private fun DialogueBesoin(surEnvoi: (code: String, beneficiaire: String?, categorie: String?, note: String) -> Unit, surAbandon: () -> Unit) {
+    var code by rememberSaveable { mutableStateOf<String?>(null) }
+    var pourQui by rememberSaveable { mutableStateOf<String?>(null) }
+    var categorie by rememberSaveable { mutableStateOf<String?>(null) }
+    var note by rememberSaveable { mutableStateOf("") }
+    val admis = Classement.admis(code, offre = false)
+    val pourQuiEffectif = pourQui?.takeIf { it in admis } ?: admis.singleOrNull()
+    AlertDialog(
+        onDismissRequest = surAbandon,
+        title = { Text("Signaler un besoin") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("De quoi s'agit-il ?", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Classement.FAMILLES_RADIO.forEach { (c, libelle) ->
+                        FilterChip(selected = code == c, onClick = { code = c; pourQui = null; categorie = null }, label = { Text(libelle) })
+                    }
+                }
+                if (admis.size > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Pour qui ?", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        admis.forEach { b ->
+                            FilterChip(selected = pourQuiEffectif == b, onClick = { pourQui = b; if (b != Classement.ANIMAUX) categorie = null },
+                                label = { Text(Classement.LIBELLES[b] ?: b) })
+                        }
+                    }
+                }
+                if (pourQuiEffectif == Classement.ANIMAUX) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Quels animaux ?", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Classement.CATEGORIES_ANIMAUX.forEach { (c, libelle) ->
+                            FilterChip(selected = categorie == c, onClick = { categorie = if (categorie == c) null else c }, label = { Text(libelle) })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(note, { note = it.take(Classement.NOTE_BESOIN_MAX) }, label = { Text("Quelques mots (facultatif)") },
+                    supportingText = { Text("${note.length}/${Classement.NOTE_BESOIN_MAX} — rien sur l'habitant") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = code != null && (admis.size < 2 || pourQuiEffectif != null), onClick = {
+                surEnvoi(code!!, pourQuiEffectif, categorie, note)
+            }) { Text("Envoyer") }
+        },
+        dismissButton = { TextButton(onClick = surAbandon) { Text("Annuler") } },
+    )
 }
 
 private fun heure(millis: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(millis))

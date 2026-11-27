@@ -114,7 +114,11 @@ class DepotCitoyen(
         /** Le corps attendu par le serveur pour chaque geste. Public pour être testé seul. */
         fun corps(d: Depot): JsonObject = buildJsonObject {
             // Les précisions du type d'abord : un champ du formulaire, s'il porte le même nom, l'emporte.
-            d.precisions.forEach { (cle, valeur) -> put(cle, valeur) }
+            // Une liste au serveur (une offre peut prendre plusieurs catégories d'animaux).
+            d.precisions.forEach { (cle, valeur) ->
+                if (cle == "categories_animaux") put(cle, kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(valeur))))
+                else put(cle, valeur)
+            }
             // Le serveur attend une géométrie en texte (EWKT), pas un objet : il la passe telle
             // quelle à PostGIS. Longitude d'abord, comme toujours en WKT.
             fun position(cle: String) = d.position?.let { p ->

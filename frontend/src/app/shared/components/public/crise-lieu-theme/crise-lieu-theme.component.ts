@@ -35,6 +35,8 @@ export class CriseLieuThemeComponent implements OnInit {
   @Output() criseSelectionnee = new EventEmitter<Crisis | null>();
   @Output() adresseSelectionnee = new EventEmitter<AddressResult | null>();
   @Output() typesAutorises = new EventEmitter<string[]>();
+  /** Par id de type : les « pour qui » écoutés (classement « quoi + pour qui », 27/11/2026). */
+  @Output() beneficiairesEcoutes = new EventEmitter<Record<string, string[]>>();
 
   crises: Crisis[] = [];
   criseId = '';
@@ -120,6 +122,7 @@ export class CriseLieuThemeComponent implements OnInit {
         this.besoins = res.besoins;
         this.repli = !!res.repli;
         this.typesAutorises.emit(res.type_ids);
+        this.beneficiairesEcoutes.emit(res.beneficiaires_par_type ?? {});
       },
       error: () => { this.chargementThemes = false; this.appele = true; },
     });

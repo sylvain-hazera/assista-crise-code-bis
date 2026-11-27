@@ -119,10 +119,20 @@ def degats(crise, environment):
 def moyens(crise, environment, maintenant):
     from .models import MessageTerrain, Offer, Request
 
-    demandes = dict(Request.objects.filter(crisis=crise, environment=environment, status__in=["NON_TRAITEE", "EN_COURS"])
-                    .values_list("request_type__type").annotate(n=Count("id")).values_list("request_type__type", "n"))
-    offres = dict(Offer.objects.filter(crisis=crise, environment=environment, status="DISPONIBLE")
-                  .values_list("offer_type__type").annotate(n=Count("id")).values_list("offer_type__type", "n"))
+    # Par famille et par « pour qui » (27/11/2026) : « Transport · animaux » se lit à part de
+    # « Transport · personnes ».
+    from .classement import COURT
+
+    def _libelle(t, b):
+        return f"{t or 'Autre'} · {COURT[b]}" if b in COURT else (t or "Autre")
+
+    demandes, offres = {}, {}
+    for t, b, n in (Request.objects.filter(crisis=crise, environment=environment, status__in=["NON_TRAITEE", "EN_COURS"])
+                    .values_list("request_type__type", "beneficiaire").annotate(n=Count("id"))):
+        demandes[_libelle(t, b)] = demandes.get(_libelle(t, b), 0) + n
+    for t, b, n in (Offer.objects.filter(crisis=crise, environment=environment, status="DISPONIBLE")
+                    .values_list("offer_type__type", "beneficiaire").annotate(n=Count("id"))):
+        offres[_libelle(t, b)] = offres.get(_libelle(t, b), 0) + n
     renforts = MessageTerrain.objects.filter(crise=crise, environment=environment, type="RENFORT",
                                              emis_le__gte=maintenant - datetime.timedelta(hours=24))
     return {

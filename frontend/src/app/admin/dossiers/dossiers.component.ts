@@ -10,6 +10,9 @@ import { TeamService } from '../../services/team.service';
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
 import { Dossier } from '../../shared/models/dossier.model';
+import {
+  Beneficiaire, CATEGORIES_ANIMAUX, LIBELLES_BENEFICIAIRE, TypeClasse, beneficiairesAdmis, codeFamille, libelleClasse,
+} from '../../shared/utils/classement';
 import { Team, teamDisplayName } from '../../shared/models/team.model';
 import { UserRole } from '../../shared/models/user.model';
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
@@ -140,6 +143,7 @@ export class DossiersComponent implements OnInit {
   openDossier(dossier: Dossier): void {
 
     this.selectedDossier = dossier;
+    this.requalification = null;
     this.loadOrigineDossierPhoto(dossier);
 
     this.commentaireService.getAll()
@@ -296,6 +300,7 @@ export class DossiersComponent implements OnInit {
 
   closeDossier(): void {
     this.selectedDossier = null;
+    this.requalification = null;
     if (this.origineDossierPhotoUrl) URL.revokeObjectURL(this.origineDossierPhotoUrl);
     this.origineDossierPhotoUrl = null;
   }
@@ -310,6 +315,67 @@ export class DossiersComponent implements OnInit {
     preview$?.subscribe({
       next: (blob) => this.origineDossierPhotoUrl = URL.createObjectURL(blob),
       error: () => {},
+    });
+  }
+
+  // --- Requalification (classement « quoi + pour qui », 27/11/2026) -------------------------
+  readonly LIBELLES_BENEFICIAIRE = LIBELLES_BENEFICIAIRE;
+  readonly CATEGORIES_ANIMAUX = CATEGORIES_ANIMAUX;
+  typesDemande: TypeClasse[] = [];
+  requalification: { type: string; beneficiaire: string; categorie: string } | null = null;
+  savingRequalification = false;
+
+  classementDe(d: Dossier): string {
+    const cat = CATEGORIES_ANIMAUX.find(c => c.value === d.demande_categorie_animaux)?.label;
+    return libelleClasse(d.demande_type_nom, d.demande_beneficiaire) + (cat ? ` · ${cat}` : '');
+  }
+
+  get famillesDemande(): TypeClasse[] {
+    return this.typesDemande.filter(t => !t.parent && t.code);
+  }
+
+  get beneficiairesRequalification(): Beneficiaire[] {
+    if (!this.requalification) return [];
+    const parId = new Map(this.typesDemande.map(t => [t.id, t]));
+    return beneficiairesAdmis(codeFamille(parId.get(this.requalification.type), parId), 'demande');
+  }
+
+  ouvrirRequalification(): void {
+    if (!this.selectedDossier) return;
+    const ouvrir = () => this.requalification = {
+      type: this.selectedDossier?.demande_type ?? '',
+      beneficiaire: this.selectedDossier?.demande_beneficiaire ?? '',
+      categorie: this.selectedDossier?.demande_categorie_animaux ?? '',
+    };
+    if (this.typesDemande.length) { ouvrir(); return; }
+    this.requestService.getTypes().subscribe({
+      next: (types: any[]) => { this.typesDemande = types; ouvrir(); },
+      error: () => alert('Impossible de charger les familles de demande.'),
+    });
+  }
+
+  enregistrerRequalification(): void {
+    const r = this.requalification;
+    if (!this.selectedDossier || !r || this.savingRequalification) return;
+    this.savingRequalification = true;
+    const admis = this.beneficiairesRequalification;
+    const beneficiaire = admis.includes(r.beneficiaire as Beneficiaire) ? r.beneficiaire : (admis.length === 1 ? admis[0] : null);
+    this.dossierService.requalifier(this.selectedDossier.id, {
+      request_type: r.type || undefined,
+      beneficiaire,
+      categorie_animaux: beneficiaire === 'ANIMAUX' ? (r.categorie || null) : null,
+    }).subscribe({
+      next: (updated) => {
+        this.selectedDossier = updated;
+        this.requalification = null;
+        this.savingRequalification = false;
+        this.load();
+      },
+      error: (err) => {
+        const e = err.error || {};
+        alert(e.beneficiaire?.[0] || e.beneficiaire || e.error || 'Impossible de requalifier ce dossier.');
+        this.savingRequalification = false;
+      },
     });
   }
 

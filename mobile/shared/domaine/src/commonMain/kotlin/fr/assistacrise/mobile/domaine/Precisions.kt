@@ -48,7 +48,8 @@ object Precisions {
         "transport" to listOf(
             Precision.Choix("transport_type", "Que transportez-vous ?", listOf("PERSONNES" to "Des personnes", "MATERIEL" to "Du matériel", "ANIMAUX" to "Des animaux")),
             Precision.Nombre("nombre_places_assises", "Places assises", si = "transport_type" to "PERSONNES"),
-            Precision.Texte("transport_animaux_precision", "Quels animaux ?", si = "transport_type" to "ANIMAUX"),
+            Precision.Choix("categories_animaux", "Quels animaux ?", Classement.CATEGORIES_ANIMAUX, si = "transport_type" to "ANIMAUX"),
+            Precision.Texte("transport_animaux_precision", "Précision (van, caisses…)", si = "transport_type" to "ANIMAUX"),
             Precision.Texte("immatriculation", "Immatriculation"),
             Precision.OuiNon("confirmation_reglementaire", "Véhicule assuré et en règle"),
         ),
@@ -79,18 +80,47 @@ object Precisions {
      * @param famille le libellé du type racine choisi (« Hébergement »), tel que le serveur le
      * donne : le site reconnaît lui aussi les types par leur libellé.
      */
-    fun pour(genre: GenreDepot, famille: String?): List<Precision> {
+    fun pour(genre: GenreDepot, famille: String?, code: String? = null): List<Precision> {
         val cle = famille?.trim()?.lowercase()
         return when (genre) {
-            GenreDepot.OFFRE -> OFFRE[cle].orEmpty() + TOUTE_OFFRE
-            GenreDepot.DEMANDE -> if (cle == "hébergement") HEBERGEMENT + Precision.Nombre("zone_recherche_rayon_km", "Dans un rayon de (km)") else emptyList()
+            GenreDepot.OFFRE -> (if (cle == "transport") emptyList() else pourQui(code, offre = true)) + OFFRE[cle].orEmpty() + TOUTE_OFFRE
+            GenreDepot.DEMANDE -> pourQui(code, offre = false) +
+                if (cle == "hébergement") HEBERGEMENT + Precision.Nombre("zone_recherche_rayon_km", "Dans un rayon de (km)") else emptyList()
             else -> emptyList()
         }
     }
 
+    /**
+     * « Pour qui ? » puis « Quels animaux ? » (classement « quoi + pour qui », 27/11/2026). Le
+     * transport d'une offre le dit déjà par « Que transportez-vous ? ».
+     */
+    private fun pourQui(code: String?, offre: Boolean): List<Precision> {
+        val cleCategorie = if (offre) "categories_animaux" else "categorie_animaux"
+        val admis = Classement.admis(code, offre)
+        // Des animaux seulement (une demande de soins) : pas de « pour qui », mais lesquels.
+        if (admis == listOf(Classement.ANIMAUX)) {
+            return listOfNotNull(
+                Precision.Choix(cleCategorie, "Quels animaux ?", Classement.CATEGORIES_ANIMAUX),
+                Precision.Nombre("nombre_animaux", "Combien (environ) ?").takeIf { !offre },
+            )
+        }
+        if (admis.size < 2) return emptyList()
+        return listOfNotNull(
+            Precision.Choix("beneficiaire", "Pour qui ?", admis.map { it to (Classement.LIBELLES[it] ?: it) }),
+            Precision.Choix(cleCategorie, "Quels animaux ?", Classement.CATEGORIES_ANIMAUX, si = "beneficiaire" to Classement.ANIMAUX)
+                .takeIf { Classement.ANIMAUX in admis },
+            Precision.Nombre("nombre_animaux", "Combien (environ) ?", si = "beneficiaire" to Classement.ANIMAUX)
+                .takeIf { !offre && Classement.ANIMAUX in admis },
+        )
+    }
+
+    /** Ce qui décrit un logement pour des personnes : sans objet pour des animaux. */
+    private val CLES_LOGEMENT = (HEBERGEMENT.map { it.cle } + listOf("zone_recherche_rayon_km", "accueil_sinistres", "accueil_intervenants")).toSet()
+
     /** Les champs à montrer compte tenu de ce qui est déjà saisi. */
     fun visibles(champs: List<Precision>, saisie: Map<String, String>): List<Precision> =
         champs.filter { c -> c.si?.let { (cle, valeur) -> valeurDe(champs, saisie, cle) == valeur || (cle == "type_loyer" && valeurDe(champs, saisie, cle) == "MARCHE") } ?: true }
+            .filter { c -> saisie["beneficiaire"] != Classement.ANIMAUX || c.cle !in CLES_LOGEMENT }
 
     /**
      * Ce qui part au serveur : seulement les champs visibles et renseignés. Un « oui/non » part

@@ -137,6 +137,30 @@
         (mission d'intérêt général, sans demandeur individuel)
       </div>
 
+      <!-- Classement « quoi + pour qui » (27/11/2026) : à corriger si le besoin relevé était approximatif. -->
+      <div class="detail-row" *ngIf="selectedDossier.demande">
+        <strong>Besoin :</strong>
+        {{ classementDe(selectedDossier) }}
+        <button type="button" class="lien-action" *ngIf="!requalification && selectedDossier.statut !== 'CLOTURE'"
+                (click)="ouvrirRequalification()">Requalifier</button>
+      </div>
+      <div class="detail-row requalification" *ngIf="requalification">
+        <select [(ngModel)]="requalification.type" aria-label="Famille">
+          <option *ngFor="let t of famillesDemande" [ngValue]="t.id">{{ t.type }}</option>
+        </select>
+        <select *ngIf="beneficiairesRequalification.length > 1" [(ngModel)]="requalification.beneficiaire" aria-label="Pour qui">
+          <option value="">— Pour qui —</option>
+          <option *ngFor="let b of beneficiairesRequalification" [ngValue]="b">{{ LIBELLES_BENEFICIAIRE[b] }}</option>
+        </select>
+        <select *ngIf="requalification.beneficiaire === 'ANIMAUX' || (beneficiairesRequalification.length === 1 && beneficiairesRequalification[0] === 'ANIMAUX')"
+                [(ngModel)]="requalification.categorie" aria-label="Quels animaux">
+          <option value="">Tous animaux</option>
+          <option *ngFor="let c of CATEGORIES_ANIMAUX" [ngValue]="c.value">{{ c.label }}</option>
+        </select>
+        <button type="button" (click)="enregistrerRequalification()" [disabled]="savingRequalification">Enregistrer</button>
+        <button type="button" (click)="requalification = null">Annuler</button>
+      </div>
+
       <div class="detail-row">
         <strong>Compétence :</strong>
         {{ selectedDossier.competence_nom }}

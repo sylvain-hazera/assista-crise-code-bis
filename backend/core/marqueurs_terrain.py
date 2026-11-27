@@ -48,6 +48,8 @@ MARQUEUR_DU_SIGNALEMENT = {
     "route barrée": ("⛔", ""),
     "arbre sur la chaussée": ("⛔", "Arbre sur la chaussée"),
     "danger imminent": ("⚠️", ""),
+    "départ de feu": ("🔥", ""),
+    "inondation / montée des eaux": ("🌊", ""),
 }
 SIGNALEMENT_PAR_DEFAUT = ("ℹ️", "")
 #: Longueur d'une note de signalement : la radio n'a pas de place pour plus.

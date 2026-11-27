@@ -35,7 +35,8 @@
           axe="request"
           (criseSelectionnee)="onCriseSelectionnee($event)"
           (adresseSelectionnee)="onAddressSelected($event)"
-          (typesAutorises)="onTypesAutorises($event)">
+          (typesAutorises)="onTypesAutorises($event)"
+          (beneficiairesEcoutes)="onBeneficiairesEcoutes($event)">
         </app-crise-lieu-theme>
 
         @if (typesDemandeAutorises.length > 0) {
@@ -76,6 +77,41 @@
                     }
                 </div>
 
+                <!-- Pour qui ? (classement « quoi + pour qui », 27/11/2026) -->
+                @if (beneficiairesPour(i).length > 1) {
+                    <div class="form-group">
+                        <span class="form-label">Pour qui ? <span class="required">*</span></span>
+                        <div class="choix-pour-qui" role="radiogroup" [attr.aria-label]="'Pour qui, besoin ' + (i + 1)">
+                            @for (b of beneficiairesPour(i); track b) {
+                                <button type="button" class="puce" role="radio" [attr.aria-checked]="beneficiaires[i] === b"
+                                        [class.active]="beneficiaires[i] === b" (click)="choisirBeneficiaire(i, b)">
+                                    {{ LIBELLES_BENEFICIAIRE[b] }}
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (beneficiaires[i] === 'ANIMAUX') {
+                    <div class="form-group">
+                        <span class="form-label">Quels animaux ?</span>
+                        <div class="choix-pour-qui" role="radiogroup" [attr.aria-label]="'Quels animaux, besoin ' + (i + 1)">
+                            @for (c of CATEGORIES_ANIMAUX; track c.value) {
+                                <button type="button" class="puce" role="radio" [attr.aria-checked]="categoriesAnimaux[i] === c.value"
+                                        [class.active]="categoriesAnimaux[i] === c.value"
+                                        (click)="categoriesAnimaux[i] = categoriesAnimaux[i] === c.value ? '' : c.value">
+                                    {{ c.label }}
+                                </button>
+                            }
+                        </div>
+                        <label [for]="'nombreAnimaux' + i" class="form-label petit">Combien (environ) ?</label>
+                        <input type="number" min="1" class="form-input nombre" [id]="'nombreAnimaux' + i"
+                               [value]="nombresAnimaux[i] ?? ''" (input)="nombresAnimaux[i] = +$any($event.target).value || null">
+                    </div>
+                }
+                @if (needsType.at(i).value === 'Soins') {
+                    <p class="hint">Pour une personne blessée ou malade, appelez le 15 (ou le 112).</p>
+                }
+
                 @if (childrenFor(i).length > 0) {
                     <div class="form-group">
                         <label [for]="'needSubType' + i" class="form-label">Précisez (optionnel)</label>
@@ -96,7 +132,7 @@
                 }
 
                 <!-- Hébergement : durée + critères détaillés du logement recherché -->
-                @if (needsType.at(i).value === TYPE_HEBERGEMENT) {
+                @if (estRechercheLogement(i)) {
                     <div class="form-group">
                         <label class="form-label">Durée d'hébergement recherchée</label>
                         <label class="radio-label">

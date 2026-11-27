@@ -41,7 +41,8 @@
           axe="offer"
           (criseSelectionnee)="onCriseSelectionnee($event)"
           (adresseSelectionnee)="onAddressSelected($event)"
-          (typesAutorises)="onTypesAutorises($event)">
+          (typesAutorises)="onTypesAutorises($event)"
+          (beneficiairesEcoutes)="onBeneficiairesEcoutes($event)">
         </app-crise-lieu-theme>
 
         @if (typesOffreAutorises.length > 0) {
@@ -83,8 +84,36 @@
                     }
                 </div>
 
+                <!-- Pour qui ? (classement « quoi + pour qui », 27/11/2026) -->
+                @if (beneficiairesPourOffre(rg).length > 1) {
+                    <div class="form-group">
+                        <span class="form-label">Pour qui ? <span class="required">*</span></span>
+                        <div class="choix-pour-qui" role="radiogroup" [attr.aria-label]="'Pour qui, offre ' + (i + 1)">
+                            @for (b of beneficiairesPourOffre(rg); track b) {
+                                <button type="button" class="puce" role="radio" [attr.aria-checked]="rg.get('beneficiaire')?.value === b"
+                                        [class.active]="rg.get('beneficiaire')?.value === b" (click)="choisirBeneficiaireOffre(rg, b)">
+                                    {{ LIBELLES_BENEFICIAIRE[b] }}
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (beneficiaireDe(rg) === 'ANIMAUX') {
+                    <div class="form-group">
+                        <span class="form-label">Quels animaux ? <span class="field-hint-inline">(plusieurs choix possibles)</span></span>
+                        <div class="choix-pour-qui" role="group" [attr.aria-label]="'Quels animaux, offre ' + (i + 1)">
+                            @for (c of CATEGORIES_ANIMAUX; track c.value) {
+                                <button type="button" class="puce" [attr.aria-pressed]="categorieCochee(rg, c.value)"
+                                        [class.active]="categorieCochee(rg, c.value)" (click)="basculerCategorie(rg, c.value)">
+                                    {{ c.label }}
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <!-- Hébergement : durée + critères détaillés du logement -->
-                @if (rg.get('type')?.value === TYPE_HEBERGEMENT) {
+                @if (rg.get('type')?.value === TYPE_HEBERGEMENT && beneficiaireDe(rg) !== 'ANIMAUX') {
                     <div class="form-group">
                         <label class="form-label">Durée de l'hébergement proposé</label>
                         <label class="radio-label">
@@ -222,11 +251,11 @@
 
                     @if (rg.get('transportType')?.value === 'ANIMAUX') {
                         <div class="form-group">
-                            <label class="form-label">Type d'animaux <span class="required">*</span></label>
+                            <label class="form-label">Précision <span class="field-hint-inline">(facultatif si une catégorie est cochée)</span></label>
                             <input type="text" formControlName="transportAnimauxPrecision" class="form-input"
-                              placeholder="Ex. chiens, chats, chevaux, bétail...">
+                              placeholder="Ex. van 2 chevaux, caisses pour chats...">
                             @if (rg.get('transportAnimauxPrecision')?.invalid && rg.get('transportAnimauxPrecision')?.touched) {
-                                <div class="error-message">Merci de préciser le type d'animaux.</div>
+                                <div class="error-message">Cochez au moins une catégorie d'animaux, ou précisez-les ici.</div>
                             }
                         </div>
                     }

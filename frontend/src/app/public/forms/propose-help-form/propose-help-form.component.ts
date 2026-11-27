@@ -72,15 +72,23 @@ function presencePhysiqueValidator(control: AbstractControl): ValidationErrors |
   return (requiert && control.value === null) ? { required: true } : null;
 }
 
-/** Type d'animal exigé si transportType === ANIMAUX (réévalué dans addOffer()). */
+/** Type d'animal exigé si transportType === ANIMAUX : une catégorie cochée OU une précision
+ * écrite suffit (classement « quoi + pour qui », 27/11/2026). */
 function transportAnimauxPrecisionValidator(control: AbstractControl): ValidationErrors | null {
   const parent = control.parent;
   if (!parent) return null;
   const transportType = parent.get('transportType')?.value;
-  return (transportType === 'ANIMAUX' && !control.value) ? { required: true } : null;
+  const categories: string[] = parent.get('categoriesAnimaux')?.value ?? [];
+  return (transportType === 'ANIMAUX' && !control.value && categories.length === 0) ? { required: true } : null;
 }
 
 import { titreDepot } from '../../../shared/utils/titre-depot.util';
+import {
+  Beneficiaire, CATEGORIES_ANIMAUX, LIBELLES_BENEFICIAIRE, TypeClasse, beneficiaireParDefaut, beneficiairesAdmis, codeFamille,
+} from '../../../shared/utils/classement';
+
+/** Le type de transport dit déjà pour qui : personnes, matériel (biens) ou animaux. */
+const BENEFICIAIRE_DU_TRANSPORT: Record<string, Beneficiaire> = { PERSONNES: 'PERSONNES', MATERIEL: 'BIENS', ANIMAUX: 'ANIMAUX' };
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -220,6 +228,47 @@ export class ProposeHelpFormComponent implements OnInit {
 
   onTypesAutorises(typeIds: string[]): void {
     this.typesOffreAutorises = typeIds;
+  }
+
+  // --- Classement « quoi + pour qui » (27/11/2026) -----------------------------------------
+  readonly LIBELLES_BENEFICIAIRE = LIBELLES_BENEFICIAIRE;
+  readonly CATEGORIES_ANIMAUX = CATEGORIES_ANIMAUX;
+  beneficiairesEcoutes: Record<string, string[]> = {};
+  private typesOffreParLibelle = new Map<string, TypeClasse>();
+  private typesOffreParId = new Map<string, TypeClasse>();
+
+  onBeneficiairesEcoutes(par: Record<string, string[]>): void {
+    this.beneficiairesEcoutes = par;
+  }
+
+  /** « Pour qui ? » à poser pour cette offre ; le transport le dit par son propre choix. */
+  beneficiairesPourOffre(rg: AbstractControl): Beneficiaire[] {
+    const libelle = rg.get('type')?.value;
+    if (!libelle || libelle === TYPE_TRANSPORT) return [];
+    const type = this.typesOffreParLibelle.get(libelle);
+    if (!type) return [];
+    return beneficiairesAdmis(codeFamille(type, this.typesOffreParId), 'offre', this.beneficiairesEcoutes[type.id]);
+  }
+
+  /** Le « pour qui » effectif d'une offre (choisi, déduit du transport, ou seul possible). */
+  beneficiaireDe(rg: AbstractControl): Beneficiaire | '' {
+    const v = rg.value;
+    if (v.type === TYPE_TRANSPORT) return BENEFICIAIRE_DU_TRANSPORT[v.transportType] ?? '';
+    return v.beneficiaire || beneficiaireParDefaut(this.beneficiairesPourOffre(rg));
+  }
+
+  choisirBeneficiaireOffre(rg: AbstractControl, b: Beneficiaire): void {
+    rg.patchValue({ beneficiaire: b, ...(b !== 'ANIMAUX' ? { categoriesAnimaux: [] } : {}) });
+  }
+
+  basculerCategorie(rg: AbstractControl, valeur: string): void {
+    const actuelles: string[] = rg.get('categoriesAnimaux')?.value ?? [];
+    rg.patchValue({ categoriesAnimaux: actuelles.includes(valeur) ? actuelles.filter(c => c !== valeur) : [...actuelles, valeur] });
+    rg.get('transportAnimauxPrecision')?.updateValueAndValidity();
+  }
+
+  categorieCochee(rg: AbstractControl, valeur: string): boolean {
+    return (rg.get('categoriesAnimaux')?.value ?? []).includes(valeur);
   }
 
   offerTypeOptions: { value: string; label: string }[] = [
@@ -416,6 +465,8 @@ export class ProposeHelpFormComponent implements OnInit {
       next: (types: any[]) => {
         types.forEach(type => {
           this.typesOffreMap.set(type.type, type.id);
+          this.typesOffreParLibelle.set(type.type, type);
+          this.typesOffreParId.set(type.id, type);
         });
         this.offerTypeOptions = [
           { value: '', label: 'Dropdown' },
@@ -477,6 +528,9 @@ export class ProposeHelpFormComponent implements OnInit {
     if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
     if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
     if (f.get('acceptCgu')?.invalid) errors.push('Vous devez accepter les conditions générales d\'utilisation.');
+    if (this.offerRows.controls.some(rg => this.beneficiairesPourOffre(rg).length > 1 && !rg.get('beneficiaire')?.value)) {
+      errors.push('Précisez pour qui est chaque offre : des personnes ou des animaux.');
+    }
     if (this.offerRows.invalid) errors.push('Complétez les informations sur votre offre (un ou plusieurs champs manquants ou invalides).');
     if (this.hasCheckedEngines && !this.engineConfirmationReglementaire) {
       errors.push('Confirmez être en règle (vous et les engins cochés) pour valider la rubrique Engins agricoles / chantiers / spéciaux.');
@@ -558,6 +612,11 @@ export class ProposeHelpFormComponent implements OnInit {
       }
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
+      const beneficiaire = this.beneficiaireDe(row);
+      if (beneficiaire) formData.append('beneficiaire', beneficiaire);
+      if (beneficiaire === 'ANIMAUX') {
+        for (const c of (v.categoriesAnimaux ?? [])) formData.append('categories_animaux', c);
+      }
       if (v.type === TYPE_TRANSPORT && v.transportType === 'ANIMAUX' && v.transportAnimauxPrecision) {
         formData.append('transport_animaux_precision', v.transportAnimauxPrecision);
       }
@@ -757,6 +816,8 @@ export class ProposeHelpFormComponent implements OnInit {
       numeroAdeliRpps: [''],
       transportType: [''],
       transportAnimauxPrecision: ['', transportAnimauxPrecisionValidator],
+      beneficiaire: [''],
+      categoriesAnimaux: [[] as string[]],
       nombrePlacesAssises: [null as number | null],
       materielType: [''],
       cuveContenu: [''],

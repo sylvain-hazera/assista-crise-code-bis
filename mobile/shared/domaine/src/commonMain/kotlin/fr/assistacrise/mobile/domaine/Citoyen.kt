@@ -37,6 +37,8 @@ data class TypeDepot(
     @SerialName("type") val libelle: String? = null,
     /** Les types forment un arbre (« Matériel » → « Bulldozer à lame »). `null` = racine. */
     val parent: String? = null,
+    /** Code stable de la famille (EVAC, ABRI…), sur les types racine (27/11/2026). */
+    val code: String? = null,
 )
 
 /** Une information publiée sur une crise. */

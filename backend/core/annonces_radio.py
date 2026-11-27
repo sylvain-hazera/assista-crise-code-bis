@@ -84,8 +84,9 @@ def nature(dossier):
     """La grande famille seulement (« Matériel », « Transport », « Route barrée ») : la radio n'a
     pas à détailler le besoin ni la compétence (Sylvain, 27/11/2026). Le détail arrive en IP."""
     if dossier.demande_id and dossier.demande.request_type_id:
-        t = dossier.demande.request_type
-        return str(t.parent if t.parent_id else t)
+        from .classement import libelle_radio
+
+        return libelle_radio(dossier.demande.request_type, dossier.demande.beneficiaire)
     if dossier.information_id and dossier.information.information_type_id:
         return str(dossier.information.information_type)
     return ""

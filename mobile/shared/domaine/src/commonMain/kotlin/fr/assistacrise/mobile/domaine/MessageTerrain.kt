@@ -30,6 +30,9 @@ enum class TypeMessageTerrain(
     PAUSE("PAUSE", "En pause"),
     PREMIERS_SECOURS("PS", "Demande de premiers secours", prioritaire = true, demandeTexte = true, texteObligatoire = true,
         questionTexte = "Pour quel motif demander des secours ?"),
+    /** Un besoin relevé sur place (27/11/2026) : « EVAC·A·EQ 45.50000,4.60000 3 chevaux ». Le PC
+     * en fait une demande, rapprochée de l'équipe la plus spécialisée. Voir [Classement.besoin]. */
+    BESOIN("BES", "Besoin relevé sur le terrain", demandeTexte = true, texteObligatoire = true, questionTexte = "Quelques mots (facultatif)"),
 }
 
 /** Ce qui part au serveur (et, faute de réseau, sur le canal radio de l'équipe). */

@@ -360,3 +360,21 @@
 // 18/11/2026 : la carte ne montrait qu'un numéro. Le titre dit de quoi il s'agit.
 .titre-dossier { font-weight: 600; margin: .35rem 0 .5rem; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+// Requalification d'une demande (classement « quoi + pour qui », 27/11/2026).
+.lien-action {
+  margin-left: 0.5rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ac-blue-text, #1e3a8a);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.requalification {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}

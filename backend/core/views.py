@@ -1003,10 +1003,43 @@ class TypesALecouteView(generics.GenericAPIView):
                 catalogue = catalogue.filter(actif=True)
             type_ids = list(catalogue.values_list('id', flat=True))
 
+        # Classement « quoi + pour qui » (27/11/2026) : pour chaque type, les « pour qui » admis
+        # ET écoutés, et les catégories d'animaux écoutées (absentes : toutes).
+        beneficiaires_par_type, categories_par_type = {}, {}
+        if axe != 'information':
+            from .besoins_ecoute import restrictions_par_besoin
+            from .classement import beneficiaires_admis
+
+            restrictions = {} if repli else restrictions_par_besoin(crise, None if axe == 'offer' else commune_code)
+            catalogue = _CATALOGUE_TYPE_PAR_AXE[axe].objects.filter(id__in=type_ids)
+            if axe == 'request':
+                catalogue = catalogue.select_related('parent')
+            ponts = {}
+            for type_id, besoin_id in pont_model.objects.filter(**{f"{champ_type_id}__in": type_ids}).values_list(champ_type_id, 'besoin_id'):
+                ponts.setdefault(type_id, []).append(besoin_id)
+            for t in catalogue:
+                admis = beneficiaires_admis(t, 'demande' if axe == 'request' else 'offre')
+                if not admis:
+                    continue
+                ecoutes, cats = set(), set()
+                for besoin_id in ponts.get(t.id, []):
+                    if repli or besoin_id not in restrictions:
+                        continue
+                    b, c = restrictions[besoin_id]
+                    ecoutes = None if (b is None or ecoutes is None) else ecoutes | b
+                    cats = None if (c is None or cats is None) else cats | c
+                if repli or not ponts.get(t.id):
+                    ecoutes, cats = None, None
+                beneficiaires_par_type[str(t.id)] = [x for x in admis if ecoutes is None or x in ecoutes] or admis
+                if cats is not None and cats:
+                    categories_par_type[str(t.id)] = sorted(cats)
+
         return Response({
             "besoins": BesoinSerializer(besoins, many=True).data,
             "type_ids": [str(i) for i in type_ids],
             "repli": repli,
+            "beneficiaires_par_type": beneficiaires_par_type,
+            "categories_animaux_par_type": categories_par_type,
         })
 
 
@@ -1533,6 +1566,53 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             appris = apprendre_affectation(dossier, team, request)
             data["apprentissages"] = [appris] if appris else []
         return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="requalifier", permission_classes=[IsInstitutionalActor])
+    def requalifier(self, request, pk=None):
+        """Requalifie la demande d'un dossier : famille, pour qui, catégorie d'animaux
+        (classement « quoi + pour qui », 27/11/2026). Un besoin relevé par radio arrive souvent
+        approximatif ; un dépôt ancien a reçu un pour qui déduit. Encore en attente, le dossier
+        est rapproché à nouveau, du plus précis au plus général ; affecté, il garde son équipe."""
+        from .classement import choisir, competences_pour_demande, normaliser
+
+        dossier = self.get_object()
+        demande = dossier.demande
+        if demande is None:
+            return Response({"error": "Ce dossier ne vient pas d'une demande."}, status=status.HTTP_400_BAD_REQUEST)
+        attrs = {}
+        if request.data.get('request_type'):
+            attrs['request_type'] = get_object_or_404(RequestType, pk=request.data['request_type'])
+        if 'beneficiaire' in request.data:
+            attrs['beneficiaire'] = request.data.get('beneficiaire') or None
+        if 'categorie_animaux' in request.data:
+            attrs['categorie_animaux'] = request.data.get('categorie_animaux') or None
+        if 'nombre_animaux' in request.data:
+            n = request.data.get('nombre_animaux')
+            attrs['nombre_animaux'] = int(n) if str(n or '').isdigit() else None
+        erreurs = normaliser(attrs, "demande", demande)
+        if erreurs:
+            return Response(erreurs, status=status.HTTP_400_BAD_REQUEST)
+        for champ, valeur in attrs.items():
+            setattr(demande, champ, valeur)
+        demande.save(update_fields=list(attrs.keys()))
+        champs = []
+        besoin = resolve_besoin_for_request(demande)
+        if besoin is not None and besoin.id != dossier.besoin_id:
+            dossier.besoin = besoin
+            champs.append('besoin')
+        if dossier.statut in STATUTS_DOSSIER_EN_ATTENTE:
+            competence, equipe = choisir(dossier.crise, competences_pour_demande(demande), demande)
+            if competence is not None:
+                dossier.competence, dossier.equipe = competence, equipe
+                champs += ['competence', 'equipe']
+        if champs:
+            dossier.save(update_fields=champs)
+        from .classement import COURT
+        libelle = f"{demande.request_type}" + (f" · {COURT[demande.beneficiaire]}" if demande.beneficiaire in COURT else "")
+        DossierHistorique.objects.create(dossier=dossier, evenement=f"Requalifié : {libelle}", environment=dossier.environment)
+        audit_log(request=request, action_code="MODIFICATION", objet_type="Dossier", objet_id=dossier.id,
+                  crise=dossier.crise, commentaire=f"Dossier {dossier.numero} requalifié : {libelle}")
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
 
     @action(detail=False, methods=["post"], url_path="affecter-equipe-masse", permission_classes=[IsInstitutionalActor])
     def affecter_equipe_masse(self, request):
@@ -4207,6 +4287,24 @@ def resuggerer_dossiers(crise_id, competence_id):
             dossier.equipe = equipe
             dossier.save(update_fields=['equipe'])
             modifies += 1
+    # Une équipe spécialisée arrive (« Évacuation d'équidés ») : les demandes en attente sous une
+    # compétence plus générale de la même cascade lui reviennent (27/11/2026).
+    from .classement import choisir, competences_pour_demande
+    precises = Dossier.objects.filter(
+        crise=crise, statut__in=STATUTS_DOSSIER_EN_ATTENTE, demande__isnull=False,
+        demande__beneficiaire__isnull=False, competence__isnull=False,
+    ).exclude(competence=competence).select_related('demande__request_type')
+    for dossier in precises:
+        cascade = competences_pour_demande(dossier.demande)
+        if competence not in cascade or dossier.competence not in cascade:
+            continue
+        if cascade.index(competence) > cascade.index(dossier.competence):
+            continue
+        nouvelle, equipe = choisir(crise, cascade, dossier.demande)
+        if equipe is not None and (nouvelle.id, equipe.id) != (dossier.competence_id, dossier.equipe_id):
+            dossier.competence, dossier.equipe = nouvelle, equipe
+            dossier.save(update_fields=['competence', 'equipe'])
+            modifies += 1
     return modifies
 
 
@@ -4332,15 +4430,27 @@ def affecter_competences_aux_crises(team, request=None):
     return creees
 
 
-def resolve_competence_for_request(demande):
+def resolve_competence_for_request(demande, equipe=None):
     """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
     utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
-    le rattachement d'un dossier créé manuellement (assign_team)."""
-    mapping_besoin = RequestTypeBesoin.objects.filter(request_type=demande.request_type).first()
-    if not mapping_besoin:
+    le rattachement d'un dossier créé manuellement (assign_team).
+
+    Classement « quoi + pour qui » (27/11/2026) : les compétences vont de la plus précise à la
+    plus générale (classement.competences_pour_demande). Avec `equipe` (affectation à la main),
+    la plus précise que l'équipe tient sur la crise ; sinon la plus générale, celle que les
+    régulateurs suivent."""
+    from .classement import competences_pour_demande
+
+    competences = competences_pour_demande(demande)
+    if not competences:
         return None
-    mapping_competence = BesoinCompetence.objects.filter(besoin=mapping_besoin.besoin).first()
-    return mapping_competence.competence if mapping_competence else None
+    if equipe is not None and demande.crisis_id:
+        tenues = set(AffectationCompetence.objects.filter(
+            crise_id=demande.crisis_id, equipe=equipe, active=True).values_list('competence_id', flat=True))
+        for competence in competences:
+            if competence.id in tenues:
+                return competence
+    return competences[-1]
 
 
 def resolve_competence_for_information(signalement):
@@ -4456,7 +4566,7 @@ def _assign_request_to_team(demande, team, request, mission=None):
     # affecter explicitement une équipe ici confirme/corrige ce dossier existant au lieu d'en
     # créer un second en doublon (bug repéré le 26/09).
     dossier, cree = _dossier_pour_soumission(
-        'demande', demande, demande.crisis, resolve_competence_for_request(demande), team,
+        'demande', demande, demande.crisis, resolve_competence_for_request(demande, team), team,
         titre=demande.title,
         description=f"Demande affectée à l'équipe {team.name} : {demande.title}",
         besoin=resolve_besoin_for_request(demande),
@@ -4926,8 +5036,11 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # surveille cette compétence actuellement"), inchangé.
             statut = Dossier.Statut.EN_ATTENTE_AFFECTATION
 
-            equipe = None
-            competence = resolve_competence_for_request(demande)
+            # Du plus précis au plus général (classement « quoi + pour qui », 27/11/2026) :
+            # une équipe « Évacuation d'équidés » reçoit les chevaux, sans elle l'équipe
+            # « Évacuation d'animaux », puis celle de transport.
+            from .classement import choisir, competences_pour_demande
+            competence, equipe = choisir(demande.crisis, competences_pour_demande(demande), demande)
 
             if competence:
 
@@ -4945,9 +5058,6 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
                 if not regulateurs_disponibles.exists():
                     statut = Dossier.Statut.EN_ATTENTE_DISTRIBUTION
-
-                if demande.crisis:
-                    equipe = meilleure_equipe_pour_competence(demande.crisis, competence, demande)
 
             if competence:
 

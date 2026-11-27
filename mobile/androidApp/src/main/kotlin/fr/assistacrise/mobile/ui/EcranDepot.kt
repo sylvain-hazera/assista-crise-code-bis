@@ -107,7 +107,7 @@ fun EcranDepot(modele: ModeleApplication, compte: Compte) {
     }
     // Les précisions que ce type appelle, comme sur le site : la famille choisie décide.
     val famille = types.firstOrNull { it.id == idType }?.let { c -> types.firstOrNull { it.id == c.parent } ?: c }
-    val champsPrecis = Precisions.pour(genre, famille?.libelle)
+    val champsPrecis = Precisions.pour(genre, famille?.libelle, famille?.code)
     val (positionLue, autorise, demanderPosition) = positionDuMoment()
     // Un lieu touché sur la carte l'emporte : c'est là que ça se passe, pas là où je me tiens.
     val lieu = modele.lieuChoisi

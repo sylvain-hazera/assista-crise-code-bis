@@ -18,8 +18,9 @@ export class BesoinCompetenceService {
     return this.http.get<BesoinCompetence[]>(`${this.url}/`);
   }
 
-  create(besoin: string, competence: string): Observable<BesoinCompetence> {
-    return this.http.post<BesoinCompetence>(`${this.url}/`, { besoin, competence });
+  create(besoin: string, competence: string, beneficiaire: string | null = null,
+         categorie_animaux: string | null = null): Observable<BesoinCompetence> {
+    return this.http.post<BesoinCompetence>(`${this.url}/`, { besoin, competence, beneficiaire, categorie_animaux });
   }
 
   delete(id: string): Observable<void> {

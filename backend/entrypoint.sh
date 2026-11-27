@@ -39,8 +39,9 @@ echo "Creating default Request Types..."
 python manage.py shell <<EOF
 from core.models import RequestType, OfferType, InformationType 
 
+# Classement « quoi + pour qui » (27/11/2026) : « Assistance à évacuation » est devenue
+# Transport + personnes (migration 0400).
 types_demandes = [
-    'Assistance à évacuation',
     'Hébergement',
     'Nourriture et eau',
     'Transport',
@@ -63,6 +64,8 @@ types_offres = [
 types_informations = [
     'Information utile',
     'Danger imminent',
+    'Départ de feu',
+    'Inondation / montée des eaux',
     'Autre'
 ]
 

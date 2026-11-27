@@ -26,6 +26,9 @@ export interface ImplicationInstitution {
   date_creation: string;
   themes?: string[];
   themes_libelles?: string[];
+  /** Restrictions facultatives de l'écoute (27/11/2026) : vide = tous. */
+  beneficiaires_ecoutes?: string[];
+  categories_animaux_ecoutees?: string[];
   responsable?: string | null;
   responsable_nom?: string | null;
 }
@@ -47,6 +50,8 @@ export interface ImplicationInstitutionPayload {
   type_implication: TypeImplication;
   commentaire?: string;
   themes?: string[];
+  beneficiaires_ecoutes?: string[];
+  categories_animaux_ecoutees?: string[];
   responsable?: string;
   responsable_email?: string;
   renfort?: boolean;

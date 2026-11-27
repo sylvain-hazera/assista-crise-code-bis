@@ -66,6 +66,15 @@
 
   <span *ngIf="selectedCompetence" class="selected-competence">{{ selectedCompetence.nom }}</span>
 
+  <select [(ngModel)]="selectedBeneficiaire" aria-label="Pour qui">
+    <option value="">Pour tous</option>
+    <option *ngFor="let b of beneficiaires" [ngValue]="b">{{ LIBELLES_BENEFICIAIRE[b] }}</option>
+  </select>
+  <select *ngIf="selectedBeneficiaire === 'ANIMAUX'" [(ngModel)]="selectedCategorie" aria-label="Quels animaux">
+    <option value="">Tous les animaux</option>
+    <option *ngFor="let c of CATEGORIES_ANIMAUX" [ngValue]="c.value">{{ c.label }}</option>
+  </select>
+
   <button type="button" [disabled]="!selectedBesoinIdCompetence || !selectedCompetence" (click)="submitCompetence()">
     Ajouter
   </button>
@@ -75,6 +84,7 @@
   <thead>
     <tr>
       <th>Besoin</th>
+      <th>Pour qui</th>
       <th>Compétence</th>
       <th></th>
     </tr>
@@ -83,6 +93,7 @@
   <tbody>
     <tr *ngFor="let c of correspondancesCompetence">
       <td>{{ c.besoin_nom }}</td>
+      <td>{{ precision(c) }}</td>
       <td>{{ c.competence_nom }}</td>
       <td><button *ngIf="estAdmin" type="button" (click)="deleteCompetence(c.id)">Supprimer</button></td>
     </tr>

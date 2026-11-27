@@ -352,6 +352,31 @@
                               </label>
                             }
                           </div>
+                          <!-- Pour qui ? (27/11/2026) : rien de coché = tous -->
+                          <p class="hint">Pour qui ? (rien de coché : tous)</p>
+                          <div class="checkbox-group">
+                            @for (b of beneficiairesEcoute; track b) {
+                              <label class="checkbox-label">
+                                <input type="checkbox"
+                                       [checked]="(implication.beneficiaires_ecoutes || []).includes(b)"
+                                       (change)="basculerEcoute(implication, 'beneficiaires_ecoutes', b, $any($event.target).checked)">
+                                <span>{{ LIBELLES_BENEFICIAIRE[b] }}</span>
+                              </label>
+                            }
+                          </div>
+                          @if ((implication.beneficiaires_ecoutes || []).includes('ANIMAUX')) {
+                            <p class="hint">Quels animaux ? (rien de coché : tous)</p>
+                            <div class="checkbox-group">
+                              @for (c of CATEGORIES_ANIMAUX; track c.value) {
+                                <label class="checkbox-label">
+                                  <input type="checkbox"
+                                         [checked]="(implication.categories_animaux_ecoutees || []).includes(c.value)"
+                                         (change)="basculerEcoute(implication, 'categories_animaux_ecoutees', c.value, $any($event.target).checked)">
+                                  <span>{{ c.label }}</span>
+                                </label>
+                              }
+                            </div>
+                          }
                         </details>
                       }
                     </td>

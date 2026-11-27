@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 CODES = {
     "ARR": "ARRIVE", "SIT": "SITUATION", "FIN": "TERMINEE", "SUIV": "EN_ROUTE_SUIVANTE",
     "DISPO": "DISPONIBLE", "INDISPO": "INDISPONIBLE", "RENF": "RENFORT", "DANG": "DANGER",
-    "PAUSE": "PAUSE", "PS": "PREMIERS_SECOURS",
+    "PAUSE": "PAUSE", "PS": "PREMIERS_SECOURS", "BES": "BESOIN",
 }
 CODE_DU_TYPE = {v: k for k, v in CODES.items()}
 PRIORITAIRES = {"DANGER", "PREMIERS_SECOURS"}
@@ -118,6 +118,112 @@ def _effets(message, request):
             alerter(message, request)
         except Exception:
             logger.exception("Alerte prioritaire non envoyée pour le message de terrain %s.", message.id)
+    if message.type == "BESOIN":
+        try:
+            demande_du_besoin(message)
+        except Exception:
+            logger.exception("Besoin de terrain %s non transformé en demande.", message.id)
+
+
+# --- Besoin relevé sur le terrain (27/11/2026) ---------------------------------------------
+#
+# « ⚑BES 3f2a9c.9c1e0b.a1b2c3 EVAC·A·EQ 44.80000,-0.59000 3 chevaux » : famille, pour qui,
+# catégorie d'animaux (facultative), position (facultative), et quelques mots. Rien sur
+# l'habitant : la demande créée porte le nom de l'intervenant qui l'a relevée.
+
+_BESOIN = re.compile(
+    r"^\s*([A-Z]{2,6})(?:[·.]([PAB]))?(?:[·.]([A-Z]{2}))?(?:\s+(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+))?(?:\s+(.*))?$", re.S)
+
+
+def ecrire_besoin(code, beneficiaire=None, categorie=None, latitude=None, longitude=None, note=""):
+    """Le corps d'un message BES (le pendant de l'application : domaine/MessageTerrain.kt)."""
+    from .models import CODE_BENEFICIAIRE, CODE_CATEGORIE_ANIMAUX
+
+    etiquette = code
+    if beneficiaire:
+        etiquette += "·" + CODE_BENEFICIAIRE[beneficiaire]
+        if beneficiaire == "ANIMAUX" and categorie:
+            etiquette += "·" + CODE_CATEGORIE_ANIMAUX[categorie]
+    morceaux = [etiquette]
+    if latitude is not None and longitude is not None:
+        morceaux.append(f"{latitude:.5f},{longitude:.5f}")
+    if note:
+        morceaux.append(note.strip()[:30].rstrip())
+    return " ".join(morceaux)
+
+
+def lire_besoin(texte):
+    """{code, beneficiaire, categorie, latitude, longitude, note} ou None."""
+    from .models import CODE_BENEFICIAIRE, CODE_CATEGORIE_ANIMAUX
+
+    texte = texte or ""
+    # Par radio, l'étiquette ajoute le libellé : « Besoin relevé sur le terrain : EVAC·A … ».
+    if " : " in texte:
+        texte = texte.split(" : ", 1)[1]
+    m = _BESOIN.match(texte)
+    if not m:
+        return None
+    par_lettre = {v: k for k, v in CODE_BENEFICIAIRE.items()}
+    par_code = {v: k for k, v in CODE_CATEGORIE_ANIMAUX.items()}
+    lat = float(m.group(4)) if m.group(4) else None
+    lon = float(m.group(5)) if m.group(5) else None
+    if lat is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        lat = lon = None
+    return {"code": m.group(1), "beneficiaire": par_lettre.get(m.group(2) or ""),
+            "categorie": par_code.get(m.group(3) or ""), "latitude": lat, "longitude": lon,
+            "note": (m.group(6) or "").strip()}
+
+
+def demande_du_besoin(message):
+    """Le besoin relevé devient une demande de la crise, puis un dossier rapproché comme les
+    autres (du plus précis au plus général). Rend la demande, ou None."""
+    from django.contrib.gis.geos import Point
+
+    from .classement import beneficiaires_admis, choisir, competences_pour_demande, libelle_radio
+    from .models import Dossier, Request, RequestType
+    from .views import populate_dossier_participants_and_notify, resolve_besoin_for_request
+
+    crise = message.crise
+    lu = lire_besoin(message.texte)
+    if crise is None or lu is None:
+        return None
+    type_ = (RequestType.objects.filter(code=lu["code"], parent__isnull=True, actif=True).first()
+             or RequestType.objects.filter(code="AUTRE", parent__isnull=True).first())
+    if type_ is None:
+        return None
+    admis = beneficiaires_admis(type_, "demande")
+    beneficiaire = lu["beneficiaire"] if lu["beneficiaire"] in admis else (admis[0] if len(admis) == 1 else None)
+    if beneficiaire is None and admis:
+        beneficiaire = "PERSONNES" if "PERSONNES" in admis else admis[0]
+    categorie = lu["categorie"] if beneficiaire == "ANIMAUX" else None
+    lat, lon = lu["latitude"], lu["longitude"]
+    if lat is None and message.latitude:
+        lat, lon = float(message.latitude), float(message.longitude)
+    nombre = None
+    if beneficiaire == "ANIMAUX" and lu["note"][:1].isdigit():
+        chiffres = re.match(r"\d+", lu["note"])
+        nombre = int(chiffres.group(0)) if chiffres else None
+    libelle = libelle_radio(type_, beneficiaire)
+    auteur = message.auteur
+    demande = Request.objects.create(
+        title=f"Relevé terrain : {libelle}"[:150], description=lu["note"] or None,
+        first_name_request=auteur.first_name or "Intervenant", last_name_request=auteur.last_name or "",
+        email_request=auteur.email or "", phone_request="",
+        request_type=type_, crisis=crise, author=auteur,
+        location=Point(lon, lat, srid=4326) if lat is not None else None,
+        beneficiaire=beneficiaire, categorie_animaux=categorie, nombre_animaux=nombre,
+        environment=message.environment,
+    )
+    competence, equipe = choisir(crise, competences_pour_demande(demande), demande)
+    import uuid as _uuid
+    dossier = Dossier.objects.create(
+        numero=f"DOS-{_uuid.uuid4().hex[:8].upper()}", crise=crise, competence=competence,
+        besoin=resolve_besoin_for_request(demande), equipe=equipe, demande=demande,
+        titre=demande.title, description=f"Besoin relevé par {_nom(auteur)} ({message.get_canal_display()})",
+        statut=Dossier.Statut.EN_ATTENTE_AFFECTATION, environment=message.environment,
+    )
+    populate_dossier_participants_and_notify(dossier, equipe=equipe)
+    return demande
 
 
 def _nom(user):

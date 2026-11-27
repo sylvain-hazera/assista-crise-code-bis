@@ -53,6 +53,9 @@ function emptyHebergementDetails(): HebergementDetails {
 }
 
 import { titreDepot } from '../../../shared/utils/titre-depot.util';
+import {
+  Beneficiaire, CATEGORIES_ANIMAUX, LIBELLES_BENEFICIAIRE, TypeClasse, beneficiaireParDefaut, beneficiairesAdmis, codeFamille,
+} from '../../../shared/utils/classement';
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -90,6 +93,43 @@ export class RequestHelpFormComponent implements OnInit {
 
   onTypesAutorises(typeIds: string[]): void {
     this.typesDemandeAutorises = typeIds;
+  }
+
+  // --- Classement « quoi + pour qui » (27/11/2026) -----------------------------------------
+  // Un besoin = une famille (le quoi), puis « Pour qui ? » si la famille en admet plusieurs,
+  // puis, pour des animaux, lesquels et combien. Tableaux parallèles à needsType.
+  readonly LIBELLES_BENEFICIAIRE = LIBELLES_BENEFICIAIRE;
+  readonly CATEGORIES_ANIMAUX = CATEGORIES_ANIMAUX;
+  beneficiairesEcoutes: Record<string, string[]> = {};
+  beneficiaires: (Beneficiaire | '')[] = [];
+  categoriesAnimaux: string[] = [];
+  nombresAnimaux: (number | null)[] = [];
+  private typesParLibelle = new Map<string, TypeClasse>();
+  private typesParId = new Map<string, TypeClasse>();
+
+  onBeneficiairesEcoutes(par: Record<string, string[]>): void {
+    this.beneficiairesEcoutes = par;
+  }
+
+  /** Les « pour qui » proposés pour le besoin `index` (vide : la question ne se pose pas). */
+  beneficiairesPour(index: number): Beneficiaire[] {
+    const libelle = this.needsType.at(index)?.value;
+    const type = this.typesParLibelle.get(libelle);
+    if (!type) return [];
+    return beneficiairesAdmis(codeFamille(type, this.typesParId), 'demande', this.beneficiairesEcoutes[type.id]);
+  }
+
+  choisirBeneficiaire(index: number, b: Beneficiaire): void {
+    this.beneficiaires[index] = b;
+    if (b !== 'ANIMAUX') {
+      this.categoriesAnimaux[index] = '';
+      this.nombresAnimaux[index] = null;
+    }
+  }
+
+  /** Une recherche de logement pour des personnes porte sur une zone, pas sur une adresse. */
+  estRechercheLogement(index: number): boolean {
+    return this.needsType.at(index)?.value === TYPE_HEBERGEMENT && this.beneficiaires[index] !== 'ANIMAUX';
   }
 
   needTypeOptions: { value: string; label: string }[] = [
@@ -159,6 +199,8 @@ export class RequestHelpFormComponent implements OnInit {
       next: (types: any[]) => {
         types.forEach(type => {
           this.typesDemandeMap.set(type.type, type.id);
+          this.typesParLibelle.set(type.type, type);
+          this.typesParId.set(type.id, type);
         });
 
         const byId = new Map(types.map(t => [t.id, t]));
@@ -232,8 +274,13 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onTopLevelTypeChange(index: number): void {
-    // Changer de besoin principal efface la précision choisie.
+    // Changer de besoin principal efface la précision choisie, et le « pour qui » s'il ne
+    // vaut plus (une seule possibilité : retenue d'office).
     this.subCategorySelections[index] = '';
+    const admis = this.beneficiairesPour(index);
+    if (!admis.includes(this.beneficiaires[index] as Beneficiaire)) {
+      this.choisirBeneficiaire(index, beneficiaireParDefaut(admis) as Beneficiaire);
+    }
   }
 
   onSubCategoryChange(index: number, value: string): void {
@@ -278,12 +325,15 @@ export class RequestHelpFormComponent implements OnInit {
 
   /** « Votre adresse » est facultative si tous les besoins sont des recherches de logement. */
   addressRequired(): boolean {
-    return this.needsType.controls.some(c => c.value !== TYPE_HEBERGEMENT);
+    return this.needsType.controls.some((_c, i) => !this.estRechercheLogement(i));
   }
 
   private step1ValidationErrors(): string[] {
     const errors: string[] = [];
     if (this.needsType.invalid) errors.push('Précisez chaque besoin (choisissez un type dans la liste).');
+    if (this.needsType.controls.some((_c, i) => this.beneficiairesPour(i).length > 1 && !this.beneficiaires[i])) {
+      errors.push('Précisez pour qui est chaque besoin : des personnes, des animaux ou des biens.');
+    }
     if (this.addressRequired() && !this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
     return errors;
   }
@@ -318,7 +368,8 @@ export class RequestHelpFormComponent implements OnInit {
       const hd = this.hebergementDetails[i];
       const formData = new FormData();
 
-      const lieu = topLevelType === TYPE_HEBERGEMENT ? hd?.zoneCommunes?.[0]?.name : this.selectedAddress?.city;
+      const logement = this.estRechercheLogement(i);
+      const lieu = logement ? hd?.zoneCommunes?.[0]?.name : this.selectedAddress?.city;
       formData.append('title', titreDepot(needType, lieu));
       formData.append('first_name_request', this.informationForm.get('firstName')?.value);
       formData.append('last_name_request', this.informationForm.get('lastName')?.value);
@@ -327,7 +378,7 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
 
       // Besoin Hébergement : la zone de recherche remplace `location`/`commune_code`.
-      if (topLevelType !== TYPE_HEBERGEMENT) {
+      if (!logement) {
         formData.append('location', JSON.stringify(localisation));
         if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
       }
@@ -336,8 +387,14 @@ export class RequestHelpFormComponent implements OnInit {
       if (typeId) formData.append('request_type', typeId);
       if (crisisId) formData.append('crisis', crisisId);
       if (description) formData.append('description', description);
+      const beneficiaire = this.beneficiaires[i] || beneficiaireParDefaut(this.beneficiairesPour(i));
+      if (beneficiaire) formData.append('beneficiaire', beneficiaire);
+      if (beneficiaire === 'ANIMAUX') {
+        if (this.categoriesAnimaux[i]) formData.append('categorie_animaux', this.categoriesAnimaux[i]);
+        if (this.nombresAnimaux[i]) formData.append('nombre_animaux', String(this.nombresAnimaux[i]));
+      }
 
-      if (topLevelType === TYPE_HEBERGEMENT && hd) {
+      if (logement && hd) {
         if (hd.zoneCommunes.length > 0) {
           formData.append('zone_recherche_communes', JSON.stringify(hd.zoneCommunes.map(c => c.code)));
           // commune_code conservé pour un rapprochement géographique de base (team_zone_specificity).
@@ -435,6 +492,9 @@ export class RequestHelpFormComponent implements OnInit {
     this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
     this.subCategorySelections.push('');
     this.hebergementDetails.push(emptyHebergementDetails());
+    this.beneficiaires.push('');
+    this.categoriesAnimaux.push('');
+    this.nombresAnimaux.push(null);
   }
 
   removeNeed(index: number): void {
@@ -442,6 +502,9 @@ export class RequestHelpFormComponent implements OnInit {
     this.descriptions.removeAt(index);
     this.subCategorySelections.splice(index, 1);
     this.hebergementDetails.splice(index, 1);
+    this.beneficiaires.splice(index, 1);
+    this.categoriesAnimaux.splice(index, 1);
+    this.nombresAnimaux.splice(index, 1);
   }
 
   /** Affiche la raison précise d'un refus (validate_crisis_open_and_monitored). */

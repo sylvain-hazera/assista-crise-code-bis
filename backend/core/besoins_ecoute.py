@@ -76,3 +76,30 @@ def besoins_a_lecoute(crise, commune_code: str | None = None):
     )
 
     return Besoin.objects.filter(id__in=besoin_ids)
+
+
+def restrictions_par_besoin(crise, commune_code: str | None = None):
+    """Pour chaque besoin à l'écoute : (pour qui écoutés, catégories d'animaux écoutées), chacun
+    à None quand une institution écoute sans restriction (27/11/2026). Une association équestre
+    qui écoute « Transport » pour les animaux, équidés seulement, donne
+    {transport: ({"ANIMAUX"}, {"EQUIDES"})} ; une mairie qui écoute Transport sans restriction
+    l'élargit à (None, None)."""
+    if commune_code is not None and not _commune_dans_zone_crise(crise, commune_code):
+        return {}
+    implications = ImplicationInstitution.objects.filter(
+        crise=crise, actif=True, statut=StatutImplication.VALIDEE,
+        type_implication=TypeImplication.ACTEUR,
+    ).prefetch_related("themes")
+    resultat = {}
+    for implication in implications:
+        ids = set(implication.themes.values_list("id", flat=True))
+        ids |= set(Besoin.objects.filter(parent_id__in=ids).values_list("id", flat=True))
+        bens = set(implication.beneficiaires_ecoutes or []) or None
+        cats = set(implication.categories_animaux_ecoutees or []) or None
+        for besoin_id in ids:
+            avant_b, avant_c = resultat.get(besoin_id, (set(), set()))
+            resultat[besoin_id] = (
+                None if bens is None or avant_b is None else avant_b | bens,
+                None if cats is None or avant_c is None else avant_c | cats,
+            )
+    return resultat

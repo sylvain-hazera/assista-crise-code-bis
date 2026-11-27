@@ -8,6 +8,7 @@ import { BesoinService } from '../../services/besoin.service';
 import { CompetenceService } from '../../services/competence.service';
 import { MaterielCatalogueService } from '../../services/materiel-catalogue.service';
 import { BesoinCompetence } from '../../shared/models/besoin-competence.model';
+import { Beneficiaire, CATEGORIES_ANIMAUX, LIBELLES_BENEFICIAIRE } from '../../shared/utils/classement';
 import { BesoinMateriel } from '../../shared/models/besoin-materiel.model';
 import { Besoin } from '../../shared/models/besoin.model';
 import { Competence } from '../../shared/models/competence.model';
@@ -102,6 +103,21 @@ export class BesoinsCompetencesComponent implements OnInit {
   materielSearchFn = (q: string) => this.materielCatalogueService.search(q);
   materielCreateFn = (nom: string) => this.materielCatalogueService.create({ nom });
 
+  // Classement « quoi + pour qui » (27/11/2026) : une correspondance peut ne valoir que pour
+  // des animaux, voire une catégorie (Transport + animaux + équidés → « Évacuation d'équidés »).
+  // Le rapprochement va du plus précis au plus général.
+  readonly LIBELLES_BENEFICIAIRE = LIBELLES_BENEFICIAIRE;
+  readonly CATEGORIES_ANIMAUX = CATEGORIES_ANIMAUX;
+  readonly beneficiaires = Object.keys(LIBELLES_BENEFICIAIRE) as Beneficiaire[];
+  selectedBeneficiaire: Beneficiaire | '' = '';
+  selectedCategorie = '';
+
+  precision(c: BesoinCompetence): string {
+    if (!c.beneficiaire) return 'Tous';
+    const cat = CATEGORIES_ANIMAUX.find(x => x.value === c.categorie_animaux)?.label;
+    return LIBELLES_BENEFICIAIRE[c.beneficiaire as Beneficiaire] + (cat ? ` · ${cat}` : '');
+  }
+
   onCompetenceSelected(item: Competence): void {
     this.selectedCompetence = item;
   }
@@ -114,9 +130,13 @@ export class BesoinsCompetencesComponent implements OnInit {
     if (!this.selectedBesoinIdCompetence || !this.selectedCompetence) {
       return;
     }
-    this.service.create(this.selectedBesoinIdCompetence, this.selectedCompetence.id).subscribe(() => {
+    this.service.create(this.selectedBesoinIdCompetence, this.selectedCompetence.id,
+                        this.selectedBeneficiaire || null,
+                        this.selectedBeneficiaire === 'ANIMAUX' ? this.selectedCategorie || null : null).subscribe(() => {
       this.selectedBesoinIdCompetence = null;
       this.selectedCompetence = null;
+      this.selectedBeneficiaire = '';
+      this.selectedCategorie = '';
       this.load();
     });
   }

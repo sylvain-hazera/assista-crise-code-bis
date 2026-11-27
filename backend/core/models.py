@@ -427,6 +427,31 @@ class StatutImplication(models.TextChoices):
     REFUSEE = "REFUSEE", "Refusée"
 
 
+class Beneficiaire(models.TextChoices):
+    """« Pour qui » (27/11/2026) : le second axe du classement « quoi + pour qui ». La famille
+    dit l'action (évacuer, héberger, soigner, nourrir...), le bénéficiaire dit pour qui. Ainsi
+    « transport d'animaux » et « animaux à évacuer » ne sont qu'un seul chemin : Évacuation +
+    animaux. Jamais de type qui mélange les deux axes."""
+    PERSONNES = "PERSONNES", "Personnes"
+    ANIMAUX = "ANIMAUX", "Animaux"
+    BIENS = "BIENS", "Biens"
+
+
+class CategorieAnimaux(models.TextChoices):
+    """Troisième niveau, facultatif, quand le bénéficiaire est ANIMAUX : il oriente vers une
+    équipe spécialisée (une évacuation de chevaux demande un van, pas une caisse de transport)."""
+    COMPAGNIE = "COMPAGNIE", "Animaux de compagnie"
+    EQUIDES = "EQUIDES", "Équidés"
+    BETAIL = "BETAIL", "Bétail"
+    VOLAILLES = "VOLAILLES", "Volailles"
+    AUTRES = "AUTRES", "Autres animaux"
+
+
+#: Codes radio (⚑BES) des bénéficiaires et des catégories d'animaux.
+CODE_BENEFICIAIRE = {"PERSONNES": "P", "ANIMAUX": "A", "BIENS": "B"}
+CODE_CATEGORIE_ANIMAUX = {"COMPAGNIE": "CO", "EQUIDES": "EQ", "BETAIL": "BE", "VOLAILLES": "VO", "AUTRES": "AU"}
+
+
 class ImplicationInstitution(EnvironmentScopedModel):
     """Rattachement d'une institution à une crise : impliquée (sa commune est touchée) et/ou
     acteur opérationnel. Les deux peuvent coexister.
@@ -493,6 +518,10 @@ class ImplicationInstitution(EnvironmentScopedModel):
         related_name="implications_institutions",
         help_text="Besoins sur lesquels l'institution est à l'écoute pour cette crise.",
     )
+    # Restrictions facultatives de l'écoute (27/11/2026) : vide = tous. Une association équestre
+    # écoute « Évacuation » pour les animaux, équidés seulement.
+    beneficiaires_ecoutes = ArrayField(models.CharField(max_length=10, choices=Beneficiaire.choices), default=list, blank=True)
+    categories_animaux_ecoutees = ArrayField(models.CharField(max_length=10, choices=CategorieAnimaux.choices), default=list, blank=True)
 
     # EN_ATTENTE seulement pour une déclaration ACTEUR d'une institution non AUT_LOCALE (voir
     # ImplicationInstitutionViewSet.valider/refuser).
@@ -714,6 +743,9 @@ class RequestType(models.Model):
     description = models.TextField(null=True, blank=True)
     # Jamais supprimé (FK PROTECT) : actif=False masque le type du formulaire public.
     actif = models.BooleanField(default=True)
+    #: Code court et stable de la famille (EVAC, ABRI, SOIN...) : l'application et la radio
+    #: s'y fient plutôt qu'au libellé, qui peut changer.
+    code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
     parent = models.ForeignKey(
         "self",
         on_delete=models.CASCADE,
@@ -788,6 +820,10 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     request_type = models.ForeignKey(
         RequestType, on_delete=models.PROTECT, related_name="requests"
     )
+    # Classement « quoi + pour qui » (27/11/2026) : voir Beneficiaire.
+    beneficiaire = models.CharField(max_length=10, choices=Beneficiaire.choices, null=True, blank=True, db_index=True)
+    categorie_animaux = models.CharField(max_length=10, choices=CategorieAnimaux.choices, null=True, blank=True)
+    nombre_animaux = models.PositiveIntegerField(null=True, blank=True)
     crisis = models.ForeignKey(
         "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="requests"
     )
@@ -933,6 +969,8 @@ class OfferType(models.Model):
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     actif = models.BooleanField(default=True)
+    #: Même code que la famille de demande correspondante (voir RequestType.code).
+    code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
 
     def __str__(self) -> str:
         return self.type
@@ -1112,6 +1150,10 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     quantite = models.PositiveIntegerField(null=True, blank=True)
     unite = models.CharField(max_length=20, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
+    # Classement « quoi + pour qui » (27/11/2026), comme Request. Un propriétaire de van peut
+    # prendre chevaux ET bétail : plusieurs catégories.
+    beneficiaire = models.CharField(max_length=10, choices=Beneficiaire.choices, null=True, blank=True, db_index=True)
+    categories_animaux = ArrayField(models.CharField(max_length=10, choices=CategorieAnimaux.choices), default=list, blank=True)
 
     # Déclaré une fois par l'offreur et reporté sur chacune de ses offres avec présence physique.
     diplome_secourisme = models.BooleanField(default=False)
@@ -1365,6 +1407,12 @@ class BesoinCompetence(models.Model):
         null=True,
         blank=True
     )
+
+    # Précision facultative (27/11/2026) : la même famille mène à une compétence plus précise
+    # selon le bénéficiaire et la catégorie d'animaux (Évacuation + animaux + équidés →
+    # « Évacuation d'équidés »). Vide : vaut pour tous. Voir rapprochement.competences_pour.
+    beneficiaire = models.CharField(max_length=10, choices=Beneficiaire.choices, null=True, blank=True)
+    categorie_animaux = models.CharField(max_length=10, choices=CategorieAnimaux.choices, null=True, blank=True)
 
     def __str__(self):
         return f"{self.besoin.nom} -> {self.competence.nom}"
@@ -6417,6 +6465,8 @@ class MessageTerrain(EnvironmentScopedModel):
         DANGER = "DANGER", "Danger / problème sur place"
         PAUSE = "PAUSE", "En pause"
         PREMIERS_SECOURS = "PREMIERS_SECOURS", "Demande de premiers secours"
+        # 27/11/2026 : un besoin relevé sur place (« ⚑BES … EVAC·A·EQ »), qui devient une demande.
+        BESOIN = "BESOIN", "Besoin relevé sur le terrain"
 
     class Canal(models.TextChoices):
         DONNEES = "DONNEES", "Données"

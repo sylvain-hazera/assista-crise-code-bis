@@ -8,6 +8,11 @@ export interface Dossier {
 
   competence: string;
   competence_nom: string;
+  /** Classement « quoi + pour qui » de la demande (27/11/2026). */
+  demande_type?: string | null;
+  demande_type_nom?: string | null;
+  demande_beneficiaire?: string | null;
+  demande_categorie_animaux?: string | null;
   /** Nature du Besoin capturé à la création (COMPETENCE/MATERIEL/MIXTE) -- classe le dossier
    * ressource/matériel sur la page Cellule de crise, voir Dossier.besoin. */
   besoin_nature?: 'COMPETENCE' | 'MATERIEL' | 'MIXTE' | null;

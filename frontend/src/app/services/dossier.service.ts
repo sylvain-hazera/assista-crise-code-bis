@@ -62,6 +62,13 @@ export class DossierService {
     return this.http.post<Dossier>(`${this.url}/${id}/marquer-important/`, {});
   }
 
+  /** POST /api/dossiers/<id>/requalifier/ — famille, pour qui, catégorie d'animaux de la
+   * demande (classement « quoi + pour qui », 27/11/2026). Encore en attente, le dossier est
+   * rapproché à nouveau de l'équipe la plus spécialisée. */
+  requalifier(id: string, corps: { request_type?: string; beneficiaire?: string | null; categorie_animaux?: string | null }): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/requalifier/`, corps);
+  }
+
   /** POST /api/dossiers/<id>/affecter-equipe/ — affecte (ou réaffecte) une équipe directement
    * depuis la vue régulateur, peuple les participants et notifie ses régulateurs. Réservé
    * institutionnel. */

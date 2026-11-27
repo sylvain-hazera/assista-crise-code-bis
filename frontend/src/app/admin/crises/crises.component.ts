@@ -1,4 +1,5 @@
 import { QrCanauxRadioComponent } from '../../shared/components/common/qr-canaux-radio/qr-canaux-radio.component';
+import { Beneficiaire, CATEGORIES_ANIMAUX, LIBELLES_BENEFICIAIRE } from '../../shared/utils/classement';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -22,7 +23,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import type { MultiPolygon, Polygon } from 'geojson';
 
 import { Crisis, ZoneAjoutee } from '../../shared/models/crisis.model';
-import { ImplicationInstitution } from '../../shared/models/implication.model';
+import { ImplicationInstitution, ImplicationInstitutionPayload } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { ContactInstitution, Institution, InstitutionType } from '../../shared/models/institution.model';
 import { Besoin } from '../../shared/models/besoin.model';
@@ -896,6 +897,28 @@ export class CrisesComponent implements OnInit {
     if (this.isAdmin) return true;
     if (this.isMine(implication)) return true;
     return this.myInstitutions.some(i => i.id === implication.institution);
+  }
+
+  // Classement « quoi + pour qui » (27/11/2026) : une association équestre écoute « Transport »
+  // pour les animaux, équidés seulement.
+  readonly LIBELLES_BENEFICIAIRE = LIBELLES_BENEFICIAIRE;
+  readonly CATEGORIES_ANIMAUX = CATEGORIES_ANIMAUX;
+  readonly beneficiairesEcoute = Object.keys(LIBELLES_BENEFICIAIRE) as Beneficiaire[];
+
+  basculerEcoute(implication: ImplicationInstitution, champ: 'beneficiaires_ecoutes' | 'categories_animaux_ecoutees',
+                 valeur: string, coche: boolean): void {
+    const actuel = implication[champ] ?? [];
+    const liste = coche ? [...actuel, valeur] : actuel.filter(v => v !== valeur);
+    const maj: Partial<ImplicationInstitutionPayload> = { [champ]: liste };
+    if (champ === 'beneficiaires_ecoutes' && !liste.includes('ANIMAUX')) maj.categories_animaux_ecoutees = [];
+    this.implicationService.update(implication.id, maj).subscribe({
+      next: (updated) => {
+        const idx = this.implications.findIndex(i => i.id === updated.id);
+        if (idx !== -1) this.implications[idx] = updated;
+        this.showSuccess('Écoute mise à jour.');
+      },
+      error: (err) => this.showError(this.implicationErrorMessage(err, 'Impossible de modifier l\'écoute.')),
+    });
   }
 
   toggleImplicationTheme(implication: ImplicationInstitution, besoinId: string, checked: boolean): void {
