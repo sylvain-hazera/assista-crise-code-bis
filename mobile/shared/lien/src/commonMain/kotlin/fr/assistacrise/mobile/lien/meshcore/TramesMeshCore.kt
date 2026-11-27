@@ -56,13 +56,56 @@ object MeshCore {
         const val SEND_CONFIRMED = 0x82
         /** Batterie (mV, 2 octets) et stockage. */
         const val BATTERIE = 12
+        /** Journal radio : chaque trame entendue, copies relayées comprises (logRxRaw). */
+        const val LOG_RX_DATA = 0x88
+    }
+
+    /** Types de charge d'une trame sur l'air (Packet.h) : message direct et message de canal. */
+    const val CHARGE_TXT_MSG = 0x02
+    const val CHARGE_GRP_TXT = 0x05
+
+    /**
+     * Une trame entendue (27/11/2026), d'après le firmware (Packet.h, Packet.cpp, Mesh.cpp) :
+     * en-tête (route : bits 0-1 ; type : bits 2-5 ; version : bits 6-7), 4 octets de codes de
+     * transport pour les routes 0 et 3, `path_len` (6 bits bas : nombre de relais ; 2 hauts :
+     * taille de l'empreinte − 1), le chemin, puis la charge. En inondation, chaque répéteur ajoute
+     * son empreinte à la fin du chemin : `relais` va de l'émetteur vers moi. La charge reste
+     * identique d'une copie relayée à l'autre ; `signature` la désigne.
+     */
+    class TrameEntendue(val snr: Float, val rssi: Int, val inondation: Boolean, val typeCharge: Int,
+                        val octetChemin: Int, val relais: List<String>, val charge: ByteArray, val heureMs: Long) {
+        val signature: String get() = charge.copyOf(minOf(charge.size, 20)).enHex()
+        /** Message direct : empreinte (1 octet) de l'expéditeur, après celle du destinataire. */
+        val empreinteSource: String? get() = if (typeCharge == CHARGE_TXT_MSG && charge.size > 2) charge.copyOfRange(1, 2).enHex() else null
+    }
+
+    fun lireJournal(t: ByteArray, heureMs: Long): TrameEntendue? {
+        if (t.size < 5 || (t[0].toInt() and 0xff) != Rep.LOG_RX_DATA) return null
+        fun signe(o: Byte) = o.toInt()
+        val brut = t.copyOfRange(3, t.size)
+        val entete = brut[0].toInt() and 0xff
+        if ((entete shr 6) and 0x03 != 0) return null               // seule la version 1 existe
+        val route = entete and 0x03
+        var i = 1 + if (route == 0 || route == 3) 4 else 0
+        if (i >= brut.size) return null
+        val octetChemin = brut[i].toInt() and 0xff; i += 1
+        val taille = (octetChemin shr 6) + 1
+        if (taille > 3) return null
+        val nombre = octetChemin and 0x3f
+        if (i + nombre * taille >= brut.size) return null
+        val relais = (0 until nombre).map { k -> brut.copyOfRange(i + k * taille, i + (k + 1) * taille).enHex() }
+        i += nombre * taille
+        return TrameEntendue(signe(t[1]) / 4f, signe(t[2]), route == 0 || route == 1, (entete shr 2) and 0x0f,
+            octetChemin, relais, brut.copyOfRange(i, brut.size), heureMs)
     }
 
     data class Identite(val pubkeyHex: String, val nom: String)
     data class MessageRecu(val prefixeExpediteurHex: String, val texte: String, val horodatageS: Long,
                            val reception: fr.assistacrise.mobile.lien.Reception? = null,
                            /** 0 : texte ; 1 : réponse de la ligne de commande d'un répéteur ; 2 : signé. */
-                           val typeTexte: Int = 0)
+                           val typeTexte: Int = 0,
+                           /** `path_len` tel que reçu (0xFF : route directe). */
+                           val octetChemin: Int = 0xff)
 
     /** `path_len` reçu (26/11/2026) : 0xFF = arrivé par une route directe ; sinon les 6 bits bas
      * sont le nombre de sauts (les 2 hauts, la taille des empreintes de chemin). */
@@ -145,7 +188,7 @@ object MeshCore {
         val horodatage = charge.u32(i); i += 4
         if (typeTexte == 2) i += 4                           // signature
         if (i > charge.size) return null
-        return MessageRecu(prefixe, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage, reception(chemin, snr), typeTexte)
+        return MessageRecu(prefixe, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage, reception(chemin, snr), typeTexte, chemin)
     }
 
     /** Nombre d'emplacements de canal d'une radio companion. */
@@ -153,7 +196,8 @@ object MeshCore {
 
     data class Canal(val index: Int, val nom: String)
     data class MessageCanal(val canal: Int, val texte: String, val horodatageS: Long,
-                            val reception: fr.assistacrise.mobile.lien.Reception? = null)
+                            val reception: fr.assistacrise.mobile.lien.Reception? = null,
+                            val octetChemin: Int = 0xff)
 
     fun demanderCanal(index: Int) = byteArrayOf(Cmd.GET_CHANNEL.toByte(), index.toByte())
 
@@ -188,7 +232,7 @@ object MeshCore {
         val canal = charge[i].toInt() and 0xff; i += 1
         val chemin = charge[i].toInt() and 0xff; i += 2      // chemin, type de texte
         val horodatage = charge.u32(i); i += 4
-        return MessageCanal(canal, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage, reception(chemin, snr))
+        return MessageCanal(canal, charge.copyOfRange(i, charge.size).decodeToString().trimEnd('\u0000'), horodatage, reception(chemin, snr), chemin)
     }
 
     /** Liaisons en flux (série, TCP) : `0x3c`, longueur sur deux octets petit-boutistes, charge. */

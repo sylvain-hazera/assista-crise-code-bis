@@ -455,6 +455,7 @@ class LiaisonRadio(private val app: Application, val emplacement: Protocole) {
         // Tous les canaux du nœud et les messages directs, pour la messagerie radio (22/11/2026).
         app.messagerieRadio.recevoir(reaction.messages, reaction.directs, p)
         app.messagerieRadio.accuser(reaction.accuses)
+        app.messagerieRadio.joindreChemins(reaction.chemins)
         reaction.aEcrire.forEach { ecrire(it) }
     }
 

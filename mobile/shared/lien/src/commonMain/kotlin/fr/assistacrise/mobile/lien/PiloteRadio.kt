@@ -26,7 +26,14 @@ data class Reception(
     val routeDirecte: Boolean = false,
     /** Meshtastic : passé par un serveur MQTT (Internet) en chemin. */
     val parInternet: Boolean = false,
+    /** MeshCore (27/11/2026) : les chemins par lesquels le message a été entendu, la copie
+     * retenue par la radio en premier, et la signature qui reconnaîtra les copies suivantes. */
+    val chemins: List<CheminEntendu> = emptyList(),
+    val signature: String? = null,
 )
+
+/** Un chemin entendu : empreintes des relais (hexadécimal), de l'émetteur vers moi. */
+data class CheminEntendu(val relais: List<String>, val snr: Float? = null, val rssi: Int? = null)
 
 /** Un message entendu par la radio sur un canal. */
 /** `de` : l'émetteur quand le protocole le dit (Meshtastic : « !1a2b3c4d ») ; MeshCore l'écrit dans le texte (« Nom: … »).
@@ -99,6 +106,8 @@ abstract class PiloteRadio(val protocole: Protocole) {
         val messages: List<MessageRadio> = emptyList(),
         val directs: List<MessageDirect> = emptyList(),
         val accuses: List<Accuse> = emptyList(),
+        /** MeshCore : une copie relayée d'un message déjà reçu (signature, chemin). */
+        val chemins: List<Pair<String, CheminEntendu>> = emptyList(),
     )
 
     /**
@@ -187,6 +196,38 @@ class PiloteMeshCore(private val horloge: () -> Long = { 0L }) : PiloteRadio(Pro
 
     private fun session(pubkeyHex: String, maj: (SessionRepeteur?) -> SessionRepeteur) =
         noter { it.copy(repeteurs = it.repeteurs + (pubkeyHex to maj(it.repeteurs[pubkeyHex]))) }
+
+    // --- Trajet des messages reçus (27/11/2026) ---------------------------------------------
+    // La radio rapporte chaque trame entendue (0x88) avec son chemin, puis livre le message
+    // déchiffré avec la seule longueur du chemin. On rapproche les deux : même type, même
+    // `path_len`, la plus récente pas encore attribuée (et, pour un message direct, la même
+    // empreinte d'expéditeur) ; ses copies relayées portent la même charge.
+    private val entendues = ArrayDeque<MeshCore.TrameEntendue>()
+    private val signaturesAttribuees = LinkedHashMap<String, Long>()
+
+    private fun entendre(t: MeshCore.TrameEntendue): Reaction {
+        entendues.addLast(t)
+        while (entendues.size > 64 || (entendues.isNotEmpty() && t.heureMs - entendues.first().heureMs > 120_000)) entendues.removeFirst()
+        val sig = t.signature
+        if (t.inondation && sig in signaturesAttribuees) return Reaction(chemins = listOf(sig to CheminEntendu(t.relais, t.snr, t.rssi)))
+        return Reaction()
+    }
+
+    /** La réception complétée de ses chemins ; inchangée si rien ne correspond (route directe,
+     * message arrivé quand l'application n'écoutait pas). */
+    internal fun avecChemins(r: Reception?, typeCharge: Int, octetChemin: Int, prefixeSource: String? = null): Reception? {
+        if (r == null || octetChemin == 0xff) return r
+        val retenue = entendues.lastOrNull { t ->
+            t.inondation && t.typeCharge == typeCharge && t.octetChemin == octetChemin && t.signature !in signaturesAttribuees &&
+                (prefixeSource == null || t.empreinteSource?.let { prefixeSource.startsWith(it, ignoreCase = true) } == true)
+        } ?: return r
+        val sig = retenue.signature
+        signaturesAttribuees[sig] = horloge()
+        while (signaturesAttribuees.size > 64) signaturesAttribuees.remove(signaturesAttribuees.keys.first())
+        // La copie retenue d'abord, puis les autres déjà entendues.
+        val copies = listOf(retenue) + entendues.filter { it !== retenue && it.inondation && it.signature == sig }
+        return r.copy(chemins = copies.map { CheminEntendu(it.relais, it.snr, it.rssi) }, signature = sig)
+    }
 
     private fun parPrefixe(prefixeHex: String): String? =
         avance.contacts.keys.firstOrNull { it.startsWith(prefixeHex, ignoreCase = true) }
@@ -300,9 +341,11 @@ class PiloteMeshCore(private val horloge: () -> Long = { 0L }) : PiloteRadio(Pro
                 else Reaction()
             }
             MeshCore.Rep.MESSAGES_WAITING -> Reaction(listOf(suivant()))
+            MeshCore.Rep.LOG_RX_DATA -> MeshCore.lireJournal(trame, horloge())?.let { entendre(it) } ?: Reaction()
             MeshCore.Rep.CHANNEL_MSG_RECV, MeshCore.Rep.CHANNEL_MSG_RECV_V3 -> {
                 val m = MeshCore.lireMessageCanal(trame)
-                Reaction(listOf(suivant()), listOfNotNull(m?.let { MessageRadio(it.canal, it.texte, reception = it.reception, horodatageS = it.horodatageS) }))
+                Reaction(listOf(suivant()), listOfNotNull(m?.let { MessageRadio(it.canal, it.texte,
+                    reception = avecChemins(it.reception, MeshCore.CHARGE_GRP_TXT, it.octetChemin), horodatageS = it.horodatageS) }))
             }
             // Un message direct : il entre dans la messagerie radio, et on continue de vider.
             MeshCore.Rep.CONTACT_MSG_RECV, MeshCore.Rep.CONTACT_MSG_RECV_V3 -> {
@@ -313,7 +356,8 @@ class PiloteMeshCore(private val horloge: () -> Long = { 0L }) : PiloteRadio(Pro
                     if (cle != null) session(cle) { s -> (s ?: SessionRepeteur(EtatSession.CONNECTEE, horloge())).let { it.copy(console = (it.console + LigneConsole(false, m.texte, horloge())).takeLast(100)) } }
                     return Reaction(listOf(suivant()))
                 }
-                Reaction(listOf(suivant()), directs = listOfNotNull(m?.let { MessageDirect(it.prefixeExpediteurHex, it.texte, it.reception, horodatageS = it.horodatageS) }))
+                Reaction(listOf(suivant()), directs = listOfNotNull(m?.let { MessageDirect(it.prefixeExpediteurHex, it.texte,
+                    avecChemins(it.reception, MeshCore.CHARGE_TXT_MSG, it.octetChemin, it.prefixeExpediteurHex), horodatageS = it.horodatageS) }))
             }
             // Message direct parti : la radio donne le code d'accusé attendu (26/11/2026).
             MeshCore.Rep.MSG_SENT -> {

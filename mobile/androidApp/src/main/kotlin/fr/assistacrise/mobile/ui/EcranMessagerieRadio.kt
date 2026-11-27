@@ -3,6 +3,7 @@ package fr.assistacrise.mobile.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -151,6 +152,11 @@ fun EcranConversationRadio(modele: ModeleApplication) {
                 else modele.nomDuContactRadio(cle)
     var texte by rememberSaveable(cle) { mutableStateOf("") }
     var repondreA by androidx.compose.runtime.remember(cle) { mutableStateOf<fr.assistacrise.mobile.domaine.MessageConversationRadio?>(null) }
+    var trajetDe by androidx.compose.runtime.remember(cle) { mutableStateOf<fr.assistacrise.mobile.domaine.MessageConversationRadio?>(null) }
+    trajetDe?.let { m ->
+        val contacts = (pilote as? fr.assistacrise.mobile.lien.PiloteMeshCore)?.avance?.contacts?.values.orEmpty()
+        DialogueTrajet(m, contacts) { trajetDe = null }
+    }
     val defilement = rememberLazyListState()
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) defilement.animateScrollToItem(messages.size - 1) }
     val heure = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
@@ -177,7 +183,8 @@ fun EcranConversationRadio(modele: ModeleApplication) {
             items(messages) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.moi) Alignment.CenterEnd else Alignment.CenterStart) {
                   AvecMenuMessage(m.auteur, m.texte, m.moi, { repondreA = m }, { texte = taguer(texte, m.auteur) },
-                      surReagir = if (modele.reactionRadioPossible(cle, m)) { e -> modele.reagirALaRadio(cle, m, e) } else null) {
+                      surReagir = if (modele.reactionRadioPossible(cle, m)) { e -> modele.reagirALaRadio(cle, m, e) } else null,
+                      surTrajet = if (protocole == fr.assistacrise.mobile.lien.Protocole.MESHCORE && !m.moi) { { trajetDe = m } } else null) {
                     Column(Modifier.widthIn(max = 300.dp).background(
                         if (m.moi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(10.dp)) {
                         if (!m.moi && m.auteur.isNotBlank()) Text(m.auteur, style = MaterialTheme.typography.labelMedium)
@@ -239,4 +246,51 @@ fun EcranConversationRadio(modele: ModeleApplication) {
             }
         }
     }
+}
+
+/**
+ * Le trajet d'un message MeshCore reçu (27/11/2026) : les relais, de l'auteur jusqu'à moi, tels
+ * que la radio les a entendus. Une empreinte de relais ne fait qu'un octet : plusieurs contacts
+ * peuvent y répondre, on les cite tous.
+ */
+@Composable
+private fun DialogueTrajet(m: fr.assistacrise.mobile.domaine.MessageConversationRadio,
+                           contacts: Collection<fr.assistacrise.mobile.lien.meshcore.AdminMeshCore.Contact>, fermer: () -> Unit) {
+    fun relais(h: String): String {
+        val noms = contacts.filter { it.pubkeyHex.startsWith(h, ignoreCase = true) }.map { it.nom.ifBlank { it.pubkeyHex.take(8) } }
+        return when {
+            noms.isEmpty() -> "relais $h"
+            noms.size == 1 -> noms[0]
+            noms.size <= 3 -> noms.joinToString(" ou ") + " ($h)"
+            else -> "relais $h (${noms.size} contacts possibles)"
+        }
+    }
+    fun signal(t: fr.assistacrise.mobile.domaine.TrajetRadio) = listOfNotNull(
+        t.snr?.let { "SNR " + "%.1f".format(it).removeSuffix(",0").replace('-', '−') + " dB" },
+        t.rssi?.let { "$it dBm".replace('-', '−') }).joinToString(" · ")
+    val auteur = m.auteur.ifBlank { "Auteur" }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = fermer,
+        title = { Text("Trajet du message") },
+        text = {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    m.routeDirecte -> Text("Arrivé par une route directe (chemin déjà connu entre vous) : la radio ne dit pas par quels relais.")
+                    m.trajets.isEmpty() -> Text("Trajet inconnu : le message est arrivé alors que l'application n'écoutait pas la radio." +
+                        (m.sauts?.let { s -> if (s == 0) " Il a été entendu directement, sans relais." else " Il est passé par $s relais." } ?: ""))
+                    else -> m.trajets.forEachIndexed { i, t ->
+                        Column {
+                            Text(if (i == 0) "Chemin retenu par la radio" else "Entendu aussi par",
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text((listOf(auteur) + t.relais.map(::relais) + "Moi").joinToString(" → "), style = MaterialTheme.typography.bodyMedium)
+                            Text((if (t.relais.isEmpty()) "entendu directement, sans relais" else "${t.relais.size} relais") +
+                                signal(t).takeIf { it.isNotBlank() }?.let { " · dernier saut : $it" }.orEmpty(),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = fermer) { Text("Fermer") } },
+    )
 }

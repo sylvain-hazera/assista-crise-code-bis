@@ -40,7 +40,7 @@ import fr.assistacrise.mobile.domaine.Mentions
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AvecMenuMessage(auteur: String, texte: String, moi: Boolean, surRepondre: () -> Unit, surTaguer: () -> Unit,
-                    surReagir: ((String) -> Unit)? = null, contenu: @Composable () -> Unit) {
+                    surReagir: ((String) -> Unit)? = null, surTrajet: (() -> Unit)? = null, contenu: @Composable () -> Unit) {
     var ouvert by remember { mutableStateOf(false) }
     val presse = LocalClipboardManager.current
     Box(Modifier.combinedClickable(onClick = {}, onLongClick = { ouvert = true }, onLongClickLabel = "Répondre, taguer ou copier")) {
@@ -62,6 +62,8 @@ fun AvecMenuMessage(auteur: String, texte: String, moi: Boolean, surRepondre: ()
                 DropdownMenuItem(text = { Text("Taguer ${Mentions.etiquette(auteur)}") }, onClick = { ouvert = false; surTaguer() })
             }
             DropdownMenuItem(text = { Text("Copier le texte") }, onClick = { ouvert = false; presse.setText(AnnotatedString(texte)) })
+            // Messagerie radio MeshCore (27/11/2026) : par quels relais le message est arrivé.
+            if (surTrajet != null) DropdownMenuItem(text = { Text("Voir le trajet") }, onClick = { ouvert = false; surTrajet() })
         }
     }
 }

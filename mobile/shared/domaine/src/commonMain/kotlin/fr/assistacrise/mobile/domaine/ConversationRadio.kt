@@ -38,6 +38,11 @@ data class MessageConversationRadio(
     val nomRadio: String? = null,
     /** Message envoyé : le texte tel qu'il est parti (premier morceau), s'il diffère de `texte`. */
     val texteEmis: String? = null,
+    /** MeshCore (27/11/2026) : les chemins par lesquels le message a été entendu, le premier
+     * étant celui que la radio a retenu ; vide si inconnu. */
+    val trajets: List<TrajetRadio> = emptyList(),
+    /** MeshCore : désigne la charge du message, pour y joindre les copies relayées entendues ensuite. */
+    val signatureRadio: String? = null,
 ) {
     /** Le texte qui a circulé sur la radio. */
     val texteRadio: String get() = texteEmis ?: texte
@@ -55,6 +60,10 @@ data class MessageConversationRadio(
         if (parInternet) "via Internet" else null,
     ).joinToString(" · ")
 }
+
+/** Un chemin entendu : les empreintes des relais (hexadécimal), de l'émetteur vers moi. */
+@Serializable
+data class TrajetRadio(val relais: List<String>, val snr: Float? = null, val rssi: Int? = null)
 
 /** Ce que devient un message radio envoyé (26/11/2026). */
 @Serializable

@@ -200,7 +200,24 @@ class MessagerieRadio(private val app: Application) {
         false, auteur, texte, quand, sauts = r?.sauts, snr = r?.snr, rssi = r?.rssi,
         routeDirecte = r?.routeDirecte == true, parInternet = r?.parInternet == true, idRadio = id, repondA = repondA,
         horodatageRadio = horodatageS, nomRadio = nomRadio,
+        trajets = r?.chemins.orEmpty().map { fr.assistacrise.mobile.domaine.TrajetRadio(it.relais, it.snr, it.rssi) },
+        signatureRadio = r?.signature,
     )
+
+    /** MeshCore : une copie relayée d'un message déjà reçu, entendue par un autre chemin. */
+    fun joindreChemins(chemins: List<Pair<String, fr.assistacrise.mobile.lien.CheminEntendu>>) {
+        if (chemins.isEmpty()) return
+        var change = false
+        val maj = _conversations.value.mapValues { (_, liste) ->
+            liste.map { m ->
+                val nouveaux = chemins.filter { (sig, _) -> m.signatureRadio == sig }
+                    .map { (_, c) -> fr.assistacrise.mobile.domaine.TrajetRadio(c.relais, c.snr, c.rssi) }
+                    .filter { t -> m.trajets.none { it.relais == t.relais } }
+                if (nouveaux.isEmpty()) m else { change = true; m.copy(trajets = (m.trajets + nouveaux).take(16)) }
+            }
+        }
+        if (change) { _conversations.value = maj; sauver() }
+    }
 
     /** Pose une réaction sur le message `id` de la conversation ; faux si le message n'y est plus. */
     private fun reagir(cle: String, id: Long, emoji: String, auteur: String): Boolean {
