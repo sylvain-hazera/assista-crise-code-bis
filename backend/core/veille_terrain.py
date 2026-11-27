@@ -12,6 +12,10 @@ estimations voient atteintes dans l'heure — une estimation, jamais une prévis
 
 Les zones : celles de la carte de l'application (`crises_du_perimetre`), puis les
 manifestations publiées où la personne tient un poste aujourd'hui.
+
+Les cinq stations-service les plus proches (demande du 27/11/2026) : de la position que
+l'application envoie (lue, jamais gardée), sinon du centre de la première zone ; avec ce
+qu'elles délivrent encore (flux instantané des prix des carburants).
 """
 import datetime
 import logging
@@ -177,7 +181,34 @@ def manifestations_du_jour(utilisateur, environment, maintenant=None):
     ).distinct().order_by("debut"))
 
 
-def construire(utilisateur, environment, maintenant=None):
+STATIONS = 5
+#: Rayons de recherche successifs : l'index spatial travaille sur un petit carré d'abord.
+RAYONS_STATIONS_KM = (15, 50, 150)
+
+
+def stations_proches(latitude, longitude, nombre=STATIONS):
+    """Les `nombre` stations les plus proches, à vol d'oiseau."""
+    from django.contrib.gis.geos import Polygon
+
+    from .models import StationCarburant
+
+    for rayon in RAYONS_STATIONS_KM:
+        dlat = rayon / 111.0
+        dlon = rayon / (111.0 * max(0.2, math.cos(math.radians(latitude))))
+        carre = Polygon.from_bbox((longitude - dlon, latitude - dlat, longitude + dlon, latitude + dlat))
+        lues = list(StationCarburant.objects.filter(location__within=carre))
+        if len(lues) >= nombre or rayon == RAYONS_STATIONS_KM[-1]:
+            break
+    rangees = sorted(((an.distance_km(latitude, longitude, s.location.y, s.location.x), s) for s in lues), key=lambda x: x[0])
+    return [{
+        "distance_km": round(d, 1), "adresse": s.adresse, "ville": s.ville,
+        "latitude": s.location.y, "longitude": s.location.x,
+        "carburants_disponibles": s.carburants_disponibles, "ruptures_temporaires": s.ruptures_temporaires,
+        "automate_24_24": s.automate_24_24, "mis_a_jour_le": s.mis_a_jour_le,
+    } for d, s in rangees[:nombre]]
+
+
+def construire(utilisateur, environment, maintenant=None, latitude=None, longitude=None):
     from .views_carte_terrain import crises_du_perimetre
 
     maintenant = maintenant or timezone.now()
@@ -194,4 +225,16 @@ def construire(utilisateur, environment, maintenant=None):
             "communes": len(perimetre.communes) if perimetre else 0,
             "rubriques": veille_de(perimetre, maintenant) if perimetre else [],
         })
-    return {"genere_le": maintenant, "zones": resultat}
+    # Les stations : autour de moi si l'application l'a dit, sinon au centre de la première zone.
+    stations, autour = [], None
+    if latitude is not None and longitude is not None:
+        stations, autour = stations_proches(latitude, longitude), "votre position"
+    else:
+        premiere = next(((nom, p) for _n, _i, nom, p in zones if p), None)
+        if premiere:
+            nom, p = premiere
+            lat = sum(c[2] for c in p.communes) / len(p.communes)
+            lon = sum(c[3] for c in p.communes) / len(p.communes)
+            stations, autour = stations_proches(lat, lon), nom
+    return {"genere_le": maintenant, "zones": resultat,
+            "stations": {"autour_de": autour, "resultats": stations}}

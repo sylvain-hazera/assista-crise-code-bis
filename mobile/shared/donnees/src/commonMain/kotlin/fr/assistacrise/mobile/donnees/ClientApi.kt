@@ -329,8 +329,11 @@ class ClientApi(
         }
 
     /** La mini veille du territoire de la crise ou de la manifestation en cours (27/11/2026). */
-    suspend fun veilleTerrain(): Reponse<fr.assistacrise.mobile.domaine.VeilleTerrain> =
-        authentifie(HttpMethod.Get, "carte-terrain/veille/").transformer {
+    suspend fun veilleTerrain(position: Pair<Double, Double>? = null): Reponse<fr.assistacrise.mobile.domaine.VeilleTerrain> =
+        // La position, arrondie à une centaine de mètres, sert aux stations les plus proches ; le
+        // serveur ne la garde pas.
+        authentifie(HttpMethod.Get, "carte-terrain/veille/" + (position?.let { (la, lo) ->
+            "?lat=${kotlin.math.round(la * 1000) / 1000}&lon=${kotlin.math.round(lo * 1000) / 1000}" } ?: "")).transformer {
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.VeilleTerrain.serializer(), it)
         }
 

@@ -123,3 +123,37 @@ class TestVeilleTerrain:
         crise = Crisis(name="Sans zone (essai)", location=Point(4.30, 45.39), radius=3, environment="PROD")
         perimetre = veille_terrain.perimetre_de_crise(crise)
         assert [c[0] for c in perimetre.communes] == ["42095"]
+
+
+def _station(reference, lat, lon, ruptures=(), **champs):
+    from core.models import StationCarburant
+    return StationCarburant.objects.create(
+        reference=reference, adresse=f"{reference} route de Lyon", ville="Ville", location=Point(lon, lat, srid=4326),
+        carburants_disponibles=["Gazole", "SP95"], ruptures_temporaires=list(ruptures), releve_le=timezone.now(), **champs)
+
+
+@pytest.mark.django_db
+class TestStationsProches:
+    def test_les_cinq_plus_proches_de_ma_position(self, monde):
+        for n in range(7):
+            _station(f"s{n}", 45.43 + n * 0.01, 4.39)            # tous les ~1,1 km vers le nord
+        _station("loin", 46.5, 4.39)
+        r = _client(monde["lea"]).get(reverse("carte_terrain_veille"), {"lat": "45.43", "lon": "4.39"})
+        stations = r.data["stations"]
+        assert stations["autour_de"] == "votre position"
+        assert [s["adresse"].split()[0] for s in stations["resultats"]] == ["s0", "s1", "s2", "s3", "s4"]
+        assert stations["resultats"][0]["distance_km"] == 0.0
+        assert stations["resultats"][1]["carburants_disponibles"] == ["Gazole", "SP95"]
+
+    def test_sans_position_autour_de_la_zone_meme_loin(self, monde):
+        # Aucune dans les 15 premiers kilomètres : la recherche s'élargit.
+        _station("rupture", 45.75, 4.39, ruptures=["E10"], automate_24_24=True)
+        r = _client(monde["lea"]).get(reverse("carte_terrain_veille"))
+        assert r.data["stations"]["autour_de"] == "Orages (essai)"
+        (s,) = r.data["stations"]["resultats"]
+        assert s["ruptures_temporaires"] == ["E10"] and s["automate_24_24"] is True
+        assert 30 < s["distance_km"] < 40
+
+    def test_une_position_invalide_est_ignoree(self, monde):
+        r = _client(monde["lea"]).get(reverse("carte_terrain_veille"), {"lat": "999", "lon": "4.39"})
+        assert r.data["stations"]["autour_de"] == "Orages (essai)"

@@ -1,5 +1,6 @@
 package fr.assistacrise.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -77,9 +78,28 @@ fun EcranVeille(modele: ModeleApplication) {
                     }
                 }
             }
+            // Les cinq stations-service les plus proches (27/11/2026) ; toucher l'une l'ouvre dans
+            // l'application de cartes du téléphone.
+            v?.stations?.takeIf { it.resultats.isNotEmpty() }?.let { s ->
+                val contexte = androidx.compose.ui.platform.LocalContext.current
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Stations-service les plus proches" + (s.autourDe?.let { " (de $it)" } ?: ""), style = MaterialTheme.typography.titleMedium)
+                    s.resultats.forEach { st ->
+                        Column(Modifier.fillMaxWidth().clickable(enabled = st.latitude != null && st.longitude != null) {
+                            val geo = android.net.Uri.parse("geo:${st.latitude},${st.longitude}?q=${st.latitude},${st.longitude}")
+                            runCatching { contexte.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, geo)) }
+                        }) {
+                            Text(st.titre, style = MaterialTheme.typography.bodyMedium)
+                            Text(st.etat, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 14.dp),
+                                color = if (st.enRupture) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
             Text("‼ exceptionnel · ! alerte, selon les seuils conseillés des alertes automatiques. Les estimations " +
                 "(orage en approche) ne sont pas des prévisions. Sources : Météo-France, Vigicrues, Hub'Eau, Shom, BCSF-Rénass, EMSC, " +
-                "NASA FIRMS, EUMETSAT.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                "NASA FIRMS, EUMETSAT ; carburants : prix des carburants, ministère de l'Économie.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

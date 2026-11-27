@@ -13,6 +13,8 @@ import kotlinx.serialization.Serializable
 data class VeilleTerrain(
     @SerialName("genere_le") val genereLe: String? = null,
     val zones: List<ZoneVeille> = emptyList(),
+    /** Les cinq stations-service les plus proches (de ma position, sinon de la zone). */
+    val stations: StationsVeille = StationsVeille(),
 ) {
     /** Ce qui demande l'attention, toutes zones confondues (alerte ou exceptionnel). */
     val alertes: Int get() = zones.sumOf { z -> z.rubriques.sumOf { r -> r.evenements.count { it.important } } }
@@ -27,6 +29,37 @@ data class VeilleTerrain(
             else -> "Veille : $alertes alerte" + (if (alertes > 1) "s" else "") + " (" + ou.joinToString(", ") + ")"
         }
     }
+}
+
+@Serializable
+data class StationsVeille(
+    @SerialName("autour_de") val autourDe: String? = null,
+    val resultats: List<StationVeille> = emptyList(),
+)
+
+@Serializable
+data class StationVeille(
+    @SerialName("distance_km") val distanceKm: Double = 0.0,
+    val adresse: String = "",
+    val ville: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @SerialName("carburants_disponibles") val carburants: List<String> = emptyList(),
+    @SerialName("ruptures_temporaires") val ruptures: List<String> = emptyList(),
+    @SerialName("automate_24_24") val automate: Boolean = false,
+) {
+    /** « 1,2 km · 12 route de Lyon, Firminy ». */
+    val titre: String get() = (distanceKm.toString().replace('.', ',') + " km · " + listOf(adresse, ville).filter { it.isNotBlank() }.joinToString(", "))
+        .removeSuffix(" · ")
+
+    /** « Gazole, SP95 · manque : E10 · automate 24/24 », ou « plus rien à délivrer ». */
+    val etat: String get() = listOfNotNull(
+        if (carburants.isEmpty()) (if (ruptures.isEmpty()) "carburants inconnus" else "plus rien à délivrer") else carburants.joinToString(", "),
+        ruptures.takeIf { it.isNotEmpty() }?.let { "manque : " + it.joinToString(", ") },
+        if (automate) "automate 24/24" else null,
+    ).joinToString(" · ")
+
+    val enRupture: Boolean get() = ruptures.isNotEmpty()
 }
 
 @Serializable

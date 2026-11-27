@@ -67,4 +67,15 @@ class VeilleTerrainView(APIView):
 
     def get(self, request):
         from . import veille_terrain
-        return Response(veille_terrain.construire(request.user, get_active_environment(request)))
+
+        def nombre(cle, borne):
+            try:
+                v = float(request.query_params.get(cle))
+            except (TypeError, ValueError):
+                return None
+            return v if -borne <= v <= borne else None
+        latitude, longitude = nombre("lat", 90), nombre("lon", 180)
+        if latitude is None or longitude is None:
+            latitude = longitude = None
+        return Response(veille_terrain.construire(request.user, get_active_environment(request),
+                                                  latitude=latitude, longitude=longitude))

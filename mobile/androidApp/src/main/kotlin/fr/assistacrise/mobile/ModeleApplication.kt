@@ -1010,7 +1010,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         if (veilleEnCours) return
         veilleEnCours = true
         viewModelScope.launch {
-            when (val r = app.api.veilleTerrain()) {
+            when (val r = app.api.veilleTerrain(dernierePosition())) {
                 is Reponse.Ok -> { veille = r.valeur; veilleLueLe = System.currentTimeMillis(); veilleErreur = null }
                 is Reponse.Refus -> veilleErreur = r.message
                 is Reponse.Injoignable -> veilleErreur = "Pas de réseau : veille non actualisée."

@@ -29,6 +29,20 @@ class VeilleTerrainTest {
     }
 
     @Test
+    fun lesStationsSeLisentEnUneLigne() {
+        val v = json.decodeFromString(VeilleTerrain.serializer(), """{"zones":[],"stations":{"autour_de":"votre position","resultats":[
+            {"distance_km":1.2,"adresse":"12 route de Lyon","ville":"Firminy","carburants_disponibles":["Gazole","SP95"],
+             "ruptures_temporaires":["E10"],"automate_24_24":true},
+            {"distance_km":3.0,"adresse":"","ville":"Unieux","carburants_disponibles":[],"ruptures_temporaires":["Gazole"]}]}}""")
+        assertEquals("votre position", v.stations.autourDe)
+        val (a, b) = v.stations.resultats
+        assertEquals("1,2 km · 12 route de Lyon, Firminy", a.titre)
+        assertEquals("Gazole, SP95 · manque : E10 · automate 24/24", a.etat)
+        assertEquals("plus rien à délivrer · manque : Gazole", b.etat)
+        assertTrue(b.enRupture)
+    }
+
+    @Test
     fun rienOuAucuneZone() {
         assertEquals("Veille : aucune crise ni manifestation en cours", VeilleTerrain().resume())
         val calme = VeilleTerrain(zones = listOf(ZoneVeille(rubriques = listOf(RubriqueVeille("SEISMES", "Séismes",
