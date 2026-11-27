@@ -58,6 +58,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import fr.assistacrise.mobile.Ecran
 import fr.assistacrise.mobile.ModeleApplication
+import fr.assistacrise.mobile.domaine.RechercheNoeud
 import fr.assistacrise.mobile.lien.PiloteMeshtastic
 import fr.assistacrise.mobile.lien.PiloteRadio
 import fr.assistacrise.mobile.lien.Protocole
@@ -292,8 +293,12 @@ private fun EditeurCanalMeshtastic(c: CanalMeshtastic, surAnnuler: () -> Unit, s
 private fun ContactsMeshtastic(modele: ModeleApplication, pilote: PiloteMeshtastic, avance: PiloteRadio.Avance) {
     var message by remember { mutableStateOf<Long?>(null) }
     var retirer by remember { mutableStateOf<Long?>(null) }
-    val noeuds = avance.noeuds.values.filter { it.numero != avance.monNoeud }.sortedByDescending { it.dernierContact ?: 0 }
-    Text("${noeuds.size} nœud(s) entendu(s)", style = MaterialTheme.typography.bodySmall)
+    var recherche by rememberSaveable { mutableStateOf("") }
+    val tous = avance.noeuds.values.filter { it.numero != avance.monNoeud }.sortedByDescending { it.dernierContact ?: 0 }
+    val noeuds = tous.filter { RechercheNoeud.correspond(recherche, it.nomLong, it.nomCourt, it.identifiant) }
+    ChampRechercheNoeud(recherche, "Nom, nom court ou !identifiant") { recherche = it }
+    Text(if (recherche.isBlank()) "${tous.size} nœud(s) entendu(s)" else "${noeuds.size} sur ${tous.size} nœud(s) entendu(s)",
+        style = MaterialTheme.typography.bodySmall)
     noeuds.forEach { n ->
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
@@ -553,6 +558,14 @@ private fun CanauxMeshCore(modele: ModeleApplication, avance: PiloteRadio.Avance
     }
 }
 
+/** Recherche dans la liste des nœuds ou des contacts (27/11/2026). */
+@Composable
+private fun ChampRechercheNoeud(valeur: String, aide: String, surChange: (String) -> Unit) {
+    OutlinedTextField(valeur, surChange, label = { Text("Rechercher un nœud") }, placeholder = { Text(aide) },
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+        trailingIcon = { if (valeur.isNotEmpty()) TextButton(onClick = { surChange("") }) { Text("Effacer") } })
+}
+
 @Composable
 private fun ContactsMeshCore(modele: ModeleApplication, pilote: fr.assistacrise.mobile.lien.PiloteMeshCore, avance: PiloteRadio.Avance) {
     var message by remember { mutableStateOf<String?>(null) }
@@ -575,7 +588,13 @@ private fun ContactsMeshCore(modele: ModeleApplication, pilote: fr.assistacrise.
         Text("Carte exportée : meshcore://${carte.enHex()}", style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = { presse.setText(AnnotatedString("meshcore://${carte.enHex()}")) }) { Text("Copier la carte") }
     }
-    avance.contacts.values.sortedByDescending { it.derniereAnnonce }.forEach { c ->
+    var recherche by rememberSaveable { mutableStateOf("") }
+    val tous = avance.contacts.values.sortedByDescending { it.derniereAnnonce }
+    val contacts = tous.filter { RechercheNoeud.correspond(recherche, it.nom, it.genre, it.pubkeyHex) }
+    ChampRechercheNoeud(recherche, "Nom, genre (répéteur…) ou début de clé") { recherche = it }
+    Text(if (recherche.isBlank()) "${tous.size} contact(s)" else "${contacts.size} sur ${tous.size} contact(s)",
+        style = MaterialTheme.typography.bodySmall)
+    contacts.forEach { c ->
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text(c.nom.ifBlank { c.pubkeyHex.take(12) }, style = MaterialTheme.typography.bodyLarge)

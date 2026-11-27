@@ -147,6 +147,9 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
                 BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE, Ecran.PREPARER_RADIO, Ecran.MANIFESTATIONS)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
+                // Le triangle du téléphone fait comme la flèche de l'écran (27/11/2026).
+                BackHandler(enabled = ecran == Ecran.RADIO_AVANCEE) { modele.aller(Ecran.COMPTE) }
+                BackHandler(enabled = ecran == Ecran.RADIO_CONVERSATION) { modele.fermerConversationRadio() }
                 BackHandler(enabled = ecran == Ecran.DISPONIBILITES) {
                     val ouverte = modele.notificationOuverte
                     if (ouverte != null && modele.grille.value?.campagne != null) modele.ouvrirNotification(ouverte) else modele.aller(Ecran.COMPTE)

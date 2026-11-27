@@ -979,14 +979,19 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         }
     }
 
+    /** L'écran d'où la conversation a été ouverte (Équipes ou Radio avancée), pour y revenir. */
+    private var origineConversationRadio = Ecran.EQUIPES
+
     fun ouvrirConversationRadio(cle: String) {
         conversationRadio = cle
         app.messagerieRadio.marquerLue(cle)
+        if (ecran != Ecran.RADIO_CONVERSATION)
+            origineConversationRadio = ecran.takeIf { it in setOf(Ecran.RADIO_AVANCEE, Ecran.CARTE) } ?: Ecran.EQUIPES
         aller(Ecran.RADIO_CONVERSATION)
     }
 
     fun fermerConversationRadio() {
-        aller(Ecran.EQUIPES)
+        aller(origineConversationRadio)
     }
 
     fun nomDuContactRadio(cle: String) = app.messagerieRadio.nomDuContact(cle)
