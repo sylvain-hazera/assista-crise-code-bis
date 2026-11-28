@@ -123,6 +123,24 @@ class DepotCarteTerrain(
      * Rend (manifestation, poste, fin du créneau en ms). C'est ce qui allume le partage de
      * position en manifestation (décision de Sylvain du 26/11/2026 : du pointage à la fin).
      */
+    /**
+     * À quoi rattacher un marqueur posé maintenant (28/11/2026, décision de Sylvain : seulement en
+     * phase de crise ou de manifestation, et toujours rattaché à l'une ou à l'autre) : les crises
+     * ouvertes du périmètre, puis les manifestations du jour en cours — de leur premier début
+     * (manifestation ou poste, pour la mise en place) à leur dernière fin.
+     */
+    fun rattachementsEnCours(): List<fr.assistacrise.mobile.domaine.Rattachement> {
+        val t = maintenant()
+        val crises = _perimetre.value.crises.map { fr.assistacrise.mobile.domaine.Rattachement(crise = it.id, nom = it.nom.ifBlank { "Crise" }) }
+        val manifs = _manifestations.value.filter { m ->
+            if (m.statut == "ANNULEE" || m.statut == "BROUILLON") return@filter false
+            val debuts = (listOf(m.debut) + m.postes.map { it.debut }).mapNotNull(instant)
+            val fins = (listOf(m.fin) + m.postes.map { it.fin }).mapNotNull(instant)
+            debuts.isNotEmpty() && fins.isNotEmpty() && t in debuts.min()..fins.max()
+        }.map { fr.assistacrise.mobile.domaine.Rattachement(manifestation = it.id, nom = it.titre) }
+        return crises + manifs
+    }
+
     fun presencesEnCours(): List<Triple<ManifestationAsso, fr.assistacrise.mobile.domaine.PosteManifestation, Long>> {
         val t = maintenant()
         return _manifestations.value.flatMap { m ->

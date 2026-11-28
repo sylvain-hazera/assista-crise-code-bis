@@ -826,15 +826,27 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         return if (equipeDuCanalDeCrise(pr, index) != null) pr.name else null
     }
 
-    /** Où rattacher un marqueur au serveur : la crise de la conversation, celle de mon équipe
-     * engagée, sinon la manifestation où je suis présent. */
+    /** Où rattacher un marqueur au serveur, parmi les crises ouvertes et les manifestations en
+     * cours (28/11/2026) : la crise de la conversation, celle de mon équipe engagée, la
+     * manifestation où je suis présent, sinon la première. Rien en dehors d'elles. */
     private fun rattachement(cle: String?): Pair<String?, String?> {
-        val crise = cle?.let(::criseDeLaConversation)
-            ?: equipes.value.firstOrNull { it.engagee && it.canalCrise != null }?.canalCrise?.crise
-            ?: equipes.value.firstNotNullOfOrNull { it.canalCrise?.crise }
-        val manifestation = if (crise == null) app.carteTerrain.presencesEnCours().firstOrNull()?.first?.id
-                            ?: app.carteTerrain.manifestations.value.firstOrNull()?.id else null
-        return crise to manifestation
+        val possibles = rattachementsMarqueur()
+        val crises = possibles.mapNotNull { it.crise }.toSet()
+        val crise = (cle?.let(::criseDeLaConversation)
+            ?: equipes.value.firstOrNull { it.engagee && it.canalCrise != null }?.canalCrise?.crise)?.takeIf { it in crises }
+        if (crise != null) return crise to null
+        val presente = app.carteTerrain.presencesEnCours().firstOrNull()?.first?.id
+        val choisi = possibles.firstOrNull { it.manifestation != null && it.manifestation == presente } ?: possibles.firstOrNull()
+        return (choisi?.crise) to (choisi?.manifestation)
+    }
+
+    /** Les crises ouvertes et manifestations en cours auxquelles rattacher un marqueur. */
+    fun rattachementsMarqueur(): List<fr.assistacrise.mobile.domaine.Rattachement> = app.carteTerrain.rattachementsEnCours()
+
+    /** Le rattachement proposé d'office dans la fenêtre « Poser un marqueur ». */
+    fun rattachementPropose(): fr.assistacrise.mobile.domaine.Rattachement? {
+        val (c, m) = rattachement(destinationsMarqueur().firstOrNull()?.first)
+        return rattachementsMarqueur().firstOrNull { (c != null && it.crise == c) || (m != null && it.manifestation == m) }
     }
 
     /** Les crises du périmètre de la carte (27/11/2026). */
@@ -892,8 +904,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun empriseDeLaZone() = fr.assistacrise.mobile.domaine.CartesEmbarquees.emprise(app.carteTerrain.lieuxDeLaZone())
         ?.takeIf { app.carteTerrain.cleDeLaZone().isNotEmpty() }
 
-    /** Peut-on poser un marqueur ? Par une radio prête, ou par le réseau quand on sait où le rattacher. */
-    fun marqueurPossible(): Boolean = destinationsMarqueur().isNotEmpty() || rattachement(null).let { it.first != null || it.second != null }
+    /** Peut-on poser un marqueur ? Seulement en phase de crise ou de manifestation (28/11/2026) :
+     * il faut une crise ouverte ou une manifestation en cours où le rattacher. */
+    fun marqueurPossible(): Boolean = rattachementsMarqueur().isNotEmpty()
 
     /** Les conversations radio où l'on peut envoyer un marqueur : (clé, libellé), le canal de
      * l'équipe d'abord. */
@@ -911,13 +924,20 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      * régulation et le relaie sur les canaux de la crise ; hors réseau, la radio suffit, et une
      * passerelle qui l'entend le portera au central.
      */
-    fun envoyerMarqueur(cles: List<String>, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) {
+    fun envoyerMarqueur(cles: List<String>, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur,
+                        rattache: fr.assistacrise.mobile.domaine.Rattachement) {
+        // La crise ou la manifestation doit être encore en cours au moment de l'envoi.
+        if (rattachementsMarqueur().none { it.cle == rattache.cle }) {
+            message = "« ${rattache.nom} » n'est plus en cours : le marqueur n'est pas parti."
+            return
+        }
         viewModelScope.launch {
             // Le même texte sur chaque canal coché, MeshCore comme Meshtastic (27/11/2026).
             val texte = fr.assistacrise.mobile.domaine.MarqueursRadio.ecrirePourLaRadio(m)
             val partis = cles.filter { app.messagerieRadio.envoyer(it, texte) }
             val parRadio = partis.isNotEmpty()
-            val (crise, manifestation) = rattachement(partis.firstNotNullOfOrNull { k -> k.takeIf { criseDeLaConversation(it) != null } } ?: cles.firstOrNull())
+            val crise = rattache.crise
+            val manifestation = rattache.manifestation
             // Déjà émis sur le canal de crise d'un protocole : le serveur ne l'y réémet pas ; des
             // deux : il ne réémet rien (« true »).
             val protocoles = partis.mapNotNull(::protocoleSiCanalDeCrise).toSet()
@@ -927,7 +947,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 protocoles.size >= 2 -> "true"; protocoles.size == 1 -> protocoles.first()
                 crise == null && parRadio -> "true"; else -> null
             }
-            val central = if (crise != null || manifestation != null) app.api.poserMarqueur(m, crise, manifestation, deja) else null
+            val central = app.api.poserMarqueur(m, crise, manifestation, deja)
             if (central is Reponse.Ok) app.carteTerrain.garder(central.valeur)
             val canaux = if (partis.size > 1) "sur ${partis.size} canaux radio" else "par la radio"
             val manques = (cles.size - partis.size).takeIf { it > 0 }?.let { " ($it canal${if (it > 1) "aux" else ""} n'a pas pris le message)" } ?: ""

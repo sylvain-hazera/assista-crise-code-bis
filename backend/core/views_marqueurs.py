@@ -82,6 +82,13 @@ class MarqueursTerrainView(APIView):
         if crise is None and manifestation is None:
             raise ValidationError({"detail": "Le marqueur doit appartenir à une crise ou à une manifestation."})
         source = MarqueurTerrain.Source.APPLICATION if d.get("source") == "APPLICATION" else MarqueurTerrain.Source.SITE
+        # Depuis l'application, un marqueur se pose seulement en phase de crise ou de
+        # manifestation (28/11/2026). Le site garde la main pour préparer une manifestation.
+        if source == MarqueurTerrain.Source.APPLICATION:
+            if crise is not None and crise.end_date is not None:
+                raise ValidationError({"detail": "Cette crise est close : on n'y pose plus de marqueur."})
+            if crise is None and not mf.en_cours(manifestation):
+                raise ValidationError({"detail": "Cette manifestation n'est pas en cours : le marqueur se pose pendant qu'elle a lieu."})
         diffuser, sauf = _diffusion(d)
         m, cree = mt.enregistrer(env, emoji, lat, lon, str(d.get("note") or "")[:500], crise=crise,
                                  manifestation=manifestation, auteur=request.user, source=source,

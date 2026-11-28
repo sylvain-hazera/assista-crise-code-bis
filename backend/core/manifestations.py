@@ -212,6 +212,18 @@ def pointer(inscription, present: bool, par):
     return inscription
 
 
+def en_cours(manifestation, maintenant=None) -> bool:
+    """La manifestation est publiée et en cours : de son premier début (elle-même ou un de ses
+    postes, pour la mise en place) à sa dernière fin (28/11/2026)."""
+    if manifestation.statut != StatutManifestation.PUBLIEE:
+        return False
+    maintenant = maintenant or timezone.now()
+    postes = list(manifestation.postes.values_list("debut", "fin"))
+    debut = min([manifestation.debut] + [d for d, _f in postes if d])
+    fin = max([manifestation.fin] + [f for _d, f in postes if f])
+    return debut <= maintenant <= fin
+
+
 def du_jour_pour(utilisateur, environment):
     """Les manifestations où la personne est inscrite et qui ont lieu aujourd'hui (± la nuit) :
     ce que « je pars » lui propose."""

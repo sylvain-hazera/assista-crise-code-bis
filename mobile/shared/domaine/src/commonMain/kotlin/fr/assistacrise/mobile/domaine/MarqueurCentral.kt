@@ -47,3 +47,9 @@ data class MarqueurCentral(
 ) {
     val marqueur: MarqueursRadio.Marqueur get() = MarqueursRadio.Marqueur(emoji, latitude, longitude, note.ifBlank { null })
 }
+
+
+/** Ce à quoi un marqueur posé est rattaché : une crise ouverte OU une manifestation en cours. */
+data class Rattachement(val crise: String? = null, val manifestation: String? = null, val nom: String = "") {
+    val cle: String get() = crise?.let { "c:$it" } ?: "m:$manifestation"
+}

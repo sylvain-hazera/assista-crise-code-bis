@@ -214,6 +214,12 @@ class TestApi:
         assert MessageCanalMeshCore.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
         assert MessageCanalMeshtastic.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
 
+    def test_crise_close_plus_de_marqueur_depuis_l_application(self, scene):
+        Crisis.objects.filter(id=scene["crise"].id).update(end_date=timezone.now())
+        r = _client(scene["lea"]).post(reverse("marqueurs_terrain"), {
+            "crise": str(scene["crise"].id), "emoji": "🔥", "latitude": 44.85, "longitude": -0.57, "source": "APPLICATION"}, format="json")
+        assert r.status_code == 400 and "close" in r.data["detail"]
+
     def test_hors_de_la_crise_refuse_et_invisible(self, scene):
         r = _client(scene["intrus"]).post(reverse("marqueurs_terrain"), {
             "crise": str(scene["crise"].id), "emoji": "🔥", "latitude": 44.85, "longitude": -0.57}, format="json")
@@ -267,6 +273,24 @@ class TestManifestation:
     def test_les_presents_de_la_manifestation_se_voient(self, manif):
         ids = {str(p["utilisateur"]) for p in _client(manif["a"]).get(reverse("positions_equipes")).data}
         assert str(manif["b"].id) in ids and str(manif["dehors"].id) not in ids
+
+    def test_depuis_l_application_seulement_pendant_la_manifestation(self, manif):
+        """28/11/2026 : en dehors de la manifestation (finie ou pas commencée), l'application ne
+        pose pas de marqueur ; le site, si — le bureau prépare son dispositif à l'avance."""
+        m = manif["m"]
+        corps = {"manifestation": str(m.id), "emoji": "⛔", "latitude": 44.9, "longitude": -0.5, "source": "APPLICATION"}
+        maintenant = timezone.now()
+        for debut in (maintenant - datetime.timedelta(hours=6), maintenant + datetime.timedelta(days=1)):
+            Manifestation.objects.filter(id=m.id).update(debut=debut, fin=debut + datetime.timedelta(hours=2))
+            m.postes.update(debut=debut, fin=debut + datetime.timedelta(hours=2))
+            r = _client(manif["bureau"]).post(reverse("marqueurs_terrain"), corps, format="json")
+            assert r.status_code == 400 and "pas en cours" in r.data["detail"]
+        assert _client(manif["bureau"]).post(reverse("marqueurs_terrain"), dict(corps, source="SITE"), format="json").status_code == 201
+        # La mise en place compte : un poste qui commence avant la manifestation l'ouvre.
+        Manifestation.objects.filter(id=m.id).update(debut=maintenant + datetime.timedelta(minutes=30), fin=maintenant + datetime.timedelta(hours=3))
+        m.postes.update(debut=maintenant - datetime.timedelta(minutes=30), fin=maintenant + datetime.timedelta(hours=3))
+        r = _client(manif["a"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=44.95), format="json")
+        assert r.status_code == 201, r.data
 
     def test_marqueur_de_manifestation_previent_le_bureau(self, manif):
         r = _client(manif["a"]).post(reverse("marqueurs_terrain"), {

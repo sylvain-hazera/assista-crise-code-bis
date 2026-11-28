@@ -94,6 +94,22 @@ class CarteTerrainTest {
         assertEquals("cc1234567-mm1", autre.cleDeLaZone())
     }
 
+    @Test fun unMarqueurSeRattacheAUneCriseOuverteOuAUneManifestationEnCours() = runTest {
+        session.ouvrir("A", "R", Compte(id = "u1"))
+        depot.rafraichir()
+        assertEquals(listOf("c:c1234567-x", "m:m1"), depot.rattachementsEnCours().map { it.cle })
+        assertEquals("Course", depot.rattachementsEnCours().last().nom)
+        maintenant = h(14)                                   // la course est finie (dernier poste à 13 h)
+        assertEquals(listOf("c:c1234567-x"), depot.rattachementsEnCours().map { it.cle })
+        maintenant = h(8)                                    // pas encore commencée
+        assertEquals(listOf("c:c1234567-x"), depot.rattachementsEnCours().map { it.cle })
+    }
+
+    @Test fun sansCriseNiManifestationAucunRattachement() = runTest {
+        val vide = DepotCarteTerrain(api, MagasinEnMemoire(), { it.removePrefix("J").toIntOrNull()?.let(::h) }, { maintenant })
+        assertTrue(vide.rattachementsEnCours().isEmpty())
+    }
+
     @Test fun presenceDuPointageALaFinDuCreneau() = runTest {
         session.ouvrir("A", "R", Compte(id = "u1"))
         depot.rafraichir()

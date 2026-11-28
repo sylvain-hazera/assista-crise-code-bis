@@ -547,9 +547,17 @@ fun EcranCarte(modele: ModeleApplication) {
                             modifier = Modifier.padding(16.dp),
                         )
                         // Sans réseau, la radio porte un marqueur jusqu'aux équipes (format MeshCore SAR).
+                        // Seulement en phase de crise ou de manifestation, et rattaché à l'une ou à
+                        // l'autre (28/11/2026).
                         if (modele.marqueurPossible()) {
                             Button(onClick = { marqueurIci = lieu; lieuTouche = null }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                                 Text("Poser un marqueur (feu, route coupée…)")
+                            }
+                        } else {
+                            Surface(shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                                Text("Les marqueurs (feu, route coupée…) se posent pendant une crise ou une manifestation en cours.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(12.dp))
                             }
                         }
                     }
@@ -575,7 +583,7 @@ fun EcranCarte(modele: ModeleApplication) {
         }
         if (!listeRepliee) {
             Text(
-                "Maintenez le doigt sur la carte pour y créer une demande, un signalement, une offre d'aide ou un marqueur radio." +
+                "Maintenez le doigt sur la carte pour y créer une demande, un signalement, une offre d'aide ou, pendant une crise ou une manifestation, un marqueur." +
                     if (positionsRadio.isNotEmpty() || marqueursRadio.isNotEmpty() || pointsManif.isNotEmpty())
                         " En violet : nœuds radio ; cerclés de noir : marqueurs du terrain ; verts : points clés (PC de manifestation en rouge)." else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -650,7 +658,8 @@ fun EcranCarte(modele: ModeleApplication) {
     marqueurIci?.let { lieu ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { marqueurIci = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), surEnvoi = { cles, m -> modele.envoyerMarqueur(cles, m); marqueurIci = null },
+            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), modele.rattachementsMarqueur(), modele.rattachementPropose(),
+                            surEnvoi = { cles, m, r -> modele.envoyerMarqueur(cles, m, r); marqueurIci = null },
                             surAbandon = { marqueurIci = null }, modifier = Modifier.padding(16.dp))
         }
     }
@@ -720,9 +729,13 @@ private fun partagerGpx(contexte: android.content.Context, marqueurs: List<Model
 /** Un marqueur d'incident envoyé par la radio, à l'endroit touché : genre, note, conversation. */
 @Composable
 private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String>>,
-                            surEnvoi: (List<String>, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur) -> Unit,
+                            rattachements: List<fr.assistacrise.mobile.domaine.Rattachement>,
+                            propose: fr.assistacrise.mobile.domaine.Rattachement?,
+                            surEnvoi: (List<String>, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur, fr.assistacrise.mobile.domaine.Rattachement) -> Unit,
                             surAbandon: () -> Unit, modifier: Modifier = Modifier) {
     var genre by remember { mutableStateOf(fr.assistacrise.mobile.domaine.MarqueursRadio.GENRES.first()) }
+    // Toujours rattaché à une crise ouverte ou à une manifestation en cours (28/11/2026).
+    var rattache by remember(rattachements) { mutableStateOf(propose ?: rattachements.singleOrNull()) }
     var note by remember { mutableStateOf("") }
     // Plusieurs canaux à la fois (27/11/2026), MeshCore et Meshtastic : le canal de l'équipe coché d'office.
     var cles by remember { mutableStateOf(listOfNotNull(destinations.firstOrNull()?.first).toSet()) }
@@ -739,6 +752,19 @@ private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String
             }
             androidx.compose.material3.OutlinedTextField(note, { note = it.take(80) }, label = { Text("Précision (facultatif)") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            if (rattachements.size > 1) {
+                Text("Pour quelle crise ou manifestation ?", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rattachements.forEach { r ->
+                        FilterChip(selected = rattache?.cle == r.cle, onClick = { rattache = r },
+                            label = { Text((if (r.crise != null) "Crise · " else "Manifestation · ") + r.nom) })
+                    }
+                }
+            } else rattachements.singleOrNull()?.let { r ->
+                Text((if (r.crise != null) "Crise : " else "Manifestation : ") + r.nom, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
             Text(if (destinations.isEmpty()) "Aucune radio prête : le marqueur part par le réseau, vers la plateforme qui le relaie par la radio."
                  else "Sur quels canaux radio ? Cochez-en autant qu'il faut, MeshCore et Meshtastic (avec du réseau, il part aussi vers la plateforme).",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -754,10 +780,11 @@ private fun EnvoyerMarqueur(lieu: LatLng, destinations: List<Pair<String, String
             Text("Tous ceux qui ont ces canaux le verront : n'y mettez aucun nom de personne.", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             Button(onClick = {
+                val r = rattache ?: return@Button
                 // Une route : son sens ouvre la note (« 1 sens · arbre en travers »).
                 surEnvoi(destinations.map { it.first }.filter { it in cles }, fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur(genre.emoji, lieu.latitude, lieu.longitude,
-                    fr.assistacrise.mobile.domaine.MarqueursRadio.noteDeRoute(genre.precision, note)))
-            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    fr.assistacrise.mobile.domaine.MarqueursRadio.noteDeRoute(genre.precision, note)), r)
+            }, enabled = rattache != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text(when (cles.size) { 0 -> "Envoyer (par le réseau seulement)"; 1 -> "Envoyer"; else -> "Envoyer sur ${cles.size} canaux" })
             }
         }
