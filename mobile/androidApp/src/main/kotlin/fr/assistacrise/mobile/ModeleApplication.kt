@@ -72,6 +72,9 @@ enum class Ecran {
     MANIFESTATIONS, VEILLE,
 }
 
+private const val SANS_RESEAU_ENGAGEMENT =
+    "Sans réseau, rien n'est parti : réessayez dès que possible, ou complétez ensuite Mon relevé sur le site."
+
 class ModeleApplication(private val app: Application) : ViewModel() {
 
     val compte = app.session.compte
@@ -1016,6 +1019,79 @@ class ModeleApplication(private val app: Application) : ViewModel() {
                 is Reponse.Injoignable -> veilleErreur = "Pas de réseau : veille non actualisée."
             }
             veilleEnCours = false
+        }
+    }
+
+    // ── « Je pars », « je rentre » et relevé kilométrique (28/11/2026) ─────────────────────
+    // L'heure est celle du serveur au moment du geste : sans réseau, le geste est refusé et
+    // la personne complète ensuite son relevé sur le site.
+
+    var engagement by mutableStateOf<fr.assistacrise.mobile.domaine.EtatEngagement?>(null); private set
+    var engagementErreur by mutableStateOf<String?>(null); private set
+    var engagementEnvoi by mutableStateOf(false); private set
+    var engagementMessage by mutableStateOf<String?>(null); private set
+    /** Estimation du GPS depuis le départ, proposée au retour (null : rien de mesuré). */
+    var distanceEstimee by mutableStateOf<Int?>(null); private set
+
+    fun lireEngagement() {
+        viewModelScope.launch {
+            when (val r = app.api.etatEngagement()) {
+                is Reponse.Ok -> { engagement = r.valeur; engagementErreur = null }
+                is Reponse.Refus -> engagementErreur = r.message
+                is Reponse.Injoignable -> Unit           // la carte garde le dernier état lu
+            }
+        }
+    }
+
+    fun partir(cible: String, equipe: String?, departDe: String, vehicule: String?, compteurDepart: String) {
+        if (engagementEnvoi) return
+        engagementEnvoi = true; engagementErreur = null; engagementMessage = null
+        viewModelScope.launch {
+            when (val r = app.api.partir(cible, equipe, departDe, vehicule, compteurDepart)) {
+                is Reponse.Ok -> { engagement = r.valeur; app.commencerDistance(); engagementMessage = "Départ déclaré." }
+                is Reponse.Refus -> engagementErreur = r.message
+                is Reponse.Injoignable -> engagementErreur = SANS_RESEAU_ENGAGEMENT
+            }
+            engagementEnvoi = false
+        }
+    }
+
+    fun preparerRetour() {
+        viewModelScope.launch { distanceEstimee = app.distanceDepuisLeDepart() }
+    }
+
+    /** « Je rentre ». Un ticket photographié part ensuite, rattaché à la ligne close : son
+     * montant n'est donc pas envoyé avec le retour, pour ne pas le compter deux fois. */
+    fun rentrer(retourA: String, retour: fr.assistacrise.mobile.domaine.Retour,
+                photoPeage: ByteArray?, photoStationnement: ByteArray?, fini: () -> Unit) {
+        if (engagementEnvoi) return
+        engagementEnvoi = true; engagementErreur = null; engagementMessage = null
+        val envoye = retour.copy(peage = if (photoPeage != null) "" else retour.peage,
+                                 stationnement = if (photoStationnement != null) "" else retour.stationnement)
+        viewModelScope.launch {
+            when (val r = app.api.rentrer(retourA, envoye)) {
+                is Reponse.Ok -> {
+                    val (etat, ligne) = r.valeur
+                    engagement = etat
+                    app.oublierDistance()
+                    distanceEstimee = null
+                    var tickets = true
+                    if (ligne != null) {
+                        for ((nature, montant, photo) in listOf(Triple("PEAGE", retour.peage, photoPeage),
+                                                                Triple("STATIONNEMENT", retour.stationnement, photoStationnement))) {
+                            if (photo != null && montant.isNotBlank()) {
+                                tickets = app.api.ajouterFrais(ligne, nature, montant.trim(), photo) is Reponse.Ok && tickets
+                            }
+                        }
+                    }
+                    engagementMessage = if (tickets) "Retour déclaré." else
+                        "Retour déclaré, mais un ticket n'est pas parti : ajoutez-le dans Mon relevé, sur le site."
+                    fini()
+                }
+                is Reponse.Refus -> engagementErreur = r.message
+                is Reponse.Injoignable -> engagementErreur = SANS_RESEAU_ENGAGEMENT
+            }
+            engagementEnvoi = false
         }
     }
 

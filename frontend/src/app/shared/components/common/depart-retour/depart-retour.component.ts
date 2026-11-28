@@ -9,7 +9,11 @@ import { environment } from '../../../../../environments/environment';
 /** Où en est la personne, et où elle peut partir (voir core/engagements_personnels.py). */
 export interface MonEngagement {
   en_cours: { crise: string; crise_nom: string; equipe_nom: string | null; parti_le: string;
-              depart_de?: string; hebergement?: string } | null;
+              depart_de?: string; hebergement?: string;
+              /** Relevé kilométrique (28/11/2026). */
+              vehicule_personnel?: string | null; compteur_depart?: string } | null;
+  /** Mes véhicules déclarés : on choisit au départ celui avec lequel on part. */
+  vehicules?: { id: string; designation: string }[];
   /** `hebergement` : le logement de la personne sur cette crise, si elle y est en déplacement
    * sur site — elle part alors de là, et y rentre. */
   crises: { id: string; nom: string; hebergement?: string }[];
@@ -44,6 +48,15 @@ export interface MonEngagement {
               <option value="DOMICILE">à mon domicile</option>
               <option value="HEBERGEMENT">à mon hébergement sur site</option>
             </select></label>
+          <span class="deplacement">
+            @if (e.compteur_depart) {
+              <label>Compteur à l'arrivée <input type="text" inputmode="numeric" maxlength="9" [(ngModel)]="compteurArrivee" [placeholder]="'départ : ' + e.compteur_depart"></label>
+            } @else {
+              <label>Km aller-retour <input type="text" inputmode="decimal" maxlength="7" [(ngModel)]="kilometres" placeholder="facultatif"></label>
+            }
+            <label>Péage <input type="text" inputmode="decimal" maxlength="7" [(ngModel)]="peage" placeholder="€"></label>
+            <label>Stationnement <input type="text" inputmode="decimal" maxlength="7" [(ngModel)]="stationnement" placeholder="€"></label>
+          </span>
           <button type="button" class="btn-primary" [disabled]="envoi" (click)="geste('rentrer')">Je rentre</button>
         } @else {
           <p><span class="material-icons">schedule</span> Déclarez votre départ : c'est ce qui compte le temps que vous passez sur
@@ -67,6 +80,18 @@ export interface MonEngagement {
               <option value="DOMICILE">de mon domicile</option>
               <option value="HEBERGEMENT">de mon hébergement sur site{{ hebergement ? ' (' + hebergement + ')' : '' }}</option>
             </select></label>
+          @if (vehicules.length) {
+            <span class="deplacement">
+              <label>Avec
+                <select [(ngModel)]="vehicule">
+                  <option value="">— sans mon véhicule —</option>
+                  @for (v of vehicules; track v.id) { <option [value]="v.id">{{ v.designation }}</option> }
+                </select></label>
+              @if (vehicule) {
+                <label>Compteur au départ <input type="text" inputmode="numeric" maxlength="9" [(ngModel)]="compteurDepart" placeholder="facultatif"></label>
+              }
+            </span>
+          }
           <button type="button" class="btn-primary" [disabled]="envoi" (click)="geste('partir')">Je pars</button>
         }
         @if (lienReleve) { <a routerLink="/mon-releve" class="releve">Mon relevé d'heures</a> }
@@ -82,6 +107,8 @@ export interface MonEngagement {
     .erreur { flex-basis: 100%; color: #b91c1c; }
     .releve { font-size: .9rem; }
     .material-icons { font-size: 1.2rem; }
+    .deplacement { display: inline-flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; }
+    .deplacement input { width: 6.5rem; }
   `],
 })
 export class DepartRetourComponent implements OnInit {
@@ -97,6 +124,13 @@ export class DepartRetourComponent implements OnInit {
   equipe = '';
   envoi = false;
   erreur = '';
+  // Relevé kilométrique (28/11/2026) : tout est facultatif, et se complète ensuite dans Mon relevé.
+  vehicule = '';
+  compteurDepart = '';
+  compteurArrivee = '';
+  kilometres = '';
+  peage = '';
+  stationnement = '';
 
   private readonly url = `${environment.apiUrl}/mon-engagement/`;
 
@@ -116,7 +150,11 @@ export class DepartRetourComponent implements OnInit {
     if (etat.equipes.length === 1) this.equipe = etat.equipes[0].id;
     // Logé sur site, on part de son logement ; parti, on rentre par défaut d'où l'on vient.
     this.lieu = etat.en_cours ? (etat.en_cours.depart_de || 'DOMICILE') : (this.hebergement ? 'HEBERGEMENT' : 'DOMICILE');
+    if (etat.vehicules?.length === 1 && !this.vehicule) this.vehicule = etat.vehicules[0].id;
+    this.compteurDepart = this.compteurArrivee = this.kilometres = this.peage = this.stationnement = '';
   }
+
+  get vehicules(): NonNullable<MonEngagement['vehicules']> { return this.etat?.vehicules ?? []; }
 
   get manifestations(): NonNullable<MonEngagement['manifestations']> { return this.etat?.manifestations ?? []; }
 
@@ -132,9 +170,16 @@ export class DepartRetourComponent implements OnInit {
   geste(geste: 'partir' | 'rentrer'): void {
     this.envoi = true;
     this.erreur = '';
-    const corps = geste !== 'partir' ? { geste, retour_a: this.lieu }
-      : this.cible.startsWith('m:') ? { geste, manifestation: this.cible.slice(2), depart_de: this.lieu }
-      : { geste, crise: this.crise, equipe: this.equipe || null, depart_de: this.lieu };
+    const depart = this.vehicule ? { vehicule_personnel: this.vehicule, compteur_depart: this.compteurDepart } : {};
+    // Seul ce qui est saisi part : rentrer sans rien dire reste le geste d'avant.
+    const retour: Record<string, string> = {};
+    for (const [cle, valeur] of [['compteur_arrivee', this.compteurArrivee], ['kilometres', this.kilometres],
+                                 ['peage', this.peage], ['stationnement', this.stationnement]]) {
+      if (valeur.trim()) retour[cle] = valeur.trim();
+    }
+    const corps = geste !== 'partir' ? { geste, retour_a: this.lieu, ...retour }
+      : this.cible.startsWith('m:') ? { geste, manifestation: this.cible.slice(2), depart_de: this.lieu, ...depart }
+      : { geste, crise: this.crise, equipe: this.equipe || null, depart_de: this.lieu, ...depart };
     this.http.post<MonEngagement>(this.url, corps).subscribe({
       next: (etat) => { this.envoi = false; this.recevoir(etat); },
       error: (err) => { this.envoi = false; this.erreur = err?.error?.detail || "La déclaration n'a pas pu être enregistrée."; },

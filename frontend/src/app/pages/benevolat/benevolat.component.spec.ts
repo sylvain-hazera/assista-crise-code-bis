@@ -57,4 +57,20 @@ describe('BenevolatComponent', () => {
     expect(requete.request.body).toEqual({ geste: 'refuser', motif: 'Trajets non justifiés' });
     requete.flush({ ...D.abandons[0], statut: 'REFUSE', numero_recu: '' });
   });
+
+  it('envoie le tarif par puissance avec les réglages', () => {
+    composant.reglages!.tarifs_km_puissance!['5'] = '0,636';
+    composant.enregistrerReglages();
+    const requete = http.expectOne(r => r.method === 'PUT' && r.url.endsWith('/benevolat/reglages/'));
+    expect(requete.request.body.tarifs_km_puissance).toEqual({ '5': '0,636' });
+  });
+
+  it('propose le relevé kilométrique d\'un bénévole qui a roulé', () => {
+    const bouton = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).find(b => b.textContent?.includes('Relevé km'));
+    expect(bouton).toBeTruthy();
+    bouton!.click();
+    const requete = http.expectOne(r => r.url.endsWith('/benevolat/releve-km/'));
+    expect(requete.request.params.get('utilisateur')).toBe('u1');
+    expect(requete.request.params.get('annee')).toBe(String(composant.annee));
+  });
 });

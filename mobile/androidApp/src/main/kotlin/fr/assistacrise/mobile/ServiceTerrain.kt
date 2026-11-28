@@ -130,7 +130,10 @@ class ServiceTerrain : Service(), LocationListener {
 
     override fun onLocationChanged(position: Location) {
         portee.launch {
-            val retenu = app.suivi.relever(Releve(position.latitude, position.longitude, System.currentTimeMillis(), position.accuracy))
+            val releve = Releve(position.latitude, position.longitude, System.currentTimeMillis(), position.accuracy)
+            // Distance depuis « je pars », si le départ a été déclaré dans l'application.
+            app.noterPourDistance(releve)
+            val retenu = app.suivi.relever(releve)
             // Envoi tout de suite si possible ; sinon la position attend dans la file, et seule
             // la dernière y reste.
             if (retenu) app.synchro.envoyerLaFile(force = true)

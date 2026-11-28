@@ -130,7 +130,13 @@ class EngagementPersonnelView(APIView):
                 "equipe_nom": ouvert.equipe.name if ouvert.equipe_id else None,
                 "parti_le": ouvert.parti_le, "depart_de": ouvert.depart_de,
                 "hebergement": ouvert.hebergement,
+                "vehicule_personnel": str(ouvert.vehicule_personnel_id) if ouvert.vehicule_personnel_id else None,
+                "compteur_depart": ouvert.compteur_depart,
+                # Ce qui sera proposé au retour (relevé kilométrique, 28/11/2026).
+                "motif_propose": ouvert.motif or ouvert.objet_nom,
+                "arrivee_proposee": ouvert.lieu_arrivee or ep.lieu_de(ouvert),
             },
+            "vehicules": [_vehicule_en_dict(v) for v in ep.vehicules_de(request.user)],
             # `hebergement` : le logement de la personne sur cette crise si elle y est « en
             # déplacement sur site » — c'est alors de là qu'elle part et là qu'elle rentre.
             "crises": [{"id": str(c.id), "nom": c.name, "hebergement": ep.hebergement_de(request.user, c)}
@@ -156,16 +162,22 @@ class EngagementPersonnelView(APIView):
                 manifestation = Manifestation.objects.filter(id=request.data.get("manifestation"), environment=environment).first()
                 if manifestation is None:
                     raise ValidationError({"detail": "Manifestation introuvable."})
-                ep.partir(request.user, environment, manifestation=manifestation, depart_de=request.data.get("depart_de"))
+                ep.partir(request.user, environment, manifestation=manifestation, depart_de=request.data.get("depart_de"),
+                          deplacement=_deplacement(request.data))
             elif geste == "partir":
                 crise = Crisis.objects.filter(id=request.data.get("crise"), environment=environment).first() \
                     if request.data.get("crise") else None
                 if crise is None:
                     raise ValidationError({"detail": "Indiquez la crise sur laquelle vous partez."})
                 equipe = Team.objects.filter(id=request.data.get("equipe")).first() if request.data.get("equipe") else None
-                ep.partir(request.user, environment, crise, equipe, depart_de=request.data.get("depart_de"))
+                ep.partir(request.user, environment, crise, equipe, depart_de=request.data.get("depart_de"),
+                          deplacement=_deplacement(request.data))
             elif geste == "rentrer":
-                ep.rentrer(request.user, environment, retour_a=request.data.get("retour_a"))
+                rentree = ep.rentrer(request.user, environment, retour_a=request.data.get("retour_a"),
+                                     deplacement=_deplacement(request.data),
+                                     peage=request.data.get("peage"), stationnement=request.data.get("stationnement"))
+                # La ligne close, pour y joindre ensuite la photo d'un ticket (application, 28/11/2026).
+                return Response(dict(self._etat(request), ligne_rentree=str(rentree.id)))
             else:
                 raise ValidationError({"detail": "Geste inconnu."})
         except ep.ErreurEngagement as erreur:
@@ -173,9 +185,32 @@ class EngagementPersonnelView(APIView):
         return Response(self._etat(request))
 
 
+def _vehicule_en_dict(v) -> dict:
+    return {"id": str(v.id), "genre": v.genre, "libelle": v.libelle, "immatriculation": v.immatriculation,
+            "puissance_cv": v.puissance(), "designation": v.designation, "actif": v.actif}
+
+
+def _deplacement(donnees) -> dict:
+    """Les champs du déplacement présents dans la requête (relevé kilométrique, 28/11/2026)."""
+    from .engagements_personnels import CHAMPS_DEPLACEMENT
+    return {k: donnees.get(k) for k in CHAMPS_DEPLACEMENT if k in donnees}
+
+
+def _frais_en_dict(f) -> dict:
+    return {"id": str(f.id), "nature": f.nature, "nature_libelle": f.get_nature_display(), "montant": f.montant,
+            "justificatif": bool(f.justificatif), "justificatif_nom": f.justificatif_nom if f.justificatif else ""}
+
+
 def _ligne_de_releve(engagement) -> dict:
     duree = engagement.duree
+    vp = engagement.vehicule_personnel
     return {
+        "vehicule_personnel": str(vp.id) if vp is not None else None,
+        "vehicule_designation": vp.designation if vp is not None else "",
+        "lieu_depart": engagement.lieu_depart, "lieu_arrivee": engagement.lieu_arrivee, "motif": engagement.motif,
+        "aller_retour": engagement.aller_retour,
+        "compteur_depart": engagement.compteur_depart, "compteur_arrivee": engagement.compteur_arrivee,
+        "frais": [_frais_en_dict(f) for f in engagement.frais.all()],
         "id": str(engagement.id), "crise": str(engagement.crise_id) if engagement.crise_id else None,
         # `crise_nom` garde son nom pour les écrans existants : c'est le nom de l'activité.
         "crise_nom": engagement.objet_nom,
@@ -230,7 +265,8 @@ class MonReleveView(APIView):
         fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
         objets = list(EngagementPersonnel.objects.filter(
             utilisateur=request.user, environment=environment, parti_le__gte=debut, parti_le__lte=fin)
-            .select_related("crise", "equipe", "manifestation").order_by("-parti_le"))
+            .select_related("crise", "equipe", "manifestation", "vehicule_personnel").prefetch_related("frais")
+            .order_by("-parti_le"))
         lignes = [_ligne_de_releve(l) for l in objets]
         from . import benevolat, manifestations as mf
         from .models import AbandonFrais, Institution, VehiculeBenevole
@@ -258,6 +294,7 @@ class MonReleveView(APIView):
             "manifestations": [{"id": str(m.id), "nom": m.titre, "debut": m.debut}
                                for m in ep.manifestations_declarables(request.user, environment)[:100]],
             "vehicules": [{"code": c, "libelle": l} for c, l in VehiculeBenevole.choices],
+            "mes_vehicules": [_vehicule_en_dict(v) for v in ep.vehicules_de(request.user)],
             "frais": frais,
             "activite": ep.activite(request.user, environment, debut, fin),
             "crises": [{"id": str(c.id), "nom": c.name} for c in ep.crises_declarables(request.user, environment)],
@@ -288,6 +325,7 @@ class MonReleveView(APIView):
                 rentre_le=_instant(request.data.get("rentre_le"), "Retour"),
                 depart_de=request.data.get("depart_de"), retour_a=request.data.get("retour_a"),
                 kilometres=request.data.get("kilometres"), vehicule=request.data.get("vehicule"),
+                deplacement=_deplacement(request.data),
             )
         except ep.ErreurEngagement as erreur:
             raise ValidationError({"detail": str(erreur)})
@@ -306,7 +344,7 @@ class MonReleveLigneView(APIView):
 
         from .models import EngagementPersonnel
         return get_object_or_404(
-            EngagementPersonnel.objects.select_related("crise", "equipe", "manifestation"),
+            EngagementPersonnel.objects.select_related("crise", "equipe", "manifestation", "vehicule_personnel"),
             id=ligne_id, utilisateur=request.user, environment=get_active_environment(request))
 
     def patch(self, request, ligne_id):
@@ -321,6 +359,7 @@ class MonReleveLigneView(APIView):
                 rentre_le=_instant(donnees["rentre_le"], "Retour") if donnees.get("rentre_le") else None,
                 depart_de=donnees.get("depart_de"), retour_a=donnees.get("retour_a"),
                 kilometres=donnees.get("kilometres"), vehicule=donnees.get("vehicule"),
+                deplacement=_deplacement(donnees),
             )
         except ep.ErreurEngagement as erreur:
             raise ValidationError({"detail": str(erreur)})
@@ -336,6 +375,164 @@ class MonReleveLigneView(APIView):
             )})
         ligne.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MesVehiculesView(APIView):
+    """GET : mes véhicules actifs. POST {genre, libelle, immatriculation, puissance_cv}."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from . import engagements_personnels as ep
+        return Response([_vehicule_en_dict(v) for v in ep.vehicules_de(request.user)])
+
+    def post(self, request):
+        from .models import VehiculePersonnel
+        v = VehiculePersonnel(utilisateur=request.user)
+        _champs_vehicule(v, request.data)
+        if VehiculePersonnel.objects.filter(utilisateur=request.user, actif=True).count() >= 10:
+            raise ValidationError({"detail": "Dix véhicules au plus : retirez-en un."})
+        v.save()
+        return Response(_vehicule_en_dict(v), status=status.HTTP_201_CREATED)
+
+
+def _champs_vehicule(v, donnees):
+    from .models import VehiculeBenevole
+    if "genre" in donnees:
+        if donnees.get("genre") not in (VehiculeBenevole.VOITURE, VehiculeBenevole.DEUX_ROUES):
+            raise ValidationError({"detail": "Voiture, ou moto et scooter."})
+        v.genre = donnees["genre"]
+    if "libelle" in donnees:
+        v.libelle = str(donnees.get("libelle") or "").strip()[:80]
+    if "immatriculation" in donnees:
+        v.immatriculation = str(donnees.get("immatriculation") or "").strip().upper()[:20]
+    if "puissance_cv" in donnees:
+        texte = str(donnees.get("puissance_cv") or "").strip()
+        if texte and (not texte.isdigit() or not 1 <= int(texte) <= 99):
+            raise ValidationError({"detail": "Puissance fiscale : un nombre de chevaux (CV), de 1 à 99."})
+        v.puissance_cv = str(int(texte)) if texte else ""
+    if not (v.libelle or v.immatriculation):
+        raise ValidationError({"detail": "Donnez au moins un nom ou l'immatriculation du véhicule."})
+
+
+class MonVehiculeView(APIView):
+    """PATCH : modifier un de mes véhicules. DELETE : le retirer (il reste sur les lignes passées)."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def _vehicule(self, request, vid):
+        from django.shortcuts import get_object_or_404
+
+        from .models import VehiculePersonnel
+        return get_object_or_404(VehiculePersonnel, id=vid, utilisateur=request.user, actif=True)
+
+    def patch(self, request, vid):
+        v = self._vehicule(request, vid)
+        _champs_vehicule(v, request.data)
+        v.save()
+        return Response(_vehicule_en_dict(v))
+
+    def delete(self, request, vid):
+        v = self._vehicule(request, vid)
+        if v.engagements.exists():
+            v.actif = False
+            v.save(update_fields=["actif"])
+        else:
+            v.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FraisLigneView(APIView):
+    """POST (multipart : nature, montant, fichier?) : un péage ou un stationnement sur une de
+    MES lignes. DELETE <fid> : le retirer. Refusé sur une ligne validée."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ligne_id):
+        from . import engagements_personnels as ep
+        ligne = MonReleveLigneView()._ligne(request, ligne_id)
+        try:
+            frais = ep.ajouter_frais(ligne, request.data.get("nature"), request.data.get("montant"),
+                                     request.FILES.get("fichier"))
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(_frais_en_dict(frais), status=status.HTTP_201_CREATED)
+
+    def delete(self, request, ligne_id, fid):
+        from django.shortcuts import get_object_or_404
+
+        from . import engagements_personnels as ep
+        ligne = MonReleveLigneView()._ligne(request, ligne_id)
+        frais = get_object_or_404(ligne.frais, id=fid)
+        try:
+            ep.retirer_frais(frais)
+        except ep.ErreurEngagement as erreur:
+            raise ValidationError({"detail": str(erreur)})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class JustificatifFraisView(APIView):
+    """GET : le ticket d'un péage ou d'un stationnement — pour son auteur, pour qui relit la
+    ligne (encadrement, bureau, mairie), ou pour le bureau de l'association de la ligne. 404
+    pour tout autre : on ne dit pas qu'il existe."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, fid):
+        from django.http import FileResponse, Http404
+        from django.shortcuts import get_object_or_404
+
+        from . import engagements_personnels as ep
+        from . import manifestations as mf
+        from .models import FraisDeplacement
+
+        environment = get_active_environment(request)
+        frais = get_object_or_404(FraisDeplacement.objects.select_related("engagement__manifestation", "engagement__equipe"),
+                                  id=fid, engagement__environment=environment)
+        ligne = frais.engagement
+        permis = ligne.utilisateur_id == request.user.id or ep.a_relire_par(
+            request.user, environment, _collectivite_de_l_agent(request)).filter(id=ligne.id).exists()
+        if not permis:
+            institutions = {i for i in (ligne.institution_id, ligne.equipe.institution_id if ligne.equipe_id else None,
+                                        ligne.manifestation.institution_id if ligne.manifestation_id else None) if i}
+            permis = any(mf.organise(request.user, i) for i in institutions)
+        if not permis or not frais.justificatif:
+            raise Http404
+        return FileResponse(frais.justificatif.open("rb"), as_attachment=True, filename=frais.justificatif_nom or "ticket")
+
+
+class MonReleveKmView(APIView):
+    """GET ?institution=&du=&au= : mon relevé kilométrique PDF pour une de mes associations,
+    lignes validées et en attente (marquées comme telles)."""
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        import datetime
+
+        from django.http import HttpResponse
+        from django.shortcuts import get_object_or_404
+        from django.utils import timezone
+        from django.utils.dateparse import parse_date
+
+        from . import benevolat
+        from . import engagements_personnels as ep
+        from .models import Institution
+
+        environment = get_active_environment(request)
+        institution = get_object_or_404(Institution, id=request.query_params.get("institution"))
+        if institution.id not in ep.institutions_de(request.user):
+            from . import manifestations as mf
+            if institution.id not in set(mf.associations_de(request.user)):
+                raise ValidationError({"detail": "Ce n'est pas l'une de vos associations."})
+        au = parse_date(str(request.query_params.get("au") or "")) or timezone.localdate()
+        du = parse_date(str(request.query_params.get("du") or "")) or datetime.date(au.year, 1, 1)
+        if du > au or (au - du).days > 366:
+            raise ValidationError({"detail": "Période invalide (un an au plus)."})
+        pdf = benevolat.releve_km_pdf(request.user, institution, environment, du, au, validees_seulement=False)
+        reponse = HttpResponse(pdf, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="releve-km-{du:%Y%m%d}-{au:%Y%m%d}.pdf"'
+        return reponse
 
 
 def _collectivite_de_l_agent(request):
@@ -376,8 +573,10 @@ class RelevesEquipeView(APIView):
         fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
         nommer = _nommer_pour(request)
         personnes = {}
-        for ligne in ep.a_relire_par(request.user, environment, _collectivite_de_l_agent(request)).filter(
-                parti_le__gte=debut, parti_le__lte=fin).order_by("utilisateur_id", "-parti_le"):
+        a_relire = (ep.a_relire_par(request.user, environment, _collectivite_de_l_agent(request))
+                    .filter(parti_le__gte=debut, parti_le__lte=fin).select_related("vehicule_personnel", "manifestation")
+                    .prefetch_related("frais").order_by("utilisateur_id", "-parti_le"))
+        for ligne in a_relire:
             fiche = personnes.setdefault(ligne.utilisateur_id, {
                 "personne": nommer(ligne.utilisateur) or "Membre d'équipe", "lignes": [],
                 "total_heures": 0, "heures_validees": 0, "a_valider": 0,

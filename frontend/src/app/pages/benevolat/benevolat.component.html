@@ -35,7 +35,7 @@
       <div><span class="valeur">{{ d.valorisation_heures !== null ? (d.valorisation_heures | number:'1.2-2') + ' €' : '—' }}</span>
         <span class="libelle">valorisation{{ d.reglages.taux_horaire ? ' à ' + d.reglages.taux_horaire + ' €/h' : ' (taux à renseigner)' }}</span></div>
       <div><span class="valeur">{{ d.kilometres | number:'1.0-0' }} km</span><span class="libelle">parcourus</span></div>
-      <div><span class="valeur">{{ d.frais | number:'1.2-2' }} €</span><span class="libelle">de frais kilométriques</span></div>
+      <div><span class="valeur">{{ d.frais | number:'1.2-2' }} €</span><span class="libelle">de frais de déplacement@if (+(d.frais_annexes ?? 0)) { (dont {{ d.frais_annexes | number:'1.2-2' }} € de péages et stationnement)}</span></div>
     </section>
 
     <div class="colonnes">
@@ -43,13 +43,15 @@
         <h2>Par bénévole</h2>
         <div class="tableur">
           <table>
-            <thead><tr><th>Bénévole</th><th class="nombre">Heures</th><th class="nombre">Valorisation</th><th class="nombre">Km</th><th class="nombre">Frais</th></tr></thead>
+            <thead><tr><th>Bénévole</th><th class="nombre">Heures</th><th class="nombre">Valorisation</th><th class="nombre">Km</th><th class="nombre">Frais</th><th></th></tr></thead>
             <tbody>
               @for (b of d.benevoles; track b.utilisateur) {
                 <tr><td>{{ b.nom }}</td><td class="nombre">{{ b.heures | number:'1.0-2' }}</td>
                   <td class="nombre">{{ b.valorisation !== null ? (b.valorisation | number:'1.2-2') + ' €' : '—' }}</td>
-                  <td class="nombre">{{ b.kilometres | number:'1.0-1' }}</td><td class="nombre">{{ b.frais | number:'1.2-2' }} €</td></tr>
-              } @empty { <tr><td colspan="5" class="note">Aucune heure validée sur {{ d.annee }}.</td></tr> }
+                  <td class="nombre">{{ b.kilometres | number:'1.0-1' }}</td>
+                  <td class="nombre">{{ b.frais | number:'1.2-2' }} €@if (+(b.frais_annexes ?? 0)) { <br><span class="note">dont {{ b.frais_annexes | number:'1.2-2' }} € péages, stationnement</span> }</td>
+                  <td>@if (+b.kilometres || +(b.frais_annexes ?? 0)) { <button type="button" class="lien" (click)="releveKm(b)" title="Relevé kilométrique de l'année, lignes validées (PDF)">Relevé km</button> }</td></tr>
+              } @empty { <tr><td colspan="6" class="note">Aucune heure validée sur {{ d.annee }}.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -91,6 +93,14 @@
               <input type="text" inputmode="decimal" [(ngModel)]="r.tarif_km_voiture" placeholder="selon le barème retenu"></label>
             <label>Tarif kilométrique moto, scooter (€/km)
               <input type="text" inputmode="decimal" [(ngModel)]="r.tarif_km_deux_roues"></label>
+            <fieldset class="large tranches">
+              <legend>Tarif voiture par puissance fiscale (€/km, facultatif)</legend>
+              @for (t of tranches; track t.cle) {
+                <label>{{ t.libelle }} <input type="text" inputmode="decimal" [(ngModel)]="r.tarifs_km_puissance![t.cle]"></label>
+              }
+              <p class="note">Rempli, il s'applique aux voitures dont le bénévole a déclaré la puissance ; sinon, le tarif voiture
+                ci-dessus. Reportez le barème que votre association retient.</p>
+            </fieldset>
             <p class="note large">Repères : le SMIC horaire brut au 1er janvier 2026 est de 12,02 € ; il n'existe plus de barème
               kilométrique propre aux bénévoles, on applique le barème fiscal des frais de véhicule (selon la puissance et le
               kilométrage annuel, publié sur impots.gouv.fr). Ces taux sont ceux que votre association retient.</p>

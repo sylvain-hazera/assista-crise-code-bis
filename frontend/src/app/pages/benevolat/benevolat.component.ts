@@ -11,6 +11,8 @@ export interface ReglagesBenevolat {
   taux_horaire: string | null;
   tarif_km_voiture: string | null;
   tarif_km_deux_roues: string | null;
+  /** Tarif par puissance fiscale (28/11/2026) : « 3 » = 3 CV et moins, « 7 » = 7 CV et plus. */
+  tarifs_km_puissance?: Record<string, string>;
   recus_fiscaux: boolean;
   fondement_recus: string;
   signataire_nom: string;
@@ -28,8 +30,10 @@ export interface Valorisation {
   annee: number;
   reglages: ReglagesBenevolat;
   heures: string; kilometres: string; frais: string;
+  /** Péages et stationnement, compris dans `frais`. */
+  frais_annexes?: string;
   valorisation_heures: string | null;
-  benevoles: { utilisateur: string; nom: string; heures: string; kilometres: string; frais: string; valorisation: string | null }[];
+  benevoles: { utilisateur: string; nom: string; heures: string; kilometres: string; frais: string; frais_annexes?: string; valorisation: string | null }[];
   activites: { genre: string; nom: string; date: string; heures: string; benevoles: number }[];
   mois: { mois: string; heures: string }[];
   lignes_a_valider: number;
@@ -105,7 +109,10 @@ export class BenevolatComponent implements OnInit {
     this.chargerEtendue();
     this.erreur = '';
     this.http.get<Valorisation>(this.url, { params: { institution: this.institution, annee: String(this.annee) } }).subscribe({
-      next: (d) => { this.donnees = d; this.reglages = { ...d.reglages }; },
+      next: (d) => {
+        this.donnees = d;
+        this.reglages = { ...d.reglages, tarifs_km_puissance: { ...(d.reglages.tarifs_km_puissance ?? {}) } };
+      },
       error: (err) => this.erreur = err?.error?.detail || 'Le bénévolat n\'a pas pu être chargé.',
     });
   }
@@ -118,6 +125,22 @@ export class BenevolatComponent implements OnInit {
     this.http.put<ReglagesBenevolat>(`${this.url}reglages/`, { ...r, institution: this.institution, annee: this.annee }).subscribe({
       next: () => { this.message = 'Réglages de l\'année enregistrés.'; this.charger(); },
       error: (err) => this.erreur = err?.error?.detail || 'Les réglages n\'ont pas pu être enregistrés.',
+    });
+  }
+
+  /** Les tranches de puissance fiscale, dans l'ordre du barème. */
+  readonly tranches = [
+    { cle: '3', libelle: '3 CV et moins' }, { cle: '4', libelle: '4 CV' }, { cle: '5', libelle: '5 CV' },
+    { cle: '6', libelle: '6 CV' }, { cle: '7', libelle: '7 CV et plus' },
+  ];
+
+  /** Le relevé kilométrique PDF d'un bénévole, lignes validées de l'année. */
+  releveKm(b: Valorisation['benevoles'][number]): void {
+    this.http.get(`${this.url}releve-km/`, {
+      params: { institution: this.institution, utilisateur: b.utilisateur, annee: String(this.annee) }, responseType: 'blob',
+    }).subscribe({
+      next: (pdf) => this.enregistrerFichier(pdf, `releve-km-${this.annee}-${b.nom.replace(/\W+/g, '-')}.pdf`),
+      error: () => this.erreur = 'Le relevé kilométrique n\'a pas pu être téléchargé.',
     });
   }
 

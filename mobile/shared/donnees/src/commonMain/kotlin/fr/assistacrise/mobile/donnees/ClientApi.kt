@@ -322,6 +322,54 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.ManifestationAsso.serializer(), it)
         }
 
+    // --- « Je pars », « je rentre » et relevé kilométrique (28/11/2026) ------------------
+
+    /** Où j'en suis : départ en cours, où je peux partir, mes véhicules. */
+    suspend fun etatEngagement(): Reponse<fr.assistacrise.mobile.domaine.EtatEngagement> =
+        authentifie(HttpMethod.Get, "mon-engagement/").transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.EtatEngagement.serializer(), it)
+        }
+
+    /** « Je pars » pour une crise (`cible` = « c:<id> ») ou une manifestation (« m:<id> »). */
+    suspend fun partir(cible: String, equipe: String?, departDe: String, vehicule: String?, compteurDepart: String):
+        Reponse<fr.assistacrise.mobile.domaine.EtatEngagement> =
+        authentifie(HttpMethod.Post, "mon-engagement/", buildJsonObject {
+            put("geste", "partir")
+            if (cible.startsWith("m:")) put("manifestation", cible.drop(2))
+            else { put("crise", cible.drop(2)); equipe?.takeIf { it.isNotBlank() }?.let { put("equipe", it) } }
+            put("depart_de", departDe)
+            if (!vehicule.isNullOrBlank()) {
+                put("vehicule_personnel", vehicule)
+                if (compteurDepart.isNotBlank()) put("compteur_depart", compteurDepart.filter { it.isDigit() })
+            }
+        }).transformer { json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.EtatEngagement.serializer(), it) }
+
+    /** « Je rentre », avec ce que la personne dit de son déplacement. Rend le nouvel état et
+     * l'identifiant de la ligne close (pour y joindre un ticket). */
+    suspend fun rentrer(retourA: String, retour: fr.assistacrise.mobile.domaine.Retour):
+        Reponse<Pair<fr.assistacrise.mobile.domaine.EtatEngagement, String?>> =
+        authentifie(HttpMethod.Post, "mon-engagement/", buildJsonObject {
+            put("geste", "rentrer")
+            put("retour_a", retourA)
+            retour.champs().forEach { (cle, valeur) ->
+                when (valeur) { is Boolean -> put(cle, valeur); else -> put(cle, valeur.toString()) }
+            }
+        }).transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.EtatEngagement.serializer(), it) to
+                (it.jsonObject["ligne_rentree"] as? JsonPrimitive)?.content
+        }
+
+    /** Un péage ou un stationnement sur une de mes lignes, avec la photo du ticket. */
+    suspend fun ajouterFrais(ligne: String, nature: String, montant: String, photo: ByteArray?): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mon-releve/$ligne/frais/", formulaire = formData {
+            append("nature", nature)
+            append("montant", montant)
+            if (photo != null) append("fichier", photo, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"ticket.jpg\"")
+            })
+        }).sansValeur()
+
     /** Le périmètre de ma carte : crise en cours, sinon crises de ma commune (27/11/2026). */
     suspend fun perimetreCarte(): Reponse<fr.assistacrise.mobile.domaine.PerimetreCarte> =
         authentifie(HttpMethod.Get, "carte-terrain/perimetre/").transformer {

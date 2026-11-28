@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { LigneReleve, MonReleveComponent, Releve } from './mon-releve.component';
+import { kmDesCompteurs, LigneReleve, MonReleveComponent, Releve, trajetDe } from './mon-releve.component';
 import { fournisseursDeTest } from '../../testing/test-providers';
 
 /** Mon relevé d'heures : le tableau, les oublis complétés à la main, l'activité en regard. */
@@ -131,5 +131,45 @@ describe('MonReleveComponent', () => {
     const requete = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/mon-releve/abandon/'));
     expect(requete.request.body).toEqual({ institution: 'a1', annee: 2026, adresse: '3 allée des Pins' });
     requete.flush({});
+  });
+
+  describe('relevé kilométrique', () => {
+    it('les deux compteurs font les kilomètres', () => {
+      expect(kmDesCompteurs('45 210', '45262')).toBe(52);
+      expect(kmDesCompteurs('45210', '')).toBeNull();
+      expect(kmDesCompteurs('1000', '900')).toBeNull();
+    });
+
+    it('le trajet se lit d\'un coup d\'œil', () => {
+      expect(trajetDe({ ...LIGNE, lieu_depart: 'Domicile', lieu_arrivee: 'Floirac' })).toBe('Domicile → Floirac (A/R)');
+      expect(trajetDe({ ...LIGNE, lieu_depart: 'Domicile', lieu_arrivee: 'Floirac', aller_retour: false })).toBe('Domicile → Floirac');
+      expect(trajetDe(LIGNE)).toBe('');
+    });
+
+    it('envoie le trajet, et les kilomètres des compteurs plutôt que ceux saisis', () => {
+      composant.modifier({ ...LIGNE, rentre_le: '2026-11-16T15:00:00Z' });
+      Object.assign(composant.brouillon!, { compteur_depart: '100', compteur_arrivee: '146', kilometres: '999', motif: 'Balisage' });
+      composant.enregistrer();
+      const req = http.expectOne(r => r.method === 'PATCH' && r.url.endsWith('/mon-releve/l1/'));
+      expect(req.request.body).toEqual(jasmine.objectContaining({ kilometres: '46', motif: 'Balisage', compteur_depart: '100' }));
+    });
+
+    it('un ticket part en multipart avec sa nature et son montant', () => {
+      composant.fraisNature = 'STATIONNEMENT';
+      composant.fraisMontant = '2,50';
+      composant.ajouterFrais(LIGNE);
+      const req = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/mon-releve/l1/frais/'));
+      const corps = req.request.body as FormData;
+      expect(corps.get('nature')).toBe('STATIONNEMENT');
+      expect(corps.get('montant')).toBe('2,50');
+    });
+
+    it('choisir un véhicule déclaré en reprend le type', () => {
+      composant.releve = { ...RELEVE, mes_vehicules: [{ id: 'v1', genre: 'DEUX_ROUES', libelle: 'Scooter', immatriculation: '', puissance_cv: null, designation: 'Scooter' }] };
+      composant.ajouter();
+      expect(composant.brouillon!.vehicule_personnel).toBe('v1');
+      composant.choisirVehicule(composant.brouillon!);
+      expect(composant.brouillon!.vehicule).toBe('DEUX_ROUES');
+    });
   });
 });

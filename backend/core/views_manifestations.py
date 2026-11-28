@@ -421,6 +421,15 @@ class ReglagesBenevolatView(APIView):
         r.taux_horaire = _decimal(request.data.get("taux_horaire"), "Taux horaire")
         r.tarif_km_voiture = _decimal(request.data.get("tarif_km_voiture"), "Tarif voiture")
         r.tarif_km_deux_roues = _decimal(request.data.get("tarif_km_deux_roues"), "Tarif deux-roues")
+        if "tarifs_km_puissance" in request.data:
+            tarifs = {}
+            for tranche, valeur in dict(request.data.get("tarifs_km_puissance") or {}).items():
+                if str(tranche) not in ("3", "4", "5", "6", "7"):
+                    raise ValidationError({"detail": "Tranches de puissance : 3 (et moins) à 7 (et plus)."})
+                d = _decimal(valeur, f"Tarif {tranche} CV")
+                if d:
+                    tarifs[str(tranche)] = str(d)
+            r.tarifs_km_puissance = tarifs
         r.recus_fiscaux = bool(request.data.get("recus_fiscaux"))
         r.fondement_recus = _texte(request.data.get("fondement_recus"), 300)
         r.signataire_nom = _texte(request.data.get("signataire_nom"), 150)
@@ -446,6 +455,30 @@ class ExportBenevolatView(APIView):
                   commentaire=f"Export du bénévolat {annee}")
         reponse = HttpResponse(contenu, content_type=mime)
         reponse["Content-Disposition"] = f'attachment; filename="benevolat-{annee}.{ext}"'
+        return reponse
+
+
+class ReleveKmBureauView(APIView):
+    """GET ?institution=&utilisateur=&annee= : le relevé kilométrique PDF d'un bénévole, lignes
+    validées de l'année seulement (bureau, 28/11/2026)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import User
+
+        environment = get_active_environment(request)
+        institution = _association(request, request.query_params)
+        annee = _annee(request.query_params.get("annee"))
+        benevole = get_object_or_404(User, id=request.query_params.get("utilisateur"))
+        if not benevolat.lignes_de(institution, environment, annee, benevole):
+            # Pas de relevé pour quelqu'un qui n'a rien de validé chez nous : rien à dire de lui.
+            raise ValidationError({"detail": "Aucune ligne validée de ce bénévole sur cette année."})
+        pdf = benevolat.releve_km_pdf(benevole, institution, environment, datetime.date(annee, 1, 1),
+                                      datetime.date(annee, 12, 31), validees_seulement=True)
+        audit_log(request=request, action_code="EXPORT", objet_type="Institution", objet_id=institution.id,
+                  commentaire=f"Relevé kilométrique {annee} d'un bénévole")
+        reponse = HttpResponse(pdf, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="releve-km-{annee}.pdf"'
         return reponse
 
 

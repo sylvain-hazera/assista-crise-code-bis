@@ -55,3 +55,11 @@
   &:hover:not(:disabled) { background: #1d4ed8; } }
 .btn-secondary { border: 1px solid var(--ac-border-strong, #d1d5db); background: var(--ac-surface-2, #f9fafb); color: var(--ac-text, #374151);
   &:hover:not(:disabled) { border-color: #2563eb; color: var(--ac-blue-text, #2563eb); } }
+
+// Tarif par puissance fiscale (28/11/2026).
+.tranches { display: flex; flex-wrap: wrap; gap: .4rem .8rem; margin: 0; padding: .5rem .8rem;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px;
+  legend { font-size: .85rem; padding: 0 .3rem; }
+  label { display: flex; flex-direction: column; gap: .15rem; font-size: .82rem; }
+  input { width: 5.5rem; font: inherit; padding: .25rem .3rem; }
+  .note { flex-basis: 100%; } }

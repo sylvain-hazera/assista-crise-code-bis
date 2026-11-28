@@ -4857,6 +4857,42 @@ class SourceEngagement(models.TextChoices):
     PLANNING = "PLANNING", "Pointé par le bureau (manifestation)"
 
 
+class VehiculePersonnel(models.Model):
+    """Le véhicule qu'un bénévole déclare une fois pour son relevé kilométrique (28/11/2026) :
+    libellé, immatriculation et puissance fiscale figurent sur le relevé imprimable, et la
+    puissance peut fixer le tarif (barème par puissance de l'association). Tout est chiffré ;
+    la puissance est lue en Python. Un véhicule qui a servi n'est pas supprimé : il est retiré."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="vehicules_personnels")
+    genre = models.CharField(max_length=12, choices=[(VehiculeBenevole.VOITURE, "Voiture"),
+                                                     (VehiculeBenevole.DEUX_ROUES, "Moto, scooter")],
+                             default=VehiculeBenevole.VOITURE)
+    libelle = EncryptedTextField(max_length=80, blank=True, default="")
+    immatriculation = EncryptedTextField(max_length=20, blank=True, default="")
+    puissance_cv = EncryptedTextField(max_length=4, blank=True, default="")
+    actif = models.BooleanField(default=True)
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["cree_le"]
+
+    def puissance(self):
+        try:
+            return int(str(self.puissance_cv or "").strip())
+        except ValueError:
+            return None
+
+    @property
+    def designation(self) -> str:
+        morceaux = [self.libelle or self.get_genre_display()]
+        if self.immatriculation:
+            morceaux.append(self.immatriculation)
+        if self.puissance():
+            morceaux.append(f"{self.puissance()} CV")
+        return " · ".join(morceaux)
+
+
 class EngagementPersonnel(EnvironmentScopedModel):
     """« Je pars », « je rentre » pour le personnel municipal et les membres d'association
     (17/11/2026) : le temps qu'une personne a réellement passé sur une crise, d'après ce
@@ -4900,6 +4936,16 @@ class EngagementPersonnel(EnvironmentScopedModel):
     vehicule = models.CharField(max_length=12, choices=VehiculeBenevole.choices, default=VehiculeBenevole.AUCUN)
     #: DECLARE : « je pars / je rentre » ou saisi à la main ; PLANNING : né du pointage d'une manifestation.
     source = models.CharField(max_length=10, choices=SourceEngagement.choices, default=SourceEngagement.DECLARE)
+    # Relevé kilométrique (28/11/2026) : le trajet, son motif, le véhicule déclaré et ses
+    # compteurs. Quand les deux compteurs sont saisis, les kilomètres en sont la différence.
+    vehicule_personnel = models.ForeignKey(
+        VehiculePersonnel, on_delete=models.SET_NULL, null=True, blank=True, related_name="engagements")
+    lieu_depart = EncryptedTextField(max_length=200, blank=True, default="")
+    lieu_arrivee = EncryptedTextField(max_length=200, blank=True, default="")
+    motif = EncryptedTextField(max_length=300, blank=True, default="")
+    aller_retour = models.BooleanField(default=True)
+    compteur_depart = EncryptedTextField(max_length=10, blank=True, default="")
+    compteur_arrivee = EncryptedTextField(max_length=10, blank=True, default="")
 
     class Meta:
         ordering = ["-parti_le"]
@@ -4931,6 +4977,36 @@ class EngagementPersonnel(EnvironmentScopedModel):
         if self.rentre_le is None or self.rentre_le < self.parti_le:
             return None
         return self.rentre_le - self.parti_le
+
+
+class NatureFraisDeplacement(models.TextChoices):
+    PEAGE = "PEAGE", "Péage"
+    STATIONNEMENT = "STATIONNEMENT", "Stationnement"
+
+
+class FraisDeplacement(models.Model):
+    """Un péage ou un stationnement d'un déplacement du relevé (28/11/2026), avec son ticket.
+    Même protection que les autres justificatifs : chiffré au repos, sous `documents/` (bloqué
+    par le proxy), rendu seulement par une action qui contrôle les droits."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    engagement = models.ForeignKey(EngagementPersonnel, on_delete=models.CASCADE, related_name="frais")
+    nature = models.CharField(max_length=14, choices=NatureFraisDeplacement.choices)
+    montant = EncryptedTextField(max_length=12, default="0")
+    justificatif = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        null=True, blank=True, validators=[validate_identity_document_file])
+    justificatif_nom = EncryptedTextField(max_length=255, blank=True, default="")
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["cree_le"]
+
+    def montant_nombre(self) -> float:
+        try:
+            return max(0.0, float(str(self.montant or "0").replace(",", ".")))
+        except ValueError:
+            return 0.0
 
 
 class NatureAppelStandard(models.TextChoices):
@@ -14024,6 +14100,9 @@ class ReglagesBenevolat(EnvironmentScopedModel):
                                        help_text="Valorisation d'une heure de bénévolat (€).")
     tarif_km_voiture = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     tarif_km_deux_roues = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    #: Tarif par puissance fiscale, saisi par le trésorier (28/11/2026) : {"3": "0.529", …, "7": "0.697"}.
+    #: « 3 » vaut pour 3 CV et moins, « 7 » pour 7 CV et plus. Vide : le tarif voiture s'applique.
+    tarifs_km_puissance = models.JSONField(default=dict, blank=True)
     #: L'association est habilitée à délivrer des reçus fiscaux (intérêt général, art. 200 du CGI).
     recus_fiscaux = models.BooleanField(default=False)
     fondement_recus = EncryptedTextField(max_length=300, blank=True, default="")

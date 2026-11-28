@@ -45,7 +45,15 @@
             <tbody>
               @for (l of fiche.lignes; track l.id) {
                 <tr [class.dehors]="!l.rentre_le">
-                  <td>{{ l.crise_nom }}</td><td>{{ l.equipe_nom }}</td>
+                  <td>{{ l.crise_nom }}
+                    @if (trajet(l)) { <br><span class="note">{{ trajet(l) }}@if (l.motif && l.motif !== l.crise_nom) { — {{ l.motif }} }</span> }
+                    @if (l.compteur_depart || l.compteur_arrivee) { <br><span class="note">Compteur {{ l.compteur_depart || '?' }} → {{ l.compteur_arrivee || '?' }}</span> }
+                    @if (l.vehicule_designation) { <br><span class="note">{{ l.vehicule_designation }}</span> }
+                    @for (f of l.frais ?? []; track f.id) {
+                      <br><span class="note">{{ f.nature_libelle }} {{ f.montant }} €</span>
+                      @if (f.justificatif) { <button type="button" class="lien" (click)="ouvrirTicket(f)" title="Ouvrir le ticket"><span class="material-icons petite">attach_file</span>ticket</button> }
+                    }
+                  </td><td>{{ l.equipe_nom }}</td>
                   <td>{{ l.parti_le | date:'dd/MM/yyyy HH:mm' }}</td><td>{{ libelleLieu(l.depart_de) }}</td>
                   <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td><td>{{ libelleLieu(l.retour_a) }}</td>
                   <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
@@ -107,14 +115,21 @@
                   <ng-container *ngTemplateOutlet="edition; context: { b: brouillon }"></ng-container>
                 } @else {
                   <tr [class.dehors]="!l.rentre_le">
-                    <td>{{ l.crise_nom }}</td>
+                    <td>{{ l.crise_nom }}
+                      @if (trajet(l)) { <br><span class="note">{{ trajet(l) }}</span> }
+                      @if (l.motif && l.motif !== l.crise_nom) { <br><span class="note">{{ l.motif }}</span> }
+                    </td>
                     <td>{{ l.equipe_nom }}</td>
                     <td>{{ l.parti_le | date:'dd/MM/yyyy HH:mm' }}</td>
                     <td>{{ libelleLieu(l.depart_de) }}@if (l.depart_de === 'HEBERGEMENT' && l.hebergement) { <br><span class="note">{{ l.hebergement }}</span> }</td>
                     <td>{{ l.rentre_le ? (l.rentre_le | date:'dd/MM/yyyy HH:mm') : 'pas encore rentré' }}</td>
                     <td>{{ libelleLieu(l.retour_a) }}</td>
                     <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
-                    <td class="nombre">{{ l.kilometres || '—' }}@if (libelleVehicule(l.vehicule)) { <br><span class="note">{{ libelleVehicule(l.vehicule) }}</span> }</td>
+                    <td class="nombre">{{ l.kilometres || '—' }}@if (l.vehicule_designation || libelleVehicule(l.vehicule)) { <br><span class="note">{{ l.vehicule_designation || libelleVehicule(l.vehicule) }}</span> }
+                      @if (l.frais?.length) {
+                        <br><span class="note" [title]="'Péages et stationnement de ce déplacement'">+ {{ totalFrais(l) | number:'1.2-2' }} €@for (f of l.frais; track f.id) { @if (f.justificatif) { <span class="material-icons petite" title="Ticket joint">attach_file</span> } }</span>
+                      }
+                    </td>
                     <td>
                       @if (l.source === 'PLANNING') { <span class="pastille" title="Créée par le bureau au pointage de la manifestation : ajoutez vos kilomètres">pointée</span> }
                       @if (l.saisie_manuelle) { <span class="pastille" title="Complétée ou corrigée à la main, après coup">à la main</span> }
@@ -136,13 +151,47 @@
         </div>
         <p class="note">Une ligne par sortie, du départ au retour, 24 heures au plus. Les lignes ne peuvent pas se
           recouvrir. Une ligne déclarée sur le moment se corrige mais ne se supprime pas. Les kilomètres sont ceux de
-          l'aller-retour, avec votre véhicule.</p>
+          l'aller-retour, avec votre véhicule ; si vous relevez le compteur au départ et à l'arrivée, ils se calculent seuls.</p>
+
+        <div class="vehicules">
+          <h3>Mes véhicules</h3>
+          @for (v of r.mes_vehicules ?? []; track v.id) {
+            <p>{{ v.designation }} <button type="button" class="lien" (click)="retirerVehicule(v)">Retirer</button></p>
+          } @empty {
+            <p class="note">Déclarez votre véhicule une fois : son immatriculation et sa puissance fiscale figurent sur
+              votre relevé kilométrique, et la puissance peut fixer le tarif de votre association.</p>
+          }
+          @if (nouveauVehicule; as v) {
+            <div class="formulaire-vehicule">
+              <label>Type
+                <select [(ngModel)]="v.genre"><option value="VOITURE">Voiture</option><option value="DEUX_ROUES">Moto, scooter</option></select></label>
+              <label>Nom <input type="text" maxlength="80" [(ngModel)]="v.libelle" placeholder="Clio grise"></label>
+              <label>Immatriculation <input type="text" maxlength="20" [(ngModel)]="v.immatriculation" placeholder="AB-123-CD"></label>
+              <label>Puissance fiscale (CV) <input type="text" inputmode="numeric" maxlength="2" [(ngModel)]="v.puissance_cv" placeholder="5"></label>
+              <button type="button" class="btn-primary" (click)="enregistrerVehicule()">Enregistrer</button>
+              <button type="button" class="lien" (click)="nouveauVehicule = null">Annuler</button>
+            </div>
+            <p class="note">La puissance fiscale est la case P.6 de la carte grise.</p>
+          } @else {
+            <button type="button" class="lien" (click)="declarerVehicule()">Déclarer un véhicule</button>
+          }
+        </div>
+
+        @if (r.frais?.length) {
+          <p class="releves-km">Relevé kilométrique de la période (PDF, à signer) :
+            @for (f of r.frais ?? []; track f.institution) {
+              <button type="button" class="btn-secondary" (click)="telechargerReleveKm(f)"><span class="material-icons">description</span> {{ f.nom }}</button>
+            }
+          </p>
+        }
 
         @for (f of r.frais ?? []; track f.institution) {
           @if (f.kilometres || f.abandon) {
             <div class="frais">
               <h3>Mes frais {{ f.annee }} — {{ f.nom }}</h3>
-              <p>{{ f.kilometres | number:'1.0-1' }} km validés@if (f.montant !== '0.00') {, soit {{ f.montant }} € au tarif de l'association}.</p>
+              <p>{{ f.kilometres | number:'1.0-1' }} km validés@if (f.montant !== '0.00') {, soit {{ f.montant }} €
+                @if (f.peages !== '0.00' || f.stationnement !== '0.00') { (dont {{ f.peages }} € de péages et {{ f.stationnement }} € de stationnement) }
+                au tarif de l'association}.</p>
               @if (f.abandon; as a) {
                 <p><span class="pastille" [class.validee]="a.statut === 'RECU_EMIS'">{{ a.statut_libelle }}</span>
                   @if (a.motif_refus) { <span class="note">{{ a.motif_refus }}</span> }
@@ -235,6 +284,40 @@
         <td>
           <button type="button" class="btn-primary" [disabled]="envoi" (click)="enregistrer()">Enregistrer</button>
           <button type="button" class="lien" (click)="brouillon = null">Annuler</button>
+        </td>
+      </tr>
+      <tr class="edition deplacement">
+        <td colspan="9">
+          <div class="champs-deplacement">
+            <label>Véhicule
+              <select [(ngModel)]="b.vehicule_personnel" (change)="choisirVehicule(b)">
+                <option value="">— non précisé —</option>
+                @for (v of r.mes_vehicules ?? []; track v.id) { <option [value]="v.id">{{ v.designation }}</option> }
+              </select></label>
+            <label>Départ <input type="text" maxlength="200" [(ngModel)]="b.lieu_depart" placeholder="Domicile"></label>
+            <label>Arrivée <input type="text" maxlength="200" [(ngModel)]="b.lieu_arrivee" placeholder="Floirac, parc du Castel"></label>
+            <label class="case"><input type="checkbox" [(ngModel)]="b.aller_retour"> Aller-retour</label>
+            <label class="large">Motif <input type="text" maxlength="300" [(ngModel)]="b.motif" placeholder="Balisage radio de la course"></label>
+            <label>Compteur au départ <input type="text" inputmode="numeric" maxlength="9" [(ngModel)]="b.compteur_depart" placeholder="45210"></label>
+            <label>Compteur à l'arrivée <input type="text" inputmode="numeric" maxlength="9" [(ngModel)]="b.compteur_arrivee" placeholder="45262"></label>
+            @if (kmCompteurs(b) !== null) { <p class="note">Soit {{ kmCompteurs(b) }} km d'après les compteurs.</p> }
+          </div>
+          @if (b.id && ligneEditee; as l) {
+            <div class="frais-ligne">
+              <strong>Péages et stationnement</strong>
+              @for (f of l.frais ?? []; track f.id) {
+                <span class="frais-puce">{{ f.nature_libelle }} {{ f.montant }} €
+                  @if (f.justificatif) { <button type="button" class="lien" (click)="ouvrirTicket(f)"><span class="material-icons petite">attach_file</span>ticket</button> }
+                  <button type="button" class="lien" (click)="retirerFrais(l, f)" aria-label="Retirer ce frais">retirer</button></span>
+              }
+              <select [(ngModel)]="fraisNature" aria-label="Nature du frais"><option value="PEAGE">Péage</option><option value="STATIONNEMENT">Stationnement</option></select>
+              <input type="text" inputmode="decimal" class="km" [(ngModel)]="fraisMontant" aria-label="Montant en euros" placeholder="€">
+              <input type="file" accept="image/*,application/pdf" (change)="choisirTicket($event)" aria-label="Ticket (photo ou PDF)">
+              <button type="button" class="btn-secondary" (click)="ajouterFrais(l)">Ajouter</button>
+            </div>
+          } @else if (!b.id) {
+            <p class="note">Péages et stationnement s'ajoutent, avec leur ticket, une fois la ligne enregistrée.</p>
+          }
         </td>
       </tr>
     </ng-template>

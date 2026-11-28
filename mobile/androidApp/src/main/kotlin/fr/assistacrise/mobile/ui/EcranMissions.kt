@@ -92,6 +92,9 @@ fun EcranMissions(modele: ModeleApplication, compte: Compte) {
                 modifier = Modifier.fillMaxWidth().clickable { modele.ouvrirVeille() }.padding(horizontal = 20.dp, vertical = 6.dp))
         }
 
+        // « Je pars », « je rentre » et le relevé kilométrique (28/11/2026).
+        CarteDepartRetour(modele)
+
         // Les deux gestes du contrôle, à portée de pouce : montrer mon attestation, lire celle d'un autre.
         val mobilisations by modele.mobilisations.collectAsStateWithLifecycle()
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

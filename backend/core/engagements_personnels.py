@@ -74,7 +74,8 @@ def _lieu(valeur, defaut):
     return valeur if valeur in LieuDeDepart.values else defaut
 
 
-def partir(utilisateur, environment, crise=None, equipe=None, depart_de=None, manifestation=None) -> EngagementPersonnel:
+def partir(utilisateur, environment, crise=None, equipe=None, depart_de=None, manifestation=None,
+           deplacement=None) -> EngagementPersonnel:
     """« Je pars ». Rejouable : déjà parti sur cette crise, on rend l'engagement en cours.
 
     `depart_de` : domicile ou hébergement. Sans précision, quelqu'un qui a un logement sur
@@ -94,11 +95,11 @@ def partir(utilisateur, environment, crise=None, equipe=None, depart_de=None, ma
         from . import manifestations as mf
         if not mf.du_jour_pour(utilisateur, environment).filter(id=manifestation.id).exists():
             raise ErreurEngagement("Vous n'êtes pas inscrit sur un poste de cette manifestation aujourd'hui.")
-        return EngagementPersonnel.objects.create(
+        return _au_depart(EngagementPersonnel(
             utilisateur=utilisateur, environment=environment, manifestation=manifestation,
             institution=manifestation.institution, parti_le=timezone.now(),
             depart_de=_lieu(depart_de, LieuDeDepart.DOMICILE),
-        )
+        ), deplacement)
     if crise.end_date is not None:
         raise ErreurEngagement("Cette crise est close.")
     if not crises_ouvertes_pour(utilisateur, environment).filter(id=crise.id).exists():
@@ -108,14 +109,23 @@ def partir(utilisateur, environment, crise=None, equipe=None, depart_de=None, ma
     institution = equipe.institution if equipe is not None and equipe.institution_id else getattr(utilisateur, "institution", None)
     logement = hebergement_de(utilisateur, crise)
     depart_de = _lieu(depart_de, LieuDeDepart.HEBERGEMENT if logement else LieuDeDepart.DOMICILE)
-    return EngagementPersonnel.objects.create(
+    return _au_depart(EngagementPersonnel(
         utilisateur=utilisateur, environment=environment, crise=crise, equipe=equipe,
         institution=institution, parti_le=timezone.now(), depart_de=depart_de,
         hebergement=logement if depart_de == LieuDeDepart.HEBERGEMENT else "",
-    )
+    ), deplacement)
 
 
-def rentrer(utilisateur, environment, retour_a=None):
+def _au_depart(engagement, deplacement):
+    """Au départ, seuls le véhicule, le compteur et le lieu de départ ont un sens."""
+    if deplacement:
+        appliquer_deplacement(engagement, {k: v for k, v in deplacement.items()
+                                           if k in ("vehicule_personnel", "compteur_depart", "lieu_depart")})
+    engagement.save()
+    return engagement
+
+
+def rentrer(utilisateur, environment, retour_a=None, deplacement=None, peage=None, stationnement=None):
     """« Je rentre ». Sans départ en cours, il n'y a rien à clore. On rentre par défaut là
     d'où l'on est parti."""
     ouvert = en_cours(utilisateur, environment)
@@ -125,7 +135,20 @@ def rentrer(utilisateur, environment, retour_a=None):
     ouvert.retour_a = _lieu(retour_a, ouvert.depart_de)
     if ouvert.retour_a == LieuDeDepart.HEBERGEMENT and not ouvert.hebergement and ouvert.crise_id:
         ouvert.hebergement = hebergement_de(utilisateur, ouvert.crise)
-    ouvert.save(update_fields=["rentre_le", "retour_a", "hebergement"])
+    # Le déplacement (28/11/2026) : tout est facultatif, et vérifié AVANT d'enregistrer le
+    # retour — un compteur faux ne doit pas laisser un retour à moitié déclaré.
+    from django.db import transaction
+    from .models import NatureFraisDeplacement
+    montants = [(NatureFraisDeplacement.PEAGE, lire_montant(peage, "Péage")),
+                (NatureFraisDeplacement.STATIONNEMENT, lire_montant(stationnement, "Stationnement"))]
+    appliquer_deplacement(ouvert, {k: v for k, v in (deplacement or {}).items() if k in CHAMPS_DEPLACEMENT})
+    if ouvert.kilometres_nombre() > 0 or ouvert.vehicule_personnel_id:
+        proposer_deplacement(ouvert)
+    with transaction.atomic():
+        ouvert.save()
+        for nature, montant in montants:
+            if montant:
+                ouvert.frais.create(nature=nature, montant=montant)
     return ouvert
 
 
@@ -165,6 +188,152 @@ def lire_kilometres(valeur) -> str:
     return f"{km:g}"
 
 
+def lire_compteur(valeur) -> str:
+    """Kilométrage du compteur du véhicule : un entier, vide = non relevé."""
+    texte = str(valeur if valeur is not None else "").strip().replace(" ", "").replace("\u202f", "")
+    if texte == "":
+        return ""
+    if not texte.isdigit() or int(texte) > 9_999_999:
+        raise ErreurEngagement("Compteur : un nombre entier de kilomètres est attendu.")
+    return str(int(texte))
+
+
+def lire_montant(valeur, quoi="Montant") -> str:
+    """« 4,50 » → « 4.50 » ; vide ou zéro = rien. Entre 0 et 1000 €."""
+    texte = str(valeur if valeur is not None else "").strip().replace(",", ".").replace("€", "").strip()
+    if texte == "":
+        return ""
+    try:
+        montant = float(texte)
+    except ValueError:
+        raise ErreurEngagement(f"{quoi} : un montant en euros est attendu.")
+    if montant < 0 or montant > 1000:
+        raise ErreurEngagement(f"{quoi} : entre 0 et 1000 €.")
+    return f"{montant:.2f}" if montant > 0 else ""
+
+
+def vehicules_de(utilisateur):
+    from .models import VehiculePersonnel
+    return VehiculePersonnel.objects.filter(utilisateur=utilisateur, actif=True)
+
+
+#: Les champs du déplacement qu'un geste peut porter (relevé kilométrique, 28/11/2026).
+CHAMPS_DEPLACEMENT = ("vehicule_personnel", "lieu_depart", "lieu_arrivee", "motif", "aller_retour",
+                      "compteur_depart", "compteur_arrivee", "kilometres")
+
+
+def _oui(valeur) -> bool:
+    return valeur in (True, 1) or str(valeur).strip().lower() in ("1", "true", "oui", "on")
+
+
+def appliquer_deplacement(engagement, donnees: dict) -> None:
+    """Pose sur la ligne (sans l'enregistrer) ce que `donnees` dit du déplacement. Une clé
+    absente ne change rien ; une chaîne vide efface. Les deux compteurs saisis font les
+    kilomètres : la différence, et rien d'autre."""
+    if not donnees:
+        return
+    if "vehicule_personnel" in donnees:
+        ident = donnees.get("vehicule_personnel")
+        if ident in (None, ""):
+            engagement.vehicule_personnel = None
+        else:
+            vehicule = vehicules_de(engagement.utilisateur).filter(id=ident).first() if _uuid(ident) else None
+            if vehicule is None:
+                raise ErreurEngagement("Ce véhicule n'est pas l'un des vôtres.")
+            engagement.vehicule_personnel = vehicule
+            engagement.vehicule = vehicule.genre
+    for champ, longueur in (("lieu_depart", 200), ("lieu_arrivee", 200), ("motif", 300)):
+        if champ in donnees:
+            setattr(engagement, champ, str(donnees.get(champ) or "").strip()[:longueur])
+    if "aller_retour" in donnees and donnees.get("aller_retour") is not None:
+        engagement.aller_retour = _oui(donnees.get("aller_retour"))
+    for champ in ("compteur_depart", "compteur_arrivee"):
+        if champ in donnees:
+            setattr(engagement, champ, lire_compteur(donnees.get(champ)))
+    if "kilometres" in donnees and donnees.get("kilometres") is not None:
+        engagement.kilometres = lire_kilometres(donnees.get("kilometres"))
+    if engagement.compteur_depart and engagement.compteur_arrivee:
+        ecart = int(engagement.compteur_arrivee) - int(engagement.compteur_depart)
+        if ecart < 0:
+            raise ErreurEngagement("Compteur : celui de l'arrivée est plus petit que celui du départ.")
+        if ecart > 3000:
+            raise ErreurEngagement("Compteur : plus de 3000 km entre le départ et l'arrivée.")
+        engagement.kilometres = str(ecart)
+
+
+def _uuid(valeur) -> bool:
+    import uuid
+    try:
+        uuid.UUID(str(valeur))
+        return True
+    except ValueError:
+        return False
+
+
+def ajouter_frais(engagement, nature, montant, fichier=None):
+    """Un péage ou un stationnement sur une de SES lignes, avec ou sans ticket."""
+    from .models import FraisDeplacement, NatureFraisDeplacement
+    if engagement.valide_le is not None:
+        raise ErreurEngagement(
+            "Cette ligne a été validée par votre encadrement : demandez-lui de lever sa validation.")
+    if nature not in NatureFraisDeplacement.values:
+        raise ErreurEngagement("Péage ou stationnement ?")
+    valeur = lire_montant(montant, NatureFraisDeplacement(nature).label)
+    if not valeur:
+        raise ErreurEngagement("Indiquez le montant payé.")
+    frais = FraisDeplacement(engagement=engagement, nature=nature, montant=valeur)
+    if fichier is not None:
+        from django.core.exceptions import ValidationError as ErreurDjango
+        from .validators import validate_identity_document_file
+        try:
+            validate_identity_document_file(fichier)
+        except ErreurDjango as erreur:
+            raise ErreurEngagement(" ".join(erreur.messages))
+        frais.justificatif = fichier
+        frais.justificatif_nom = (getattr(fichier, "name", "") or "ticket")[:255]
+    frais.save()
+    engagement.modifie_le = timezone.now()
+    engagement.save(update_fields=["modifie_le"])
+    return frais
+
+
+def retirer_frais(frais):
+    if frais.engagement.valide_le is not None:
+        raise ErreurEngagement(
+            "Cette ligne a été validée par votre encadrement : demandez-lui de lever sa validation.")
+    if frais.justificatif:
+        frais.justificatif.delete(save=False)
+    frais.delete()
+
+
+def lieu_de(engagement) -> str:
+    """Le lieu de l'activité, proposé comme arrivée : la commune de la manifestation, sinon
+    celle de la crise."""
+    from .models import Commune
+    code = ""
+    if engagement.manifestation_id:
+        m = engagement.manifestation
+        code = m.commune_code or next((c for c in (m.communes or []) if c), "")
+    elif engagement.crise_id:
+        from .accords_communes import communes_de_la_crise
+        code = next(iter(sorted(communes_de_la_crise(engagement.crise) or [])), "")
+    if not code:
+        return engagement.objet_nom
+    commune = Commune.objects.filter(code=code).only("nom").first()
+    return commune.nom if commune and commune.nom else engagement.objet_nom
+
+
+def proposer_deplacement(engagement) -> None:
+    """Valeurs par défaut d'un déplacement, sans écraser ce que la personne a dit."""
+    if not engagement.motif:
+        engagement.motif = engagement.objet_nom[:300]
+    if not engagement.lieu_depart:
+        engagement.lieu_depart = (engagement.hebergement or "Hébergement") \
+            if engagement.depart_de == LieuDeDepart.HEBERGEMENT else "Domicile"
+    if not engagement.lieu_arrivee:
+        engagement.lieu_arrivee = lieu_de(engagement)[:200]
+
+
 def _verifier(utilisateur, environment, parti_le, rentre_le, sauf=None):
     maintenant = timezone.now()
     if parti_le > maintenant or (rentre_le is not None and rentre_le > maintenant):
@@ -187,7 +356,8 @@ def _verifier(utilisateur, environment, parti_le, rentre_le, sauf=None):
 
 
 def completer(utilisateur, environment, *, crise=None, parti_le, rentre_le, equipe=None,
-              depart_de=None, retour_a=None, manifestation=None, kilometres=None, vehicule=None) -> EngagementPersonnel:
+              depart_de=None, retour_a=None, manifestation=None, kilometres=None, vehicule=None,
+              deplacement=None) -> EngagementPersonnel:
     """Ajoute à la main une sortie oubliée. Elle doit être complète (un départ ET un retour) :
     un départ en cours se déclare par le bouton, pas après coup."""
     from .models import VehiculeBenevole
@@ -199,14 +369,14 @@ def completer(utilisateur, environment, *, crise=None, parti_le, rentre_le, equi
         if not manifestations_declarables(utilisateur, environment).filter(id=manifestation.id).exists():
             raise ErreurEngagement("Cette manifestation n'est pas celle d'une de vos associations.")
         _verifier(utilisateur, environment, parti_le, rentre_le)
-        return EngagementPersonnel.objects.create(
+        return _avec_deplacement(EngagementPersonnel(
             utilisateur=utilisateur, environment=environment, manifestation=manifestation,
             institution=manifestation.institution, parti_le=parti_le, rentre_le=rentre_le,
             depart_de=_lieu(depart_de, LieuDeDepart.DOMICILE), retour_a=_lieu(retour_a, _lieu(depart_de, LieuDeDepart.DOMICILE)),
             kilometres=lire_kilometres(kilometres),
             vehicule=vehicule if vehicule in VehiculeBenevole.values else VehiculeBenevole.AUCUN,
             saisie_manuelle=True, modifie_le=timezone.now(),
-        )
+        ), deplacement)
     if not crises_declarables(utilisateur, environment).filter(id=crise.id).exists():
         raise ErreurEngagement("Ni votre institution ni vos équipes n'ont été engagées sur cette crise.")
     if equipe is not None and not equipes_de(utilisateur).filter(id=equipe.id).exists():
@@ -215,18 +385,26 @@ def completer(utilisateur, environment, *, crise=None, parti_le, rentre_le, equi
     depart_de = _lieu(depart_de, LieuDeDepart.DOMICILE)
     retour_a = _lieu(retour_a, depart_de)
     institution = equipe.institution if equipe is not None and equipe.institution_id else getattr(utilisateur, "institution", None)
-    return EngagementPersonnel.objects.create(
+    return _avec_deplacement(EngagementPersonnel(
         utilisateur=utilisateur, environment=environment, crise=crise, equipe=equipe, institution=institution,
         parti_le=parti_le, rentre_le=rentre_le, depart_de=depart_de, retour_a=retour_a,
         hebergement=hebergement_de(utilisateur, crise) if LieuDeDepart.HEBERGEMENT in (depart_de, retour_a) else "",
         kilometres=lire_kilometres(kilometres),
         vehicule=vehicule if vehicule in VehiculeBenevole.values else VehiculeBenevole.AUCUN,
         saisie_manuelle=True, modifie_le=timezone.now(),
-    )
+    ), deplacement)
+
+
+def _avec_deplacement(engagement, deplacement):
+    appliquer_deplacement(engagement, {k: v for k, v in (deplacement or {}).items() if k in CHAMPS_DEPLACEMENT})
+    if engagement.kilometres_nombre() > 0 or engagement.vehicule_personnel_id:
+        proposer_deplacement(engagement)
+    engagement.save()
+    return engagement
 
 
 def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retour_a=None,
-             kilometres=None, vehicule=None) -> EngagementPersonnel:
+             kilometres=None, vehicule=None, deplacement=None) -> EngagementPersonnel:
     """Corrige une de SES lignes — typiquement le retour oublié. La ligne est marquée
     « complétée à la main » : le relevé ne fait pas passer une correction pour une déclaration
     faite sur le moment. Une ligne validée par l'encadrement ne se corrige plus."""
@@ -247,6 +425,9 @@ def corriger(engagement, *, parti_le=None, rentre_le=None, depart_de=None, retou
         engagement.kilometres = lire_kilometres(kilometres)
     if vehicule in VehiculeBenevole.values:
         engagement.vehicule = vehicule
+        if vehicule == VehiculeBenevole.AUCUN:
+            engagement.vehicule_personnel = None
+    appliquer_deplacement(engagement, {k: v for k, v in (deplacement or {}).items() if k in CHAMPS_DEPLACEMENT})
     if heures_changees or depart_de is not None or retour_a is not None:
         engagement.saisie_manuelle = True
     engagement.modifie_le = timezone.now()

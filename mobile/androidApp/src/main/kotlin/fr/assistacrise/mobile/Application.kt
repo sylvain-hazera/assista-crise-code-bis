@@ -31,6 +31,8 @@ import java.util.UUID
  * Les pièces de l'application, assemblées une fois. Pas de bibliothèque d'injection : il y
  * a une dizaine d'objets, et les voir câblés à la main sur une page vaut mieux qu'une magie de plus.
  */
+private const val FICHIER_DISTANCE = "distance-depart"
+
 class Application : android.app.Application() {
     val magasin by lazy { MagasinChiffre(File(filesDir, "magasin")) }
     val session by lazy { Session(magasin) }
@@ -156,6 +158,27 @@ class Application : android.app.Application() {
     val depot by lazy { DepotMissions(api, magasin, file) { if (equipes.connues) equipes.equipes.value.map { it.id }.toSet() else null } }
     val equipes by lazy { DepotEquipes(api, magasin, file) }
     val suivi by lazy { DepotSuivi(magasin, file) { System.currentTimeMillis() } }
+
+    // Distance parcourue depuis « je pars » (relevé kilométrique, 28/11/2026). Le fichier n'existe
+    // qu'entre le départ et le retour déclarés dans l'application ; il ne garde que la distance
+    // et la dernière position, jamais la trace.
+    private val verrouDistance = kotlinx.coroutines.sync.Mutex()
+
+    suspend fun commencerDistance() = verrouDistance.withLock {
+        magasin.ecrire(FICHIER_DISTANCE, fr.assistacrise.mobile.domaine.DistanceParcourue().enTexte())
+    }
+
+    suspend fun noterPourDistance(r: fr.assistacrise.mobile.domaine.Releve) = verrouDistance.withLock {
+        val texte = magasin.lire(FICHIER_DISTANCE) ?: return@withLock
+        val d = fr.assistacrise.mobile.domaine.DistanceParcourue.depuis(texte)
+        d.ajouter(r)
+        magasin.ecrire(FICHIER_DISTANCE, d.enTexte())
+    }
+
+    suspend fun distanceDepuisLeDepart(): Int? =
+        magasin.lire(FICHIER_DISTANCE)?.let { fr.assistacrise.mobile.domaine.DistanceParcourue.depuis(it).kilometres }
+
+    suspend fun oublierDistance() = verrouDistance.withLock { magasin.effacer(FICHIER_DISTANCE) }
     val citoyen by lazy { DepotCitoyen(api, magasin, file) }
     val radio by lazy { Radios(this) }
     val dossiers by lazy { DepotDossiers(api, magasin, file) { UUID.randomUUID().toString() } }

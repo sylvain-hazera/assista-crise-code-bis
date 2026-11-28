@@ -32,6 +32,50 @@ export interface LigneReleve {
   validee: boolean;
   /** Ce que l'encadrement demande de revoir. */
   remarque_chef: string;
+  // Relevé kilométrique (28/11/2026).
+  vehicule_personnel?: string | null;
+  vehicule_designation?: string;
+  lieu_depart?: string;
+  lieu_arrivee?: string;
+  motif?: string;
+  aller_retour?: boolean;
+  compteur_depart?: string;
+  compteur_arrivee?: string;
+  frais?: FraisLigne[];
+}
+
+/** Un péage ou un stationnement d'un déplacement, avec ou sans ticket. */
+export interface FraisLigne {
+  id: string;
+  nature: 'PEAGE' | 'STATIONNEMENT';
+  nature_libelle: string;
+  montant: string;
+  justificatif: boolean;
+  justificatif_nom: string;
+}
+
+/** Un véhicule que la personne a déclaré pour son relevé kilométrique. */
+export interface VehiculePersonnel {
+  id: string;
+  genre: 'VOITURE' | 'DEUX_ROUES';
+  libelle: string;
+  immatriculation: string;
+  puissance_cv: number | null;
+  designation: string;
+}
+
+/** « Domicile → Floirac (A/R) », vide si rien n'est dit. */
+export function trajetDe(l: LigneReleve): string {
+  if (!l.lieu_depart && !l.lieu_arrivee) return '';
+  return `${l.lieu_depart || '?'} → ${l.lieu_arrivee || '?'}${l.aller_retour === false ? '' : ' (A/R)'}`;
+}
+
+/** Kilomètres d'après les compteurs, ou null s'ils ne sont pas tous deux saisis (ou incohérents). */
+export function kmDesCompteurs(depart: string, arrivee: string): number | null {
+  const d = Number(String(depart ?? '').replace(/\s/g, ''));
+  const a = Number(String(arrivee ?? '').replace(/\s/g, ''));
+  if (!String(depart ?? '').trim() || !String(arrivee ?? '').trim() || !Number.isInteger(d) || !Number.isInteger(a) || a < d) return null;
+  return a - d;
 }
 
 /** Le relevé d'une personne, tel que son chef d'équipe le relit. */
@@ -57,6 +101,7 @@ export interface Releve {
   total_kilometres?: number;
   manifestations?: { id: string; nom: string; debut: string }[];
   vehicules?: { code: string; libelle: string }[];
+  mes_vehicules?: VehiculePersonnel[];
   /** Frais de l'année, par association, et renonciation au remboursement (reçu fiscal). */
   frais?: FraisAssociation[];
 }
@@ -68,6 +113,9 @@ export interface FraisAssociation {
   recus_fiscaux: boolean;
   kilometres: number;
   montant: string;
+  frais_km?: string;
+  peages?: string;
+  stationnement?: string;
   abandon: { id: string; statut: string; statut_libelle: string; numero_recu: string; motif_refus: string; montant: string | null } | null;
 }
 
@@ -83,7 +131,16 @@ interface Brouillon {
   rentre_le: string;
   depart_de: string;
   retour_a: string;
+  vehicule_personnel: string;
+  lieu_depart: string;
+  lieu_arrivee: string;
+  motif: string;
+  aller_retour: boolean;
+  compteur_depart: string;
+  compteur_arrivee: string;
 }
+
+interface NouveauVehicule { genre: 'VOITURE' | 'DEUX_ROUES'; libelle: string; immatriculation: string; puissance_cv: string }
 
 /**
  * Mon relevé d'heures (17/11/2026) : ce que j'ai déclaré par « je pars » / « je rentre », et de
@@ -121,6 +178,13 @@ export class MonReleveComponent implements OnInit {
   /** Renonciation au remboursement en cours de saisie : l'association, et l'adresse du reçu. */
   renonciation: FraisAssociation | null = null;
   adresse = '';
+  /** Véhicule en cours de déclaration (relevé kilométrique). */
+  nouveauVehicule: NouveauVehicule | null = null;
+  /** Péage ou stationnement en cours d'ajout sur la ligne éditée. */
+  fraisNature: 'PEAGE' | 'STATIONNEMENT' = 'PEAGE';
+  fraisMontant = '';
+  fraisFichier: File | null = null;
+  readonly trajet = trajetDe;
 
   private readonly url = `${environment.apiUrl}/mon-releve/`;
 
@@ -200,7 +264,14 @@ export class MonReleveComponent implements OnInit {
     this.brouillon = {
       activite: premiere, equipe: releve.equipes.length === 1 ? releve.equipes[0].id : '',
       parti_le: '', rentre_le: '', depart_de: 'DOMICILE', retour_a: 'DOMICILE', kilometres: '', vehicule: 'AUCUN',
+      ...this.deplacementVide(),
     };
+  }
+
+  private deplacementVide() {
+    const seul = this.releve?.mes_vehicules?.length === 1 ? this.releve.mes_vehicules[0].id : '';
+    return { vehicule_personnel: seul, lieu_depart: '', lieu_arrivee: '', motif: '', aller_retour: true,
+             compteur_depart: '', compteur_arrivee: '' };
   }
 
   modifier(ligne: LigneReleve): void {
@@ -210,7 +281,24 @@ export class MonReleveComponent implements OnInit {
       parti_le: this.enLocal(ligne.parti_le), rentre_le: this.enLocal(ligne.rentre_le),
       depart_de: ligne.depart_de, retour_a: ligne.retour_a || ligne.depart_de,
       kilometres: ligne.kilometres ?? '', vehicule: ligne.vehicule || 'AUCUN',
+      vehicule_personnel: ligne.vehicule_personnel ?? '', lieu_depart: ligne.lieu_depart ?? '',
+      lieu_arrivee: ligne.lieu_arrivee ?? '', motif: ligne.motif ?? '', aller_retour: ligne.aller_retour !== false,
+      compteur_depart: ligne.compteur_depart ?? '', compteur_arrivee: ligne.compteur_arrivee ?? '',
     };
+    this.fraisMontant = ''; this.fraisFichier = null;
+  }
+
+  /** La ligne en cours d'édition, telle que le serveur l'a renvoyée (pour ses frais). */
+  get ligneEditee(): LigneReleve | undefined {
+    return this.brouillon?.id ? this.releve?.lignes.find(l => l.id === this.brouillon?.id) : undefined;
+  }
+
+  /** Les deux compteurs saisis font les kilomètres : le champ km est alors calculé. */
+  kmCompteurs(b: Brouillon): number | null { return kmDesCompteurs(b.compteur_depart, b.compteur_arrivee); }
+
+  choisirVehicule(b: Brouillon): void {
+    const v = this.releve?.mes_vehicules?.find(x => x.id === b.vehicule_personnel);
+    if (v) b.vehicule = v.genre;
   }
 
   /** Reprend l'heure d'une ligne d'activité dans le champ encore vide de la ligne en cours. */
@@ -231,7 +319,9 @@ export class MonReleveComponent implements OnInit {
     const corps = {
       crise: genre === 'c' ? id : null, manifestation: genre === 'm' ? id : null,
       equipe: genre === 'c' ? (b.equipe || null) : null, depart_de: b.depart_de, retour_a: b.retour_a,
-      kilometres: b.kilometres, vehicule: b.vehicule,
+      kilometres: this.kmCompteurs(b) !== null ? String(this.kmCompteurs(b)) : b.kilometres, vehicule: b.vehicule,
+      vehicule_personnel: b.vehicule_personnel || '', lieu_depart: b.lieu_depart, lieu_arrivee: b.lieu_arrivee,
+      motif: b.motif, aller_retour: b.aller_retour, compteur_depart: b.compteur_depart, compteur_arrivee: b.compteur_arrivee,
       // Le navigateur convertit l'heure du poste en instant universel : le serveur n'a pas à
       // deviner le fuseau de la personne.
       parti_le: new Date(b.parti_le).toISOString(), rentre_le: new Date(b.rentre_le).toISOString(),
@@ -274,6 +364,85 @@ export class MonReleveComponent implements OnInit {
         URL.revokeObjectURL(lien.href);
       },
       error: () => this.erreur = "Le reçu n'a pas pu être téléchargé.",
+    });
+  }
+
+  // ── Mes véhicules ────────────────────────────────────────────────────────────────────────
+
+  declarerVehicule(): void {
+    this.nouveauVehicule = { genre: 'VOITURE', libelle: '', immatriculation: '', puissance_cv: '' };
+  }
+
+  enregistrerVehicule(): void {
+    const v = this.nouveauVehicule;
+    if (!v) return;
+    this.erreur = '';
+    this.http.post<VehiculePersonnel>(`${environment.apiUrl}/mes-vehicules/`, v).subscribe({
+      next: () => { this.nouveauVehicule = null; this.message = 'Véhicule enregistré.'; this.charger(); },
+      error: (err) => this.erreur = err?.error?.detail || "Le véhicule n'a pas pu être enregistré.",
+    });
+  }
+
+  retirerVehicule(v: VehiculePersonnel): void {
+    if (!confirm(`Retirer « ${v.designation} » ? Il reste sur vos déplacements passés.`)) return;
+    this.http.delete(`${environment.apiUrl}/mes-vehicules/${v.id}/`).subscribe({
+      next: () => this.charger(),
+      error: (err) => this.erreur = err?.error?.detail || 'Retrait impossible.',
+    });
+  }
+
+  // ── Péages et stationnement ──────────────────────────────────────────────────────────────
+
+  choisirTicket(evenement: Event): void {
+    this.fraisFichier = (evenement.target as HTMLInputElement).files?.[0] ?? null;
+  }
+
+  ajouterFrais(ligne: LigneReleve): void {
+    if (!this.fraisMontant.trim()) { this.erreur = 'Indiquez le montant payé.'; return; }
+    const corps = new FormData();
+    corps.append('nature', this.fraisNature);
+    corps.append('montant', this.fraisMontant.trim());
+    if (this.fraisFichier) corps.append('fichier', this.fraisFichier);
+    this.erreur = '';
+    this.http.post(`${this.url}${ligne.id}/frais/`, corps).subscribe({
+      next: () => { this.fraisMontant = ''; this.fraisFichier = null; this.charger(); },
+      error: (err) => this.erreur = err?.error?.detail || "Le frais n'a pas pu être ajouté.",
+    });
+  }
+
+  retirerFrais(ligne: LigneReleve, f: FraisLigne): void {
+    this.http.delete(`${this.url}${ligne.id}/frais/${f.id}/`).subscribe({
+      next: () => this.charger(),
+      error: (err) => this.erreur = err?.error?.detail || 'Retrait impossible.',
+    });
+  }
+
+  totalFrais(l: LigneReleve): number {
+    return (l.frais ?? []).reduce((t, f) => t + Number(f.montant || 0), 0);
+  }
+
+  ouvrirTicket(f: FraisLigne): void {
+    this.telecharger(`${environment.apiUrl}/frais-deplacement/${f.id}/justificatif/`, f.justificatif_nom || 'ticket',
+      "Le ticket n'a pas pu être ouvert.");
+  }
+
+  /** Mon relevé kilométrique imprimable, pour la période affichée. */
+  telechargerReleveKm(f: FraisAssociation): void {
+    const params = new URLSearchParams({ institution: f.institution, ...this.periode() });
+    this.telecharger(`${environment.apiUrl}/mon-releve/kilometrique/?${params}`, `releve-km-${this.du}-${this.au}.pdf`,
+      "Le relevé kilométrique n'a pas pu être téléchargé.");
+  }
+
+  private telecharger(url: string, nom: string, echec: string): void {
+    this.http.get(url, { responseType: 'blob' }).subscribe({
+      next: (fichier) => {
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(fichier);
+        lien.download = nom;
+        lien.click();
+        URL.revokeObjectURL(lien.href);
+      },
+      error: () => this.erreur = echec,
     });
   }
 

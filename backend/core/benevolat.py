@@ -23,7 +23,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
-    AbandonFrais, EngagementPersonnel, ReglagesBenevolat, StatutAbandonFrais, VehiculeBenevole,
+    AbandonFrais, EngagementPersonnel, NatureFraisDeplacement, ReglagesBenevolat, StatutAbandonFrais, VehiculeBenevole,
 )
 
 #: Taux de la réduction d'impôt, affiché comme une information (CGI art. 200), jamais calculé
@@ -44,8 +44,18 @@ def _centimes(v) -> Decimal:
     return Decimal(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def tarif_km(r: ReglagesBenevolat, vehicule: str):
+def tarif_km(r: ReglagesBenevolat, vehicule: str, puissance=None):
+    """Le tarif d'un kilomètre. Une voiture dont on connaît la puissance prend le tarif de sa
+    tranche si le trésorier l'a saisi (28/11/2026) ; sinon le tarif voiture."""
     if vehicule == VehiculeBenevole.VOITURE:
+        if puissance and r.tarifs_km_puissance:
+            tranche = str(min(7, max(3, int(puissance))))
+            try:
+                valeur = Decimal(str(r.tarifs_km_puissance.get(tranche) or "").replace(",", "."))
+                if valeur > 0:
+                    return valeur
+            except (ArithmeticError, ValueError):
+                pass
         return r.tarif_km_voiture
     if vehicule == VehiculeBenevole.DEUX_ROUES:
         return r.tarif_km_deux_roues
@@ -60,7 +70,8 @@ def lignes_de(institution, environment, annee, utilisateur=None, validees=True):
     qs = (EngagementPersonnel.objects.filter(environment=environment, parti_le__gte=debut, parti_le__lt=fin)
           .filter(Q(institution=institution) | Q(equipe__institution=institution) | Q(manifestation__institution=institution))
           .exclude(rentre_le__isnull=True)
-          .select_related("utilisateur", "crise", "manifestation", "equipe").distinct().order_by("parti_le"))
+          .select_related("utilisateur", "crise", "manifestation", "equipe", "vehicule_personnel")
+          .prefetch_related("frais").distinct().order_by("parti_le"))
     if utilisateur is not None:
         qs = qs.filter(utilisateur=utilisateur)
     if validees:
@@ -73,9 +84,32 @@ def _heures(ligne) -> Decimal:
     return Decimal(str(round(d.total_seconds() / 3600, 2))) if d else Decimal("0")
 
 
-def frais_ligne(ligne, r: ReglagesBenevolat) -> Decimal:
-    t = tarif_km(r, ligne.vehicule)
+def tarif_ligne(ligne, r: ReglagesBenevolat):
+    vp = ligne.vehicule_personnel
+    return tarif_km(r, ligne.vehicule, vp.puissance() if vp is not None else None)
+
+
+def frais_km_ligne(ligne, r: ReglagesBenevolat) -> Decimal:
+    t = tarif_ligne(ligne, r)
     return _centimes(Decimal(str(ligne.kilometres_nombre())) * t) if t else Decimal("0.00")
+
+
+def frais_annexes_ligne(ligne, nature=None) -> Decimal:
+    """Péages et stationnement de la ligne (28/11/2026), ou d'une seule nature."""
+    return _centimes(sum((Decimal(str(f.montant_nombre())) for f in ligne.frais.all()
+                          if nature is None or f.nature == nature), Decimal("0")))
+
+
+def frais_ligne(ligne, r: ReglagesBenevolat) -> Decimal:
+    """Tout ce que la ligne coûte au bénévole : kilomètres, péages, stationnement."""
+    return frais_km_ligne(ligne, r) + frais_annexes_ligne(ligne)
+
+
+def trajet(ligne) -> str:
+    """« Domicile → Firminy », vide si rien n'est dit."""
+    if not (ligne.lieu_depart or ligne.lieu_arrivee):
+        return ""
+    return f"{ligne.lieu_depart or '?'} → {ligne.lieu_arrivee or '?'}"
 
 
 def _nom(u) -> str:
@@ -87,13 +121,15 @@ def valorisation(institution, environment, annee) -> dict:
     r = reglages(institution, annee, environment)
     lignes = lignes_de(institution, environment, annee)
     par_benevole, par_activite, par_mois = {}, {}, {}
-    total_h, total_km, total_frais = Decimal("0"), Decimal("0"), Decimal("0")
+    total_h, total_km, total_frais, total_annexes = Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
     for l in lignes:
         h, km, frais = _heures(l), Decimal(str(l.kilometres_nombre())), frais_ligne(l, r)
-        total_h += h; total_km += km; total_frais += frais
+        annexes = frais_annexes_ligne(l)
+        total_h += h; total_km += km; total_frais += frais; total_annexes += annexes
         b = par_benevole.setdefault(l.utilisateur_id, {"utilisateur": str(l.utilisateur_id), "nom": _nom(l.utilisateur),
-                                                       "heures": Decimal("0"), "kilometres": Decimal("0"), "frais": Decimal("0")})
-        b["heures"] += h; b["kilometres"] += km; b["frais"] += frais
+                                                       "heures": Decimal("0"), "kilometres": Decimal("0"), "frais": Decimal("0"),
+                                                       "frais_annexes": Decimal("0")})
+        b["heures"] += h; b["kilometres"] += km; b["frais"] += frais; b["frais_annexes"] += annexes
         cle = ("m", l.manifestation_id) if l.manifestation_id else ("c", l.crise_id)
         a = par_activite.setdefault(cle, {"genre": "manifestation" if l.manifestation_id else "crise", "nom": l.objet_nom,
                                           "date": timezone.localtime(l.parti_le).date(), "heures": Decimal("0"), "benevoles": set()})
@@ -107,6 +143,7 @@ def valorisation(institution, environment, annee) -> dict:
         "annee": annee,
         "reglages": reglages_en_dict(r),
         "heures": total_h, "kilometres": total_km, "frais": _centimes(total_frais),
+        "frais_annexes": _centimes(total_annexes),
         "valorisation_heures": _centimes(total_h * taux) if taux else None,
         "benevoles": sorted(par_benevole.values(), key=lambda b: b["nom"].lower()),
         "activites": [dict(a, benevoles=len(a["benevoles"])) for a in sorted(par_activite.values(), key=lambda a: a["date"])],
@@ -118,7 +155,8 @@ def valorisation(institution, environment, annee) -> dict:
 def reglages_en_dict(r: ReglagesBenevolat) -> dict:
     return {
         "annee": r.annee, "taux_horaire": r.taux_horaire, "tarif_km_voiture": r.tarif_km_voiture,
-        "tarif_km_deux_roues": r.tarif_km_deux_roues, "recus_fiscaux": r.recus_fiscaux,
+        "tarif_km_deux_roues": r.tarif_km_deux_roues, "tarifs_km_puissance": r.tarifs_km_puissance or {},
+        "recus_fiscaux": r.recus_fiscaux,
         "fondement_recus": r.fondement_recus, "signataire_nom": r.signataire_nom,
         "signataire_qualite": r.signataire_qualite, "dernier_recu": r.dernier_recu,
     }
@@ -127,15 +165,21 @@ def reglages_en_dict(r: ReglagesBenevolat) -> dict:
 def export_lignes(institution, environment, annee, format_="csv"):
     """Les lignes validées de l'année, pour le comptable : (contenu, type MIME, extension)."""
     r = reglages(institution, annee, environment)
-    entetes = ["Bénévole", "Activité", "Type", "Départ", "Retour", "Heures", "Véhicule", "Kilomètres", "Frais (€)",
-               "Valorisation (€)", "Validé le"]
+    entetes = ["Bénévole", "Activité", "Type", "Départ", "Retour", "Heures", "Véhicule", "Puissance (CV)", "Motif",
+               "Trajet", "A/R", "Compteur départ", "Compteur arrivée", "Kilomètres", "Frais km (€)", "Péages (€)",
+               "Stationnement (€)", "Frais total (€)", "Valorisation (€)", "Validé le"]
     rangs = []
     for l in lignes_de(institution, environment, annee):
         h = _heures(l)
         rangs.append([
             _nom(l.utilisateur), l.objet_nom, "Manifestation" if l.manifestation_id else "Crise",
             timezone.localtime(l.parti_le).strftime("%d/%m/%Y %H:%M"), timezone.localtime(l.rentre_le).strftime("%d/%m/%Y %H:%M"),
-            float(h), l.get_vehicule_display(), l.kilometres_nombre(), float(frais_ligne(l, r)),
+            float(h), l.get_vehicule_display(),
+            (l.vehicule_personnel.puissance() or "") if l.vehicule_personnel_id else "",
+            l.motif, trajet(l), "oui" if l.aller_retour else "non", l.compteur_depart, l.compteur_arrivee,
+            l.kilometres_nombre(), float(frais_km_ligne(l, r)),
+            float(frais_annexes_ligne(l, NatureFraisDeplacement.PEAGE)),
+            float(frais_annexes_ligne(l, NatureFraisDeplacement.STATIONNEMENT)), float(frais_ligne(l, r)),
             float(_centimes(h * r.taux_horaire)) if r.taux_horaire else "",
             timezone.localtime(l.valide_le).strftime("%d/%m/%Y") if l.valide_le else "",
         ])
@@ -162,10 +206,15 @@ def export_lignes(institution, environment, annee, format_="csv"):
 
 def frais_abandonnables(institution, environment, annee, utilisateur) -> dict:
     r = reglages(institution, annee, environment)
-    lignes = [l for l in lignes_de(institution, environment, annee, utilisateur) if l.kilometres_nombre() > 0]
-    montant = sum((frais_ligne(l, r) for l in lignes), Decimal("0.00"))
+    lignes = [l for l in lignes_de(institution, environment, annee, utilisateur)
+              if l.kilometres_nombre() > 0 or frais_annexes_ligne(l) > 0]
+    frais_km = sum((frais_km_ligne(l, r) for l in lignes), Decimal("0.00"))
+    peages = sum((frais_annexes_ligne(l, NatureFraisDeplacement.PEAGE) for l in lignes), Decimal("0.00"))
+    stationnement = sum((frais_annexes_ligne(l, NatureFraisDeplacement.STATIONNEMENT) for l in lignes), Decimal("0.00"))
     return {"lignes": [str(l.id) for l in lignes], "kilometres": sum(l.kilometres_nombre() for l in lignes),
-            "montant": str(_centimes(montant))}
+            "frais_km": str(_centimes(frais_km)), "peages": str(_centimes(peages)),
+            "stationnement": str(_centimes(stationnement)),
+            "montant": str(_centimes(frais_km + peages + stationnement))}
 
 
 def demander_abandon(institution, environment, annee, utilisateur, adresse: str) -> AbandonFrais:
@@ -178,7 +227,7 @@ def demander_abandon(institution, environment, annee, utilisateur, adresse: str)
         raise ErreurBenevolat("Indiquez votre adresse : elle figure sur le reçu fiscal.")
     frais = frais_abandonnables(institution, environment, annee, utilisateur)
     if Decimal(frais["montant"]) <= 0:
-        raise ErreurBenevolat("Aucun frais kilométrique validé sur cette année (ou tarif non renseigné par l'association).")
+        raise ErreurBenevolat("Aucun frais de déplacement validé sur cette année (ou tarif non renseigné par l'association).")
     abandon, cree = AbandonFrais.objects.get_or_create(
         institution=institution, utilisateur=utilisateur, annee=annee, environment=environment,
         defaults={"detail": dict(frais, adresse=adresse.strip()[:300])})
@@ -320,8 +369,13 @@ def recu_pdf(abandon) -> bytes:
     ]
     tableau = Table([
         ["Forme du don", "Renonciation expresse au remboursement de frais engagés par un bénévole"],
-        ["Nature du don", "Frais kilométriques (abandon de frais)"],
-        ["Kilomètres", f"{float(d.get('kilometres', 0)):.0f} km, sur {len(d.get('lignes', []))} déplacement(s) validé(s)"],
+        ["Nature du don", "Frais de déplacement : kilomètres, péages, stationnement (abandon de frais)"
+         if Decimal(d.get("peages") or "0") + Decimal(d.get("stationnement") or "0") > 0
+         else "Frais kilométriques (abandon de frais)"],
+        ["Kilomètres", f"{float(d.get('kilometres', 0)):.0f} km, sur {len(d.get('lignes', []))} déplacement(s) validé(s)"
+         + (f", soit {d['frais_km']} €" if d.get("frais_km") else "")],
+        *([["Péages", f"{d['peages']} €"]] if Decimal(d.get("peages") or "0") > 0 else []),
+        *([["Stationnement", f"{d['stationnement']} €"]] if Decimal(d.get("stationnement") or "0") > 0 else []),
         ["Mode de versement", "Autre (abandon de frais)"],
     ], colWidths=[45 * mm, 120 * mm])
     tableau.setStyle(TableStyle([
@@ -339,4 +393,125 @@ def recu_pdf(abandon) -> bytes:
     sortie = io.BytesIO()
     SimpleDocTemplate(sortie, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=15 * mm,
                       title=f"Reçu {abandon.numero_recu}").build(elements)
+    return sortie.getvalue()
+
+
+# --- Relevé kilométrique imprimable (28/11/2026, PDF jamais stocké) -----------------------------
+
+def lignes_de_deplacement(institution, environment, utilisateur, du, au, validees_seulement=True):
+    """Les déplacements d'un bénévole pour une association entre deux dates (incluses) : les
+    lignes terminées qui portent des kilomètres ou des frais."""
+    debut = timezone.make_aware(datetime.datetime.combine(du, datetime.time.min))
+    fin = timezone.make_aware(datetime.datetime.combine(au, datetime.time.max))
+    qs = (EngagementPersonnel.objects.filter(environment=environment, utilisateur=utilisateur,
+                                             parti_le__gte=debut, parti_le__lte=fin)
+          .filter(Q(institution=institution) | Q(equipe__institution=institution) | Q(manifestation__institution=institution))
+          .exclude(rentre_le__isnull=True)
+          .select_related("crise", "manifestation", "equipe", "vehicule_personnel")
+          .prefetch_related("frais").distinct().order_by("parti_le"))
+    if validees_seulement:
+        qs = qs.filter(valide_le__isnull=False)
+    return [l for l in qs if l.kilometres_nombre() > 0 or frais_annexes_ligne(l) > 0]
+
+
+def releve_km_pdf(utilisateur, institution, environment, du, au, validees_seulement=True) -> bytes:
+    """L'état des frais de déplacement d'un bénévole : une ligne par déplacement (date, motif,
+    trajet, compteurs, km, frais), les totaux, « certifié exact » et deux signatures. Le
+    bénévole l'imprime avec ses lignes en attente (marquées comme telles) ; le bureau, avec
+    les seules lignes validées."""
+    from xml.sax.saxutils import escape
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    r = reglages(institution, au.year, environment)
+    lignes = lignes_de_deplacement(institution, environment, utilisateur, du, au, validees_seulement)
+    sombre, gris, filet = colors.HexColor("#1e293b"), colors.HexColor("#6b7280"), colors.HexColor("#d1d5db")
+    titre = ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=sombre, spaceAfter=1 * mm)
+    sous = ParagraphStyle("s", fontName="Helvetica", fontSize=8.5, leading=11, textColor=gris, spaceAfter=3 * mm)
+    texte = ParagraphStyle("x", fontName="Helvetica", fontSize=9, leading=12, textColor=sombre)
+    cellule = ParagraphStyle("c", fontName="Helvetica", fontSize=7.5, leading=9, textColor=sombre)
+    petit = ParagraphStyle("p", fontName="Helvetica", fontSize=7.5, leading=10, textColor=gris)
+
+    def p(t, style=texte):
+        return Paragraph(escape(str(t or "")).replace("\n", "<br/>"), style)
+
+    def euros(v: Decimal) -> str:
+        return f"{v:.2f}".replace(".", ",") if v else ""
+
+    def nombre(v) -> str:
+        return format(Decimal(str(v)).normalize(), "f").replace(".", ",")
+
+    vehicules = []
+    for l in lignes:
+        if l.vehicule_personnel_id and l.vehicule_personnel not in vehicules:
+            vehicules.append(l.vehicule_personnel)
+    elements = [
+        p("Relevé kilométrique et frais de déplacement", titre),
+        p(f"Du {du:%d/%m/%Y} au {au:%d/%m/%Y} — "
+          + ("lignes validées par l'association" if validees_seulement else "lignes validées et en attente de validation"), sous),
+        p(f"Association : {institution.nom}"),
+        p(f"Bénévole : {_nom(utilisateur)}"),
+        p("Véhicule(s) : " + ("; ".join(v.designation for v in vehicules) if vehicules else "non précisé")),
+        Spacer(1, 4 * mm),
+    ]
+    entete = ["Date", "Motif", "Trajet", "A/R", "Compteur\ndépart", "Compteur\narrivée", "Km", "€/km", "Frais km",
+              "Péage", "Station.", "Total", "Validation"]
+    rangs = [entete]
+    t_km, t_fkm, t_pea, t_sta = Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
+    for l in lignes:
+        km = Decimal(str(l.kilometres_nombre()))
+        tarif = tarif_ligne(l, r)
+        fkm = frais_km_ligne(l, r)
+        pea = frais_annexes_ligne(l, NatureFraisDeplacement.PEAGE)
+        sta = frais_annexes_ligne(l, NatureFraisDeplacement.STATIONNEMENT)
+        t_km += km; t_fkm += fkm; t_pea += pea; t_sta += sta
+        rangs.append([
+            timezone.localtime(l.parti_le).strftime("%d/%m/%Y"), p(l.motif or l.objet_nom, cellule), p(trajet(l), cellule),
+            "oui" if l.aller_retour else "non", l.compteur_depart, l.compteur_arrivee, nombre(km),
+            f"{tarif:.3f}".replace(".", ",") if tarif else "", euros(fkm), euros(pea), euros(sta), euros(fkm + pea + sta),
+            timezone.localtime(l.valide_le).strftime("%d/%m/%Y") if l.valide_le else "en attente",
+        ])
+    rangs.append(["Total", "", "", "", "", "", nombre(t_km), "", euros(t_fkm), euros(t_pea), euros(t_sta),
+                  euros(t_fkm + t_pea + t_sta), ""])
+    tableau = Table(rangs, repeatRows=1, colWidths=[18 * mm, 46 * mm, 52 * mm, 9 * mm, 17 * mm, 17 * mm, 12 * mm,
+                                                     12 * mm, 16 * mm, 14 * mm, 14 * mm, 16 * mm, 19 * mm])
+    tableau.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7.5), ("FONT", (0, 1), (-1, -1), "Helvetica", 7.5),
+        ("FONT", (0, -1), (-1, -1), "Helvetica-Bold", 7.5),
+        ("TEXTCOLOR", (0, 0), (-1, -1), sombre), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5e7eb")),
+        ("GRID", (0, 0), (-1, -1), 0.4, filet), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (3, 1), (-2, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]))
+    signatures = Table([[p("Le bénévole, « certifié exact »"), p(f"Pour l'association : {r.signataire_nom or ''}"
+                                                                  + (f", {r.signataire_qualite}" if r.signataire_qualite else ""))],
+                        ["", ""]], colWidths=[120 * mm, 120 * mm], rowHeights=[None, 20 * mm])
+    signatures.setStyle(TableStyle([("BOX", (0, 0), (0, -1), 0.4, filet), ("BOX", (1, 0), (1, -1), 0.4, filet),
+                                    ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    tarifs = []
+    if r.tarif_km_voiture:
+        tarifs.append(f"voiture {nombre(r.tarif_km_voiture)} €/km")
+    if r.tarifs_km_puissance:
+        tarifs.append("par puissance fiscale : " + ", ".join(
+            f"{'≤ ' if k == '3' else ('≥ ' if k == '7' else '')}{k} CV {nombre(v)} €/km"
+            for k, v in sorted(r.tarifs_km_puissance.items()) if v))
+    if r.tarif_km_deux_roues:
+        tarifs.append(f"moto, scooter {nombre(r.tarif_km_deux_roues)} €/km")
+    elements += [
+        tableau, Spacer(1, 3 * mm),
+        p(("Tarifs retenus par l'association pour " + str(au.year) + " : " + " ; ".join(tarifs) + ".") if tarifs
+          else "L'association n'a pas encore renseigné ses tarifs kilométriques : seuls les kilomètres sont relevés.", petit),
+        Spacer(1, 5 * mm),
+        p(f"Fait le {timezone.localdate():%d/%m/%Y}."), Spacer(1, 2 * mm), signatures, Spacer(1, 3 * mm),
+        p("Relevé établi d'après les déclarations du bénévole dans l'application. Les justificatifs de péage et de "
+          "stationnement sont conservés par l'association. En cas d'abandon de frais, ce relevé accompagne la "
+          "renonciation écrite du bénévole.", petit),
+    ]
+    sortie = io.BytesIO()
+    SimpleDocTemplate(sortie, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm,
+                      bottomMargin=12 * mm, title=f"Relevé kilométrique — {_nom(utilisateur)}").build(elements)
     return sortie.getvalue()

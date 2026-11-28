@@ -86,4 +86,22 @@ describe('DepartRetourComponent', () => {
     expect(requete.request.body).toEqual({ geste: 'partir', manifestation: 'm1', depart_de: 'DOMICILE' });
     requete.flush({ en_cours: null, crises: [], equipes: [] });
   });
+
+  it('part avec son véhicule et son compteur, rentre avec le compteur et un péage (28/11/2026)', () => {
+    ouvrir({ ...LIBRE, vehicules: [{ id: 'v1', designation: 'Clio · AB-123-CD · 5 CV' }] });
+    const c = fixture.componentInstance;
+    expect(c.vehicule).toBe('v1');
+    c.compteurDepart = '45210';
+    c.geste('partir');
+    const depart = http.expectOne(r => r.method === 'POST');
+    expect(depart.request.body).toEqual(jasmine.objectContaining({ vehicule_personnel: 'v1', compteur_depart: '45210' }));
+    depart.flush({ ...PARTI, en_cours: { ...PARTI.en_cours!, vehicule_personnel: 'v1', compteur_depart: '45210' } });
+    fixture.detectChanges();
+    expect(texte()).toContain("Compteur à l'arrivée");
+    c.compteurArrivee = '45262';
+    c.peage = '3,40';
+    c.geste('rentrer');
+    const retour = http.expectOne(r => r.method === 'POST');
+    expect(retour.request.body).toEqual({ geste: 'rentrer', retour_a: 'DOMICILE', compteur_arrivee: '45262', peage: '3,40' });
+  });
 });

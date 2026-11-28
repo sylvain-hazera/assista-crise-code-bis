@@ -18,7 +18,8 @@ from .views_stocks import ArticleStockViewSet, DepotStockViewSet, EtatStockView,
 from .views_dons import AppelAuxDonsViewSet, AvisDonsPublicsView, CatalogueDonsView, FoyerSinistreViewSet
 from .views_formulaires import FormulaireTerrainViewSet, TypesQuestionView
 from .views_standard import (
-    AppelStandardViewSet, EngagementPersonnelView, MonReleveLigneView, MonReleveView, PointDeSituationView,
+    AppelStandardViewSet, EngagementPersonnelView, FraisLigneView, JustificatifFraisView, MesVehiculesView,
+    MonReleveKmView, MonReleveLigneView, MonReleveView, MonVehiculeView, PointDeSituationView,
     RelevesEquipeView,
 )
 from .views_stocks_logistique import (
@@ -630,6 +631,12 @@ urlpatterns = [
     path('mon-releve/', MonReleveView.as_view(), name='mon_releve'),
     path('releves-equipe/', RelevesEquipeView.as_view(), name='releves_equipe'),
     path('mon-releve/<uuid:ligne_id>/', MonReleveLigneView.as_view(), name='mon_releve_ligne'),
+    path('mon-releve/<uuid:ligne_id>/frais/', FraisLigneView.as_view(), name='mon_releve_frais'),
+    path('mon-releve/<uuid:ligne_id>/frais/<uuid:fid>/', FraisLigneView.as_view(), name='mon_releve_frais_detail'),
+    path('mon-releve/kilometrique/', MonReleveKmView.as_view(), name='mon_releve_km'),
+    path('frais-deplacement/<uuid:fid>/justificatif/', JustificatifFraisView.as_view(), name='frais_justificatif'),
+    path('mes-vehicules/', MesVehiculesView.as_view(), name='mes_vehicules'),
+    path('mes-vehicules/<uuid:vid>/', MonVehiculeView.as_view(), name='mon_vehicule'),
     # Manifestations d'association et bénévolat (26/11/2026, core/manifestations.py, core/benevolat.py).
     path('carte-terrain/perimetre/', views_carte_terrain.PerimetreCarteView.as_view(), name='carte_terrain_perimetre'),
     path('carte-terrain/veille/', views_carte_terrain.VeilleTerrainView.as_view(), name='carte_terrain_veille'),
@@ -651,6 +658,7 @@ urlpatterns = [
     path('benevolat/', views_manifestations.BenevolatView.as_view(), name='benevolat'),
     path('benevolat/reglages/', views_manifestations.ReglagesBenevolatView.as_view(), name='benevolat_reglages'),
     path('benevolat/export/', views_manifestations.ExportBenevolatView.as_view(), name='benevolat_export'),
+    path('benevolat/releve-km/', views_manifestations.ReleveKmBureauView.as_view(), name='benevolat_releve_km'),
     path('benevolat/abandons/<uuid:aid>/', views_manifestations.AbandonGesteView.as_view(), name='benevolat_abandon'),
     path('benevolat/abandons/<uuid:aid>/recu/', views_manifestations.RecuFiscalView.as_view(), name='benevolat_recu'),
     path('mon-releve/abandon/', views_manifestations.MonAbandonView.as_view(), name='mon_abandon'),
