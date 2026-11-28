@@ -3054,6 +3054,8 @@ class ReleveDepartementPEI(models.Model):
     essaye_le = models.DateTimeField(null=True, blank=True)
     nombre = models.PositiveIntegerField(default=0)
     erreur = models.CharField(max_length=255, blank=True, default="")
+    #: Échecs consécutifs (28/11/2026) : l'attente avant le prochain essai double à chacun.
+    echecs = models.PositiveSmallIntegerField(default=0)
     #: Date du dernier import d'un fichier SDIS pour ce département (null : jamais).
     sdis_importe_le = models.DateTimeField(null=True, blank=True)
     sdis_nombre = models.PositiveIntegerField(default=0)

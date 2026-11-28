@@ -129,6 +129,19 @@ class TestReleveOSM:
         assert PointEauIncendie.objects.filter(departement_code="42").count() == 30
         assert "copie précédente conservée" in ReleveDepartementPEI.objects.get(departement_code="42").erreur
 
+    def test_echec_reessaye_avant_les_mises_a_jour_attente_qui_double(self, db):
+        maintenant = timezone.now()
+        for code in points_eau_osm.DEPARTEMENTS:
+            ReleveDepartementPEI.objects.create(departement_code=code, releve_le=maintenant - datetime.timedelta(days=1))
+        ReleveDepartementPEI.objects.filter(departement_code="01").update(releve_le=maintenant - datetime.timedelta(days=9))
+        # 13 n'a jamais réussi : trois échecs, le dernier il y a 20 h -> attente de 24 h, pas encore.
+        ReleveDepartementPEI.objects.filter(departement_code="13").update(
+            releve_le=None, essaye_le=maintenant - datetime.timedelta(hours=20), echecs=3, erreur="502")
+        assert points_eau_osm.prochain_departement(maintenant) == "01"
+        # Attente écoulée : l'échec passe avant la remise à jour la plus ancienne.
+        assert points_eau_osm.prochain_departement(maintenant + datetime.timedelta(hours=5)) == "13"
+        assert [points_eau_osm.attente_apres_echec(n).total_seconds() / 3600 for n in (0, 1, 2, 3, 4, 9)] == [6, 6, 12, 24, 48, 48]
+
     def test_rotation_jamais_releve_puis_le_plus_ancien_et_echec_reessaye_plus_tard(self, db):
         maintenant = timezone.now()
         for code in points_eau_osm.DEPARTEMENTS:
@@ -290,3 +303,64 @@ class TestExport:
 
     def test_export_refuse_a_un_intervenant(self, intervenant):
         assert _client(intervenant).get(reverse("points-eau-export"), {"commune": SAINT_ETIENNE}).status_code == 403
+
+
+class _ReponseOverpass:
+    def __init__(self, code, donnees=None):
+        import io
+        import json
+        self.status_code = code
+        tampon = io.BytesIO(json.dumps(donnees or {}).encode())
+
+        class _Brut:
+            def read(self, n=-1, decode_content=False):
+                return tampon.read(n)
+
+        self.raw = _Brut()
+
+
+@pytest.mark.django_db
+class TestServeursDeSecours:
+    """28/11/2026 : le serveur principal saturait (55 départements sur 99 en échec)."""
+
+    @pytest.fixture(autouse=True)
+    def _sans_pause(self, monkeypatch):
+        monkeypatch.setattr(points_eau_osm, "PAUSE_ENTRE_SERVEURS_S", 0)
+
+    def test_bascule_sur_le_serveur_suivant(self, monkeypatch):
+        appels = []
+
+        def poster(url, **kwargs):
+            appels.append(url)
+            if "overpass-api.de" in url:
+                return _ReponseOverpass(502)
+            return _ReponseOverpass(200, _overpass())
+
+        monkeypatch.setattr(points_eau_osm.requests, "post", poster)
+        assert points_eau_osm.interroger((4.0, 45.0, 4.5, 45.5)) == _overpass()
+        assert appels == [points_eau_osm.SERVEURS[0][1], points_eau_osm.SERVEURS[1][1]]
+
+    def test_tous_indisponibles_puis_quatre_morceaux(self, monkeypatch):
+        rectangles = []
+
+        def poster(url, data, **kwargs):
+            requete = data["data"]
+            rectangles.append(requete)
+            # Le grand rectangle expire partout ; les quarts répondent au premier serveur.
+            if "45.00000,4.00000,46.00000,5.00000" in requete:
+                return _ReponseOverpass(504)
+            return _ReponseOverpass(200, {"elements": [{"type": "node", "id": 1, "lat": 45.2, "lon": 4.2},
+                                                       {"type": "node", "id": len(rectangles), "lat": 45.7, "lon": 4.7}]})
+
+        monkeypatch.setattr(points_eau_osm.requests, "post", poster)
+        donnees = points_eau_osm.interroger_par_morceaux((4.0, 45.0, 5.0, 46.0))
+        assert len(rectangles) == 3 + 4
+        # Le nœud 1, rendu par chaque quart, n'est compté qu'une fois.
+        assert sorted(e["id"] for e in donnees["elements"]) == [1, 4, 5, 6, 7]
+
+    def test_un_quart_en_echec_fait_echouer_le_departement_et_compte_l_echec(self, communes, monkeypatch):
+        monkeypatch.setattr(points_eau_osm.requests, "post", lambda url, **kwargs: _ReponseOverpass(502))
+        with pytest.raises(points_eau_osm.OverpassIndisponible):
+            points_eau_osm.relever(departement="42")
+        etat = ReleveDepartementPEI.objects.get(departement_code="42")
+        assert etat.echecs == 1 and "private.coffee" in etat.erreur and etat.releve_le is None

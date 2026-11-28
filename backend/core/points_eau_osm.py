@@ -8,9 +8,14 @@ marqué désaffecté) : une couche INDICATIVE. Elle n'est jamais fusionnée avec
 
 LA ROTATION (décision de Sylvain : « France entière, en parsant département par département sur
 plusieurs jours »)
-Un département par passage, toutes les deux heures : le jamais relevé d'abord, puis le plus
-anciennement relevé. Un département en échec est réessayé six heures plus tard, sans bloquer
-les autres. La France (101 départements) se parcourt en neuf jours environ.
+Un département par passage, toutes les deux heures : le jamais relevé d'abord, puis ceux en
+échec dont l'attente est écoulée (6, 12, 24 puis 48 h), puis le plus anciennement relevé. La
+France (101 départements) se parcourt en neuf jours environ.
+
+SERVEURS DE SECOURS ET DÉCOUPAGE (28/11/2026)
+Le serveur principal saturait (55 départements sur 99 en échec au premier tour) : la requête
+part ensuite vers deux serveurs publics de secours, puis, si aucun ne répond, en quatre
+rectangles plus petits (voir SERVEURS et interroger_par_morceaux).
 
 POURQUOI UN RECTANGLE, ET PAS LA LIMITE DU DÉPARTEMENT
 Les serveurs Overpass publics saturent souvent (constaté le 24/11/2026), et une requête sur une
@@ -34,8 +39,10 @@ import datetime
 import logging
 import math
 import re
+import time
 
 import requests
+import urllib3
 from django.contrib.gis.geos import Point
 from django.db import transaction
 from django.utils import timezone
@@ -43,6 +50,21 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 URL_OVERPASS = "https://overpass-api.de/api/interpreter"
+#: Serveurs Overpass publics, mondiaux, gratuits et sans clé, dans l'ordre d'essai (28/11/2026).
+#: Le principal (FOSSGIS) est saturé : du 24 au 26/11, 55 départements sur 99 y ont échoué (502).
+#: Les deux autres, d'après le tableau des instances publiques du wiki OSM lu le 28/11/2026 :
+#: private.coffee (« pas de limite », prévenir pour un gros projet) et VK Maps (« pas de
+#: limite »). Notre usage — une requête toutes les deux heures, quatre au pire — reste très en
+#: deçà de la règle du principal (10 000 requêtes par jour, divisées par 100 pour un usage
+#: régulier). Pas d'appels en parallèle : un serveur après l'autre.
+SERVEURS = (
+    ("overpass-api.de", URL_OVERPASS),
+    ("overpass.private.coffee", "https://overpass.private.coffee/api/interpreter"),
+    ("VK Maps", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"),
+)
+PAUSE_ENTRE_SERVEURS_S = 5
+#: Attente avant de réessayer un département en échec : 6 h, puis 12, 24, 48 h au plus.
+REESSAI_MAX = datetime.timedelta(hours=48)
 ENTETES = {"User-Agent": "Assista-Crise/1.0 (points d'eau incendie)"}
 DELAI_REQUETE_S = 180
 DELAI_REPONSE_S = 240
@@ -141,9 +163,18 @@ def traduire(tags):
 
 # ── Rotation ─────────────────────────────────────────────────────────────────
 
+def attente_apres_echec(echecs):
+    """6 h après un échec, puis le double à chaque échec de plus, 48 h au plus."""
+    return min(REESSAI_APRES * (2 ** max(0, (echecs or 1) - 1)), REESSAI_MAX)
+
+
 def prochain_departement(maintenant=None):
-    """Le département à relever maintenant : jamais relevé d'abord, puis le plus ancien ; un
-    essai raté il y a moins de six heures passe son tour."""
+    """Le département à relever maintenant, dans cet ordre (28/11/2026) :
+    0. jamais essayé ;
+    1. en échec, et son attente écoulée — le plus anciennement essayé d'abord : un département
+       sans données passe avant la remise à jour d'un département déjà relevé ;
+    2. relevé avec succès, le plus ancien d'abord ;
+    3. en échec, encore dans son attente (6, 12, 24 puis 48 h)."""
     from .models import ReleveDepartementPEI
 
     maintenant = maintenant or timezone.now()
@@ -153,9 +184,11 @@ def prochain_departement(maintenant=None):
         r = etats.get(code)
         if r is None or (r.releve_le is None and r.essaye_le is None):
             return (0, datetime.datetime.min.replace(tzinfo=datetime.timezone.utc), code)
-        if r.essaye_le and (r.releve_le is None or r.essaye_le > r.releve_le) and maintenant - r.essaye_le < REESSAI_APRES:
-            return (2, r.essaye_le, code)
-        return (1, r.releve_le or r.essaye_le, code)
+        if r.essaye_le and (r.releve_le is None or r.essaye_le > r.releve_le):
+            if maintenant - r.essaye_le < attente_apres_echec(r.echecs):
+                return (3, r.essaye_le, code)
+            return (1, r.essaye_le, code)
+        return (2, r.releve_le or r.essaye_le, code)
 
     return min(DEPARTEMENTS, key=rang)
 
@@ -213,8 +246,48 @@ def requete(ouest, sud, est, nord):
             'node["disused:emergency"="fire_hydrant"];);out body;')
 
 
+class OverpassIndisponible(RuntimeError):
+    """Aucun serveur n'a répondu correctement ; le message les nomme tous."""
+
+
 def interroger(rectangle):
-    reponse = requests.post(URL_OVERPASS, data={"data": requete(*rectangle)}, headers=ENTETES,
+    """La requête, au premier serveur qui répond correctement (SERVEURS, dans l'ordre)."""
+    echecs = []
+    for rang, (nom, url) in enumerate(SERVEURS):
+        if rang:
+            time.sleep(PAUSE_ENTRE_SERVEURS_S)
+        try:
+            donnees = _interroger_un(url, rectangle)
+        except (RuntimeError, ValueError, requests.RequestException, urllib3.exceptions.HTTPError) as erreur:
+            echecs.append(f"{nom} : {erreur}"[:80])
+            logger.info("Points d'eau OSM : %s indisponible (%s).", nom, erreur)
+            continue
+        if rang:
+            logger.info("Points d'eau OSM : réponse du serveur de secours %s.", nom)
+        return donnees
+    raise OverpassIndisponible(" ; ".join(echecs))
+
+
+def interroger_par_morceaux(rectangle):
+    """Le rectangle entier, sinon ses quatre quarts réunis (28/11/2026) : une requête plus petite
+    passe souvent là où la grande expire. Un quart en échec fait échouer le tout — un
+    département à moitié relevé passerait pour complet."""
+    try:
+        return interroger(rectangle)
+    except OverpassIndisponible as erreur:
+        logger.info("Points d'eau OSM : rectangle entier impossible (%s), essai en quatre morceaux.", erreur)
+    ouest, sud, est, nord = rectangle
+    milieu_lon, milieu_lat = (ouest + est) / 2, (sud + nord) / 2
+    elements = {}
+    for morceau in ((ouest, sud, milieu_lon, milieu_lat), (milieu_lon, sud, est, milieu_lat),
+                    (ouest, milieu_lat, milieu_lon, nord), (milieu_lon, milieu_lat, est, nord)):
+        for element in interroger(morceau).get("elements", []):
+            elements[(element.get("type"), element.get("id"))] = element
+    return {"elements": list(elements.values())}
+
+
+def _interroger_un(url, rectangle):
+    reponse = requests.post(url, data={"data": requete(*rectangle)}, headers=ENTETES,
                             timeout=DELAI_REPONSE_S, stream=True)
     if reponse.status_code != 200:
         raise RuntimeError(f"Overpass a répondu {reponse.status_code}")
@@ -280,12 +353,13 @@ def relever(departement=None, maintenant=None):
     etat.save(update_fields=["essaye_le"])
     try:
         rectangle, communes = communes_autour(code)
-        nombre = enregistrer(code, lire(interroger(rectangle), code, communes, rectangle), maintenant)
+        nombre = enregistrer(code, lire(interroger_par_morceaux(rectangle), code, communes, rectangle), maintenant)
     except Exception as erreur:
         etat.erreur = f"{type(erreur).__name__}: {erreur}"[:255]
-        etat.save(update_fields=["erreur"])
+        etat.echecs = (etat.echecs or 0) + 1
+        etat.save(update_fields=["erreur", "echecs"])
         raise
-    etat.releve_le, etat.nombre, etat.erreur = maintenant, nombre, ""
-    etat.save(update_fields=["releve_le", "nombre", "erreur"])
+    etat.releve_le, etat.nombre, etat.erreur, etat.echecs = maintenant, nombre, "", 0
+    etat.save(update_fields=["releve_le", "nombre", "erreur", "echecs"])
     logger.info("Points d'eau OSM : %s points pour le département %s.", nombre, code)
     return nombre
