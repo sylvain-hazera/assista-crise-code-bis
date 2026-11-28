@@ -26,6 +26,8 @@ export interface CouvertureRadioSite {
   perte_environnement_db: number;
   /** Faux = perte d'environnement par défaut, donc indication et non prévision. */
   calibre: boolean;
+  /** Montrée sur la carte ouverte, sans connexion (28/11/2026) : décision explicite. */
+  publique?: boolean;
   surface_estimee_km2: number | null;
   /** Points pour lesquels l'IGN n'a rien renvoyé : au-delà de quelques pourcents, la couverture
    * est sous-estimée. */

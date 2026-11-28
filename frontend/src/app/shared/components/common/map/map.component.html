@@ -229,6 +229,7 @@
           <span class="material-icons">close</span>
         </button>
       </div>
+      @if (!modeOuvert) {
       <label class="layer-toggle-item">
         <input type="checkbox" [(ngModel)]="layerVisibility.crises" (ngModelChange)="onLayerToggle()">
         <span class="layer-dot crises-dot"></span>
@@ -259,6 +260,7 @@
         <span class="layer-dot postes-secours-dot"></span>
         Postes de secours / soins
       </label>
+      }
       <!-- Veille du territoire : donnees publiques, lues dans la copie que tient notre serveur.
            Chargees a la demande, pour la seule emprise affichee. -->
       <label class="layer-toggle-item" title="Réseau routier national seulement (Bison Futé)">
@@ -513,6 +515,8 @@
           }
         </label>
       }
+      <!-- Mode ouvert (28/11/2026) : la page y ajoute ses sections (radio, propagation). -->
+      <ng-content select="[panneauOuvert]"></ng-content>
     </div>
     }
 </div>

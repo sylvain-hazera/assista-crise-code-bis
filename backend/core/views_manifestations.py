@@ -92,6 +92,10 @@ def _en_dict(m, utilisateur, detail=False) -> dict:
                          for p in m.partages.select_related("mairie").prefetch_related("lignes")]
         d["consignes"] = m.consignes
         d["postes"] = [_poste_en_dict(p, utilisateur, bureau) for p in postes]
+        # Où l'application peut poser un marqueur (28/11/2026) : autour de ces points.
+        from . import zones_marqueurs
+        d["zone_points"] = [[round(la, 5), round(lo, 5)] for la, lo in zones_marqueurs.points_de_manifestation(m)]
+        d["zone_rayon_km"] = zones_marqueurs.RAYON_MANIFESTATION_KM
         d["documents"] = [{"id": str(doc.id), "nom": (doc.metadata_publiques or {}).get("nom") or doc.fichier.name.rsplit("/", 1)[-1]}
                           for doc in m.documents.all()]
     return d

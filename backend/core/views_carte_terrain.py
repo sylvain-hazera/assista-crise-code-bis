@@ -11,7 +11,6 @@ manifestation en cours ; sans crise en cours, les crises de sa commune.
 3. sinon, rien.
 Les manifestations du jour, l'application les a déjà (`manifestations/`).
 """
-import json
 
 from django.db.models import Q
 from rest_framework.permissions import IsAuthenticated
@@ -23,10 +22,15 @@ from .permissions import get_active_environment
 
 
 def _en_dict(c):
+    from .zones_marqueurs import zone_effective
+
+    # La zone EFFECTIVE (28/11/2026) : le polygone dessiné, sinon les communes ou départements
+    # tamponnés, et le rayon pour une crise qui n'a ni l'un ni l'autre. L'application y décide
+    # si un clic long peut poser un marqueur.
     return {
         "id": str(c.id), "nom": c.name,
         "latitude": c.location.y if c.location else None, "longitude": c.location.x if c.location else None,
-        "zone": json.loads(c.zone.geojson) if getattr(c, "zone", None) else None,
+        **zone_effective(c),
     }
 
 

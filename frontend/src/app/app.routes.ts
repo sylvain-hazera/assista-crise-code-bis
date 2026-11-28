@@ -7,6 +7,9 @@ import { authGuard } from './core/guards/auth.guard';
 import { pilotageGuard } from './pilotage/pilotage.guard';
 
 export const routes: Routes = [
+  // Ce qu'on partage sans connexion, « pour les copains » (28/11/2026) : hors de la mise en
+  // page publique, qui porte la connexion.
+  { path: 'ouvert', loadChildren: () => import('./ouvert/ouvert.routes').then(m => m.OUVERT_ROUTES) },
   {
     path: '',
     component: PublicLayoutComponent,

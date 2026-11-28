@@ -1,0 +1,83 @@
+<app-bandeau-ouvert titre="Santé du réseau radio" />
+<main class="page">
+  <p class="chapeau">Ce que le réseau a vécu ces dernières 24 heures, mesuré par nos passerelles. Agrégé : ni nom, ni
+    position, ni liste des appareils entendus.</p>
+
+  @if (erreur) {
+    <p class="message" role="alert">Les mesures n'ont pas pu être lues pour l'instant.</p>
+  }
+
+  @if (sante; as s) {
+    <section class="bloc">
+      <h2>Meshtastic</h2>
+      @if (s.meshtastic.passerelles === 'aucune') {
+        <p class="note">Aucune passerelle n'a rapporté de mesure ces dernières 24 heures.</p>
+      } @else {
+        <div class="tuiles">
+          <div class="tuile">
+            <span class="libelle">Occupation du canal</span>
+            <span class="valeur" [class.charge]="(s.meshtastic.occupation_actuelle ?? 0) >= seuilOccupation">{{ occupation(s.meshtastic.occupation_actuelle) }}</span>
+            @if (courbe(s.meshtastic.occupation_canal, 50); as c) {
+              @if (c.trace) {
+                <svg [attr.viewBox]="'0 0 ' + largeur + ' ' + hauteur" class="courbe" role="img" aria-label="Occupation du canal sur 24 heures">
+                  <line x1="0" [attr.x2]="largeur" [attr.y1]="ySeuil(c.max)" [attr.y2]="ySeuil(c.max)" class="seuil" />
+                  <path [attr.d]="c.aire" class="aire" />
+                  <path [attr.d]="c.trace" class="trait" />
+                  @if (c.dernier) { <circle [attr.cx]="c.dernier.x" [attr.cy]="c.dernier.y" r="3" class="point" /> }
+                </svg>
+              }
+            }
+            <span class="note">Médiane des passerelles. Pointillé : {{ seuilOccupation }} %, au-delà le réseau est chargé et les messages se perdent davantage.</span>
+          </div>
+          <div class="tuile">
+            <span class="libelle">Temps d'antenne en émission</span>
+            @if (courbe(s.meshtastic.temps_antenne_tx); as c) {
+              <span class="valeur">{{ occupation(s.meshtastic.temps_antenne_tx.length ? s.meshtastic.temps_antenne_tx[s.meshtastic.temps_antenne_tx.length - 1].v : null) }}</span>
+              @if (c.trace) {
+                <svg [attr.viewBox]="'0 0 ' + largeur + ' ' + hauteur" class="courbe" role="img" aria-label="Temps d'antenne sur 24 heures">
+                  <path [attr.d]="c.aire" class="aire" /><path [attr.d]="c.trace" class="trait" />
+                  @if (c.dernier) { <circle [attr.cx]="c.dernier.x" [attr.cy]="c.dernier.y" r="3" class="point" /> }
+                </svg>
+              }
+            }
+            <span class="note">La part du temps où une passerelle émet elle-même.</span>
+          </div>
+          <div class="tuile">
+            <span class="libelle">Paquets reçus par heure</span>
+            @if (courbe(s.meshtastic.paquets_par_heure); as c) {
+              <span class="valeur">{{ totalPaquets.toLocaleString('fr-FR') }} <small>en 24 h</small></span>
+              @if (c.trace) {
+                <svg [attr.viewBox]="'0 0 ' + largeur + ' ' + hauteur" class="courbe" role="img" aria-label="Paquets reçus par heure">
+                  <path [attr.d]="c.aire" class="aire" /><path [attr.d]="c.trace" class="trait" />
+                </svg>
+              }
+            }
+          </div>
+        </div>
+        @if (s.meshtastic.par_type.length) {
+          <h3>Ce qui circule</h3>
+          <ul class="types">
+            @for (t of s.meshtastic.par_type; track t.type) {
+              <li><span class="nom">{{ libelleType(t.type) }}</span>
+                <span class="barre"><span [style.width.%]="part(t.nombre, totalPaquets)"></span></span>
+                <span class="part">{{ part(t.nombre, totalPaquets) }} %</span></li>
+            }
+          </ul>
+        }
+      }
+    </section>
+
+    <section class="bloc">
+      <h2>MeshCore</h2>
+      <div class="tuiles">
+        <div class="tuile"><span class="libelle">Trames entendues en 24 h</span><span class="valeur">{{ s.meshcore.trames_24h.toLocaleString('fr-FR') }}</span></div>
+        <div class="tuile"><span class="libelle">Répéteurs publics connus</span><span class="valeur">{{ s.meshcore.repeteurs_publics }}</span>
+          <span class="note">dont {{ s.meshcore.repeteurs_vus_24h }} vus ces dernières 24 heures</span></div>
+      </div>
+      <p class="note"><a routerLink="/ouvert/carte">Voir les répéteurs sur la carte</a></p>
+    </section>
+    <p class="note">Calculé le {{ s.calcule_le | slice:0:16 }} (heure universelle).</p>
+  } @else if (!erreur) {
+    <p class="note">Lecture des mesures…</p>
+  }
+</main>

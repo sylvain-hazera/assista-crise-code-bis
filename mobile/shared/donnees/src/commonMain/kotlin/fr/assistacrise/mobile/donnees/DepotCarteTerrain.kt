@@ -129,14 +129,17 @@ class DepotCarteTerrain(
      * ouvertes du périmètre, puis les manifestations du jour en cours — de leur premier début
      * (manifestation ou poste, pour la mise en place) à leur dernière fin.
      */
-    fun rattachementsEnCours(): List<fr.assistacrise.mobile.domaine.Rattachement> {
+    fun rattachementsEnCours(latitude: Double? = null, longitude: Double? = null): List<fr.assistacrise.mobile.domaine.Rattachement> {
         val t = maintenant()
-        val crises = _perimetre.value.crises.map { fr.assistacrise.mobile.domaine.Rattachement(crise = it.id, nom = it.nom.ifBlank { "Crise" }) }
+        // Avec un point (le clic long), seulement les crises et manifestations dont la zone le
+        // contient (28/11/2026).
+        val ici = if (latitude != null && longitude != null) latitude to longitude else null
+        val crises = _perimetre.value.crises.filter { c -> ici == null || c.contient(ici.first, ici.second) }.map { fr.assistacrise.mobile.domaine.Rattachement(crise = it.id, nom = it.nom.ifBlank { "Crise" }) }
         val manifs = _manifestations.value.filter { m ->
             if (m.statut == "ANNULEE" || m.statut == "BROUILLON") return@filter false
             val debuts = (listOf(m.debut) + m.postes.map { it.debut }).mapNotNull(instant)
             val fins = (listOf(m.fin) + m.postes.map { it.fin }).mapNotNull(instant)
-            debuts.isNotEmpty() && fins.isNotEmpty() && t in debuts.min()..fins.max()
+            debuts.isNotEmpty() && fins.isNotEmpty() && t in debuts.min()..fins.max() && (ici == null || m.pres(ici.first, ici.second))
         }.map { fr.assistacrise.mobile.domaine.Rattachement(manifestation = it.id, nom = it.titre) }
         return crises + manifs
     }

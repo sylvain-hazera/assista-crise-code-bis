@@ -1,0 +1,108 @@
+<div class="page">
+  <app-bandeau-ouvert [titre]="vue === 'propagation' ? 'Propagation radio' : vue === 'liaison' ? 'Est-ce que ça passe ?' : 'Carte ouverte'" />
+  <div class="carte">
+    <app-map [modeOuvert]="true" (carteMaplibre)="surCarte($event)">
+      <div panneauOuvert class="sections">
+
+        <section class="section" aria-labelledby="titre-radio">
+          <h3 id="titre-radio">Réseau radio</h3>
+          <label class="ligne">
+            <input type="checkbox" [(ngModel)]="repeteurs" (ngModelChange)="basculerRepeteurs()">
+            <span class="pastille repeteur"></span><span class="pastille room"></span>
+            Répéteurs et rooms MeshCore@if (nombreRepeteurs !== null) { <small>&nbsp;{{ nombreRepeteurs }}</small> }
+          </label>
+          <p class="note">Les appareils personnels n'apparaissent jamais. Cartographie CoreScope (meshstats) et nos passerelles.</p>
+          @if (couvertures.length) {
+            <label class="champ">Couverture d'un relais
+              <select [(ngModel)]="couvertureChoisie" (ngModelChange)="choisirCouverture()">
+                <option value="">— aucune —</option>
+                @for (c of couvertures; track c.id) { <option [value]="c.id">{{ c.nom }}</option> }
+              </select>
+            </label>
+            @if (couvertureAffichee; as c) {
+              <p class="note"><span class="pastille marge-bonne"></span> marge de 6 dB ou plus
+                <span class="pastille marge-juste"></span> de justesse.
+                @if (!c.calibre) { <strong>Non calibrée</strong> : une indication du relief, pas une prévision. }</p>
+            }
+          }
+        </section>
+
+        <section class="section" aria-labelledby="titre-propagation" [class.mise-en-avant]="vue === 'propagation'">
+          <h3 id="titre-propagation">Propagation</h3>
+          @if (propagation?.hf; as hf) {
+            <div class="hf">
+              <div class="indices">
+                <span><strong>Kp {{ hf.kp ?? '—' }}</strong></span>
+                <span>Flux 10,7 cm : {{ hf.flux_10cm ?? '—' }}</span>
+                @if (hf.eruption_max_24h) { <span>Éruption max 24 h : {{ hf.eruption_max_24h.classe }}</span> }
+              </div>
+              <p><strong>Géomagnétisme (G)</strong> : {{ niveau(hf.g) }}. {{ hf.effet_g }}</p>
+              <p><strong>Coupures radio (R)</strong> : {{ niveau(hf.r) }}. {{ hf.effet_r }}</p>
+              @if (hf.kp_max_prevu_3j !== null) { <p class="note">Kp le plus fort prévu sur 3 jours : {{ hf.kp_max_prevu_3j }}.</p> }
+              <p class="note">Ondes courtes · échelles de la NOAA (Space Weather Prediction Center)
+                @if (propagation?.hf_source?.perime) { — <strong>relevé ancien</strong> }</p>
+            </div>
+          } @else {
+            <p class="note">Pas encore de relevé de la météo de l'espace.</p>
+          }
+          <label class="ligne">
+            <input type="checkbox" [(ngModel)]="tropo" (ngModelChange)="poserTropo()" [disabled]="!propagation?.tropo?.echeances?.length">
+            Conduits troposphériques (VHF, UHF, LoRa)
+          </label>
+          @if (propagation?.tropo; as t) {
+            @if (t.echeances.length) {
+              @if (tropo) {
+                <label class="champ">Heure
+                  <select [(ngModel)]="echeance" (ngModelChange)="poserTropo()">
+                    @for (e of t.echeances; track e.echeance) { <option [value]="e.echeance">{{ heure(e.echeance) }}</option> }
+                  </select>
+                </label>
+                <ul class="legende">
+                  @for (l of t.legende; track l.classe) {
+                    <li><span class="carre" [style.background]="l.couleur"></span><strong>{{ l.libelle }}</strong> — {{ l.effet }}</li>
+                  }
+                </ul>
+                @if (echeanceAffichee; as e) { <p class="note">Conduit estimé sur {{ e.part_conduit_pct }} % de la carte à cette heure.</p> }
+              }
+              <p class="note">Nos estimations sur le modèle ARPEGE de Météo-France. {{ t.limite }}</p>
+            } @else {
+              <p class="note">Pas encore de calcul : il arrive avec le prochain passage du modèle ARPEGE.</p>
+            }
+          }
+        </section>
+
+        <section class="section" aria-labelledby="titre-liaison" [class.mise-en-avant]="vue === 'liaison'">
+          <h3 id="titre-liaison">Est-ce que ça passe ?</h3>
+          <div class="reglages">
+            <label class="champ">Réglage LoRa
+              <select [(ngModel)]="liaison.preset">
+                <option value="LONG_FAST">LongFast</option>
+                <option value="LONG_SLOW">LongSlow</option>
+                <option value="MEDIUM_FAST">MediumFast</option>
+              </select>
+            </label>
+            <label class="champ">Antenne A (m)<input type="number" min="0" max="200" [(ngModel)]="liaison.hauteurA"></label>
+            <label class="champ">Antenne B (m)<input type="number" min="0" max="200" [(ngModel)]="liaison.hauteurB"></label>
+          </div>
+          <div class="boutons">
+            <button type="button" class="bouton" (click)="commencerLiaison()" [disabled]="liaison.actif || liaison.enCours">
+              {{ liaison.actif ? (liaison.a ? 'Touchez le point B…' : 'Touchez le point A…') : 'Choisir deux points' }}
+            </button>
+            @if (liaison.a || liaison.bilan) { <button type="button" class="lien" (click)="effacerLiaison()">Effacer</button> }
+          </div>
+          @if (liaison.enCours) { <p class="note">Calcul du profil…</p> }
+          @if (liaison.erreur) { <p class="erreur" role="alert">{{ liaison.erreur }}</p> }
+          @if (liaison.bilan; as b) {
+            <div class="bilan" [class.passe]="b.verdict === 'passe'" [class.justesse]="b.verdict === 'passe de justesse'" [class.non]="b.verdict === 'ne passe pas'">
+              <p class="verdict">Ça {{ b.verdict }}</p>
+              <p>{{ distanceKm() }} km · marge {{ b.marge_db }} dB@if (b.diffraction_db) { · perte par le relief {{ b.diffraction_db }} dB }</p>
+              @if (b.obstacle) { <p>Obstacle principal à {{ b.obstacle.distance_km }} km ({{ b.obstacle.hauteur_m }} m).</p> }
+              @if (!b.parametres.calibre) { <p class="note">Non calibré : une indication du relief, pas une garantie.</p> }
+            </div>
+          }
+          <p class="note">Relief IGN, 60 km au plus. Un nombre limité de calculs par connexion.</p>
+        </section>
+      </div>
+    </app-map>
+  </div>
+</div>

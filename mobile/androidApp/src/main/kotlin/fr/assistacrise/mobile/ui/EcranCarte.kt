@@ -549,13 +549,13 @@ fun EcranCarte(modele: ModeleApplication) {
                         // Sans réseau, la radio porte un marqueur jusqu'aux équipes (format MeshCore SAR).
                         // Seulement en phase de crise ou de manifestation, et rattaché à l'une ou à
                         // l'autre (28/11/2026).
-                        if (modele.marqueurPossible()) {
+                        if (modele.marqueurPossible(lieu.latitude, lieu.longitude)) {
                             Button(onClick = { marqueurIci = lieu; lieuTouche = null }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                                 Text("Poser un marqueur (feu, route coupée…)")
                             }
                         } else {
                             Surface(shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                                Text("Les marqueurs (feu, route coupée…) se posent pendant une crise ou une manifestation en cours.",
+                                Text("Cet endroit n'est dans la zone d'aucune crise ni manifestation en cours : pas de marqueur ici.",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(12.dp))
                             }
@@ -658,7 +658,8 @@ fun EcranCarte(modele: ModeleApplication) {
     marqueurIci?.let { lieu ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { marqueurIci = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), modele.rattachementsMarqueur(), modele.rattachementPropose(),
+            EnvoyerMarqueur(lieu, modele.destinationsMarqueur(), modele.rattachementsMarqueur(lieu.latitude, lieu.longitude),
+                            modele.rattachementPropose(lieu.latitude, lieu.longitude),
                             surEnvoi = { cles, m, r -> modele.envoyerMarqueur(cles, m, r); marqueurIci = null },
                             surAbandon = { marqueurIci = null }, modifier = Modifier.padding(16.dp))
         }

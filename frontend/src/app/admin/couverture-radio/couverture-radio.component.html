@@ -185,7 +185,7 @@
         <thead>
           <tr>
             <th>Site</th><th>Antenne</th><th>Rayon</th><th>Preset</th>
-            <th>Surface estimée</th><th>Points</th><th>État</th><th>Calculée</th>
+            <th>Surface estimée</th><th>Points</th><th>État</th><th>Calculée</th><th>Carte ouverte</th>
           </tr>
         </thead>
         <tbody>
@@ -215,6 +215,13 @@
                 @if (c.erreur) { <small class="trous">{{ c.erreur }}</small> }
               </td>
               <td>{{ c.date_calcul ? (c.date_calcul | date:'dd/MM HH:mm') : '—' }}</td>
+              <td>
+                @if (c.statut === 'TERMINEE') {
+                  <label class="publier" title="Montrer cette couverture, sans connexion, sur /ouvert/carte. À ne cocher que pour un relais en service, jamais pour un site candidat ou un domicile.">
+                    <input type="checkbox" [checked]="!!c.publique" (change)="publier(c, $any($event.target).checked)"> publiée
+                  </label>
+                }
+              </td>
             </tr>
           }
         </tbody>

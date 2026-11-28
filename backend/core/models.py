@@ -3737,6 +3737,35 @@ class PotentielOrageFeu(models.Model):
         return f"Potentiel d'orage de feu pour {self.echeance:%d/%m %H:%M}"
 
 
+class PropagationTropo(models.Model):
+    """Conduits troposphériques (VHF, UHF, LoRa 868 MHz) pour une heure, calculés sur le profil
+    vertical d'ARPEGE déjà lu pour le potentiel d'orage de feu (core/tropo.py) : NOS
+    ESTIMATIONS. `grilles` : gradient de réfractivité (N/km) et classe, compressés ; `image` :
+    la classe peinte pour la carte. Donnée publique partagée PROD/DEMO (28/11/2026)."""
+
+    echeance = models.DateTimeField(primary_key=True)
+    calcul = models.DateTimeField(help_text="Heure de référence du calcul ARPEGE.")
+    largeur = models.PositiveIntegerField()
+    hauteur = models.PositiveIntegerField()
+    ouest = models.FloatField()
+    nord = models.FloatField()
+    grilles = models.BinaryField()
+    image = models.BinaryField()
+    releve_le = models.DateTimeField()
+
+    def __str__(self):
+        return f"Propagation troposphérique pour {self.echeance:%d/%m %H:%M}"
+
+
+class ReleveEspace(models.Model):
+    """Météo de l'espace pour la propagation en ondes courtes (core/propagation.py) : le dernier
+    relevé des données publiques de la NOAA (SWPC). Une seule ligne (pk=1)."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    donnees = models.JSONField(default=dict)
+    releve_le = models.DateTimeField()
+
+
 class ProduitFeuMTG(models.Model):
     """Liste de pixels en feu du satellite MTG déjà lue (LSA SAF, une toutes les dix minutes) --
     core/feux_mtg.py. Gardée une semaine."""
@@ -11118,6 +11147,9 @@ class CouvertureRadioSite(EnvironmentScopedModel):
 
     perte_environnement_db = models.FloatField()
     calibre = models.BooleanField(default=False)
+    #: Publiée sur la carte ouverte (28/11/2026) : seulement par décision explicite de qui a
+    #: l'accès radio. Un site candidat, ou le toit de quelqu'un, ne sort jamais de lui-même.
+    publique = models.BooleanField(default=False)
 
     # [[lat, lon, marge_db, distance_m], ...] : les points ATTEINTS seulement. Les autres ne
     # servent à rien et tripleraient la taille.

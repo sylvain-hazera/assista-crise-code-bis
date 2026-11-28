@@ -47,6 +47,11 @@ export class CouvertureRadioService {
     return this.http.post<BilanLiaison>(`${this.url}/analyser-liaison/`, data);
   }
 
+  /** Montre ou retire une couverture de la carte ouverte, sans connexion (28/11/2026). */
+  publier(id: string, publique: boolean): Observable<CouvertureRadioSite> {
+    return this.http.post<CouvertureRadioSite>(`${this.url}/${id}/publier/`, { publique });
+  }
+
   calibrations(): Observable<CalibrationRadio[]> {
     return this.http.get<CalibrationRadio[]>(`${this.urlCalibrations}/`);
   }

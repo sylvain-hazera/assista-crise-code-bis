@@ -24308,6 +24308,20 @@ class CouvertureRadioSiteViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnl
             "proprietes": CouvertureRadioSiteSerializer(couverture).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='publier')
+    def publier(self, request, pk=None):
+        """{publique: true|false} : montre ou retire cette couverture de la carte ouverte, sans
+        connexion (28/11/2026). Décision explicite : rien ne sort de lui-même."""
+        couverture = self.get_object()
+        publique = request.data.get('publique') in (True, 'true', '1', 1)
+        if publique and couverture.statut != StatutCouvertureRadio.TERMINEE:
+            return Response({'detail': "Seule une couverture terminée se publie."}, status=status.HTTP_400_BAD_REQUEST)
+        couverture.publique = publique
+        couverture.save(update_fields=['publique'])
+        from django.core.cache import cache
+        cache.delete_many([f"carte-ouverte:resume:{couverture.environment}"])
+        return Response(CouvertureRadioSiteSerializer(couverture).data)
+
     @action(detail=False, methods=['post'], url_path='analyser-liaison')
     def analyser_liaison(self, request):
         """Bilan d'une liaison point à point sur le relief, calculé tout de suite.

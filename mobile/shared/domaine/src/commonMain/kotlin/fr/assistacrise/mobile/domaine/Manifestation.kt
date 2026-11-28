@@ -30,7 +30,20 @@ data class ManifestationAsso(
     val postes: List<PosteManifestation> = emptyList(),
     /** Ce que chaque commune traversée a ouvert à l'association (26/11/2026). */
     val partages: List<PartageCommune> = emptyList(),
-)
+    /** Où l'application peut poser un marqueur (28/11/2026) : autour de ces points [lat, lon]. */
+    @SerialName("zone_points") val zonePoints: List<List<Double>> = emptyList(),
+    @SerialName("zone_rayon_km") val zoneRayonKm: Double = 5.0,
+) {
+    /** Ce point est-il près de la manifestation ? Sans `zone_points` (serveur ancien), le lieu et
+     * les postes placés. */
+    fun pres(latitude: Double, longitude: Double): Boolean {
+        val points = zonePoints.mapNotNull { if (it.size >= 2) it[0] to it[1] else null }.ifEmpty {
+            listOfNotNull(if (this.latitude != null && this.longitude != null) this.latitude to this.longitude else null) +
+                postes.mapNotNull { if (it.latitude != null && it.longitude != null) it.latitude to it.longitude else null }
+        }
+        return points.any { (la, lo) -> ZoneMarquage.distanceKm(latitude, longitude, la, lo) <= zoneRayonKm }
+    }
+}
 
 @Serializable
 data class PartageCommune(

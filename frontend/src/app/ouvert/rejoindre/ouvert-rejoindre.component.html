@@ -1,0 +1,62 @@
+<app-bandeau-ouvert titre="Rejoindre le réseau radio" />
+<main class="page">
+  <p class="chapeau">Le réseau radio du territoire fonctionne sans Internet et sans opérateur téléphonique : des petits
+    émetteurs LoRa portés par chacun, des répéteurs sur les points hauts, et des passerelles qui le relient à Internet
+    quand il y en a. Chaque nœud de plus étend la portée pour tout le monde.</p>
+
+  <section class="etape">
+    <h2><span class="rang">1</span> Choisir son réseau</h2>
+    <p>Deux logiciels cohabitent sur la même bande, mais <strong>ne se parlent pas entre eux</strong> : il faut
+      choisir.</p>
+    <dl class="choix">
+      <div><dt>MeshCore</dt><dd>Des répéteurs fixes portent les messages ; les appareils personnels ne répètent pas.
+        C'est le réseau dont les répéteurs figurent sur <a routerLink="/ouvert/carte">la carte ouverte</a>.</dd></div>
+      <div><dt>Meshtastic</dt><dd>Chaque appareil peut relayer les messages des autres. Très répandu, avec une
+        application pour Android et iPhone.</dd></div>
+    </dl>
+  </section>
+
+  <section class="etape">
+    <h2><span class="rang">2</span> Le matériel</h2>
+    <p>Un nœud LoRa 868 MHz compatible avec le logiciel choisi, relié au téléphone en Bluetooth, avec son antenne
+      868 MHz. <strong>Ne jamais l'allumer sans antenne</strong> : l'émetteur peut y laisser la vie. Une batterie, et
+      pour un point fixe un petit panneau solaire, suffisent.</p>
+  </section>
+
+  <section class="etape">
+    <h2><span class="rang">3</span> Les réglages en métropole</h2>
+    <table class="reglages">
+      <tbody>
+        <tr><th scope="row">Région</th><td>EU_868 (Europe, bande 869,4 à 869,65 MHz)</td></tr>
+        <tr><th scope="row">Fréquence du réseau</th><td>869,525 MHz</td></tr>
+        <tr><th scope="row">Puissance</th><td>27 dBm (500 mW) au plus : c'est le plafond que le logiciel applique à cette région</td></tr>
+        <tr><th scope="row">Temps d'émission</th><td>10 % du temps au plus, sur une heure glissante. Laissez le limiteur actif.</td></tr>
+        <tr><th scope="row">Meshtastic</th><td>Réglage <em>LongFast</em> et canal public par défaut, sans rien changer</td></tr>
+        <tr><th scope="row">MeshCore</th><td>Les autres réglages (largeur de bande, facteur d'étalement) doivent être
+          exactement ceux du réseau local : demandez-les avant de régler, au moindre écart on ne s'entend plus.</td></tr>
+      </tbody>
+    </table>
+    <p class="avertissement"><span class="material-icons" aria-hidden="true">gavel</span>
+      La bande et la puissance autorisées ne sont pas les mêmes partout : en outre-mer (La Réunion, Mayotte, Antilles,
+      Guyane), ce qui est permis en métropole ne l'est pas automatiquement. Référence : le chapitre 7 du tableau
+      national de répartition des bandes de fréquences (TNRBF) et la table des appareils de faible portée de l'ANFR.
+      La responsabilité est celle de qui exploite l'émetteur.</p>
+  </section>
+
+  <section class="etape">
+    <h2><span class="rang">4</span> Les règles de courtoisie</h2>
+    <ul>
+      <li><strong>La bande est partagée</strong>, secours compris : un nœud qui émet trop dégrade le réseau de tous.
+        Pas de télémétrie ni de position toutes les minutes.</li>
+      <li><strong>Peu de sauts.</strong> Chaque saut de plus porte plus loin, mais multiplie le trafic pour tout le monde.</li>
+      <li><strong>Aucun nom de personne</strong>, aucune information médicale : tout ce qui passe sur un canal public
+        est lu par tous ceux qui l'écoutent.</li>
+      <li><strong>Votre position</strong> : partagez-la approximative, pas celle de votre porte.</li>
+      <li>Un répéteur installé sur un point haut ? Dites-le : il apparaîtra sur la carte, et la couverture de chacun
+        en profitera.</li>
+    </ul>
+  </section>
+
+  <p class="suite">Voir aussi : <a routerLink="/ouvert/reseau">la santé du réseau</a> ·
+    <a routerLink="/ouvert/carte" [queryParams]="{ vue: 'liaison' }">est-ce que ça passe entre deux points ?</a></p>
+</main>

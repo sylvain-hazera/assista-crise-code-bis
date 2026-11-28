@@ -840,13 +840,17 @@ class ModeleApplication(private val app: Application) : ViewModel() {
         return (choisi?.crise) to (choisi?.manifestation)
     }
 
-    /** Les crises ouvertes et manifestations en cours auxquelles rattacher un marqueur. */
-    fun rattachementsMarqueur(): List<fr.assistacrise.mobile.domaine.Rattachement> = app.carteTerrain.rattachementsEnCours()
+    /** Les crises ouvertes et manifestations en cours auxquelles rattacher un marqueur ; avec
+     * un point, seulement celles dont la zone le contient (28/11/2026). */
+    fun rattachementsMarqueur(latitude: Double? = null, longitude: Double? = null): List<fr.assistacrise.mobile.domaine.Rattachement> =
+        app.carteTerrain.rattachementsEnCours(latitude, longitude)
 
-    /** Le rattachement proposé d'office dans la fenêtre « Poser un marqueur ». */
-    fun rattachementPropose(): fr.assistacrise.mobile.domaine.Rattachement? {
+    /** Le rattachement proposé d'office dans la fenêtre « Poser un marqueur », parmi ceux dont
+     * la zone contient le point. */
+    fun rattachementPropose(latitude: Double, longitude: Double): fr.assistacrise.mobile.domaine.Rattachement? {
+        val possibles = rattachementsMarqueur(latitude, longitude)
         val (c, m) = rattachement(destinationsMarqueur().firstOrNull()?.first)
-        return rattachementsMarqueur().firstOrNull { (c != null && it.crise == c) || (m != null && it.manifestation == m) }
+        return possibles.firstOrNull { (c != null && it.crise == c) || (m != null && it.manifestation == m) } ?: possibles.firstOrNull()
     }
 
     /** Les crises du périmètre de la carte (27/11/2026). */
@@ -906,7 +910,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
 
     /** Peut-on poser un marqueur ? Seulement en phase de crise ou de manifestation (28/11/2026) :
      * il faut une crise ouverte ou une manifestation en cours où le rattacher. */
-    fun marqueurPossible(): Boolean = rattachementsMarqueur().isNotEmpty()
+    fun marqueurPossible(latitude: Double, longitude: Double): Boolean = rattachementsMarqueur(latitude, longitude).isNotEmpty()
 
     /** Les conversations radio où l'on peut envoyer un marqueur : (clé, libellé), le canal de
      * l'équipe d'abord. */
@@ -926,9 +930,9 @@ class ModeleApplication(private val app: Application) : ViewModel() {
      */
     fun envoyerMarqueur(cles: List<String>, m: fr.assistacrise.mobile.domaine.MarqueursRadio.Marqueur,
                         rattache: fr.assistacrise.mobile.domaine.Rattachement) {
-        // La crise ou la manifestation doit être encore en cours au moment de l'envoi.
-        if (rattachementsMarqueur().none { it.cle == rattache.cle }) {
-            message = "« ${rattache.nom} » n'est plus en cours : le marqueur n'est pas parti."
+        // La crise ou la manifestation doit être encore en cours, et le point dans sa zone.
+        if (rattachementsMarqueur(m.latitude, m.longitude).none { it.cle == rattache.cle }) {
+            message = "« ${rattache.nom} » n'est plus en cours, ou cet endroit est hors de sa zone : le marqueur n'est pas parti."
             return
         }
         viewModelScope.launch {

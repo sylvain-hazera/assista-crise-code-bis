@@ -105,6 +105,17 @@ class CarteTerrainTest {
         assertEquals(listOf("c:c1234567-x"), depot.rattachementsEnCours().map { it.cle })
     }
 
+    @Test fun leRattachementDependDeLEndroitTouche() = runTest {
+        session.ouvrir("A", "R", Compte(id = "u1"))
+        depot.rafraichir()
+        // Dans le contour de la crise, loin de la course.
+        assertEquals(listOf("c:c1234567-x"), depot.rattachementsEnCours(44.82, -0.52).map { it.cle })
+        // À 600 m d'un poste de la course, hors du contour.
+        assertEquals(listOf("m:m1"), depot.rattachementsEnCours(44.905, -0.505).map { it.cle })
+        // Ailleurs : rien.
+        assertTrue(depot.rattachementsEnCours(45.5, 1.0).isEmpty())
+    }
+
     @Test fun sansCriseNiManifestationAucunRattachement() = runTest {
         val vide = DepotCarteTerrain(api, MagasinEnMemoire(), { it.removePrefix("J").toIntOrNull()?.let(::h) }, { maintenant })
         assertTrue(vide.rattachementsEnCours().isEmpty())

@@ -1,0 +1,27 @@
+<main class="accueil">
+  <header class="tete">
+    <p class="surtitre">Assista-Crise · en accès libre</p>
+    <h1>Ce qu'on partage hors crise</h1>
+    <p class="chapeau">La météo, le réseau radio et le territoire, tels que notre serveur les relève pour les équipes.
+      Rien ici ne concerne une crise ou une manifestation en cours.</p>
+  </header>
+
+  <nav class="entrees" aria-label="Pages ouvertes">
+    @for (e of entrees; track e.titre) {
+      <a class="entree" [routerLink]="e.lien" [queryParams]="e.vue ? { vue: e.vue } : {}">
+        <span class="material-icons icone" aria-hidden="true">{{ e.icone }}</span>
+        <span class="corps">
+          <span class="titre">{{ e.titre }}</span>
+          <span class="description">{{ e.description }}</span>
+          @if (etat(e); as ligne) { <span class="etat">{{ ligne }}</span> }
+        </span>
+        <span class="material-icons fleche" aria-hidden="true">chevron_right</span>
+      </a>
+    }
+  </nav>
+
+  <footer class="pied">
+    Sources : Météo-France, NOAA, Hub'Eau, Bison Futé, BCSF-Rénass, NASA FIRMS, EUMETSAT, cartographie CoreScope
+    (meshstats), et nos estimations quand c'est écrit. Données indicatives, à recouper avant toute décision.
+  </footer>
+</main>

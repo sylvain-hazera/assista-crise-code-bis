@@ -214,6 +214,20 @@ class TestApi:
         assert MessageCanalMeshCore.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
         assert MessageCanalMeshtastic.objects.filter(direction=DirectionMessageMesh.SORTANT).count() == 0
 
+    def test_depuis_l_application_seulement_dans_la_zone_de_la_crise(self, scene):
+        corps = {"crise": str(scene["crise"].id), "emoji": "🔥", "longitude": -0.58, "source": "APPLICATION"}
+        # Sans contour : le rayon de la crise (10 km par défaut) autour de son lieu.
+        assert _client(scene["lea"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=44.90), format="json").status_code == 201
+        r = _client(scene["lea"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=45.10), format="json")
+        assert r.status_code == 400 and "hors de la zone" in r.data["detail"]
+        # Avec un contour dessiné, c'est lui qui compte.
+        from django.contrib.gis.geos import Polygon
+        Crisis.objects.filter(id=scene["crise"].id).update(zone=Polygon.from_bbox((-0.7, 44.7, -0.4, 45.2)))
+        assert _client(scene["lea"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=45.10, emoji="⛔"), format="json").status_code == 201
+        perimetre = _client(scene["lea"]).get(reverse("carte_terrain_perimetre")).data
+        crise = next(c for c in perimetre["crises"] if c["id"] == str(scene["crise"].id))
+        assert crise["zone"]["type"] == "Polygon" and crise["rayon_km"] == 10.0
+
     def test_crise_close_plus_de_marqueur_depuis_l_application(self, scene):
         Crisis.objects.filter(id=scene["crise"].id).update(end_date=timezone.now())
         r = _client(scene["lea"]).post(reverse("marqueurs_terrain"), {
@@ -260,7 +274,7 @@ class TestManifestation:
         for u in (a, b):
             ContactInstitution.objects.create(institution=asso, utilisateur=u, actif=True)
         maintenant = timezone.now()
-        m = Manifestation.objects.create(institution=asso, titre="Course cycliste", statut="PUBLIEE",
+        m = Manifestation.objects.create(institution=asso, titre="Course cycliste", statut="PUBLIEE", location=Point(-0.5, 44.9),
                                          debut=maintenant - datetime.timedelta(hours=1), fin=maintenant + datetime.timedelta(hours=3))
         poste = PosteManifestation.objects.create(manifestation=m, intitule="Carrefour", places=5,
                                                   debut=m.debut, fin=m.fin)
@@ -289,8 +303,22 @@ class TestManifestation:
         # La mise en place compte : un poste qui commence avant la manifestation l'ouvre.
         Manifestation.objects.filter(id=m.id).update(debut=maintenant + datetime.timedelta(minutes=30), fin=maintenant + datetime.timedelta(hours=3))
         m.postes.update(debut=maintenant - datetime.timedelta(minutes=30), fin=maintenant + datetime.timedelta(hours=3))
-        r = _client(manif["a"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=44.95), format="json")
+        r = _client(manif["a"]).post(reverse("marqueurs_terrain"), dict(corps, latitude=44.93), format="json")
         assert r.status_code == 201, r.data
+
+    def test_depuis_l_application_seulement_pres_de_la_manifestation(self, manif):
+        corps = {"manifestation": str(manif["m"].id), "emoji": "🔥", "latitude": 44.9, "longitude": -0.4, "source": "APPLICATION"}
+        r = _client(manif["a"]).post(reverse("marqueurs_terrain"), corps, format="json")
+        assert r.status_code == 400 and "hors de la zone" in r.data["detail"]                  # à 8 km du lieu
+        corps["longitude"] = -0.46                                                               # à 3 km
+        assert _client(manif["a"]).post(reverse("marqueurs_terrain"), corps, format="json").status_code == 201
+        # Le site prépare où il veut.
+        corps.update(longitude=-0.2, source="SITE")
+        assert _client(manif["bureau"]).post(reverse("marqueurs_terrain"), corps, format="json").status_code == 201
+
+    def test_l_application_recoit_les_points_de_la_zone(self, manif):
+        d = _client(manif["a"]).get(reverse("manifestation", args=[manif["m"].id])).data
+        assert d["zone_points"] == [[44.9, -0.5]] and d["zone_rayon_km"] == 5.0
 
     def test_marqueur_de_manifestation_previent_le_bureau(self, manif):
         r = _client(manif["a"]).post(reverse("marqueurs_terrain"), {

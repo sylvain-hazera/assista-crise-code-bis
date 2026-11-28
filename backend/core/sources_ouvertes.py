@@ -28,7 +28,7 @@ from django.utils import timezone
 from . import (
     antennes_mobiles, cartographie_meshcore, points_eau_osm, arretes_circulation, avalanche, carburants, circulation, defibrillateurs, feux_satellite, foyers_actifs, hauteurs_eau, meteo_forets, meteo_france, niveaux_mer,
     doppler, feux_mtg, foudre, observations_meteo, orages, orages_de_feu, pluie, referentiel_adresses,
-    precipitations_hiver, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
+    precipitations_hiver, propagation, qualite_air, radioactivite, rafales, restrictions_eau, sante_urgences, seismes, trafic_routier, vent,
     vigilance_crues,
 )
 
@@ -185,6 +185,10 @@ SOURCES = {
         # trois heures par jour, aujourd'hui et demain. 54 grilles de 70 Ko par heure calculée,
         # une heure par relevé, appels espacés de 3 s (clé partagée) ; rien entre deux calculs du modèle. Parmi les
         # sources lentes, avant les deux plus lourdes.
+        # Météo de l'espace pour les ondes courtes (28/11/2026) : cinq petits fichiers JSON de
+        # la NOAA ; le Kp change toutes les trois heures, les échelles une fois par jour.
+        Source("PROPAGATION_HF", "Propagation en ondes courtes (météo de l'espace)", propagation.relever,
+               datetime.timedelta(minutes=29), datetime.timedelta(hours=6), propagation.ATTRIBUTION),
         Source("POTENTIEL_ORAGE_FEU", "Potentiel d'orage de feu (nos estimations)", orages_de_feu.relever,
                datetime.timedelta(minutes=19), datetime.timedelta(hours=12), "Météo-France (ARPEGE), nos estimations"),
         # Neige, verglas, grêle prévus : même service et même poids que les rafales (treize

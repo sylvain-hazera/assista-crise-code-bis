@@ -89,6 +89,12 @@ class MarqueursTerrainView(APIView):
                 raise ValidationError({"detail": "Cette crise est close : on n'y pose plus de marqueur."})
             if crise is None and not mf.en_cours(manifestation):
                 raise ValidationError({"detail": "Cette manifestation n'est pas en cours : le marqueur se pose pendant qu'elle a lieu."})
+            # Et dans sa zone (28/11/2026).
+            from . import zones_marqueurs as zm
+            dedans = zm.dans_la_crise(crise, lat, lon) if crise is not None else zm.pres_de_la_manifestation(manifestation, lat, lon)
+            if not dedans:
+                nom = crise.name if crise is not None else manifestation.titre
+                raise ValidationError({"detail": f"Cet endroit est hors de la zone de « {nom} »."})
         diffuser, sauf = _diffusion(d)
         m, cree = mt.enregistrer(env, emoji, lat, lon, str(d.get("note") or "")[:500], crise=crise,
                                  manifestation=manifestation, auteur=request.user, source=source,

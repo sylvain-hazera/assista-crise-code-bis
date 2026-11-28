@@ -168,7 +168,7 @@ from .views_delegation import DelegationGestionViewSet, ExportDonneesInstitution
 from .views_envoi import ConnecteurSMTPViewSet
 from .views_terrain import MessageTerrainViewSet
 from . import views_conversations  # noqa: E402
-from . import views_manifestations  # noqa: E402
+from . import views_carte_ouverte, views_manifestations  # noqa: E402
 from . import views_marqueurs  # noqa: E402
 from . import views_carte_terrain  # noqa: E402
 from . import views_adhesion  # noqa: E402
@@ -458,6 +458,16 @@ urlpatterns = [
     path('rafales-prevues/', RafalesPrevuesView.as_view(), name='rafales_prevues'),
     path('orages-de-feu/', PotentielOrageFeuView.as_view(), name='orages_de_feu'),
     path('orages-de-feu/image/', ImagePotentielOrageFeuView.as_view(), name='orages_de_feu_image'),
+    # Partie publique « pour les copains » (28/11/2026), sans connexion : core/carte_ouverte.py.
+    path('carte-ouverte/', views_carte_ouverte.ResumeOuvertView.as_view(), name='carte_ouverte'),
+    path('carte-ouverte/radio/', views_carte_ouverte.RadioOuverteView.as_view(), name='carte_ouverte_radio'),
+    path('carte-ouverte/radio/liaison/', views_carte_ouverte.LiaisonOuverteView.as_view(), name='carte_ouverte_liaison'),
+    path('carte-ouverte/radio/couvertures/', views_carte_ouverte.CouverturesOuvertesView.as_view(), name='carte_ouverte_couvertures'),
+    path('carte-ouverte/radio/couvertures/<uuid:pk>/geojson/', views_carte_ouverte.CouvertureOuverteGeojsonView.as_view(),
+         name='carte_ouverte_couverture_geojson'),
+    path('carte-ouverte/radio/sante/', views_carte_ouverte.SanteReseauView.as_view(), name='carte_ouverte_sante'),
+    path('carte-ouverte/propagation/', views_carte_ouverte.PropagationOuverteView.as_view(), name='carte_ouverte_propagation'),
+    path('carte-ouverte/propagation/tropo/image/', views_carte_ouverte.ImageTropoView.as_view(), name='carte_ouverte_tropo_image'),
     path('feux-suivis/', FeuxSuivisView.as_view(), name='feux_suivis'),
     path('orages/', OragesView.as_view(), name='orages'),
     path('orages/radar/', PluieRadarView.as_view(), name='orages_radar'),

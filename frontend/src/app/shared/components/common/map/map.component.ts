@@ -164,11 +164,17 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() modeMeteo = false;
   /** Cellule orageuse choisie sur la carte (clic), ou null quand on clique ailleurs. */
   @Output() celluleChoisie = new EventEmitter<string | null>();
+  /** Partie publique « pour les copains » (28/11/2026) : la météo et la veille, rien qui
+   * touche une crise ou une manifestation (ni crises, ni demandes, ni offres, ni centres, ni
+   * positions, ni points d'eau). La page qui l'emploie pose ses propres couches (radio,
+   * propagation) sur la carte que `carteMaplibre` lui transmet, et son panneau sous le nôtre. */
+  @Input() modeOuvert = false;
+  @Output() carteMaplibre = new EventEmitter<maplibregl.Map>();
 
   // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
   /** Les points d'eau incendie ne se montrent qu'aux comptes connectés (24/11/2026). */
-  get connecte(): boolean { return this.authService.isLoggedIn(); }
+  get connecte(): boolean { return !this.modeOuvert && this.authService.isLoggedIn(); }
 
   // Panneau des calques replié par défaut (gênant sur mobile une fois déplié).
   layersPanelOpen = false;
@@ -254,6 +260,17 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private personneVulnerableService: PersonneVulnerableService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
+    if (this.modeOuvert) {
+      // Même un compte connecté ne voit ici que ce qui est public.
+      this.isInstitutional = false;
+      for (const cle of Object.keys(this.layerVisibility) as (keyof LayerVisibility)[]) {
+        this.layerVisibility[cle] = false;
+      }
+      Object.assign(this.layerVisibility, { pluieRadar: true, orages: true, oragesEstimations: true, eclairs: true });
+      this.layersPanelOpen = true;
+      this.runWhenMapReady(() => this.onLayerToggle());
+      return;
+    }
     if (this.modeMeteo) {
       for (const cle of Object.keys(this.layerVisibility) as (keyof LayerVisibility)[]) {
         this.layerVisibility[cle] = false;
@@ -2911,6 +2928,7 @@ private addHoverEffect() { // Show convex hull around clusters on hover
     }), 'top-right');
 
     this.map.on('load', () => {
+      if (this.map) this.carteMaplibre.emit(this.map);
       // If crises, requests, or offers were already loaded before the map was ready, add them to the map now
       if (this.crises.length > 0) {
         this.addCrisisMarkers();

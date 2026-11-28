@@ -462,6 +462,8 @@ def relever(maintenant=None):
     maintenant = maintenant or timezone.now()
     voulues = echeances_voulues(maintenant)
     PotentielOrageFeu.objects.filter(echeance__lt=maintenant - GARDER_APRES).delete()
+    from .models import PropagationTropo
+    PropagationTropo.objects.filter(echeance__lt=maintenant - GARDER_APRES).delete()
     if not voulues:
         return PotentielOrageFeu.objects.count()
     connues = {p.echeance: p.calcul for p in PotentielOrageFeu.objects.only("echeance", "calcul")}
@@ -495,6 +497,12 @@ def relever(maintenant=None):
         masque = masque if masque is not None else masque_vegetation(largeur, hauteur, ouest, nord)
         if masque is not None:
             grilles["rang"] = numpy.where(masque, grilles["rang"], 0).astype(numpy.uint8)
+        # Conduits troposphériques (28/11/2026), sur les mêmes grilles : aucun appel de plus.
+        try:
+            from . import tropo
+            tropo.enregistrer(echeance, calcul, sol, niveaux, ouest, nord)
+        except Exception:
+            logger.exception("Propagation troposphérique : calcul impossible pour %s.", echeance)
         with transaction.atomic():
             PotentielOrageFeu.objects.update_or_create(echeance=echeance, defaults={
                 "calcul": calcul, "largeur": largeur, "hauteur": hauteur, "ouest": ouest, "nord": nord,

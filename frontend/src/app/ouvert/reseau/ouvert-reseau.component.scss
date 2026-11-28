@@ -1,0 +1,27 @@
+:host { display: block; min-height: 100vh; background: var(--ac-bg, #f4f6f8); color: var(--ac-text, #1f2933); }
+.page { max-width: 60rem; margin: 0 auto; padding: 1.5rem 16px 3rem; display: flex; flex-direction: column; gap: 1.25rem; }
+.chapeau { margin: 0; max-width: 40rem; line-height: 1.5; color: var(--ac-text-muted, #4b5563); }
+.message { margin: 0; padding: .6rem .8rem; border-left: 4px solid #b91c1c; background: var(--ac-red-bg, #fef2f2); }
+.bloc { display: flex; flex-direction: column; gap: .75rem; }
+h2 { margin: 0; font-size: 1.15rem; }
+h3 { margin: .25rem 0 0; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ac-text-muted, #5f6b7a); }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; }
+.tuile { display: flex; flex-direction: column; gap: .35rem; padding: .9rem 1rem; background: var(--ac-surface, #fff);
+  border: 1px solid var(--ac-border, #dde2e8); border-radius: 10px; }
+.libelle { font-size: .82rem; color: var(--ac-text-muted, #5f6b7a); }
+.valeur { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.valeur small { font-size: .8rem; font-weight: 400; color: var(--ac-text-muted, #6b7280); }
+.valeur.charge { color: var(--ac-orange-text, #c2410c); }
+.courbe { width: 100%; height: 64px; }
+.courbe .aire { fill: var(--ac-blue-bg, #e0eaff); stroke: none; }
+.courbe .trait { fill: none; stroke: var(--ac-blue-text, #1d4ed8); stroke-width: 1.6; }
+.courbe .point { fill: var(--ac-blue-text, #1d4ed8); }
+.courbe .seuil { stroke: var(--ac-orange-text, #c2410c); stroke-width: 1; stroke-dasharray: 4 3; }
+.note { margin: 0; font-size: .8rem; line-height: 1.4; color: var(--ac-text-muted, #6b7280); }
+.note a { color: var(--ac-blue-text, #1d4ed8); }
+.types { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; max-width: 34rem; }
+.types li { display: grid; grid-template-columns: 11rem 1fr 3rem; align-items: center; gap: .6rem; font-size: .88rem; }
+.barre { height: .55rem; background: var(--ac-surface-3, #e5e9ee); border-radius: 999px; overflow: hidden; }
+.barre span { display: block; height: 100%; background: var(--ac-teal-text, #0d9488); }
+.part { text-align: right; font-variant-numeric: tabular-nums; color: var(--ac-text-muted, #5f6b7a); }
+@media (max-width: 480px) { .types li { grid-template-columns: 8rem 1fr 2.5rem; } }

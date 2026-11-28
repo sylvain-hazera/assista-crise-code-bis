@@ -4704,7 +4704,7 @@ class CouvertureRadioSiteSerializer(serializers.ModelSerializer):
                   'hauteur_cible_m', 'preset', 'puissance_dbm', 'rayon_max_km', 'nb_rayons',
                   'pas_m', 'perte_environnement_db', 'calibre', 'surface_estimee_km2',
                   'points_sans_altitude', 'nombre_points', 'statut', 'erreur',
-                  'date_lancement', 'date_calcul']
+                  'date_lancement', 'date_calcul', 'publique']
         read_only_fields = fields
 
     def get_latitude(self, obj):

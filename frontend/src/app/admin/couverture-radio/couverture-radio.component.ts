@@ -145,6 +145,13 @@ export class CouvertureRadioComponent implements OnInit, OnDestroy {
     });
   }
 
+  publier(c: CouvertureRadioSite, publique: boolean): void {
+    this.service.publier(c.id, publique).subscribe({
+      next: (maj) => c.publique = maj.publique,
+      error: (e: HttpErrorResponse) => this.erreur = this.messageDErreur(e) ?? 'Publication impossible.',
+    });
+  }
+
   calibrer(): void {
     this.calibrationEnCours = true;
     this.service.calibrer().subscribe({
