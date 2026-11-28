@@ -164,6 +164,18 @@ describe('MonReleveComponent', () => {
       expect(corps.get('montant')).toBe('2,50');
     });
 
+    it('un autre justificatif part sans montant, et exige sa photo', () => {
+      composant.fraisNature = 'AUTRE';
+      composant.ajouterFrais(LIGNE);
+      expect(composant.erreur).toContain('photo');
+      http.expectNone(r => r.method === 'POST');
+      composant.fraisFichier = new File(['x'], 'compteur.jpg', { type: 'image/jpeg' });
+      composant.ajouterFrais(LIGNE);
+      const corps = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/mon-releve/l1/frais/')).request.body as FormData;
+      expect(corps.get('nature')).toBe('AUTRE');
+      expect(corps.has('montant')).toBeFalse();
+    });
+
     it('choisir un véhicule déclaré en reprend le type', () => {
       composant.releve = { ...RELEVE, mes_vehicules: [{ id: 'v1', genre: 'DEUX_ROUES', libelle: 'Scooter', immatriculation: '', puissance_cv: null, designation: 'Scooter' }] };
       composant.ajouter();

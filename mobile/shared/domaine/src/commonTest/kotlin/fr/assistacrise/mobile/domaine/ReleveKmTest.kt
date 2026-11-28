@@ -62,4 +62,32 @@ class ReleveKmTest {
         assertEquals(5, etat.vehicules.single().puissanceCv)
         assertTrue(!etat.vide)
     }
+
+    @Test
+    fun litMonReleveDuServeur() {
+        val json = Json { ignoreUnknownKeys = true }
+        val r = json.decodeFromString(MonReleve.serializer(), """
+            {"du": "2026-10-29", "au": "2026-11-28", "total_heures": 7.5, "total_kilometres": 52.0,
+             "lignes": [
+               {"id": "l1", "crise_nom": "Course des 10 km", "parti_le": "2026-11-27T08:00:00+01:00", "rentre_le": "2026-11-27T12:00:00+01:00",
+                "heures": 4.0, "kilometres": "52", "lieu_depart": "Domicile", "lieu_arrivee": "Floirac", "aller_retour": true,
+                "validee": false, "remarque_chef": "", "activite": [],
+                "frais": [{"id": "f1", "nature": "PEAGE", "nature_libelle": "Péage", "montant": "3.40", "justificatif": true, "justificatif_nom": "t.jpg"},
+                          {"id": "f2", "nature": "AUTRE", "nature_libelle": "Autre justificatif", "montant": "0", "justificatif": true}]},
+               {"id": "l2", "crise_nom": "Crue", "parti_le": "2026-11-28T08:00:00+01:00", "rentre_le": null, "validee": false},
+               {"id": "l3", "crise_nom": "Crue", "parti_le": "2026-11-20T08:00:00+01:00", "rentre_le": "2026-11-20T10:00:00+01:00",
+                "validee": false, "remarque_chef": "Retour à 9 h, pas 10 h"}],
+             "frais": [{"institution": "a1", "nom": "Radio-club", "annee": 2026, "kilometres": 52.0, "montant": "33.07", "abandon": null}],
+             "activite": [], "crises": []}
+        """.trimIndent())
+        val (l1, l2, l3) = r.lignes
+        assertEquals("Domicile → Floirac (A/R)", l1.trajet)
+        assertEquals(3.4, l1.totalFrais, 1e-9)                      // l'autre justificatif ne compte pas
+        assertTrue(l1.frais[1].sansMontant && l1.accepteJustificatif)
+        assertEquals(EtatLigne.EN_ATTENTE, l1.etat)
+        assertEquals(EtatLigne.EN_COURS, l2.etat)
+        assertTrue(!l2.accepteJustificatif)                          // pas encore rentré
+        assertEquals(EtatLigne.A_REVOIR, l3.etat)
+        assertEquals("a1", r.frais.single().institution)
+    }
 }

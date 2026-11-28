@@ -69,8 +69,11 @@ enum class Ecran {
     CONNEXION, INSCRIPTION, MISSIONS, EQUIPES, MESSAGERIE, CARTE, AIDE, DEPOT, COMPTE,
     NOTIFICATIONS, NOTIFICATION, DISPONIBILITES, FICHE, INTERVENTIONS, DOSSIER,
     SCANNER, VERDICT, MOBILISATIONS, MON_COMPTE, DEGATS, RADIO_AVANCEE, RADIO_CONVERSATION, PREPARER_RADIO,
-    MANIFESTATIONS, VEILLE,
+    MANIFESTATIONS, VEILLE, RELEVE,
 }
+
+/** Les périodes proposées par « Mon relevé » dans l'application (28/11/2026). */
+enum class PeriodeReleve(val libelle: String) { TRENTE_JOURS("30 derniers jours"), CE_MOIS("Ce mois-ci"), MOIS_DERNIER("Le mois dernier"), CETTE_ANNEE("Cette année") }
 
 private const val SANS_RESEAU_ENGAGEMENT =
     "Sans réseau, rien n'est parti : réessayez dès que possible, ou complétez ensuite Mon relevé sur le site."
@@ -1117,6 +1120,70 @@ class ModeleApplication(private val app: Application) : ViewModel() {
             }
             engagementEnvoi = false
         }
+    }
+
+    // ── Mon relevé (28/11/2026) : l'historique des heures et des kilomètres, les justificatifs,
+    // le relevé kilométrique en PDF. Les corrections d'heures restent sur le site.
+
+    var releve by mutableStateOf<fr.assistacrise.mobile.domaine.MonReleve?>(null); private set
+    var periodeReleve by mutableStateOf(PeriodeReleve.TRENTE_JOURS); private set
+    var releveEnCours by mutableStateOf(false); private set
+    var releveErreur by mutableStateOf<String?>(null); private set
+    var releveMessage by mutableStateOf<String?>(null); private set
+
+    fun ouvrirReleve() {
+        aller(Ecran.RELEVE)
+        lireReleve()
+    }
+
+    fun choisirPeriodeReleve(p: PeriodeReleve) {
+        periodeReleve = p
+        lireReleve()
+    }
+
+    /** (du, au) au format AAAA-MM-JJ, ou (null, null) pour les 30 derniers jours (défaut du serveur). */
+    fun bornesReleve(p: PeriodeReleve = periodeReleve): Pair<String?, String?> {
+        val aujourdhui = java.time.LocalDate.now()
+        return when (p) {
+            PeriodeReleve.TRENTE_JOURS -> null to null
+            PeriodeReleve.CE_MOIS -> aujourdhui.withDayOfMonth(1).toString() to aujourdhui.toString()
+            PeriodeReleve.MOIS_DERNIER -> aujourdhui.minusMonths(1).let { it.withDayOfMonth(1).toString() to it.withDayOfMonth(it.lengthOfMonth()).toString() }
+            PeriodeReleve.CETTE_ANNEE -> aujourdhui.withDayOfYear(1).toString() to aujourdhui.toString()
+        }
+    }
+
+    fun lireReleve() {
+        releveEnCours = true
+        releveErreur = null
+        viewModelScope.launch {
+            val (du, au) = bornesReleve()
+            when (val r = app.api.monReleve(du, au)) {
+                is Reponse.Ok -> releve = r.valeur
+                is Reponse.Refus -> releveErreur = r.message
+                is Reponse.Injoignable -> releveErreur = "Pas de réseau : relevé non actualisé."
+            }
+            releveEnCours = false
+        }
+    }
+
+    /** Ajoute un péage, un stationnement ou un autre justificatif (photo) à une sortie terminée. */
+    fun ajouterJustificatif(ligne: String, nature: String, montant: String, photo: ByteArray?, fini: (Boolean) -> Unit) {
+        releveErreur = null
+        viewModelScope.launch {
+            when (val r = app.api.ajouterFrais(ligne, nature, if (nature == "AUTRE") "" else montant.trim(), photo)) {
+                is Reponse.Ok -> { releveMessage = "Justificatif ajouté."; fini(true); lireReleve() }
+                is Reponse.Refus -> { releveErreur = r.message; fini(false) }
+                is Reponse.Injoignable -> { releveErreur = "Pas de réseau : réessayez avec le réseau."; fini(false) }
+            }
+        }
+    }
+
+    suspend fun octetsJustificatif(id: String) = app.api.justificatif(id)
+
+    suspend fun releveKmPdf(institution: String): Reponse<ByteArray> {
+        val r = releve
+        val (du, au) = if (r != null) r.du to r.au else bornesReleve().let { (d, a) -> (d ?: "") to (a ?: "") }
+        return app.api.releveKmPdf(institution, du, au)
     }
 
     /** Couches météo de la carte : rien n'est lu si aucune n'est cochée. */

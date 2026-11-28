@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity() {
                     compte == null && modele.ecran in setOf(Ecran.INSCRIPTION, Ecran.SCANNER, Ecran.VERDICT) -> modele.ecran
                     compte == null -> Ecran.CONNEXION
                     // Mode citoyen : rien de l'intervenant n'est visible (dossier § 13).
-                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE, Ecran.MANIFESTATIONS) -> Ecran.AIDE
+                    !intervenant && modele.ecran !in setOf(Ecran.AIDE, Ecran.DEPOT, Ecran.COMPTE, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE, Ecran.MANIFESTATIONS, Ecran.RELEVE) -> Ecran.AIDE
                     modele.ecran == Ecran.CONNEXION || modele.ecran == Ecran.INSCRIPTION -> Ecran.MISSIONS
                     else -> modele.ecran
                 }
@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = ecran == Ecran.DOSSIER) { modele.fermerDossier() }
                 BackHandler(enabled = ecran == Ecran.DEGATS) { modele.aller(Ecran.MISSIONS) }
                 BackHandler(enabled = ecran in setOf(Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS)) { modele.fermerScanner() }
-                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE, Ecran.PREPARER_RADIO, Ecran.MANIFESTATIONS)) { modele.aller(Ecran.COMPTE) }
+                BackHandler(enabled = ecran in setOf(Ecran.NOTIFICATIONS, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.MON_COMPTE, Ecran.PREPARER_RADIO, Ecran.MANIFESTATIONS, Ecran.RELEVE)) { modele.aller(Ecran.COMPTE) }
                 BackHandler(enabled = ecran == Ecran.NOTIFICATION) { modele.ouvrirNotifications() }
                 // Le triangle du téléphone fait comme la flèche de l'écran (27/11/2026).
                 BackHandler(enabled = ecran == Ecran.RADIO_AVANCEE) { modele.aller(Ecran.COMPTE) }
@@ -214,6 +214,7 @@ class MainActivity : ComponentActivity() {
                             ecran == Ecran.RADIO_CONVERSATION -> fr.assistacrise.mobile.ui.EcranConversationRadio(modele)
                             ecran == Ecran.PREPARER_RADIO -> fr.assistacrise.mobile.ui.EcranPreparerRadio(modele)
                             ecran == Ecran.MANIFESTATIONS -> fr.assistacrise.mobile.ui.EcranManifestations(modele)
+                            ecran == Ecran.RELEVE -> fr.assistacrise.mobile.ui.EcranReleve(modele)
                             ecran == Ecran.VEILLE -> fr.assistacrise.mobile.ui.EcranVeille(modele)
                             else -> EcranMissions(modele, compte!!)
                         }
@@ -228,5 +229,5 @@ class MainActivity : ComponentActivity() {
 private val ECRANS_SANS_BARRE = setOf(
     Ecran.MESSAGERIE, Ecran.DEPOT, Ecran.NOTIFICATIONS, Ecran.NOTIFICATION, Ecran.DISPONIBILITES, Ecran.FICHE, Ecran.INTERVENTIONS, Ecran.DOSSIER,
     Ecran.SCANNER, Ecran.VERDICT, Ecran.MOBILISATIONS, Ecran.MON_COMPTE, Ecran.RADIO_AVANCEE, Ecran.RADIO_CONVERSATION,
-    Ecran.MANIFESTATIONS, Ecran.VEILLE,
+    Ecran.MANIFESTATIONS, Ecran.VEILLE, Ecran.RELEVE,
 )

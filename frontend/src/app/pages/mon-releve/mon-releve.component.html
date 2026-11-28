@@ -127,7 +127,7 @@
                     <td class="nombre">{{ l.heures !== null ? (l.heures | number:'1.2-2') : '—' }}</td>
                     <td class="nombre">{{ l.kilometres || '—' }}@if (l.vehicule_designation || libelleVehicule(l.vehicule)) { <br><span class="note">{{ l.vehicule_designation || libelleVehicule(l.vehicule) }}</span> }
                       @if (l.frais?.length) {
-                        <br><span class="note" [title]="'Péages et stationnement de ce déplacement'">+ {{ totalFrais(l) | number:'1.2-2' }} €@for (f of l.frais; track f.id) { @if (f.justificatif) { <span class="material-icons petite" title="Ticket joint">attach_file</span> } }</span>
+                        <br><span class="note" [title]="'Péages, stationnement et justificatifs de ce déplacement'">@if (totalFrais(l)) { + {{ totalFrais(l) | number:'1.2-2' }} € }@for (f of l.frais; track f.id) { @if (f.justificatif) { <span class="material-icons petite" title="Justificatif joint">attach_file</span> } }</span>
                       }
                     </td>
                     <td>
@@ -304,19 +304,19 @@
           </div>
           @if (b.id && ligneEditee; as l) {
             <div class="frais-ligne">
-              <strong>Péages et stationnement</strong>
+              <strong>Péages, stationnement, justificatifs</strong>
               @for (f of l.frais ?? []; track f.id) {
-                <span class="frais-puce">{{ f.nature_libelle }} {{ f.montant }} €
+                <span class="frais-puce">{{ f.nature_libelle }}@if (f.nature !== 'AUTRE') { {{ f.montant }} € }
                   @if (f.justificatif) { <button type="button" class="lien" (click)="ouvrirTicket(f)"><span class="material-icons petite">attach_file</span>ticket</button> }
                   <button type="button" class="lien" (click)="retirerFrais(l, f)" aria-label="Retirer ce frais">retirer</button></span>
               }
-              <select [(ngModel)]="fraisNature" aria-label="Nature du frais"><option value="PEAGE">Péage</option><option value="STATIONNEMENT">Stationnement</option></select>
-              <input type="text" inputmode="decimal" class="km" [(ngModel)]="fraisMontant" aria-label="Montant en euros" placeholder="€">
+              <select [(ngModel)]="fraisNature" aria-label="Nature du frais"><option value="PEAGE">Péage</option><option value="STATIONNEMENT">Stationnement</option><option value="AUTRE">Autre justificatif (photo du compteur…)</option></select>
+              @if (fraisNature !== 'AUTRE') { <input type="text" inputmode="decimal" class="km" [(ngModel)]="fraisMontant" aria-label="Montant en euros" placeholder="€"> }
               <input type="file" accept="image/*,application/pdf" (change)="choisirTicket($event)" aria-label="Ticket (photo ou PDF)">
               <button type="button" class="btn-secondary" (click)="ajouterFrais(l)">Ajouter</button>
             </div>
           } @else if (!b.id) {
-            <p class="note">Péages et stationnement s'ajoutent, avec leur ticket, une fois la ligne enregistrée.</p>
+            <p class="note">Péages, stationnement et autres justificatifs s'ajoutent une fois la ligne enregistrée.</p>
           }
         </td>
       </tr>

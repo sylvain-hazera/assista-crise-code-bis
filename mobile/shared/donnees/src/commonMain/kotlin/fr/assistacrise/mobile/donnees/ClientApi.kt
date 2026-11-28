@@ -359,16 +359,59 @@ class ClientApi(
                 (it.jsonObject["ligne_rentree"] as? JsonPrimitive)?.content
         }
 
-    /** Un péage ou un stationnement sur une de mes lignes, avec la photo du ticket. */
+    /** Un péage, un stationnement ou un autre justificatif (sans montant) sur une de mes lignes,
+     * avec sa photo. */
     suspend fun ajouterFrais(ligne: String, nature: String, montant: String, photo: ByteArray?): Reponse<Unit> =
         authentifie(HttpMethod.Post, "mon-releve/$ligne/frais/", formulaire = formData {
             append("nature", nature)
-            append("montant", montant)
+            if (montant.isNotBlank()) append("montant", montant)
             if (photo != null) append("fichier", photo, Headers.build {
                 append(HttpHeaders.ContentType, "image/jpeg")
                 append(HttpHeaders.ContentDisposition, "filename=\"ticket.jpg\"")
             })
         }).sansValeur()
+
+    /** Mon relevé d'heures et kilométrique sur une période (28/11/2026, `mon-releve/`). */
+    suspend fun monReleve(du: String? = null, au: String? = null): Reponse<fr.assistacrise.mobile.domaine.MonReleve> =
+        authentifie(HttpMethod.Get, "mon-releve/" + listOfNotNull(du?.let { "du=$it" }, au?.let { "au=$it" })
+            .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }).transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.MonReleve.serializer(), it)
+        }
+
+    /** Mon relevé kilométrique imprimable (PDF) pour une association et une période. */
+    suspend fun releveKmPdf(institution: String, du: String, au: String): Reponse<ByteArray> =
+        octets("mon-releve/kilometrique/?institution=$institution&du=$du&au=$au", "Le relevé n'a pas pu être obtenu.")
+
+    /** Le justificatif d'un frais (photo ou PDF). */
+    suspend fun justificatif(idFrais: String): Reponse<ByteArray> =
+        octets("frais-deplacement/$idFrais/justificatif/", "Ce justificatif n'est pas accessible.")
+
+    /** Octets d'une ressource authentifiée (PDF, image), avec un rafraîchissement du jeton au besoin. */
+    private suspend fun octets(chemin: String, refus: String): Reponse<ByteArray> {
+        suspend fun lire(jeton: String): Reponse<ByteArray> = try {
+            val reponse = http.request("$urlApi/$chemin") {
+                header(HttpHeaders.Authorization, "Bearer $jeton"); header("X-Environment", session.environnement.value)
+            }
+            val code = reponse.status.value
+            when {
+                code in 200..299 -> Reponse.Ok(reponse.readRawBytes())
+                code >= 500 || code == 408 || code == 429 -> Reponse.Injoignable("Le serveur ne répond pas correctement pour le moment (erreur $code).")
+                else -> Reponse.Refus(code, refus)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Reponse.Injoignable("Le serveur est injoignable. Vérifiez votre connexion.")
+        }
+        val jeton = session.jetonAcces ?: return Reponse.Refus(401, SESSION_EXPIREE)
+        val premiere = lire(jeton)
+        if (premiere !is Reponse.Refus || premiere.code != 401) return premiere
+        return when (val r = rafraichir(jeton)) {
+            is Reponse.Ok -> lire(r.valeur)
+            is Reponse.Refus -> r
+            is Reponse.Injoignable -> r
+        }
+    }
 
     /** Le périmètre de ma carte : crise en cours, sinon crises de ma commune (27/11/2026). */
     suspend fun perimetreCarte(): Reponse<fr.assistacrise.mobile.domaine.PerimetreCarte> =

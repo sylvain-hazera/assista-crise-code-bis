@@ -277,10 +277,16 @@ def ajouter_frais(engagement, nature, montant, fichier=None):
         raise ErreurEngagement(
             "Cette ligne a été validée par votre encadrement : demandez-lui de lever sa validation.")
     if nature not in NatureFraisDeplacement.values:
-        raise ErreurEngagement("Péage ou stationnement ?")
-    valeur = lire_montant(montant, NatureFraisDeplacement(nature).label)
-    if not valeur:
-        raise ErreurEngagement("Indiquez le montant payé.")
+        raise ErreurEngagement("Péage, stationnement ou autre justificatif ?")
+    if nature == NatureFraisDeplacement.AUTRE:
+        # Une pièce sans montant (tableau de bord, preuve de trajet) : la photo est tout.
+        if fichier is None:
+            raise ErreurEngagement("Joignez la photo ou le document.")
+        valeur = "0"
+    else:
+        valeur = lire_montant(montant, NatureFraisDeplacement(nature).label)
+        if not valeur:
+            raise ErreurEngagement("Indiquez le montant payé.")
     frais = FraisDeplacement(engagement=engagement, nature=nature, montant=valeur)
     if fichier is not None:
         from django.core.exceptions import ValidationError as ErreurDjango

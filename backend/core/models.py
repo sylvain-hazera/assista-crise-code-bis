@@ -5013,6 +5013,8 @@ class EngagementPersonnel(EnvironmentScopedModel):
 class NatureFraisDeplacement(models.TextChoices):
     PEAGE = "PEAGE", "Péage"
     STATIONNEMENT = "STATIONNEMENT", "Stationnement"
+    #: Une pièce sans montant (28/11/2026) : photo du tableau de bord, ou toute autre preuve.
+    AUTRE = "AUTRE", "Autre justificatif"
 
 
 class FraisDeplacement(models.Model):

@@ -146,6 +146,18 @@ class TestFrais:
         with open(chemin, "rb") as f:
             assert not f.read().startswith(b"\x89PNG")
 
+    def test_autre_justificatif_photo_obligatoire_sans_montant(self, asso, settings, tmp_path):
+        settings.MEDIA_ROOT = str(tmp_path)
+        ligne = _ligne(asso, kilometres="20", vehicule="VOITURE")
+        url = reverse("mon_releve_frais", args=[ligne.id])
+        r = asso["lea"].post(url, {"nature": "AUTRE"}, format="multipart")
+        assert r.status_code == 400 and "photo" in r.data["detail"]
+        r = asso["lea"].post(url, {"nature": "AUTRE", "montant": "99", "fichier": _png()}, format="multipart")
+        assert r.status_code == 201, r.data
+        assert r.data["nature_libelle"] == "Autre justificatif" and r.data["montant"] == "0" and r.data["justificatif"] is True
+        # Il ne compte dans aucun frais.
+        assert benevolat.frais_annexes_ligne(EngagementPersonnel.objects.get(id=ligne.id)) == Decimal("0.00")
+
     def test_rien_sur_une_ligne_validee(self, asso):
         ligne = _ligne(asso, valide=True, kilometres="20", vehicule="VOITURE")
         r = asso["lea"].post(reverse("mon_releve_frais", args=[ligne.id]), {"nature": "STATIONNEMENT", "montant": "2"},

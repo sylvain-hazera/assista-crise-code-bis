@@ -137,3 +137,79 @@ class DistanceParcourue(metres: Double = 0.0, private var derniere: Releve? = nu
         }
     }
 }
+
+
+// ── Mon relevé dans l'application (28/11/2026), miroir de `mon-releve/` ───────────────────
+
+@Serializable
+data class FraisLigne(
+    val id: String,
+    val nature: String,
+    @SerialName("nature_libelle") val libelle: String = "",
+    val montant: String = "0",
+    val justificatif: Boolean = false,
+    @SerialName("justificatif_nom") val nomJustificatif: String = "",
+) {
+    /** Un « autre justificatif » n'a pas de montant : la photo est tout. */
+    val sansMontant: Boolean get() = nature == "AUTRE"
+}
+
+@Serializable
+data class LigneReleve(
+    val id: String,
+    @SerialName("crise_nom") val activite: String = "",
+    @SerialName("equipe_nom") val equipe: String = "",
+    @SerialName("parti_le") val partiLe: String = "",
+    @SerialName("rentre_le") val rentreLe: String? = null,
+    val heures: Double? = null,
+    val kilometres: String = "",
+    @SerialName("vehicule_designation") val vehicule: String = "",
+    @SerialName("lieu_depart") val lieuDepart: String = "",
+    @SerialName("lieu_arrivee") val lieuArrivee: String = "",
+    val motif: String = "",
+    @SerialName("aller_retour") val allerRetour: Boolean = true,
+    val validee: Boolean = false,
+    @SerialName("remarque_chef") val remarque: String = "",
+    @SerialName("saisie_manuelle") val aLaMain: Boolean = false,
+    val frais: List<FraisLigne> = emptyList(),
+) {
+    /** « Domicile → Floirac (A/R) », vide si rien n'est dit. */
+    val trajet: String get() = if (lieuDepart.isBlank() && lieuArrivee.isBlank()) "" else
+        "${lieuDepart.ifBlank { "?" }} → ${lieuArrivee.ifBlank { "?" }}" + if (allerRetour) " (A/R)" else ""
+
+    val etat: EtatLigne get() = when {
+        rentreLe == null -> EtatLigne.EN_COURS
+        validee -> EtatLigne.VALIDEE
+        remarque.isNotBlank() -> EtatLigne.A_REVOIR
+        else -> EtatLigne.EN_ATTENTE
+    }
+
+    /** Péages et stationnement de la ligne, en euros. */
+    val totalFrais: Double get() = frais.filter { !it.sansMontant }.sumOf { it.montant.replace(",", ".").toDoubleOrNull() ?: 0.0 }
+
+    /** Une ligne validée ne se modifie plus, et une sortie pas terminée n'a pas encore de justificatif. */
+    val accepteJustificatif: Boolean get() = !validee && rentreLe != null
+}
+
+enum class EtatLigne(val libelle: String) {
+    EN_COURS("en cours"), EN_ATTENTE("en attente de validation"), A_REVOIR("à revoir"), VALIDEE("validée")
+}
+
+@Serializable
+data class AssociationReleve(
+    val institution: String,
+    val nom: String,
+    val annee: Int = 0,
+    val kilometres: Double = 0.0,
+    val montant: String = "0.00",
+)
+
+@Serializable
+data class MonReleve(
+    val du: String,
+    val au: String,
+    val lignes: List<LigneReleve> = emptyList(),
+    @SerialName("total_heures") val totalHeures: Double = 0.0,
+    @SerialName("total_kilometres") val totalKilometres: Double = 0.0,
+    val frais: List<AssociationReleve> = emptyList(),
+)

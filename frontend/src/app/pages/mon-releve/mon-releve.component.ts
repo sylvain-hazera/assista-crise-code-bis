@@ -47,7 +47,7 @@ export interface LigneReleve {
 /** Un péage ou un stationnement d'un déplacement, avec ou sans ticket. */
 export interface FraisLigne {
   id: string;
-  nature: 'PEAGE' | 'STATIONNEMENT';
+  nature: 'PEAGE' | 'STATIONNEMENT' | 'AUTRE';
   nature_libelle: string;
   montant: string;
   justificatif: boolean;
@@ -181,7 +181,7 @@ export class MonReleveComponent implements OnInit {
   /** Véhicule en cours de déclaration (relevé kilométrique). */
   nouveauVehicule: NouveauVehicule | null = null;
   /** Péage ou stationnement en cours d'ajout sur la ligne éditée. */
-  fraisNature: 'PEAGE' | 'STATIONNEMENT' = 'PEAGE';
+  fraisNature: 'PEAGE' | 'STATIONNEMENT' | 'AUTRE' = 'PEAGE';
   fraisMontant = '';
   fraisFichier: File | null = null;
   readonly trajet = trajetDe;
@@ -398,10 +398,12 @@ export class MonReleveComponent implements OnInit {
   }
 
   ajouterFrais(ligne: LigneReleve): void {
-    if (!this.fraisMontant.trim()) { this.erreur = 'Indiquez le montant payé.'; return; }
+    // « Autre justificatif » (28/11/2026) : une photo sans montant, le tableau de bord par exemple.
+    if (this.fraisNature === 'AUTRE' && !this.fraisFichier) { this.erreur = 'Joignez la photo ou le document.'; return; }
+    if (this.fraisNature !== 'AUTRE' && !this.fraisMontant.trim()) { this.erreur = 'Indiquez le montant payé.'; return; }
     const corps = new FormData();
     corps.append('nature', this.fraisNature);
-    corps.append('montant', this.fraisMontant.trim());
+    if (this.fraisNature !== 'AUTRE') corps.append('montant', this.fraisMontant.trim());
     if (this.fraisFichier) corps.append('fichier', this.fraisFichier);
     this.erreur = '';
     this.http.post(`${this.url}${ligne.id}/frais/`, corps).subscribe({
@@ -418,7 +420,7 @@ export class MonReleveComponent implements OnInit {
   }
 
   totalFrais(l: LigneReleve): number {
-    return (l.frais ?? []).reduce((t, f) => t + Number(f.montant || 0), 0);
+    return (l.frais ?? []).filter(f => f.nature !== 'AUTRE').reduce((t, f) => t + Number(f.montant || 0), 0);
   }
 
   ouvrirTicket(f: FraisLigne): void {
