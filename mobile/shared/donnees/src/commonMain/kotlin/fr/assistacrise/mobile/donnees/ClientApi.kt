@@ -378,6 +378,65 @@ class ClientApi(
             json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.MonReleve.serializer(), it)
         }
 
+    // Le circuit complet du relevé dans l'application (28/11/2026) : compléter, corriger,
+    // retirer, véhicules, justificatifs, renonciation, et la relecture par l'encadrement.
+
+    private fun versJson(champs: Map<String, Any?>): JsonObject = buildJsonObject {
+        champs.forEach { (cle, valeur) ->
+            when (valeur) {
+                null -> put(cle, kotlinx.serialization.json.JsonNull)
+                is Boolean -> put(cle, valeur)
+                is Number -> put(cle, valeur)
+                else -> put(cle, valeur.toString())
+            }
+        }
+    }
+
+    private fun lireLigne(e: JsonElement) = json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.LigneReleve.serializer(), e)
+
+    /** Ajoute une sortie oubliée (départ ET retour). */
+    suspend fun completerSortie(champs: Map<String, Any?>): Reponse<fr.assistacrise.mobile.domaine.LigneReleve> =
+        authentifie(HttpMethod.Post, "mon-releve/", versJson(champs)).transformer(::lireLigne)
+
+    /** Corrige une de mes sorties (tant qu'elle n'est pas validée). */
+    suspend fun corrigerSortie(id: String, champs: Map<String, Any?>): Reponse<fr.assistacrise.mobile.domaine.LigneReleve> =
+        authentifie(HttpMethod.Patch, "mon-releve/$id/", versJson(champs)).transformer(::lireLigne)
+
+    /** Retire une sortie ajoutée à la main. */
+    suspend fun retirerSortie(id: String): Reponse<Unit> = authentifie(HttpMethod.Delete, "mon-releve/$id/").sansValeur()
+
+    suspend fun retirerFrais(ligne: String, frais: String): Reponse<Unit> =
+        authentifie(HttpMethod.Delete, "mon-releve/$ligne/frais/$frais/").sansValeur()
+
+    suspend fun ajouterVehicule(genre: String, libelle: String, immatriculation: String, puissanceCv: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mes-vehicules/", buildJsonObject {
+            put("genre", genre); put("libelle", libelle.trim()); put("immatriculation", immatriculation.trim()); put("puissance_cv", puissanceCv.trim())
+        }).sansValeur()
+
+    suspend fun retirerVehicule(id: String): Reponse<Unit> = authentifie(HttpMethod.Delete, "mes-vehicules/$id/").sansValeur()
+
+    /** Je renonce au remboursement de mes frais validés de l'année (reçu fiscal). */
+    suspend fun renoncer(institution: String, annee: Int, adresse: String): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "mon-releve/abandon/", buildJsonObject {
+            put("institution", institution); put("annee", annee); put("adresse", adresse.trim())
+        }).sansValeur()
+
+    suspend fun recuFiscal(abandon: String): Reponse<ByteArray> =
+        octets("benevolat/abandons/$abandon/recu/", "Le reçu n'est pas disponible.")
+
+    /** Les relevés que j'encadre (mes équipes, mon bureau, ma mairie). */
+    suspend fun relevesEquipe(du: String? = null, au: String? = null): Reponse<fr.assistacrise.mobile.domaine.RelevesEquipe> =
+        authentifie(HttpMethod.Get, "releves-equipe/" + listOfNotNull(du?.let { "du=$it" }, au?.let { "au=$it" })
+            .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }).transformer {
+            json.decodeFromJsonElement(fr.assistacrise.mobile.domaine.RelevesEquipe.serializer(), it)
+        }
+
+    /** Valider une ligne, ou la renvoyer avec ce qui est à revoir. */
+    suspend fun relire(ligne: String, geste: String, remarque: String = ""): Reponse<Unit> =
+        authentifie(HttpMethod.Post, "releves-equipe/", buildJsonObject {
+            put("ligne", ligne); put("geste", geste); put("remarque", remarque.trim())
+        }).sansValeur()
+
     /** Mon relevé kilométrique imprimable (PDF) pour une association et une période. */
     suspend fun releveKmPdf(institution: String, du: String, au: String): Reponse<ByteArray> =
         octets("mon-releve/kilometrique/?institution=$institution&du=$du&au=$au", "Le relevé n'a pas pu être obtenu.")

@@ -90,4 +90,29 @@ class ReleveKmTest {
         assertEquals(EtatLigne.A_REVOIR, l3.etat)
         assertEquals("a1", r.frais.single().institution)
     }
+
+    @Test
+    fun uneSortieOublieePortePourQuiEtLesHeures() {
+        val b = BrouillonSortie(cible = "c:k1", equipe = "e1", partiLe = "2026-11-27T08:00:00+01:00", rentreLe = "2026-11-27T12:00:00+01:00",
+            compteurDepart = "45 210", compteurArrivee = "45262", kilometres = "999")
+        val c = b.champs()
+        assertEquals("k1", c["crise"]); assertEquals("e1", c["equipe"]); assertEquals("52", c["kilometres"])
+        assertEquals("45210", c["compteur_depart"]); assertEquals("AUCUN", c["vehicule"])
+        assertEquals("Indiquez le départ et le retour.", b.copy(rentreLe = "").manque())
+        assertEquals("Choisissez la crise ou la manifestation.", b.copy(cible = "").manque())
+        assertEquals("m1", BrouillonSortie(cible = "m:m1", partiLe = "a", rentreLe = "b").champs()["manifestation"])
+    }
+
+    @Test
+    fun uneCorrectionNEnvoieQueCeQuiAChange() {
+        val ligne = LigneReleve(id = "l1", crise = "k1", partiLe = "2026-11-27T08:00:00+01:00", rentreLe = "2026-11-27T12:00:00+01:00",
+            departDe = "DOMICILE", retourA = "DOMICILE", kilometres = "40")
+        val origine = BrouillonSortie.depuis(ligne)
+        val c = origine.copy(kilometres = "52", motif = "Balisage").champs(origine)
+        // Seul le trajet change : ni les heures ni les lieux ne partent, et pas d'activité.
+        assertTrue("parti_le" !in c && "rentre_le" !in c && "depart_de" !in c && "retour_a" !in c && "crise" !in c)
+        assertEquals("52", c["kilometres"]); assertEquals("Balisage", c["motif"])
+        assertEquals("2026-11-27T13:00:00+01:00", origine.copy(rentreLe = "2026-11-27T13:00:00+01:00").champs(origine)["rentre_le"])
+        assertTrue(ligne.retirable.not() && ligne.corrigeable)
+    }
 }

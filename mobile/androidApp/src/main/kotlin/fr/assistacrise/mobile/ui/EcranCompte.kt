@@ -64,21 +64,24 @@ fun EcranCompte(modele: ModeleApplication, compte: Compte, intervenant: Boolean)
 
             Spacer(Modifier.height(20.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                // Dans l'ordre du parcours d'un bénévole (28/11/2026) : qui je suis, quand je suis
+                // disponible, ce qu'on me demande, où je m'inscris, ce que je fais, puis ce que
+                // j'ai fait (le relevé).
                 Entree("Mon compte", "Identité, mot de passe, mes documents", titres.any { it.refuse }, modele::ouvrirMonCompte)
-                HorizontalDivider()
-                Entree("Notifications", if (modele.nonVues > 0) "${modele.nonVues} à voir" else "Demandes de votre association", modele.nonVues > 0, modele::ouvrirNotifications)
-                HorizontalDivider()
-                Entree("Mes disponibilités", "Les créneaux où l'on peut compter sur vous") { modele.ouvrirDisponibilites() }
                 HorizontalDivider()
                 Entree("Ma fiche de bénévole", "Adresse, situation, engagement", surClic = modele::ouvrirFiche)
                 HorizontalDivider()
-                Entree("Manifestations", "Les manifestations de mon association : je m'inscris sur un poste", surClic = modele::ouvrirManifestations)
+                Entree("Mes disponibilités", "Les créneaux où l'on peut compter sur vous") { modele.ouvrirDisponibilites() }
                 HorizontalDivider()
-                Entree("Mon relevé", "Mes heures, mes kilomètres, mes justificatifs, le relevé à signer", surClic = modele::ouvrirReleve)
+                Entree("Notifications", if (modele.nonVues > 0) "${modele.nonVues} à voir" else "Demandes de votre association", modele.nonVues > 0, modele::ouvrirNotifications)
+                HorizontalDivider()
+                Entree("Manifestations", "Les manifestations de mon association : je m'inscris sur un poste", surClic = modele::ouvrirManifestations)
                 if (intervenant) {
                     HorizontalDivider()
                     Entree("Mes interventions", "Les dossiers confiés à mes équipes", surClic = modele::ouvrirInterventions)
                 }
+                HorizontalDivider()
+                Entree("Mon relevé", "Mes heures et mes kilomètres : compléter, corriger, justifier, valider, signer", surClic = modele::ouvrirReleve)
             }
 
             Spacer(Modifier.height(24.dp))

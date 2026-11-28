@@ -158,7 +158,17 @@ data class FraisLigne(
 data class LigneReleve(
     val id: String,
     @SerialName("crise_nom") val activite: String = "",
+    val crise: String? = null,
+    val manifestation: String? = null,
+    @SerialName("equipe") val equipeId: String? = null,
     @SerialName("equipe_nom") val equipe: String = "",
+    @SerialName("depart_de") val departDe: String = "DOMICILE",
+    @SerialName("retour_a") val retourA: String = "",
+    @SerialName("vehicule") val typeVehicule: String = "AUCUN",
+    @SerialName("vehicule_personnel") val vehiculePersonnel: String? = null,
+    @SerialName("compteur_depart") val compteurDepart: String = "",
+    @SerialName("compteur_arrivee") val compteurArrivee: String = "",
+    val source: String = "DECLARE",
     @SerialName("parti_le") val partiLe: String = "",
     @SerialName("rentre_le") val rentreLe: String? = null,
     val heures: Double? = null,
@@ -189,6 +199,15 @@ data class LigneReleve(
 
     /** Une ligne validée ne se modifie plus, et une sortie pas terminée n'a pas encore de justificatif. */
     val accepteJustificatif: Boolean get() = !validee && rentreLe != null
+
+    /** Se corrige tant qu'elle n'est pas validée (le retour oublié compris). */
+    val corrigeable: Boolean get() = !validee
+
+    /** Se retire seulement si on l'a ajoutée à la main : une déclaration du moment se corrige. */
+    val retirable: Boolean get() = !validee && aLaMain
+
+    /** La cible au format du formulaire : « c:<crise> » ou « m:<manifestation> ». */
+    val cible: String get() = manifestation?.let { "m:$it" } ?: "c:${crise.orEmpty()}"
 }
 
 enum class EtatLigne(val libelle: String) {
@@ -196,12 +215,45 @@ enum class EtatLigne(val libelle: String) {
 }
 
 @Serializable
+data class AbandonReleve(
+    val id: String,
+    val statut: String = "",
+    @SerialName("statut_libelle") val libelle: String = "",
+    @SerialName("numero_recu") val numeroRecu: String = "",
+    @SerialName("motif_refus") val motifRefus: String = "",
+    val montant: String? = null,
+) {
+    val recuDisponible: Boolean get() = statut == "RECU_EMIS"
+    /** On peut (re)demander tant que rien n'a été accepté. */
+    val renouvelable: Boolean get() = statut == "REFUSE" || statut == "DEMANDE"
+}
+
+@Serializable
 data class AssociationReleve(
     val institution: String,
     val nom: String,
     val annee: Int = 0,
+    @SerialName("recus_fiscaux") val recusFiscaux: Boolean = false,
     val kilometres: Double = 0.0,
     val montant: String = "0.00",
+    val abandon: AbandonReleve? = null,
+) {
+    /** Renoncer au remboursement (reçu fiscal) : l'association le permet, il y a des frais, et
+     * rien n'est encore accepté. */
+    val renonciationPossible: Boolean get() =
+        recusFiscaux && (montant.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0 && (abandon == null || abandon.renouvelable)
+}
+
+@Serializable
+data class Choix(val id: String = "", val nom: String = "", val code: String = "", val libelle: String = "", val debut: String = "")
+
+@Serializable
+data class ActiviteReleve(
+    val quand: String,
+    val heure: Boolean = false,
+    val source: String = "moi",
+    val equipe: String = "",
+    val quoi: String = "",
 )
 
 @Serializable
@@ -212,4 +264,94 @@ data class MonReleve(
     @SerialName("total_heures") val totalHeures: Double = 0.0,
     @SerialName("total_kilometres") val totalKilometres: Double = 0.0,
     val frais: List<AssociationReleve> = emptyList(),
+    /** De quoi compléter un oubli : crises, manifestations, équipes, lieux, types de véhicule. */
+    val crises: List<Choix> = emptyList(),
+    val manifestations: List<Choix> = emptyList(),
+    val equipes: List<Choix> = emptyList(),
+    val lieux: List<Choix> = emptyList(),
+    @SerialName("mes_vehicules") val mesVehicules: List<VehiculePersonnel> = emptyList(),
+    /** Ce que la personne et ses équipes ont fait, pour retrouver ses heures. */
+    val activite: List<ActiviteReleve> = emptyList(),
+    /** Elle encadre une équipe, ou relit pour son bureau ou sa mairie : onglet « À valider ». */
+    val encadre: Boolean = false,
+) {
+    val peutAjouter: Boolean get() = crises.isNotEmpty() || manifestations.isNotEmpty()
+}
+
+/** Le relevé d'une personne, tel que l'encadrement le relit (`releves-equipe/`). */
+@Serializable
+data class FicheEquipe(
+    val personne: String,
+    val lignes: List<LigneReleve> = emptyList(),
+    @SerialName("total_heures") val totalHeures: Double = 0.0,
+    @SerialName("heures_validees") val heuresValidees: Double = 0.0,
+    @SerialName("a_valider") val aValider: Int = 0,
 )
+
+@Serializable
+data class RelevesEquipe(val du: String = "", val au: String = "", val fiches: List<FicheEquipe> = emptyList()) {
+    val aValider: Int get() = fiches.sumOf { it.aValider }
+}
+
+/**
+ * Une sortie en cours de saisie, dans l'application (28/11/2026) : ajout d'un oubli ou
+ * correction. Les instants sont déjà en ISO 8601 avec leur décalage (l'heure du téléphone).
+ * `champs()` donne le corps de `mon-releve/` (POST) ou `mon-releve/<id>/` (PATCH).
+ */
+data class BrouillonSortie(
+    val id: String? = null,
+    val cible: String = "",
+    val equipe: String = "",
+    val partiLe: String = "",
+    val rentreLe: String = "",
+    val departDe: String = "DOMICILE",
+    val retourA: String = "DOMICILE",
+    val vehiculePersonnel: String = "",
+    val typeVehicule: String = "AUCUN",
+    val lieuDepart: String = "",
+    val lieuArrivee: String = "",
+    val motif: String = "",
+    val allerRetour: Boolean = true,
+    val compteurDepart: String = "",
+    val compteurArrivee: String = "",
+    val kilometres: String = "",
+) {
+    val kmDesCompteurs: Int? get() = ReleveKm.kmCompteurs(compteurDepart, compteurArrivee)
+
+    /** Ce qui manque encore, en clair, ou null. */
+    fun manque(): String? = when {
+        id == null && cible.length < 3 -> "Choisissez la crise ou la manifestation."
+        partiLe.isBlank() || rentreLe.isBlank() -> "Indiquez le départ et le retour."
+        else -> null                     // l'ordre des heures, le recouvrement : le serveur le dit
+    }
+
+    /** `origine` : la ligne telle qu'elle était, pour une correction. Les heures et les lieux de
+     * départ ou de retour inchangés ne partent pas : le serveur marquerait sinon les heures
+     * « complétées à la main » alors qu'on n'a touché qu'au trajet. */
+    fun champs(origine: BrouillonSortie? = null): Map<String, Any?> = buildMap {
+        if (id == null) {
+            if (cible.startsWith("m:")) put("manifestation", cible.drop(2))
+            else { put("crise", cible.drop(2)); put("equipe", equipe.ifBlank { null }) }
+        }
+        if (origine == null || partiLe != origine.partiLe) put("parti_le", partiLe)
+        if (origine == null || rentreLe != origine.rentreLe) put("rentre_le", rentreLe)
+        if (origine == null || departDe != origine.departDe) put("depart_de", departDe)
+        if (origine == null || retourA != origine.retourA) put("retour_a", retourA)
+        put("vehicule_personnel", vehiculePersonnel)
+        put("vehicule", if (vehiculePersonnel.isBlank()) typeVehicule else null)
+        put("lieu_depart", lieuDepart.trim()); put("lieu_arrivee", lieuArrivee.trim()); put("motif", motif.trim())
+        put("aller_retour", allerRetour)
+        put("compteur_depart", compteurDepart.filter { it.isDigit() })
+        put("compteur_arrivee", compteurArrivee.filter { it.isDigit() })
+        put("kilometres", kmDesCompteurs?.toString() ?: kilometres.trim())
+    }
+
+    companion object {
+        fun depuis(l: LigneReleve) = BrouillonSortie(
+            id = l.id, cible = l.cible, equipe = l.equipeId.orEmpty(), partiLe = l.partiLe, rentreLe = l.rentreLe.orEmpty(),
+            departDe = l.departDe, retourA = l.retourA.ifBlank { l.departDe }, vehiculePersonnel = l.vehiculePersonnel.orEmpty(),
+            typeVehicule = l.typeVehicule, lieuDepart = l.lieuDepart, lieuArrivee = l.lieuArrivee, motif = l.motif,
+            allerRetour = l.allerRetour, compteurDepart = l.compteurDepart, compteurArrivee = l.compteurArrivee, kilometres = l.kilometres,
+        )
+    }
+}

@@ -1139,6 +1139,7 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     fun choisirPeriodeReleve(p: PeriodeReleve) {
         periodeReleve = p
         lireReleve()
+        if (relevesEquipe != null) lireRelevesEquipe()
     }
 
     /** (du, au) au format AAAA-MM-JJ, ou (null, null) pour les 30 derniers jours (défaut du serveur). */
@@ -1179,6 +1180,59 @@ class ModeleApplication(private val app: Application) : ViewModel() {
     }
 
     suspend fun octetsJustificatif(id: String) = app.api.justificatif(id)
+
+    /** Un geste du relevé : message en cas de succès, relecture du relevé, rappel au formulaire. */
+    private fun gesteReleve(succes: String, appel: suspend () -> Reponse<*>, fini: (Boolean) -> Unit = {}) {
+        releveErreur = null
+        releveMessage = null
+        viewModelScope.launch {
+            when (val r = appel()) {
+                is Reponse.Ok -> { releveMessage = succes; fini(true); lireReleve(); if (relevesEquipe != null) lireRelevesEquipe() }
+                is Reponse.Refus -> { releveErreur = r.message; fini(false) }
+                is Reponse.Injoignable -> { releveErreur = "Pas de réseau : réessayez avec le réseau."; fini(false) }
+            }
+        }
+    }
+
+    /** Ajoute une sortie oubliée, ou corrige une sortie (`origine` : la ligne avant correction). */
+    fun enregistrerSortie(b: fr.assistacrise.mobile.domaine.BrouillonSortie, origine: fr.assistacrise.mobile.domaine.BrouillonSortie?, fini: (Boolean) -> Unit) {
+        b.manque()?.let { releveErreur = it; fini(false); return }
+        val id = b.id
+        if (id == null) gesteReleve("Sortie ajoutée.", { app.api.completerSortie(b.champs()) }, fini)
+        else gesteReleve("Sortie corrigée.", { app.api.corrigerSortie(id, b.champs(origine)) }, fini)
+    }
+
+    fun retirerSortie(id: String) = gesteReleve("Sortie retirée.", { app.api.retirerSortie(id) })
+
+    fun retirerFrais(ligne: String, frais: String) = gesteReleve("Justificatif retiré.", { app.api.retirerFrais(ligne, frais) })
+
+    fun ajouterVehicule(genre: String, libelle: String, immatriculation: String, puissanceCv: String, fini: (Boolean) -> Unit) =
+        gesteReleve("Véhicule enregistré.", { app.api.ajouterVehicule(genre, libelle, immatriculation, puissanceCv) }, fini)
+
+    fun retirerVehicule(id: String) = gesteReleve("Véhicule retiré.", { app.api.retirerVehicule(id) })
+
+    fun renoncer(a: fr.assistacrise.mobile.domaine.AssociationReleve, adresse: String, fini: (Boolean) -> Unit) =
+        gesteReleve("Demande envoyée au bureau de votre association.", { app.api.renoncer(a.institution, a.annee, adresse) }, fini)
+
+    suspend fun recuFiscal(abandon: String) = app.api.recuFiscal(abandon)
+
+    // La relecture par l'encadrement : valider, ou renvoyer avec ce qui est à revoir.
+    var relevesEquipe by mutableStateOf<fr.assistacrise.mobile.domaine.RelevesEquipe?>(null); private set
+
+    fun lireRelevesEquipe() {
+        viewModelScope.launch {
+            val (du, au) = bornesReleve()
+            when (val r = app.api.relevesEquipe(du, au)) {
+                is Reponse.Ok -> relevesEquipe = r.valeur
+                is Reponse.Refus -> releveErreur = r.message
+                is Reponse.Injoignable -> releveErreur = "Pas de réseau : relevés de l'équipe non actualisés."
+            }
+        }
+    }
+
+    fun relire(ligne: String, geste: String, remarque: String = "", fini: (Boolean) -> Unit = {}) =
+        gesteReleve(if (geste == "valider") "Ligne validée." else "Ligne renvoyée avec votre remarque.",
+            { app.api.relire(ligne, geste, remarque) }, fini)
 
     suspend fun releveKmPdf(institution: String): Reponse<ByteArray> {
         val r = releve
